@@ -8,7 +8,7 @@ from github import Github
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
-from commit_status_helper import get_commit
+from commit_status_helper import get_commit, post_label
 
 NAME = "Run Check (actions)"
 
@@ -79,6 +79,21 @@ TRUSTED_CONTRIBUTORS = {
         "thomoco",  # ClickHouse
         "BoloniniD",  # Seasoned contributor, HSE
     ]
+}
+
+MAP_CATEGORY_TO_LABEL = {
+    "New Feature": "pr-feature",
+    "Bug Fix": "pr-bugfix",
+    "Bug Fix (user-visible misbehaviour in official stable or prestable release)": "pr-bugfix",
+    "Improvement": "pr-improvement",
+    "Performance Improvement": "pr-performance",
+    "Backward Incompatible Change": "pr-backward-incompatible",
+    "Build/Testing/Packaging Improvement": "pr-build",
+    "Not for changelog (changelog entry is not required)": "pr-not-for-changelog",
+    "Not for changelog": "pr-not-for-changelog",
+    "Documentation (changelog entry is not required)": "pr-documentation",
+    "Documentation": "pr-documentation",
+    # 'Other': doesn't match anything
 }
 
 
@@ -168,7 +183,7 @@ def check_pr_description(pr_info):
                     + second_category
                     + "'"
                 )
-                return result_status[:140]
+                return result_status[:140], category
 
         elif re.match(
             r"(?i)^[>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
@@ -190,19 +205,19 @@ def check_pr_description(pr_info):
             i += 1
 
     if not category:
-        return "Changelog category is empty"
+        return "Changelog category is empty", category
 
     # Filter out the PR categories that are not for changelog.
     if re.match(
         r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
         category,
     ):
-        return ""
+        return "", category
 
     if not entry:
-        return f"Changelog entry required for category '{category}'"
+        return f"Changelog entry required for category '{category}'", category
 
-    return ""
+    return "", category
 
 
 if __name__ == "__main__":
@@ -213,7 +228,10 @@ if __name__ == "__main__":
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
-    description_report = check_pr_description(pr_info)[:139]
+    description_report, category = check_pr_description(pr_info)
+    if category in MAP_CATEGORY_TO_LABEL:
+        post_label(gh, pr_info, MAP_CATEGORY_TO_LABEL[category])
+
     if description_report:
         print("::notice ::Cannot run, description does not match the template")
         logging.info(
@@ -225,7 +243,7 @@ if __name__ == "__main__":
         )
         commit.create_status(
             context=NAME,
-            description=description_report,
+            description=description_report[:139],
             state="failure",
             target_url=url,
         )
