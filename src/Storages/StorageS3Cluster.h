@@ -41,6 +41,7 @@ protected:
         const StorageID & table_id_,
         String cluster_name_,
         const String & format_name_,
+        UInt64 max_single_read_retries_,
         UInt64 max_connections_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
