@@ -57,8 +57,8 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
-    /// Used to inject new created processors.
-    Processors* getProcessors() { return &processors; }
+    /// Append extra processors for this step.
+    void appendExtraProcessors(const Processors & extra_processors);
 
 protected:
     /// Clear distinct_columns if res_header doesn't contain all of them.

@@ -324,14 +324,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     right->pipe.dropExtremes();
 
     left->pipe.collected_processors = collected_processors;
-    if (auto * step = typeid_cast<ExpressionStep*>(right->pipe.processors.back()->getQueryPlanStep()))
-    {
-        right->pipe.collected_processors = step->getProcessors();
-    }
-    else
-    {
-        right->pipe.collected_processors = collected_processors;
-    }
+
+    /// Collect the NEW processors for the right pipeline.
+    QueryPipelineProcessorsCollector collector(*right);
+    /// Remember the last step of the right pipeline.
+    IQueryPlanStep* step = right->pipe.processors.back()->getQueryPlanStep();
 
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool default_totals = false;
@@ -399,6 +396,17 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
             collected_processors->emplace_back(joining);
 
         left->pipe.processors.emplace_back(std::move(joining));
+    }
+
+    /// Move the collected processors to the last step in the right pipeline.
+    Processors processors = collector.detachProcessors();
+    if (auto * expression_step = typeid_cast<ExpressionStep*>(step))
+    {
+        expression_step->appendExtraProcessors(processors);
+    }
+    else
+    {
+        collected_processors->insert(collected_processors->end(), processors.begin(), processors.end());
     }
 
     left->pipe.processors.insert(left->pipe.processors.end(), right->pipe.processors.begin(), right->pipe.processors.end());
