@@ -162,7 +162,7 @@ def test_put(started_cluster, maybe_auth, positive, compression):
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test.csv"
     put_query = f"""insert into table function s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{filename}',
-                    {maybe_auth}'CSV', '{table_format}', {compression}) values settings s3_truncate_on_insert=1 {values}"""
+                    {maybe_auth}'CSV', '{table_format}', '{compression}') values settings s3_truncate_on_insert=1 {values}"""
 
     try:
         run_query(instance, put_query)
