@@ -46,6 +46,7 @@
 #include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -505,8 +506,6 @@ void checkForUsersNotInMainConfig(
             " Also note that you should place configuration changes to the appropriate *.d directory like 'users.d'.",
             users_config_path, config_path);
     }
-}
-
 }
 
 /// Unused in other builds
