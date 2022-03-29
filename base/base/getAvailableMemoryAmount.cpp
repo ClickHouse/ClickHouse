@@ -27,7 +27,7 @@ uint64_t getAvailableMemoryAmountOrZero()
     unsigned int usermem;
     size_t len = sizeof(usermem);
     static int mib[2] = { CTL_HW, HW_USERMEM };
-    if (sysctl(mib, 2, &usermem, &len, NULL, 0) == 0 && len == sizeof(usermem))
+    if (sysctl(mib, 2, &usermem, &len, nullptr, 0) == 0 && len == sizeof(usermem))
         return usermem;
     else
         return 0;
