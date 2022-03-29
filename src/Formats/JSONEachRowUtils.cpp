@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
@@ -158,22 +159,37 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
     {
         auto object = field.getObject();
         DataTypePtr value_type;
+        bool is_object = false;
         for (const auto key_value_pair : object)
         {
             auto type = getDataTypeFromJSONFieldImpl(key_value_pair.second);
             if (!type)
-                return nullptr;
+                continue;
 
-            if (value_type && value_type->getName() != type->getName())
-                return nullptr;
+            if (isObject(type))
+            {
+                is_object = true;
+                break;
+            }
 
-            value_type = type;
+            if (!value_type)
+            {
+                value_type = type;
+            }
+            else if (!value_type->equals(*type))
+            {
+                is_object = true;
+                break;
+            }
         }
 
-        if (!value_type)
-            return nullptr;
+        if (is_object)
+            return std::make_shared<DataTypeObject>("json", false);
 
-        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
+        if (value_type)
+            return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
+
+        return nullptr;
     }
 
     throw Exception{ErrorCodes::INCORRECT_DATA, "Unexpected JSON type"};
