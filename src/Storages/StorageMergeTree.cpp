@@ -1750,6 +1750,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
                 auto out = disk->writeFile(tmp_checksums_path, 4096);
                 part->checksums.write(*out);
                 disk->moveFile(tmp_checksums_path, checksums_path);
+
+                part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (const Exception & ex)
@@ -1766,6 +1768,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             try
             {
                 checkDataPart(part, true);
+                part->checkMetadata();
                 results.emplace_back(part->name, true, "");
             }
             catch (const Exception & ex)
