@@ -177,3 +177,6 @@ if __name__ == "__main__":
         check_name,
     )
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+
+    if state == "error":
+        sys.exit(1)
