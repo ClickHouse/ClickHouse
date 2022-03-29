@@ -121,8 +121,6 @@ private:
     Operators_t overlapping_operators_to_skip = { (const char *[]){ nullptr } };
     ParserPtr first_elem_parser;
     ParserPtr remaining_elem_parser;
-    /// =, !=, <, > ALL (subquery) / ANY (subquery)
-    bool allow_any_all_operators = false;
 
 public:
     /** `operators_` - allowed operators and their corresponding functions
@@ -132,10 +130,11 @@ public:
     {
     }
 
-    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_,
-            Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_, bool allow_any_all_operators_ = false)
+    ParserLeftAssociativeBinaryOperatorList(
+        Operators_t operators_, Operators_t overlapping_operators_to_skip_,
+        ParserPtr && first_elem_parser_)
         : operators(operators_), overlapping_operators_to_skip(overlapping_operators_to_skip_),
-          first_elem_parser(std::move(first_elem_parser_)), allow_any_all_operators(allow_any_all_operators_)
+          first_elem_parser(std::move(first_elem_parser_))
     {
     }
 
@@ -352,7 +351,7 @@ private:
     static const char * operators[];
     static const char * overlapping_operators_to_skip[];
     ParserLeftAssociativeBinaryOperatorList operator_parser {operators,
-        overlapping_operators_to_skip, std::make_unique<ParserBetweenExpression>(), true};
+    overlapping_operators_to_skip, std::make_unique<ParserBetweenExpression>()};
 
 protected:
     const char * getName() const  override{ return "comparison expression"; }
