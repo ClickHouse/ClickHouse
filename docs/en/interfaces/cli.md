@@ -1,6 +1,6 @@
 ---
-toc_priority: 17
-toc_title: Command-Line Client
+sidebar_position: 17
+sidebar_label: Command-Line Client
 ---
 
 # Command-line Client {#command-line-client}
