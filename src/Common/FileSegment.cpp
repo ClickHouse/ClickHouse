@@ -421,10 +421,8 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
             download_state = State::SKIP_CACHE;
             LOG_TEST(log, "Remove cell {} (nothing downloaded)", range().toString());
             cache->remove(key(), offset(), cache_lock, segment_lock);
-
-            detached = true;
         }
-        else if (is_last_holder)
+        else
         {
             /**
             * Only last holder of current file segment can resize the cell,
@@ -434,9 +432,9 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
             */
             LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), current_downloaded_size);
             cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
-
-            detached = true;
         }
+
+        detached = true;
 
         if (cache_writer)
         {
