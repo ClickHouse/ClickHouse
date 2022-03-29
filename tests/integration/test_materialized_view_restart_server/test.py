@@ -15,7 +15,7 @@ def start_cluster():
 
 
 def test_materialized_view_with_subquery(start_cluster):
-    node.query("create table test (x UInt32) engine=TineLog()")
+    node.query("create table test (x UInt32) engine=TinyLog()")
     node.query(
         "create materialized view mv engine = TinyLog() as with subquery as (select * from test) select * from subquery"
     )
