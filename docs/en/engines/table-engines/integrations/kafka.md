@@ -1,6 +1,6 @@
 ---
-toc_priority: 8
-toc_title: Kafka
+sidebar_position: 8
+sidebar_label: Kafka
 ---
 
 # Kafka {#kafka}
@@ -87,8 +87,9 @@ Examples:
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-!!! attention "Attention"
-    Do not use this method in new projects. If possible, switch old projects to the method described above.
+:::warning    
+Do not use this method in new projects. If possible, switch old projects to the method described above.
+:::
 
 ``` sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format

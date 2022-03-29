@@ -188,7 +188,7 @@ sudo ./clickhouse install
 
 ### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
 
-For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay). These builds are not recommended for use in production environments because they are less thoroughly tested, and they also only contain a subset of ClickHouse features available.
+For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay). 
 
 
 -   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse)
