@@ -20,6 +20,7 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledQuota.h>
 #include <Formats/FormatFactory.h>
 #include <base/logger_useful.h>
 
@@ -195,6 +196,14 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         auto read_buf = getReadBufferFromASTInsertQuery(query);
         WriteBufferFromString write_buf(bytes);
         copyData(*read_buf, write_buf);
+    }
+
+    if (auto quota = query_context->getQuota())
+    {
+        /// Do not throw if quota exceded right now, because
+        /// bytes are not written now actually.
+        quota->checkExceeded(QuotaType::WRITTEN_BYTES);
+        quota->used(QuotaType::WRITTEN_BYTES, bytes.size(), /*check_exceeded=*/ false);
     }
 
     auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
