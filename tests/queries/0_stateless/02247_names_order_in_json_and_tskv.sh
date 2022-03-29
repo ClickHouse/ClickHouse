@@ -15,12 +15,14 @@ touch $DATA_FILE
 echo -e 'a=1\tb=s1\tc=\N
 c=[2]\ta=2\tb=\N}
 a=\N
+
 c=[3]\ta=\N' > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'TSKV')"
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'TSKV')"
 
 echo -e 'b=1
 a=2\tc=3
+
 e=3
 c=1\tb=3\ta=3' > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'TSKV')"
