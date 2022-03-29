@@ -351,15 +351,6 @@ public:
         max_size = max_size_;
     }
 
-    // Before calling this method you should be sure
-    // that lock is acquired.
-    template <typename F>
-    void processEachQueryStatus(F && func) const
-    {
-        for (auto && query : processes)
-            func(query);
-    }
-
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
     {
         std::lock_guard lock(mutex);
