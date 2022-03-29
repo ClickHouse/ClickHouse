@@ -27,7 +27,11 @@ target_include_directories (_boost_headers_only SYSTEM BEFORE INTERFACE ${LIBRAR
 
 # asio
 
-target_compile_definitions (_boost_headers_only INTERFACE BOOST_ASIO_STANDALONE=1)
+target_compile_definitions (_boost_headers_only INTERFACE
+  BOOST_ASIO_STANDALONE=1
+  # Avoid using of deprecated in c++ > 17 std::result_of
+  BOOST_ASIO_HAS_STD_INVOKE_RESULT=1
+)
 
 # iostreams
 
