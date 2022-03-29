@@ -10,13 +10,13 @@ from get_robot_token import get_parameter_from_ssm
 class ClickHouseHelper:
     def __init__(self, url=None):
         if url is None:
-            self.url = get_parameter_from_ssm("clickhouse-test-stat-url2")
-            self.auth = {
-                "X-ClickHouse-User": get_parameter_from_ssm(
-                    "clickhouse-test-stat-login2"
-                ),
-                "X-ClickHouse-Key": "",
-            }
+            self.url = get_parameter_from_ssm("clickhouse-test-stat-url")
+
+        self.url = url
+        self.auth = {
+            'X-ClickHouse-User': user if user is not None else get_parameter_from_ssm("clickhouse-test-stat-login"),
+            'X-ClickHouse-Key': password if password is not None else get_parameter_from_ssm("clickhouse-test-stat-password")
+        }
 
     @staticmethod
     def _insert_json_str_info_impl(url, auth, db, table, json_str):
