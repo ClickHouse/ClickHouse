@@ -179,7 +179,7 @@ def mark_flaky_tests(clickhouse_helper, check_name, test_results):
             check_name=check_name
         )
 
-        tests_data = clickhouse_helper.select_json_each_row("gh-data", query)
+        tests_data = clickhouse_helper.select_json_each_row("default", query)
         master_failed_tests = {row["test_name"] for row in tests_data}
         logging.info("Found flaky tests: %s", ", ".join(master_failed_tests))
 
