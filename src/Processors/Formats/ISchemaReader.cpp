@@ -1,6 +1,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -10,8 +11,8 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
-IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_)
-    : ISchemaReader(in_), max_rows_to_read(max_rows_to_read_), default_type(default_type_)
+IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_, bool allow_bools_as_numbers_)
+    : ISchemaReader(in_), max_rows_to_read(max_rows_to_read_), default_type(default_type_), allow_bools_as_numbers(allow_bools_as_numbers_)
 {
 }
 
@@ -39,9 +40,18 @@ NamesAndTypesList IRowSchemaReader::readSchema()
                 data_types[i] = new_data_types[i];
             /// If the new type and the previous type for this column are different,
             /// we will use default type if we have it or throw an exception.
-            else if (data_types[i]->getName() != new_data_types[i]->getName())
+            else if (!data_types[i]->equals(*new_data_types[i]))
             {
-                if (default_type)
+                /// Check if we have Bool and Number and if allow_bools_as_numbers
+                /// is true make the result type Number
+                auto not_nullable_type = removeNullable(data_types[i]);
+                auto not_nullable_new_type = removeNullable(new_data_types[i]);
+                if (allow_bools_as_numbers && (isBool(not_nullable_type) || isBool(not_nullable_new_type))
+                    && (isNumber(not_nullable_type) || isNumber(not_nullable_new_type)))                {
+                    if (isBool(not_nullable_type))
+                        data_types[i] = new_data_types[i];
+                }
+                else if (default_type)
                     data_types[i] = default_type;
                 else
                     throw Exception(
@@ -89,8 +99,8 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     return result;
 }
 
-IRowWithNamesSchemaReader::IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_)
-    : ISchemaReader(in_), max_rows_to_read(max_rows_to_read_), default_type(default_type_)
+IRowWithNamesSchemaReader::IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_, bool allow_bools_as_numbers_)
+    : ISchemaReader(in_), max_rows_to_read(max_rows_to_read_), default_type(default_type_), allow_bools_as_numbers(allow_bools_as_numbers_)
 {
 }
 
@@ -122,7 +132,17 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
             /// we will use default type if we have it or throw an exception.
             else if (new_type && type->getName() != new_type->getName())
             {
-                if (default_type)
+                /// Check if we have Bool and Number and if allow_bools_as_numbers
+                /// is true make the result type Number
+                auto not_nullable_type = removeNullable(type);
+                auto not_nullable_new_type = removeNullable(new_type);
+                if (allow_bools_as_numbers && (isBool(not_nullable_type) || isBool(not_nullable_new_type))
+                    && (isNumber(not_nullable_type) || isNumber(not_nullable_new_type)))
+                {
+                    if (isBool(not_nullable_type))
+                        type = new_type;
+                }
+                else if (default_type)
                     type = default_type;
                 else
                     throw Exception(

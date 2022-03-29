@@ -130,6 +130,7 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool named_tuples_as_objects = false;
         bool serialize_as_strings = false;
+        bool read_bools_as_numbers = true;
     } json;
 
     struct

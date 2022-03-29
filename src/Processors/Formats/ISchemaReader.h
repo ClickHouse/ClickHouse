@@ -36,7 +36,7 @@ protected:
 class IRowSchemaReader : public ISchemaReader
 {
 public:
-    IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
+    IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr, bool allow_bools_as_numbers_ = false);
     NamesAndTypesList readSchema() override;
 
 protected:
@@ -51,6 +51,7 @@ protected:
 private:
     size_t max_rows_to_read;
     DataTypePtr default_type;
+    bool allow_bools_as_numbers;
     std::vector<String> column_names;
 };
 
@@ -62,7 +63,7 @@ private:
 class IRowWithNamesSchemaReader : public ISchemaReader
 {
 public:
-    IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
+    IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr, bool allow_bools_as_numbers_ = false);
     NamesAndTypesList readSchema() override;
     bool hasStrictOrderOfColumns() const override { return false; }
 
@@ -76,6 +77,7 @@ protected:
 private:
     size_t max_rows_to_read;
     DataTypePtr default_type;
+    bool allow_bools_as_numbers;
 };
 
 /// Base class for schema inference for formats that don't need any data to
