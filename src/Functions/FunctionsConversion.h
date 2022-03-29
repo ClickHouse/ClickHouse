@@ -53,6 +53,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
+#include <Common/HashTable/HashMap.h>
 
 
 namespace DB
@@ -3140,52 +3141,138 @@ private:
         }
     }
 
+    WrapperType createTupleToObjectWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
+    {
+        if (!from_tuple.haveExplicitNames())
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_tuple.getName());
+
+        PathsInData paths;
+        DataTypes from_types;
+
+        std::tie(paths, from_types) = flattenTuple(from_tuple.getPtr());
+        auto to_types = from_types;
+
+        for (auto & type : to_types)
+        {
+            if (isTuple(type) || isNested(type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Cast to Object can be performed only from flatten Named Tuple. Got: {}",
+                    from_tuple.getName());
+
+            type = recursiveRemoveLowCardinality(type);
+        }
+
+        return [element_wrappers = getElementWrappers(from_types, to_types),
+            has_nullable_subcolumns, from_types, to_types, paths]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count)
+        {
+            size_t tuple_size = to_types.size();
+            auto flattened_column = flattenTuple(arguments.front().column);
+            const auto & column_tuple = assert_cast<const ColumnTuple &>(*flattened_column);
+
+            if (tuple_size != column_tuple.getColumns().size())
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Expected tuple with {} subcolumn, but got {} subcolumns",
+                    tuple_size, column_tuple.getColumns().size());
+
+            auto res = ColumnObject::create(has_nullable_subcolumns);
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
+                auto converted_column = element_wrappers[i](element, to_types[i], nullable_source, input_rows_count);
+                res->addSubcolumn(paths[i], converted_column->assumeMutable());
+            }
+
+            return res;
+        };
+    }
+
+    WrapperType createMapToObjectWrapper(const DataTypeMap & from_map, bool has_nullable_subcolumns) const
+    {
+        auto key_value_types = from_map.getKeyValueTypes();
+
+        if (!isStringOrFixedString(key_value_types[0]))
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Cast to Object from Map can be performed only from Map "
+                "with String or FixedString key. Got: {}", from_map.getName());
+
+        const auto & value_type = key_value_types[1];
+        auto to_value_type = value_type;
+
+        if (!has_nullable_subcolumns && value_type->isNullable())
+            to_value_type = removeNullable(value_type);
+
+        if (has_nullable_subcolumns && !value_type->isNullable())
+            to_value_type = makeNullable(value_type);
+
+        DataTypes to_key_value_types{std::make_shared<DataTypeString>(), std::move(to_value_type)};
+        auto element_wrappers = getElementWrappers(key_value_types, to_key_value_types);
+
+        return [has_nullable_subcolumns, element_wrappers, key_value_types, to_key_value_types]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t) -> ColumnPtr
+        {
+            const auto & column_map = assert_cast<const ColumnMap &>(*arguments.front().column);
+            const auto & offsets = column_map.getNestedColumn().getOffsets();
+            auto key_value_columns = column_map.getNestedData().getColumnsCopy();
+
+            for (size_t i = 0; i < 2; ++i)
+            {
+                ColumnsWithTypeAndName element{{key_value_columns[i], key_value_types[i], ""}};
+                key_value_columns[i] = element_wrappers[i](element, to_key_value_types[i], nullable_source, key_value_columns[i]->size());
+            }
+
+            const auto & key_column_str = assert_cast<const ColumnString &>(*key_value_columns[0]);
+            const auto & value_column = *key_value_columns[1];
+
+            using SubcolumnsMap = HashMap<StringRef, MutableColumnPtr, StringRefHash>;
+            SubcolumnsMap subcolumns;
+
+            for (size_t row = 0; row < offsets.size(); ++row)
+            {
+                for (size_t i = offsets[static_cast<ssize_t>(row) - 1]; i < offsets[row]; ++i)
+                {
+                    auto ref = key_column_str.getDataAt(i);
+
+                    bool inserted;
+                    SubcolumnsMap::LookupResult it;
+                    subcolumns.emplace(ref, it, inserted);
+                    auto & subcolumn = it->getMapped();
+
+                    if (inserted)
+                        subcolumn = value_column.cloneEmpty()->cloneResized(row);
+
+                    /// Map can have duplicated keys. We insert only first one.
+                    if (subcolumn->size() == row)
+                        subcolumn->insertFrom(value_column, i);
+                }
+
+                /// Insert default values for keys missed in current row.
+                for (const auto & [_, subcolumn] : subcolumns)
+                    if (subcolumn->size() == row)
+                        subcolumn->insertDefault();
+            }
+
+            auto column_object = ColumnObject::create(has_nullable_subcolumns);
+            for (auto && [key, subcolumn] : subcolumns)
+            {
+                PathInData path(key.toView());
+                column_object->addSubcolumn(path, std::move(subcolumn));
+            }
+
+            return column_object;
+        };
+    }
+
     WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_type) const
     {
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
         {
-            if (!from_tuple->haveExplicitNames())
-                 throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_type->getName());
-
-            PathsInData paths;
-            DataTypes from_types;
-
-            std::tie(paths, from_types) = flattenTuple(from_type);
-            auto to_types = from_types;
-
-            for (auto & type : to_types)
-            {
-                if (isTuple(type) || isNested(type))
-                     throw Exception(ErrorCodes::TYPE_MISMATCH,
-                        "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_type->getName());
-
-                type = recursiveRemoveLowCardinality(type);
-            }
-
-            return [element_wrappers = getElementWrappers(from_types, to_types),
-                has_nullable_subcolumns = to_type->hasNullableSubcolumns(), from_types, to_types, paths]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count)
-            {
-                size_t tuple_size = to_types.size();
-                auto flattened_column = flattenTuple(arguments.front().column);
-                const auto & column_tuple = assert_cast<const ColumnTuple &>(*flattened_column);
-
-                if (tuple_size != column_tuple.getColumns().size())
-                    throw Exception(ErrorCodes::TYPE_MISMATCH,
-                        "Expected tuple with {} subcolumn, but got {} subcolumns",
-                        tuple_size, column_tuple.getColumns().size());
-
-                auto res = ColumnObject::create(has_nullable_subcolumns);
-                for (size_t i = 0; i < tuple_size; ++i)
-                {
-                    ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
-                    auto converted_column = element_wrappers[i](element, to_types[i], nullable_source, input_rows_count);
-                    res->addSubcolumn(paths[i], converted_column->assumeMutable());
-                }
-
-                return res;
-            };
+            return createTupleToObjectWrapper(*from_tuple, to_type->hasNullableSubcolumns());
+        }
+        else if (const auto * from_map = checkAndGetDataType<DataTypeMap>(from_type.get()))
+        {
+            return createMapToObjectWrapper(*from_map, to_type->hasNullableSubcolumns());
         }
         else if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
@@ -3199,7 +3286,7 @@ private:
         }
 
         throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Cast to Object can be performed only from flatten named tuple or string. Got: {}", from_type->getName());
+            "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
     }
 
     template <typename FieldType>

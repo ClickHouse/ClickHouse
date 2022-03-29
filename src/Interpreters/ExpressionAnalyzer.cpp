@@ -100,20 +100,9 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
 {
     auto columns = select_query->select()->children;
 
-    const auto * group_by_expr_with_alias = dynamic_cast<const ASTWithAlias *>(argument.get());
-    if (group_by_expr_with_alias && !group_by_expr_with_alias->alias.empty())
-    {
-        for (const auto & column : columns)
-        {
-            const auto * col_with_alias = dynamic_cast<const ASTWithAlias *>(column.get());
-            if (col_with_alias)
-            {
-                const auto & alias = col_with_alias->alias;
-                if (!alias.empty() && alias == group_by_expr_with_alias->alias)
-                    return false;
-            }
-        }
-    }
+    const auto * expr_with_alias = dynamic_cast<const ASTWithAlias *>(argument.get());
+    if (expr_with_alias && !expr_with_alias->alias.empty())
+        return false;
 
     const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get());
     if (!ast_literal)
@@ -130,7 +119,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
                         pos, columns.size());
 
     const auto & column = columns[--pos];
-    if (typeid_cast<const ASTIdentifier *>(column.get()))
+    if (typeid_cast<const ASTIdentifier *>(column.get()) || typeid_cast<const ASTLiteral *>(column.get()))
     {
         argument = column->clone();
     }
@@ -1324,7 +1313,9 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
             throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
 
         if (getContext()->getSettingsRef().enable_positional_arguments)
+        {
             replaceForPositionalArguments(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
+        }
     }
 
     getRootActions(select_query->orderBy(), only_types, step.actions());

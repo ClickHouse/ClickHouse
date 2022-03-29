@@ -1312,10 +1312,14 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
 
         if (replica_part_header.getColumnsHash() != local_part_header.getColumnsHash())
         {
-            /// Either it's a bug or ZooKeeper contains broken data.
-            /// TODO Fix KILL MUTATION and replace CHECKSUM_DOESNT_MATCH with LOGICAL_ERROR
-            /// (some replicas may skip killed mutation even if it was executed on other replicas)
-            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Part {} from {} has different columns hash", part_name, replica);
+            /// Currently there are two (known) cases when it may happen:
+            ///  - KILL MUTATION query had removed mutation before all replicas have executed assigned MUTATE_PART entries.
+            ///    Some replicas may skip this mutation and update part version without actually applying any changes.
+            ///    It leads to mismatching checksum if changes were applied on other replicas.
+            ///  - ALTER_METADATA and MERGE_PARTS were reordered on some replicas.
+            ///    It may lead to different number of columns in merged parts on these replicas.
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Part {} from {} has different columns hash "
+                            "(it may rarely happen on race condition with KILL MUTATION or ALTER COLUMN).", part_name, replica);
         }
 
         replica_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
