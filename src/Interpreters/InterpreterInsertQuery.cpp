@@ -358,6 +358,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 auto new_context = Context::createCopy(context);
                 new_context->setSettings(new_settings);
+                new_context->setInsertionTable(getContext()->getInsertionTable());
 
                 InterpreterSelectWithUnionQuery interpreter_select{
                     query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
