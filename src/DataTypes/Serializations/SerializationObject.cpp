@@ -63,12 +63,12 @@ private:
     size_t num_dimensions_to_keep;
 };
 
-using Node = typename ColumnObject::SubcolumnsTree::Node;
+using Node = typename ColumnObject::Subcolumns::Node;
 
 /// Finds a subcolumn from the same Nested type as @entry and inserts
 /// an array with default values with consistent sizes as in Nested type.
 bool tryInsertDefaultFromNested(
-    const std::shared_ptr<Node> & entry, const ColumnObject::SubcolumnsTree & subcolumns)
+    const std::shared_ptr<Node> & entry, const ColumnObject::Subcolumns & subcolumns)
 {
     if (!entry->path.hasNested())
         return false;
@@ -198,7 +198,7 @@ void SerializationObject<Parser>::deserializeWholeText(IColumn & column, ReadBuf
 template <typename Parser>
 void SerializationObject<Parser>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    deserializeTextImpl(column, [&](String & s) { readEscapedStringInto(s, istr); });
+    deserializeTextImpl(column, [&](String & s) { readEscapedString(s, istr); });
 }
 
 template <typename Parser>
