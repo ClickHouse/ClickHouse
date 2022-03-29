@@ -41,4 +41,13 @@ timeout $TIMEOUT bash -c show_processes_func &
 
 wait
 
+# otherwise it can be alive after test
+query_alive=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.processes WHERE query ILIKE 'SELECT * FROM numbers(600000000)%'")
+while [[ $query_alive != 0 ]]
+do
+    $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query ilike '%SELECT * FROM numbers(600000000)%'" 2> /dev/null 1> /dev/null
+    sleep 0.5
+    query_alive=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.processes WHERE query ILIKE 'SELECT * FROM numbers(600000000)%'")
+done
+
 echo "Test OK"
