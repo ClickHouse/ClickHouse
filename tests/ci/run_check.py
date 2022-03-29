@@ -5,7 +5,7 @@ import re
 from typing import Tuple
 
 from github import Github
-from env_helper import GITHUB_RUN_ID, GITHUB_REPOSITORY, GITHUB_SERVER_URL
+from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from commit_status_helper import get_commit
@@ -231,7 +231,7 @@ if __name__ == "__main__":
         )
         sys.exit(1)
 
-    url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
+    url = GITHUB_RUN_URL
     if not can_run:
         print("::notice ::Cannot run")
         commit.create_status(

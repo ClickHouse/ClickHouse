@@ -38,27 +38,17 @@ function restart_replicas_loop()
     done
     sleep 0.$RANDOM
 }
-function restart_thread_1()
-{
-    restart_replicas_loop
-}
-
-function restart_thread_2()
-{
-    restart_replicas_loop
-}
 
 export -f rename_thread_1
 export -f rename_thread_2
-export -f restart_thread_1
-export -f restart_thread_2
+export -f restart_replicas_loop
 
 TIMEOUT=10
 
 clickhouse_client_loop_timeout $TIMEOUT rename_thread_1 2> /dev/null &
 clickhouse_client_loop_timeout $TIMEOUT rename_thread_2 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT restart_thread_1 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT restart_thread_2 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT restart_replicas_loop 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT restart_replicas_loop 2> /dev/null &
 
 wait
 
