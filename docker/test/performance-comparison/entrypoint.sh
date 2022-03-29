@@ -4,7 +4,7 @@ set -ex
 CHPC_CHECK_START_TIMESTAMP="$(date +%s)"
 export CHPC_CHECK_START_TIMESTAMP
 
-S3_URL=${S3_URL:="https://clickhouse-builds.s3.yandex.net"}
+S3_URL=${S3_URL:="https://clickhouse-builds.s3.amazonaws.com"}
 
 COMMON_BUILD_PREFIX="/clickhouse_build_check"
 if [[ $S3_URL == *"s3.amazonaws.com"* ]]; then
@@ -64,9 +64,7 @@ function find_reference_sha
         # Historically there were various path for the performance test package,
         # test all of them.
         unset found
-        declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/performance/performance.tgz"
-                                "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/clickhouse_build_check/performance/performance.tgz"
-                               )
+        declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/performance/performance.tgz")
         for path in "${urls_to_try[@]}"
         do
             if curl_with_retry "$path"
