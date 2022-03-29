@@ -208,6 +208,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
 
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
+    /// shared_ptr is used to make SubqueriesForSets copyable.
     std::shared_ptr<SubqueriesForSets> subquery_for_sets;
     PreparedSets prepared_sets;
 };
