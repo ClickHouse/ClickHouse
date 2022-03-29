@@ -6,11 +6,13 @@ from typing import TextIO, List, Tuple, Optional, Dict
 Entity = Tuple[str, str, str]
 
 # https://regex101.com/r/R6iogw/12
-cmake_option_regex: str = r"^\s*option\s*\(([A-Z_0-9${}]+)\s*(?:\"((?:.|\n)*?)\")?\s*(.*)?\).*$"
+cmake_option_regex: str = (
+    r"^\s*option\s*\(([A-Z_0-9${}]+)\s*(?:\"((?:.|\n)*?)\")?\s*(.*)?\).*$"
+)
 
 ch_master_url: str = "https://github.com/clickhouse/clickhouse/blob/master/"
 
-name_str: str = "<a name=\"{anchor}\"></a>[`{name}`](" + ch_master_url + "{path}#L{line})"
+name_str: str = '<a name="{anchor}"></a>[`{name}`](' + ch_master_url + "{path}#L{line})"
 default_anchor_str: str = "[`{name}`](#{anchor})"
 
 comment_var_regex: str = r"\${(.+)}"
@@ -27,10 +29,14 @@ entities: Dict[str, Tuple[str, str]] = {}
 
 
 def make_anchor(t: str) -> str:
-    return "".join(["-" if i == "_" else i.lower() for i in t if i.isalpha() or i == "_"])
+    return "".join(
+        ["-" if i == "_" else i.lower() for i in t if i.isalpha() or i == "_"]
+    )
+
 
 def process_comment(comment: str) -> str:
     return re.sub(comment_var_regex, comment_var_replace, comment, flags=re.MULTILINE)
+
 
 def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> None:
     (line, comment) = line_comment
@@ -47,22 +53,22 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
         formatted_default: str = "`" + default + "`"
 
     formatted_name: str = name_str.format(
-        anchor=make_anchor(name),
-        name=name,
-        path=path,
-        line=line)
+        anchor=make_anchor(name), name=name, path=path, line=line
+    )
 
     formatted_description: str = "".join(description.split("\n"))
 
     formatted_comment: str = process_comment(comment)
 
     formatted_entity: str = "| {} | {} | {} | {} |".format(
-        formatted_name, formatted_default, formatted_description, formatted_comment)
+        formatted_name, formatted_default, formatted_description, formatted_comment
+    )
 
     entities[name] = path, formatted_entity
 
+
 def process_file(root_path: str, file_path: str, file_name: str) -> None:
-    with open(os.path.join(file_path, file_name), 'r') as cmake_file:
+    with open(os.path.join(file_path, file_name), "r") as cmake_file:
         contents: str = cmake_file.read()
 
         def get_line_and_comment(target: str) -> Tuple[int, str]:
@@ -70,10 +76,10 @@ def process_file(root_path: str, file_path: str, file_name: str) -> None:
             comment: str = ""
 
             for n, line in enumerate(contents_list):
-                if 'option' not in line.lower() or target not in line:
+                if "option" not in line.lower() or target not in line:
                     continue
 
-                for maybe_comment_line in contents_list[n - 1::-1]:
+                for maybe_comment_line in contents_list[n - 1 :: -1]:
                     if not re.match("\s*#\s*", maybe_comment_line):
                         break
 
@@ -82,16 +88,22 @@ def process_file(root_path: str, file_path: str, file_name: str) -> None:
                 # line numbering starts with 1
                 return n + 1, comment
 
-        matches: Optional[List[Entity]] = re.findall(cmake_option_regex, contents, re.MULTILINE)
+        matches: Optional[List[Entity]] = re.findall(
+            cmake_option_regex, contents, re.MULTILINE
+        )
 
-
-        file_rel_path_with_name: str = os.path.join(file_path[len(root_path):], file_name)
-        if file_rel_path_with_name.startswith('/'):
+        file_rel_path_with_name: str = os.path.join(
+            file_path[len(root_path) :], file_name
+        )
+        if file_rel_path_with_name.startswith("/"):
             file_rel_path_with_name = file_rel_path_with_name[1:]
 
         if matches:
             for entity in matches:
-                build_entity(file_rel_path_with_name, entity, get_line_and_comment(entity[0]))
+                build_entity(
+                    file_rel_path_with_name, entity, get_line_and_comment(entity[0])
+                )
+
 
 def process_folder(root_path: str, name: str) -> None:
     for root, _, files in os.walk(os.path.join(root_path, name)):
@@ -99,12 +111,19 @@ def process_folder(root_path: str, name: str) -> None:
             if f == "CMakeLists.txt" or ".cmake" in f:
                 process_file(root_path, root, f)
 
-def generate_cmake_flags_files() -> None:
-    root_path: str = os.path.join(os.path.dirname(__file__), '..', '..')
 
-    output_file_name: str = os.path.join(root_path, "docs/en/development/cmake-in-clickhouse.md")
-    header_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_header.md")
-    footer_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_footer.md")
+def generate_cmake_flags_files() -> None:
+    root_path: str = os.path.join(os.path.dirname(__file__), "..", "..")
+
+    output_file_name: str = os.path.join(
+        root_path, "docs/en/development/cmake-in-clickhouse.md"
+    )
+    header_file_name: str = os.path.join(
+        root_path, "docs/_includes/cmake_in_clickhouse_header.md"
+    )
+    footer_file_name: str = os.path.join(
+        root_path, "docs/_includes/cmake_in_clickhouse_footer.md"
+    )
 
     process_file(root_path, root_path, "CMakeLists.txt")
     process_file(root_path, os.path.join(root_path, "programs"), "CMakeLists.txt")
@@ -127,8 +146,10 @@ def generate_cmake_flags_files() -> None:
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 
-        f.write("\n### External libraries\nNote that ClickHouse uses forks of these libraries, see https://github.com/ClickHouse-Extras.\n" +
-            table_header)
+        f.write(
+            "\n### External libraries\nNote that ClickHouse uses forks of these libraries, see https://github.com/ClickHouse-Extras.\n"
+            + table_header
+        )
 
         for k in sorted_keys:
             if k.startswith("ENABLE_") and ".cmake" in entities[k][0]:
@@ -143,15 +164,18 @@ def generate_cmake_flags_files() -> None:
         with open(footer_file_name, "r") as footer:
             f.write(footer.read())
 
-        other_languages = ["docs/ja/development/cmake-in-clickhouse.md",
-                           "docs/zh/development/cmake-in-clickhouse.md",
-                           "docs/ru/development/cmake-in-clickhouse.md"]
+        other_languages = [
+            "docs/ja/development/cmake-in-clickhouse.md",
+            "docs/zh/development/cmake-in-clickhouse.md",
+            "docs/ru/development/cmake-in-clickhouse.md",
+        ]
 
         for lang in other_languages:
             other_file_name = os.path.join(root_path, lang)
             if os.path.exists(other_file_name):
-                os.unlink(other_file_name)    
+                os.unlink(other_file_name)
             os.symlink(output_file_name, other_file_name)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     generate_cmake_flags_files()
