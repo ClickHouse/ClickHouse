@@ -607,6 +607,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (async_insert)
         {
+            quota = context->getQuota();
+            if (quota)
+            {
+                quota->used(QuotaType::QUERY_INSERTS, 1);
+                quota->used(QuotaType::QUERIES, 1);
+                quota->checkExceeded(QuotaType::ERRORS);
+            }
+
             queue->push(ast, context);
 
             if (settings.wait_for_async_insert)
@@ -615,13 +623,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_id = context->getCurrentQueryId();
                 auto source = std::make_shared<WaitForAsyncInsertSource>(query_id, timeout, *queue);
                 res.pipeline = QueryPipeline(Pipe(std::move(source)));
-            }
-
-            quota = context->getQuota();
-            if (quota)
-            {
-                quota->used(QuotaType::QUERY_INSERTS, 1);
-                quota->used(QuotaType::QUERIES, 1);
             }
 
             const auto & table_id = insert_query->table_id;
