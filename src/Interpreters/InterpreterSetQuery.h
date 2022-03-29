@@ -3,6 +3,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <Access/Common/AccessRightsElement.h>
 
 namespace DB
 {
@@ -26,6 +27,8 @@ public:
     void executeForCurrentContext();
 
     bool supportsTransactions() const override { return true; }
+
+    AccessRightsElements getRequiredAccess() const;
 
 private:
     ASTPtr query_ptr;

@@ -777,9 +777,14 @@ void Context::setUser(const UUID & user_id_)
 
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
+
     auto default_profile_info = access->getDefaultProfileInfo();
     settings_constraints_and_current_profiles = default_profile_info->getConstraintsAndProfileIDs();
+
     applySettingsChanges(default_profile_info->settings);
+
+    if (getGlobalContext()->global_set)
+        applySettingsChanges(getGlobalContext()->getSettingsChanges());
 
     if (!user->default_database.empty())
         setCurrentDatabase(user->default_database);

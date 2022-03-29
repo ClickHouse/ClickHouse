@@ -385,6 +385,8 @@ public:
 
     KitchenSink kitchen_sink;
 
+    bool global_set = false;
+
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
@@ -415,6 +417,8 @@ private:
     Context();
     Context(const Context &);
     Context & operator=(const Context &);
+
+    SettingsChanges settings_changes;
 
 public:
     /// Create initial Context with ContextShared and etc.
@@ -633,6 +637,16 @@ public:
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
+    void setSettingsChanges(const SettingsChanges & changes)
+    {
+        settings_changes = changes;
+    }
+
+    SettingsChanges & getSettingsChanges()
+    {
+        return settings_changes;
+    }
+
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change) const;
     void checkSettingsConstraints(const SettingsChanges & changes) const;
@@ -730,6 +744,8 @@ public:
     void makeGlobalContext() { initGlobal(); global_context = shared_from_this(); }
 
     const Settings & getSettingsRef() const { return settings; }
+
+    Settings & getMutableSettingsRef() { return settings; }
 
     void setProgressCallback(ProgressCallback callback);
     /// Used in executeQuery() to pass it to the QueryPipeline.

@@ -121,13 +121,23 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
 
 bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ASTSetQuery::SetKind kind;
+    kind = ASTSetQuery::SetKind::Session;
+
+    String cluster_str;
+
     ParserToken s_comma(TokenType::Comma);
 
     if (!parse_only_internals)
     {
         ParserKeyword s_set("SET");
+        ParserKeyword s_scope("GLOBAL");
 
-        if (!s_set.ignore(pos, expected))
+       if (s_set.ignore(pos, expected))
+        {
+            if (s_scope.ignore(pos, expected))
+                kind = ASTSetQuery::SetKind::Global;
+        } else
             return false;
 
         /// Parse SET TRANSACTION ... queries using ParserTransactionControl
@@ -155,7 +165,19 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             changes.push_back(std::move(current));
     }
 
+    if (!parse_only_internals)
+    {
+        ParserKeyword s_on("ON");
+        if (s_on.ignore(pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                return false;
+        }
+    }
+
     auto query = std::make_shared<ASTSetQuery>();
+    query->setSetKind(kind);
+    query->cluster = cluster_str;
     node = query;
 
     query->is_standalone = !parse_only_internals;

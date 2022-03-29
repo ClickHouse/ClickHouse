@@ -197,6 +197,7 @@ enum class AccessType
     M(CLUSTER, "", GLOBAL, ALL) /* ON CLUSTER queries */ \
     \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
+    M(SET_GLOBAL, "SET GLOBAL", GLOBAL, ALL) \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
 
 #define DECLARE_ACCESS_TYPE_ENUM_CONST(name, aliases, node_type, parent_group_name) \
