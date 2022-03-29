@@ -44,7 +44,7 @@ class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, p
     friend class StorageSystemDistributionQueue;
 
 public:
-    ~StorageDistributed() override;
+    virtual ~StorageDistributed() override;
 
     std::string getName() const override { return "Distributed"; }
 
