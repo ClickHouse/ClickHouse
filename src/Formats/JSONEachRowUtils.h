@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>

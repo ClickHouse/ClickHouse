@@ -153,7 +153,7 @@ namespace
 
 }
 
-void LDAPClient::diag(const int rc, String text)
+void LDAPClient::diag(int rc, String text)
 {
     std::scoped_lock lock(ldap_global_mutex);
 

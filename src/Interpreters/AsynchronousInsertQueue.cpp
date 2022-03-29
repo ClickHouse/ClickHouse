@@ -32,6 +32,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
+    extern const Event AsyncInsertBytes;
 }
 
 namespace DB
@@ -222,7 +223,9 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
     if (!data)
         data = std::make_unique<InsertData>();
 
-    data->size += entry->bytes.size();
+    size_t entry_data_size = entry->bytes.size();
+
+    data->size += entry_data_size;
     data->last_update = std::chrono::steady_clock::now();
     data->entries.emplace_back(entry);
 
@@ -239,6 +242,7 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
 
     CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
     ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
+    ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
