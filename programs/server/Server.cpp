@@ -507,18 +507,10 @@ void checkForUsersNotInMainConfig(
     }
 }
 
-[[noreturn]] void forceShutdown()
-{
-#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
-    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
-    /// while connection handling threads are still run.
-    (void)syscall(SYS_exit_group, 0);
-    __builtin_unreachable();
-#else
-    _exit(0);
-#endif
 }
 
+/// Unused in other builds
+#if defined(OS_LINUX)
 static String readString(const String & path)
 {
     ReadBufferFromFile in(path);
@@ -534,6 +526,8 @@ static int readNumber(const String & path)
     readText(result, in);
     return result;
 }
+
+#endif
 
 static void sanityChecks(Server * server)
 {
