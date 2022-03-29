@@ -553,7 +553,11 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         auto arrow_column = std::make_shared<arrow::ChunkedArray>(array_vector);
         std::unordered_map<std::string, std::shared_ptr<ColumnWithTypeAndName>> dict_values;
         bool skipped = false;
-        ColumnWithTypeAndName sample_column = readColumnFromArrowColumn(arrow_column, field->name(), format_name, false, dict_values, false, false, skip_columns_with_unsupported_types, skipped);
+        bool allow_null_type = false;
+        if (hint_header && hint_header->has(field->name()) && hint_header->getByName(field->name()).type->isNullable())
+            allow_null_type = true;
+        ColumnWithTypeAndName sample_column = readColumnFromArrowColumn(
+            arrow_column, field->name(), format_name, false, dict_values, false, allow_null_type, skip_columns_with_unsupported_types, skipped);
         if (!skipped)
             sample_columns.emplace_back(std::move(sample_column));
     }

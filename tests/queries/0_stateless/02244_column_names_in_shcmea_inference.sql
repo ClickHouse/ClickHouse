@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 
 insert into function file('test_02244', 'TSV', 'x String, y UInt32') select 'Hello, world!', 42 settings engine_file_truncate_on_insert=1;
 desc file('test_02244', 'TSV') settings column_names_for_schema_inference='x,y';
