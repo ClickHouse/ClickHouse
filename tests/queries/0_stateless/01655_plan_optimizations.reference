@@ -155,3 +155,5 @@ Limit
 Expression
 Sorting
 Expression
+> this query should be executed without throwing an exception
+0
