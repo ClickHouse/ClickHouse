@@ -129,27 +129,27 @@ struct DecimalUtilsSplitAndCombineForDateTime64TestParam
 };
 */
 
-class DecimalUtilsSplitAndCombineForDateTimeTest : public ::testing::TestWithParam<DecimalUtilsSplitAndCombineTestParam>
+class DecimalUtilsSplitAndCombineForDateTime64Test : public ::testing::TestWithParam<DecimalUtilsSplitAndCombineTestParam>
 {};
 
 
 // Unfortunately typed parametrized tests () are not supported in this version of gtest, so I have to emulate by hand.
-TEST_P(DecimalUtilsSplitAndCombineForDateTimeTest, splitDateTime64)
+TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, splitDateTime64)
 {
     testSplit<DateTime64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineForDateTimeTest, combineDateTime64)
+TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, combineDateTime64)
 {
     testDecimalFromComponents<DateTime64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineForDateTimeTest, getWholePartDateTime64)
+TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, getWholePartDateTime64)
 {
     testGetWhole<DateTime64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineForDateTimeTest, getFractionalPartDateTime64)
+TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, getFractionalPartDateTime64)
 {
     testGetFractional<DateTime64>(GetParam());
 }
@@ -209,7 +209,7 @@ INSTANTIATE_TEST_SUITE_P(Basic,
 );
 
 INSTANTIATE_TEST_SUITE_P(Basic,
-    DecimalUtilsSplitAndCombineForDateTimeTest,
+    DecimalUtilsSplitAndCombineForDateTime64Test,
     ::testing::ValuesIn(std::initializer_list<DecimalUtilsSplitAndCombineTestParam>{
         {
             "Negative timestamp 1965-12-12 12:12:12.123 UTC",

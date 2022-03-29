@@ -162,7 +162,7 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
         if constexpr (std::is_same_v<DecimalType, DateTime64>)
         {
             whole -= T(1);
-            fractional = scale_multiplier + fractional;
+            fractional += scale_multiplier;
         }
         else
         {
@@ -194,7 +194,13 @@ inline typename DecimalType::NativeType getWholePart(const DecimalType & decimal
     if (scale == 0)
         return decimal.value;
 
-    return decimal.value / scaleMultiplier<typename DecimalType::NativeType>(scale);
+    using T = typename DecimalType::NativeType;
+    constexpr bool is_datetime64 = std::is_same_v<DecimalType, DateTime64>;
+    const auto scale_multiplier = scaleMultiplier<T>(scale);
+    if (!is_datetime64 || decimal.value >= T(0))
+        return decimal.value / scale_multiplier;
+    else
+        return (decimal.value - scale_multiplier + T(1)) / scale_multiplier;
 }
 
 
@@ -209,8 +215,15 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
     /// Anycase we make modulo before compare to make scale_multiplier > 1 unaffected.
     T result = decimal.value % scale_multiplier;
     if constexpr (!keep_sign)
+    {
         if (result < T(0))
-            result = -result;
+        {
+            if constexpr (std::is_same_v<DecimalType, DateTime64>)
+                result += scale_multiplier;
+            else
+                result *= T(-1);
+        }
+    }
 
     return result;
 }
