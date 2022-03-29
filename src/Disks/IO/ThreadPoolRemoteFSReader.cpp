@@ -1,5 +1,6 @@
 #include "ThreadPoolRemoteFSReader.h"
 
+#include <Core/UUID.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -50,17 +51,36 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 
+    if (!query_context)
+    {
+        if (!shared_query_context)
+        {
+            ContextPtr global_context = CurrentThread::isInitialized() ? CurrentThread::get().getGlobalContext() : nullptr;
+            if (global_context)
+            {
+                shared_query_context = Context::createCopy(global_context);
+                shared_query_context->makeQueryContext();
+            }
+        }
+
+        if (shared_query_context)
+        {
+            shared_query_context->setCurrentQueryId(toString(UUIDHelpers::generateV4()));
+            query_context = shared_query_context;
+        }
+    }
+
     auto task = std::make_shared<std::packaged_task<Result()>>([request, running_group, query_context]
     {
         ThreadStatus thread_status;
 
-        /// Save query context if any, because cache implementation needs it.
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
-
         /// To be able to pass ProfileEvents.
         if (running_group)
             thread_status.attachQuery(running_group);
+
+        /// Save query context if any, because cache implementation needs it.
+        if (query_context)
+            thread_status.attachQueryContext(query_context);
 
         setThreadName("VFSRead");
 

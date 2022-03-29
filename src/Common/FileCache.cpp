@@ -57,7 +57,7 @@ String IFileCache::getPathInLocalCache(const Key & key)
     return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
 }
 
-bool IFileCache::isReadOnly()
+bool IFileCache::shouldBypassCache()
 {
     return !CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()

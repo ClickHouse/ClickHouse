@@ -19,6 +19,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/FileCacheFactory.h>
+#include <Common/FileCache.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
@@ -228,7 +229,12 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
 
     ReadSettings disk_read_settings{read_settings};
     if (cache)
+    {
+        if (IFileCache::shouldBypassCache())
+            disk_read_settings.remote_fs_read_from_cache_if_exists_otherwise_bypass_cache = true;
+
         disk_read_settings.remote_fs_cache = cache;
+    }
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
         path, settings->client, bucket, metadata,

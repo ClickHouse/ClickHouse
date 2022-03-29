@@ -55,8 +55,8 @@ SELECT count() FROM system.remote_filesystem_cache;
 21
 OPTIMIZE TABLE test FINAL;
 SELECT count() FROM system.remote_filesystem_cache;
-24
+27
 SET mutations_sync=2;
 ALTER TABLE test UPDATE value = 'kek' WHERE key = 100;
 SELECT count() FROM system.remote_filesystem_cache;
-25
+28
