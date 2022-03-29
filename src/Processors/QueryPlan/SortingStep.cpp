@@ -92,7 +92,7 @@ SortingStep::SortingStep(
 void SortingStep::updateInputStream(DataStream input_stream)
 {
     input_streams.clear();
-    input_streams.push_back(std::move(input_stream));
+    input_streams.emplace_back(std::move(input_stream));
 }
 
 void SortingStep::updateOutputStream(Block result_header)
