@@ -560,6 +560,8 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context)
 {
+    context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+
     Poco::Net::HTTPBasicCredentials credentials;
 
     std::vector<String> urls_to_check;
