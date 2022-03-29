@@ -101,6 +101,9 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("hypothesis", hypothesisIndexCreator);
     registerValidator("hypothesis", hypothesisIndexValidator);
+
+    registerCreator("simpleHnsw", simpleHnswIndexCreator);
+    registerValidator("simpleHnsw", simpleHnswIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

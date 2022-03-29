@@ -262,3 +262,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/--name"]
+	path = contrib/--name
+	url = git@github.com:Piachonkin-Alex/nmslib.git
