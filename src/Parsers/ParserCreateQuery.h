@@ -195,14 +195,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         if (!expr_parser.parse(pos, default_expression, expected))
             return false;
     }
-    else
+    else if (s_ephemeral.ignore(pos, expected))
     {
-        if (s_ephemeral.ignore(pos, expected))
-        {
-            default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
-            if (!expr_parser.parse(pos, default_expression, expected) && type)
-                default_expression = std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(type)->getDefault());
-        }
+        default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
+        if (!expr_parser.parse(pos, default_expression, expected) && type)
+            default_expression = std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(type)->getDefault());
     }
 
     if (require_type && !type && !default_expression)
