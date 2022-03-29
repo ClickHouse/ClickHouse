@@ -496,7 +496,7 @@ TEST(LRUFileCache, get)
         /// Test max file segment size
 
         auto settings2 = settings;
-        settings.max_file_segment_size = 10;
+        settings2.max_file_segment_size = 10;
         auto cache2 = DB::LRUFileCache(caches_dir / "cache2", settings2);
         cache2.initialize();
 
