@@ -1,6 +1,8 @@
 ---
-toc_priority: 11
-toc_title: Installation
+sidebar_label: Installation
+sidebar_position: 1
+keywords: [clickhouse, install, installation, docs]
+description: ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture.
 ---
 
 # Installation {#installation}
@@ -24,15 +26,36 @@ To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or P
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu. Run these commands to install packages:
 
 ``` bash
-{% include 'install/deb.sh' %}
+sudo apt-get install apt-transport-https ca-certificates dirmngr
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
+
+echo "deb https://repo.clickhouse.com/deb/stable/ main/" | sudo tee \
+    /etc/apt/sources.list.d/clickhouse.list
+sudo apt-get update
+
+sudo apt-get install -y clickhouse-server clickhouse-client
+
+sudo service clickhouse-server start
+clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
 
-<details markdown="1">
-
+<details>
 <summary>Deprecated Method for installing deb-packages</summary>
+
 ``` bash
-{% include 'install/deb_repo.sh' %}
+sudo apt-get install apt-transport-https ca-certificates dirmngr
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
+
+echo "deb https://repo.clickhouse.com/deb/stable/ main/" | sudo tee \
+    /etc/apt/sources.list.d/clickhouse.list
+sudo apt-get update
+
+sudo apt-get install -y clickhouse-server clickhouse-client
+
+sudo service clickhouse-server start
+clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
+
 </details>
 
 You can replace `stable` with `lts` or `testing` to use different [release trains](../faq/operations/production.md) based on your needs.
@@ -57,15 +80,28 @@ It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat
 First, you need to add the official repository:
 
 ``` bash
-{% include 'install/rpm.sh' %}
+sudo yum install -y yum-utils
+sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
+sudo yum install -y clickhouse-server clickhouse-client
+
+sudo /etc/init.d/clickhouse-server start
+clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
 
 <details markdown="1">
 
 <summary>Deprecated Method for installing rpm-packages</summary>
+
 ``` bash
-{% include 'install/rpm_repo.sh' %}
+sudo yum install yum-utils
+sudo rpm --import https://repo.clickhouse.com/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.clickhouse.com/rpm/clickhouse.repo
+sudo yum install clickhouse-server clickhouse-client
+
+sudo /etc/init.d/clickhouse-server start
+clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
+
 </details>
 
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). `prestable` is sometimes also available.
@@ -86,14 +122,52 @@ The required version can be downloaded with `curl` or `wget` from repository htt
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest stable version:
 
 ``` bash
-{% include 'install/tgz.sh' %}
+LATEST_VERSION=$(curl -s https://packages.clickhouse.com/tgz/stable/ | \
+    grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
+export LATEST_VERSION
+curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz"
+curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
+curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz"
+curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz"
+
+tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
+sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
+
+tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
+sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
+
+tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
+sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
+sudo /etc/init.d/clickhouse-server start
+
+tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
+sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 ```
 
 <details markdown="1">
 
 <summary>Deprecated Method for installing tgz archives</summary>
+
 ``` bash
-{% include 'install/tgz_repo.sh' %}
+export LATEST_VERSION=$(curl -s https://repo.clickhouse.com/tgz/stable/ | \
+    grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz
+
+tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
+sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
+sudo /etc/init.d/clickhouse-server start
+
+tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
+sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 ```
 </details>
 

@@ -304,8 +304,8 @@ CREATE TABLE table_name
 Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in the following queries:
 
 ``` sql
-SELECT count() FROM table WHERE s < 'z'
-SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
+SELECT count() FROM table WHERE s &lt; 'z'
+SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) &gt;= 1234
 ```
 
 #### Available Types of Indices {#available-types-of-indices}
@@ -364,7 +364,7 @@ The `set` index can be used with all functions. Function subsets for other index
 | Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
 |------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notEquals(!=, <>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |

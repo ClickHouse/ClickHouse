@@ -1,7 +1,11 @@
 ---
-toc_priority: 76
-toc_title: Security Changelog
+sidebar_label: Security Changelog
+sidebar_position: 100
+keywords: [clickhouse, security, changelog]
+description: Security Changelog
 ---
+
+# Security Changelog
 
 ## Fixed in ClickHouse 21.4.3.21, 2021-04-12 {#fixed-in-clickhouse-release-21-4-3-21-2021-04-12}
 
@@ -80,5 +84,3 @@ Credits: Andrey Krasichkov and Evgeny Sidorov of Yandex Information Security Tea
 Incorrect configuration in deb package could lead to the unauthorized use of the database.
 
 Credits: the UK’s National Cyber Security Centre (NCSC)
-
-{## [Original article](https://clickhouse.com/docs/en/security_changelog/) ##}
