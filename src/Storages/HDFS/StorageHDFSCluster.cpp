@@ -50,7 +50,7 @@ StorageHDFSCluster::StorageHDFSCluster(
 /// The code executes on initiator
 Pipe StorageHDFSCluster::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -106,12 +106,12 @@ Pipe StorageHDFSCluster::read(
         }
     }
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
     return Pipe::unitePipes(std::move(pipes));
 }
 
 QueryProcessingStage::Enum StorageHDFSCluster::getQueryProcessingStage(
-    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageMetadataPtr &, SelectQueryInfo &) const
+    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)

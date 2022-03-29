@@ -5,6 +5,7 @@ from testflows.core import *
 import rbac.helper.errors as errors
 from rbac.requirements import *
 
+
 @TestFeature
 @Name("show create role")
 def feature(self, node="clickhouse1"):
@@ -26,14 +27,17 @@ def feature(self, node="clickhouse1"):
             with Finally("I drop the role"):
                 node.query(f"DROP ROLE IF EXISTS {role}")
 
-    with Scenario("I show create role", requirements=[
-            RQ_SRS_006_RBAC_Role_ShowCreate("1.0")]):
+    with Scenario(
+        "I show create role", requirements=[RQ_SRS_006_RBAC_Role_ShowCreate("1.0")]
+    ):
         with setup("role0"):
             with When("I run show create role command"):
                 node.query("SHOW CREATE ROLE role0")
 
-    with Scenario("I show create role, role doesn't exist, exception", requirements=[
-            RQ_SRS_006_RBAC_Role_ShowCreate("1.0")]):
+    with Scenario(
+        "I show create role, role doesn't exist, exception",
+        requirements=[RQ_SRS_006_RBAC_Role_ShowCreate("1.0")],
+    ):
         with When("I run show create role to catch an exception"):
             exitcode, message = errors.role_not_found_in_disk(name="role0")
             node.query("SHOW CREATE ROLE role0", exitcode=exitcode, message=message)

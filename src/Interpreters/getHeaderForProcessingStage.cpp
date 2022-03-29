@@ -82,9 +82,8 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
 }
 
 Block getHeaderForProcessingStage(
-        const IStorage & storage,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage)
@@ -93,7 +92,8 @@ Block getHeaderForProcessingStage(
     {
         case QueryProcessingStage::FetchColumns:
         {
-            Block header = metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
+            Block header = storage_snapshot->getSampleBlockForColumns(column_names);
+
             if (query_info.prewhere_info)
             {
                 auto & prewhere_info = *query_info.prewhere_info;
@@ -123,7 +123,7 @@ Block getHeaderForProcessingStage(
             removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
 
             auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
-                    metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID())));
+                    storage_snapshot->getSampleBlockForColumns(column_names)));
             return InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         }
     }

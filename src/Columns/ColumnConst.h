@@ -163,7 +163,7 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        auto res = data->deserializeAndInsertFromArena(pos);
+        const auto * res = data->deserializeAndInsertFromArena(pos);
         data->popBack(1);
         ++s;
         return res;
@@ -242,7 +242,7 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (auto rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
+        if (const auto * rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
             return data->structureEquals(*rhs_concrete->data);
         return false;
     }

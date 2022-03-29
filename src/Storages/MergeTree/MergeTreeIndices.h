@@ -29,7 +29,7 @@ struct MergeTreeIndexFormat
     MergeTreeIndexVersion version;
     const char* extension;
 
-    operator bool() const { return version != 0; }
+    operator bool() const { return version != 0; } /// NOLINT
 };
 
 /// Stores some info about a single block of data.
@@ -122,7 +122,7 @@ using MergeTreeIndexMergedConditions = std::vector<IMergeTreeIndexMergedConditio
 
 struct IMergeTreeIndex
 {
-    IMergeTreeIndex(const IndexDescription & index_)
+    explicit IMergeTreeIndex(const IndexDescription & index_)
         : index(index_)
     {
     }
