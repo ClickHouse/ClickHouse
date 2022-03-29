@@ -161,7 +161,7 @@ String FileSegment::getDownloader() const
 bool FileSegment::isDownloader() const
 {
     std::lock_guard segment_lock(mutex);
-    return getCallerIdImpl(true) == downloader_id;
+    return getCallerId() == downloader_id;
 }
 
 FileSegment::RemoteFileReaderPtr FileSegment::getRemoteFileReader()
