@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-import datetime
 import logging
 import os.path as p
-import subprocess
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from typing import Dict, Tuple, Union
 
@@ -193,22 +191,6 @@ def update_cmake_version(
         f.write(VERSIONS_TEMPLATE.format_map(version.as_dict()))
 
 
-def _update_changelog(repo_path: str, version: ClickHouseVersion):
-    cmd = """sed \
-        -e "s/[@]VERSION_STRING[@]/{version_str}/g" \
-        -e "s/[@]DATE[@]/{date}/g" \
-        -e "s/[@]AUTHOR[@]/clickhouse-release/g" \
-        -e "s/[@]EMAIL[@]/clickhouse-release@yandex-team.ru/g" \
-        < {in_path} > {changelog_path}
-    """.format(
-        version_str=version.string,
-        date=datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S") + " +0300",
-        in_path=p.join(repo_path, CHANGELOG_IN_PATH),
-        changelog_path=p.join(repo_path, CHANGELOG_PATH),
-    )
-    subprocess.check_call(cmd, shell=True)
-
-
 def update_contributors(
     relative_contributors_path: str = GENERATED_CONTRIBUTORS, force: bool = False
 ):
@@ -233,22 +215,10 @@ def update_contributors(
         cfd.write(content)
 
 
-def _update_dockerfile(repo_path: str, version: ClickHouseVersion):
-    version_str_for_docker = ".".join(
-        [str(version.major), str(version.minor), str(version.patch), "*"]
-    )
-    cmd = "ls -1 {path}/docker/*/Dockerfile | xargs sed -i -r -e 's/ARG version=.+$/ARG version='{ver}'/'".format(
-        path=repo_path, ver=version_str_for_docker
-    )
-    subprocess.check_call(cmd, shell=True)
-
-
-def update_version_local(repo_path, version, version_type="testing"):
+def update_version_local(version, version_type="testing"):
     update_contributors()
     version.with_description(version_type)
     update_cmake_version(version)
-    _update_changelog(repo_path, version)
-    _update_dockerfile(repo_path, version)
 
 
 def main():
