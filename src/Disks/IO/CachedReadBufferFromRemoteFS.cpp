@@ -120,12 +120,12 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
     auto range = file_segment->range();
 
     /// Each wait() call has a timeout of 1 second.
-    size_t wait_download_max_tries = settings.remote_fs_cache_max_wait_sec;
+    size_t wait_download_max_tries = settings.filesystem_cache_max_wait_sec;
     size_t wait_download_tries = 0;
 
     auto download_state = file_segment->state();
 
-    if (settings.remote_fs_read_from_cache_if_exists_otherwise_bypass_cache)
+    if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         if (download_state == FileSegment::State::DOWNLOADED)
         {
@@ -772,7 +772,7 @@ std::optional<size_t> CachedReadBufferFromRemoteFS::getLastNonDownloadedOffset()
 
 void CachedReadBufferFromRemoteFS::assertCacheAllowed() const
 {
-    if (IFileCache::shouldBypassCache() && !settings.remote_fs_read_from_cache_if_exists_otherwise_bypass_cache)
+    if (IFileCache::shouldBypassCache() && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache used when not allowed");
 }
 

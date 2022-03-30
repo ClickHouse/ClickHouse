@@ -298,9 +298,9 @@ BlockIO InterpreterSystemQuery::execute()
                 cache->reset();
             break;
 #endif
-        case Type::DROP_REMOTE_FILESYSTEM_CACHE:
+        case Type::DROP_FILESYSTEM_CACHE:
         {
-            if (query.remote_filesystem_cache_path.empty())
+            if (query.filesystem_cache_path.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
@@ -308,7 +308,7 @@ BlockIO InterpreterSystemQuery::execute()
             }
             else
             {
-                auto cache = FileCacheFactory::instance().get(query.remote_filesystem_cache_path);
+                auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
                 cache->tryRemoveAll();
             }
             break;
@@ -775,7 +775,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_REMOTE_FILESYSTEM_CACHE:
+        case Type::DROP_FILESYSTEM_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;

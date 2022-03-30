@@ -43,7 +43,6 @@ public:
 
     virtual void tryRemoveAll() = 0;
 
-    /// If cache can be used as read only. (For merges, for example).
     static bool shouldBypassCache();
 
     /// Cache capacity in bytes.

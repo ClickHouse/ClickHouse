@@ -28,7 +28,7 @@ public:
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
-        DROP_REMOTE_FILESYSTEM_CACHE,
+        DROP_FILESYSTEM_CACHE,
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
@@ -89,7 +89,7 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
-    String remote_filesystem_cache_path;
+    String filesystem_cache_path;
 
     String getID(char) const override { return "SYSTEM query"; }
 
