@@ -43,11 +43,13 @@ void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_
     writeCString("\"", wb);
     writeCString(":", wb);
     writeCString("\"", wb);
+    writeCString(" [ ", wb);
     if (color)
         writeString(setColor(intHash64(msg_ext.thread_id)), wb);
     DB::writeIntText(msg_ext.thread_id, wb);
     if (color)
         writeCString(resetColor(), wb);
+    writeCString(" ] ", wb);
     writeCString("\"", wb);
 
     /// We write query_id even in case when it is empty (no query context)
@@ -59,12 +61,14 @@ void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_
     writeCString("\"", wb);
     writeCString(":", wb);
     writeCString("\"", wb);
+    writeCString("{", wb);
 
     if (color)
         writeString(setColor(std::hash<std::string>()(msg_ext.query_id)), wb);
     DB::writeString(msg_ext.query_id, wb);
     if (color)
         writeCString(resetColor(), wb);
+    writeCString("}", wb);
     writeCString("\"", wb);
 
     writeCString(",", wb);
@@ -75,6 +79,7 @@ void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_
     writeCString(":", wb);
 
     writeCString("\"", wb);
+    writeCString("<", wb);
 
     int priority = static_cast<int>(msg.getPriority());
     if (color)
@@ -82,6 +87,7 @@ void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_
     DB::writeString(getPriorityName(priority), wb);
     if (color)
         writeCString(resetColor(), wb);
+    writeCString(">", wb);
     writeCString("\"", wb);
 
     writeCString(",", wb);

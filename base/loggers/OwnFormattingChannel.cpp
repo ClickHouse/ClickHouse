@@ -12,7 +12,7 @@ void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
         if (pFormatter)
         {
             std::string text;
-            if(log_format_json)
+            if(log_format_json == true)
             {
                 pFormatter->formatExtendedJSON(msg, text);
             }

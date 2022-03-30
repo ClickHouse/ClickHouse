@@ -200,7 +200,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log->setLevel(console_log_level);
         split->addChannel(log, "console");
     }
-    if(config.has("logger.format.json"))
+    if(config.has("logger.format.json") == true)
     {
         log_format_json = true;
     }
