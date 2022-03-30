@@ -101,7 +101,6 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
     /// onCancel and generate can be called concurrently
     std::mutex reader_mutex;
-    bool initialized = false;
     std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IteratorWrapper> file_iterator;
     size_t download_thread_num = 1;
