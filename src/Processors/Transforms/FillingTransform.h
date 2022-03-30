@@ -40,6 +40,8 @@ private:
     Positions fill_column_positions;
     Positions interpolate_column_positions;
     Positions other_column_positions;
+    std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
+    ExpressionActionsPtr interpolate_actions;
     bool first = true;
     bool generate_suffix = false;
 

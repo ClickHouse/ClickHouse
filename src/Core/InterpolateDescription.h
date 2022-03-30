@@ -19,15 +19,12 @@ namespace DB
 /// Interpolate description
 struct InterpolateDescription
 {
-    explicit InterpolateDescription(ExpressionActionsPtr actions, const Aliases & aliases);
+    explicit InterpolateDescription(ActionsDAGPtr actions, const Aliases & aliases);
 
-    ExpressionActionsPtr actions;
+    ActionsDAGPtr actions;
 
     std::unordered_map<std::string, NameAndTypePair> required_columns_map; /// input column name -> {alias, type}
-    std::unordered_set<std::string> result_columns_map; /// result block columns
-
-    /// filled externally in transform
-    std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
+    std::unordered_set<std::string> result_columns_set; /// result block columns
 };
 
 using InterpolateDescriptionPtr = std::shared_ptr<InterpolateDescription>;

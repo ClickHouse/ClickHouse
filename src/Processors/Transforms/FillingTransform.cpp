@@ -149,10 +149,13 @@ FillingTransform::FillingTransform(
     if (on_totals)
         return;
 
+    if (interpolate_description)
+        interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
+
     std::vector<bool> is_fill_column(header_.columns());
     for (size_t i = 0, size = sort_description.size(); i < size; ++i)
     {
-        if (interpolate_description && interpolate_description->result_columns_map.count(sort_description[i].column_name))
+        if (interpolate_description && interpolate_description->result_columns_set.count(sort_description[i].column_name))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
                 sort_description[i].column_name);
@@ -188,11 +191,11 @@ FillingTransform::FillingTransform(
         if (interpolate_description)
             if (const auto & p = interpolate_description->required_columns_map.find(column.name);
                 p != interpolate_description->required_columns_map.end())
-                    interpolate_description->input_positions.emplace_back(idx, p->second);
+                    input_positions.emplace_back(idx, p->second);
 
         if (!is_fill_column[idx])
         {
-            if (interpolate_description && interpolate_description->result_columns_map.count(column.name))
+            if (interpolate_description && interpolate_description->result_columns_set.count(column.name))
                 interpolate_column_positions.push_back(idx);
             else
                 other_column_positions.push_back(idx);
@@ -256,34 +259,35 @@ void FillingTransform::transform(Chunk & chunk)
         {
             interpolate_block.clear();
 
-            if (interpolate_description->input_positions.size())
+            if (input_positions.size())
             {
-                for (const auto & [col_pos, name_type] : interpolate_description->input_positions)
+                /// populate calculation block with required columns with values from previous row
+                for (const auto & [col_pos, name_type] : input_positions)
                 {
                     MutableColumnPtr column = name_type.type->createColumn();
                     auto [res_columns, pos] = res_map[col_pos];
                     size_t size = (*res_columns)[pos]->size();
-                    if (size == 0)
+                    if (size == 0) /// this is the first row in current chunk
                     {
+                        /// take value from last row of previous chunk if exists, else use default
                         if (last_row.size() > col_pos && last_row[col_pos]->size())
                             column->insertFrom(*last_row[col_pos], 0);
                         else
                             column->insertDefault();
                     }
-                    else
+                    else /// take value from previous row of current chunk
                         column->insertFrom(*(*res_columns)[pos], size - 1);
 
                     interpolate_block.insert({std::move(column), name_type.type, name_type.name});
                 }
+                interpolate_actions->execute(interpolate_block);
             }
             else /// all INTERPOLATE expressions are constants
             {
-                /// dirty hack - we need at least one column with one row to execute actions on block
-                DataTypePtr dt = std::make_shared<DataTypeUInt64>();
-                interpolate_block.insert({dt->createColumnConst(1, dt->getDefault()), dt, "dummy"});
+                /// LOL :)
+                size_t n = 1;
+                interpolate_actions->execute(interpolate_block, n);
             }
-
-            interpolate_description->actions->execute(interpolate_block);
         }
     };
 
@@ -303,8 +307,12 @@ void FillingTransform::transform(Chunk & chunk)
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
         }
 
-        for (interpolate(); filling_row.next(next_row); interpolate())
+        interpolate();
+        while (filling_row.next(next_row))
+        {
                 insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+                interpolate();
+        }
 
         setResultColumns(chunk, res_fill_columns, res_interpolate_columns, res_other_columns);
         return;
@@ -362,8 +370,12 @@ void FillingTransform::transform(Chunk & chunk)
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
         }
 
-        for (interpolate(); filling_row.next(next_row); interpolate())
+        interpolate();
+        while (filling_row.next(next_row))
+        {
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+            interpolate();
+        }
 
         copyRowFromColumns(res_fill_columns, old_fill_columns, row_ind);
         copyRowFromColumns(res_interpolate_columns, old_interpolate_columns, row_ind);
