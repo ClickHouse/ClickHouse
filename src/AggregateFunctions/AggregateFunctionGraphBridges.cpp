@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes 
-{
-extern const int UNSUPPORTED_PARAMETER;
-}
-
 class GraphCountBridges final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphCountBridges>
 {
 public:
@@ -18,16 +13,8 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    UInt64 min(UInt64 a, UInt64 b) const {
-        if (a < b) {
-            return a;
-        } else {
-            return b;
-        }
-    }
-
-    void countBridges(ConstAggregateDataPtr __restrict place, StringRef vertex, StringRef parent, HashMap<StringRef, bool>& used, HashMap<StringRef, UInt64>& tin, HashMap<StringRef, UInt64>& up, UInt64& cntBridges, UInt64& timer) const {
-        used[vertex] = true;
+    void countBridges(ConstAggregateDataPtr __restrict place, StringRef vertex, StringRef parent, HashSet<StringRef>& used, HashMap<StringRef, UInt64>& tin, HashMap<StringRef, UInt64>& up, UInt64& cntBridges, UInt64& timer) const {
+        used.insert(vertex);
         tin[vertex] = timer;
         up[vertex] = timer;
         ++timer;
@@ -35,12 +22,15 @@ public:
         for (StringRef next : this->data(place).graph.at(vertex)) {
             if (next == parent) {
                 continue;
-            } else if (used[next]) {
-                up[vertex] = min(up[vertex], tin[next]);
+            } else if (used.find(vertex) != used.end()) {
+                auto vup = up.find(vertex);
+                *vup = std::min(*vup, tin[next]);
             } else {
                 countBridges(place, next, vertex, used, tin, up, cntBridges, timer);
-                up[vertex] = min(up[vertex], up[next]);
-                if (up[next] > tin[vertex]) {
+                auto vup = up.find(vertex);
+                auto nup = up.find(next);
+                *vup = std::min(*vup, *nup);
+                if (*nup > tin[vertex]) {
                     ++cntBridges;
                 }
             }
@@ -52,7 +42,7 @@ public:
         if (graph.size() < 2) {
             return 0;
         }
-        HashMap<StringRef, bool> used;
+        HashSet<StringRef> used;
         HashMap<StringRef, UInt64> tin, up;
         UInt64 cntBridges = 0;
         UInt64 timer = 0;
