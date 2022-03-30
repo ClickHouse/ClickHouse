@@ -720,6 +720,7 @@ std::vector<String> LRUFileCache::tryGetCachePaths(const Key & key)
     std::lock_guard cache_lock(mutex);
 
     std::vector<String> cache_paths;
+
     const auto & cells_by_offset = files[key];
 
     for (const auto & [offset, cell] : cells_by_offset)

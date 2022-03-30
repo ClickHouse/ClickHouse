@@ -23,7 +23,7 @@ namespace DB
  *         remote_path
  *     FROM system.remote_data_paths
  * ) AS data_paths
- * INNER JOIN system.remote_filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
+ * INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
  * FORMAT Vertical
  */
 

@@ -1,7 +1,7 @@
 -- Tags: no-parallel, no-fasttest, long
 
 SET max_memory_usage='20G';
-SET remote_fs_cache_on_write_operations = 0;
+SET enable_filesystem_cache_on_write_operations = 0;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache';
@@ -43,12 +43,12 @@ SET remote_filesystem_read_method='threadpool';
 
 SELECT * FROM test WHERE value LIKE '%abc%' ORDER BY value LIMIT 10 FORMAT Null;
 
-SET remote_fs_cache_on_write_operations = 1;
+SET enable_filesystem_cache_on_write_operations = 1;
 
 TRUNCATE TABLE test;
 SELECT count() FROM test;
 
-SYSTEM DROP REMOTE FILESYSTEM CACHE;
+SYSTEM DROP FILESYSTEM CACHE;
 
 INSERT INTO test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
 

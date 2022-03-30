@@ -231,7 +231,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     if (cache)
     {
         if (IFileCache::shouldBypassCache())
-            disk_read_settings.remote_fs_read_from_cache_if_exists_otherwise_bypass_cache = true;
+            disk_read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
         disk_read_settings.remote_fs_cache = cache;
     }
@@ -273,7 +273,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
               mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + blob_name);
 
     bool cache_on_insert = fs::path(path).extension() != ".tmp"
-        && write_settings.remote_fs_cache_on_write_operations
+        && write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
