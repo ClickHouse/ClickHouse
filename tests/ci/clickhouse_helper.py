@@ -15,7 +15,7 @@ class ClickHouseHelper:
         self.url = url
         self.auth = {
             "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
-            "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password")
+            "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password"),
         }
 
     @staticmethod
