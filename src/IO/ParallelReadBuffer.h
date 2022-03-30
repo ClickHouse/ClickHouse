@@ -82,8 +82,8 @@ public:
         std::unique_ptr<ReadBufferFactory> reader_factory_,
         ThreadPool * pool,
         size_t max_working_readers,
-        WorkerSetup worker_setup = {},
-        WorkerCleanup worker_cleanup = {});
+        WorkerSetup worker_setup = [](ThreadStatus &){},
+        WorkerCleanup worker_cleanup = [](ThreadStatus &){});
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
