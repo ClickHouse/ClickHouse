@@ -130,11 +130,6 @@ private:
     void onBackgroundException();
     void finishAndWait();
 
-    using WorkerSetup = std::function<void()>;
-    WorkerSetup getWorkerSetup();
-    using WorkerCleanup = std::function<void()>;
-    WorkerCleanup getWorkerCleanup();
-
     SynchronizedArenaWithFreeLists arena;
 
     Segment current_segment;
