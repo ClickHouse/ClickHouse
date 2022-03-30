@@ -148,6 +148,17 @@ if __name__ == "__main__":
                         build_name,
                     )
 
+    some_builds_are_missing = len(build_reports_map) < len(reports_order)
+
+    if some_builds_are_missing:
+        logging.info(
+            "Expected to get %s build results, got %s",
+            len(reports_order),
+            len(build_reports_map),
+        )
+    else:
+        logging.info("Got exactly %s builds", len(build_reports_map))
+
     build_reports = [
         build_reports_map[build_name]
         for build_name in reports_order
@@ -219,10 +230,10 @@ if __name__ == "__main__":
         if build_result.status == "success":
             ok_builds += 1
 
-    if ok_builds == 0:
+    if ok_builds == 0 or some_builds_are_missing:
         summary_status = "error"
 
-    description = "{}/{} builds are OK".format(ok_builds, total_builds)
+    description = f"{ok_builds}/{total_builds} builds are OK"
 
     print("::notice ::Report url: {}".format(url))
 
