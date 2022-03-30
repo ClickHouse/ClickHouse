@@ -126,11 +126,6 @@ public:
 
     String getName() const override { return "Hive"; }
 
-    String getID() const
-    {
-        return std::to_string(reinterpret_cast<std::uintptr_t>(this));
-    }
-
     Chunk generate() override
     {
         while (!isCancelled())
