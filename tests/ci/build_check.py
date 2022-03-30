@@ -296,7 +296,7 @@ def main():
         version.string,
         image_version,
         ccache_path,
-        official=official_flag
+        official=official_flag,
     )
 
     logging.info("Going to run packager with %s", packager_cmd)
