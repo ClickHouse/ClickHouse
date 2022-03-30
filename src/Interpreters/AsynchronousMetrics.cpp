@@ -12,6 +12,7 @@
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
@@ -607,6 +608,15 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
+#if USE_ROCKSDB
+    {
+        if (auto metadata_cache = getContext()->tryGetMergeTreeMetadataCache())
+        {
+            new_values["MergeTreeMetadataCacheSize"] = metadata_cache->getEstimateNumKeys();
+        }
+    }
+#endif
+
 #if USE_EMBEDDED_COMPILER
     {
         if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
@@ -616,6 +626,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 #endif
+
 
     new_values["Uptime"] = getContext()->getUptimeSeconds();
 
