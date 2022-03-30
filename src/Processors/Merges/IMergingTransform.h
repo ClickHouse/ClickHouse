@@ -19,6 +19,12 @@ public:
         bool have_all_inputs_,
         UInt64 limit_hint_);
 
+    IMergingTransformBase(
+        const Blocks & input_headers,
+        const Block & output_header,
+        bool have_all_inputs_,
+        UInt64 limit_hint_);
+
     OutputPort & getOutputPort() { return outputs.front(); }
 
     /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
@@ -78,6 +84,18 @@ public:
         UInt64 limit_hint_,
         Args && ... args)
         : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_, limit_hint_)
+        , algorithm(std::forward<Args>(args) ...)
+    {
+    }
+
+    template <typename ... Args>
+    IMergingTransform(
+        const Blocks & input_headers,
+        const Block & output_header,
+        bool have_all_inputs_,
+        UInt64 limit_hint_,
+        Args && ... args)
+        : IMergingTransformBase(input_headers, output_header, have_all_inputs_, limit_hint_)
         , algorithm(std::forward<Args>(args) ...)
     {
     }

@@ -173,6 +173,19 @@ public:
 
     bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
 
+    /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
+      */
+    void setTotals(const Block & block) override { totals = block; }
+    const Block & getTotals() const override { return totals; }
+
+    virtual JoinPipelineType pipelineType() const override
+    {
+        bool is_filled = from_storage_join || data->type == Type::DICT;
+        if (is_filled)
+            return JoinPipelineType::Filled;
+        return JoinPipelineType::RShaped;
+    }
+
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
       * Use only after all calls to joinBlock was done.

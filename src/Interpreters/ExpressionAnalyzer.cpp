@@ -29,6 +29,7 @@
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 
@@ -1087,8 +1088,16 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
+    {
         return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
-    return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
+    }
+    else if (analyzed_join->forceFullSortingMergeJoin())
+    {
+        if (analyzed_join->getClauses().size() != 1)
+            throw Exception("Full sorting merge join is supported only for single-condition joins", ErrorCodes::NOT_IMPLEMENTED);
+        return std::make_shared<FullSortingMergeJoin>(*analyzed_join);
+    }
+    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(

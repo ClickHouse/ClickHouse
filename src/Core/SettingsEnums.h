@@ -44,6 +44,7 @@ enum class JoinAlgorithm
     PREFER_PARTIAL_MERGE,
     PARALLEL_HASH,
     DIRECT,
+    FULL_SORTING_MERGE,
 };
 
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)

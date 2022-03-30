@@ -30,6 +30,9 @@ struct ExpressionActionsSettings;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
+
 class QueryPipelineBuilder
 {
 public:
@@ -97,6 +100,13 @@ public:
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
+
+    static QueryPipelineBuilderPtr mergePipelines(
+        QueryPipelineBuilderPtr left,
+        QueryPipelineBuilderPtr right,
+        ProcessorPtr transform,
+        Processors * collected_processors);
+
     /// Join two pipelines together using JoinPtr.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static std::unique_ptr<QueryPipelineBuilder> joinPipelines(
@@ -106,6 +116,12 @@ public:
         size_t max_block_size,
         size_t max_streams,
         bool keep_left_read_in_order,
+        Processors * collected_processors = nullptr);
+
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelines2(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        size_t max_block_size,
         Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.

@@ -199,6 +199,10 @@ public:
 
     bool preferMergeJoin() const { return join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PREFER_PARTIAL_MERGE); }
     bool forceMergeJoin() const { return join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PARTIAL_MERGE); }
+
+    bool allowParallelHashJoin() const;
+    bool forceFullSortingMergeJoin() const { return join_algorithm.isSet(JoinAlgorithm::FULL_SORTING_MERGE); }
+
     bool forceHashJoin() const
     {
         /// HashJoin always used for DictJoin
@@ -206,7 +210,6 @@ public:
             || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::HASH)
             || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PARALLEL_HASH);
     }
-    bool allowParallelHashJoin() const;
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
