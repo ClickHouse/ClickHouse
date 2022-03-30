@@ -212,8 +212,8 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
     DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
+    if (const auto user = login_context.getUser())
     {
-        const auto user = access->getUser();
         log_entry.user = user->getName();
         log_entry.user_identified_with = user->auth_data.getType();
         log_entry.external_auth_server = user->auth_data.getLDAPServerName();
