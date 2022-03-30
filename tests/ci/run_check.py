@@ -243,7 +243,7 @@ if __name__ == "__main__":
         pr_labels_to_add.append(MAP_CATEGORY_TO_LABEL[category])
 
     for label in pr_info.labels:
-        if label in MAP_CATEGORY_TO_LABEL and label not in pr_labels_to_add:
+        if label in MAP_CATEGORY_TO_LABEL.values() and label not in pr_labels_to_add:
             pr_labels_to_remove.append(label)
 
     if pr_info.has_changes_in_submodules():
