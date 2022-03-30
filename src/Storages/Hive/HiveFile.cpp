@@ -135,8 +135,8 @@ void HiveOrcFile::prepareReader()
 void HiveOrcFile::prepareColumnMapping()
 {
     const orc::Type & type = reader->GetRawORCReader()->getType();
-    size_t size = type.getSubtypeCount();
-    for (size_t pos = 0; pos < size; pos++)
+    size_t count = type.getSubtypeCount();
+    for (size_t pos = 0; pos < count; pos++)
     {
         /// Column names in hive is case-insensitive.
         String column{type.getFieldName(pos)};
@@ -156,9 +156,9 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveOrcFile::buildMinMaxIndex(c
     if (!statistics)
         return nullptr;
 
-    size_t size = index_names_and_types.size();
+    size_t range_num = index_names_and_types.size();
     auto idx = std::make_unique<IMergeTreeDataPart::MinMaxIndex>();
-    idx->hyperrectangle.resize(size);
+    idx->hyperrectangle.resize(range_num);
 
     size_t i = 0;
     for (const auto & name_type : index_names_and_types)
