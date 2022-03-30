@@ -19,7 +19,7 @@ void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
             else
             {
                 pFormatter->formatExtended(msg, text);
-            }            
+            }
             pChannel->log(Poco::Message(msg.base, text));
         }
         else
