@@ -50,7 +50,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         if (auto log = text_log.lock())
             split->addTextLog(log, text_log_max_priority);
 #endif
-
+    
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger) //-V1051
         return;
