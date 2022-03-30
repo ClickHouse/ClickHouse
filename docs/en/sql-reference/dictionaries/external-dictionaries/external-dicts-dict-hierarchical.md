@@ -1,9 +1,9 @@
 ---
-toc_priority: 45
-toc_title: Hierarchical dictionaries
+sidebar_position: 45
+sidebar_label: Hierarchical dictionaries
 ---
 
-# Hierarchical Dictionaries {#hierarchical-dictionaries}
+# Hierarchical Dictionaries 
 
 ClickHouse supports hierarchical dictionaries with a [numeric key](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict-numeric-key).
 

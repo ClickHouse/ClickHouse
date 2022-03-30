@@ -1,9 +1,9 @@
 ---
-toc_priority: 42
-toc_title: Dictionary Updates
+sidebar_position: 42
+sidebar_label: Dictionary Updates
 ---
 
-# Dictionary Updates {#dictionary-updates}
+# Dictionary Updates 
 
 ClickHouse periodically updates the dictionaries. The update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries are defined in the `<lifetime>` tag in seconds.
 

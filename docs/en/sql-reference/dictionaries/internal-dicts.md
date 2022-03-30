@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: Internal Dictionaries
+sidebar_position: 39
+sidebar_label: Internal Dictionaries
 ---
 
 # Internal Dictionaries {#internal_dicts}
