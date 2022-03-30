@@ -18,7 +18,7 @@ CREATE TABLE t_01411(
 ) ENGINE = MergeTree()
 ORDER BY tuple();
 
-INSERT INTO t_01411 (str) SELECT concat('asdf', toString(number % 10000)) FROM numbers(2000000);
+INSERT INTO t_01411 (str) SELECT concat('asdf', toString(number % 10000)) FROM numbers(100000);
 
 CREATE TABLE t_01411_num(
     num UInt8,
@@ -26,10 +26,10 @@ CREATE TABLE t_01411_num(
 ) ENGINE = MergeTree()
 ORDER BY tuple();
 
-INSERT INTO t_01411_num (num) SELECT number % 1000 FROM numbers(200000);
+INSERT INTO t_01411_num (num) SELECT number % 1000 FROM numbers(100000);
 
 create table lc_dict_reading (val UInt64, str StringWithDictionary, pat String) engine = MergeTree order by val;
-insert into lc_dict_reading select number, if(number < 8192 * 4, number % 100, number) as s, s from system.numbers limit 1000000;
+insert into lc_dict_reading select number, if(number < 8192 * 4, number % 100, number) as s, s from system.numbers limit 100000;
 """
 
 function go()

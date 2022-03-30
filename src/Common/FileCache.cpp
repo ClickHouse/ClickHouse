@@ -531,8 +531,8 @@ void LRUFileCache::loadCacheInfoIntoMemory()
     std::lock_guard cache_lock(mutex);
 
     Key key;
-    UInt64 offset;
-    size_t size;
+    UInt64 offset = 0;
+    size_t size = 0;
     std::vector<FileSegmentCell *> cells;
 
     /// cache_base_path / key_prefix / key / offset
