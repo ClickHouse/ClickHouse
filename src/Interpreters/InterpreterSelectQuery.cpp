@@ -281,7 +281,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , input_pipe(std::move(input_pipe_))
     , log(&Poco::Logger::get("InterpreterSelectQuery"))
     , metadata_snapshot(metadata_snapshot_)
-    , subquery_for_sets(std::make_shared<SubqueriesForSets>(std::move(subquery_for_sets_)))
+    , subquery_for_sets(std::move(subquery_for_sets_))
     , prepared_sets(std::move(prepared_sets_))
 {
     checkStackSize();
@@ -458,7 +458,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             NameSet(required_result_column_names.begin(), required_result_column_names.end()),
             !options.only_analyze,
             options,
-            std::move(*subquery_for_sets),
+            std::move(subquery_for_sets),
             std::move(prepared_sets));
 
         if (!options.only_analyze)
@@ -550,7 +550,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         LOG_TRACE(log, "Running 'analyze' second time");
 
         /// Reuse already built sets for multiple passes of analysis
-        subquery_for_sets = std::make_shared<SubqueriesForSets>(std::move(query_analyzer->getSubqueriesForSets()));
+        subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
         prepared_sets = std::move(query_analyzer->getPreparedSets());
 
         /// Do not try move conditions to PREWHERE for the second time.
@@ -635,13 +635,14 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         auto & query = getSelectQuery();
         query_analyzer->makeSetsForIndex(query.where());
         query_analyzer->makeSetsForIndex(query.prewhere());
-        query_info.sets = query_analyzer->getPreparedSets();
-        query_info.subquery_for_sets = std::make_shared<SubqueriesForSets>(std::move(query_analyzer->getSubqueriesForSets()));
+        query_info.sets = std::move(query_analyzer->getPreparedSets());
+        query_info.subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
 
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
 
+        /// query_info.sets is used for further set index analysis. Use copy instead of move.
         query_analyzer->getPreparedSets() = query_info.sets;
-        query_analyzer->getSubqueriesForSets() = std::move(*query_info.subquery_for_sets);
+        query_analyzer->getSubqueriesForSets() = std::move(query_info.subquery_for_sets);
     }
 
     /// Do I need to perform the first part of the pipeline?
