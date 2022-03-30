@@ -486,7 +486,8 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
             session_log->addLoginSuccess(
                     auth_id,
                     named_session ? std::optional<std::string>(named_session->key.second) : std::nullopt,
-                    *query_context);
+                    *query_context,
+                    *user);
 
             notified_session_log_about_login = true;
         }
