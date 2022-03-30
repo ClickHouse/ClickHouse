@@ -17,8 +17,9 @@ $ make
 
 Generating data:
 
-!!! warning "Attention"
-    With `-s 100` dbgen generates 600 million rows (67 GB), while while `-s 1000` it generates 6 billion rows (which takes a lot of time)
+:::warning    
+With `-s 100` dbgen generates 600 million rows (67 GB), while while `-s 1000` it generates 6 billion rows (which takes a lot of time)
+:::
 
 ``` bash
 $ ./dbgen -s 1000 -T c

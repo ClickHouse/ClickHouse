@@ -290,8 +290,9 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 ```
 
-!!! info "Info"
-    If you will run the queries described below, you have to use the full table name, `datasets.trips_mergetree`.
+:::info    
+If you will run the queries described below, you have to use the full table name, `datasets.trips_mergetree`.
+:::
 
 ## Results on Single Server {#results-on-single-server}
 

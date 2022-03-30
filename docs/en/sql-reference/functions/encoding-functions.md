@@ -1,6 +1,6 @@
 ---
-toc_priority: 52
-toc_title: Encoding
+sidebar_position: 52
+sidebar_label: Encoding
 ---
 
 # Encoding Functions {#encoding-functions}
@@ -170,8 +170,9 @@ Performs the opposite operation of [hex](#hex). It interprets each pair of hexad
 
 If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
 
-!!! note "Note"
-    If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
+:::note    
+If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
+:::
 
 Alias: `UNHEX`.
 
@@ -328,8 +329,9 @@ Alias: `UNBIN`.
 
 For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264) functions.
 
-!!! note "Note"
-    If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
+:::note    
+If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
+:::
 
 Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown). 
 
