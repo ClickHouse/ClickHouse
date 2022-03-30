@@ -35,7 +35,7 @@ void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_
     DB::writeChar('0' + ((msg_ext.time_microseconds / 10) % 10), wb);
     DB::writeChar('0' + ((msg_ext.time_microseconds / 1) % 10), wb);
     writeCString("\"", wb);
-    
+
     writeCString(",", wb);
 
     writeCString("\"", wb);
@@ -76,7 +76,6 @@ void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_
 
     writeCString("\"", wb);
 
-    
     int priority = static_cast<int>(msg.getPriority());
     if (color)
         writeCString(setColorForLogPriority(priority), wb);
@@ -100,7 +99,7 @@ void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_
     if (color)
         writeCString(resetColor(), wb);
     writeCString("\"", wb);
-    
+
     writeCString(",", wb);
 
     writeCString("\"", wb);

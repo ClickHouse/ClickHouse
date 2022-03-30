@@ -49,8 +49,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (split)
         if (auto log = text_log.lock())
             split->addTextLog(log, text_log_max_priority);
-#endif
-    
+#endif 
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger) //-V1051
         return;
@@ -183,7 +182,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
     bool color_logs_by_default = isatty(STDERR_FILENO);
-    
     if (config.getBool("logger.console", false)
         || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
     {
@@ -202,12 +200,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log->setLevel(console_log_level);
         split->addChannel(log, "console");
     }
-    
     if(config.has("logger.format.json"))
     {
-        log_format_json = true; 
+        log_format_json = true;
     }
-    
     split->open();
     logger.close();
     logger.setChannel(split);
