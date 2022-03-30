@@ -126,9 +126,14 @@ public:
 
     String getName() const override { return "Hive"; }
 
+    String getID() const
+    {
+        return std::to_string(reinterpret_cast<std::uintptr_t>(this));
+    }
+
     Chunk generate() override
     {
-        while (true)
+        while (!isCancelled())
         {
             if (!reader)
             {
@@ -242,6 +247,7 @@ public:
                 read_buf.reset();
             }
         }
+        return {};
     }
 
     void onCancel() override
