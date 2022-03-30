@@ -38,7 +38,7 @@ public:
 
     Pipe read(
         const Names & column_names_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & metadata_snapshot_,
         SelectQueryInfo & query_info_,
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage_,
@@ -46,7 +46,7 @@ public:
         unsigned num_streams_) override;
 
     QueryProcessingStage::Enum getQueryProcessingStage(
-        ContextPtr context_, QueryProcessingStage::Enum to_stage_, const StorageMetadataPtr &, SelectQueryInfo &) const override;
+        ContextPtr context_, QueryProcessingStage::Enum to_stage_, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
 protected:
     StorageHiveCluster(

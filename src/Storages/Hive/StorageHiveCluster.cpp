@@ -55,7 +55,7 @@ StorageHiveCluster::StorageHiveCluster(
 
 Pipe StorageHiveCluster::read(
     const Names & column_names_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & metadata_snapshot_,
     SelectQueryInfo & query_info_,
     ContextPtr context_,
     QueryProcessingStage::Enum processed_stage_,
@@ -113,7 +113,7 @@ Pipe StorageHiveCluster::read(
                 auto task_iter_callback = std::make_shared<TaskIterator>([node]() { return node.host_name; });
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                     connection,
-                    queryToString(query_info_.query),
+                    queryToString(query_info_.original_query),
                     header,
                     context_,
                     nullptr,
@@ -124,7 +124,7 @@ Pipe StorageHiveCluster::read(
                 pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
             }
         }
-        metadata_snapshot_->check(column_names_, getVirtuals(), getStorageID());
+        metadata_snapshot_->check(column_names_);
         return Pipe::unitePipes(std::move(pipes));
     }
 
@@ -169,7 +169,7 @@ Pipe StorageHiveCluster::read(
 }
 
 QueryProcessingStage::Enum StorageHiveCluster::getQueryProcessingStage(
-    ContextPtr context_, QueryProcessingStage::Enum to_stage_, const StorageMetadataPtr &, SelectQueryInfo &) const
+    ContextPtr context_, QueryProcessingStage::Enum to_stage_, const StorageSnapshotPtr &, SelectQueryInfo &) const
 {
     if (context_->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         if (to_stage_ >= QueryProcessingStage::Enum::WithMergeableState)
