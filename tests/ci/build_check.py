@@ -21,6 +21,8 @@ from ci_config import CI_CONFIG, BuildConfig
 from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
+IMAGE_NAME = "clickhouse/binary-builder"
+
 
 def get_build_config(build_check_name: str, build_name: str) -> BuildConfig:
     if build_check_name == "ClickHouse build check (actions)":
@@ -52,7 +54,6 @@ def get_packager_cmd(
     build_version: str,
     image_version: str,
     ccache_path: str,
-    pr_info: PRInfo,
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
@@ -73,9 +74,8 @@ def get_packager_cmd(
     cmd += " --cache=ccache"
     cmd += " --ccache_dir={}".format(ccache_path)
 
-    if "alien_pkgs" in build_config and build_config["alien_pkgs"]:
-        if pr_info.number == 0 or "release" in pr_info.labels:
-            cmd += " --alien-pkgs rpm tgz"
+    if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
+        cmd += " --additional-pkgs"
 
     cmd += " --docker-image-version={}".format(image_version)
     cmd += " --version={}".format(build_version)
@@ -84,13 +84,6 @@ def get_packager_cmd(
         cmd += " --with-binaries=tests"
 
     return cmd
-
-
-def get_image_name(build_config: BuildConfig) -> str:
-    if build_config["package_type"] != "deb":
-        return "clickhouse/binary-builder"
-    else:
-        return "clickhouse/deb-builder"
 
 
 def build_clickhouse(
@@ -240,6 +233,7 @@ def main():
                     "https://s3.amazonaws.com/clickhouse-builds/"
                     + url.replace("+", "%2B").replace(" ", "%20")
                 )
+        success = len(build_urls) > 0
         create_json_artifact(
             TEMP_PATH,
             build_name,
@@ -247,12 +241,15 @@ def main():
             build_urls,
             build_config,
             0,
-            len(build_urls) > 0,
+            success,
         )
-        return
+        # Fail build job if not successeded
+        if not success:
+            sys.exit(1)
+        else:
+            sys.exit(0)
 
-    image_name = get_image_name(build_config)
-    docker_image = get_image_with_version(IMAGES_PATH, image_name)
+    docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
 
     logging.info("Got version from repo %s", version.string)
@@ -293,7 +290,6 @@ def main():
         version.string,
         image_version,
         ccache_path,
-        pr_info,
     )
     logging.info("Going to run packager with %s", packager_cmd)
 

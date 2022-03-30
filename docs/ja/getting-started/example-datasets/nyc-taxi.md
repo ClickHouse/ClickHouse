@@ -21,7 +21,7 @@ toc_title: "ニューヨークタクシー"
 ファイルの中には、無効な行が含まれている場合があり、以下のように修正することができます。
 
 ``` bash
-sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_
+sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_Yand
 sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-03.csv > data/yellow_tripdata_2010-03.csv_
 mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
 mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
@@ -378,7 +378,6 @@ Q3:0.051秒
 Q4:0.072秒
 
 この場合、クエリの処理時間は、ネットワークのレイテンシによって決定されます。
-フィンランドのYandexデータセンターにあるクライアントをロシアのクラスター上に置いてクエリを実行したところ、約20ミリ秒のレイテンシが追加されました。
 
 ## サマリ {#summary}
 

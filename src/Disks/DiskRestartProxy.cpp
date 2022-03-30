@@ -41,6 +41,8 @@ public:
         swap(*impl);
     }
 
+    String getInfoForLog() override { return impl->getInfoForLog(); }
+
 private:
     ReadLock lock;
 };

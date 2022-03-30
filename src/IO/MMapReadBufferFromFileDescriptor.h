@@ -18,7 +18,7 @@ public:
     off_t seek(off_t off, int whence) override;
 
 protected:
-    MMapReadBufferFromFileDescriptor() {}
+    MMapReadBufferFromFileDescriptor() = default;
     void init();
 
     MMappedFileDescriptor mapped;

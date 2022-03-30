@@ -24,7 +24,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -117,14 +117,14 @@ public:
 
     static Block getBlockForSource(
         const StorageHDFSPtr & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot_,
         const ColumnsDescription & columns_description,
         bool need_path_column,
         bool need_file_column);
 
     HDFSSource(
         StorageHDFSPtr storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
         UInt64 max_block_size_,
         bool need_path_column_,
@@ -140,7 +140,7 @@ public:
 
 private:
     StorageHDFSPtr storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     UInt64 max_block_size;
     bool need_path_column;
     bool need_file_column;
