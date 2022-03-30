@@ -234,20 +234,29 @@ if __name__ == "__main__":
     commit = get_commit(gh, pr_info.sha)
 
     description_report, category = check_pr_description(pr_info)
-    pr_labels = []
+    pr_labels_to_add = []
+    pr_labels_to_remove = []
     if (
         category in MAP_CATEGORY_TO_LABEL
         and MAP_CATEGORY_TO_LABEL[category] not in pr_info.labels
     ):
-        pr_labels.append(MAP_CATEGORY_TO_LABEL[category])
+        pr_labels_to_add.append(MAP_CATEGORY_TO_LABEL[category])
+
+    for label in pr_info.labels:
+        if label in MAP_CATEGORY_TO_LABEL and label not in pr_labels_to_add:
+            pr_labels_to_remove.append(label)
 
     if pr_info.has_changes_in_submodules():
-        pr_labels.append(SUBMODULE_CHANGED_LABEL)
+        pr_labels_to_add.append(SUBMODULE_CHANGED_LABEL)
     elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
-        remove_labels(gh, pr_info, [SUBMODULE_CHANGED_LABEL])
+        pr_labels_to_remove.append(SUBMODULE_CHANGED_LABEL)
 
-    if pr_labels:
-        post_labels(gh, pr_info, pr_labels)
+    if pr_labels_to_add:
+        post_labels(gh, pr_info, pr_labels_to_add)
+
+    if pr_labels_to_remove:
+        remove_labels(gh, pr_info, pr_labels_to_remove)
+
     if description_report:
         print("::notice ::Cannot run, description does not match the template")
         logging.info(
