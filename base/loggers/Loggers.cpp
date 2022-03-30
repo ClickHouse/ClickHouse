@@ -205,7 +205,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     
     if(config.has("logger.format.json"))
     {
-        log_format_json = true;
+        log_format_json = true; 
     }
     
     split->open();
