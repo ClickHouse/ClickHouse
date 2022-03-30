@@ -1,6 +1,6 @@
 ---
-toc_priority: 44
-toc_title: Requirements
+sidebar_position: 44
+sidebar_label: Requirements
 ---
 
 # Requirements {#requirements}

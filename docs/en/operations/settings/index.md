@@ -1,10 +1,10 @@
 ---
-sidebar_label: Introduction
-sidebar_position: 27
+sidebar_label: Settings
+sidebar_position: 52
 slug: index
 ---
 
-# Settings {#session-settings-intro}
+# Settings 
 
 There are multiple ways to make all the settings described in this section of documentation.
 
