@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Common/PODArray.h>
+#include <IO/WriteHelpers.h>
 
 #include <algorithm>
 #include <cctype>
@@ -100,6 +101,12 @@ public:
     std::vector<String> getHints(const String & name) const
     {
         return prompter.getHints(name, getAllRegisteredNames());
+    }
+
+    String getHintsString(const String & name) const
+    {
+        const auto hints = getHints(name);
+        return !hints.empty() ? ", may be you meant: " + toString(hints) : "";
     }
 
     IHints() = default;
