@@ -14,7 +14,8 @@
 #include <arrow/ipc/writer.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Storages/CustomStorageMergeTree.h>
-#include "CHColumnToSparkRow.h"
+#include <Storages/SourceFromJavaIter.h>
+#include <Parser/CHColumnToSparkRow.h>
 
 namespace DB
 {
@@ -86,8 +87,19 @@ public:
 
     DB::BatchParquetFileSourcePtr parseReadRealWithLocalFile(const substrait::ReadRel& rel);
     DB::QueryPlanPtr parseMergeTreeTable(const substrait::ReadRel& rel);
+    DB::QueryPlanPtr parseInputRel(const substrait::InputRel& rel);
     DB::Block parseNameStruct(const substrait::NamedStruct& struct_);
     DB::DataTypePtr parseType(const substrait::Type& type);
+
+    void addInputIter(jobject iter)
+    {
+        input_iters.emplace_back(iter);
+    }
+
+    void setJavaVM(JavaVM * vm_)
+    {
+        vm = vm_;
+    }
 
     static ContextMutablePtr global_context;
     static Context::ConfigurationPtr config;
@@ -129,7 +141,9 @@ private:
 
     int name_no = 0;
     std::unordered_map<std::string, std::string> function_mapping;
+    std::vector<jobject> input_iters;
     ContextPtr context;
+    JavaVM* vm;
 
 
 //    DB::QueryPlanPtr query_plan;

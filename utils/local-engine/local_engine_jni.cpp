@@ -4,7 +4,9 @@
 #include <Parser/SerializedPlanParser.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Shuffle/ShuffleReader.h>
+#include <Shuffle/ShuffleSplitter.h>
 #include <numeric>
+#include <regex>
 
 bool inside_main = true;
 #ifdef __cplusplus
@@ -24,6 +26,9 @@ static jclass spark_row_info_class;
 static jmethodID spark_row_info_constructor;
 static jclass ch_column_batch_class;
 
+static jclass split_result_class;
+static jmethodID split_result_constructor;
+
 
 jint JNI_OnLoad(JavaVM * vm, void * reserved)
 {
@@ -41,10 +46,19 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
     spark_row_info_class = CreateGlobalClassReference(env, "Lcom/intel/oap/row/SparkRowInfo;");
     spark_row_info_constructor = env->GetMethodID(spark_row_info_class, "<init>", "([J[JJJ)V");
 
+    split_result_class = CreateGlobalClassReference(env, "Lcom/intel/oap/vectorized/SplitResult;");
+    split_result_constructor = GetMethodID(env, split_result_class, "<init>", "(JJJJJJ[J[J)V");
+
     ch_column_batch_class = CreateGlobalClassReference(env, "Lcom/intel/oap/vectorized/CHColumnVector;");
     local_engine::ShuffleReader::input_stream_class = CreateGlobalClassReference(env, "Ljava/io/InputStream;");
     local_engine::ShuffleReader::input_stream_read = env->GetMethodID(local_engine::ShuffleReader::input_stream_class, "read", "([B)I");
 
+    local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class =
+        CreateGlobalClassReference(env, "Lcom/intel/oap/execution/ColumnarNativeIterator;");
+    local_engine::SourceFromJavaIter::serialized_record_batch_iterator_hasNext =
+        GetMethodID(env, local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class, "hasNext", "()Z");
+    local_engine::SourceFromJavaIter::serialized_record_batch_iterator_next =
+        GetMethodID(env, local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class, "next", "()[B");
     return JNI_VERSION_1_8;
 }
 
@@ -59,7 +73,9 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
     env->DeleteGlobalRef(unsupportedoperation_exception_class);
     env->DeleteGlobalRef(illegal_access_exception_class);
     env->DeleteGlobalRef(illegal_argument_exception_class);
+    env->DeleteGlobalRef(split_result_class);
     env->DeleteGlobalRef(local_engine::ShuffleReader::input_stream_class);
+    env->DeleteGlobalRef(local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class);
 }
 //static SharedContextHolder shared_context;
 
@@ -75,7 +91,35 @@ jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKe
     std::string plan_string;
     plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
     auto * executor = createExecutor( plan_string);
+    env->ReleaseByteArrayElements(plan, plan_address, JNI_ABORT);
     return reinterpret_cast<jlong>(executor);
+}
+
+jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithIterator(
+    JNIEnv* env, jobject obj, jlong , jbyteArray plan,
+    jobjectArray iter_arr) {
+    auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
+    JavaVM * vm;
+    assert(env->GetJavaVM(&vm) == JNI_OK);
+    dbms::SerializedPlanParser parser(context);
+    parser.setJavaVM(vm);
+    jsize iter_num = env->GetArrayLength(iter_arr);
+    for (jsize i=0; i < iter_num; i++)
+    {
+        jobject iter = env->GetObjectArrayElement(iter_arr, i);
+        iter = env->NewGlobalRef(iter);
+        parser.addInputIter(iter);
+    }
+
+    jsize plan_size = env->GetArrayLength(plan);
+    jbyte * plan_address = env->GetByteArrayElements(plan, nullptr);
+    std::string plan_string;
+    plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
+    auto query_plan = parser.parse(plan_string);
+    dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
+    executor->execute(std::move(query_plan));
+    env->ReleaseByteArrayElements(plan, plan_address, JNI_ABORT);
+    return 0;
 }
 
 jboolean Java_com_intel_oap_row_RowIterator_nativeHasNext(JNIEnv * env, jobject obj, jlong executor_address)
@@ -144,20 +188,6 @@ void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeSetBatchS
 void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeSetMetricsTime(JNIEnv * env, jobject obj, jboolean setMetricsTime)
 {
 }
-
-// CHColumnBatch
-//
-//jlong getCHColumnVectorBlockAddress(JNIEnv * env, jobject obj)
-//{
-//    jfieldID fid = env->GetFieldID(ch_column_batch_class,"blockAddress","L");
-//    return env->GetLongField(obj,fid);
-//}
-//
-//jint getCHColumnVectorPosition(JNIEnv * env, jobject obj)
-//{
-//    jfieldID fid = env->GetFieldID(ch_column_batch_class,"blockAddress","L");
-//    return env->GetIntField(obj,fid);
-//}
 
 ColumnWithTypeAndName inline getColumnFromColumnVector(JNIEnv * env, jobject obj, jlong block_address, jint column_position)
 {
@@ -301,7 +331,7 @@ jstring Java_com_intel_oap_vectorized_CHNativeBlock_nativeColumnType(JNIEnv * en
     }
     else
     {
-        throw "unsupported datatype";
+        throw std::runtime_error("unsupported datatype " + std::string(block->getByPosition(position).type->getFamilyName()));
     }
 
     return charTojstring(env, type.c_str());
@@ -338,6 +368,108 @@ void Java_com_intel_oap_vectorized_CHStreamReader_nativeClose(JNIEnv * env, jobj
     delete reader;
 //    env->DeleteGlobalRef(reader->in->java_in);
     local_engine::ShuffleReader::env = nullptr;
+}
+
+std::string jstring2string(JNIEnv *env, jstring jStr) {
+    if (!jStr)
+        return "";
+
+    const jclass stringClass = env->GetObjectClass(jStr);
+    const jmethodID getBytes = env->GetMethodID(stringClass, "getBytes", "(Ljava/lang/String;)[B");
+    const jbyteArray stringJbytes = static_cast<jbyteArray>(env->CallObjectMethod(jStr, getBytes, env->NewStringUTF("UTF-8")));
+
+    size_t length = static_cast<size_t>(env->GetArrayLength(stringJbytes));
+    jbyte* pBytes = env->GetByteArrayElements(stringJbytes, nullptr);
+
+    std::string ret = std::string(reinterpret_cast<char *>(pBytes), length);
+    env->ReleaseByteArrayElements(stringJbytes, pBytes, JNI_ABORT);
+
+    env->DeleteLocalRef(stringJbytes);
+    env->DeleteLocalRef(stringClass);
+    return ret;
+}
+
+std::vector<std::string> stringSplit(const std::string& str, char delim) {
+    std::string s;
+    s.append(1, delim);
+    std::regex reg(s);
+    std::vector<std::string> elems(std::sregex_token_iterator(str.begin(), str.end(), reg, -1),
+                                   std::sregex_token_iterator());
+    return elems;
+}
+
+// Splitter Jni Wrapper
+jlong Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_nativeMake(JNIEnv * env,
+                                                                          jobject,
+                                                                          jstring short_name,
+                                                                          jint num_partitions,
+                                                                          jbyteArray expr_list,
+                                                                          jlong map_id,
+                                                                          jint buffer_size,
+                                                                          jstring codec,
+                                                                          jstring data_file,
+                                                                          jstring local_dirs)
+{
+    int len = env->GetArrayLength(expr_list);
+    std::string exprs;
+    exprs.reserve(len);
+    env->GetByteArrayRegion(expr_list, 0, len, reinterpret_cast<jbyte *>(exprs.data()));
+    local_engine::SplitOptions options
+    {
+        .buffer_size = static_cast<size_t>(buffer_size),
+        .data_file = jstring2string(env, data_file),
+        .local_tmp_dir = jstring2string(env, local_dirs),
+        .map_id = static_cast<int>(map_id),
+        .partition_nums = static_cast<size_t>(num_partitions),
+        .exprs = stringSplit(exprs, ','),
+        .compress_method = jstring2string(env, codec)
+    };
+    local_engine::SplitterHolder * splitter = new local_engine::SplitterHolder{.splitter=local_engine::ShuffleSplitter::create(jstring2string(env, short_name), options)};
+    return reinterpret_cast<jlong>(splitter);
+}
+
+void Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_split(JNIEnv * ,
+                                                                     jobject ,
+                                                                     jlong splitterId,
+                                                                     jint ,
+                                                                     jlong block)
+{
+    local_engine::SplitterHolder * splitter = reinterpret_cast<local_engine::SplitterHolder *>(splitterId);
+    Block * data = reinterpret_cast<Block *>(block);
+    splitter->splitter->split(*data);
+}
+
+jobject Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_stop(JNIEnv * env,
+                                                                     jobject,
+                                                                     jlong splitterId)
+{
+    local_engine::SplitterHolder * splitter = reinterpret_cast<local_engine::SplitterHolder *>(splitterId);
+    auto result = splitter->splitter->stop();
+    const auto& partition_lengths = result.partition_length;
+    auto partition_length_arr = env->NewLongArray(partition_lengths.size());
+    auto src = reinterpret_cast<const jlong*>(partition_lengths.data());
+    env->SetLongArrayRegion(partition_length_arr, 0, partition_lengths.size(), src);
+
+    const auto& raw_partition_lengths = result.raw_partition_length;
+    auto raw_partition_length_arr = env->NewLongArray(raw_partition_lengths.size());
+    auto raw_src = reinterpret_cast<const jlong*>(raw_partition_lengths.data());
+    env->SetLongArrayRegion(raw_partition_length_arr, 0, raw_partition_lengths.size(),
+                            raw_src);
+
+    jobject split_result = env->NewObject(
+        split_result_class, split_result_constructor, result.total_compute_pid_time,
+        result.total_write_time, result.total_spill_time,
+        0, result.total_bytes_written,
+        result.total_bytes_written, partition_length_arr, raw_partition_length_arr);
+
+    return split_result;
+}
+void Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_close(JNIEnv *,
+                                                                     jobject,
+                                                                     jlong splitterId)
+{
+    local_engine::SplitterHolder * splitter = reinterpret_cast<local_engine::SplitterHolder *>(splitterId);
+    delete splitter;
 }
 #ifdef __cplusplus
 }

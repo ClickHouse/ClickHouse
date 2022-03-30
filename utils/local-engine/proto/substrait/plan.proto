@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package substrait;
 
-import "substrait/relations.proto";
+import "substrait/algebra.proto";
 import "substrait/extensions/extensions.proto";
 
 option java_multiple_files = true;

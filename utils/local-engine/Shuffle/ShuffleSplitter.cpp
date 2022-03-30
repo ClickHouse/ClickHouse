@@ -6,17 +6,24 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Functions/FunctionFactory.h>
+#include <Parser/SerializedPlanParser.h>
 
 namespace local_engine
 {
 void ShuffleSplitter::split(DB::Block & block)
 {
+    Stopwatch watch;
+    watch.start();
     computeAndCountPartitionId(block);
     splitBlockByPartition(block);
+    split_result.total_write_time +=watch.elapsedMilliseconds();
 }
-void ShuffleSplitter::stop()
+SplitResult ShuffleSplitter::stop()
 {
     // spill all buffers
+    Stopwatch watch;
+    watch.start();
     for (size_t i = 0; i < options.partition_nums; i++)
     {
         spillPartition(i);
@@ -27,7 +34,9 @@ void ShuffleSplitter::stop()
     partition_cached_write_buffers.clear();
     partition_write_buffers.clear();
     mergePartitionFiles();
+    split_result.total_write_time += watch.elapsedMilliseconds();
     stopped = true;
+    return split_result;
 }
 void ShuffleSplitter::splitBlockByPartition(DB::Block & block)
 {
@@ -45,6 +54,7 @@ void ShuffleSplitter::splitBlockByPartition(DB::Block & block)
 
     for (size_t i = 0; i < options.partition_nums; ++i)
     {
+        split_result.raw_partition_length[i] += partitions[i].bytes();
         ColumnsBuffer & buffer = partition_buffer[i];
         size_t first_cache_count = std::min(partitions[i].rows(), options.buffer_size - buffer.size());
         if (first_cache_count < partitions[i].rows())
@@ -70,11 +80,13 @@ void ShuffleSplitter::init()
     partition_outputs.reserve(options.partition_nums);
     partition_write_buffers.reserve(options.partition_nums);
     partition_cached_write_buffers.reserve(options.partition_nums);
-    partition_length.reserve(options.partition_nums);
+    split_result.partition_length.reserve(options.partition_nums);
+    split_result.raw_partition_length.reserve(options.partition_nums);
     for (size_t i = 0; i < options.partition_nums; ++i)
     {
         partition_buffer.emplace_back(ColumnsBuffer());
-        partition_length.emplace_back(0);
+        split_result.partition_length.emplace_back(0);
+        split_result.raw_partition_length.emplace_back(0);
         partition_outputs.emplace_back(nullptr);
         partition_write_buffers.emplace_back(nullptr);
         partition_cached_write_buffers.emplace_back(nullptr);
@@ -90,6 +102,8 @@ void ShuffleSplitter::buildSelector(size_t row_nums, DB::IColumn::Selector & sel
 
 void ShuffleSplitter::spillPartition(size_t partition_id)
 {
+    Stopwatch watch;
+    watch.start();
     if (!partition_outputs[partition_id])
     {
         partition_write_buffers[partition_id]
@@ -99,6 +113,8 @@ void ShuffleSplitter::spillPartition(size_t partition_id)
     }
     DB::Block result = partition_buffer[partition_id].releaseColumns();
     partition_outputs[partition_id]->write(result);
+    split_result.total_spill_time += watch.elapsedMilliseconds();
+    split_result.total_bytes_spilled += result.bytes();
 }
 void ShuffleSplitter::mergePartitionFiles()
 {
@@ -110,12 +126,12 @@ void ShuffleSplitter::mergePartitionFiles()
     {
         auto file = getPartitionTempFile(i);
         DB::ReadBufferFromFile reader = DB::ReadBufferFromFile(file);
-        partition_length[i] = 0;
         while (reader.next())
         {
             auto bytes = reader.readBig(buffer.data(), buffer_size);
             data_write_buffer.write(buffer.data(), bytes);
-            partition_length[i] += bytes;
+            split_result.partition_length[i] += bytes;
+            split_result.total_bytes_written += bytes;
         }
         reader.close();
         std::filesystem::remove(file);
@@ -128,9 +144,13 @@ ShuffleSplitter::ShuffleSplitter(SplitOptions&& options_) : options(options_)
 }
 ShuffleSplitter::Ptr ShuffleSplitter::create(std::string short_name, SplitOptions options_)
 {
-    if (short_name == "round-robin")
+    if (short_name == "rr")
     {
         return RoundRobinSplitter::create(std::move(options_));
+    }
+    else if (short_name == "hash")
+    {
+        return HashSplitter::create(std::move(options_));
     }
     else
     {
@@ -153,22 +173,6 @@ std::unique_ptr<DB::WriteBuffer> ShuffleSplitter::getPartitionWriteBuffer(size_t
         auto codec = DB::CompressionCodecFactory::instance().get(options.compress_method, {});
         return std::make_unique<DB::CompressedWriteBuffer>(*partition_cached_write_buffers[partition_id], codec);
     }
-//    if (options.compress_method == "zstd")
-//    {
-//        return std::make_unique<ZstdDeflatingWriteBuffer>(std::move(file_write_buffer), options.compress_level);
-//    }
-//    else if (options.compress_method == "zlib")
-//    {
-//        return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(file_write_buffer), CompressionMethod::Gzip, options.compress_level);
-//    }
-//    else if (options.compress_method == "lzma")
-//    {
-//        return std::make_unique<LZMADeflatingWriteBuffer>(std::move(file_write_buffer), options.compress_level);
-//    }
-//    else if (options.compress_method == "brotli")
-//    {
-//        return std::make_unique<BrotliWriteBuffer>(std::move(file_write_buffer), options.compress_level);
-//    }
     else
     {
         return std::move(partition_cached_write_buffers[partition_id]);
@@ -180,7 +184,7 @@ void ShuffleSplitter::writeIndexFile()
 {
     auto index_file = options.data_file + ".index";
     auto writer = std::make_unique<DB::WriteBufferFromFile>(index_file, DBMS_DEFAULT_BUFFER_SIZE, O_CREAT | O_WRONLY | O_TRUNC);
-    for (auto len : partition_length)
+    for (auto len : split_result.partition_length)
     {
         DB::writeIntText(len, *writer);
         DB::writeChar('\n', *writer);
@@ -223,15 +227,49 @@ DB::Block ColumnsBuffer::getHeader()
 }
 void RoundRobinSplitter::computeAndCountPartitionId(DB::Block & block)
 {
+    Stopwatch watch;
+    watch.start();
     partition_ids.resize(block.rows());
     for (auto & pid : partition_ids)
     {
         pid = pid_selection_;
         pid_selection_ = (pid_selection_ + 1) % options.partition_nums;
     }
+    split_result.total_compute_pid_time += watch.elapsedMilliseconds();
 }
 std::unique_ptr<ShuffleSplitter> RoundRobinSplitter::create(SplitOptions&& options_)
 {
     return std::make_unique<RoundRobinSplitter>( std::move(options_));
 }
+
+std::unique_ptr<ShuffleSplitter> HashSplitter::create(SplitOptions && options_)
+{
+    return std::make_unique<HashSplitter>( std::move(options_));
+}
+
+void HashSplitter::computeAndCountPartitionId(DB::Block & block)
+{
+    Stopwatch watch;
+    watch.start();
+    if (!hash_function)
+    {
+        auto & factory = DB::FunctionFactory::instance();
+        auto function = factory.get("murmurHash3_32", dbms::SerializedPlanParser::global_context);
+        ColumnsWithTypeAndName args;
+        for (auto &name : options.exprs)
+        {
+            args.emplace_back(block.getByName(name));
+        }
+        hash_function = function->build(args);
+    }
+    auto result_type = hash_function->getResultType();
+    auto hash_column = hash_function->execute(block.getColumnsWithTypeAndName(), result_type, block.rows(), false);
+    partition_ids.clear();
+    for (size_t i=0; i < block.rows(); i++)
+    {
+        partition_ids.emplace_back(static_cast<UInt64>(hash_column->getUInt(i) % options.partition_nums));
+    }
+    split_result.total_compute_pid_time += watch.elapsedMilliseconds();
+}
+
 }

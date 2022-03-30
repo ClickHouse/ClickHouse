@@ -5,6 +5,7 @@
 #include <Common/PODArray.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Functions/IFunction.h>
 
 
 
@@ -20,6 +21,7 @@ struct SplitOptions
     std::string local_tmp_dir;
     int map_id;
     size_t partition_nums;
+    std::vector<std::string> exprs;
     std::string compress_method = "zstd";
     int compress_level;
 };
@@ -37,6 +39,16 @@ private:
     DB::Block header;
 };
 
+struct SplitResult
+{
+    Int64 total_compute_pid_time;
+    Int64 total_write_time;
+    Int64 total_spill_time;
+    Int64 total_bytes_written;
+    Int64 total_bytes_spilled;
+    std::vector<Int64> partition_length;
+    std::vector<Int64> raw_partition_length;
+};
 
 class ShuffleSplitter
 {
@@ -52,10 +64,10 @@ public:
     void split(DB::Block & block);
     virtual void computeAndCountPartitionId(DB::Block & block) {}
     std::vector<int64_t> getPartitionLength() {
-        return partition_length;
+        return split_result.partition_length;
     }
     void writeIndexFile();
-    void stop();
+    SplitResult stop();
 
 private:
     void init();
@@ -74,7 +86,7 @@ protected:
     std::vector<std::unique_ptr<DB::WriteBuffer>> partition_write_buffers;
     std::vector<std::unique_ptr<DB::WriteBuffer>> partition_cached_write_buffers;
     SplitOptions options;
-    std::vector<int64_t> partition_length;
+    SplitResult split_result;
 };
 
 class RoundRobinSplitter : public ShuffleSplitter {
@@ -90,4 +102,25 @@ public:
 private:
     int32_t pid_selection_ = 0;
 };
+
+class HashSplitter : public ShuffleSplitter {
+public:
+    static std::unique_ptr<ShuffleSplitter> create(SplitOptions && options);
+
+    HashSplitter(SplitOptions options_)
+        : ShuffleSplitter(std::move(options_)) {}
+
+    ~HashSplitter() override = default;
+    void computeAndCountPartitionId(DB::Block & block) override;
+
+private:
+    DB::FunctionBasePtr hash_function;
+};
+
+struct SplitterHolder
+{
+    ShuffleSplitter::Ptr splitter;
+};
+
+
 }

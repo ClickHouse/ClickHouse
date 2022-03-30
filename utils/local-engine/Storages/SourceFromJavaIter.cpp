@@ -1,0 +1,42 @@
+#include "SourceFromJavaIter.h"
+
+namespace local_engine
+{
+jclass SourceFromJavaIter::serialized_record_batch_iterator_class = nullptr;
+jmethodID SourceFromJavaIter::serialized_record_batch_iterator_hasNext = nullptr;
+jmethodID SourceFromJavaIter::serialized_record_batch_iterator_next = nullptr;
+
+DB::Chunk SourceFromJavaIter::generate()
+{
+    JNIEnv * env;
+    assert(vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_8) == JNI_OK);
+    jboolean has_next = env->CallBooleanMethod(java_iter,serialized_record_batch_iterator_hasNext);
+    if (has_next)
+    {
+        jbyteArray block = static_cast<jbyteArray>(env->CallObjectMethod(java_iter, serialized_record_batch_iterator_next));
+        DB::Block * data = reinterpret_cast<DB::Block *>(byteArrayToLong(env, block));
+        size_t rows = data->rows();
+        return DB::Chunk(data->mutateColumns(), rows);
+    }
+    else
+    {
+        return DB::Chunk();
+    }
+}
+SourceFromJavaIter::~SourceFromJavaIter()
+{
+    JNIEnv * env;
+    assert(vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_8) == JNI_OK);
+    env->DeleteGlobalRef(java_iter);
+}
+Int64 SourceFromJavaIter::byteArrayToLong(JNIEnv* env, jbyteArray arr)
+{
+    jsize len = env->GetArrayLength(arr);
+    assert(len == sizeof(Int64));
+    char * c_arr = new char[len];
+    env->GetByteArrayRegion(arr, 0, len, reinterpret_cast<jbyte*>(c_arr));
+    Int64 result = reinterpret_cast<Int64 *>(c_arr)[0];
+    delete[] c_arr;
+    return result;
+}
+}

@@ -52,8 +52,7 @@ int ReadBufferFromJavaInputStream::readFromJava()
     jint count = ShuffleReader::env->CallIntMethod(java_in, ShuffleReader::input_stream_read, buf);
     if (count > 0)
     {
-        auto * arr = ShuffleReader::env->GetByteArrayElements(buf, JNI_FALSE);
-        memcpy(internal_buffer.begin(), arr, count);
+        ShuffleReader::env->GetByteArrayRegion(buf, 0, count, reinterpret_cast<jbyte *>(internal_buffer.begin()));
     }
     return count;
 }

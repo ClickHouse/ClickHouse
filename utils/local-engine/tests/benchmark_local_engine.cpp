@@ -214,7 +214,7 @@ static void BM_ShuffleSplitter(benchmark::State& state) {
             .partition_nums = 4,
             .compress_method = local_engine::ShuffleSplitter::compress_methods[state.range(1)]
         };
-        auto splitter = local_engine::ShuffleSplitter::create("round-robin", options);
+        auto splitter = local_engine::ShuffleSplitter::create("rr", options);
         while(executor.pull(chunk))
         {
             sum += chunk.rows();
@@ -226,6 +226,89 @@ static void BM_ShuffleSplitter(benchmark::State& state) {
     }
 }
 
+static void BM_HashShuffleSplitter(benchmark::State& state) {
+    std::shared_ptr<DB::StorageInMemoryMetadata> metadata = std::make_shared<DB::StorageInMemoryMetadata>();
+    ColumnsDescription columns_description;
+    auto int64_type = std::make_shared<DB::DataTypeInt64>();
+    auto int32_type = std::make_shared<DB::DataTypeInt32>();
+    auto double_type = std::make_shared<DB::DataTypeFloat64>();
+    const auto * type_string = "columns format version: 1\n"
+                               "15 columns:\n"
+                               "`l_partkey` Int64\n"
+                               "`l_suppkey` Int64\n"
+                               "`l_linenumber` Int32\n"
+                               "`l_quantity` Float64\n"
+                               "`l_extendedprice` Float64\n"
+                               "`l_discount` Float64\n"
+                               "`l_tax` Float64\n"
+                               "`l_returnflag` String\n"
+                               "`l_linestatus` String\n"
+                               "`l_shipdate` Date\n"
+                               "`l_commitdate` Date\n"
+                               "`l_receiptdate` Date\n"
+                               "`l_shipinstruct` String\n"
+                               "`l_shipmode` String\n"
+                               "`l_comment` String\n";
+    auto names_and_types_list = NamesAndTypesList::parse(type_string);
+    metadata = local_engine::buildMetaData(names_and_types_list, global_context);
+    auto param = DB::MergeTreeData::MergingParams();
+    auto settings = local_engine::buildMergeTreeSettings();
+
+    local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
+                                                           "home/saber/Documents/data/mergetree",
+                                                           *metadata,
+                                                           false,
+                                                           global_context,
+                                                           "",
+                                                           param,
+                                                           std::move(settings));
+    custom_merge_tree.loadDataParts(false);
+    for (auto _: state)
+    {
+        state.PauseTiming();
+        auto query_info = local_engine::buildQueryInfo(names_and_types_list);
+        auto data_parts = custom_merge_tree.getDataPartsVector();
+        int min_block = 0;
+        int max_block = state.range(0);
+        MergeTreeData::DataPartsVector selected_parts;
+        std::copy_if(std::begin(data_parts), std::end(data_parts), std::inserter(selected_parts, std::begin(selected_parts)),
+                     [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
+        auto query = custom_merge_tree.reader.readFromParts(selected_parts,
+                                                            names_and_types_list.getNames(),
+                                                            metadata,
+                                                            metadata,
+                                                            *query_info,
+                                                            global_context,
+                                                            10000,
+                                                            1);
+        QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
+        QueryPipeline query_pipeline;
+        query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
+        state.ResumeTiming();
+        auto executor = PullingPipelineExecutor(query_pipeline);
+        Block chunk = executor.getHeader();
+        int sum =0;
+        auto root = "/tmp/test_shuffle/"+local_engine::ShuffleSplitter::compress_methods[state.range(1)];
+        local_engine::SplitOptions options{
+            .buffer_size = 8192,
+            .data_file = root+"/data.dat",
+            .local_tmp_dir = root,
+            .map_id = 1,
+            .partition_nums = 4,
+            .exprs = {"l_partkey","l_suppkey"},
+            .compress_method = local_engine::ShuffleSplitter::compress_methods[state.range(1)]
+        };
+        auto splitter = local_engine::ShuffleSplitter::create("hash", options);
+        while(executor.pull(chunk))
+        {
+            sum += chunk.rows();
+            splitter->split(chunk);
+        }
+        splitter->stop();
+        splitter->writeIndexFile();
+        std::cout << sum <<"\n";
+    }
+}
 static void BM_ShuffleReader(benchmark::State& state)
 {
     for (auto _: state)
@@ -807,8 +890,9 @@ double quantile(const vector<double>&x)
 
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Unit(benchmark::kMillisecond)->Iterations(40);
-BENCHMARK(BM_MergeTreeRead)->Arg(2)->Unit(benchmark::kMillisecond)->Iterations(40);
-//BENCHMARK(BM_ShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
+//BENCHMARK(BM_MergeTreeRead)->Arg(2)->Unit(benchmark::kMillisecond)->Iterations(40);
+BENCHMARK(BM_ShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
+BENCHMARK(BM_HashShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
 //BENCHMARK(BM_ShuffleReader)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SimpleAggregate)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);

@@ -43,6 +43,17 @@ DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocal
     return std::make_shared<BatchParquetFileSource>(files_info, parseNameStruct(rel.base_schema()));
 }
 
+DB::QueryPlanPtr dbms::SerializedPlanParser::parseInputRel(const substrait::InputRel& rel)
+{
+    assert(!input_iters.empty());
+    assert(rel.has_input_schema());
+    auto plan = std::make_unique<DB::QueryPlan>();
+    auto source = std::make_shared<local_engine::SourceFromJavaIter>(parseNameStruct(rel.input_schema()), input_iters[0], vm);
+    DB::QueryPlanStepPtr source_step = std::make_unique<DB::ReadFromPreparedSource>(Pipe(source), context);
+    plan->addStep(std::move(source_step));
+    return plan;
+}
+
 DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait::ReadRel& rel)
 {
     Stopwatch watch;
@@ -188,14 +199,22 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const substrait::Rel & rel)
 {
     switch (rel.rel_type_case())
     {
-        case substrait::Rel::RelTypeCase::kFetch: {
+        case substrait::Rel::RelTypeCase::kInput:
+        {
+            const auto & input = rel.input();
+            DB::QueryPlanPtr query_plan = parseInputRel(input);
+            return query_plan;
+        }
+        case substrait::Rel::RelTypeCase::kFetch:
+        {
             const auto & limit = rel.fetch();
             DB::QueryPlanPtr query_plan = parseOp(limit.input());
             auto limit_step = std::make_unique<DB::LimitStep>(query_plan->getCurrentDataStream(), limit.count(), limit.offset());
             query_plan->addStep(std::move(limit_step));
             return query_plan;
         }
-        case substrait::Rel::RelTypeCase::kFilter: {
+        case substrait::Rel::RelTypeCase::kFilter:
+        {
             const auto & filter = rel.filter();
             DB::QueryPlanPtr query_plan = parseOp(filter.input());
             std::string filter_name;
@@ -204,7 +223,8 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const substrait::Rel & rel)
             query_plan->addStep(std::move(filter_step));
             return query_plan;
         }
-        case substrait::Rel::RelTypeCase::kProject: {
+        case substrait::Rel::RelTypeCase::kProject:
+        {
             const auto & project = rel.project();
             DB::QueryPlanPtr query_plan = parseOp(project.input());
             const auto & expressions = project.expressions();
@@ -217,6 +237,11 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const substrait::Rel & rel)
                     const auto * field = actions_dag->getInputs()[expr.selection().direct_reference().struct_field().field()];
                     required_columns.emplace_back(DB::NameWithAlias (field->result_name, field->result_name));
                 }
+                else if (expr.has_scalar_function())
+                {
+                    std::string name;
+                    actions_dag = parseFunction(query_plan->getCurrentDataStream(), expr, name, actions_dag, true);
+                }
                 else
                 {
                     throw std::runtime_error("unsupported projection type");
@@ -228,14 +253,16 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const substrait::Rel & rel)
             query_plan->addStep(std::move(expression_step));
             return query_plan;
         }
-        case substrait::Rel::RelTypeCase::kAggregate: {
+        case substrait::Rel::RelTypeCase::kAggregate:
+        {
             const auto & aggregate = rel.aggregate();
             DB::QueryPlanPtr query_plan = parseOp(aggregate.input());
             auto aggregate_step = parseAggregate(*query_plan, aggregate);
             query_plan->addStep(std::move(aggregate_step));
             return query_plan;
         }
-        case substrait::Rel::RelTypeCase::kRead: {
+        case substrait::Rel::RelTypeCase::kRead:
+        {
             const auto & read = rel.read();
             assert(read.has_local_files() || read.has_extension_table() && "Only support local parquet files or merge tree read rel");
             DB::QueryPlanPtr query_plan;
@@ -376,7 +403,8 @@ DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
     return actions_dag;
 }
 
-const DB::ActionsDAG::Node * dbms::SerializedPlanParser::parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression & rel)
+const DB::ActionsDAG::Node * dbms::SerializedPlanParser::
+    parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression & rel)
 {
     switch (rel.rex_type_case())
     {
