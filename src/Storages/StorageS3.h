@@ -73,7 +73,8 @@ public:
         String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
-        std::shared_ptr<IteratorWrapper> file_iterator_);
+        std::shared_ptr<IteratorWrapper> file_iterator_,
+        size_t download_thread_num);
 
     String getName() const override;
 
@@ -103,9 +104,14 @@ private:
     bool initialized = false;
     std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IteratorWrapper> file_iterator;
+    size_t download_thread_num = 1;
+
+    Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 
     /// Recreate ReadBuffer and BlockInputStream for each file.
     bool initialize();
+
+    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
 };
 
 /**
