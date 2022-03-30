@@ -10,6 +10,6 @@ namespace DB
 using CallbackRunner = std::function<void(std::function<void()>)>;
 
 /// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrow()'
-CallbackRunner threadPoolCallbackRunner(ThreadPool & pool);
+CallbackRunner threadPoolCallbackRunner(ThreadPool & pool, std::function<void()> setup = {}, std::function<void()> cleanup = {});
 
 }

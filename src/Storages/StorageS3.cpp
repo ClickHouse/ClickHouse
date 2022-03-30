@@ -324,32 +324,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     LOG_TRACE(
         log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}.", download_thread_num, object_size, download_buffer_size);
 
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-        ? CurrentThread::get().getThreadGroup()
-        : MainThreadStatus::getInstance().getThreadGroup();
-
-    ContextPtr query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
-
-    auto worker_cleanup = [has_running_group = running_group == nullptr](ThreadStatus & thread_status)
-    {
-        if (has_running_group)
-            thread_status.detachQuery(false);
-    };
-
-    auto worker_setup = [query_context = std::move(query_context),
-                         running_group = std::move(running_group)](ThreadStatus & thread_status)
-    {
-        /// Save query context if any, because cache implementation needs it.
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
-
-        /// To be able to pass ProfileEvents.
-        if (running_group)
-            thread_status.attachQuery(running_group);
-    };
-
-    return std::make_unique<ParallelReadBuffer>(
-        std::move(factory), &IOThreadPool::get(), download_thread_num, std::move(worker_setup), std::move(worker_cleanup));
+    return std::make_unique<ParallelReadBuffer>(std::move(factory), &IOThreadPool::get(), download_thread_num);
 }
 
 String StorageS3Source::getName() const
@@ -431,16 +406,6 @@ static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & clien
     return false;
 }
 
-// TODO: common thread pool for IO must be used instead after PR #35150
-static ThreadPool & getThreadPoolStorageS3()
-{
-    constexpr size_t pool_size = 100;
-    constexpr size_t queue_size = 1000000;
-    static ThreadPool pool(pool_size, pool_size, queue_size);
-    return pool;
-}
-
-
 class StorageS3Sink : public SinkToStorage
 {
 public:
@@ -463,10 +428,20 @@ public:
     {
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(
-                client, bucket, key, min_upload_part_size,
-                upload_part_size_multiply_factor, upload_part_size_multiply_parts_count_threshold,
-                max_single_part_upload_size, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, threadPoolCallbackRunner(getThreadPoolStorageS3())), compression_method, 3);
-        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
+                client,
+                bucket,
+                key,
+                min_upload_part_size,
+                upload_part_size_multiply_factor,
+                upload_part_size_multiply_parts_count_threshold,
+                max_single_part_upload_size,
+                std::nullopt,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                threadPoolCallbackRunner(IOThreadPool::get())),
+            compression_method,
+            3);
+        writer
+            = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
     }
 
     String getName() const override { return "StorageS3Sink"; }
