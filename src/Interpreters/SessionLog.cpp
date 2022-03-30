@@ -203,7 +203,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(auth_failure_reason.data(), auth_failure_reason.length());
 }
 
-void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context)
+void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context, const User & login_user)
 {
     const auto access = login_context.getAccess();
     const auto & settings = login_context.getSettingsRef();
@@ -212,12 +212,9 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
     DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
-    if (const auto user = login_context.getUser())
-    {
-        log_entry.user = user->getName();
-        log_entry.user_identified_with = user->auth_data.getType();
-        log_entry.external_auth_server = user->auth_data.getLDAPServerName();
-    }
+    log_entry.user = login_user.getName();
+    log_entry.user_identified_with = login_user.auth_data.getType();
+    log_entry.external_auth_server = login_user.auth_data.getLDAPServerName();
 
     if (session_id)
         log_entry.session_id = *session_id;
