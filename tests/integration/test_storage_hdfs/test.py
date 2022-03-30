@@ -553,6 +553,16 @@ def test_insert_select_schema_inference(started_cluster):
     result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test.native.zst')")
     assert int(result) == 1
 
+def test_cluster_join(started_cluster):
+    result = node1.query(
+        '''
+        SELECT l.id,r.id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as l
+        JOIN hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as r
+        ON l.id = r.id
+        '''
+    )
+    assert "AMBIGUOUS_COLUMN_NAME" not in result
+
 
 if __name__ == "__main__":
     cluster.start()
