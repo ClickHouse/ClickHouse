@@ -116,7 +116,7 @@ def clickhouse_execute_http(base_args, query, timeout=30, settings=None, default
 def clickhouse_execute(base_args, query, timeout=30, settings=None):
     return clickhouse_execute_http(base_args, query, timeout, settings).strip()
 
-def clickhouse_execute_json(base_args, query, timeout=30, settings=None):
+def clickhouse_execute_json(base_args, query, timeout=60, settings=None):
     data = clickhouse_execute_http(base_args, query, timeout, settings, 'JSONEachRow')
     if not data:
         return None
