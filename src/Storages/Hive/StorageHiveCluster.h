@@ -26,7 +26,7 @@ class StorageHiveCluster : public shared_ptr_helper<StorageHiveCluster>, public 
     friend struct shared_ptr_helper<StorageHiveCluster>;
 
 public:
-    String getName() const override { return "HiveStorage"; }
+    String getName() const override { return "HiveCluster"; }
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(
         const ASTPtr & /* left_in_operand */,
