@@ -7,17 +7,13 @@
 namespace DB
 {
 
-CallbackRunner threadPoolCallbackRunner(ThreadPool & pool, std::function<void()> setup, std::function<void()> cleanup)
+CallbackRunner threadPoolCallbackRunner(ThreadPool & pool)
 {
-    return [pool = &pool, thread_group = CurrentThread::getGroup(), setup = std::move(setup), cleanup = std::move(cleanup)](
-               auto callback) mutable
+    return [pool = &pool, thread_group = CurrentThread::getGroup()](auto callback) mutable
     {
         pool->scheduleOrThrow(
-            [&, callback = std::move(callback), thread_group, setup = std::move(setup), cleanup = std::move(cleanup)]()
+            [&, callback = std::move(callback), thread_group]()
             {
-                if (setup)
-                    setup();
-
                 if (thread_group)
                     CurrentThread::attachTo(thread_group);
 
@@ -35,9 +31,6 @@ CallbackRunner threadPoolCallbackRunner(ThreadPool & pool, std::function<void()>
                     ///
                     /// As a work-around, reset memory tracker to total, which is always alive.
                     CurrentThread::get().memory_tracker.setParent(&total_memory_tracker);
-
-                    if (cleanup)
-                        cleanup();
                 });
                 callback();
             });
