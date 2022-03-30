@@ -27,17 +27,17 @@ namespace DB
  * FORMAT Vertical
  */
 
-class StorageSystemRemoteFilesystemCache final : public shared_ptr_helper<StorageSystemRemoteFilesystemCache>,
-    public IStorageSystemOneBlock<StorageSystemRemoteFilesystemCache>
+class StorageSystemFilesystemCache final : public shared_ptr_helper<StorageSystemFilesystemCache>,
+    public IStorageSystemOneBlock<StorageSystemFilesystemCache>
 {
-    friend struct shared_ptr_helper<StorageSystemRemoteFilesystemCache>;
+    friend struct shared_ptr_helper<StorageSystemFilesystemCache>;
 public:
-    std::string getName() const override { return "SystemRemoteFilesystemCache"; }
+    std::string getName() const override { return "SystemFilesystemCache"; }
 
     static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    explicit StorageSystemRemoteFilesystemCache(const StorageID & table_id_);
+    explicit StorageSystemFilesystemCache(const StorageID & table_id_);
 
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
