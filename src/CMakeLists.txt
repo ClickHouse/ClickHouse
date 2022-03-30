@@ -494,6 +494,11 @@ endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
+if (USE_ORC)
+    dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${CMAKE_BINARY_DIR}/contrib/orc/c++/include")
+endif ()
+
 if (TARGET ch_contrib::rocksdb)
     dbms_target_link_libraries(PUBLIC ch_contrib::rocksdb)
 endif()
