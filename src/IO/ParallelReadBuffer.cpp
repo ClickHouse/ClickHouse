@@ -13,21 +13,37 @@ namespace ErrorCodes
 
 }
 
-ParallelReadBuffer::ParallelReadBuffer(
-    std::unique_ptr<ReadBufferFactory> reader_factory_,
-    ThreadPool * pool_,
-    size_t max_working_readers_,
-    WorkerSetup worker_setup_,
-    WorkerCleanup worker_cleanup_)
+ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPool * pool, size_t max_working_readers_)
     : SeekableReadBufferWithSize(nullptr, 0)
-    , pool(pool_)
     , max_working_readers(max_working_readers_)
+    , schedule(threadPoolCallbackRunner(*pool, getWorkerSetup(), getWorkerCleanup()))
     , reader_factory(std::move(reader_factory_))
-    , worker_setup(std::move(worker_setup_))
-    , worker_cleanup(std::move(worker_cleanup_))
 {
     std::unique_lock<std::mutex> lock{mutex};
     addReaders(lock);
+}
+
+
+ParallelReadBuffer::WorkerSetup ParallelReadBuffer::getWorkerSetup()
+{
+    return [this]
+    {
+        std::lock_guard lock{mutex};
+        ++active_working_reader;
+    };
+}
+
+ParallelReadBuffer::WorkerCleanup ParallelReadBuffer::getWorkerCleanup()
+{
+    return [this]
+    {
+        std::lock_guard lock{mutex};
+        --active_working_reader;
+        if (active_working_reader == 0)
+        {
+            readers_done.notify_all();
+        }
+    };
 }
 
 bool ParallelReadBuffer::addReaderToPool(std::unique_lock<std::mutex> & /*buffer_lock*/)
@@ -40,30 +56,8 @@ bool ParallelReadBuffer::addReaderToPool(std::unique_lock<std::mutex> & /*buffer
 
     auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader)));
 
-    pool->scheduleOrThrow(
-        [&, this, worker = std::move(worker)]() mutable
-        {
-            ThreadStatus thread_status;
+    schedule([this, worker = std::move(worker)]() mutable { readerThreadFunction(std::move(worker)); });
 
-            {
-                std::lock_guard lock{mutex};
-                ++active_working_reader;
-            }
-
-            SCOPE_EXIT({
-                worker_cleanup(thread_status);
-
-                std::lock_guard lock{mutex};
-                --active_working_reader;
-                if (active_working_reader == 0)
-                {
-                    readers_done.notify_all();
-                }
-            });
-            worker_setup(thread_status);
-
-            readerThreadFunction(std::move(worker));
-        });
     return true;
 }
 
@@ -237,7 +231,8 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
         while (!emergency_stop && !read_worker->cancel)
         {
             if (!read_worker->reader->next())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to read all the data from the reader, missing {} bytes", read_worker->bytes_left);
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Failed to read all the data from the reader, missing {} bytes", read_worker->bytes_left);
 
             if (emergency_stop || read_worker->cancel)
                 break;
