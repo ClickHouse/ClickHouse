@@ -1,4 +1,4 @@
-#include "StorageSystemRemoteFilesystemCache.h"
+#include "StorageSystemFilesystemCache.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -6,13 +6,12 @@
 #include <Common/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
-#include <Storages/System/StorageSystemRemoteFilesystemCache.h>
 
 
 namespace DB
 {
 
-NamesAndTypesList StorageSystemRemoteFilesystemCache::getNamesAndTypes()
+NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
 {
     return {
         {"cache_base_path", std::make_shared<DataTypeString>()},
@@ -26,12 +25,12 @@ NamesAndTypesList StorageSystemRemoteFilesystemCache::getNamesAndTypes()
     };
 }
 
-StorageSystemRemoteFilesystemCache::StorageSystemRemoteFilesystemCache(const StorageID & table_id_)
+StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & table_id_)
     : IStorageSystemOneBlock(table_id_)
 {
 }
 
-void StorageSystemRemoteFilesystemCache::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     auto caches = FileCacheFactory::instance().getAll();
 

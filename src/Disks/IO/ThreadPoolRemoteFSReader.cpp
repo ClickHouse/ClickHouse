@@ -94,9 +94,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, bytes_read);
 
-        /// Query id cound be attached artificially.
-        if (running_group || (CurrentThread::isInitialized() && CurrentThread::getQueryId().size != 0))
-            thread_status.detachQuery();
+        thread_status.detachQuery(/* if_not_detached */true);
 
         return Result{ .size = bytes_read, .offset = offset };
     });
