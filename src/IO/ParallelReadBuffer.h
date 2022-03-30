@@ -77,7 +77,7 @@ public:
         virtual std::optional<size_t> getTotalSize() = 0;
     };
 
-    explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPool * pool, size_t max_working_readers);
+    explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, CallbackRunner schedule_, size_t max_working_readers);
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 

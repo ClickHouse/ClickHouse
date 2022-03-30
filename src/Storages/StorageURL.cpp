@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -349,7 +350,7 @@ namespace
                                 return wrapReadBufferWithCompressionMethod(
                                     std::make_unique<ParallelReadBuffer>(
                                         std::move(read_buffer_factory),
-                                        &IOThreadPool::get(),
+                                        threadPoolCallbackRunner(IOThreadPool::get()),
                                         download_threads),
                                     chooseCompressionMethod(request_uri.getPath(), compression_method));
                             }

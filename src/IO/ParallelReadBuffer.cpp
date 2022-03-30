@@ -13,10 +13,10 @@ namespace ErrorCodes
 
 }
 
-ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPool * pool, size_t max_working_readers_)
+ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, CallbackRunner schedule_, size_t max_working_readers_)
     : SeekableReadBufferWithSize(nullptr, 0)
     , max_working_readers(max_working_readers_)
-    , schedule(threadPoolCallbackRunner(*pool))
+    , schedule(std::move(schedule_))
     , reader_factory(std::move(reader_factory_))
 {
     std::unique_lock<std::mutex> lock{mutex};
