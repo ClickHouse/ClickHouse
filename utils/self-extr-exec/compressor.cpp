@@ -45,8 +45,8 @@ int compress(int in_fd, int out_fd, int level=5)
     // 6402520 is size of stripped decompressor
     size_t start = 6405000ull;
 
-    // 22550744 size of decompressor
-    // size_t start = 22550780ull;
+    // 22558008ull size of decompressor
+    // size_t start = 22558008ull;
 
     /// As experiments showed, size of compressed file is 4 times less than clickhouse executable
     /// Get a little bit more memory to prevent errors with size. 
