@@ -1,6 +1,6 @@
 ---
-toc_priority: 46
-toc_title: Troubleshooting
+sidebar_position: 46
+sidebar_label: Troubleshooting
 ---
 
 # Troubleshooting {#troubleshooting}
