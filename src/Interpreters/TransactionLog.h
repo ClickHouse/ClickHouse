@@ -24,25 +24,22 @@ public:
         if (likely(ptr))
             return *ptr;
 
-        std::lock_guard lock{instance_mutex};
-        if (!instance_holder.has_value())
-        {
-            instance_holder.emplace();
-            instance_raw_ptr = &instance_holder.value();
-        }
-        return instance_holder.value();
+        return createInstanceOrThrow();
     }
 
     static void shutdownIfAny()
     {
         std::lock_guard lock{instance_mutex};
-        if (instance_holder.has_value())
+        if (instance_holder)
             instance_holder->shutdown();
     }
 
 private:
+    static Derived & createInstanceOrThrow();
+
     static inline std::atomic<Derived *> instance_raw_ptr;
-    static inline std::optional<Derived> instance_holder;
+    /// It was supposed to be std::optional, but gcc fails to compile it for some reason
+    static inline std::shared_ptr<Derived> instance_holder;
     static inline std::mutex instance_mutex;
 };
 
@@ -179,5 +176,17 @@ private:
     std::atomic_bool stop_flag = false;
     ThreadFromGlobalPool updating_thread;
 };
+
+template <typename Derived>
+Derived & SingletonHelper<Derived>::createInstanceOrThrow()
+{
+    std::lock_guard lock{instance_mutex};
+    if (!instance_holder)
+    {
+        instance_holder = std::make_shared<Derived>();
+        instance_raw_ptr = instance_holder.get();
+    }
+    return *instance_holder;
+}
 
 }
