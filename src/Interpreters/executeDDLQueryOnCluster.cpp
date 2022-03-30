@@ -82,6 +82,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     }
 
     query->cluster = context->getMacros()->expand(query->cluster);
+
+    /// TODO: support per-cluster grant
+    context->checkAccess(AccessType::CLUSTER);
+
     ClusterPtr cluster = params.cluster ? params.cluster : context->getCluster(query->cluster);
     DDLWorker & ddl_worker = context->getDDLWorker();
 
