@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <memory>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
@@ -27,6 +28,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>

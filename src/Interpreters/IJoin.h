@@ -6,15 +6,38 @@
 #include <Core/Names.h>
 #include <Core/Block.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+class Block;
 
 struct ExtraBlock;
 using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
 class TableJoin;
 class NotJoinedBlocks;
+
+enum class JoinPipelineType
+{
+    /*
+     * Right stream processed first.
+     * The pipeline is not sorted.
+     */
+    RShaped,
+
+    /*
+     * Only left stream is processed, right is already filled.
+     */
+    Filled,
+
+    /*
+     * The pipeline is created from the left and right streams processed with merging transform.
+     * The pipeline is sorted.
+     */
+    YShaped,
+};
 
 class IJoin
 {
@@ -48,7 +71,8 @@ public:
 
     /// StorageJoin/Dictionary is already filled. No need to call addJoinedBlock.
     /// Different query plan is used for such joins.
-    virtual bool isFilled() const { return false; }
+    virtual bool isFilled() const { return pipelineType() == JoinPipelineType::Filled; }
+    virtual JoinPipelineType pipelineType() const { return JoinPipelineType::RShaped; }
 
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
@@ -59,6 +83,7 @@ public:
 private:
     Block totals;
 };
+
 
 using JoinPtr = std::shared_ptr<IJoin>;
 
