@@ -583,22 +583,23 @@ static void sanityChecks(Server * server)
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
         server->context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
 #endif
+
     try
     {
         if (getAvailableMemoryAmount() < (2l << 30))
             server->context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
+
+        if (!enoughSpaceInDirectory(data_path, 1ull << 30))
+            server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
+
+        if (!logs_path.empty())
+        {
+            if (!enoughSpaceInDirectory(fs::path(logs_path).parent_path(), 1ull << 30))
+                server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
+        }
     }
     catch (...)
     {
-    }
-
-    if (!enoughSpaceInDirectory(data_path, 1ull << 30))
-        server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
-
-    if (!logs_path.empty())
-    {
-        if (!enoughSpaceInDirectory(logs_path, 1ull << 30))
-            server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
     }
 }
 
