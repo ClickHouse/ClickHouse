@@ -138,6 +138,14 @@ class VersionType:
     VALID = (TESTING, PRESTABLE, STABLE, LTS)
 
 
+def validate_version(version: str):
+    parts = version.split(".")
+    if len(parts) != 4:
+        raise ValueError(f"{version} does not contain 4 parts")
+    for part in parts:
+        int(part)
+
+
 def get_abs_path(path: str) -> str:
     return p.abspath(p.join(git.root, path))
 
