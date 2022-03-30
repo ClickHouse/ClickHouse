@@ -392,8 +392,13 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                 if (bytes_to_predownload)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Failed to predownload remaining {} bytes. Current file segment: {}, current download offset: {}, expected: {}, eof: {}",
-                        file_segment->range().toString(), file_segment->getDownloadOffset(), file_offset_of_buffer_end, implementation_buffer->eof());
+                        "Failed to predownload remaining {} bytes. Current file segment: {}, current download offset: {}, expected: {}, "
+                        "eof: {}",
+                        bytes_to_predownload,
+                        file_segment->range().toString(),
+                        file_segment->getDownloadOffset(),
+                        file_offset_of_buffer_end,
+                        implementation_buffer->eof());
 
                 auto result = implementation_buffer->hasPendingData();
 
