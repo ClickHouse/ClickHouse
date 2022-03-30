@@ -50,7 +50,6 @@ RUN apt-get update \
         pigz \
         rename \
         software-properties-common \
-        gcc-multilib \
         --yes --no-install-recommends \
     && apt-get clean
 
@@ -63,10 +62,7 @@ RUN rustup target add aarch64-unknown-linux-gnu && \
         rustup target add aarch64-apple-darwin && \
         rustup target add powerpc64le-unknown-linux-gnu
 RUN apt-get install \
-        gcc-aarch64-linux-gnu \
         build-essential \
-        libc6 \
-        libc6-dev \
         --yes
 
 # This symlink required by gcc to find lld compiler
