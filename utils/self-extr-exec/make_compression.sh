@@ -2,8 +2,9 @@
 
 # Put this script near compressor and decompressor
 
-strip decompressor
+cp decompressor clickhouse
+strip clickhouse
 
 # TODO use env variables
-./compressor ../../programs/clickhouse decompressor
+./compressor ../../programs/clickhouse clickhouse
  

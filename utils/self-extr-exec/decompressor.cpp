@@ -31,7 +31,7 @@ int decompress(int in_fd, int out_fd)
     fstat(in_fd, &info_in);
 
     /// NOTE: next parametrs depend on binary size
-    // 22550780ull for full, 6405000ull for stripped;
+    // 22558008ull for full, 6405000ull for stripped;
     off_t in_offset = 6405000ull /*size of decompressor*/, out_offset = 0;
 
     /// mmap files
@@ -82,16 +82,16 @@ int decompress(int in_fd, int out_fd)
     return 0;
 }
 
-int main()
+int main(int /*argc*/, char* argv[])
 {
-    int input_fd = open("decompressor", O_RDONLY);
+    int input_fd = open(argv[0], O_RDONLY);
     if (input_fd == -1)
     {
         perror(nullptr);
         return 0;
     }
     
-    int output_fd = open("clickhouse_decompressed", O_RDWR | O_CREAT, 0775);
+    int output_fd = open("clickhouse.decompressed", O_RDWR | O_CREAT, 0775);
     if (output_fd == -1)
     {
         perror(nullptr);
@@ -103,7 +103,12 @@ int main()
         return 1;
     }
 
-    close(input_fd);
+    fsync(output_fd);
     close(output_fd);
+    close(input_fd);
+
+    /// NOTE: This command should not depend from any variables.
+    /// It should be changed if file changes.
+    execl("/usr/bin/bash", "bash", "-c", "mv ./clickhouse.decompressed ./clickhouse", NULL);
     return 0;
 }
