@@ -259,7 +259,7 @@ public:
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function '{}' needs at least 2 arguments, at most 3 arguments; passed {}.",
-                arguments.size());
+                name, arguments.size());
 
         if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
