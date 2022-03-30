@@ -151,15 +151,15 @@ Pipe StorageHiveCluster::read(
     // second stage, create local hive storage reading pipeline
     auto local_storage_settings = std::make_unique<HiveSettings>();
     local_storage_settings->applyChanges(*storage_settings);
-    auto metadata = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage_hive = StorageHive::create(
         hive_metastore_url,
         hive_database,
         hive_table,
         StorageID("StorageHiveCluster", hive_database + "_" + hive_table),
-        metadata->columns,
-        metadata->constraints,
-        metadata->comment,
+        metadata_snapshot->columns,
+        metadata_snapshot->constraints,
+        metadata_snapshot->comment,
         partition_by_ast,
         std::move(local_storage_settings),
         context_,
