@@ -81,7 +81,7 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
     std::lock_guard lock(mutex);
 
     /// Only perform case sensitive completion when the prefix string contains any uppercase characters
-    if (std::none_of(prefix.begin(), prefix.end(), [&](auto c) { return c >= 'A' && c <= 'Z'; }))
+    if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
         range = std::equal_range(
             words_no_case.begin(), words_no_case.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
@@ -109,10 +109,10 @@ void LineReader::Suggest::addWords(Words && new_words)
         std::lock_guard lock(mutex);
         addNewWords(words, new_words, std::less<std::string>{});
         addNewWords(words_no_case, new_words_no_case, NoCaseCompare{});
-    }
 
-    assert(std::is_sorted(words.begin(), words.end()));
-    assert(std::is_sorted(words_no_case.begin(), words_no_case.end(), NoCaseCompare{}));
+        assert(std::is_sorted(words.begin(), words.end()));
+        assert(std::is_sorted(words_no_case.begin(), words_no_case.end(), NoCaseCompare{}));
+    }
 }
 
 LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)

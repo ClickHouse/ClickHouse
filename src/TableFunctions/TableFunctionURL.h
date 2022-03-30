@@ -10,7 +10,7 @@ namespace DB
 
 class Context;
 
-/* url(source, format[, structure, compression]) - creates a temporary storage from url
+/* url(source, format[, structure, compression]) - creates a temporary storage from url.
  */
 class TableFunctionURL : public ITableFunctionFileLike
 {

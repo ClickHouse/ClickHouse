@@ -28,6 +28,7 @@
 #include <base/sleep.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/logger_useful.h>
+#include <base/sort.h>
 #include <random>
 #include <pcg_random.hpp>
 #include <base/scope_guard_safe.h>
@@ -221,7 +222,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
 static void filterAndSortQueueNodes(Strings & all_nodes)
 {
     all_nodes.erase(std::remove_if(all_nodes.begin(), all_nodes.end(), [] (const String & s) { return !startsWith(s, "query-"); }), all_nodes.end());
-    std::sort(all_nodes.begin(), all_nodes.end());
+    ::sort(all_nodes.begin(), all_nodes.end());
 }
 
 void DDLWorker::scheduleTasks(bool reinitialized)
@@ -349,6 +350,12 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             bool maybe_concurrently_deleting = task && !zookeeper->exists(fs::path(task->entry_path) / "active");
             return task && !maybe_concurrently_deleting && !maybe_currently_processing;
         }
+        else if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
+        {
+            /// If connection was lost during queue loading
+            /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
+            return false;
+        }
         else
         {
             /// Return true if entry should not be scheduled.
@@ -364,7 +371,11 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
         String reason;
         auto task = initAndCheckTask(entry_name, reason, zookeeper);
-        if (!task)
+        if (task)
+        {
+            queue_fully_loaded_after_initialization_debug_helper = true;
+        }
+        else
         {
             LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
             updateMaxDDLEntryID(entry_name);

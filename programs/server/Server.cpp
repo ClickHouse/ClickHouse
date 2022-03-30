@@ -22,6 +22,9 @@
 #include <base/getMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/safeExit.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
@@ -30,7 +33,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <base/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
@@ -43,6 +45,7 @@
 #include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -80,6 +83,7 @@
 #include <Common/Elf.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -93,8 +97,6 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
-#    include <unistd.h>
-#    include <sys/syscall.h>
 #endif
 
 #if USE_SSL
@@ -194,6 +196,7 @@ namespace
 {
 
 void setupTmpPath(Poco::Logger * log, const std::string & path)
+try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
@@ -211,6 +214,15 @@ void setupTmpPath(Poco::Logger * log, const std::string & path)
         else
             LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
     }
+}
+catch (...)
+{
+    DB::tryLogCurrentException(
+        log,
+        fmt::format(
+            "Caught exception while setup temporary path: {}. It is ok to skip this exception as cleaning old temporary files is not "
+            "necessary",
+            path));
 }
 
 int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
@@ -493,19 +505,6 @@ void checkForUsersNotInMainConfig(
     }
 }
 
-[[noreturn]] void forceShutdown()
-{
-#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
-    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
-    /// while connection handling threads are still run.
-    (void)syscall(SYS_exit_group, 0);
-    __builtin_unreachable();
-#else
-    _exit(0);
-#endif
-}
-
-
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
@@ -556,6 +555,10 @@ if (ThreadFuzzer::instance().isEffective())
         config().getUInt("thread_pool_queue_size", 10000)
     );
 
+    IOThreadPool::initialize(
+        config().getUInt("max_io_thread_pool_size", 100),
+        config().getUInt("max_io_thread_pool_free_size", 0),
+        config().getUInt("io_thread_pool_queue_size", 10000));
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -826,6 +829,36 @@ if (ThreadFuzzer::instance().isEffective())
         fs::create_directories(path / "metadata_dropped/");
     }
 
+#if USE_ROCKSDB
+    /// Initialize merge tree metadata cache
+    if (config().has("merge_tree_metadata_cache"))
+    {
+        fs::create_directories(path / "rocksdb/");
+        size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
+        bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
+        try
+        {
+            LOG_DEBUG(
+                log, "Initiailizing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
+            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+        }
+        catch (...)
+        {
+            if (continue_if_corrupted)
+            {
+                /// Rename rocksdb directory and reinitialize merge tree metadata cache
+                time_t now = time(nullptr);
+                fs::rename(path / "rocksdb", path / ("rocksdb.old." + std::to_string(now)));
+                global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
+#endif
+
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
@@ -914,6 +947,14 @@ if (ThreadFuzzer::instance().isEffective())
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+            auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
+            if (config->has("global_memory_usage_overcommit_max_wait_microseconds"))
+            {
+                UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 0);
+                global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
+            }
+            total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
+
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
@@ -925,6 +966,8 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->loadOrReloadDictionaries(*config);
             global_context->loadOrReloadModels(*config);
             global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+
+            global_context->setRemoteHostFilter(*config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -962,7 +1005,9 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->updateInterserverCredentials(*config);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
-
+#if USE_SSL
+            CertificateReloader::instance().tryLoad(*config);
+#endif
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
@@ -987,6 +1032,11 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
         FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
+        auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
+        {
+            return global_context->getConfigRef();
+        };
+
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -1005,7 +1055,11 @@ if (ThreadFuzzer::instance().isEffective())
                         port_name,
                         "Keeper (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
+                            new KeeperTCPHandlerFactory(
+                                config_getter, global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(),
+                                false), server_pool, socket));
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -1024,7 +1078,10 @@ if (ThreadFuzzer::instance().isEffective())
                         secure_port_name,
                         "Keeper with secure protocol (tcp_secure): " + address.toString(),
                         std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
+                            new KeeperTCPHandlerFactory(
+                                config_getter, global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(), true), server_pool, socket));
 #else
                     UNUSED(port);
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -1047,6 +1104,9 @@ if (ThreadFuzzer::instance().isEffective())
     auto & access_control = global_context->getAccessControl();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
+
+    access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
+    access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
 
     /// Initialize access storages.
     try
@@ -1295,7 +1355,7 @@ if (ThreadFuzzer::instance().isEffective())
 #endif
 
 #if !defined(__x86_64__)
-    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
+    LOG_INFO(log, "Query Profiler and TraceCollector is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())
@@ -1351,6 +1411,16 @@ if (ThreadFuzzer::instance().isEffective())
                     "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
                     ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         }
+
+        if (servers.empty())
+             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
+                ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+#if USE_SSL
+        CertificateReloader::instance().tryLoad(config());
+#endif
+
+        /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
 
         async_metrics.start();
 
@@ -1495,7 +1565,7 @@ if (ThreadFuzzer::instance().isEffective())
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_INFO(log, "Will shutdown forcefully.");
-                forceShutdown();
+                safeExit(0);
             }
         });
 

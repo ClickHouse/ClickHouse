@@ -95,6 +95,9 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     ColumnsDescription columns;
     if (structure != "auto")
         columns = parseColumnsListFromString(structure, context);
+    else if (!structure_hint.empty())
+        columns = structure_hint;
+
     StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method);
     storage->startup();
     return storage;

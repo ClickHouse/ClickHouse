@@ -1,3 +1,4 @@
+-- Tags: no-s3-storage
 drop table if exists d;
 
 create table d (i int, j int) engine MergeTree partition by i % 2 order by tuple() settings index_granularity = 1;
@@ -53,7 +54,7 @@ select count() from d group by toDate(dt);
 
 -- fuzz crash
 SELECT pointInEllipses(min(j), NULL), max(dt), count('0.0000000007') FROM d WHERE toDate(dt) >= '2021-10-25';
-SELECT min(dt) FROM d PREWHERE ceil(j) <= 0;
+SELECT min(j) FROM d PREWHERE ceil(j) <= 0;
 SELECT min(dt) FROM d PREWHERE ((0.9998999834060669 AND 1023) AND 255) <= ceil(j);
 SELECT count('') AND NULL FROM d PREWHERE ceil(j) <= NULL;
 

@@ -18,6 +18,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTColumnDeclaration.h>
 
 
 namespace DB
@@ -353,20 +354,26 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ttl_table;
     ASTPtr settings;
 
-    if (!s_engine.ignore(pos, expected))
-        return false;
+    bool storage_like = false;
 
-    s_eq.ignore(pos, expected);
+    if (s_engine.ignore(pos, expected))
+    {
+        s_eq.ignore(pos, expected);
 
-    if (!ident_with_optional_params_p.parse(pos, engine, expected))
-        return false;
+        if (!ident_with_optional_params_p.parse(pos, engine, expected))
+            return false;
+        storage_like = true;
+    }
 
     while (true)
     {
         if (!partition_by && s_partition_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, partition_by, expected))
+            {
+                storage_like = true;
                 continue;
+            }
             else
                 return false;
         }
@@ -374,7 +381,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!primary_key && s_primary_key.ignore(pos, expected))
         {
             if (expression_p.parse(pos, primary_key, expected))
+            {
+                storage_like = true;
                 continue;
+            }
             else
                 return false;
         }
@@ -382,7 +392,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!order_by && s_order_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, order_by, expected))
+            {
+                storage_like = true;
                 continue;
+            }
             else
                 return false;
         }
@@ -390,7 +403,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!sample_by && s_sample_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, sample_by, expected))
+            {
+                storage_like = true;
                 continue;
+            }
             else
                 return false;
         }
@@ -398,7 +414,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ttl_table && s_ttl.ignore(pos, expected))
         {
             if (parser_ttl_list.parse(pos, ttl_table, expected))
+            {
+                storage_like = true;
                 continue;
+            }
             else
                 return false;
         }
@@ -407,10 +426,14 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;
+            storage_like = true;
         }
 
         break;
     }
+    // If any part of storage definition is found create storage node
+    if (!storage_like)
+        return false;
 
     auto storage = std::make_shared<ASTStorage>();
     storage->set(storage->engine, engine);
@@ -549,13 +572,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!storage_parse_result && !is_temporary)
         {
-            if (!s_as.ignore(pos, expected))
+            if (s_as.ignore(pos, expected) && !table_function_p.parse(pos, as_table_function, expected))
                 return false;
-            if (!table_function_p.parse(pos, as_table_function, expected))
-            {
-                return false;
-            }
         }
+
+        /// Will set default table engine if Storage clause was not parsed
     }
     /** Create queries without list of columns:
       *  - CREATE|ATTACH TABLE ... AS ...
@@ -590,10 +611,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                 }
             }
         }
-        else if (!storage)
-        {
-            return false;
-        }
     }
     auto comment = parseComment(pos, expected);
 
@@ -625,12 +642,14 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (comment)
         query->set(query->comment, comment);
 
-    if (query->storage && query->columns_list && query->columns_list->primary_key)
+    if (query->columns_list && query->columns_list->primary_key)
     {
-        if (query->storage->primary_key)
-        {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
             throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
-        }
+
         query->storage->primary_key = query->columns_list->primary_key;
     }
 
@@ -1263,8 +1282,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (is_materialized_view && !to_table)
     {
         /// Internal ENGINE for MATERIALIZED VIEW must be specified.
-        if (!storage_p.parse(pos, storage, expected))
-            return false;
+        /// Actually check it in Interpreter as default_table_engine can be set
+        storage_p.parse(pos, storage, expected);
 
         if (s_populate.ignore(pos, expected))
             is_populate = true;

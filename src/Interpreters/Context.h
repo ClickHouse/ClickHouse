@@ -16,6 +16,7 @@
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
+
 #include "config_core.h"
 
 #include <boost/container/flat_set.hpp>
@@ -29,6 +30,7 @@
 namespace Poco::Net { class IPAddress; }
 namespace zkutil { class ZooKeeper; }
 
+struct OvercommitTracker;
 
 namespace DB
 {
@@ -151,6 +153,12 @@ using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
+
+#if USE_ROCKSDB
+class MergeTreeMetadataCache;
+using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
+#endif
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -169,7 +177,7 @@ struct SharedContextHolder
     explicit SharedContextHolder(std::unique_ptr<ContextSharedPart> shared_context);
     SharedContextHolder(SharedContextHolder &&) noexcept;
 
-    SharedContextHolder & operator=(SharedContextHolder &&);
+    SharedContextHolder & operator=(SharedContextHolder &&) noexcept;
 
     ContextSharedPart * get() const { return shared.get(); }
     void reset();
@@ -177,6 +185,7 @@ struct SharedContextHolder
 private:
     std::unique_ptr<ContextSharedPart> shared;
 };
+
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -657,6 +666,8 @@ public:
     ProcessList & getProcessList();
     const ProcessList & getProcessList() const;
 
+    OvercommitTracker * getGlobalOvercommitTracker() const;
+
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
@@ -676,6 +687,11 @@ public:
     bool tryCheckClientConnectionToMyKeeperCluster() const;
 
     UInt32 getZooKeeperSessionUptime() const;
+
+#if USE_ROCKSDB
+    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
+    MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
+#endif
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
@@ -765,6 +781,10 @@ public:
 
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
+
+#if USE_ROCKSDB
+    void initializeMergeTreeMetadataCache(const String & dir, size_t size);
+#endif
 
     bool hasTraceCollector() const;
 

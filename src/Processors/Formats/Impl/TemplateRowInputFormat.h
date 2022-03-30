@@ -15,7 +15,7 @@ namespace DB
 
 class TemplateFormatReader;
 
-class TemplateRowInputFormat : public RowInputFormatWithDiagnosticInfo
+class TemplateRowInputFormat final : public RowInputFormatWithDiagnosticInfo
 {
     using EscapingRule = FormatSettings::EscapingRule;
 public:

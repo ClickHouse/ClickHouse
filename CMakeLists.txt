@@ -62,12 +62,12 @@ set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a pos
 # For more info see https://cmake.org/cmake/help/latest/prop_gbl/USE_FOLDERS.html
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# Check that submodules are present only if source was downloaded with git
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
+# Check that submodules are present
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/sysroot/README.md")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
 
-include (cmake/find/ccache.cmake)
+include (cmake/ccache.cmake)
 
 # Take care to add prlimit in command line before ccache, or else ccache thinks that
 # prlimit is compiler, and clang++ is its input file, and refuses to work  with
@@ -182,7 +182,7 @@ if (COMPILER_CLANG)
 
     if (HAS_USE_CTOR_HOMING)
         # For more info see https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
-		if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+        if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
         endif()
@@ -248,7 +248,9 @@ endif()
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     set(USE_DEBUG_HELPERS ON)
 endif()
+
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
+option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
@@ -259,9 +261,17 @@ endif ()
 # Add a section with the hash of the compiled machine code for integrity checks.
 # Only for official builds, because adding a section can be time consuming (rewrite of several GB).
 # And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
-if (OBJCOPY_PATH AND YANDEX_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE))
+if (OBJCOPY_PATH AND CLICKHOUSE_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE))
     set (USE_BINARY_HASH 1)
 endif ()
+
+# Allows to build stripped binary in a separate directory
+if (OBJCOPY_PATH AND STRIP_PATH)
+    option(INSTALL_STRIPPED_BINARIES "Build stripped binaries with debug info in separate directory" OFF)
+    if (INSTALL_STRIPPED_BINARIES)
+        set(STRIPPED_BINARIES_OUTPUT "stripped" CACHE STRING "A separate directory for stripped information")
+    endif()
+endif()
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
@@ -285,8 +295,13 @@ include(cmake/cpu_features.cmake)
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
 
 # Reproducible builds
-set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
-set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+# If turned `ON`, remap file source paths in debug info, predefined preprocessor macros and __builtin_FILE().
+option(ENABLE_BUILD_PATH_MAPPING "Enable remap file source paths in debug info, predefined preprocessor macros and __builtin_FILE(). It's to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ON)
+
+if (ENABLE_BUILD_PATH_MAPPING)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+endif()
 
 if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
     # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
@@ -340,16 +355,19 @@ if (WITH_COVERAGE AND COMPILER_GCC)
     set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
 endif()
 
-set(COMPILER_FLAGS "${COMPILER_FLAGS}")
+set (COMPILER_FLAGS "${COMPILER_FLAGS}")
+
+# Our built-in unwinder only supports DWARF version up to 4.
+set (DEBUG_INFO_FLAGS "-g -gdwarf-4")
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
-set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_CXX_FLAGS_ADD}")
-set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_CXX_FLAGS_ADD}")
+set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
+set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} -fno-inline ${CMAKE_CXX_FLAGS_ADD}")
 
 set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${COMMON_WARNING_FLAGS} ${CMAKE_C_FLAGS_ADD}")
-set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
-set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
+set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
+set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
 if (COMPILER_CLANG)
     if (OS_DARWIN)
@@ -401,17 +419,6 @@ else ()
     option(WERROR "Enable -Werror compiler option" ON)
 endif ()
 
-if (WERROR)
-    # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
-    # Instead, adopt modern cmake usage requirement.
-    target_compile_options(global-libs INTERFACE "-Werror")
-endif ()
-
-# Make this extra-checks for correct library dependencies.
-if (OS_LINUX AND NOT SANITIZE)
-    target_link_options(global-libs INTERFACE "-Wl,--no-undefined")
-endif ()
-
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
@@ -419,12 +426,25 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
+add_library(global-group INTERFACE)
 if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+endif ()
+link_libraries(global-group)
+
+if (WERROR)
+    # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
+    # Instead, adopt modern cmake usage requirement.
+    target_compile_options(global-group INTERFACE "-Werror")
+endif ()
+
+# Make this extra-checks for correct library dependencies.
+if (OS_LINUX AND NOT SANITIZE)
+    target_link_options(global-group INTERFACE "-Wl,--no-undefined")
 endif ()
 
 ######################################

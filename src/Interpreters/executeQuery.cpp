@@ -413,9 +413,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ASTPtr ast;
     const char * query_end;
 
-    /// Don't limit the size of internal queries.
-    size_t max_query_size = 0;
-    if (!internal) max_query_size = settings.max_query_size;
+    size_t max_query_size = settings.max_query_size;
+    /// Don't limit the size of internal queries or distributed subquery.
+    if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        max_query_size = 0;
 
     String query_database;
     String query_table;
@@ -606,6 +607,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (async_insert)
         {
+            quota = context->getQuota();
+            if (quota)
+            {
+                quota->used(QuotaType::QUERY_INSERTS, 1);
+                quota->used(QuotaType::QUERIES, 1);
+                quota->checkExceeded(QuotaType::ERRORS);
+            }
+
             queue->push(ast, context);
 
             if (settings.wait_for_async_insert)
@@ -614,13 +623,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_id = context->getCurrentQueryId();
                 auto source = std::make_shared<WaitForAsyncInsertSource>(query_id, timeout, *queue);
                 res.pipeline = QueryPipeline(Pipe(std::move(source)));
-            }
-
-            quota = context->getQuota();
-            if (quota)
-            {
-                quota->used(QuotaType::QUERY_INSERTS, 1);
-                quota->used(QuotaType::QUERIES, 1);
             }
 
             const auto & table_id = insert_query->table_id;
@@ -655,6 +657,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
             }
 
+            if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
+            {
+                /// Save insertion table (not table function). TODO: support remote() table function.
+                auto table_id = insert_interpreter->getDatabaseTable();
+                if (!table_id.empty())
+                    context->setInsertionTable(std::move(table_id));
+            }
+
             {
                 std::unique_ptr<OpenTelemetrySpanHolder> span;
                 if (context->query_trace_context.trace_id != UUID())
@@ -664,14 +674,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
                 }
                 res = interpreter->execute();
-            }
-
-            if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
-            {
-                /// Save insertion table (not table function). TODO: support remote() table function.
-                auto table_id = insert_interpreter->getDatabaseTable();
-                if (!table_id.empty())
-                    context->setInsertionTable(std::move(table_id));
             }
         }
 
@@ -780,8 +782,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
-                element.thread_ids = std::move(info.thread_ids);
-                element.profile_counters = std::move(info.profile_counters);
+                element.thread_ids = info.thread_ids;
+                element.profile_counters = info.profile_counters;
 
                 /// We need to refresh the access info since dependent views might have added extra information, either during
                 /// creation of the view (PushingToViewsBlockOutputStream) or while executing its internal SELECT

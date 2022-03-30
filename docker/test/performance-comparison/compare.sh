@@ -1294,15 +1294,15 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         select '' test_name,
             '$(sed -n 's/.*<!--message: \(.*\)-->/\1/p' report.html)' test_status,
             0 test_duration_ms,
-            'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url
+            'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url
         union all
             select test || ' #' || toString(query_index), 'slower' test_status, 0 test_duration_ms,
-                'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#changes-in-performance.'
+                'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#changes-in-performance.'
                     || test || '.' || toString(query_index) report_url
             from queries where changed_fail != 0 and diff > 0
         union all
             select test || ' #' || toString(query_index), 'unstable' test_status, 0 test_duration_ms,
-                'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#unstable-queries.'
+                'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#unstable-queries.'
                     || test || '.' || toString(query_index) report_url
             from queries where unstable_fail != 0
     )
@@ -1378,7 +1378,7 @@ $REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/
 EOF
 
     # Also insert some data about the check into the CI checks table.
-    "${client[@]}" --query "INSERT INTO "'"'"gh-data"'"'".checks FORMAT TSVWithNamesAndTypes" \
+    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
         < ci-checks.tsv
 
     set -x

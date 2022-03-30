@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_set>
+
 #include <AggregateFunctions/AggregateFunctionNull.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -7,14 +9,13 @@
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
+#include <base/sort.h>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
-#include <unordered_set>
 
 
 namespace DB
@@ -67,7 +68,7 @@ struct AggregateFunctionIntervalLengthSumData
         /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
         {
-            std::sort(std::begin(segments), std::end(segments));
+            ::sort(std::begin(segments), std::end(segments));
         }
         else
         {
@@ -76,10 +77,10 @@ struct AggregateFunctionIntervalLengthSumData
             const auto end = std::end(segments);
 
             if (!sorted)
-                std::sort(begin, middle);
+                ::sort(begin, middle);
 
             if (!other.sorted)
-                std::sort(middle, end);
+                ::sort(middle, end);
 
             std::inplace_merge(begin, middle, end);
         }
@@ -89,11 +90,11 @@ struct AggregateFunctionIntervalLengthSumData
 
     void sort()
     {
-        if (!sorted)
-        {
-            std::sort(std::begin(segments), std::end(segments));
-            sorted = true;
-        }
+        if (sorted)
+            return;
+
+        ::sort(std::begin(segments), std::end(segments));
+        sorted = true;
     }
 
     void serialize(WriteBuffer & buf) const

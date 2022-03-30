@@ -35,6 +35,10 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType PartsMerge;
+}
 
 static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
 {
@@ -202,7 +206,15 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             table->checkTableCanBeDropped();
 
-            auto table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+            TableExclusiveLockHolder table_lock;
+            /// We don't need this lock for ReplicatedMergeTree
+            if (!table->supportsReplication())
+            {
+                /// And for simple MergeTree we can stop merges before acquiring the lock
+                auto merges_blocker = table->getActionLock(ActionLocks::PartsMerge);
+                auto table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+            }
+
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
             table->truncate(query_ptr, metadata_snapshot, context_, table_lock);

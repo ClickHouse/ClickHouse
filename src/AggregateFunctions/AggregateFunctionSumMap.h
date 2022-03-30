@@ -226,7 +226,7 @@ public:
                 {
                     // FIXME why is storing NearestFieldType not enough, and we
                     // have to check for decimals again here?
-                    UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
+                    UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getScale();
                     it = merged_maps.find(DecimalField<T>(key, scale));
                 }
                 else
@@ -251,7 +251,7 @@ public:
 
                     if constexpr (is_decimal<T>)
                     {
-                        UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
+                        UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getScale();
                         merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
                     }
                     else
@@ -489,15 +489,15 @@ public:
                 "Aggregate function '{}' requires exactly one parameter "
                 "of Array type", getName());
 
-        Array keys_to_keep_;
-        if (!params_.front().tryGet<Array>(keys_to_keep_))
+        Array keys_to_keep_values;
+        if (!params_.front().tryGet<Array>(keys_to_keep_values))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Aggregate function {} requires an Array as a parameter",
                 getName());
 
-        keys_to_keep.reserve(keys_to_keep_.size());
+        keys_to_keep.reserve(keys_to_keep_values.size());
 
-        for (const Field & f : keys_to_keep_)
+        for (const Field & f : keys_to_keep_values)
             keys_to_keep.emplace(f.safeGet<T>());
     }
 

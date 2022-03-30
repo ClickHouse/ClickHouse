@@ -27,7 +27,7 @@ protected:
     std::string getFileName() const override;
 
 public:
-    ReadBufferFromFileDescriptor(
+    explicit ReadBufferFromFileDescriptor(
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
@@ -36,6 +36,10 @@ public:
         : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
         , required_alignment(alignment)
         , fd(fd_)
+    {
+    }
+
+    virtual ~ReadBufferFromFileDescriptor() override
     {
     }
 
@@ -70,7 +74,7 @@ private:
 class ReadBufferFromFileDescriptorPRead : public ReadBufferFromFileDescriptor
 {
 public:
-    ReadBufferFromFileDescriptorPRead(
+    explicit ReadBufferFromFileDescriptorPRead(
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
@@ -79,6 +83,9 @@ public:
         : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
     {
         use_pread = true;
+    }
+    virtual ~ReadBufferFromFileDescriptorPRead() override
+    {
     }
 };
 

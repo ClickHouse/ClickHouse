@@ -121,7 +121,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
         /// Add data to aggr. state if interval is not empty. Empty when haven't found current key in new block.
         if (key_begin != key_end)
-            params->aggregator.executeOnIntervalWithoutKeyImpl(variants.without_key, key_begin, key_end, aggregate_function_instructions.data(), variants.aggregates_pool);
+            params->aggregator.executeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_function_instructions.data(), variants.aggregates_pool);
 
         current_memory_usage = getCurrentMemoryUsage() - initial_memory_usage;
 

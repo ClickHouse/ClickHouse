@@ -105,7 +105,7 @@ void PostgreSQLHandler::run()
                             "0A000",
                             "Command is not supported"),
                         true);
-                    LOG_ERROR(log, Poco::format("Command is not supported. Command code %d", static_cast<Int32>(message_type)));
+                    LOG_ERROR(log, "Command is not supported. Command code {:d}", static_cast<Int32>(message_type));
                     message_transport->dropMessage();
             }
         }
@@ -222,7 +222,7 @@ void PostgreSQLHandler::cancelRequest()
     std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg =
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
 
-    String query = Poco::format("KILL QUERY WHERE query_id = 'postgres:%d:%d'", msg->process_id, msg->secret_key);
+    String query = fmt::format("KILL QUERY WHERE query_id = 'postgres:{:d}:{:d}'", msg->process_id, msg->secret_key);
     ReadBufferFromString replacement(query);
 
     auto query_context = session->makeQueryContext();
@@ -287,7 +287,7 @@ void PostgreSQLHandler::processQuery()
         {
             secret_key = dis(gen);
             auto query_context = session->makeQueryContext();
-            query_context->setCurrentQueryId(Poco::format("postgres:%d:%d", connection_id, secret_key));
+            query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
             CurrentThread::QueryScope query_scope{query_context};
             ReadBufferFromString read_buf(spl_query);
