@@ -397,14 +397,13 @@ def main():
 
     images_dict = get_images_dict(GITHUB_WORKSPACE, "docker/images.json")
 
+    pr_info = PRInfo()
     if args.all:
-        pr_info = PRInfo()
         pr_info.changed_files = set(images_dict.keys())
     elif args.image_path:
-        pr_info = PRInfo()
         pr_info.changed_files = set(i for i in args.image_path)
     else:
-        pr_info = PRInfo(need_changed_files=True)
+        pr_info.fetch_changed_files()
 
     changed_images = get_changed_docker_images(pr_info, images_dict)
     if changed_images:
