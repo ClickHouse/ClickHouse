@@ -2,7 +2,7 @@
 import logging
 import os.path as p
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-from typing import Dict, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 from git_helper import Git, removeprefix
 
@@ -47,12 +47,16 @@ class ClickHouseVersion:
         patch: Union[int, str],
         revision: Union[int, str],
         git: Git,
+        tweak: str = None,
     ):
         self._major = int(major)
         self._minor = int(minor)
         self._patch = int(patch)
         self._revision = int(revision)
         self._git = git
+        self._tweak = None
+        if tweak is not None:
+            self._tweak = int(tweak)
         self._describe = ""
 
     def update(self, part: str) -> "ClickHouseVersion":
@@ -87,7 +91,7 @@ class ClickHouseVersion:
 
     @property
     def tweak(self) -> int:
-        return self._git.tweak
+        return self._tweak or self._git.tweak
 
     @property
     def revision(self) -> int:
@@ -126,6 +130,25 @@ class ClickHouseVersion:
         if version_type not in VersionType.VALID:
             raise ValueError(f"version type {version_type} not in {VersionType.VALID}")
         self._describe = f"v{self.string}-{version_type}"
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(self, type(other)):
+            return NotImplemented
+        return (
+            self.major == other.major
+            and self.minor == other.minor
+            and self.patch == other.patch
+            and self.tweak == other.tweak
+        )
+
+    def __lt__(self, other: "ClickHouseVersion") -> bool:
+        for part in ("major", "minor", "patch", "tweak"):
+            if getattr(self, part) < getattr(other, part):
+                return True
+            elif getattr(self, part) > getattr(other, part):
+                return False
+
+        return False
 
 
 class VersionType:
@@ -180,6 +203,29 @@ def get_version_from_repo(
         versions["revision"],
         git,
     )
+
+
+def get_version_from_string(version: str) -> ClickHouseVersion:
+    validate_version(version)
+    parts = version.split(".")
+    return ClickHouseVersion(parts[0], parts[1], parts[2], -1, git, parts[3])
+
+
+def get_version_from_tag(tag: str) -> ClickHouseVersion:
+    git.check_tag(tag)
+    tag = tag[1:].split("-")[0]
+    return get_version_from_string(tag)
+
+
+def get_tagged_versions() -> List[ClickHouseVersion]:
+    versions = []
+    for tag in git.get_tags():
+        try:
+            version = get_version_from_tag(tag)
+            versions.append(version)
+        except Exception:
+            continue
+    return sorted(versions)
 
 
 def update_cmake_version(
