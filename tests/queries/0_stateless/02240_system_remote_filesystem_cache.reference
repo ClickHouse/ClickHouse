@@ -6,14 +6,14 @@ DROP TABLE IF EXISTS test;
 CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache';
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 SELECT  * FROM test FORMAT Null;
-SELECT cache_base_path, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache ORDER BY file_segment_range_end, size;
-./disks/s3/data_cache/	0	0	1
-./disks/s3/data_cache/	0	79	80
-./disks/s3/data_cache/	0	745	746
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache ORDER BY file_segment_range_end, size;
+0	0	1
+0	79	80
+0	745	746
 SYSTEM DROP FILESYSTEM CACHE;
-SELECT cache_base_path, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
 SELECT * FROM test FORMAT Null;
-SELECT cache_base_path, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
-./disks/s3/data_cache/	0	745	746
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
+0	745	746
 SYSTEM DROP FILESYSTEM CACHE;
-SELECT cache_base_path, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;

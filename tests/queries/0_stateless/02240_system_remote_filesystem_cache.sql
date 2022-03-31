@@ -9,10 +9,10 @@ CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SET
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 
 SELECT  * FROM test FORMAT Null;
-SELECT cache_base_path, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache ORDER BY file_segment_range_end, size;
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache ORDER BY file_segment_range_end, size;
 SYSTEM DROP FILESYSTEM CACHE;
-SELECT cache_base_path, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
 SELECT * FROM test FORMAT Null;
-SELECT cache_base_path, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
 SYSTEM DROP FILESYSTEM CACHE;
-SELECT cache_base_path, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
