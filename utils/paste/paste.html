@@ -30,6 +30,11 @@ is definitely not the most natural for ClickHouse.
 Nevertheless, it is always important to test the system in corner cases
 and unusual scenarios to find potential flaws and to explore new possibilities.
 
+## Contributing
+
+Please send a pull request to
+https://github.com/ClickHouse/ClickHouse/blob/master/utils/paste/paste.html
+
 ## Terms Of Use
 
 This service can be used for helping ClickHouse development.
@@ -56,7 +61,9 @@ DMCA violations should be reported as well.
 ## Installation
 
 ```
-CREATE TABLE paste
+CREATE DATABASE paste ENGINE = Replicated('/clickhouse/databases/paste/', '{shard}', '{replica}');
+
+CREATE TABLE paste.data
 (
     fingerprint UInt32 DEFAULT reinterpretAsUInt32(unhex(fingerprint_hex)),
     hash UInt128 DEFAULT reinterpretAsUInt128(unhex(hash_hex)),
@@ -75,12 +82,32 @@ CREATE TABLE paste
 
     CONSTRAINT length CHECK length(content) < 10 * 1024 * 1024,
     CONSTRAINT hash_is_correct CHECK sipHash128(content) = reinterpretAsFixedString(hash),
-    CONSTRAINT not_uniform_random CHECK length(content) < 10000 OR arrayReduce('entropy', extractAll(content, '.')) < 7
-    CONSTRAINT not_constant CHECK length(content) < 10000 OR arrayReduce('uniqUpTo(1)', extractAll(content, '.')) > 1
+    CONSTRAINT not_uniform_random CHECK length(content) < 10000 OR arrayReduce('entropy', extractAll(content, '.')) < 7,
+    CONSTRAINT not_constant CHECK length(content) < 10000 OR arrayReduce('uniqUpTo(1)', extractAll(content, '.')) > 1,
 
     PRIMARY KEY (fingerprint, hash)
 )
-ENGINE = MergeTree
+ENGINE = ReplicatedMergeTree;
+
+CREATE USER paste IDENTIFIED WITH no_password
+DEFAULT DATABASE paste
+SETTINGS
+    add_http_cors_header = 1,
+    async_insert = 1,
+    limit = 1,
+    offset = 0,
+    max_result_rows = 1,
+    force_primary_key = 1,
+    max_query_size = '10M';
+
+CREATE QUOTA paste
+KEYED BY ip_address
+FOR RANDOMIZED INTERVAL 1 MINUTE MAX query_selects = 100, query_inserts = 1000, written_bytes = '10M',
+FOR RANDOMIZED INTERVAL 1 HOUR MAX query_selects = 1000, query_inserts = 10000, written_bytes = '50M',
+FOR RANDOMIZED INTERVAL 1 DAY MAX query_selects = 5000, query_inserts = 50000, written_bytes = '200M'
+TO paste;
+
+GRANT SELECT, INSERT ON paste.data TO paste;
 ```
 
 -->
@@ -155,7 +182,7 @@ ENGINE = MergeTree
 <textarea id="data" autofocus></textarea>
 <script type="text/javascript">
 
-const clickhouse_url = "http://localhost:8123/?add_http_cors_header=1&async_insert=1";
+const clickhouse_url = "https://play.clickhouse.com/?user=paste";
 
 const encoder = new TextEncoder();
 
@@ -252,7 +279,7 @@ async function load(fingerprint, hash, type) {
 
     const response = await fetch(
         clickhouse_url,
-        { method: "POST", body: `SELECT content, lower(hex(reinterpretAsFixedString(prev_hash))) AS prev_hash, lower(hex(reinterpretAsFixedString(prev_fingerprint))) AS prev_fingerprint FROM paste WHERE fingerprint = reinterpretAsUInt32(unhex('${fingerprint}')) AND hash = reinterpretAsUInt128(unhex('${hash}')) ORDER BY time LIMIT 1 FORMAT JSON` });
+        { method: "POST", body: `SELECT content, lower(hex(reinterpretAsFixedString(prev_hash))) AS prev_hash, lower(hex(reinterpretAsFixedString(prev_fingerprint))) AS prev_fingerprint FROM data WHERE fingerprint = reinterpretAsUInt32(unhex('${fingerprint}')) AND hash = reinterpretAsUInt128(unhex('${hash}')) ORDER BY time LIMIT 1 FORMAT JSON` });
 
     function onError() {
         show(error);
@@ -300,7 +327,7 @@ async function save(text) {
         clickhouse_url,
         {
             method: "POST",
-            body: "INSERT INTO paste (fingerprint_hex, hash_hex, prev_fingerprint_hex, prev_hash_hex, content) FORMAT JSONEachRow " + JSON.stringify(
+            body: "INSERT INTO data (fingerprint_hex, hash_hex, prev_fingerprint_hex, prev_hash_hex, content) FORMAT JSONEachRow " + JSON.stringify(
             {
                 fingerprint_hex: curr_fingerprint,
                 hash_hex: curr_hash,
