@@ -298,7 +298,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getImplementationBuffer(File
     {
         case ReadType::CACHED:
         {
-#ifdef NDEBUG
+#ifndef NDEBUG
             auto * file_reader = assert_cast<ReadBufferFromFile *>(read_buffer_for_file_segment.get());
             size_t file_size = file_reader->size();
 
