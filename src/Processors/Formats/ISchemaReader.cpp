@@ -11,6 +11,60 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
+static void chooseResultType(
+    DataTypePtr & type,
+    const DataTypePtr & new_type,
+    bool allow_bools_as_numbers,
+    const DataTypePtr & default_type,
+    const String & column_name,
+    size_t row)
+{
+    if (!type)
+        type = new_type;
+
+    /// If the new type and the previous type for this column are different,
+    /// we will use default type if we have it or throw an exception.
+    if (new_type && type->equals(*new_type))
+    {
+        /// Check if we have Bool and Number and if allow_bools_as_numbers
+        /// is true make the result type Number
+        auto not_nullable_type = removeNullable(type);
+        auto not_nullable_new_type = removeNullable(new_type);
+        if (allow_bools_as_numbers && (isBool(not_nullable_type) || isBool(not_nullable_new_type))
+            && (isNumber(not_nullable_type) || isNumber(not_nullable_new_type)))
+        {
+            if (isBool(not_nullable_type))
+                type = new_type;
+        }
+        else if (default_type)
+            type = default_type;
+        else
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "Automatically defined type {} for column {} in row {} differs from type defined by previous rows: {}",
+                type->getName(),
+                column_name,
+                row,
+                new_type->getName());
+    }
+}
+
+static void checkTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t max_rows_to_read)
+{
+    if (!type)
+    {
+        if (!default_type)
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "Cannot determine table structure by first {} rows of data, because some columns contain only Nulls. To increase the maximum "
+                "number of rows to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference",
+                max_rows_to_read);
+
+        type = default_type;
+    }
+    result.emplace_back(name, type);
+}
+
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_, bool allow_bools_as_numbers_)
     : ISchemaReader(in_), max_rows_to_read(max_rows_to_read_), default_type(default_type_), allow_bools_as_numbers(allow_bools_as_numbers_)
 {
@@ -35,29 +89,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             if (!new_data_types[i])
                 continue;
 
-            /// If we couldn't determine the type of column yet, just set the new type.
-            if (!data_types[i])
-                data_types[i] = new_data_types[i];
-            /// If the new type and the previous type for this column are different,
-            /// we will use default type if we have it or throw an exception.
-            else if (!data_types[i]->equals(*new_data_types[i]))
-            {
-                /// Check if we have Bool and Number and if allow_bools_as_numbers
-                /// is true make the result type Number
-                auto not_nullable_type = removeNullable(data_types[i]);
-                auto not_nullable_new_type = removeNullable(new_data_types[i]);
-                if (allow_bools_as_numbers && (isBool(not_nullable_type) || isBool(not_nullable_new_type))
-                    && (isNumber(not_nullable_type) || isNumber(not_nullable_new_type)))                {
-                    if (isBool(not_nullable_type))
-                        data_types[i] = new_data_types[i];
-                }
-                else if (default_type)
-                    data_types[i] = default_type;
-                else
-                    throw Exception(
-                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                        "Automatically defined type {} for column {} in row {} differs from type defined by previous rows: {}", new_data_types[i]->getName(), i + 1, row, data_types[i]->getName());
-            }
+            chooseResultType(data_types[i], new_data_types[i], allow_bools_as_numbers, default_type, std::to_string(i + 1), row);
         }
     }
 
@@ -82,18 +114,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     for (size_t i = 0; i != data_types.size(); ++i)
     {
         /// Check that we could determine the type of this column.
-        if (!data_types[i])
-        {
-            if (!default_type)
-                throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot determine table structure by first {} rows of data, because some columns contain only Nulls. To increase the maximum "
-                    "number of rows to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference",
-                    max_rows_to_read);
-
-            data_types[i] = default_type;
-        }
-        result.emplace_back(column_names[i], data_types[i]);
+        checkTypeAndAppend(result, data_types[i], column_names[i], default_type, max_rows_to_read);
     }
 
     return result;
@@ -125,30 +146,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
             }
 
             auto & type = it->second;
-            /// If we couldn't determine the type of column yet, just set the new type.
-            if (!type)
-                type = new_type;
-            /// If the new type and the previous type for this column are different,
-            /// we will use default type if we have it or throw an exception.
-            else if (new_type && type->equals(*new_type))
-            {
-                /// Check if we have Bool and Number and if allow_bools_as_numbers
-                /// is true make the result type Number
-                auto not_nullable_type = removeNullable(type);
-                auto not_nullable_new_type = removeNullable(new_type);
-                if (allow_bools_as_numbers && (isBool(not_nullable_type) || isBool(not_nullable_new_type))
-                    && (isNumber(not_nullable_type) || isNumber(not_nullable_new_type)))
-                {
-                    if (isBool(not_nullable_type))
-                        type = new_type;
-                }
-                else if (default_type)
-                    type = default_type;
-                else
-                    throw Exception(
-                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                        "Automatically defined type {} for column {} in row {} differs from type defined by previous rows: {}", type->getName(), name, row, new_type->getName());
-            }
+            chooseResultType(type, new_type, allow_bools_as_numbers, default_type, name, row);
         }
     }
 
@@ -160,18 +158,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     for (auto & [name, type] : names_and_types)
     {
         /// Check that we could determine the type of this column.
-        if (!type)
-        {
-            if (!default_type)
-                throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot determine table structure by first {} rows of data, because some columns contain only Nulls. To increase the maximum "
-                    "number of rows to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference",
-                    max_rows_to_read);
-
-            type = default_type;
-        }
-        result.emplace_back(name, type);
+        checkTypeAndAppend(result, type, name, default_type, max_rows_to_read);
     }
 
     return result;
