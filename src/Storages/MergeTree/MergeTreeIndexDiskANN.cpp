@@ -3,7 +3,7 @@
 #include <parameters.h>
 #include <utils.h>
 
-#include <Storages/MergeTree/MergeTreeIndexSimple.h>
+#include <Storages/MergeTree/MergeTreeIndexDiskANN.h>
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
