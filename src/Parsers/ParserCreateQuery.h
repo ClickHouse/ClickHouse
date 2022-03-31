@@ -196,12 +196,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
     else if (s_ephemeral.ignore(pos, expected))
     {
-        if (s_ephemeral.ignore(pos, expected))
-        {
-            default_specifier = "EPHEMERAL";
-            if (!expr_parser.parse(pos, default_expression, expected) && type)
-                default_expression = std::make_shared<ASTLiteral>(Field());
-        }
+        default_specifier = "EPHEMERAL";
+        if (!expr_parser.parse(pos, default_expression, expected) && type)
+            default_expression = std::make_shared<ASTLiteral>(Field());
     }
 
     if (require_type && !type && !default_expression)
