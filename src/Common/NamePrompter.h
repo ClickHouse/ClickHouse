@@ -110,7 +110,7 @@ public:
         /// Note: we don't use toString because it will cause writeCString naming conflict in src/Dictionaries/MongoDBDictionarySource.cpp
         for (auto & hint : hints)
             hint = "'" + hint + "'";
-        return !hints.empty() ? ", may be you meant: " + boost::algorithm::join(hints, ",") : "";
+        return !hints.empty() ? ", may be you meant: [" + boost::algorithm::join(hints, ",") + "]" : "";
     }
 
     IHints() = default;
