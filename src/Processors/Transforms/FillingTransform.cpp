@@ -193,15 +193,15 @@ FillingTransform::FillingTransform(
                 p != interpolate_description->required_columns_map.end())
                     input_positions.emplace_back(idx, p->second);
 
-        if (!is_fill_column[idx])
-        {
-            if (interpolate_description && interpolate_description->result_columns_set.count(column.name))
-                interpolate_column_positions.push_back(idx);
-            else
+        if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.count(column.name)))
                 other_column_positions.push_back(idx);
-        }
+
         ++idx;
     }
+
+    if(interpolate_description)
+        for (const auto & name : interpolate_description->result_columns_order)
+            interpolate_column_positions.push_back(header_.getPositionByName(name));
 }
 
 IProcessor::Status FillingTransform::prepare()
