@@ -259,7 +259,7 @@ void FillingTransform::transform(Chunk & chunk)
         {
             interpolate_block.clear();
 
-            if (input_positions.size())
+            if (!input_positions.empty())
             {
                 /// populate calculation block with required columns with values from previous row
                 for (const auto & [col_pos, name_type] : input_positions)
@@ -270,7 +270,7 @@ void FillingTransform::transform(Chunk & chunk)
                     if (size == 0) /// this is the first row in current chunk
                     {
                         /// take value from last row of previous chunk if exists, else use default
-                        if (last_row.size() > col_pos && last_row[col_pos]->size())
+                        if (last_row.size() > col_pos && !last_row[col_pos]->empty())
                             column->insertFrom(*last_row[col_pos], 0);
                         else
                             column->insertDefault();
@@ -284,7 +284,6 @@ void FillingTransform::transform(Chunk & chunk)
             }
             else /// all INTERPOLATE expressions are constants
             {
-                /// LOL :)
                 size_t n = 1;
                 interpolate_actions->execute(interpolate_block, n);
             }
