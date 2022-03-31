@@ -59,3 +59,15 @@ SELECT min(dt) FROM d PREWHERE ((0.9998999834060669 AND 1023) AND 255) <= ceil(j
 SELECT count('') AND NULL FROM d PREWHERE ceil(j) <= NULL;
 
 drop table d;
+
+-- count variant optimization
+
+drop table if exists test;
+create table test (id Int64, d Int64, projection dummy(select * order by id)) engine MergeTree order by id;
+insert into test select number, number from numbers(1e3);
+
+select count(if(d=4, d, 1)) from test settings force_optimize_projection = 1;
+select count(d/3) from test settings force_optimize_projection = 1;
+select count(if(d=4, Null, 1)) from test settings force_optimize_projection = 1; -- { serverError 584 }
+
+drop table test;
