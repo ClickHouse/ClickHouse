@@ -397,6 +397,15 @@ NamesAndTypesList ColumnsDescription::getSubcolumns(const String & name_in_stora
     return NamesAndTypesList(range.first, range.second);
 }
 
+NamesAndTypesList ColumnsDescription::getNested(const String & column_name) const
+{
+    auto range = getNameRange(columns, column_name);
+    NamesAndTypesList nested;
+    for (auto & it = range.first; it != range.second; ++it)
+        nested.emplace_back(it->name, it->type);
+    return nested;
+}
+
 void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
 {
     NamesAndTypesList subcolumns_list;
