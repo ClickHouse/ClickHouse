@@ -15,7 +15,6 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/CompressionMethod.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -248,7 +247,7 @@ public:
     {
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
         HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
-        auto fs = createHDFSFS(builder.get());
+        HDFSFSPtr fs = createHDFSFS(builder.get());
         for (const auto & uri : uris_)
         {
             path_and_uri = getPathFromUriAndUriWithoutPath(uri);
@@ -657,7 +656,7 @@ void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr 
     const String url = uris[0].substr(0, begin_of_path);
 
     HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", local_context->getGlobalContext()->getConfigRef());
-    auto fs = createHDFSFS(builder.get());
+    HDFSFSPtr fs = createHDFSFS(builder.get());
 
     for (const auto & uri : uris)
     {
