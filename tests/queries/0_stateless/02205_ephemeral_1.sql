@@ -77,7 +77,4 @@ INSERT INTO t_ephemeral_02205_1 (x, y) VALUES (21, 7);
 SELECT * FROM t_ephemeral_02205_1;
 
 DROP TABLE IF EXISTS t_ephemeral_02205_1;
-<<<<<<< HEAD
-=======
 
->>>>>>> refactored to remove parsers rependency on datatypes
