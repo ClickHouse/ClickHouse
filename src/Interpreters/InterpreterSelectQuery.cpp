@@ -856,11 +856,11 @@ static InterpolateDescriptionPtr getInterpolateDescription(const ASTSelectQuery 
         auto syntax_result = TreeRewriter(context).analyze(exprs, block.getNamesAndTypesList());
         ExpressionAnalyzer analyzer(exprs, syntax_result, context);
         ActionsDAGPtr actions = analyzer.getActionsDAG(true);
-        ActionsDAGPtr convDAG = ActionsDAG::makeConvertingActions(actions->getResultColumns(),
+        ActionsDAGPtr conv_dag = ActionsDAG::makeConvertingActions(actions->getResultColumns(),
             columns, ActionsDAG::MatchColumnsMode::Position, true);
-        ActionsDAGPtr mergeDAG = ActionsDAG::merge(std::move(*actions->clone()), std::move(*convDAG));
+        ActionsDAGPtr merge_dag = ActionsDAG::merge(std::move(*actions->clone()), std::move(*conv_dag));
 
-        interpolate_descr = std::make_shared<InterpolateDescription>(mergeDAG, aliases);
+        interpolate_descr = std::make_shared<InterpolateDescription>(merge_dag, aliases);
     }
 
     return interpolate_descr;
