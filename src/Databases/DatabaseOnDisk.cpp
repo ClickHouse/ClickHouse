@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -54,6 +55,9 @@ std::pair<String, StoragePtr> createTableFromAST(
 {
     ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
+
+    if (ast_create_query.select && ast_create_query.isView())
+        ApplyWithSubqueryVisitor().visit(*ast_create_query.select);
 
     if (ast_create_query.as_table_function)
     {

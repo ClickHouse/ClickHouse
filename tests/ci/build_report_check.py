@@ -233,7 +233,11 @@ if __name__ == "__main__":
     if ok_builds == 0 or some_builds_are_missing:
         summary_status = "error"
 
-    description = f"{ok_builds}/{total_builds} builds are OK"
+    addition = ""
+    if some_builds_are_missing:
+        addition = "(some builds are missing)"
+
+    description = f"{ok_builds}/{total_builds} builds are OK {addition}"
 
     print("::notice ::Report url: {}".format(url))
 
@@ -244,3 +248,6 @@ if __name__ == "__main__":
         state=summary_status,
         target_url=url,
     )
+
+    if summary_status == "error":
+        sys.exit(1)
