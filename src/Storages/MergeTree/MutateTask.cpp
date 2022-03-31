@@ -74,7 +74,7 @@ static void splitMutationCommands(
                     mutated_columns.emplace(column_name);
 
                 if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
-                     mutated_columns.emplace(command.column_name);
+                    mutated_columns.emplace(command.column_name);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
             {
