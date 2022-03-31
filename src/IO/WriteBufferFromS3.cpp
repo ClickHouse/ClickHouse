@@ -100,6 +100,7 @@ void WriteBufferFromS3::nextImpl()
 
         auto cache_key = cache->hash(blob_name);
         auto file_segments_holder = cache->setDownloading(cache_key, current_download_offset, size);
+        current_download_offset += size;
 
         size_t remaining_size = size;
         for (const auto & file_segment : file_segments_holder.file_segments)
