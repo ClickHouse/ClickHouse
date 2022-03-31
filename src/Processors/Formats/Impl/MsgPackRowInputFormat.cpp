@@ -359,7 +359,7 @@ bool MsgPackVisitor::visit_ext(const char * value, uint32_t size)
         return true;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported MsgPack extension type: {%x}", type);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported MsgPack extension type: {:x}", type);
 }
 
 void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
@@ -498,7 +498,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             msgpack::object_ext object_ext = object.via.ext;
             if (object_ext.type() == int8_t(MsgPackExtensionTypes::UUIDType))
                 return std::make_shared<DataTypeUUID>();
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {%x} is not supported", object_ext.type());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {:x} is not supported", object_ext.type());
         }
     }
     __builtin_unreachable();
