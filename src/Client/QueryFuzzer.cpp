@@ -37,43 +37,55 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
 }
 
-Field QueryFuzzer::getRandomField(int type)
+static constexpr Int64 bad_int64_values[] =
+    {-2, -1, 0, 1, 2, 3, 7, 10, 100, 255, 256, 257, 1023, 1024,
+        1025, 65535, 65536, 65537, 1024 * 1024 - 1, 1024 * 1024,
+        1024 * 1024 + 1, INT_MIN - 1ll, INT_MIN, INT_MIN + 1,
+        INT_MAX - 1, INT_MAX, INT_MAX + 1ll, INT64_MIN, INT64_MIN + 1,
+        INT64_MAX - 1, INT64_MAX};
+
+Field getRandomInteger(pcg64 & rnd)
 {
-    static constexpr Int64 bad_int64_values[]
-        = {-2, -1, 0, 1, 2, 3, 7, 10, 100, 255, 256, 257, 1023, 1024,
-           1025, 65535, 65536, 65537, 1024 * 1024 - 1, 1024 * 1024,
-           1024 * 1024 + 1, INT_MIN - 1ll, INT_MIN, INT_MIN + 1,
-           INT_MAX - 1, INT_MAX, INT_MAX + 1ll, INT64_MIN, INT64_MIN + 1,
-           INT64_MAX - 1, INT64_MAX};
-    switch (type)
-    {
-    case 0:
-    {
-        return bad_int64_values[fuzz_rand() % (sizeof(bad_int64_values)
+    return bad_int64_values[rnd() % (sizeof(bad_int64_values)
                 / sizeof(*bad_int64_values))];
-    }
-    case 1:
-    {
-        static constexpr float values[]
+}
+
+Field getRandomFloat(pcg64 & rnd)
+{
+    static constexpr float values[]
                 = {NAN, INFINITY, -INFINITY, 0., -0., 0.0001, 0.5, 0.9999,
                    1., 1.0001, 2., 10.0001, 100.0001, 1000.0001, 1e10, 1e20,
-                  FLT_MIN, FLT_MIN + FLT_EPSILON, FLT_MAX, FLT_MAX + FLT_EPSILON}; return values[fuzz_rand() % (sizeof(values) / sizeof(*values))];
-    }
-    case 2:
+                  FLT_MIN, FLT_MIN + FLT_EPSILON, FLT_MAX, FLT_MAX + FLT_EPSILON};
+
+    return values[rnd() % (sizeof(values) / sizeof(*values))];
+}
+
+Field getRandomDecimal(pcg64 & rnd)
+{
+    static constexpr UInt64 scales[] = {0, 1, 2, 10};
+    return DecimalField<Decimal64>(
+        bad_int64_values[rnd() % (sizeof(bad_int64_values)
+            / sizeof(*bad_int64_values))],
+        scales[rnd() % (sizeof(scales) / sizeof(*scales))]);
+}
+
+Field getRandomNumericField(int type, pcg64 & rnd)
+{
+    switch (type)
     {
-        static constexpr UInt64 scales[] = {0, 1, 2, 10};
-        return DecimalField<Decimal64>(
-            bad_int64_values[fuzz_rand() % (sizeof(bad_int64_values)
-                / sizeof(*bad_int64_values))],
-            scales[fuzz_rand() % (sizeof(scales) / sizeof(*scales))]);
-    }
-    default:
-        assert(false);
-        return Null{};
+        case 0:
+            return getRandomInteger(rnd);
+        case 1:
+            return getRandomFloat(rnd);
+        case 2:
+            return getRandomDecimal(rnd);
+        default:
+            assert(false);
+            return Null{};
     }
 }
 
-Field QueryFuzzer::fuzzField(Field field)
+Field fuzzField(Field field, pcg64 & rnd)
 {
     const auto type = field.getType();
 
@@ -95,26 +107,26 @@ Field QueryFuzzer::fuzzField(Field field)
         type_index = 2;
     }
 
-    if (fuzz_rand() % 20 == 0)
+    if (rnd() % 20 == 0)
     {
         return Null{};
     }
 
     if (type_index >= 0)
     {
-        if (fuzz_rand() % 20 == 0)
+        if (rnd() % 20 == 0)
         {
             // Change type sometimes, but not often, because it mostly leads to
             // boring errors.
-            type_index = fuzz_rand() % 3;
+            type_index = rnd() % 3;
         }
-        return getRandomField(type_index);
+        return getRandomNumericField(type_index, rnd);
     }
 
     if (type == Field::Types::String)
     {
         auto & str = field.get<std::string>();
-        UInt64 action = fuzz_rand() % 10;
+        UInt64 action = rnd() % 10;
         switch (action)
         {
         case 0:
@@ -129,7 +141,7 @@ Field QueryFuzzer::fuzzField(Field field)
         case 4:
             if (!str.empty())
             {
-                str[fuzz_rand() % str.size()] = '\0';
+                str[rnd() % str.size()] = '\0';
             }
             break;
         default:
@@ -141,24 +153,24 @@ Field QueryFuzzer::fuzzField(Field field)
     {
         auto & arr = field.reinterpret<FieldVector>();
 
-        if (fuzz_rand() % 5 == 0 && !arr.empty())
+        if (rnd() % 5 == 0 && !arr.empty())
         {
-            size_t pos = fuzz_rand() % arr.size();
+            size_t pos = rnd() % arr.size();
             arr.erase(arr.begin() + pos);
             std::cerr << "erased\n";
         }
 
-        if (fuzz_rand() % 5 == 0)
+        if (rnd() % 5 == 0)
         {
             if (!arr.empty())
             {
-                size_t pos = fuzz_rand() % arr.size();
-                arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
+                size_t pos = rnd() % arr.size();
+                arr.insert(arr.begin() + pos, fuzzField(arr[pos], rnd));
                 std::cerr << fmt::format("inserted (pos {})\n", pos);
             }
             else
             {
-                arr.insert(arr.begin(), getRandomField(0));
+                arr.insert(arr.begin(), getRandomNumericField(0, rnd));
                 std::cerr << "inserted (0)\n";
             }
 
@@ -166,7 +178,7 @@ Field QueryFuzzer::fuzzField(Field field)
 
         for (auto & element : arr)
         {
-            element = fuzzField(element);
+            element = fuzzField(element, rnd);
         }
     }
 
@@ -345,7 +357,7 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             {
                 // The offsets are fuzzed normally through 'children'.
                 def.frame_begin_offset
-                    = std::make_shared<ASTLiteral>(getRandomField(0));
+                    = std::make_shared<ASTLiteral>(getRandomNumericField(0, fuzz_rand));
             }
             else
             {
@@ -363,7 +375,7 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             if (def.frame_end_type == WindowFrame::BoundaryType::Offset)
             {
                 def.frame_end_offset
-                    = std::make_shared<ASTLiteral>(getRandomField(0));
+                    = std::make_shared<ASTLiteral>(getRandomNumericField(0, fuzz_rand));
             }
             else
             {
@@ -528,7 +540,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         // do here.
         if (fuzz_rand() % 11 == 0)
         {
-            literal->value = fuzzField(literal->value);
+            literal->value = fuzzField(literal->value, fuzz_rand);
         }
     }
     else

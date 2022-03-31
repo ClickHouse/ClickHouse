@@ -3,7 +3,7 @@
 #include <DataTypes/Serializations/PathInData.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
-#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/ClearableHashMap.h>
 
 namespace DB
 {
@@ -32,7 +32,7 @@ public:
         const Node * parent = nullptr;
 
         Arena strings_pool;
-        HashMapWithStackMemory<StringRef, std::shared_ptr<Node>, StringRefHash, 4> children;
+        ClearableHashMapWithStackMemory<StringRef, std::shared_ptr<Node>, StringRefHash, 4> children;
 
         NodeData data;
         PathInData path;
@@ -46,10 +46,18 @@ public:
             StringRef key_ref{strings_pool.insert(key.data(), key.length()), key.length()};
             children[key_ref] = std::move(next_node);
         }
+
+        void removeChild(std::string_view key)
+        {
+            StringRef key_ref(key.data(), key.length());
+            children.erase(key_ref);
+        }
     };
 
     using NodeKind = typename Node::Kind;
     using NodePtr = std::shared_ptr<Node>;
+
+    SubcolumnsTree() : root(std::make_shared<Node>(Node::TUPLE)) {}
 
     /// Add a leaf without any data in other nodes.
     bool add(const PathInData & path, const NodeData & leaf_data)
@@ -76,9 +84,6 @@ public:
 
         if (parts.empty())
             return false;
-
-        if (!root)
-            root = std::make_shared<Node>(Node::TUPLE);
 
         Node * current_node = root.get();
         for (size_t i = 0; i < parts.size() - 1; ++i)
@@ -151,8 +156,8 @@ public:
         if (node->isScalar())
             return predicate(*node) ? node : nullptr;
 
-        for (const auto & [_, child] : node->children)
-            if (const auto * leaf = findLeaf(child.get(), predicate))
+        for (const auto & elem : node->children)
+            if (const auto * leaf = findLeaf(elem.getMapped().get(), predicate))
                 return leaf;
 
         return nullptr;
@@ -166,13 +171,14 @@ public:
         return node;
     }
 
-    bool empty() const { return root == nullptr; }
+    bool empty() const { return root->children.empty(); }
     size_t size() const { return leaves.size(); }
 
     using Nodes = std::vector<NodePtr>;
 
     const Nodes & getLeaves() const { return leaves; }
     const Node * getRoot() const { return root.get(); }
+    Node * getRoot() { return root.get(); }
 
     using iterator = typename Nodes::iterator;
     using const_iterator = typename Nodes::const_iterator;
@@ -186,9 +192,6 @@ public:
 private:
     const Node * findImpl(const PathInData & path, bool find_exact) const
     {
-        if (!root)
-            return nullptr;
-
         const auto & parts = path.getParts();
         const Node * current_node = root.get();
 

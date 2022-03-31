@@ -445,10 +445,10 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
     {
         std::vector<std::tuple<String, ColumnWithTypeAndDimensions>> tuple_elements;
         tuple_elements.reserve(children.size());
-        for (const auto & [name, child] : children)
+        for (const auto & elem : children)
         {
-            auto column = createTypeFromNode(child.get());
-            tuple_elements.emplace_back(name, std::move(column));
+            auto column = createTypeFromNode(elem.getMapped().get());
+            tuple_elements.emplace_back(elem.getKey(), std::move(column));
         }
 
         /// Sort to always create the same type for the same set of subcolumns.

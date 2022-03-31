@@ -60,8 +60,7 @@ struct QueryFuzzer
     void fuzzMain(ASTPtr & ast);
 
     // Various helper functions follow, normally you shouldn't have to call them.
-    Field getRandomField(int type);
-    Field fuzzField(Field field);
+
     ASTPtr getRandomColumnLike();
     void replaceWithColumnLike(ASTPtr & ast);
     void replaceWithTableLike(ASTPtr & ast);
@@ -76,5 +75,11 @@ struct QueryFuzzer
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
 };
+
+Field getRandomInteger(pcg64 & rnd);
+Field getRandomFloat(pcg64 & rnd);
+Field getRandomDecimal(pcg64 & rnd);
+Field getRandomNumericField(int type, pcg64 & rnd);
+Field fuzzField(Field field, pcg64 & rnd);
 
 }
