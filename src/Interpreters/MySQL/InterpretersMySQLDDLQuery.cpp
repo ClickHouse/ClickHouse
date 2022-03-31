@@ -150,12 +150,12 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
 
     ColumnsDescription columns_description;
 
-    for (
-        auto [column_name_and_type, declare_column_ast] = std::tuple{columns_name_and_type.begin(), columns_definition->children.begin()};
-        column_name_and_type != columns_name_and_type.end();
-        column_name_and_type++,
-        declare_column_ast++
-    )
+    /// FIXME: we could write it like auto [a, b] = std::tuple(x, y),
+    /// but this produce endless recursion in gcc-11, and leads to SIGSEGV
+    /// (see git blame for details).
+    auto column_name_and_type = columns_name_and_type.begin();
+    auto declare_column_ast = columns_definition->children.begin();
+    for (; column_name_and_type != columns_name_and_type.end(); column_name_and_type++, declare_column_ast++)
     {
         const auto & declare_column = (*declare_column_ast)->as<MySQLParser::ASTDeclareColumn>();
         String comment;
