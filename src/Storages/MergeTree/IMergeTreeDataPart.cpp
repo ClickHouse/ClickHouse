@@ -635,31 +635,34 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
-    try {
-      loadUUID();
-      loadColumns(require_columns_checksums);
-      loadChecksums(require_columns_checksums);
-      loadIndexGranularity();
-      calculateColumnsAndSecondaryIndicesSizesOnDisk();
-      loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
-      loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
-      loadPartitionAndMinMaxIndex();
-      if (!parent_part)
-      {
-          loadTTLInfos();
-          loadProjections(require_columns_checksums, check_consistency);
-      }
+    try
+    {
+        loadUUID();
+        loadColumns(require_columns_checksums);
+        loadChecksums(require_columns_checksums);
+        loadIndexGranularity();
+        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+        loadIndex(); /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
+        loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
+        loadPartitionAndMinMaxIndex();
+        if (!parent_part)
+        {
+            loadTTLInfos();
+            loadProjections(require_columns_checksums, check_consistency);
+        }
 
-      if (check_consistency)
-          checkConsistency(require_columns_checksums);
+        if (check_consistency)
+            checkConsistency(require_columns_checksums);
 
-      loadDefaultCompressionCodec();
-    } catch (...) {
-      // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
-      // into meta data before exception, need to clean them all.
-      metadata_manager->deleteAll(/*include_projection*/true);
-      metadata_manager->assertAllDeleted(/*include_projection*/true);
-      throw;
+        loadDefaultCompressionCodec();
+    }
+    catch (...)
+    {
+        // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
+        // into meta data before exception, need to clean them all.
+        metadata_manager->deleteAll(/*include_projection*/ true);
+        metadata_manager->assertAllDeleted(/*include_projection*/ true);
+        throw;
     }
 }
 
