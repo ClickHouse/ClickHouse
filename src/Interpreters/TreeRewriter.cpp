@@ -345,7 +345,10 @@ void replaceWithSumCount(String column_name, ASTFunction & func)
     {
         /// Rewrite "avg" to sumCount().1 / sumCount().2
         auto new_arg1 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(1)));
-        auto new_arg2 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(2)));
+        auto new_arg2 = makeASTFunction("CAST",
+            makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(2))),
+            std::make_shared<ASTLiteral>("Float64"));
+
         func.name = "divide";
         exp_list->children.push_back(new_arg1);
         exp_list->children.push_back(new_arg2);

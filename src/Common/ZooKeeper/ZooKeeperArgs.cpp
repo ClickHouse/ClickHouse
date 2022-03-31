@@ -1,7 +1,10 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <base/find_symbols.h>
+#include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/isLocalAddress.h>
+#include <Poco/String.h>
 
 namespace zkutil
 {
@@ -53,6 +56,15 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
         {
             implementation = config.getString(config_name + "." + key);
         }
+        else if (key == "zookeeper_load_balancing")
+        {
+            String load_balancing_str = config.getString(config_name + "." + key);
+            /// Use magic_enum to avoid dependency from dbms (`SettingFieldLoadBalancingTraits::fromString(...)`)
+            auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
+            if (!load_balancing)
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
+            get_priority_load_balancing.load_balancing = *load_balancing;
+        }
         else
             throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
     }
@@ -68,6 +80,15 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
 
     if (session_timeout_ms < 0 || operation_timeout_ms < 0 || connection_timeout_ms < 0)
         throw KeeperException("Timeout cannot be negative", Coordination::Error::ZBADARGUMENTS);
+
+    /// init get_priority_load_balancing
+    get_priority_load_balancing.hostname_differences.resize(hosts.size());
+    const String & local_hostname = getFQDNOrHostName();
+    for (size_t i = 0; i < hosts.size(); ++i)
+    {
+        const String & node_host = hosts[i].substr(0, hosts[i].find_last_of(':'));
+        get_priority_load_balancing.hostname_differences[i] = DB::getHostNameDifference(local_hostname, node_host);
+    }
 }
 
 ZooKeeperArgs::ZooKeeperArgs(const String & hosts_string)

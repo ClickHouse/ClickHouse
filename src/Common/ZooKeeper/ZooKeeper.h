@@ -14,7 +14,9 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include <Common/thread_local_rng.h>
 #include <unistd.h>
+#include <random>
 
 
 namespace ProfileEvents
@@ -38,6 +40,25 @@ namespace zkutil
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
+struct ShuffleHost
+{
+    String host;
+    Int64 priority = 0;
+    UInt32 random = 0;
+
+    void randomize()
+    {
+        random = thread_local_rng();
+    }
+
+    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
+    {
+        return std::forward_as_tuple(lhs.priority, lhs.random)
+               < std::forward_as_tuple(rhs.priority, rhs.random);
+    }
+};
+
+using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
 ///
@@ -55,6 +76,7 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+
 
     /** Config of the form:
         <zookeeper>
@@ -79,6 +101,8 @@ public:
         </zookeeper>
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
+    std::vector<ShuffleHost> shuffleHosts() const;
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.

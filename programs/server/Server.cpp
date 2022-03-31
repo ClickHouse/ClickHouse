@@ -45,6 +45,7 @@
 #include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -554,6 +555,10 @@ if (ThreadFuzzer::instance().isEffective())
         config().getUInt("thread_pool_queue_size", 10000)
     );
 
+    IOThreadPool::initialize(
+        config().getUInt("max_io_thread_pool_size", 100),
+        config().getUInt("max_io_thread_pool_free_size", 0),
+        config().getUInt("io_thread_pool_queue_size", 10000));
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -824,6 +829,36 @@ if (ThreadFuzzer::instance().isEffective())
         fs::create_directories(path / "metadata_dropped/");
     }
 
+#if USE_ROCKSDB
+    /// Initialize merge tree metadata cache
+    if (config().has("merge_tree_metadata_cache"))
+    {
+        fs::create_directories(path / "rocksdb/");
+        size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
+        bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
+        try
+        {
+            LOG_DEBUG(
+                log, "Initiailizing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
+            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+        }
+        catch (...)
+        {
+            if (continue_if_corrupted)
+            {
+                /// Rename rocksdb directory and reinitialize merge tree metadata cache
+                time_t now = time(nullptr);
+                fs::rename(path / "rocksdb", path / ("rocksdb.old." + std::to_string(now)));
+                global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
+#endif
+
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
@@ -1022,8 +1057,8 @@ if (ThreadFuzzer::instance().isEffective())
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
                                 config_getter, global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout,
-                                global_context->getSettingsRef().send_timeout,
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(),
                                 false), server_pool, socket));
                 });
 
@@ -1045,8 +1080,8 @@ if (ThreadFuzzer::instance().isEffective())
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
                                 config_getter, global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout,
-                                global_context->getSettingsRef().send_timeout, true), server_pool, socket));
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(), true), server_pool, socket));
 #else
                     UNUSED(port);
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",

@@ -5,7 +5,6 @@
 
 #include <functional>
 #include <filesystem>
-#include <pcg-random/pcg_random.hpp>
 
 #include <base/logger_useful.h>
 #include <Common/randomSeed.h>
@@ -13,6 +12,7 @@
 #include <Common/Exception.h>
 
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/DNS.h>
 
 
 namespace fs = std::filesystem;
@@ -45,6 +45,7 @@ static void check(Coordination::Error code, const std::string & path)
 
 
 void ZooKeeper::init(ZooKeeperArgs args_)
+
 {
     args = std::move(args_);
     log = &Poco::Logger::get("ZooKeeper");
@@ -57,14 +58,13 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         Coordination::ZooKeeper::Nodes nodes;
         nodes.reserve(args.hosts.size());
 
-        Strings shuffled_hosts = args.hosts;
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        pcg64 generator(randomSeed());
-        std::shuffle(shuffled_hosts.begin(), shuffled_hosts.end(), generator);
+        std::vector<ShuffleHost> shuffled_hosts = shuffleHosts();
 
         bool dns_error = false;
-        for (auto & host_string : shuffled_hosts)
+        for (auto & host : shuffled_hosts)
         {
+            auto & host_string = host.host;
             try
             {
                 bool secure = bool(startsWith(host_string, "secure://"));
@@ -72,6 +72,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
                 if (secure)
                     host_string.erase(0, strlen("secure://"));
 
+                LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, Poco::Net::SocketAddress{host_string}.toString());
                 nodes.emplace_back(Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, secure});
             }
             catch (const Poco::Net::HostNotFoundException & e)
@@ -135,7 +136,6 @@ void ZooKeeper::init(ZooKeeperArgs args_)
     }
 }
 
-
 ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 {
     zk_log = std::move(zk_log_);
@@ -147,6 +147,31 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 {
     init(ZooKeeperArgs(config, config_name));
 }
+
+std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
+{
+    std::function<size_t(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
+    std::vector<ShuffleHost> shuffle_hosts;
+    for (size_t i = 0; i < args.hosts.size(); ++i)
+    {
+        ShuffleHost shuffle_host;
+        shuffle_host.host = args.hosts[i];
+        if (get_priority)
+            shuffle_host.priority = get_priority(i);
+        shuffle_host.randomize();
+        shuffle_hosts.emplace_back(shuffle_host);
+    }
+
+    std::sort(
+        shuffle_hosts.begin(), shuffle_hosts.end(),
+        [](const ShuffleHost & lhs, const ShuffleHost & rhs)
+        {
+            return ShuffleHost::compare(lhs, rhs);
+        });
+
+    return shuffle_hosts;
+}
+
 
 bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
 {
