@@ -466,8 +466,6 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
 
             if (field.size() > 1 && ((field.front() == '\'' && field.back() == '\'') || (field.front() == '"' && field.back() == '"')))
             {
-                auto s = std::string_view(field.data() + 1, field.size() - 2);
-
                 ReadBufferFromString buf(std::string_view(field.data() + 1, field.size() - 2));
                 /// Try to determine the type of value inside quotes
                 auto type = determineDataTypeForSingleField(buf);
