@@ -2,6 +2,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <boost/noncopyable.hpp>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/TableLockHolder.h>
 #include <Common/Stopwatch.h>
 #include <base/scope_guard.h>
 
@@ -66,6 +67,7 @@ private:
 
     /// Lists of changes made by transaction
     std::unordered_set<StoragePtr> storages;
+    std::vector<TableLockHolder> table_read_locks_for_ordinary_db;
     DataPartsVector creating_parts;
     DataPartsVector removing_parts;
     using RunningMutationsList = std::vector<std::pair<StoragePtr, String>>;
