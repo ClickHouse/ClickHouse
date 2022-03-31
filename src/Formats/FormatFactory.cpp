@@ -13,6 +13,8 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -90,6 +92,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
+    format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
@@ -120,13 +123,16 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
     format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
     format_settings.arrow.allow_missing_columns = settings.input_format_arrow_allow_missing_columns;
+    format_settings.arrow.case_insensitive_column_matching = settings.input_format_arrow_case_insensitive_column_matching;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
     format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
     format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
+    format_settings.orc.case_insensitive_column_matching = settings.input_format_orc_case_insensitive_column_matching;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.seekable_read = settings.input_format_allow_seeks;
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
+    format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
@@ -275,9 +281,10 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
         && !settings.output_format_json_array_of_rows)
     {
-        auto formatter_creator = [output_getter, sample, callback, format_settings]
-        (WriteBuffer & output) -> OutputFormatPtr
-        { return output_getter(output, sample, {std::move(callback)}, format_settings);};
+        auto formatter_creator = [output_getter, sample, callback, format_settings] (WriteBuffer & output) -> OutputFormatPtr
+        {
+            return output_getter(output, sample, {callback}, format_settings);
+        };
 
         ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
 
@@ -431,6 +438,9 @@ void FormatFactory::registerFileExtension(const String & extension, const String
 
 String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_found)
 {
+    if (file_name == "stdin")
+        return getFormatFromFileDescriptor(STDIN_FILENO);
+
     CompressionMethod compression_method = chooseCompressionMethod(file_name, "");
     if (CompressionMethod::None != compression_method)
     {
@@ -457,6 +467,25 @@ String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_
         return "";
     }
     return it->second;
+}
+
+String FormatFactory::getFormatFromFileDescriptor(int fd)
+{
+#ifdef OS_LINUX
+    char buf[32] = {'\0'};
+    snprintf(buf, sizeof(buf), "/proc/self/fd/%d", fd);
+    char file_path[PATH_MAX] = {'\0'};
+    if (readlink(buf, file_path, sizeof(file_path) - 1) != -1)
+        return getFormatFromFileName(file_path, false);
+    return "";
+#elif defined(__APPLE__)
+    char file_path[PATH_MAX] = {'\0'};
+    if (fcntl(fd, F_GETPATH, file_path) != -1)
+        return getFormatFromFileName(file_path, false);
+    return "";
+#else
+    return "";
+#endif
 }
 
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)

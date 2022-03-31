@@ -13,7 +13,7 @@ class ReadBuffer;
 /// This format slurps all input data into single value.
 /// This format can only parse a table with single field of type String or similar.
 
-class RawBLOBRowInputFormat : public IRowInputFormat
+class RawBLOBRowInputFormat final : public IRowInputFormat
 {
 public:
     RawBLOBRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
@@ -34,4 +34,3 @@ public:
 };
 
 }
-

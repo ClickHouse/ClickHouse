@@ -11,12 +11,12 @@ ActionLock::ActionLock(const ActionBlocker & blocker) : counter_ptr(blocker.coun
         ++(*counter);
 }
 
-ActionLock::ActionLock(ActionLock && other)
+ActionLock::ActionLock(ActionLock && other) noexcept
 {
     *this = std::move(other);
 }
 
-ActionLock & ActionLock::operator=(ActionLock && other)
+ActionLock & ActionLock::operator=(ActionLock && other) noexcept
 {
     auto lock_lhs = this->counter_ptr.lock();
 

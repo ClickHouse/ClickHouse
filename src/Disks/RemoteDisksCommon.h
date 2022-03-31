@@ -21,4 +21,10 @@ std::pair<String, DiskPtr> prepareForLocalMetadata(
     const String & config_prefix,
     ContextPtr context);
 
+FileCachePtr getCachePtrForDisk(
+    const String & name,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    ContextPtr context);
+
 }

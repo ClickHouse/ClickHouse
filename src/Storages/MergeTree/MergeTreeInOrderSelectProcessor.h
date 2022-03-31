@@ -15,7 +15,7 @@ public:
     explicit MergeTreeInOrderSelectProcessor(Args &&... args)
         : MergeTreeSelectProcessor{std::forward<Args>(args)...}
     {
-        LOG_DEBUG(log, "Reading {} ranges in order from part {}, approx. {} rows starting from {}",
+        LOG_TRACE(log, "Reading {} ranges in order from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
     }

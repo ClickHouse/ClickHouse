@@ -187,6 +187,7 @@ public:
     /// Register file extension for format
     void registerFileExtension(const String & extension, const String & format_name);
     String getFormatFromFileName(String file_name, bool throw_if_not_found = false);
+    String getFormatFromFileDescriptor(int fd);
 
     /// Register schema readers for format its name.
     void registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator);

@@ -38,8 +38,9 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
     {
         size_t total_bytes_to_read = 0;
         Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
-        return StorageFile::getTableStructureFromData(format, paths, compression_method, std::nullopt, context);
+        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context);
     }
+
 
     return parseColumnsListFromString(structure, context);
 }

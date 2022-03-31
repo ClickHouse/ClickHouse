@@ -13,9 +13,11 @@
 #include <base/itoa.h>
 #include <base/map.h>
 #include <base/range.h>
+#include <base/sort.h>
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
+
 
 namespace DB
 {
@@ -145,7 +147,7 @@ static void validateKeyTypes(const DataTypes & key_types)
 template <typename T, typename Comp>
 size_t sortAndUnique(std::vector<T> & vec, Comp comp)
 {
-    std::sort(vec.begin(), vec.end(),
+    ::sort(vec.begin(), vec.end(),
               [&](const auto & a, const auto & b) { return comp(a, b) < 0; });
 
     auto new_end = std::unique(vec.begin(), vec.end(),

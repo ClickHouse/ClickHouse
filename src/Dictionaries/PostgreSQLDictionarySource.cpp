@@ -30,7 +30,7 @@ static const UInt64 max_block_size = 8192;
 
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema",
-    "update_field", "update_tag", "invalidate_query", "query", "where", "name", "priority"};
+    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority"};
 
 namespace
 {
@@ -80,7 +80,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 
 Pipe PostgreSQLDictionarySource::loadAll()
 {
-    LOG_TRACE(log, load_all_query);
+    LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadBase(load_all_query);
 }
 
@@ -88,7 +88,7 @@ Pipe PostgreSQLDictionarySource::loadAll()
 Pipe PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
-    LOG_TRACE(log, load_update_query);
+    LOG_TRACE(log, fmt::runtime(load_update_query));
     return loadBase(load_update_query);
 }
 

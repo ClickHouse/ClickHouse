@@ -55,7 +55,7 @@ Internal coordination settings are located in `<keeper_server>.<coordination_set
 -    `auto_forwarding` — Allow to forward write requests from followers to the leader (default: true).
 -    `shutdown_timeout` — Wait to finish internal connections and shutdown (ms) (default: 5000).
 -    `startup_timeout` — If the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms) (default: 30000).
--    `four_letter_word_white_list` — White list of 4lw commands (default: "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro").
+-    `four_letter_word_allow_list` — Allow list of 4lw commands (default: "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro").
 
 Quorum configuration is located in `<keeper_server>.<raft_configuration>` section and contain servers description.
 
@@ -108,14 +108,20 @@ Examples of configuration for quorum with three nodes can be found in [integrati
 ClickHouse Keeper is bundled into the ClickHouse server package, just add configuration of `<keeper_server>` and start ClickHouse server as always. If you want to run standalone ClickHouse Keeper you can start it in a similar way with:
 
 ```bash
-clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
+clickhouse-keeper --config /etc/your_path_to_config/config.xml
+```
+
+If you don't have the symlink (`clickhouse-keeper`) you can create it or specify `keeper` as argument:
+
+```bash
+clickhouse keeper --config /etc/your_path_to_config/config.xml
 ```
 
 ## Four Letter Word Commands {#four-letter-word-commands}
 
 ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.  
 
-The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro".
+The 4lw commands has a allow list configuration `four_letter_word_allow_list` which has default value "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro".
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
 
@@ -195,7 +201,7 @@ Server stats reset.
 ```
 server_id=1
 tcp_port=2181
-four_letter_word_white_list=*
+four_letter_word_allow_list=*
 log_storage_path=./coordination/logs
 snapshot_storage_path=./coordination/snapshots
 max_requests_batch_size=100

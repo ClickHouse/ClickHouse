@@ -14,9 +14,13 @@ namespace DB
 class ISchemaReader
 {
 public:
-    ISchemaReader(ReadBuffer & in_) : in(in_) {}
+    explicit ISchemaReader(ReadBuffer & in_) : in(in_) {}
 
     virtual NamesAndTypesList readSchema() = 0;
+
+    /// True if order of columns is important in format.
+    /// Exceptions: JSON, TSKV.
+    virtual bool hasStrictOrderOfColumns() const { return true; }
 
     virtual ~ISchemaReader() = default;
 
@@ -60,6 +64,7 @@ class IRowWithNamesSchemaReader : public ISchemaReader
 public:
     IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
     NamesAndTypesList readSchema() override;
+    bool hasStrictOrderOfColumns() const override { return false; }
 
 protected:
     /// Read one row and determine types of columns in it.

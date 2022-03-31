@@ -21,6 +21,8 @@ from ci_config import CI_CONFIG, BuildConfig
 from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
+IMAGE_NAME = "clickhouse/binary-builder"
+
 
 def get_build_config(build_check_name: str, build_name: str) -> BuildConfig:
     if build_check_name == "ClickHouse build check (actions)":
@@ -52,7 +54,7 @@ def get_packager_cmd(
     build_version: str,
     image_version: str,
     ccache_path: str,
-    pr_info: PRInfo,
+    official: bool,
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
@@ -73,9 +75,8 @@ def get_packager_cmd(
     cmd += " --cache=ccache"
     cmd += " --ccache_dir={}".format(ccache_path)
 
-    if "alien_pkgs" in build_config and build_config["alien_pkgs"]:
-        if pr_info.number == 0 or "release" in pr_info.labels:
-            cmd += " --alien-pkgs rpm tgz"
+    if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
+        cmd += " --additional-pkgs"
 
     cmd += " --docker-image-version={}".format(image_version)
     cmd += " --version={}".format(build_version)
@@ -83,14 +84,10 @@ def get_packager_cmd(
     if _can_export_binaries(build_config):
         cmd += " --with-binaries=tests"
 
+    if official:
+        cmd += " --official"
+
     return cmd
-
-
-def get_image_name(build_config: BuildConfig) -> str:
-    if build_config["package_type"] != "deb":
-        return "clickhouse/binary-builder"
-    else:
-        return "clickhouse/deb-builder"
 
 
 def build_clickhouse(
@@ -175,7 +172,7 @@ def get_release_or_pr(
         # for pushes to master - major version, but not for performance builds
         # they havily relies on a fixed path for build package and nobody going
         # to deploy them somewhere, so it's ok.
-        return ".".join(version.as_tuple()[:2])
+        return f"{version.major}.{version.minor}"
     # PR number for anything else
     return str(pr_info.number)
 
@@ -218,7 +215,7 @@ def main():
 
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
-    version = get_version_from_repo(REPO_COPY)
+    version = get_version_from_repo()
     release_or_pr = get_release_or_pr(pr_info, build_config, version)
 
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
@@ -240,6 +237,7 @@ def main():
                     "https://s3.amazonaws.com/clickhouse-builds/"
                     + url.replace("+", "%2B").replace(" ", "%20")
                 )
+        success = len(build_urls) > 0
         create_json_artifact(
             TEMP_PATH,
             build_name,
@@ -247,21 +245,26 @@ def main():
             build_urls,
             build_config,
             0,
-            len(build_urls) > 0,
+            success,
         )
-        return
+        # Fail build job if not successeded
+        if not success:
+            sys.exit(1)
+        else:
+            sys.exit(0)
 
-    image_name = get_image_name(build_config)
-    docker_image = get_image_with_version(IMAGES_PATH, image_name)
+    docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
 
-    logging.info("Got version from repo %s", version.get_version_string())
+    logging.info("Got version from repo %s", version.string)
 
+    official_flag = pr_info.number == 0
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         version_type = "stable"
+        official_flag = True
 
-    update_version_local(REPO_COPY, pr_info.sha, version, version_type)
+    update_version_local(REPO_COPY, version, version_type)
 
     logging.info("Updated local files with version")
 
@@ -290,11 +293,12 @@ def main():
         build_config,
         os.path.join(REPO_COPY, "docker/packager"),
         build_output_path,
-        version.get_version_string(),
+        version.string,
         image_version,
         ccache_path,
-        pr_info,
+        official=official_flag,
     )
+
     logging.info("Going to run packager with %s", packager_cmd)
 
     build_clickhouse_log = os.path.join(TEMP_PATH, "build_log")

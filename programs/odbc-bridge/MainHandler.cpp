@@ -46,7 +46,7 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
     response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
         *response.send() << message << std::endl;
-    LOG_WARNING(log, message);
+    LOG_WARNING(log, fmt::runtime(message));
 }
 
 
@@ -102,7 +102,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     catch (const Exception & ex)
     {
         processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
-        LOG_ERROR(log, ex.getStackTraceString());
+        LOG_ERROR(log, fmt::runtime(ex.getStackTraceString()));
         return;
     }
 

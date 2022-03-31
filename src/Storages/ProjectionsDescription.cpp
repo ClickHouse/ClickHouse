@@ -107,7 +107,9 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
-        result.query_ast, query_context, storage, {}, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias());
+        result.query_ast, query_context, storage, {},
+        /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizationsAlias());
 
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
@@ -179,7 +181,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const ColumnsDescription & columns,
-    const ASTPtr & partition_columns,
+    ASTPtr partition_columns,
     const Names & minmax_columns,
     const ASTs & primary_key_asts,
     ContextPtr query_context)
@@ -203,7 +205,12 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
 
     if (partition_columns && !partition_columns->children.empty())
+    {
+        partition_columns = partition_columns->clone();
+        for (const auto & partition_column : partition_columns->children)
+            KeyDescription::moduloToModuloLegacyRecursive(partition_column);
         select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, partition_columns->clone());
+    }
 
     result.definition_ast = select_query;
     result.name = MINMAX_COUNT_PROJECTION_NAME;

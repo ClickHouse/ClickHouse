@@ -38,8 +38,9 @@ struct FormatSettings
 
     enum class DateTimeInputFormat
     {
-        Basic,      /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort  /// Use sophisticated rules to parse whatever possible.
+        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort,   /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
@@ -73,6 +74,7 @@ struct FormatSettings
         bool low_cardinality_as_dictionary = false;
         bool import_nested = false;
         bool allow_missing_columns = false;
+        bool case_insensitive_column_matching = false;
     } arrow;
 
     struct
@@ -135,6 +137,7 @@ struct FormatSettings
         UInt64 row_group_size = 1000000;
         bool import_nested = false;
         bool allow_missing_columns = false;
+        bool case_insensitive_column_matching = false;
     } parquet;
 
     struct Pretty
@@ -215,6 +218,7 @@ struct FormatSettings
         bool import_nested = false;
         bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
+        bool case_insensitive_column_matching = false;
     } orc;
 
     /// For capnProto format we should determine how to
@@ -231,9 +235,17 @@ struct FormatSettings
         EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
     } capn_proto;
 
+    enum class MsgPackUUIDRepresentation
+    {
+        STR, // Output UUID as a string of 36 characters.
+        BIN, // Output UUID as 16-bytes binary.
+        EXT, // Output UUID as ExtType = 2
+    };
+
     struct
     {
         UInt64 number_of_columns = 0;
+        MsgPackUUIDRepresentation output_uuid_representation = MsgPackUUIDRepresentation::EXT;
     } msgpack;
 };
 

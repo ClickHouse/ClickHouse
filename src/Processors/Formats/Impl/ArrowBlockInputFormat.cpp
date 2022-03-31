@@ -114,7 +114,7 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadB
     if (is_stopped)
         return nullptr;
 
-    auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(std::move(arrow_file));
+    auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file);
     if (!file_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
             "Error while opening a table: {}", file_reader_status.status().ToString());
@@ -139,7 +139,11 @@ void ArrowBlockInputFormat::prepareReader()
     }
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(), "Arrow", format_settings.arrow.import_nested, format_settings.arrow.allow_missing_columns);
+        getPort().getHeader(),
+        "Arrow",
+        format_settings.arrow.import_nested,
+        format_settings.arrow.allow_missing_columns,
+        format_settings.arrow.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     if (stream)

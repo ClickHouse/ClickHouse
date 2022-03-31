@@ -5,6 +5,7 @@
         <max_partitions_per_insert_block>2000</max_partitions_per_insert_block>
         <max_insert_block_size>10000000</max_insert_block_size>
         <max_threads>8</max_threads>
+        <max_memory_usage>15G</max_memory_usage>
     </settings>
 
     <substitutions>

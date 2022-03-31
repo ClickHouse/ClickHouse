@@ -32,11 +32,33 @@ public:
       */
     void writeWithPermutation(const Block & block, const IColumn::Permutation * permutation);
 
+    /// Finalizer is a structure which is returned from by finalizePart().
+    /// Files from part may be written asynchronously, e.g. for blob storages.
+    /// You should call finish() to wait until all data is written.
+    struct Finalizer
+    {
+        struct Impl;
+        std::unique_ptr<Impl> impl;
+
+        explicit Finalizer(std::unique_ptr<Impl> impl_);
+        ~Finalizer();
+        Finalizer(Finalizer &&) noexcept;
+        Finalizer & operator=(Finalizer &&) noexcept;
+
+        void finish();
+    };
+
     /// Finalize writing part and fill inner structures
     /// If part is new and contains projections, they should be added before invoking this method.
-    void writeSuffixAndFinalizePart(
+    Finalizer finalizePartAsync(
             MergeTreeData::MutableDataPartPtr & new_part,
-            bool sync = false,
+            bool sync,
+            const NamesAndTypesList * total_columns_list = nullptr,
+            MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+
+    void finalizePart(
+            MergeTreeData::MutableDataPartPtr & new_part,
+            bool sync,
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
@@ -46,10 +68,10 @@ private:
       */
     void writeImpl(const Block & block, const IColumn::Permutation * permutation);
 
-    void finalizePartOnDisk(
+    using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
+    WrittenFiles finalizePartOnDisk(
             const MergeTreeData::DataPartPtr & new_part,
-            MergeTreeData::DataPart::Checksums & checksums,
-            bool sync);
+            MergeTreeData::DataPart::Checksums & checksums);
 
     NamesAndTypesList columns_list;
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
