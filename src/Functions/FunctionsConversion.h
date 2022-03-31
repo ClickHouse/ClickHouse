@@ -875,7 +875,7 @@ struct ConvertImplGenericToString
         const IColumn & col_from = *col_with_type_and_name.column;
 
         size_t size = col_from.size();
-        auto col_to = result_type->createColumn();
+        auto col_to = removeNullable(result_type)->createColumn();
 
         {
             ColumnStringHelpers::WriteHelper write_helper(
