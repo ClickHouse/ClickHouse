@@ -4,7 +4,6 @@ c	Nullable(String)
 1	s1	\N
 2	}	[2]
 \N	\N	\N
-\N	\N	\N
 \N	\N	[3]
 b	Nullable(String)					
 a	Nullable(String)					
@@ -12,7 +11,6 @@ c	Nullable(String)
 e	Nullable(String)					
 1	\N	\N	\N
 \N	2	3	\N
-\N	\N	\N	\N
 \N	\N	\N	3
 3	3	1	\N
 a	Nullable(Float64)					
