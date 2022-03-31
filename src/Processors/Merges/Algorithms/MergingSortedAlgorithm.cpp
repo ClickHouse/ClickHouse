@@ -11,14 +11,15 @@ namespace ErrorCodes
 }
 
 MergingSortedAlgorithm::MergingSortedAlgorithm(
-    const Block & header,
+    Block header_,
     size_t num_inputs,
     SortDescription description_,
     size_t max_block_size,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
+    : header(std::move(header_))
+    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)
@@ -65,7 +66,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             continue;
 
         prepareChunk(chunk);
-        cursors[source_num] = SortCursorImpl(chunk.getColumns(), description, source_num);
+        cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
     }
 
     if (has_collation)

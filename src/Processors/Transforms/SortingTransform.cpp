@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeSorter::MergeSorter(Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
+MergeSorter::MergeSorter(Block header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
     : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     Chunks nonempty_chunks;
@@ -36,7 +36,7 @@ MergeSorter::MergeSorter(Chunks chunks_, SortDescription & description_, size_t 
         /// which can be inefficient.
         convertToFullIfSparse(chunk);
 
-        cursors.emplace_back(chunk.getColumns(), description);
+        cursors.emplace_back(header, chunk.getColumns(), description);
         has_collation |= cursors.back().has_collation;
 
         nonempty_chunks.emplace_back(std::move(chunk));

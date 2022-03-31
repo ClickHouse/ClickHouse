@@ -21,10 +21,12 @@ static bool isPrefix(const SortDescription & pref_descr, const SortDescription &
 }
 
 FinishSortingTransform::FinishSortingTransform(
-    const Block & header, const SortDescription & description_sorted_,
+    Block header_,
+    const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
-    size_t max_merged_block_size_, UInt64 limit_)
-    : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_)
+    size_t max_merged_block_size_,
+    UInt64 limit_)
+    : SortingTransform(header_, description_to_sort_, max_merged_block_size_, limit_), header(std::move(header_))
 {
     /// Check for sanity non-modified descriptions
     if (!isPrefix(description_sorted_, description_to_sort_))
@@ -100,7 +102,7 @@ void FinishSortingTransform::generate()
 {
     if (!merge_sorter)
     {
-        merge_sorter = std::make_unique<MergeSorter>(std::move(chunks), description, max_merged_block_size, limit);
+        merge_sorter = std::make_unique<MergeSorter>(header, std::move(chunks), description, max_merged_block_size, limit);
         generated_prefix = true;
     }
 

@@ -8,13 +8,14 @@ namespace DB
 static const size_t MAX_ROWS_IN_MULTIVERSION_QUEUE = 8192;
 
 VersionedCollapsingAlgorithm::VersionedCollapsingAlgorithm(
-    const Block & header, size_t num_inputs,
-    SortDescription description_, const String & sign_column_,
+    const Block & header,
+    size_t num_inputs,
+    SortDescription description_,
+    const String & sign_column_,
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : IMergingAlgorithmWithSharedChunks(
-            num_inputs, std::move(description_), out_row_sources_buf_, MAX_ROWS_IN_MULTIVERSION_QUEUE)
+    : IMergingAlgorithmWithSharedChunks(header, num_inputs, std::move(description_), out_row_sources_buf_, MAX_ROWS_IN_MULTIVERSION_QUEUE)
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     /// -1 for +1 in FixedSizeDequeWithGaps's internal buffer. 3 is a reasonable minimum size to collapse anything.
     , max_rows_in_queue(std::min(std::max<size_t>(3, max_block_size), MAX_ROWS_IN_MULTIVERSION_QUEUE) - 1)

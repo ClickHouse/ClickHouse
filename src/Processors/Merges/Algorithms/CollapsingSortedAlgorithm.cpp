@@ -30,7 +30,7 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     Poco::Logger * log_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : IMergingAlgorithmWithSharedChunks(num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
+    : IMergingAlgorithmWithSharedChunks(header, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , sign_column_number(header.getPositionByName(sign_column))
     , only_positive_sign(only_positive_sign_)
