@@ -127,7 +127,10 @@ public:
     NamesAndTypesList getEphemeral() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
     NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + ephemeral
+    /// Returns .size0/.null/...
     NamesAndTypesList getSubcolumns(const String & name_in_storage) const;
+    /// Returns column_name.*
+    NamesAndTypesList getNested(const String & column_name) const;
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
