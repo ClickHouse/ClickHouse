@@ -165,7 +165,6 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
             client_version_patch = client_tcp_protocol_version;
     }
 
-
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
     {
         uint8_t have_trace_id = 0;
