@@ -199,7 +199,7 @@ FillingTransform::FillingTransform(
         ++idx;
     }
 
-    if(interpolate_description)
+    if (interpolate_description)
         for (const auto & name : interpolate_description->result_columns_order)
             interpolate_column_positions.push_back(header_.getPositionByName(name));
 }
