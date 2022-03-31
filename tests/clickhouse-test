@@ -52,6 +52,7 @@ MESSAGES_TO_RETRY = [
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
     "DB::Exception: Cannot enqueue query",
+    "environment: line 1: wait_for: No record of process", # Something weird from bash internals, let's just retry
     "is executing longer than distributed_ddl_task_timeout" # FIXME
 ]
 
@@ -116,7 +117,7 @@ def clickhouse_execute_http(base_args, query, timeout=30, settings=None, default
 def clickhouse_execute(base_args, query, timeout=30, settings=None):
     return clickhouse_execute_http(base_args, query, timeout, settings).strip()
 
-def clickhouse_execute_json(base_args, query, timeout=30, settings=None):
+def clickhouse_execute_json(base_args, query, timeout=60, settings=None):
     data = clickhouse_execute_http(base_args, query, timeout, settings, 'JSONEachRow')
     if not data:
         return None

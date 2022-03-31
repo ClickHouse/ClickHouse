@@ -683,6 +683,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
             }
 
+            if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
+            {
+                /// Save insertion table (not table function). TODO: support remote() table function.
+                auto table_id = insert_interpreter->getDatabaseTable();
+                if (!table_id.empty())
+                    context->setInsertionTable(std::move(table_id));
+            }
+
             {
                 std::unique_ptr<OpenTelemetrySpanHolder> span;
                 if (context->query_trace_context.trace_id != UUID())
@@ -692,14 +700,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
                 }
                 res = interpreter->execute();
-            }
-
-            if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
-            {
-                /// Save insertion table (not table function). TODO: support remote() table function.
-                auto table_id = insert_interpreter->getDatabaseTable();
-                if (!table_id.empty())
-                    context->setInsertionTable(std::move(table_id));
             }
         }
 
