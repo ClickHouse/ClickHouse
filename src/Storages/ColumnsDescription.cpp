@@ -603,6 +603,13 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, cons
             || hasSubcolumn(column_name);
 }
 
+bool ColumnsDescription::hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const
+{
+    auto range = getNameRange(columns, column_name);
+    return range.first != range.second &&
+        defaultKindToGetKind(range.first->default_desc.kind) & kind;
+}
+
 bool ColumnsDescription::hasDefaults() const
 {
     for (const auto & column : columns)

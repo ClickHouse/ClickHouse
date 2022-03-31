@@ -167,6 +167,7 @@ public:
 
     bool hasPhysical(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
+    bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
 
     NameAndTypePair getPhysical(const String & column_name) const;
     NameAndTypePair getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
