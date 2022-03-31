@@ -33,7 +33,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
         if (!column_description.column_name.empty())
         {
             column_description.column_number = header.getPositionByName(column_description.column_name);
-            column_description.column_name.clear();
+            // column_description.column_name.clear();
         }
     }
 }
@@ -79,7 +79,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     prepareChunk(input.chunk);
     current_inputs[source_num].swap(input);
-    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), {});
+    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
 
     if (has_collation)
         queue_with_collation.push(cursors[source_num]);

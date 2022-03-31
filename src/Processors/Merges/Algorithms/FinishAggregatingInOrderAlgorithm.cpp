@@ -48,7 +48,7 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
         if (!column_description.column_name.empty())
         {
             column_description.column_number = header_.getPositionByName(column_description.column_name);
-            column_description.column_name.clear();
+            // column_description.column_name.clear();
         }
     }
 }

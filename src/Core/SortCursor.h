@@ -91,8 +91,7 @@ struct SortCursorImpl
         for (size_t j = 0, size = desc.size(); j < size; ++j)
         {
             auto & column_desc = desc[j];
-            size_t column_number
-                = !column_desc.column_name.empty() ? block.getPositionByName(column_desc.column_name) : column_desc.column_number;
+            size_t column_number = block.getPositionByName(column_desc.column_name);
             sort_columns.push_back(columns[column_number].get());
 
             need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->isCollationSupported();

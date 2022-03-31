@@ -145,7 +145,7 @@ SortingTransform::SortingTransform(
         if (!column_description.column_name.empty())
         {
             column_description.column_number = sample.getPositionByName(column_description.column_name);
-            column_description.column_name.clear();
+            // column_description.column_name.clear();
         }
     }
 
