@@ -30,11 +30,22 @@ if(MKL_FOUND)
   message("Found MKL! ${MKL_ROOT}/include ${mkl_core_file}")
   target_include_directories(_diskann PUBLIC "${MKL_ROOT}/include")
 
-  find_package(BLAS REQUIRED)
-  target_link_libraries(_diskann PRIVATE ${BLAS_LIBRARIES})
+  set(LIBMKL_THREAD_PATH
+      "${ClickHouse_SOURCE_DIR}/contrib/diskann-cmake/mkl/libmkl_intel_thread.a"
+  )
 
-  find_package(LAPACK REQUIRED)
-  target_link_libraries(_diskann PRIVATE ${LAPACK_LIBRARIES})
+  set(LIBMKL_ILP64_PATH
+    "${ClickHouse_SOURCE_DIR}/contrib/diskann-cmake/mkl/libmkl_intel_ilp64.a"
+  )
+
+  set(LIBMKL_CORE_PATH
+    "${ClickHouse_SOURCE_DIR}/contrib/diskann-cmake/mkl/libmkl_core.a"
+  )
+
+  set (CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} ${LIBMKL_THREAD_PATH}" )
+  set (CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} ${LIBMKL_ILP64_PATH}" )
+  set (CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} ${LIBMKL_CORE_PATH}" )
+
 else()
   message(FATAL_ERROR "MKL not found!")
 endif()

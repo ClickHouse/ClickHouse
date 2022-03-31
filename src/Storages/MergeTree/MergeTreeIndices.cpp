@@ -84,8 +84,8 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
-    registerCreator("simple", simpleIndexCreator);
-    registerValidator("simple", simpleIndexValidator);
+    registerCreator("diskann", diskANNIndexCreator);
+    registerValidator("diskann", diskANNIndexValidator);
 
     registerCreator("minmax", minmaxIndexCreator);
     registerValidator("minmax", minmaxIndexValidator);
