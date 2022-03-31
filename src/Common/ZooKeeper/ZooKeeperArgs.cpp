@@ -6,6 +6,14 @@
 #include <Common/isLocalAddress.h>
 #include <Poco/String.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+}
+
 namespace zkutil
 {
 
