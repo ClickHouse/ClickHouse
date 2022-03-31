@@ -146,17 +146,6 @@ private:
     friend class MutateTask;
     friend class MergeTask;
 
-    /// Get the columns list of the resulting part in the same order as storage_columns.
-    static std::pair<NamesAndTypesList, SerializationInfoByName> getColumnsForNewDataPart(
-        MergeTreeData::DataPartPtr source_part,
-        const Block & updated_header,
-        NamesAndTypesList storage_columns,
-        const SerializationInfoByName & serialization_infos,
-        const MutationCommands & commands_for_removes);
-
-    static ExecuteTTLType shouldExecuteTTL(
-        const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies);
-
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
