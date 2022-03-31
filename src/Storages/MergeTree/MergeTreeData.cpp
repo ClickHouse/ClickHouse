@@ -3373,7 +3373,12 @@ void MergeTreeData::checkAlterPartitionIsPossible(
 void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
     const String partition_id = getPartitionIDFromQuery(partition, getContext());
-    auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
+    DataPartsVector parts_to_remove;
+    const auto * partition_ast = partition->as<ASTPartition>();
+    if (partition_ast && partition_ast->all)
+        parts_to_remove = getDataPartsVector();
+    else
+        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
 
     UInt64 partition_size = 0;
 
@@ -3824,6 +3829,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
+    if (partition_ast.all)
+        return "ALL";
     size_t fields_count = key_sample_block.columns();
     if (partition_ast.fields_count != fields_count)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
