@@ -65,8 +65,11 @@ RUN apt-get update \
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 RUN rustup target add aarch64-unknown-linux-gnu && \
-    apt-get install \
+RUN apt-get install \
+        gcc-aarch64-linux-gnu \
         build-essential \
+        libc6 \
+        libc6-dev \
         --yes
 
 
