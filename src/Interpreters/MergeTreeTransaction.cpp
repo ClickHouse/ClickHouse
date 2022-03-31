@@ -13,6 +13,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static TableLockHolder getLockForOrdinary(const StoragePtr & storage)
+{
+    if (storage->getStorageID().uuid != UUIDHelpers::Nil)
+        return {};
+
+    /// Maybe we should just throw an exception and do not support Ordinary database?
+    auto default_timeout = std::chrono::milliseconds(10 * 1000);
+    return storage->lockForShare(RWLockImpl::NO_QUERY, default_timeout);
+}
+
 MergeTreeTransaction::MergeTreeTransaction(CSN snapshot_, LocalTID local_tid_, UUID host_id)
     : tid({snapshot_, local_tid_, host_id})
     , snapshot(snapshot_)
@@ -106,14 +116,19 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
 
 void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPartPtr & new_part)
 {
+    auto maybe_lock = getLockForOrdinary(storage);
     std::lock_guard lock{mutex};
     checkIsNotCancelled();
     storages.insert(storage);
+    if (maybe_lock)
+        table_read_locks_for_ordinary_db.emplace_back(std::move(maybe_lock));
     creating_parts.push_back(new_part);
 }
 
 void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, const TransactionInfoContext & context)
 {
+    auto maybe_lock = getLockForOrdinary(storage);
+
     {
         std::lock_guard lock{mutex};
         checkIsNotCancelled();
@@ -121,6 +136,8 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
         part_to_remove->version.lockRemovalTID(tid, context);
         storages.insert(storage);
+        if (maybe_lock)
+            table_read_locks_for_ordinary_db.emplace_back(std::move(maybe_lock));
         removing_parts.push_back(part_to_remove);
     }
 
@@ -129,9 +146,12 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
 
 void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & mutation_id)
 {
+    auto maybe_lock = getLockForOrdinary(table);
     std::lock_guard lock{mutex};
     checkIsNotCancelled();
     storages.insert(table);
+    if (maybe_lock)
+        table_read_locks_for_ordinary_db.emplace_back(std::move(maybe_lock));
     mutations.emplace_back(table, mutation_id);
 }
 
