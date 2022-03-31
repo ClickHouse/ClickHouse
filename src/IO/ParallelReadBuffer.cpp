@@ -237,7 +237,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
         while (!emergency_stop && !read_worker->cancel)
         {
             if (!read_worker->reader->next())
-                throw Exception("Failed to read all the data from the reader", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to read all the data from the reader, missing {} bytes", read_worker->bytes_left);
 
             if (emergency_stop || read_worker->cancel)
                 break;
