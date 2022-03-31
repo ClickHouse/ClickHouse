@@ -14,7 +14,7 @@ namespace DB
 struct MergeTreeIndexGranuleSimpleHnsw final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_);
-    MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_, std::shared_ptr<similarity::Hnsw<float>> index_impl_);
+    MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_, std::unique_ptr<similarity::Hnsw<float>> index_impl_);
     ~MergeTreeIndexGranuleSimpleHnsw() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -24,7 +24,7 @@ struct MergeTreeIndexGranuleSimpleHnsw final : public IMergeTreeIndexGranule
 
     String index_name;
     Block index_sample_block;
-    std::shared_ptr<similarity::Hnsw<float>> index_impl;
+    std::unique_ptr<similarity::Hnsw<float>> index_impl; // unique_ptr for default construction
 };
 
 struct MergeTreeIndexAggregatorSimpleHnsw final : IMergeTreeIndexAggregator
@@ -38,7 +38,7 @@ struct MergeTreeIndexAggregatorSimpleHnsw final : IMergeTreeIndexAggregator
 
     String index_name;
     Block index_sample_block;
-    std::shared_ptr<similarity::Hnsw<float>> index_impl;
+    similarity::ObjectVector data;
 };
 
 

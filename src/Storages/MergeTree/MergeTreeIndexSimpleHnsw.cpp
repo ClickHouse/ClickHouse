@@ -1,7 +1,10 @@
 #include <cstddef>
 #include <cstring>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <vector>
+#include <spacefactory.h>
 #include <Storages/MergeTree/MergeTreeIndexSimpleHnsw.h>
 
 namespace DB
@@ -12,23 +15,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_)
+MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, 
+    const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
 {}
 
 
-MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_, std::shared_ptr<similarity::Hnsw<float>> index_impl_)
+MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_,
+    const Block & index_sample_block_, 
+    std::unique_ptr<similarity::Hnsw<float>> index_impl_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_), index_impl(std::move(index_impl_))
 {}
 
 
-void MergeTreeIndexGranuleSimpleHnsw::serializeBinary(WriteBuffer & ostr) const{
+void MergeTreeIndexGranuleSimpleHnsw::serializeBinary(WriteBuffer & ostr) const {
      std::ostringstream ost;
      index_impl->SaveIndex(ost);
-     std::string raw_data = ost.str();
-     ostr.write(raw_data.data(), raw_data.size());
+     ostr.write(ost.str().data(), ost.str().size());
 }
 
 void MergeTreeIndexGranuleSimpleHnsw::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version){
@@ -42,18 +47,49 @@ void MergeTreeIndexGranuleSimpleHnsw::deserializeBinary(ReadBuffer & istr, Merge
     index_impl->LoadIndex(ist);
 }
 
-MergeTreeIndexAggregatorSimpleHnsw::MergeTreeIndexAggregatorSimpleHnsw(const String & index_name_, const Block & index_sample_block_)
+MergeTreeIndexAggregatorSimpleHnsw::MergeTreeIndexAggregatorSimpleHnsw(const String & index_name_, 
+const Block & index_sample_block_)
     : index_name(index_name_)
-    , index_sample_block(index_sample_block_), index_impl(nullptr)
+    , index_sample_block(index_sample_block_)
 {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSimpleHnsw::getGranuleAndReset()
 {
+    std::string space_type = "l2";
+    auto space_params = std::shared_ptr<similarity::AnyParams>(new similarity::AnyParams(std::vector<std::string>()));
+    auto* space(similarity::SpaceFactoryRegistry<float>::Instance().CreateSpace(space_type, *space_params));
+    auto index_impl = std::make_unique<similarity::Hnsw<float>>(false, *space, data);
     return std::make_shared<MergeTreeIndexGranuleSimpleHnsw>(index_name, index_sample_block, std::move(index_impl));
 }
 
-void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & /*block*/, size_t * /*pos*/, size_t /*limit*/){
+void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * pos, size_t limit){
+     if (*pos >= block.rows())
+        throw Exception(
+                "The provided position is not less than the number of block rows. Position: "
+                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
+    size_t rows_read = std::min(limit, block.rows() - *pos);
+
+   auto index_column_name = index_sample_block.getByPosition(0).name;
+    const auto & column = block.getByName(index_column_name).column->cut(*pos, rows_read);
+
+    for (size_t i = 0; i < rows_read; ++i) {
+        Field field;
+        column->get(i, field);
+
+        auto field_array = field.safeGet<Tuple>();
+        float *raw_vector = new float[field_array.size()];
+
+        // Store vectors in the flatten arrays
+        for (size_t j = 0; j < field_array.size();++j) {
+            auto num = field_array.at(j).safeGet<Float32>();
+            raw_vector[j] = num;
+        }
+         // true here means that the element in vector is responsible for deleting
+        data.push_back(new similarity::Object(reinterpret_cast<char*>(raw_vector), true)); 
+    }
+
+    *pos += rows_read;
 }
 
 MergeTreeIndexConditionSimpleHnsw::MergeTreeIndexConditionSimpleHnsw(
