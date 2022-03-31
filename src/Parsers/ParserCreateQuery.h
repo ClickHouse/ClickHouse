@@ -10,7 +10,6 @@
 #include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
 #include <Parsers/ASTLiteral.h>
-#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -197,9 +196,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
     else if (s_ephemeral.ignore(pos, expected))
     {
-        default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
-        if (!expr_parser.parse(pos, default_expression, expected) && type)
-            default_expression = std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(type)->getDefault());
+        if (s_ephemeral.ignore(pos, expected))
+        {
+            default_specifier = "EPHEMERAL";
+            if (!expr_parser.parse(pos, default_expression, expected) && type)
+                default_expression = std::make_shared<ASTLiteral>(Field());
+        }
     }
 
     if (require_type && !type && !default_expression)
