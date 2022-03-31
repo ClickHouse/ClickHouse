@@ -1533,6 +1533,10 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameS
     for (const auto & sort_column : sort_columns)
         if (const auto * node = tryFindInIndex(sort_column))
             split_nodes.insert(node);
+        else
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Sorting column {} wasn't found in the ActionsDAG's index. DAG:\n{}", sort_column, dumpDAG());
+
     auto res = split(split_nodes);
     res.second->project_input = project_input;
     return res;
