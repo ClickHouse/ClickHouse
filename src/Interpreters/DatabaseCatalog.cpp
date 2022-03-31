@@ -303,9 +303,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
                     auto names = hints.getHints(table_id.getTableName());
                     Names names_with_prefix;
-                    std::transform(names.begin(), names.end(), std::back_inserter(names_with_prefix), [&table_id] (const auto & e) {
-                        return fmt::format("{}.{}", table_id.getDatabaseName(), e);
-                    });
+                    std::transform(names.begin(), names.end(), std::back_inserter(names_with_prefix), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
                     exception_message = fmt::format("Table {} doesn't exist. Maybe you meant: {}", table_id.getNameForLogs(), toString(names_with_prefix));
                 }
                 exception->emplace(exception_message, ErrorCodes::UNKNOWN_TABLE);
@@ -354,9 +352,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                 TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
                 auto names = hints.getHints(table_id.getTableName());
                 Names names_with_prefix;
-                std::transform(names.begin(), names.end(), std::back_inserter(names_with_prefix), [&table_id] (const auto & e) {
-                    return fmt::format("{}.{}", table_id.getDatabaseName(), e);
-                });
+                std::transform(names.begin(), names.end(), std::back_inserter(names_with_prefix), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
                 exception->emplace(fmt::format("Table {} doesn't exist. Maybe you meant: {}", table_id.getNameForLogs(), toString(names_with_prefix)), ErrorCodes::UNKNOWN_TABLE);
             }
             return {};
@@ -370,9 +366,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
         auto names = hints.getHints(table_id.getTableName());
         Names names_with_prefix;
-        std::transform(names.begin(), names.end(), std::back_inserter(names_with_prefix), [&table_id] (const auto & e) {
-            return fmt::format("{}.{}", table_id.getDatabaseName(), e);
-        });
+        std::transform(names.begin(), names.end(), std::back_inserter(names_with_prefix), [&table_id] (const auto & e) { return fmt::format("{}.{}", table_id.getDatabaseName(), e); });
         exception->emplace(fmt::format("Table {} doesn't exist. Maybe you meant: {}", table_id.getNameForLogs(), toString(names_with_prefix)), ErrorCodes::UNKNOWN_TABLE);
     }
     if (!table)
