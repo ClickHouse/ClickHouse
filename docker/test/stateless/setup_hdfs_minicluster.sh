@@ -4,7 +4,7 @@ set -e -x -a -u
 
 ls -lha
 
-cd hadoop-3.2.2
+cd hadoop-3.3.2
 
 export JAVA_HOME=/usr
 mkdir -p target/test/data
