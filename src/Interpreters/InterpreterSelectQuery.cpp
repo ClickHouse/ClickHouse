@@ -839,6 +839,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(const ASTSelectQuery 
     InterpolateDescriptionPtr interpolate_descr;
     if (query.interpolate())
     {
+        std::unordered_set<std::string> col_set;
         ColumnsWithTypeAndName columns;
         ASTPtr exprs = std::make_shared<ASTExpressionList>();
         for (const auto & elem : query.interpolate()->children)
@@ -848,6 +849,9 @@ static InterpolateDescriptionPtr getInterpolateDescription(const ASTSelectQuery 
             if (!block_column)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Missing column '{}' as an INTERPOLATE expression target", interpolate.column);
+            if (!col_set.insert(block_column->name).second)
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "Duplicate INTERPOLATE column '{}'", interpolate.column);
 
             columns.emplace_back(block_column->type, block_column->name);
             exprs->children.emplace_back(interpolate.expr->clone());

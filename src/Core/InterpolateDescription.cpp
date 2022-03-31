@@ -20,10 +20,12 @@ namespace DB
 
         for (const ColumnWithTypeAndName & column : actions->getResultColumns())
         {
-            if (const auto & p = aliases.find(column.name); p != aliases.end())
-                result_columns_set.insert(p->second->getColumnName());
-            else
-                result_columns_set.insert(column.name);
+            std::string name = column.name;
+            if (const auto & p = aliases.find(name); p != aliases.end())
+                name = p->second->getColumnName();
+
+            result_columns_set.insert(name);
+            result_columns_order.push_back(name);
         }
     }
 
