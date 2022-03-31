@@ -53,7 +53,7 @@ void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num
     auto & source = sources[source_num];
     source.skip_last_row = input.skip_last_row;
     source.chunk = chunk_allocator.alloc(input.chunk);
-    cursors[source_num].reset(source.chunk->getColumns(), {}, input.permutation);
+    cursors[source_num].reset(source.chunk->getColumns(), header, input.permutation);
 
     source.chunk->all_columns = cursors[source_num].all_columns;
     source.chunk->sort_columns = cursors[source_num].sort_columns;
