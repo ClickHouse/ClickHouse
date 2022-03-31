@@ -1,8 +1,8 @@
 #pragma once
 
 #include <base/types.h>
+#include <boost/algorithm/string/join.hpp>
 #include <Common/PODArray.h>
-#include <IO/WriteHelpers.h>
 
 #include <algorithm>
 #include <cctype>
@@ -105,8 +105,12 @@ public:
 
     String getHintsString(const String & name) const
     {
-        const auto hints = getHints(name);
-        return !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+        auto hints = getHints(name);
+
+        /// Note: we don't use toString because it will cause writeCString naming conflict in src/Dictionaries/MongoDBDictionarySource.cpp
+        for (auto & hint : hints)
+            hint = "'" + hint + "'";
+        return !hints.empty() ? ", may be you meant: " + boost::algorithm::join(hints, ",") : "";
     }
 
     IHints() = default;
