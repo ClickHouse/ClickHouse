@@ -146,16 +146,6 @@ private:
     friend class MutateTask;
     friend class MergeTask;
 
-    /** Split mutation commands into two parts:
-      * First part should be executed by mutations interpreter.
-      * Other is just simple drop/renames, so they can be executed without interpreter.
-      */
-    static void splitMutationCommands(
-        MergeTreeData::DataPartPtr part,
-        const MutationCommands & commands,
-        MutationCommands & for_interpreter,
-        MutationCommands & for_file_renames);
-
     /// Get the columns list of the resulting part in the same order as storage_columns.
     static std::pair<NamesAndTypesList, SerializationInfoByName> getColumnsForNewDataPart(
         MergeTreeData::DataPartPtr source_part,
