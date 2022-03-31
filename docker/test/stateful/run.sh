@@ -115,7 +115,7 @@ function run_tests()
     fi
 
     set +e
-    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time \
+    clickhouse-test -j 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time \
         --skip 00168_parallel_processing_on_replicas "${ADDITIONAL_OPTIONS[@]}" \
         "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 

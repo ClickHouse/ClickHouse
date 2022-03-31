@@ -1,4 +1,6 @@
 #include <Common/config.h>
+#include "IO/ParallelReadBuffer.h"
+#include "IO/IOThreadPool.h"
 #include "Parsers/ASTCreateQuery.h"
 
 #if USE_AWS_S3
@@ -238,7 +240,8 @@ StorageS3Source::StorageS3Source(
     String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
-    std::shared_ptr<IteratorWrapper> file_iterator_)
+    std::shared_ptr<IteratorWrapper> file_iterator_,
+    const size_t download_thread_num_)
     : SourceWithProgress(getHeader(sample_block_, need_path, need_file))
     , WithContext(context_)
     , name(std::move(name_))
@@ -254,6 +257,7 @@ StorageS3Source::StorageS3Source(
     , with_file_column(need_file)
     , with_path_column(need_path)
     , file_iterator(file_iterator_)
+    , download_thread_num(download_thread_num_)
 {
     initialize();
 }
@@ -275,26 +279,52 @@ bool StorageS3Source::initialize()
 
     file_path = fs::path(bucket) / current_key;
 
-    read_buf = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, getContext()->getReadSettings()),
-        chooseCompressionMethod(current_key, compression_hint));
+    read_buf = wrapReadBufferWithCompressionMethod(createS3ReadBuffer(current_key), chooseCompressionMethod(current_key, compression_hint));
+
     auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
 
     if (columns_desc.hasDefaults())
     {
-        builder.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext());
-        });
+        builder.addSimpleTransform(
+            [&](const Block & header)
+            { return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext()); });
     }
 
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    initialized = false;
     return true;
+}
+
+std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key)
+{
+    const size_t object_size = DB::S3::getObjectSize(client, bucket, key, false);
+
+    auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
+    const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
+    const bool object_too_small = object_size < download_thread_num * download_buffer_size;
+    if (!use_parallel_download || object_too_small)
+    {
+        LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
+        return std::make_unique<ReadBufferFromS3>(client, bucket, key, max_single_read_retries, getContext()->getReadSettings());
+    }
+
+    assert(object_size > 0);
+
+    if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
+    {
+        LOG_WARNING(log, "Downloading buffer {} bytes too small, set at least {} bytes", download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
+        download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+    }
+
+    auto factory = std::make_unique<ReadBufferS3Factory>(
+        client, bucket, key, download_buffer_size, object_size, max_single_read_retries, getContext()->getReadSettings());
+    LOG_TRACE(
+        log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}.", download_thread_num, object_size, download_buffer_size);
+
+    return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner(IOThreadPool::get()), download_thread_num);
 }
 
 String StorageS3Source::getName() const
@@ -376,16 +406,6 @@ static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & clien
     return false;
 }
 
-// TODO: common thread pool for IO must be used instead after PR #35150
-static ThreadPool & getThreadPoolStorageS3()
-{
-    constexpr size_t pool_size = 100;
-    constexpr size_t queue_size = 1000000;
-    static ThreadPool pool(pool_size, pool_size, queue_size);
-    return pool;
-}
-
-
 class StorageS3Sink : public SinkToStorage
 {
 public:
@@ -408,10 +428,20 @@ public:
     {
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(
-                client, bucket, key, min_upload_part_size,
-                upload_part_size_multiply_factor, upload_part_size_multiply_parts_count_threshold,
-                max_single_part_upload_size, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, threadPoolCallbackRunner(getThreadPoolStorageS3())), compression_method, 3);
-        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
+                client,
+                bucket,
+                key,
+                min_upload_part_size,
+                upload_part_size_multiply_factor,
+                upload_part_size_multiply_parts_count_threshold,
+                max_single_part_upload_size,
+                std::nullopt,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                threadPoolCallbackRunner(IOThreadPool::get())),
+            compression_method,
+            3);
+        writer
+            = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
     }
 
     String getName() const override { return "StorageS3Sink"; }
@@ -670,6 +700,7 @@ Pipe StorageS3::read(
         block_for_format = storage_snapshot->metadata->getSampleBlock();
     }
 
+    const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
@@ -686,7 +717,8 @@ Pipe StorageS3::read(
             compression_method,
             client_auth.client,
             client_auth.uri.bucket,
-            iterator_wrapper));
+            iterator_wrapper,
+            max_download_threads));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
