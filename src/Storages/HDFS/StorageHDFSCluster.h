@@ -34,6 +34,7 @@ public:
 
 protected:
     StorageHDFSCluster(
+        ContextPtr context_,
         String cluster_name_,
         const String & uri_,
         const StorageID & table_id_,
