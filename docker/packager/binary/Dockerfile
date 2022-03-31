@@ -62,7 +62,11 @@ RUN rustup target add aarch64-unknown-linux-gnu && \
         rustup target add aarch64-apple-darwin && \
         rustup target add powerpc64le-unknown-linux-gnu
 RUN apt-get install \
+        gcc-aarch64-linux-gnu \
         build-essential \
+        libc6 \
+        libc6-dev \
+        libc6-dev-arm64-cross \
         --yes
 
 # This symlink required by gcc to find lld compiler
