@@ -208,7 +208,7 @@ if __name__ == "__main__":
 
     # Refuse other checks to run if fast test failed
     if state != "success":
-        if "force-tests" in pr_info.labels:
+        if "force-tests" in pr_info.labels and state != "error":
             print("'force-tests' enabled, will report success")
         else:
             sys.exit(1)
