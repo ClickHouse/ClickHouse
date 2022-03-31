@@ -634,7 +634,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 
     if (!result)
     {
-#ifdef NDEBUG
+#ifndef NDEBUG
         if (auto * cache_file_reader = typeid_cast<ReadBufferFromFile *>(implementation_buffer.get()))
         {
             auto cache_file_size = cache_file_reader->size();
