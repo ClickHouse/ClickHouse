@@ -774,9 +774,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
         Names partition_key_columns = metadata_for_reading->getPartitionKey().column_names;
 
-        const auto & header = pipe.getHeader();
         for (size_t i = 0; i < sort_columns_size; ++i)
-            sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+            sort_description.emplace_back(sort_columns[i], 1, 1);
 
         addMergingFinal(
             pipe,

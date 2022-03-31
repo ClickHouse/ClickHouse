@@ -48,13 +48,6 @@ struct SortColumnDescription
     FillColumnDescription fill_description;
 
     explicit SortColumnDescription(
-            size_t column_number_, int direction_ = 1, int nulls_direction_ = 1,
-            const std::shared_ptr<Collator> & collator_ = nullptr,
-            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
-            : column_number(column_number_), direction(direction_), nulls_direction(nulls_direction_), collator(collator_)
-            , with_fill(with_fill_), fill_description(fill_description_) {}
-
-    explicit SortColumnDescription(
             const std::string & column_name_, int direction_ = 1, int nulls_direction_ = 1,
             const std::shared_ptr<Collator> & collator_ = nullptr,
             bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
