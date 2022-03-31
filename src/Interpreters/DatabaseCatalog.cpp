@@ -81,6 +81,35 @@ private:
     String database_name;
 };
 
+
+Names DatabaseNameHints::getAllRegisteredNames() const
+{
+    Names result;
+    auto database_instances = database_catalog.getDatabases();
+    for (const auto & database_name : database_instances | boost::adaptors::map_keys)
+    {
+        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            continue;
+        result.emplace_back(database_name);
+    }
+    return result;
+}
+
+Names TableNameHints::getAllRegisteredNames() const
+{
+    Names result;
+    DatabasePtr database = database_catalog.tryGetDatabase(database_name);
+    if (database)
+    {
+        for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+        {
+            const auto & storage_id = table_it->table()->getStorageID();
+            result.emplace_back(storage_id.getTableName());
+        }
+    }
+    return result;
+}
+
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
     : WithContext(context_->getGlobalContext())
     , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
