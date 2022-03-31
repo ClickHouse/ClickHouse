@@ -31,7 +31,6 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/IDiskRemote.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionInput.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Core/Settings.h>
