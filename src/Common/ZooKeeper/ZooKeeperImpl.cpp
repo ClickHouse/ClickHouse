@@ -393,8 +393,8 @@ void ZooKeeper::connect(
                 socket.connect(node.address, connection_timeout);
                 socket_address = socket.peerAddress();
 
-                socket.setReceiveTimeout(args.operation_timeout_ms);
-                socket.setSendTimeout(args.operation_timeout_ms);
+                socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
+                socket.setSendTimeout(args.operation_timeout_ms * 1000);
                 socket.setNoDelay(true);
 
                 in.emplace(socket);
@@ -456,7 +456,7 @@ void ZooKeeper::connect(
     }
     else
     {
-        LOG_TEST(log, "Connected to ZooKeeper at {} with session_id {}", socket.peerAddress().toString(), session_id);
+        LOG_TEST(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
     }
 }
 

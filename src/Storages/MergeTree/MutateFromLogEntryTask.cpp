@@ -185,7 +185,8 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 
             ProfileEvents::increment(ProfileEvents::DataAfterMutationDiffersFromReplica);
 
-            LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
+            LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. "
+                           "We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
 
             write_part_log(ExecutionStatus::fromCurrentException());
 

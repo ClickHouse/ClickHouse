@@ -1,6 +1,7 @@
 #pragma once
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/GetPriorityForLoadBalancing.h>
 
 namespace Poco
 {
@@ -33,6 +34,8 @@ struct ZooKeeperArgs
     int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
     float send_fault_probability = 0;
     float recv_fault_probability = 0;
+
+    DB::GetPriorityForLoadBalancing get_priority_load_balancing;
 };
 
 }

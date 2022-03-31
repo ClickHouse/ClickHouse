@@ -179,8 +179,12 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     if (!task->was_executed)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry {} was executed, but was not committed: code {}: {}",
-                        task->execution_status.code, task->execution_status.message);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Entry {} was executed, but was not committed: code {}: {}",
+            task->entry_name,
+            task->execution_status.code,
+            task->execution_status.message);
     }
 
     try_node->setAlreadyRemoved();
