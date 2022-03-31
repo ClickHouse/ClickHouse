@@ -30,8 +30,9 @@ static void chooseResultType(
         /// is true make the result type Number
         auto not_nullable_type = removeNullable(type);
         auto not_nullable_new_type = removeNullable(new_type);
-        if (allow_bools_as_numbers && (isBool(not_nullable_type) || isBool(not_nullable_new_type))
-            && (isNumber(not_nullable_type) || isNumber(not_nullable_new_type)))
+        bool bool_type_presents = isBool(not_nullable_type) || isBool(not_nullable_new_type);
+        bool number_type_presents = isNumber(not_nullable_type) || isNumber(not_nullable_new_type);
+        if (allow_bools_as_numbers && bool_type_presents && number_type_presents)
         {
             if (isBool(not_nullable_type))
                 type = new_type;
