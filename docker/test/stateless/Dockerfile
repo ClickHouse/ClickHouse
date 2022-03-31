@@ -61,9 +61,9 @@ RUN arch=${TARGETARCH:-amd64} \
     && chmod +x ./mc
 
 
-RUN wget 'https://dlcdn.apache.org/hadoop/common/hadoop-3.2.2/hadoop-3.2.2.tar.gz' \
-    && tar -xvf hadoop-3.2.2.tar.gz \
-    && rm -rf hadoop-3.2.2.tar.gz
+RUN wget 'https://dlcdn.apache.org/hadoop/common/hadoop-3.3.2/hadoop-3.3.2.tar.gz' \
+    && tar -xvf hadoop-3.3.2.tar.gz \
+    && rm -rf hadoop-3.3.2.tar.gz
 
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
