@@ -145,7 +145,7 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-        const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+    const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
@@ -282,16 +282,12 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 {
     TemporaryPart temp_part;
     Block & block = block_with_partition.block;
+
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    auto storage_snapshot = data.getStorageSnapshot(metadata_snapshot);
 
-    if (!storage_snapshot->object_columns.empty())
-    {
-        auto extended_storage_columns = storage_snapshot->getColumns(
-            GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
-
-        convertObjectsToTuples(columns, block, extended_storage_columns);
-    }
+    for (auto & column : columns)
+        if (isObject(column.type))
+            column.type = block.getByName(column.name).type;
 
     static const String TMP_PREFIX = "tmp_insert_";
 
@@ -464,6 +460,16 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->getBytesOnDisk());
 
     return temp_part;
+}
+
+void MergeTreeDataWriter::deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block)
+{
+    if (!storage_snapshot->object_columns.empty())
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+        auto storage_columns = storage_snapshot->getColumns(options);
+        convertObjectsToTuples(block, storage_columns);
+    }
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
