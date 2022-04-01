@@ -62,7 +62,7 @@ export -f set_role
 
 TIMEOUT=0.1
 
-for (( i = 0 ; i < 1000; ++i ))
+for (( i = 0 ; i < 100; ++i ))
 do
     clickhouse_client_loop_timeout $TIMEOUT create_and_login_user 2> /dev/null &
     clickhouse_client_loop_timeout $TIMEOUT delete_user 2> /dev/null &
