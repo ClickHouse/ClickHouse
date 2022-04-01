@@ -25,12 +25,12 @@ enum class JoinPipelineType
      * Right stream processed first.
      * The pipeline is not sorted.
      */
-    RShaped,
+    FillRightFirst,
 
     /*
      * Only left stream is processed, right is already filled.
      */
-    Filled,
+    FilledRight,
 
     /*
      * The pipeline is created from the left and right streams processed with merging transform.
@@ -71,8 +71,8 @@ public:
 
     /// StorageJoin/Dictionary is already filled. No need to call addJoinedBlock.
     /// Different query plan is used for such joins.
-    virtual bool isFilled() const { return pipelineType() == JoinPipelineType::Filled; }
-    virtual JoinPipelineType pipelineType() const { return JoinPipelineType::RShaped; }
+    virtual bool isFilled() const { return pipelineType() == JoinPipelineType::FilledRight; }
+    virtual JoinPipelineType pipelineType() const { return JoinPipelineType::FillRightFirst; }
 
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
