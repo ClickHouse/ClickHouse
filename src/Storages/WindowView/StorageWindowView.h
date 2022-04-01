@@ -182,7 +182,6 @@ private:
 
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
-    std::mutex flush_table_mutex;
     std::shared_mutex fire_signal_mutex;
     mutable std::mutex sample_block_lock; /// Mutex to protect access to sample block and inner_blocks_query
 
