@@ -186,7 +186,8 @@ void MergeSortingTransform::consume(Chunk chunk)
         temporary_files.emplace_back(createTemporaryFile(tmp_path));
 
         const std::string & path = temporary_files.back()->path();
-        merge_sorter = std::make_unique<MergeSorter>(header, std::move(chunks), description, max_merged_block_size, limit);
+        merge_sorter
+            = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
         auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, log, path);
 
         processors.emplace_back(current_processor);

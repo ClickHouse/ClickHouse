@@ -30,14 +30,14 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
 }
 
 GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
-    const Block & header,
+    const Block & header_,
     size_t num_inputs,
     SortDescription description_,
     size_t max_block_size,
     Graphite::Params params_,
     time_t time_of_merge_)
-    : IMergingAlgorithmWithSharedChunks(header, num_inputs, std::move(description_), nullptr, max_row_refs)
-    , merged_data(header.cloneEmptyColumns(), false, max_block_size)
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs)
+    , merged_data(header_.cloneEmptyColumns(), false, max_block_size)
     , params(std::move(params_))
     , time_of_merge(time_of_merge_)
 {
@@ -54,7 +54,7 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     }
 
     merged_data.allocMemForAggregates(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
-    columns_definition = defineColumns(header, params);
+    columns_definition = defineColumns(header_, params);
 }
 
 UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
