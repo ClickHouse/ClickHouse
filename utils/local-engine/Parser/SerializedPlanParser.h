@@ -72,7 +72,7 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"TO_DATE", "toDate"},
     {"equal", "equals"},
     {"cast", ""},
-    {"alias", "skip"}
+    {"alias", "alias"}
 };
 
 struct QueryContext {

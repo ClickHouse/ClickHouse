@@ -241,6 +241,10 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const substrait::Rel & rel)
                 {
                     std::string name;
                     actions_dag = parseFunction(query_plan->getCurrentDataStream(), expr, name, actions_dag, true);
+                    if (!name.empty()) {
+
+                    }
+                    required_columns.emplace_back(DB::NameWithAlias (name, name));
                 }
                 else
                 {
@@ -417,7 +421,7 @@ DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
         if (arg.has_scalar_function())
         {
             std::string arg_name;
-            parseFunction(input, arg, arg_name, actions_dag);
+            parseFunction(input, arg, arg_name, actions_dag, true);
             args.emplace_back(&actions_dag->getNodes().back());
         }
         else
@@ -427,8 +431,11 @@ DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
     }
     auto function_signature = this->function_mapping.at(std::to_string(rel.scalar_function().function_reference()));
     auto function_name = getFunctionName(function_signature, rel.scalar_function().output_type());
-    if (function_name != "skip")
+    if (function_name == "alias")
     {
+        result_name = args[0]->result_name;
+        actions_dag->addAlias(actions_dag->findInIndex(result_name), result_name);
+    } else {
         auto function_builder = DB::FunctionFactory::instance().get(function_name, this->context);
         std::string args_name;
         join(args, ',', args_name);
