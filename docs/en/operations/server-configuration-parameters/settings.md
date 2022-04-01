@@ -552,6 +552,15 @@ Keys:
 </logger>
 ```
 
+Writing to the console can be configured. Config example:
+
+``` xml
+<logger>
+    <level>information</level>
+    <console>1</console>
+</logger>
+```
+
 Writing to the syslog is also supported. Config example:
 
 ``` xml
