@@ -286,6 +286,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {
     checkStackSize();
 
+    for(const auto & column : query_ptr->as<ASTSelectQuery &>().select()->children)
+        original_select_set.insert(column->getColumnName());
+
     query_info.ignore_projections = options.ignore_projections;
     query_info.is_projection_query = options.is_projection_query;
 
@@ -834,7 +837,8 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
     return order_descr;
 }
 
-static InterpolateDescriptionPtr getInterpolateDescription(const ASTSelectQuery & query, Block block, const Aliases & aliases, ContextPtr context)
+static InterpolateDescriptionPtr getInterpolateDescription(
+    const ASTSelectQuery & query, Block block, const Aliases & aliases, const NameSet & original_select_set, ContextPtr context)
 {
     InterpolateDescriptionPtr interpolate_descr;
     if (query.interpolate())
@@ -847,8 +851,12 @@ static InterpolateDescriptionPtr getInterpolateDescription(const ASTSelectQuery 
             const auto & interpolate = elem->as<ASTInterpolateElement &>();
             ColumnWithTypeAndName *block_column = block.findByName(interpolate.column);
             if (!block_column)
+            {
+                if (original_select_set.count(interpolate.column)) /// column was removed
+                    continue;
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Missing column '{}' as an INTERPOLATE expression target", interpolate.column);
+            }
             if (!col_set.insert(block_column->name).second)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "Duplicate INTERPOLATE column '{}'", interpolate.column);
@@ -2533,7 +2541,8 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
         if (fill_descr.empty())
             return;
 
-        InterpolateDescriptionPtr interpolate_descr = getInterpolateDescription(query, result_header, syntax_analyzer_result->aliases, context);
+        InterpolateDescriptionPtr interpolate_descr =
+            getInterpolateDescription(query, result_header, syntax_analyzer_result->aliases, original_select_set, context);
         auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr), interpolate_descr);
         query_plan.addStep(std::move(filling_step));
     }

@@ -185,6 +185,8 @@ private:
     Names required_columns;
     /// Structure of query source (table, subquery, etc).
     Block source_header;
+    /// Original set of selected columns
+    NameSet original_select_set;
 
     /// Actions to calculate ALIAS if required.
     ActionsDAGPtr alias_actions;
