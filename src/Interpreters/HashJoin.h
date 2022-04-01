@@ -182,8 +182,8 @@ public:
     {
         bool is_filled = from_storage_join || data->type == Type::DICT;
         if (is_filled)
-            return JoinPipelineType::Filled;
-        return JoinPipelineType::RShaped;
+            return JoinPipelineType::FilledRight;
+        return JoinPipelineType::FillRightFirst;
     }
 
     /** For RIGHT and FULL JOINs.
