@@ -10,7 +10,7 @@ if [ -z "$CLICKHOUSE_REPO_PATH" ]; then
     CLICKHOUSE_REPO_PATH=ch
     rm -rf ch ||:
     mkdir ch ||:
-    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
+    wget -nv -nd -c "https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
     tar -C ch --strip-components=1 -xf clickhouse_no_subs.tar.gz
     ls -lath ||:
 fi
