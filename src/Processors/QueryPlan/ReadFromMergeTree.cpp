@@ -618,7 +618,7 @@ static void addMergingFinal(
         if (!desc.column_name.empty())
             key_columns.push_back(header.getPositionByName(desc.column_name));
         else
-            key_columns.emplace_back(desc.column_number);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name empty.");
     }
 
     pipe.addSimpleTransform([&](const Block & stream_header)

@@ -12,10 +12,9 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-CheckSortedTransform::CheckSortedTransform(
-    const Block & header_,
-    const SortDescription & sort_description_)
+CheckSortedTransform::CheckSortedTransform(Block header_, const SortDescription & sort_description_)
     : ISimpleTransform(header_, header_, false)
+    , header(std::move(header_))
     , sort_description_map(addPositionsToSortDescriptions(sort_description_))
 {
 }
@@ -25,13 +24,9 @@ CheckSortedTransform::addPositionsToSortDescriptions(const SortDescription & sor
 {
     SortDescriptionsWithPositions result;
     result.reserve(sort_description.size());
-    const auto & header = getInputPort().getHeader();
 
-    for (SortColumnDescription description_copy : sort_description)
+    for (const SortColumnDescription & description_copy : sort_description)
     {
-        if (!description_copy.column_name.empty())
-            description_copy.column_number = header.getPositionByName(description_copy.column_name);
-
         result.push_back(description_copy);
     }
 
@@ -49,7 +44,7 @@ void CheckSortedTransform::transform(Chunk & chunk)
     {
         for (const auto & elem : sort_description_map)
         {
-            size_t column_number = elem.column_number;
+            size_t column_number = header.getPositionByName(elem.column_name);
 
             const IColumn * left_col = left[column_number].get();
             const IColumn * right_col = right[column_number].get();

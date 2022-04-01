@@ -30,8 +30,8 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     for (auto & column_description : description)
     {
         has_collation |= column_description.collator != nullptr;
-        if (!column_description.column_name.empty())
-            column_description.column_number = header.getPositionByName(column_description.column_name);
+        if (column_description.column_name.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name empty.");
     }
 }
 

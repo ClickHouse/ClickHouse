@@ -42,7 +42,7 @@ LimitTransform::LimitTransform(
         if (!desc.column_name.empty())
             sort_column_positions.push_back(header_.getPositionByName(desc.column_name));
         else
-            sort_column_positions.push_back(desc.column_number);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name empty.");
     }
 }
 

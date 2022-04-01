@@ -64,7 +64,13 @@ void FinishSortingTransform::consume(Chunk chunk)
         while (high - low > 1)
         {
             ssize_t mid = (low + high) / 2;
-            if (!less(last_chunk.getColumns(), chunk.getColumns(), last_chunk.getNumRows() - 1, mid, description_sorted))
+            if (!less(
+                    header_without_constants,
+                    last_chunk.getColumns(),
+                    chunk.getColumns(),
+                    last_chunk.getNumRows() - 1,
+                    mid,
+                    description_sorted))
                 low = mid;
             else
                 high = mid;

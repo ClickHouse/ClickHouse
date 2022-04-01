@@ -14,18 +14,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FinishAggregatingInOrderAlgorithm::State::State(
-    const Chunk & chunk, const SortDescription & desc, Int64 total_bytes_)
-    : all_columns(chunk.getColumns())
-    , num_rows(chunk.getNumRows())
-    , total_bytes(total_bytes_)
+FinishAggregatingInOrderAlgorithm::State::State(Block header_, const Chunk & chunk, const SortDescription & desc, Int64 total_bytes_)
+    : header(std::move(header_)), all_columns(chunk.getColumns()), num_rows(chunk.getNumRows()), total_bytes(total_bytes_)
 {
     if (!chunk)
         return;
 
     sorting_columns.reserve(desc.size());
     for (const auto & column_desc : desc)
-        sorting_columns.emplace_back(all_columns[column_desc.column_number].get());
+    {
+        const auto idx = header.getPositionByName(column_desc.column_name);
+        sorting_columns.emplace_back(all_columns[idx].get());
+    }
 }
 
 FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
@@ -45,8 +45,8 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     /// Replace column names in description to positions.
     for (auto & column_description : description)
     {
-        if (!column_description.column_name.empty())
-            column_description.column_number = header_.getPositionByName(column_description.column_name);
+        if (column_description.column_name.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name empty.");
     }
 }
 
@@ -71,7 +71,7 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
     if (!arenas_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have ChunkInfoWithAllocatedBytes in FinishAggregatingInOrderAlgorithm");
 
-    states[source_num] = State{input.chunk, description, arenas_info->allocated_bytes};
+    states[source_num] = State{header, input.chunk, description, arenas_info->allocated_bytes};
 }
 
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
@@ -91,8 +91,13 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
             continue;
 
         if (!best_input
-            || less(states[i].sorting_columns, states[*best_input].sorting_columns,
-                    states[i].num_rows - 1, states[*best_input].num_rows - 1, description))
+            || less(
+                header,
+                states[i].sorting_columns,
+                states[*best_input].sorting_columns,
+                states[i].num_rows - 1,
+                states[*best_input].num_rows - 1,
+                description))
         {
             best_input = i;
         }
@@ -112,11 +117,12 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
             continue;
 
         auto indices = collections::range(states[i].current_row, states[i].num_rows);
-        auto it = std::upper_bound(indices.begin(), indices.end(), best_state.num_rows - 1,
+        auto it = std::upper_bound(
+            indices.begin(),
+            indices.end(),
+            best_state.num_rows - 1,
             [&](size_t lhs_pos, size_t rhs_pos)
-            {
-                return less(best_state.sorting_columns, states[i].sorting_columns, lhs_pos, rhs_pos, description);
-            });
+            { return less(header, best_state.sorting_columns, states[i].sorting_columns, lhs_pos, rhs_pos, description); });
 
         states[i].to_row = (it == indices.end() ? states[i].num_rows : *it);
     }

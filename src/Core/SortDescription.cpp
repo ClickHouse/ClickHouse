@@ -1,12 +1,13 @@
-#include <Core/SortDescription.h>
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include "Core/Field.h"
 
 namespace DB
 {
 
-void dumpSortDescription(const SortDescription & description, const Block & header, WriteBuffer & out)
+void dumpSortDescription(const SortDescription & description, const Block &, WriteBuffer & out)
 {
     bool first = true;
 
@@ -19,14 +20,7 @@ void dumpSortDescription(const SortDescription & description, const Block & head
         if (!desc.column_name.empty())
             out << desc.column_name;
         else
-        {
-            if (desc.column_number < header.columns())
-                out << header.getByPosition(desc.column_number).name;
-            else
-                out << "?";
-
-            out << " (pos " << desc.column_number << ")";
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column name.");
 
         if (desc.direction > 0)
             out << " ASC";
@@ -38,17 +32,12 @@ void dumpSortDescription(const SortDescription & description, const Block & head
     }
 }
 
-void SortColumnDescription::explain(JSONBuilder::JSONMap & map, const Block & header) const
+void SortColumnDescription::explain(JSONBuilder::JSONMap & map, const Block &) const
 {
     if (!column_name.empty())
         map.add("Column", column_name);
     else
-    {
-        if (column_number < header.columns())
-            map.add("Column", header.getByPosition(column_number).name);
-
-        map.add("Position", column_number);
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column name.");
 
     map.add("Ascending", direction > 0);
     map.add("With Fill", with_fill);

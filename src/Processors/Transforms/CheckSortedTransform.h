@@ -12,9 +12,7 @@ using SortDescriptionsWithPositions = std::vector<SortColumnDescription>;
 class CheckSortedTransform : public ISimpleTransform
 {
 public:
-    CheckSortedTransform(
-        const Block & header_,
-        const SortDescription & sort_description_);
+    CheckSortedTransform(Block header_, const SortDescription & sort_description_);
 
     String getName() const override { return "CheckSortedTransform"; }
 
@@ -23,10 +21,11 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
+    Block header;
     SortDescriptionsWithPositions sort_description_map;
     Columns last_row;
 
     /// Just checks, that all sort_descriptions has column_number
-    SortDescriptionsWithPositions addPositionsToSortDescriptions(const SortDescription & sort_description);
+    static SortDescriptionsWithPositions addPositionsToSortDescriptions(const SortDescription & sort_description);
 };
 }

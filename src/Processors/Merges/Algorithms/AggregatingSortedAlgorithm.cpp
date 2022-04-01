@@ -104,7 +104,7 @@ static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
         /// Included into PK?
         auto it = description.begin();
         for (; it != description.end(); ++it)
-            if (it->column_name == column.name || (it->column_name.empty() && it->column_number == i))
+            if (it->column_name == column.name)
                 break;
 
         if (it != description.end())

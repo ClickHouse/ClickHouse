@@ -101,10 +101,10 @@ struct SummingSortedAlgorithm::AggregateDescription
 };
 
 
-static bool isInPrimaryKey(const SortDescription & description, const std::string & name, const size_t number)
+static bool isInPrimaryKey(const SortDescription & description, const std::string & name, const size_t)
 {
     for (const auto & desc : description)
-        if (desc.column_name == name || (desc.column_name.empty() && desc.column_number == number))
+        if (desc.column_name == name)
             return true;
 
     return false;

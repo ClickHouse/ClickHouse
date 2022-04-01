@@ -9,8 +9,9 @@ namespace ErrorCodes
 }
 
 DistinctSortedTransform::DistinctSortedTransform(
-    const Block & header, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns)
-    : ISimpleTransform(header, header, true)
+    Block header_, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns)
+    : ISimpleTransform(header_, header_, true)
+    , header(std::move(header_))
     , description(std::move(sort_description))
     , columns_names(columns)
     , limit_hint(limit_hint_)
@@ -37,7 +38,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
         {
             case ClearableSetVariants::Type::EMPTY:
                 break;
-    #define M(NAME) \
+#define M(NAME) \
             case ClearableSetVariants::Type::NAME: \
                 has_new_data = buildFilter(*data.NAME, column_ptrs, clearing_hint_columns, filter, rows, data); \
                 break;
@@ -145,7 +146,8 @@ ColumnRawPtrs DistinctSortedTransform::getClearingColumns(const Chunk & chunk, c
     clearing_hint_columns.reserve(description.size());
     for (const auto & sort_column_description : description)
     {
-        const auto * sort_column_ptr = chunk.getColumns().at(sort_column_description.column_number).get();
+        const auto idx = header.getPositionByName(sort_column_description.column_name);
+        const auto * sort_column_ptr = chunk.getColumns().at(idx).get();
         const auto it = std::find(key_columns.cbegin(), key_columns.cend(), sort_column_ptr);
         if (it != key_columns.cend()) /// if found in key_columns
             clearing_hint_columns.emplace_back(sort_column_ptr);

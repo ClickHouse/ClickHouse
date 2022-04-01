@@ -22,7 +22,8 @@ class DistinctSortedTransform : public ISimpleTransform
 {
 public:
     /// Empty columns_ means all columns.
-    DistinctSortedTransform(const Block & header, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns);
+    DistinctSortedTransform(
+        Block header_, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns);
 
     String getName() const override { return "DistinctSortedTransform"; }
 
@@ -46,6 +47,7 @@ private:
         size_t rows,
         ClearableSetVariants & variants) const;
 
+    Block header;
     SortDescription description;
 
     struct PreviousChunk

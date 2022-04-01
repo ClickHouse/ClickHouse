@@ -37,11 +37,8 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     /// Replace column names to column position in description_sorted.
     for (auto & column_description : group_by_description)
     {
-        if (!column_description.column_name.empty())
-        {
-            column_description.column_number = res_header.getPositionByName(column_description.column_name);
-            // column_description.column_name.clear();
-        }
+        if (column_description.column_name.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name empty.");
     }
 }
 
@@ -111,11 +108,12 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     {
         /// Find the first position of new (not current) key in current chunk
         auto indices = collections::range(key_begin, rows);
-        auto it = std::upper_bound(indices.begin(), indices.end(), cur_block_size - 1,
+        auto it = std::upper_bound(
+            indices.begin(),
+            indices.end(),
+            cur_block_size - 1,
             [&](size_t lhs_row, size_t rhs_row)
-            {
-                return less(res_key_columns, key_columns, lhs_row, rhs_row, group_by_description);
-            });
+            { return less(res_header, res_key_columns, key_columns, lhs_row, rhs_row, group_by_description); });
 
         key_end = (it == indices.end() ? rows : *it);
 
