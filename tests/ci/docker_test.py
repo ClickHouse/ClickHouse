@@ -227,19 +227,20 @@ class TestDockerImageCheck(unittest.TestCase):
 
 class TestDockerServer(unittest.TestCase):
     def test_gen_tags(self):
+        version = get_version_from_string("22.2.2.2")
         cases = (
-            (("22.2.2.2", "latest"), ["latest", "22", "22.2", "22.2.2", "22.2.2.2"]),
-            (("22.2.2.2", "major"), ["22", "22.2", "22.2.2", "22.2.2.2"]),
-            (("22.2.2.2", "minor"), ["22.2", "22.2.2", "22.2.2.2"]),
-            (("22.2.2.2", "patch"), ["22.2.2", "22.2.2.2"]),
-            (("22.2.2.2", "head"), ["head"]),
+            ("latest", ["latest", "22", "22.2", "22.2.2", "22.2.2.2"]),
+            ("major", ["22", "22.2", "22.2.2", "22.2.2.2"]),
+            ("minor", ["22.2", "22.2.2", "22.2.2.2"]),
+            ("patch", ["22.2.2", "22.2.2.2"]),
+            ("head", ["head"]),
         )
         for case in cases:
-            version, release_type = case[0]
+            release_type = case[0]
             self.assertEqual(case[1], ds.gen_tags(version, release_type))
 
         with self.assertRaises(ValueError):
-            ds.gen_tags("22.2.2.2", "auto")
+            ds.gen_tags(version, "auto")
 
     @patch("docker_server.get_tagged_versions")
     def test_auto_release_type(self, mock_tagged_versions: MagicMock):
@@ -251,13 +252,13 @@ class TestDockerServer(unittest.TestCase):
             get_version_from_string("2.2.2.1"),
         ]
         cases = (
-            ("1.0.1.1", "minor"),
-            ("1.1.2.1", "minor"),
-            ("1.3.1.1", "major"),
-            ("2.1.2.1", "minor"),
-            ("2.2.1.3", "patch"),
-            ("2.2.3.1", "latest"),
-            ("2.3.1.1", "latest"),
+            (get_version_from_string("1.0.1.1"), "minor"),
+            (get_version_from_string("1.1.2.1"), "minor"),
+            (get_version_from_string("1.3.1.1"), "major"),
+            (get_version_from_string("2.1.2.1"), "minor"),
+            (get_version_from_string("2.2.1.3"), "patch"),
+            (get_version_from_string("2.2.3.1"), "latest"),
+            (get_version_from_string("2.3.1.1"), "latest"),
         )
         _ = get_tagged_versions()
         for case in cases:
