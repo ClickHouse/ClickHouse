@@ -165,8 +165,8 @@ jboolean Java_com_intel_oap_vectorized_BatchIterator_nativeHasNext(JNIEnv * env,
 jlong Java_com_intel_oap_vectorized_BatchIterator_nativeCHNext(JNIEnv * env, jobject obj, jlong executor_address)
 {
     dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
-    Block * columnBatch = executor->nextColumnar();
-    return reinterpret_cast<long>(columnBatch);
+    Block * column_batch = executor->nextColumnar();
+    return reinterpret_cast<Int64>(column_batch);
 }
 
 void Java_com_intel_oap_vectorized_BatchIterator_nativeClose(JNIEnv * env, jobject obj, jlong executor_address)
@@ -271,6 +271,13 @@ jdouble Java_com_intel_oap_vectorized_CHColumnVector_nativeGetDouble(JNIEnv * en
 {
     auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     return col.column->getFloat64(row_id);
+}
+
+jstring Java_com_intel_oap_vectorized_CHColumnVector_nativeGetString(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
+{
+    const ColumnString * col = checkAndGetColumn<ColumnString>(*getColumnFromColumnVector(env, obj, block_address, column_position).column);
+    auto result = col->getDataAt(row_id);
+    return charTojstring(env, result.toString().c_str());
 }
 
 // native block

@@ -35,6 +35,7 @@ Int64 SourceFromJavaIter::byteArrayToLong(JNIEnv* env, jbyteArray arr)
     assert(len == sizeof(Int64));
     char * c_arr = new char[len];
     env->GetByteArrayRegion(arr, 0, len, reinterpret_cast<jbyte*>(c_arr));
+    std::reverse(c_arr, c_arr+8);
     Int64 result = reinterpret_cast<Int64 *>(c_arr)[0];
     delete[] c_arr;
     return result;

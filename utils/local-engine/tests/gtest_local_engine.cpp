@@ -12,7 +12,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/ColumnVector.h>
 #include <Parsers/ASTFunction.h>
-#include <local/LocalServer.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
@@ -192,7 +191,6 @@ TEST(TestSelect, MergeTreeWriteTest)
     std::shared_ptr<DB::StorageInMemoryMetadata> metadata = std::make_shared<DB::StorageInMemoryMetadata>();
     ColumnsDescription columns_description;
     auto shared_context = Context::createShared();
-    DB::LocalServer localServer;
     auto global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
     global_context->setPath("/home/kyligence/Documents/clickhouse_conf/data/");
@@ -247,6 +245,24 @@ TEST(TestSelect, MergeTreeWriteTest)
                               return std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
                           });
     query_pipeline.execute()->execute(1);
+}
+
+TEST(TESTUtil, TestByteToLong) {
+    long expected = 0xf085460ccf7f0000l;
+    char* arr = new char[8];
+    arr[0] = -16;
+    arr[1] = -123;
+    arr[2] = 70;
+    arr[3] = 12;
+    arr[4] = -49;
+    arr[5] = 127;
+    arr[6] = 0;
+    arr[7] = 0;
+    std::reverse(arr, arr+8);
+    Int64 result = reinterpret_cast<Int64 *>(arr)[0];
+    std::cout<< std::to_string(result);
+
+    ASSERT_EQ(expected, result);
 }
 
 TEST(TestSubstrait, TestGenerate) {
