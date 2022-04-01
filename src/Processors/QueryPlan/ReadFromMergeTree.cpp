@@ -45,7 +45,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & context)
+static MergeTreeReaderSettings getMergeTreeReaderSettings(
+    const ContextPtr & context, const SelectQueryInfo & query_info)
 {
     const auto & settings = context->getSettingsRef();
     return
@@ -53,6 +54,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & con
         .read_settings = context->getReadSettings(),
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
+        .read_in_order = query_info.input_order_info != nullptr,
     };
 }
 
@@ -82,7 +84,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         getPrewhereInfo(query_info_),
         data_.getPartitionValueType(),
         virt_column_names_)})
-    , reader_settings(getMergeTreeReaderSettings(context_))
+    , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
     , prepared_parts(std::move(parts_))
     , real_column_names(std::move(real_column_names_))
     , virt_column_names(std::move(virt_column_names_))
@@ -112,6 +114,9 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     if (enable_parallel_reading)
         read_task_callback = context->getMergeTreeReadTaskCallback();
+
+    /// Add explicit description.
+    setStepDescription(data.getStorageID().getFullNameNotQuoted());
 }
 
 Pipe ReadFromMergeTree::readFromPool(
@@ -203,6 +208,7 @@ ProcessorPtr ReadFromMergeTree::createSource(
             .colums_to_read = required_columns
         };
     }
+
     return std::make_shared<TSource>(
             data, storage_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache, prewhere_info,
@@ -918,7 +924,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             total_marks_pk += part->index_granularity.getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
-        auto reader_settings = getMergeTreeReaderSettings(context);
+        auto reader_settings = getMergeTreeReaderSettings(context, query_info);
 
         bool use_skip_indexes = settings.use_skip_indexes;
         if (select.final() && !settings.use_skip_indexes_if_final)
