@@ -149,8 +149,11 @@ public:
     {
         auto it = columns.get<1>().find(column_name);
         if (it == columns.get<1>().end())
-            throw Exception(
-                "Cannot find column " + column_name + " in ColumnsDescription" + getHintsString(column_name), ErrorCodes::LOGICAL_ERROR);
+        {
+            String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_name);
+            appendHintsMessage(exception_message, column_name);
+            throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
+        }
 
         removeSubcolumns(it->name);
         if (!columns.get<1>().modify(it, std::forward<F>(f)))

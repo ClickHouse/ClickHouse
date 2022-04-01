@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <boost/algorithm/string/join.hpp>
 #include <Common/PODArray.h>
 
 #include <algorithm>
@@ -91,6 +90,10 @@ private:
     }
 };
 
+namespace detail
+{
+void appendHintsMessageImpl(String & message, const std::vector<String> & hints);
+}
 
 template <size_t MaxNumHints, typename Self>
 class IHints
@@ -103,14 +106,10 @@ public:
         return prompter.getHints(name, getAllRegisteredNames());
     }
 
-    String getHintsString(const String & name) const
+    void appendHintsMessage(String & message, const String & name) const
     {
         auto hints = getHints(name);
-
-        /// Note: we don't use toString because it will cause writeCString naming conflict in src/Dictionaries/MongoDBDictionarySource.cpp
-        for (auto & hint : hints)
-            hint = "'" + hint + "'";
-        return !hints.empty() ? ", may be you meant: [" + boost::algorithm::join(hints, ",") + "]" : "";
+        detail::appendHintsMessageImpl(message, hints);
     }
 
     IHints() = default;
@@ -125,5 +124,7 @@ public:
 private:
     NamePrompter<MaxNumHints> prompter;
 };
+
+void appendHintsString(String & message, const std::vector<String> & hints, const String & name);
 
 }
