@@ -8,28 +8,14 @@ from get_robot_token import get_parameter_from_ssm
 
 
 class ClickHouseHelper:
-    def __init__(self, url=None, user=None, password=None):
-        self.url2 = None
-        self.auth2 = None
-
+    def __init__(self, url=None):
         if url is None:
             url = get_parameter_from_ssm("clickhouse-test-stat-url")
-            self.url2 = get_parameter_from_ssm("clickhouse-test-stat-url2")
-            self.auth2 = {
-                "X-ClickHouse-User": get_parameter_from_ssm(
-                    "clickhouse-test-stat-login2"
-                ),
-                "X-ClickHouse-Key": "",
-            }
 
         self.url = url
         self.auth = {
-            "X-ClickHouse-User": user
-            if user is not None
-            else get_parameter_from_ssm("clickhouse-test-stat-login"),
-            "X-ClickHouse-Key": password
-            if password is not None
-            else get_parameter_from_ssm("clickhouse-test-stat-password"),
+            "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
+            "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password"),
         }
 
     @staticmethod
@@ -78,8 +64,6 @@ class ClickHouseHelper:
 
     def _insert_json_str_info(self, db, table, json_str):
         self._insert_json_str_info_impl(self.url, self.auth, db, table, json_str)
-        if self.url2:
-            self._insert_json_str_info_impl(self.url2, self.auth2, db, table, json_str)
 
     def insert_event_into(self, db, table, event):
         event_str = json.dumps(event)
@@ -195,7 +179,7 @@ def mark_flaky_tests(clickhouse_helper, check_name, test_results):
             check_name=check_name
         )
 
-        tests_data = clickhouse_helper.select_json_each_row("gh-data", query)
+        tests_data = clickhouse_helper.select_json_each_row("default", query)
         master_failed_tests = {row["test_name"] for row in tests_data}
         logging.info("Found flaky tests: %s", ", ".join(master_failed_tests))
 
