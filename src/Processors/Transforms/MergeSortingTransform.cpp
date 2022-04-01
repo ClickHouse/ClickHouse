@@ -98,7 +98,6 @@ MergeSortingTransform::MergeSortingTransform(
     VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
     : SortingTransform(header_, description_, max_merged_block_size_, limit_)
-    , header(std::move(header_))
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
@@ -230,7 +229,8 @@ void MergeSortingTransform::generate()
     if (!generated_prefix)
     {
         if (temporary_files.empty())
-            merge_sorter = std::make_unique<MergeSorter>(header, std::move(chunks), description, max_merged_block_size, limit);
+            merge_sorter
+                = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
         else
         {
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
@@ -258,7 +258,7 @@ void MergeSortingTransform::remerge()
     LOG_DEBUG(log, "Re-merging intermediate ORDER BY data ({} blocks with {} rows) to save memory consumption", chunks.size(), sum_rows_in_blocks);
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
-    MergeSorter remerge_sorter(header, std::move(chunks), description, max_merged_block_size, limit);
+    MergeSorter remerge_sorter(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
 
     Chunks new_chunks;
     size_t new_sum_rows_in_blocks = 0;

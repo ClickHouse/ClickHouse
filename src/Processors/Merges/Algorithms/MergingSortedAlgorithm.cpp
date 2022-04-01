@@ -31,10 +31,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     {
         has_collation |= column_description.collator != nullptr;
         if (!column_description.column_name.empty())
-        {
             column_description.column_number = header.getPositionByName(column_description.column_name);
-            // column_description.column_name.clear();
-        }
     }
 }
 

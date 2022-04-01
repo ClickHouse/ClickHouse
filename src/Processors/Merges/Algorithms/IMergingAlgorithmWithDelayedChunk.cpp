@@ -4,8 +4,8 @@
 namespace DB
 {
 
-IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(const Block & header_, size_t num_inputs, SortDescription description_)
-    : description(std::move(description_)), header(header_), current_inputs(num_inputs), cursors(num_inputs)
+IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(Block header_, size_t num_inputs, SortDescription description_)
+    : description(std::move(description_)), header(std::move(header_)), current_inputs(num_inputs), cursors(num_inputs)
 {
 }
 

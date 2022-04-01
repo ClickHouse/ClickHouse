@@ -75,6 +75,9 @@ struct SortCursorImpl
     /// Set the cursor to the beginning of the new block.
     void reset(const Columns & columns, const Block & block, IColumn::Permutation * perm = nullptr)
     {
+        if (columns.size() > block.columns())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Block doesn't contain all input columns.");
+
         all_columns.clear();
         sort_columns.clear();
 

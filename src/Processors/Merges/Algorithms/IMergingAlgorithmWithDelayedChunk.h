@@ -10,7 +10,7 @@ namespace DB
 class IMergingAlgorithmWithDelayedChunk : public IMergingAlgorithm
 {
 public:
-    IMergingAlgorithmWithDelayedChunk(const Block & header_, size_t num_inputs, SortDescription description_);
+    IMergingAlgorithmWithDelayedChunk(Block header_, size_t num_inputs, SortDescription description_);
 
 protected:
     SortingHeap<SortCursor> queue;

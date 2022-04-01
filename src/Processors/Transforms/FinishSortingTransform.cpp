@@ -26,7 +26,7 @@ FinishSortingTransform::FinishSortingTransform(
     const SortDescription & description_to_sort_,
     size_t max_merged_block_size_,
     UInt64 limit_)
-    : SortingTransform(header_, description_to_sort_, max_merged_block_size_, limit_), header(std::move(header_))
+    : SortingTransform(header_, description_to_sort_, max_merged_block_size_, limit_)
 {
     /// Check for sanity non-modified descriptions
     if (!isPrefix(description_sorted_, description_to_sort_))
@@ -102,7 +102,8 @@ void FinishSortingTransform::generate()
 {
     if (!merge_sorter)
     {
-        merge_sorter = std::make_unique<MergeSorter>(header, std::move(chunks), description, max_merged_block_size, limit);
+        merge_sorter
+            = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
         generated_prefix = true;
     }
 

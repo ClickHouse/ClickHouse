@@ -25,7 +25,6 @@ protected:
     void generate() override;
 
 private:
-    Block header;
     SortDescription description_sorted;
 
     Chunk tail_chunk;

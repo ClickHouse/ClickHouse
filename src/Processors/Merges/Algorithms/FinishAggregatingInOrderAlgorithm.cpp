@@ -46,10 +46,7 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     for (auto & column_description : description)
     {
         if (!column_description.column_name.empty())
-        {
             column_description.column_number = header_.getPositionByName(column_description.column_name);
-            // column_description.column_name.clear();
-        }
     }
 }
 

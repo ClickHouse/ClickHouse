@@ -39,8 +39,6 @@ protected:
     Processors expandPipeline() override;
 
 private:
-    Block header;
-
     size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
     size_t max_bytes_before_external_sort;
