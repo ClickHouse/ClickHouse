@@ -1,10 +1,13 @@
+// Needs to go first because its partial specialization of fmt::formatter
+// should be defined before any instantiation
+#include <fmt/ostream.h>
+
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
 #include <base/logger_useful.h>
 
 #include <cppkafka/cppkafka.h>
 #include <boost/algorithm/string/join.hpp>
-#include <fmt/ostream.h>
 #include <algorithm>
 
 namespace DB
