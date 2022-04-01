@@ -1,4 +1,6 @@
 #include <Common/config.h>
+#include "IO/ParallelReadBuffer.h"
+#include "IO/IOThreadPool.h"
 #include "Parsers/ASTCreateQuery.h"
 
 #if USE_AWS_S3
@@ -23,6 +25,7 @@
 #include <Storages/StorageS3Settings.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/getVirtualsForStorage.h>
 
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
@@ -208,25 +211,16 @@ String StorageS3Source::KeysIterator::next()
     return pimpl->next();
 }
 
-Block StorageS3Source::getHeader(Block sample_block, bool with_path_column, bool with_file_column)
+Block StorageS3Source::getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns)
 {
-    if (with_path_column)
-        sample_block.insert(
-            {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
-             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-             "_path"});
-    if (with_file_column)
-        sample_block.insert(
-            {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
-             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-             "_file"});
+    for (const auto & virtual_column : requested_virtual_columns)
+        sample_block.insert({virtual_column.type->createColumn(), virtual_column.type, virtual_column.name});
 
     return sample_block;
 }
 
 StorageS3Source::StorageS3Source(
-    bool need_path,
-    bool need_file,
+    const std::vector<NameAndTypePair> & requested_virtual_columns_,
     const String & format_,
     String name_,
     const Block & sample_block_,
@@ -238,8 +232,9 @@ StorageS3Source::StorageS3Source(
     String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
-    std::shared_ptr<IteratorWrapper> file_iterator_)
-    : SourceWithProgress(getHeader(sample_block_, need_path, need_file))
+    std::shared_ptr<IteratorWrapper> file_iterator_,
+    const size_t download_thread_num_)
+    : SourceWithProgress(getHeader(sample_block_, requested_virtual_columns_))
     , WithContext(context_)
     , name(std::move(name_))
     , bucket(bucket_)
@@ -251,9 +246,9 @@ StorageS3Source::StorageS3Source(
     , client(client_)
     , sample_block(sample_block_)
     , format_settings(format_settings_)
-    , with_file_column(need_file)
-    , with_path_column(need_path)
+    , requested_virtual_columns(requested_virtual_columns_)
     , file_iterator(file_iterator_)
+    , download_thread_num(download_thread_num_)
 {
     initialize();
 }
@@ -275,26 +270,52 @@ bool StorageS3Source::initialize()
 
     file_path = fs::path(bucket) / current_key;
 
-    read_buf = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, getContext()->getReadSettings()),
-        chooseCompressionMethod(current_key, compression_hint));
+    read_buf = wrapReadBufferWithCompressionMethod(createS3ReadBuffer(current_key), chooseCompressionMethod(current_key, compression_hint));
+
     auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
 
     if (columns_desc.hasDefaults())
     {
-        builder.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext());
-        });
+        builder.addSimpleTransform(
+            [&](const Block & header)
+            { return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext()); });
     }
 
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    initialized = false;
     return true;
+}
+
+std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key)
+{
+    const size_t object_size = DB::S3::getObjectSize(client, bucket, key, false);
+
+    auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
+    const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
+    const bool object_too_small = object_size < download_thread_num * download_buffer_size;
+    if (!use_parallel_download || object_too_small)
+    {
+        LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
+        return std::make_unique<ReadBufferFromS3>(client, bucket, key, max_single_read_retries, getContext()->getReadSettings());
+    }
+
+    assert(object_size > 0);
+
+    if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
+    {
+        LOG_WARNING(log, "Downloading buffer {} bytes too small, set at least {} bytes", download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
+        download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+    }
+
+    auto factory = std::make_unique<ReadBufferS3Factory>(
+        client, bucket, key, download_buffer_size, object_size, max_single_read_retries, getContext()->getReadSettings());
+    LOG_TRACE(
+        log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}.", download_thread_num, object_size, download_buffer_size);
+
+    return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner(IOThreadPool::get()), download_thread_num);
 }
 
 String StorageS3Source::getName() const
@@ -314,16 +335,18 @@ Chunk StorageS3Source::generate()
         {
             UInt64 num_rows = chunk.getNumRows();
 
-            if (with_path_column)
-                chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
-                                    .createColumnConst(num_rows, file_path)
-                                    ->convertToFullColumnIfConst());
-            if (with_file_column)
+            for (const auto & virtual_column : requested_virtual_columns)
             {
-                size_t last_slash_pos = file_path.find_last_of('/');
-                chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
-                                    .createColumnConst(num_rows, file_path.substr(last_slash_pos + 1))
-                                    ->convertToFullColumnIfConst());
+                if (virtual_column.name == "_path")
+                {
+                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+                }
+                else if (virtual_column.name == "_file")
+                {
+                    size_t last_slash_pos = file_path.find_last_of('/');
+                    auto column = virtual_column.type->createColumnConst(num_rows, file_path.substr(last_slash_pos + 1));
+                    chunk.addColumn(column->convertToFullColumnIfConst());
+                }
             }
 
             return chunk;
@@ -376,16 +399,6 @@ static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & clien
     return false;
 }
 
-// TODO: common thread pool for IO must be used instead after PR #35150
-static ThreadPool & getThreadPoolStorageS3()
-{
-    constexpr size_t pool_size = 100;
-    constexpr size_t queue_size = 1000000;
-    static ThreadPool pool(pool_size, pool_size, queue_size);
-    return pool;
-}
-
-
 class StorageS3Sink : public SinkToStorage
 {
 public:
@@ -408,10 +421,20 @@ public:
     {
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(
-                client, bucket, key, min_upload_part_size,
-                upload_part_size_multiply_factor, upload_part_size_multiply_parts_count_threshold,
-                max_single_part_upload_size, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, threadPoolCallbackRunner(getThreadPoolStorageS3())), compression_method, 3);
-        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
+                client,
+                bucket,
+                key,
+                min_upload_part_size,
+                upload_part_size_multiply_factor,
+                upload_part_size_multiply_parts_count_threshold,
+                max_single_part_upload_size,
+                std::nullopt,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                threadPoolCallbackRunner(IOThreadPool::get())),
+            compression_method,
+            3);
+        writer
+            = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
     }
 
     String getName() const override { return "StorageS3Sink"; }
@@ -597,6 +620,13 @@ StorageS3::StorageS3(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+
+    auto default_virtuals = NamesAndTypesList{
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+
+    auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
+    virtual_columns = getVirtualsForStorage(columns, default_virtuals);
 }
 
 std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(const ClientAuthentication & client_auth, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context)
@@ -644,14 +674,14 @@ Pipe StorageS3::read(
     updateClientAndAuthSettings(local_context, client_auth);
 
     Pipes pipes;
-    bool need_path_column = false;
-    bool need_file_column = false;
-    for (const auto & column : column_names)
+
+    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
+    std::vector<NameAndTypePair> requested_virtual_columns;
+
+    for (const auto & virtual_column : getVirtuals())
     {
-        if (column == "_path")
-            need_path_column = true;
-        if (column == "_file")
-            need_file_column = true;
+        if (column_names_set.contains(virtual_column.name))
+            requested_virtual_columns.push_back(virtual_column);
     }
 
     std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, local_context);
@@ -660,8 +690,18 @@ Pipe StorageS3::read(
     Block block_for_format;
     if (isColumnOriented())
     {
+        auto fetch_columns = column_names;
+        const auto & virtuals = getVirtuals();
+        std::erase_if(
+            fetch_columns,
+            [&](const String & col)
+            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
+
+        if (fetch_columns.empty())
+            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+
         columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+            storage_snapshot->getSampleBlockForColumns(fetch_columns).getNamesAndTypesList()};
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -670,11 +710,11 @@ Pipe StorageS3::read(
         block_for_format = storage_snapshot->metadata->getSampleBlock();
     }
 
+    const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
-            need_path_column,
-            need_file_column,
+            requested_virtual_columns,
             format_name,
             getName(),
             block_for_format,
@@ -686,7 +726,8 @@ Pipe StorageS3::read(
             compression_method,
             client_auth.client,
             client_auth.uri.bucket,
-            iterator_wrapper));
+            iterator_wrapper,
+            max_download_threads));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
@@ -850,6 +891,8 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
                 configuration.access_key_id = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else if (arg_name == "secret_access_key")
                 configuration.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+            else if (arg_name == "filename")
+                configuration.url = std::filesystem::path(configuration.url) / arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
@@ -1049,9 +1092,7 @@ void registerStorageCOS(StorageFactory & factory)
 
 NamesAndTypesList StorageS3::getVirtuals() const
 {
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+    return virtual_columns;
 }
 
 bool StorageS3::supportsPartitionBy() const

@@ -88,15 +88,27 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 
         Stopwatch watch(CLOCK_MONOTONIC);
-        auto [bytes_read, offset] = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
+
+        ReadBufferFromRemoteFSGather::ReadResult result;
+        try
+        {
+            result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
+        }
+        catch (...)
+        {
+            if (running_group)
+                CurrentThread::detachQuery();
+            throw;
+        }
+
         watch.stop();
 
         ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, bytes_read);
+        ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, result.offset ? result.size - result.offset : result.size);
 
         thread_status.detachQuery(/* if_not_detached */true);
 
-        return Result{ .size = bytes_read, .offset = offset };
+        return Result{ .size = result.size, .offset = result.offset };
     });
 
     auto future = task->get_future();

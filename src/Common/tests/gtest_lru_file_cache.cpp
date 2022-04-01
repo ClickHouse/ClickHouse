@@ -68,7 +68,7 @@ void download(DB::FileSegmentPtr file_segment)
         fs::create_directories(subdir);
 
     std::string data(size, '0');
-    file_segment->write(data.data(), size);
+    file_segment->write(data.data(), size, file_segment->getDownloadOffset());
 }
 
 void prepareAndDownload(DB::FileSegmentPtr file_segment)

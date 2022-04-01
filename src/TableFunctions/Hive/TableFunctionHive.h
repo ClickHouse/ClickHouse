@@ -10,7 +10,7 @@ class TableFunctionHive : public ITableFunction
 {
 public:
     static constexpr auto name = "hive";
-    static constexpr auto storage_type_name = "hive";
+    static constexpr auto storage_type_name = "Hive";
     std::string getName() const override { return name; }
 
     bool hasStaticStructure() const override { return true; }
