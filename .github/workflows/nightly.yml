@@ -7,6 +7,7 @@ env:
 "on":
   schedule:
     - cron: '13 3 * * *'
+  workflow_dispatch:
 
 jobs:
   DockerHubPushAarch64:
