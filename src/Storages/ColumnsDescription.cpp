@@ -230,8 +230,11 @@ void ColumnsDescription::remove(const String & column_name)
 {
     auto range = getNameRange(columns, column_name);
     if (range.first == range.second)
-        throw Exception(
-            "There is no column " + column_name + " in table" + getHintsString(column_name), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+    {
+        String exception_message = fmt::format("There is no column {} in table", column_name);
+        appendHintsMessage(exception_message, column_name);
+        throw Exception(exception_message, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+    }
 
     for (auto list_it = range.first; list_it != range.second;)
     {
@@ -245,8 +248,9 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     auto it = columns.get<1>().find(column_from);
     if (it == columns.get<1>().end())
     {
-        throw Exception(
-            "Cannot find column " + column_from + " in ColumnsDescription" + getHintsString(column_from), ErrorCodes::LOGICAL_ERROR);
+        String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_from);
+        appendHintsMessage(exception_message, column_from);
+        throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
     }
 
     columns.get<1>().modify_key(it, [&column_to] (String & old_name)
