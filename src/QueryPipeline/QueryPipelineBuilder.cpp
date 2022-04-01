@@ -328,6 +328,7 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines2(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
+    const Block & out_header,
     size_t max_block_size,
     Processors * collected_processors)
 {
@@ -343,8 +344,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines2(
         throw Exception("Join is supported only for pipelines with one output port", ErrorCodes::LOGICAL_ERROR);
 
     Blocks inputs = {left->getHeader(), right->getHeader()};
-    Block output = left->getHeader();
-    auto joining = std::make_shared<MergeJoinTransform>(inputs, output);
+    auto joining = std::make_shared<MergeJoinTransform>(inputs, out_header);
 
     auto result = mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     return result;

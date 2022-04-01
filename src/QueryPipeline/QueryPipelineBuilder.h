@@ -121,6 +121,7 @@ public:
     static std::unique_ptr<QueryPipelineBuilder> joinPipelines2(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
+        const Block & out_header,
         size_t max_block_size,
         Processors * collected_processors = nullptr);
 

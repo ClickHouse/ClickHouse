@@ -21,39 +21,16 @@ namespace DB
 class MergeJoinAlgorithm final : public IMergingAlgorithm
 {
 public:
-    MergeJoinAlgorithm()
-        : log(&Poco::Logger::get("MergeJoinAlgorithm"))
-    {
-    }
+    MergeJoinAlgorithm();
 
-    virtual void initialize(Inputs inputs) override
-    {
-        LOG_DEBUG(log, "MergeJoinAlgorithm initialize, number of inputs: {}", inputs.size());
-    }
-
-    virtual void consume(Input & input, size_t source_num) override
-    {
-        LOG_DEBUG(log, "Consume from {}", source_num);
-        if (source_num == 0)
-        {
-            chunk = std::move(input.chunk);
-        }
-    }
-
-    virtual Status merge() override
-    {
-        LOG_DEBUG(log, "merge (chunk: {})", bool(chunk));
-
-        if (chunk)
-            return Status(std::move(chunk), true);
-
-        return Status(0);
-    }
+    virtual void initialize(Inputs inputs) override;
+    virtual void consume(Input & input, size_t source_num) override;
+    virtual Status merge() override;
 
 private:
     Inputs current_inputs;
 
-    Chunk chunk;
+    Chunks chunks;
     Poco::Logger * log;
 };
 
