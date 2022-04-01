@@ -136,7 +136,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             IMergeTreeDataPart::Checksums projection_checksums_data;
             const auto & projection_path = file_path;
 
-            if (part_type == MergeTreeDataPartType::COMPACT)
+            if (projection->getType() == MergeTreeDataPartType::COMPACT)
             {
                 auto proj_path = file_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
                 auto file_buf = disk->readFile(proj_path);

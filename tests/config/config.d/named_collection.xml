@@ -14,5 +14,13 @@
             <user>default</user>
             <table>s</table>
         </clickhouse_dictionary>
+        <url_with_headers>
+            <headers>
+                <header>
+                    <name>X-ClickHouse-Format</name>
+                    <value>JSONEachRow</value>
+                </header>
+            </headers>
+        </url_with_headers>
     </named_collections>
 </clickhouse>

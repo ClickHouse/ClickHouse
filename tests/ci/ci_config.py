@@ -206,6 +206,7 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
+            "binary_gcc",
         ],
     },
     "tests_config": {
