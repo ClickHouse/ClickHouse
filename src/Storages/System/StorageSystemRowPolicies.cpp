@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Interpreters/Context.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -20,26 +19,6 @@
 
 namespace DB
 {
-
-namespace
-{
-    const std::vector<std::pair<String, Int8>> & getRowPolicyKindEnumValues()
-    {
-        static const std::vector<std::pair<String, Int8>> values = []
-        {
-            std::vector<std::pair<String, Int8>> res;
-            for (auto kind : collections::range(RowPolicyKind::MAX))
-            {
-                const std::string_view & kind_name = RowPolicyKindInfo::get(kind).name;
-                res.emplace_back(kind_name, static_cast<Int8>(kind));
-            }
-            return res;
-        }();
-        return values;
-    }
-}
-
-
 NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
 {
     NamesAndTypesList names_and_types{
@@ -58,7 +37,7 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
     }
 
     NamesAndTypesList extra_names_and_types{
-        {"kind", std::make_shared<DataTypeEnum8>(getRowPolicyKindEnumValues())},
+        {"is_restrictive", std::make_shared<DataTypeUInt8>()},
         {"apply_to_all", std::make_shared<DataTypeUInt8>()},
         {"apply_to_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
@@ -93,7 +72,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         column_filter_null_map[filter_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     }
 
-    auto & column_kind = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
+    auto & column_is_restrictive = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
     auto & column_apply_to_all = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
     auto & column_apply_to_list = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_apply_to_list_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
@@ -105,7 +84,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
                        const UUID & id,
                        const String & storage_name,
                        const std::array<String, static_cast<size_t>(RowPolicyFilterType::MAX)> & filters,
-                       RowPolicyKind kind,
+                       bool is_restrictive,
                        const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
@@ -131,7 +110,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
             }
         }
 
-        column_kind.push_back(static_cast<Int8>(kind));
+        column_is_restrictive.push_back(is_restrictive);
 
         auto apply_to_ast = apply_to.toASTWithNames(access_control);
         column_apply_to_all.push_back(apply_to_ast->all);
@@ -154,7 +133,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         if (!storage)
             continue;
 
-        add_row(policy->getName(), policy->getFullName(), id, storage->getStorageName(), policy->filters, policy->getKind(), policy->to_roles);
+        add_row(policy->getName(), policy->getFullName(), id, storage->getStorageName(), policy->filters, policy->isRestrictive(), policy->to_roles);
     }
 }
 }
