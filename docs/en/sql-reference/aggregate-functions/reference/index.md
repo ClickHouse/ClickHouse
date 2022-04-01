@@ -35,6 +35,7 @@ ClickHouse-specific aggregate functions:
 -   [groupArrayInsertAt](../../../sql-reference/aggregate-functions/reference/grouparrayinsertat.md)
 -   [groupArrayMovingAvg](../../../sql-reference/aggregate-functions/reference/grouparraymovingavg.md)
 -   [groupArrayMovingSum](../../../sql-reference/aggregate-functions/reference/grouparraymovingsum.md)
+-   [groupArraySorted](../../../sql-reference/aggregate-functions/reference/grouparraysorted.md)
 -   [groupBitAnd](../../../sql-reference/aggregate-functions/reference/groupbitand.md)
 -   [groupBitOr](../../../sql-reference/aggregate-functions/reference/groupbitor.md)
 -   [groupBitXor](../../../sql-reference/aggregate-functions/reference/groupbitxor.md)
