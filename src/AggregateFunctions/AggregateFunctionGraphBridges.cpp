@@ -1,5 +1,6 @@
 #include "AggregateFunctionGraphOperation.h"
 #include "base/types.h"
+#include "Common/HashTable/HashSet.h"
 
 namespace DB
 {
@@ -22,15 +23,12 @@ public:
         for (StringRef next : this->data(place).graph.at(vertex)) {
             if (next == parent) {
                 continue;
-            } else if (used.find(vertex) != used.end()) {
-                auto vup = up.find(vertex);
-                *vup = std::min(*vup, tin[next]);
+            } else if (used.has(next)) {
+                up[vertex] = std::min(up[vertex], tin[next]);
             } else {
                 countBridges(place, next, vertex, used, tin, up, cntBridges, timer);
-                auto vup = up.find(vertex);
-                auto nup = up.find(next);
-                *vup = std::min(*vup, *nup);
-                if (*nup > tin[vertex]) {
+                up[vertex] = std::min(up[vertex], up[next]);
+                if (up[next] > tin[vertex]) {
                     ++cntBridges;
                 }
             }
