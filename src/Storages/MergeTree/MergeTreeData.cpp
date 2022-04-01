@@ -1314,9 +1314,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     if (!parts_from_wal.empty())
         loadDataPartsFromWAL(broken_parts_to_detach, duplicate_parts_to_remove, parts_from_wal, part_lock);
 
-    for (auto & part : duplicate_parts_to_remove)
-        part->remove();
-
     for (auto & part : broken_parts_to_detach)
         part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
 
