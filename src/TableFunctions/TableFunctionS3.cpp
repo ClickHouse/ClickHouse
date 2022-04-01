@@ -12,6 +12,7 @@
 #include <Storages/StorageS3.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
+#include <filesystem>
 
 
 namespace DB
@@ -55,7 +56,9 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
             if (arg_name == "access_key_id")
                 configuration.access_key_id = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else if (arg_name == "secret_access_key")
-                configuration.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+                onfiguration.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+            else if (arg_name == "filename")
+                configuration.url = std::filesystem::path(configuration.url) / arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                                 "Unknown key-value argument `{}` for StorageS3, expected: "
