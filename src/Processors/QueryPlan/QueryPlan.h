@@ -87,7 +87,7 @@ public:
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
-    void explainEstimate(MutableColumns & columns);
+    Block explainEstimate(MutableColumns & columns);
 
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
@@ -115,9 +115,6 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
     std::vector<ContextPtr> interpreter_context;
-
-    /// Estimate result
-    Block estimate_result;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

@@ -3,6 +3,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -83,37 +84,29 @@ BlockIO InterpreterExplainQuery::execute()
 }
 
 
-Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind)
+Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind kind)
 {
-    /*
-    if (kind == ASTExplainQuery::ExplainKind::QueryEstimate)
+    Block res;
+    if (kind != ASTExplainQuery::QueryEstimate)
     {
-        auto cols = NamesAndTypes{
-            {"database", std::make_shared<DataTypeString>()},
-            {"table", std::make_shared<DataTypeString>()},
-            {"parts", std::make_shared<DataTypeUInt64>()},
-            {"rows", std::make_shared<DataTypeUInt64>()},
-            {"marks", std::make_shared<DataTypeUInt64>()},
-        };
-        return Block({
-            {cols[0].type->createColumn(), cols[0].type, cols[0].name},
-            {cols[1].type->createColumn(), cols[1].type, cols[1].name},
-            {cols[2].type->createColumn(), cols[2].type, cols[2].name},
-            {cols[3].type->createColumn(), cols[3].type, cols[3].name},
-            {cols[4].type->createColumn(), cols[4].type, cols[4].name},
-        });
+        ColumnWithTypeAndName col;
+        col.name = "explain";
+        col.type = std::make_shared<DataTypeString>();
+        col.column = col.type->createColumn();
+        res.insert(col);
+        return res;
     }
     else
     {
-        */
-    Block res;
-    ColumnWithTypeAndName col;
-    col.name = "explain";
-    col.type = std::make_shared<DataTypeString>();
-    col.column = col.type->createColumn();
-    res.insert(col);
-    return res;
-    // }
+        static const NamesAndTypesList columns = {
+            {"database", std::make_shared<DataTypeString>()},
+            {"table", std::make_shared<DataTypeString>()},
+            {"estimate", std::make_shared<DataTypeObject>("json")},
+        };
+
+        for (const auto & column : columns)
+            res.insert({column.type->createColumn(), column.type, column.name});
+    }
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
@@ -393,9 +386,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             plan.buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(getContext()),
                 BuildQueryPipelineSettings::fromContext(getContext()));
-
             if (settings.optimize)
                 plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
+
             plan.explainEstimate(res_columns);
             insert_buf = false;
             break;

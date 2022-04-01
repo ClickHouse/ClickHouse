@@ -1331,6 +1331,24 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
     }
 }
 
+void ReadFromMergeTree::updateEstimate(MutableColumns & columns) const
+{
+    const auto & id = getStorageID();
+    const auto & database = id.database_name;
+    const auto & table = id.table_name;
+    Object estimate
+    {
+        {"selected_parts", getSelectedParts()},
+        {"selected_rows", getSelectedRows()},
+        {"selected_marks", getSelectedMarks()},
+    };
+
+    size_t index = 0;
+    columns[index++]->insert(database);
+    columns[index++]->insert(table);
+    columns[index++]->insert(estimate);
+}
+
 bool MergeTreeDataSelectAnalysisResult::error() const
 {
     return std::holds_alternative<std::exception_ptr>(result);

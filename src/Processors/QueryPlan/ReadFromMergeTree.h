@@ -117,6 +117,8 @@ public:
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
 
+    void updateEstimate(MutableColumns & columns) const override;
+
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         const StorageMetadataPtr & metadata_snapshot_base,
