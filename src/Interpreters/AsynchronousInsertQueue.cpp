@@ -198,9 +198,6 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         copyData(*read_buf, write_buf);
     }
 
-    std::cerr << "bytes.size: " << bytes.size() << "\n";
-    std::cerr << "bytes: " << bytes << "\n";
-
     if (auto quota = query_context->getQuota())
         quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
