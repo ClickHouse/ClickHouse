@@ -1,6 +1,6 @@
 FROM ubuntu:20.04 AS glibc-donor
-ARG TARGETARCH
 
+ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
     && case $arch in \
         amd64) rarch=x86_64 ;; \
@@ -19,22 +19,16 @@ ENV LANG=en_US.UTF-8 \
 
 COPY --from=glibc-donor /lib/linux-gnu/libc.so.6 /lib/linux-gnu/libdl.so.2 /lib/linux-gnu/libm.so.6 /lib/linux-gnu/libpthread.so.0 /lib/linux-gnu/librt.so.1 /lib/linux-gnu/libnss_dns.so.2 /lib/linux-gnu/libnss_files.so.2 /lib/linux-gnu/libresolv.so.2 /lib/linux-gnu/ld-2.31.so /lib/
 COPY --from=glibc-donor /etc/nsswitch.conf /etc/
-COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 COPY entrypoint.sh /entrypoint.sh
-
-ARG TARGETARCH
-
 RUN arch=${TARGETARCH:-amd64} \
     && case $arch in \
         amd64) mkdir -p /lib64 && ln -sf /lib/ld-2.31.so /lib64/ld-linux-x86-64.so.2 ;; \
         arm64) ln -sf /lib/ld-2.31.so /lib/ld-linux-aarch64.so.1 ;; \
     esac
 
-# lts / testing / prestable / etc
-ARG REPO_CHANNEL="stable"
-ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="20.9.3.45"
-ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
+ARG REPOSITORY="https://s3.amazonaws.com/clickhouse-builds/22.4/31c367d3cd3aefd316778601ff6565119fe36682/package_release"
+ARG VERSION="22.4.1.917"
+ARG PACKAGES="clickhouse-keeper"
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
 # It is especially important for rootless containers: in that case entrypoint
@@ -43,6 +37,8 @@ ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
 
+
+ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
     && for package in ${PACKAGES}; do \
         { \
@@ -58,22 +54,19 @@ RUN arch=${TARGETARCH:-amd64} \
     ; done \
     && rm /tmp/*.tgz /install -r \
     && addgroup -S -g 101 clickhouse \
-    && adduser -S -h /var/lib/clickhouse -s /bin/bash -G clickhouse -g "ClickHouse server" -u 101 clickhouse \
-    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server/config.d /etc/clickhouse-server/users.d /etc/clickhouse-client /docker-entrypoint-initdb.d \
+    && adduser -S -h /var/lib/clickhouse -s /bin/bash -G clickhouse -g "ClickHouse keeper" -u 101 clickhouse \
+    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper \
     && chown clickhouse:clickhouse /var/lib/clickhouse \
-    && chown root:clickhouse /var/log/clickhouse-server \
+    && chown root:clickhouse /var/log/clickhouse-keeper \
     && chmod +x /entrypoint.sh \
     && apk add --no-cache su-exec bash tzdata \
     && cp /usr/share/zoneinfo/UTC /etc/localtime \
     && echo "UTC" > /etc/timezone \
-    && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
+    && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 
-# we need to allow "others" access to clickhouse folder, because docker container
-# can be started with arbitrary uid (openshift usecase)
 
-EXPOSE 9000 8123 9009
+EXPOSE 2181 10181 44444
 
-VOLUME /var/lib/clickhouse \
-       /var/log/clickhouse-server
+VOLUME /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 
 ENTRYPOINT ["/entrypoint.sh"]
