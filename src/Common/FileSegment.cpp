@@ -262,6 +262,78 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
     assert(getDownloadOffset() == offset_ + size);
 }
 
+void FileSegment::writeInMemory(const char * from, size_t size)
+{
+    if (!size)
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Writing zero size is not allowed");
+
+    if (availableSize() < size)
+        throw Exception(
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            "Not enough space is reserved. Available: {}, expected: {}", availableSize(), size);
+
+    std::lock_guard segment_lock(mutex);
+
+    if (cache_writer)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache writer already initialized");
+
+    auto download_path = cache->getPathInLocalCache(key(), offset());
+    cache_writer = std::make_unique<WriteBufferFromFile>(download_path, size + 1);
+
+    try
+    {
+        cache_writer->write(from, size);
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Failed to write to cache. File segment info: {}", getInfoForLogImpl(segment_lock));
+
+        download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+
+        cache_writer->finalize();
+        cache_writer.reset();
+
+        throw;
+    }
+}
+
+size_t FileSegment::finalizeWrite()
+{
+    std::lock_guard segment_lock(mutex);
+
+    if (!cache_writer)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache writer not initialized");
+
+    size_t size = cache_writer->offset();
+
+    if (size == 0)
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Writing size is not allowed");
+
+    try
+    {
+        cache_writer->next();
+    }
+    catch (...)
+    {
+        download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+
+        cache_writer->finalize();
+        cache_writer.reset();
+
+        throw;
+    }
+
+    downloaded_size += size;
+    cache_writer.reset();
+    downloader_id.clear();
+    download_state = State::DOWNLOADED;
+
+    if (downloaded_size != range().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} == {}", downloaded_size, range().size());
+
+    return size;
+}
+
 FileSegment::State FileSegment::wait()
 {
     std::unique_lock segment_lock(mutex);

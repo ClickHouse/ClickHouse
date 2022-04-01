@@ -7,6 +7,7 @@
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/CreateMultipartUploadRequest.h>
@@ -43,6 +44,7 @@ struct WriteBufferFromS3::UploadPartTask
     bool is_finised = false;
     std::string tag;
     std::exception_ptr exception;
+    std::optional<FileSegmentsHolder> cache_files;
 };
 
 struct WriteBufferFromS3::PutObjectTask
@@ -93,25 +95,50 @@ void WriteBufferFromS3::nextImpl()
     size_t size = offset();
     temporary_buffer->write(working_buffer.begin(), size);
 
+    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
+            ? CurrentThread::get().getThreadGroup()
+            : MainThreadStatus::getInstance().getThreadGroup();
+
+    if (CurrentThread::isInitialized())
+        query_context = CurrentThread::get().getQueryContext();
+
+    if (!query_context)
+    {
+        if (!shared_query_context)
+        {
+            ContextPtr global_context = CurrentThread::isInitialized() ? CurrentThread::get().getGlobalContext() : nullptr;
+            if (global_context)
+            {
+                shared_query_context = Context::createCopy(global_context);
+                shared_query_context->makeQueryContext();
+            }
+        }
+
+        if (shared_query_context)
+        {
+            shared_query_context->setCurrentQueryId(toString(UUIDHelpers::generateV4()));
+            query_context = shared_query_context;
+        }
+    }
+
     if (cacheEnabled())
     {
         if (blob_name.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty blob name");
 
         auto cache_key = cache->hash(blob_name);
-        auto file_segments_holder = cache->setDownloading(cache_key, current_download_offset, size);
+        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size));
         current_download_offset += size;
 
         size_t remaining_size = size;
-        for (const auto & file_segment : file_segments_holder.file_segments)
+        for (const auto & file_segment : file_segments_holder->file_segments)
         {
             size_t current_size = std::min(file_segment->range().size(), remaining_size);
             remaining_size -= current_size;
 
             if (file_segment->reserve(current_size))
             {
-                file_segment->write(working_buffer.begin(), current_size);
-                ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, current_size);
+                file_segment->writeInMemory(working_buffer.begin(), current_size);
             }
             else
             {
@@ -273,7 +300,9 @@ void WriteBufferFromS3::writePart()
                 /// Releasing lock and condvar notification.
                 bg_tasks_condvar.notify_one();
             }
-        });
+
+            finalizeCacheIfNeeded();
+        }, query_context);
     }
     else
     {
@@ -281,6 +310,7 @@ void WriteBufferFromS3::writePart()
         fillUploadRequest(task.req, part_tags.size() + 1);
         processUploadRequest(task);
         part_tags.push_back(task.tag);
+        finalizeCacheIfNeeded();
     }
 }
 
@@ -389,13 +419,15 @@ void WriteBufferFromS3::makeSinglepartUpload()
                 bg_tasks_condvar.notify_one();
             }
 
-        });
+            finalizeCacheIfNeeded();
+        }, query_context);
     }
     else
     {
         PutObjectTask task;
         fillPutRequest(task.req);
         processPutRequest(task);
+        finalizeCacheIfNeeded();
     }
 }
 
@@ -421,6 +453,28 @@ void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
         LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+}
+
+void WriteBufferFromS3::finalizeCacheIfNeeded()
+{
+    if (!file_segments_holder)
+        return;
+
+    auto & file_segments = file_segments_holder->file_segments;
+    for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
+    {
+        try
+        {
+            size_t size = (*file_segment_it)->finalizeWrite();
+            file_segment_it = file_segments.erase(file_segment_it);
+
+            ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 void WriteBufferFromS3::waitForReadyBackGroundTasks()

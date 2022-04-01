@@ -12,6 +12,7 @@
 
 #include <Common/ThreadPool.h>
 #include <Common/FileCache_fwd.h>
+#include <Common/FileSegment.h>
 
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
@@ -32,7 +33,7 @@ namespace Aws::S3::Model
 namespace DB
 {
 
-using ScheduleFunc = std::function<void(std::function<void()>)>;
+using ScheduleFunc = std::function<void(std::function<void()>, ContextPtr)>;
 class WriteBufferFromFile;
 
 /**
@@ -125,6 +126,10 @@ private:
     const String blob_name;
     FileCachePtr cache;
     size_t current_download_offset = 0;
+    std::optional<FileSegmentsHolder> file_segments_holder;
+    void finalizeCacheIfNeeded();
+    ContextMutablePtr shared_query_context;
+    ContextPtr query_context;
 };
 
 }

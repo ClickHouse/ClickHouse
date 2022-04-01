@@ -97,6 +97,10 @@ public:
 
     void write(const char * from, size_t size, size_t offset_);
 
+    void writeInMemory(const char * from, size_t size);
+
+    size_t finalizeWrite();
+
     RemoteFileReaderPtr getRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
