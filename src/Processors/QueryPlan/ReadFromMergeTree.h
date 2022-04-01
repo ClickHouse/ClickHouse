@@ -73,6 +73,7 @@ public:
         IndexStats index_stats;
         Names column_names_to_read;
         ReadFromMergeTree::ReadType read_type = ReadFromMergeTree::ReadType::Default;
+        UInt64 partitions_before_pk = 0;
         UInt64 total_parts = 0;
         UInt64 parts_before_pk = 0;
         UInt64 selected_parts = 0;

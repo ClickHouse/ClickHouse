@@ -892,6 +892,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
     size_t total_marks_pk = 0;
+    size_t partitions_before_pk = 0;
     size_t parts_before_pk = 0;
     try
     {
@@ -920,8 +921,13 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         if (result.sampling.read_nothing)
             return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 
+        std::unordered_set<String> partition_ids;
         for (const auto & part : parts)
+        {
             total_marks_pk += part->index_granularity.getMarksCountWithoutFinal();
+            partition_ids.insert(part->info.partition_id);
+        }
+        partitions_before_pk = partition_ids.size();
         parts_before_pk = parts.size();
 
         auto reader_settings = getMergeTreeReaderSettings(context, query_info);
@@ -964,6 +970,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
 
     result.total_parts = total_parts;
+    result.partitions_before_pk = partitions_before_pk;
     result.parts_before_pk = parts_before_pk;
     result.selected_parts = result.parts_with_ranges.size();
     result.selected_ranges = sum_ranges;
@@ -997,7 +1004,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     auto result = getAnalysisResult();
     LOG_DEBUG(
         log,
-        "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
+        "Selected {} partitions by partition key, {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
+        result.partitions_before_pk,
         result.parts_before_pk,
         result.total_parts,
         result.selected_parts,
