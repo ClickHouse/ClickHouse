@@ -70,6 +70,7 @@ void DirectionalGraphGenericData::add(const IColumn ** columns, size_t row_num, 
     StringRef key = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
     StringRef value = columns[1]->serializeValueIntoArena(row_num, *arena, begin);
     graph[key].push_back(value);
+    graph.insert({value, {}});
     ++edges_count;
 }
 
