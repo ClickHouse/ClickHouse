@@ -122,7 +122,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             if (col_ast->default_expression)
             {
                 default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
-                default_desc.expression = std::move(col_ast->default_expression);
+                default_desc.expression = col_ast->default_expression;
             }
 
             if (col_ast->comment)

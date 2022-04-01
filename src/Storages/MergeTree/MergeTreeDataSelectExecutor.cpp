@@ -877,12 +877,22 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     {
         std::atomic<size_t> total_rows{0};
 
+        /// Do not check number of read rows if we have reading
+        /// in order of sorting key with limit.
+        /// In general case, when there exists WHERE clause
+        /// it's impossible to estimate number of rows precisely,
+        /// because we can stop reading at any time.
+
         SizeLimits limits;
-        if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
+        if (settings.read_overflow_mode == OverflowMode::THROW
+            && settings.max_rows_to_read
+            && !query_info.input_order_info)
             limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
 
         SizeLimits leaf_limits;
-        if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
+        if (settings.read_overflow_mode_leaf == OverflowMode::THROW
+            && settings.max_rows_to_read_leaf
+            && !query_info.input_order_info)
             leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
 
         auto mark_cache = context->getIndexMarkCache();
