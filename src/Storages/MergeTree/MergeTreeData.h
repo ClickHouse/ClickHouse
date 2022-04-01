@@ -39,9 +39,6 @@
 namespace DB
 {
 
-/// Number of streams is not number parts, but number or parts*files, hence 1000.
-const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 1000;
-
 class AlterCommands;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
@@ -674,18 +671,15 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
-    /// Storage has data to backup.
-    bool hasDataToBackup() const override { return true; }
-
     /// Prepares entries to backup data of the storage.
-    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
+    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
     static BackupEntries backupDataParts(const DataPartsVector & data_parts);
 
     /// Extract data from the backup and put it to the storage.
-    RestoreTaskPtr restoreDataParts(
-        const std::unordered_set<String> & partition_ids,
+    RestoreDataTasks restoreDataPartsFromBackup(
         const BackupPtr & backup,
         const String & data_path_in_backup,
+        const std::unordered_set<String> & partition_ids,
         SimpleIncrement * increment);
 
     /// Moves partition to specified Disk
@@ -946,7 +940,6 @@ protected:
     friend class StorageReplicatedMergeTree;
     friend class MergeTreeDataWriter;
     friend class MergeTask;
-    friend class IPartMetadataManager;
 
     bool require_part_metadata;
 
@@ -1029,7 +1022,6 @@ protected:
     /// And for ReplicatedMergeTree we don't have LogEntry type for this operation.
     BackgroundJobsAssignee background_operations_assignee;
     BackgroundJobsAssignee background_moves_assignee;
-    bool use_metadata_cache;
 
     /// Strongly connected with two fields above.
     /// Every task that is finished will ask to assign a new one into an executor.

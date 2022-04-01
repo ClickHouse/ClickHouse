@@ -32,14 +32,14 @@ public:
     KeeperTCPHandlerFactory(
         ConfigGetter config_getter_,
         std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
-        uint64_t receive_timeout_seconds,
-        uint64_t send_timeout_seconds,
+        Poco::Timespan receive_timeout_,
+        Poco::Timespan send_timeout_,
         bool secure)
         : config_getter(config_getter_)
         , keeper_dispatcher(keeper_dispatcher_)
         , log(&Poco::Logger::get(std::string{"KeeperTCP"} + (secure ? "S" : "") + "HandlerFactory"))
-        , receive_timeout(/* seconds = */ receive_timeout_seconds, /* microseconds = */ 0)
-        , send_timeout(/* seconds = */ send_timeout_seconds, /* microseconds = */ 0)
+        , receive_timeout(receive_timeout_)
+        , send_timeout(send_timeout_)
     {
     }
 

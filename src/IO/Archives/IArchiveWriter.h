@@ -29,7 +29,7 @@ public:
 
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.
-    virtual void setCompression(const String & /* compression_method */, int /* compression_level */ = kDefaultCompressionLevel) {}
+    virtual void setCompression(int /* compression_method */, int /* compression_level */ = kDefaultCompressionLevel) {} /// NOLINT
 
     /// Sets password. If the password is not empty it will enable encryption in the archive.
     virtual void setPassword(const String & /* password */) {}

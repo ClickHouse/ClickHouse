@@ -47,6 +47,7 @@ private:
 
     // indices of columns to read from ORC file
     std::vector<int> include_indices;
+    std::vector<String> include_column_names;
 
     std::vector<size_t> missing_columns;
     BlockMissingValues block_missing_values;

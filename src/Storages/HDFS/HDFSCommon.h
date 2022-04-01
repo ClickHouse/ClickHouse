@@ -67,7 +67,7 @@ public:
     hdfsBuilder * get() { return hdfs_builder; }
 
 private:
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool isUser = false);
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool isUser = false);
 
     String getKinitCmd();
 

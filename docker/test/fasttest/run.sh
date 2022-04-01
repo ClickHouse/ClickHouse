@@ -267,7 +267,6 @@ function run_tests
     local test_opts=(
         --hung-check
         --fast-tests-only
-        --no-random-settings
         --no-long
         --testname
         --shard

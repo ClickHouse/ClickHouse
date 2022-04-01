@@ -1,17 +1,9 @@
-### Table of Contents
-**[ClickHouse release v22.3-lts, 2022-03-17](#223)**<br>
-**[ClickHouse release v22.2, 2022-02-17](#222)**<br>
-**[ClickHouse release v22.1, 2022-01-18](#221)**<br>
-**[Changelog for 2021](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats-new/changelog/2021.md)**<br>
-
-
-## <a id="223"></a> ClickHouse release v22.3-lts, 2022-03-17
+### ClickHouse release v22.3-lts, 2022-03-17
 
 #### Backward Incompatible Change
 
 * Make `arrayCompact` function behave as other higher-order functions: perform compaction not of lambda function results but on the original array. If you're using nontrivial lambda functions in arrayCompact you may restore old behaviour by wrapping `arrayCompact` arguments into `arrayMap`. Closes [#34010](https://github.com/ClickHouse/ClickHouse/issues/34010) [#18535](https://github.com/ClickHouse/ClickHouse/issues/18535) [#14778](https://github.com/ClickHouse/ClickHouse/issues/14778). [#34795](https://github.com/ClickHouse/ClickHouse/pull/34795) ([Alexandre Snarskii](https://github.com/snar)).
 * Change implementation specific behavior on overflow of function `toDatetime`. It will be saturated to the nearest min/max supported instant of datetime instead of wraparound. This change is highlighted as "backward incompatible" because someone may unintentionally rely on the old behavior. [#32898](https://github.com/ClickHouse/ClickHouse/pull/32898) ([HaiBo Li](https://github.com/marising)).
-* Make function `cast(value, 'IPv4')`, `cast(value, 'IPv6')` behave same as `toIPv4`, `toIPv6` functions. Changed behavior of incorrect IP address passed into functions `toIPv4`,` toIPv6`,  now if invalid IP address passes into this functions exception will be raised, before this function return default value. Added functions `IPv4StringToNumOrDefault`, `IPv4StringToNumOrNull`, `IPv6StringToNumOrDefault`, `IPv6StringOrNull` `toIPv4OrDefault`, `toIPv4OrNull`, `toIPv6OrDefault`, `toIPv6OrNull`. Functions `IPv4StringToNumOrDefault `, `toIPv4OrDefault `, `toIPv6OrDefault ` should be used if previous logic relied on `IPv4StringToNum`, `toIPv4`, `toIPv6` returning default value for invalid address. Added setting `cast_ipv4_ipv6_default_on_conversion_error`, if this setting enabled, then IP address conversion functions will behave as before. Closes [#22825](https://github.com/ClickHouse/ClickHouse/issues/22825). Closes [#5799](https://github.com/ClickHouse/ClickHouse/issues/5799). Closes [#35156](https://github.com/ClickHouse/ClickHouse/issues/35156). [#35240](https://github.com/ClickHouse/ClickHouse/pull/35240) ([Maksim Kita](https://github.com/kitaisreal)).
 
 #### New Feature
 
@@ -133,7 +125,7 @@
 * Fix inconsistency of `max_query_size` limitation in distributed subqueries. [#34078](https://github.com/ClickHouse/ClickHouse/pull/34078) ([Chao Ma](https://github.com/godliness)).
 
 
-### <a id="222"></a> ClickHouse release v22.2, 2022-02-17
+### ClickHouse release v22.2, 2022-02-17
 
 #### Upgrade Notes
 
@@ -309,7 +301,7 @@
 * This PR allows using multiple LDAP storages in the same list of user directories. It worked earlier but was broken because LDAP tests are disabled (they are part of the testflows tests). [#33574](https://github.com/ClickHouse/ClickHouse/pull/33574) ([Vitaly Baranov](https://github.com/vitlibar)).
 
 
-### <a id="221"></a> ClickHouse release v22.1, 2022-01-18
+### ClickHouse release v22.1, 2022-01-18
 
 #### Upgrade Notes
 
@@ -367,7 +359,7 @@
 
 #### Improvement
 
-* Now date time conversion functions that generates time before `1970-01-01 00:00:00` will be saturated to zero instead of overflow. [#29953](https://github.com/ClickHouse/ClickHouse/pull/29953) ([Amos Bird](https://github.com/amosbird)). It also fixes a bug in index analysis if date truncation function would yield result before the Unix epoch.
+* Now date time conversion functions that generates time before `1970-01-01 00:00:00` will be saturated to zero instead of overflow. [#29953](https://github.com/ClickHouse/ClickHouse/pull/29953) ([Amos Bird](https://github.com/amosbird)). It also fixes a bug in index analysis if date truncation function would yield result before the Unix epoch. 
 * Always display resource usage (total CPU usage, total RAM usage and max RAM usage per host) in client. [#33271](https://github.com/ClickHouse/ClickHouse/pull/33271) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Improve `Bool` type serialization and deserialization, check the range of values. [#32984](https://github.com/ClickHouse/ClickHouse/pull/32984) ([Kruglov Pavel](https://github.com/Avogar)).
 * If an invalid setting is defined using the `SET` query or using the query parameters in the HTTP request, error message will contain suggestions that are similar to the invalid setting string (if any exists). [#32946](https://github.com/ClickHouse/ClickHouse/pull/32946) ([Antonio Andelic](https://github.com/antonio2368)).

@@ -437,7 +437,6 @@ String FileSegment::stateToString(FileSegment::State state)
         case FileSegment::State::SKIP_CACHE:
             return "SKIP_CACHE";
     }
-    __builtin_unreachable();
 }
 
 String FileSegmentsHolder::toString()

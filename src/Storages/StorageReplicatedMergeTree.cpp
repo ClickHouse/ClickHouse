@@ -1312,14 +1312,10 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
 
         if (replica_part_header.getColumnsHash() != local_part_header.getColumnsHash())
         {
-            /// Currently there are two (known) cases when it may happen:
-            ///  - KILL MUTATION query had removed mutation before all replicas have executed assigned MUTATE_PART entries.
-            ///    Some replicas may skip this mutation and update part version without actually applying any changes.
-            ///    It leads to mismatching checksum if changes were applied on other replicas.
-            ///  - ALTER_METADATA and MERGE_PARTS were reordered on some replicas.
-            ///    It may lead to different number of columns in merged parts on these replicas.
-            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Part {} from {} has different columns hash "
-                            "(it may rarely happen on race condition with KILL MUTATION or ALTER COLUMN).", part_name, replica);
+            /// Either it's a bug or ZooKeeper contains broken data.
+            /// TODO Fix KILL MUTATION and replace CHECKSUM_DOESNT_MATCH with LOGICAL_ERROR
+            /// (some replicas may skip killed mutation even if it was executed on other replicas)
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Part {} from {} has different columns hash", part_name, replica);
         }
 
         replica_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
@@ -1564,7 +1560,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 }
 
 
-bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_check_missing_part)
+bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 {
     /// Looking for covering part. After that entry.actual_new_part_name may be filled.
     String replica = findReplicaHavingCoveringPart(entry, true);
@@ -1688,10 +1684,6 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
             if (replica.empty())
             {
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
-
-                if (!need_to_check_missing_part)
-                    return false;
-
                 throw Exception("No active replica has part " + entry.new_part_name + " or covering part", ErrorCodes::NO_REPLICA_HAS_PART);
             }
         }
@@ -1828,7 +1820,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     }
 
     /// Forcibly remove parts from ZooKeeper
-    removePartsFromZooKeeperWithRetries(parts_to_remove);
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
 
     if (entry.detach)
         LOG_DEBUG(log, "Detached {} parts inside {}.", parts_to_remove.size(), entry.new_part_name);
@@ -1950,7 +1942,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     if (parts_to_add.empty())
     {
         LOG_INFO(log, "All parts from REPLACE PARTITION command have been already attached");
-        removePartsFromZooKeeperWithRetries(parts_to_remove);
+        tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
         return true;
     }
 
@@ -2194,7 +2186,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         throw;
     }
 
-    removePartsFromZooKeeperWithRetries(parts_to_remove);
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
     res_parts.clear();
     parts_to_remove.clear();
     cleanup_thread.wakeup();
@@ -2426,7 +2418,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
                                                                 "or removed broken part from ZooKeeper", source_replica);
     }
 
-    removePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
 
     auto local_active_parts = getDataParts();
 
@@ -6012,16 +6004,16 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 }
 
 
-void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries)
+bool StorageReplicatedMergeTree::tryRemovePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries)
 {
     Strings part_names_to_remove;
     for (const auto & part : parts)
         part_names_to_remove.emplace_back(part->name);
 
-    return removePartsFromZooKeeperWithRetries(part_names_to_remove, max_retries);
+    return tryRemovePartsFromZooKeeperWithRetries(part_names_to_remove, max_retries);
 }
 
-void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries)
+bool StorageReplicatedMergeTree::tryRemovePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries)
 {
     size_t num_tries = 0;
     bool success = false;
@@ -6086,8 +6078,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(const Strin
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 
-    if (!success)
-        throw Exception(ErrorCodes::UNFINISHED, "Failed to remove parts from ZooKeeper after {} retries", num_tries);
+    return success;
 }
 
 void StorageReplicatedMergeTree::removePartsFromZooKeeper(
@@ -6400,7 +6391,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             lock.assumeUnlocked();
 
         /// Forcibly remove replaced parts from ZooKeeper
-        removePartsFromZooKeeperWithRetries(parts_to_remove);
+        tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
 
         /// Speedup removing of replaced parts from filesystem
         parts_to_remove.clear();
@@ -6607,7 +6598,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         for (auto & lock : ephemeral_locks)
             lock.assumeUnlocked();
 
-        removePartsFromZooKeeperWithRetries(parts_to_remove);
+        tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
 
         parts_to_remove.clear();
         cleanup_thread.wakeup();

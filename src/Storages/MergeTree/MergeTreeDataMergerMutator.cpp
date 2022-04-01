@@ -693,10 +693,11 @@ MergeTreeDataMergerMutator::getColumnsForNewDataPart(
         }
     }
 
+    bool is_wide_part = isWidePart(source_part);
     SerializationInfoByName new_serialization_infos;
     for (const auto & [name, info] : serialization_infos)
     {
-        if (removed_columns.count(name))
+        if (is_wide_part && removed_columns.count(name))
             continue;
 
         auto it = renamed_columns_from_to.find(name);
@@ -708,7 +709,7 @@ MergeTreeDataMergerMutator::getColumnsForNewDataPart(
 
     /// In compact parts we read all columns, because they all stored in a
     /// single file
-    if (!isWidePart(source_part))
+    if (!is_wide_part)
         return {updated_header.getNamesAndTypesList(), new_serialization_infos};
 
     Names source_column_names = source_part->getColumns().getNames();

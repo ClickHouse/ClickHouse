@@ -35,7 +35,7 @@ $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query='$query_to_kill' ASYNC" &>/dev/nul
 sleep 1
 
 # Kill $query_for_pending SYNC. This query is not blocker, so it should be killed fast.
-clickhouse_client_timeout 20 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query='$query_for_pending' SYNC" &>/dev/null
+timeout 20 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query='$query_for_pending' SYNC" &>/dev/null
 
 # Both queries have to be killed, doesn't matter with SYNC or ASYNC kill
 for _ in {1..15}

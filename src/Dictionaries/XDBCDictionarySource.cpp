@@ -50,7 +50,7 @@ namespace
         {
             if (!qualified_name.database.empty())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Dictionary source specifies a schema but schema is not supported by {}-driver",
+                    "Dictionary source of type {} specifies a schema but schema is not supported by {}-driver",
                     bridge_.getName());
         }
 

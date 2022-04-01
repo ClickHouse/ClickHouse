@@ -113,23 +113,6 @@ namespace JoinStuff
         }
     }
 
-    template <bool use_flags, bool multiple_disjuncts>
-    void JoinUsedFlags::setUsed(const Block * block, size_t row_num, size_t offset)
-    {
-        if constexpr (!use_flags)
-            return;
-
-        /// Could be set simultaneously from different threads.
-        if constexpr (multiple_disjuncts)
-        {
-            flags[block][row_num].store(true, std::memory_order_relaxed);
-        }
-        else
-        {
-            flags[nullptr][offset].store(true, std::memory_order_relaxed);
-        }
-    }
-
     template <bool use_flags, bool multiple_disjuncts, typename FindResult>
     bool JoinUsedFlags::getUsed(const FindResult & f)
     {
@@ -319,7 +302,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
                 throw Exception("ASOF join needs at least one equi-join column", ErrorCodes::SYNTAX_ERROR);
 
             size_t asof_size;
-            asof_type = SortedLookupVectorBase::getTypeSize(*key_columns.back(), asof_size);
+            asof_type = AsofRowRefs::getTypeSize(*key_columns.back(), asof_size);
             key_columns.pop_back();
 
             /// this is going to set up the appropriate hash table for the direct lookup part of the join
@@ -628,8 +611,8 @@ namespace
 
             TypeIndex asof_type = *join.getAsofType();
             if (emplace_result.isInserted())
-                time_series_map = new (time_series_map) typename Map::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
-            (*time_series_map)->insert(asof_column, stored_block, i);
+                time_series_map = new (time_series_map) typename Map::mapped_type(asof_type);
+            time_series_map->insert(asof_type, asof_column, stored_block, i);
         }
     };
 
@@ -912,6 +895,8 @@ public:
         bool is_join_get_)
         : join_on_keys(join_on_keys_)
         , rows_to_add(block.rows())
+        , asof_type(join.getAsofType())
+        , asof_inequality(join.getAsofInequality())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -962,29 +947,18 @@ public:
             /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             {
-                auto column_from_block = block.getByPosition(right_indexes[j]);
-                if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
-                {
-                    JoinCommon::changeLowCardinalityInplace(column_from_block);
-                }
-
-                if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[j].get());
-                    nullable_col && !column_from_block.column->isNullable())
-                    nullable_col->insertFromNotNullable(*column_from_block.column, row_num);
+                const auto & column = *block.getByPosition(right_indexes[j]).column;
+                if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[j].get()); nullable_col && !column.isNullable())
+                    nullable_col->insertFromNotNullable(column, row_num);
                 else
-                    columns[j]->insertFrom(*column_from_block.column, row_num);
+                    columns[j]->insertFrom(column, row_num);
             }
         }
         else
         {
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             {
-                auto column_from_block = block.getByPosition(right_indexes[j]);
-                if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
-                {
-                    JoinCommon::changeLowCardinalityInplace(column_from_block);
-                }
-                columns[j]->insertFrom(*column_from_block.column, row_num);
+                columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
             }
         }
     }
@@ -1004,6 +978,8 @@ public:
         }
     }
 
+    TypeIndex asofType() const { return *asof_type; }
+    ASOF::Inequality asofInequality() const { return asof_inequality; }
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
     std::vector<JoinOnKeyColumns> join_on_keys;
@@ -1018,13 +994,14 @@ private:
     std::vector<size_t> right_indexes;
     size_t lazy_defaults_count = 0;
     /// for ASOF
+    std::optional<TypeIndex> asof_type;
+    ASOF::Inequality asof_inequality;
     const IColumn * left_asof_key = nullptr;
 
     bool is_join_get;
 
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
-
         columns.push_back(src_column.column->cloneEmpty());
         columns.back()->reserve(src_column.column->size());
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
@@ -1247,18 +1224,19 @@ NO_INLINE IColumn::Filter joinRightColumns(
                 auto & mapped = find_result.getMapped();
                 if constexpr (jf.is_asof_join)
                 {
+                    TypeIndex asof_type = added_columns.asofType();
+                    ASOF::Inequality asof_inequality = added_columns.asofInequality();
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
-                    auto row_ref = mapped->findAsof(left_asof_key, i);
-                    if (row_ref.block)
+                    if (const RowRef * found = mapped.findAsof(asof_type, asof_inequality, left_asof_key, i))
                     {
                         setUsed<need_filter>(filter, i);
                         if constexpr (multiple_disjuncts)
-                            used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(row_ref.block, row_ref.row_num, 0);
+                            used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(FindResultImpl<const RowRef, false>(found, true, 0));
                         else
                             used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
 
-                        added_columns.appendFromBlock<jf.add_missing>(*row_ref.block, row_ref.row_num);
+                        added_columns.appendFromBlock<jf.add_missing>(*found->block, found->row_num);
                     }
                     else
                         addNotFoundRow<jf.add_missing, jf.need_replication>(added_columns, current_offset);

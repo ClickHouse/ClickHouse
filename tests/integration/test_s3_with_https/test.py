@@ -15,15 +15,8 @@ def check_proxy_logs(cluster, proxy_instance):
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance(
-            "node",
-            main_configs=[
-                "configs/config.d/storage_conf.xml",
-                "configs/config.d/ssl.xml",
-            ],
-            with_minio=True,
-            minio_certs_dir="minio_certs",
-        )
+        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml", "configs/config.d/ssl.xml"],
+                             with_minio=True, minio_certs_dir="minio_certs")
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -33,7 +26,9 @@ def cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("policy", ["s3_secure", "s3_secure_with_proxy"])
+@pytest.mark.parametrize(
+    "policy", ["s3_secure", "s3_secure_with_proxy"]
+)
 def test_s3_with_https(cluster, policy):
     node = cluster.instances["node"]
 
@@ -45,16 +40,12 @@ def test_s3_with_https(cluster, policy):
         ) ENGINE=MergeTree()
         ORDER BY id
         SETTINGS storage_policy='{}'
-        """.format(
-            policy
-        )
+        """
+            .format(policy)
     )
 
     node.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
-    assert (
-        node.query("SELECT * FROM s3_test order by id FORMAT Values")
-        == "(0,'data'),(1,'data')"
-    )
+    assert node.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data')"
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 

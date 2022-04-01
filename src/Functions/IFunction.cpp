@@ -181,12 +181,9 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         // Default implementation for nulls returns null result for null arguments,
         // so the result type must be nullable.
         if (!result_type->isNullable())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Function {} with Null argument and default implementation for Nulls "
-                "is expected to return Nullable result, got {}",
-                getName(),
-                result_type->getName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Function {} with Null argument and default implementation for Nulls "
+                            "is expected to return Nullable result, got {}", result_type->getName());
 
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
     }

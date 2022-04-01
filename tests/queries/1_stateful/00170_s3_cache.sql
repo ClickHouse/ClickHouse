@@ -1,7 +1,4 @@
--- Tags: no-parallel
-
 -- { echo }
-
 SET max_memory_usage='20G';
 SELECT count() FROM test.hits_s3;
 SELECT count() FROM test.hits_s3 WHERE AdvEngineID != 0;

@@ -11,7 +11,7 @@ RUN apt-get update -y \
 
 COPY s3downloader /s3downloader
 
-ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
+ENV S3_URL="https://clickhouse-datasets.s3.yandex.net"
 ENV DATASETS="hits visits"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 

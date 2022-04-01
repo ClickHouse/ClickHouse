@@ -11,20 +11,22 @@ using DatabaseAndTableName = std::pair<String, String>;
 
 /** BACKUP { TABLE [db.]table_name [AS [db.]table_name_in_backup] [PARTITION[S] partition_expr [,...]] |
   *          DICTIONARY [db.]dictionary_name [AS [db.]dictionary_name_in_backup] |
-  *          TEMPORARY TABLE table_name [AS table_name_in_backup] |
-  *          ALL TEMPORARY TABLES [EXCEPT ...] |
-  *          DATABASE database_name [EXCEPT ...] [AS database_name_in_backup] |
-  *          ALL DATABASES [EXCEPT ...] } [,...]
+  *          DATABASE database_name [AS database_name_in_backup] |
+  *          ALL DATABASES |
+  *          TEMPORARY TABLE table_name [AS table_name_in_backup]
+  *          ALL TEMPORARY TABLES |
+  *          EVERYTHING } [,...]
   *        TO { File('path/') |
   *             Disk('disk_name', 'path/')
   *        [SETTINGS base_backup = {File(...) | Disk(...)}]
   *
   * RESTORE { TABLE [db.]table_name_in_backup [INTO [db.]table_name] [PARTITION[S] partition_expr [,...]] |
   *           DICTIONARY [db.]dictionary_name_in_backup [INTO [db.]dictionary_name] |
+  *           DATABASE database_name_in_backup [INTO database_name] |
+  *           ALL DATABASES |
   *           TEMPORARY TABLE table_name_in_backup [INTO table_name] |
-  *           ALL TEMPORARY TABLES [EXCEPT ...] |
-  *           DATABASE database_name_in_backup [EXCEPT ...] [INTO database_name] |
-  *           ALL DATABASES [EXCEPT ...] } [,...]
+  *           ALL TEMPORARY TABLES |
+  *           EVERYTHING } [,...]
   *         FROM {File(...) | Disk(...)}
   *
   * Notes:
@@ -55,8 +57,12 @@ public:
     enum ElementType
     {
         TABLE,
+        DICTIONARY,
         DATABASE,
         ALL_DATABASES,
+        TEMPORARY_TABLE,
+        ALL_TEMPORARY_TABLES,
+        EVERYTHING,
     };
 
     struct Element
@@ -64,8 +70,6 @@ public:
         ElementType type;
         DatabaseAndTableName name;
         DatabaseAndTableName new_name;
-        bool name_is_in_temp_db = false;
-        bool new_name_is_in_temp_db = false;
         ASTs partitions;
         std::set<String> except_list;
     };

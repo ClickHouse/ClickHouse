@@ -4,7 +4,6 @@ import os
 import unittest
 from unittest.mock import patch
 
-from env_helper import GITHUB_RUN_URL
 from pr_info import PRInfo
 import docker_images_check as di
 
@@ -118,8 +117,7 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
-            f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
-            "--build-arg FROM_TAG=version "
+            "docker buildx build --builder default --build-arg FROM_TAG=version "
             "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version --cache-from "
             "type=registry,ref=name:version --push --progress plain path",
             mock_popen.call_args.args,
@@ -135,8 +133,7 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
-            f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
-            "--build-arg FROM_TAG=version2 "
+            "docker buildx build --builder default --build-arg FROM_TAG=version2 "
             "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version2 --cache-from "
             "type=registry,ref=name:version2 --progress plain path",
             mock_popen.call_args.args,
@@ -152,7 +149,7 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
-            f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
+            "docker buildx build --builder default "
             "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version2 --cache-from "
             "type=registry,ref=name:version2 --progress plain path",
             mock_popen.call_args.args,

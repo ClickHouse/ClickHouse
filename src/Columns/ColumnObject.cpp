@@ -521,7 +521,7 @@ ColumnObject::ColumnObject(bool is_nullable_)
 {
 }
 
-ColumnObject::ColumnObject(Subcolumns && subcolumns_, bool is_nullable_)
+ColumnObject::ColumnObject(SubcolumnsTree && subcolumns_, bool is_nullable_)
     : is_nullable(is_nullable_)
     , subcolumns(std::move(subcolumns_))
     , num_rows(subcolumns.empty() ? 0 : (*subcolumns.begin())->data.size())
@@ -696,7 +696,7 @@ const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & ke
 ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key)
 {
     if (const auto * node = subcolumns.findLeaf(key))
-        return const_cast<Subcolumns::Node *>(node)->data;
+        return const_cast<SubcolumnsTree::Node *>(node)->data;
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key.getPath());
 }
@@ -794,7 +794,7 @@ bool ColumnObject::isFinalized() const
 void ColumnObject::finalize()
 {
     size_t old_size = size();
-    Subcolumns new_subcolumns;
+    SubcolumnsTree new_subcolumns;
     for (auto && entry : subcolumns)
     {
         const auto & least_common_type = entry->data.getLeastCommonType();

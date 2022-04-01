@@ -1,6 +1,6 @@
 -- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-cpu-aarch64
 
-SET allow_introspection_functions = 0;
+
 SELECT addressToLineWithInlines(1); -- { serverError 446 }
 
 SET allow_introspection_functions = 1;

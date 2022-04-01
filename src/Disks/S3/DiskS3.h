@@ -105,8 +105,6 @@ public:
 
     bool supportZeroCopyReplication() const override { return true; }
 
-    bool supportParallelWrite() const override { return true; }
-
     void shutdown() override;
 
     void startup() override;

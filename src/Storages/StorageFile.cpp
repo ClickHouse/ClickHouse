@@ -179,9 +179,8 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         method = chooseCompressionMethod(current_path, compression_method);
     }
 
-    /// For clickhouse-local and clickhouse-client add progress callback to display progress bar.
-    if (context->getApplicationType() == Context::ApplicationType::LOCAL
-        || context->getApplicationType() == Context::ApplicationType::CLIENT)
+    /// For clickhouse-local add progress callback to display progress bar.
+    if (context->getApplicationType() == Context::ApplicationType::LOCAL)
     {
         auto & in = static_cast<ReadBufferFromFileDescriptor &>(*nested_buffer);
         in.setProgressCallback(context);
@@ -644,9 +643,7 @@ Pipe StorageFile::read(
 
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = context->getFileProgressCallback();
-    if ((context->getApplicationType() == Context::ApplicationType::LOCAL
-         || context->getApplicationType() == Context::ApplicationType::CLIENT)
-         && progress_callback)
+    if (context->getApplicationType() == Context::ApplicationType::LOCAL && progress_callback)
         progress_callback(FileProgress(0, total_bytes_to_read));
 
     for (size_t i = 0; i < num_streams; ++i)

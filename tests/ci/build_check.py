@@ -21,8 +21,6 @@ from ci_config import CI_CONFIG, BuildConfig
 from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
-IMAGE_NAME = "clickhouse/binary-builder"
-
 
 def get_build_config(build_check_name: str, build_name: str) -> BuildConfig:
     if build_check_name == "ClickHouse build check (actions)":
@@ -54,7 +52,7 @@ def get_packager_cmd(
     build_version: str,
     image_version: str,
     ccache_path: str,
-    official: bool,
+    pr_info: PRInfo,
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
@@ -75,8 +73,9 @@ def get_packager_cmd(
     cmd += " --cache=ccache"
     cmd += " --ccache_dir={}".format(ccache_path)
 
-    if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
-        cmd += " --additional-pkgs"
+    if "alien_pkgs" in build_config and build_config["alien_pkgs"]:
+        if pr_info.number == 0 or "release" in pr_info.labels:
+            cmd += " --alien-pkgs rpm tgz"
 
     cmd += " --docker-image-version={}".format(image_version)
     cmd += " --version={}".format(build_version)
@@ -84,10 +83,14 @@ def get_packager_cmd(
     if _can_export_binaries(build_config):
         cmd += " --with-binaries=tests"
 
-    if official:
-        cmd += " --official"
-
     return cmd
+
+
+def get_image_name(build_config: BuildConfig) -> str:
+    if build_config["package_type"] != "deb":
+        return "clickhouse/binary-builder"
+    else:
+        return "clickhouse/deb-builder"
 
 
 def build_clickhouse(
@@ -253,16 +256,15 @@ def main():
         else:
             sys.exit(0)
 
-    docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
+    image_name = get_image_name(build_config)
+    docker_image = get_image_with_version(IMAGES_PATH, image_name)
     image_version = docker_image.version
 
     logging.info("Got version from repo %s", version.string)
 
-    official_flag = pr_info.number == 0
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         version_type = "stable"
-        official_flag = True
 
     update_version_local(REPO_COPY, version, version_type)
 
@@ -296,9 +298,8 @@ def main():
         version.string,
         image_version,
         ccache_path,
-        official=official_flag,
+        pr_info,
     )
-
     logging.info("Going to run packager with %s", packager_cmd)
 
     build_clickhouse_log = os.path.join(TEMP_PATH, "build_log")

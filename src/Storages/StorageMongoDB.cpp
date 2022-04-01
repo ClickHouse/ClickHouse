@@ -156,8 +156,6 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
 
     }
 
-    context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
-
     return configuration;
 }
 

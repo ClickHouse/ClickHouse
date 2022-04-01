@@ -10,9 +10,6 @@ struct IntervalKind
 {
     enum Kind
     {
-        Nanosecond,
-        Microsecond,
-        Millisecond,
         Second,
         Minute,
         Hour,
@@ -64,9 +61,6 @@ struct IntervalKind
 
 /// NOLINTNEXTLINE
 #define FOR_EACH_INTERVAL_KIND(M) \
-    M(Nanosecond) \
-    M(Microsecond) \
-    M(Millisecond) \
     M(Second) \
     M(Minute) \
     M(Hour) \

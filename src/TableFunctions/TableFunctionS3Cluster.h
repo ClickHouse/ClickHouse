@@ -5,7 +5,6 @@
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -29,12 +28,7 @@ public:
     {
         return name;
     }
-
-    bool hasStaticStructure() const override { return configuration.structure != "auto"; }
-
-    bool needStructureHint() const override { return configuration.structure == "auto"; }
-
-    void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
+    bool hasStaticStructure() const override { return true; }
 
 protected:
     StoragePtr executeImpl(
@@ -48,8 +42,13 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr) const override;
     void parseArguments(const ASTPtr &, ContextPtr) override;
 
-    StorageS3ClusterConfiguration configuration;
-    ColumnsDescription structure_hint;
+    String cluster_name;
+    String filename;
+    String format;
+    String structure;
+    String access_key_id;
+    String secret_access_key;
+    String compression_method = "auto";
 };
 
 }

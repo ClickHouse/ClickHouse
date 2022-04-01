@@ -138,20 +138,20 @@ public:
         size_t num_of_defaults_in_prefix = 0;
     };
 
-    using Subcolumns = SubcolumnsTree<Subcolumn>;
+    using SubcolumnsTree = SubcolumnsTree<Subcolumn>;
 
 private:
     /// If true then all subcolumns are nullable.
     const bool is_nullable;
 
-    Subcolumns subcolumns;
+    SubcolumnsTree subcolumns;
     size_t num_rows;
 
 public:
     static constexpr auto COLUMN_NAME_DUMMY = "_dummy";
 
     explicit ColumnObject(bool is_nullable_);
-    ColumnObject(Subcolumns && subcolumns_, bool is_nullable_);
+    ColumnObject(SubcolumnsTree && subcolumns_, bool is_nullable_);
 
     /// Checks that all subcolumns have consistent sizes.
     void checkConsistency() const;
@@ -173,8 +173,8 @@ public:
     /// It cares about consistency of sizes of Nested arrays.
     void addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size);
 
-    const Subcolumns & getSubcolumns() const { return subcolumns; }
-    Subcolumns & getSubcolumns() { return subcolumns; }
+    const SubcolumnsTree & getSubcolumns() const { return subcolumns; }
+    SubcolumnsTree & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;
 
     /// Finalizes all subcolumns.

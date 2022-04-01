@@ -17,7 +17,6 @@ complex_tester = None
 ranged_tester = None
 test_name = "http"
 
-
 def setup_module(module):
     global cluster
     global node
@@ -39,20 +38,17 @@ def setup_module(module):
     cluster = ClickHouseCluster(__file__, name=test_name)
 
     main_configs = []
-    main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))
+    main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
 
     dictionaries = simple_tester.list_dictionaries()
 
-    cluster.add_instance("clickhouse_h", main_configs=main_configs)
+    cluster.add_instance('clickhouse_h', main_configs=main_configs)
 
-    node = cluster.add_instance(
-        "http_node", main_configs=main_configs, dictionaries=dictionaries
-    )
+    node = cluster.add_instance('http_node', main_configs=main_configs, dictionaries=dictionaries)
 
 
 def teardown_module(module):
     simple_tester.cleanup()
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -68,16 +64,13 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
 def test_simple(started_cluster, layout_name):
     simple_tester.execute(layout_name, node)
 
-
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_COMPLEX))
 def test_complex(started_cluster, layout_name):
     complex_tester.execute(layout_name, node)
-
 
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_RANGED))
 def test_ranged(started_cluster, layout_name):

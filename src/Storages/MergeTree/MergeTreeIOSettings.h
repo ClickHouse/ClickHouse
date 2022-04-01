@@ -20,8 +20,6 @@ struct MergeTreeReaderSettings
     bool save_marks_in_cache = false;
     /// Validate checksums on reading (should be always enabled in production).
     bool checksum_on_read = true;
-    /// True if we read in order of sorting key.
-    bool read_in_order = false;
 };
 
 struct MergeTreeWriterSettings

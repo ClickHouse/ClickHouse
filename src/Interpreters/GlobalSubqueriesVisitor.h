@@ -10,7 +10,6 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -18,11 +17,7 @@
 #include <Parsers/IAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/typeid_cast.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/ConstraintsDescription.h>
-#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -39,6 +34,7 @@ public:
     {
         size_t subquery_depth;
         bool is_remote;
+        size_t external_table_id;
         TemporaryTablesMapping & external_tables;
         SubqueriesForSets & subqueries_for_sets;
         bool & has_global_subqueries;
@@ -53,6 +49,7 @@ public:
             : WithContext(context_)
             , subquery_depth(subquery_depth_)
             , is_remote(is_remote_)
+            , external_table_id(1)
             , external_tables(tables)
             , subqueries_for_sets(subqueries_for_sets_)
             , has_global_subqueries(has_global_subqueries_)
@@ -95,33 +92,48 @@ public:
             {
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
                 auto temporary_table_name = getIdentifierName(subquery_or_table_name);
-                bool exists_in_local_map = external_tables.contains(temporary_table_name);
+                bool exists_in_local_map = external_tables.end() != external_tables.find(temporary_table_name);
                 bool exists_in_context = static_cast<bool>(getContext()->tryResolveStorageID(
                     StorageID("", temporary_table_name), Context::ResolveExternal));
                 if (exists_in_local_map || exists_in_context)
                     return;
             }
 
-            String alias = subquery_or_table_name->tryGetAlias();
-            String external_table_name;
-            if (alias.empty())
+            String external_table_name = subquery_or_table_name->tryGetAlias();
+            if (external_table_name.empty())
             {
-                auto hash = subquery_or_table_name->getTreeHash();
-                external_table_name = fmt::format("_data_{}_{}", hash.first, hash.second);
+                /// Generate the name for the external table.
+                external_table_name = "_data" + toString(external_table_id);
+                while (external_tables.count(external_table_name))
+                {
+                    ++external_table_id;
+                    external_table_name = "_data" + toString(external_table_id);
+                }
             }
-            else
-                external_table_name = alias;
+
+            auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, {});
+
+            Block sample = interpreter->getSampleBlock();
+            NamesAndTypesList columns = sample.getNamesAndTypesList();
+
+            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
+                getContext(),
+                ColumnsDescription{columns},
+                ConstraintsDescription{},
+                nullptr,
+                /*create_for_global_subquery*/ true);
+            StoragePtr external_storage = external_storage_holder->getTable();
 
             /** We replace the subquery with the name of the temporary table.
                 * It is in this form, the request will go to the remote server.
                 * This temporary table will go to the remote server, and on its side,
                 *  instead of doing a subquery, you just need to read it.
-                *  TODO We can do better than using alias to name external tables
                 */
 
             auto database_and_table_name = std::make_shared<ASTTableIdentifier>(external_table_name);
             if (set_alias)
             {
+                String alias = subquery_or_table_name->tryGetAlias();
                 if (auto * table_name = subquery_or_table_name->as<ASTTableIdentifier>())
                     if (alias.empty())
                         alias = table_name->shortName();
@@ -139,27 +151,8 @@ public:
             else
                 ast = database_and_table_name;
 
-            if (external_tables.contains(external_table_name))
-                return;
+            external_tables[external_table_name] = external_storage_holder;
 
-            auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, {});
-
-            Block sample = interpreter->getSampleBlock();
-            NamesAndTypesList columns = sample.getNamesAndTypesList();
-
-            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
-                getContext(),
-                ColumnsDescription{columns},
-                ConstraintsDescription{},
-                nullptr,
-                /*create_for_global_subquery*/ true);
-            StoragePtr external_storage = external_storage_holder->getTable();
-
-            external_tables.emplace(external_table_name, external_storage_holder);
-
-            /// We need to materialize external tables immediately because reading from distributed
-            /// tables might generate local plans which can refer to external tables during index
-            /// analysis. It's too late to populate the external table via CreatingSetsTransform.
             if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
             {
                 auto external_table = external_storage_holder->getTable();
