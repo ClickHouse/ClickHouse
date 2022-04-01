@@ -114,9 +114,9 @@ In addition, this column is not substituted when using an asterisk in a SELECT q
 
 ### EPHEMERAL {#ephemeral}
 
-`EPHEMERAL expr`
+`EPHEMERAL [expr]`
 
-Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement.
+Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement. If `expr` is omitted type for column is required.
 INSERT without list of columns will skip such column, so SELECT/INSERT invariant is preserved -  the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
 ### ALIAS {#alias}
