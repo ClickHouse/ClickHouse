@@ -10,6 +10,7 @@ from typing import List, Tuple
 
 from github import Github
 
+from build_check import get_release_or_pr
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import post_commit_status
 from docker_images_check import DockerImage
@@ -20,10 +21,10 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 from version_helper import (
+    ClickHouseVersion,
     get_tagged_versions,
     get_version_from_repo,
     get_version_from_string,
-    validate_version,
 )
 
 TEMP_PATH = p.join(RUNNER_TEMP, "docker_images_check")
@@ -110,42 +111,40 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def version_arg(version: str) -> str:
+def version_arg(version: str) -> ClickHouseVersion:
     try:
-        validate_version(version)
-        return version
+        return get_version_from_string(version)
     except ValueError as e:
         raise argparse.ArgumentTypeError(e)
 
 
-def auto_release_type(version: str, release_type: str) -> str:
+def auto_release_type(version: ClickHouseVersion, release_type: str) -> str:
     if release_type != "auto":
         return release_type
-    current_version = get_version_from_string(version)
 
     git_versions = get_tagged_versions()
     reference_version = git_versions[0]
     for i in reversed(range(len(git_versions))):
-        if git_versions[i] < current_version:
+        if git_versions[i] < version:
             if i == len(git_versions) - 1:
                 return "latest"
             reference_version = git_versions[i + 1]
             break
 
-    if current_version.major < reference_version.major:
+    if version.major < reference_version.major:
         return "major"
-    if current_version.minor < reference_version.minor:
+    if version.minor < reference_version.minor:
         return "minor"
-    if current_version.patch < reference_version.patch:
+    if version.patch < reference_version.patch:
         return "patch"
 
     raise ValueError(
         "Release type 'tweak' is not supported for "
-        f"{current_version.string} < {reference_version.string}"
+        f"{version.string} < {reference_version.string}"
     )
 
 
-def gen_tags(version: str, release_type: str) -> List[str]:
+def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
     """
     22.2.2.2 + latest:
     - latest
@@ -168,8 +167,7 @@ def gen_tags(version: str, release_type: str) -> List[str]:
     22.2.2.2 + head:
     - head
     """
-    validate_version(version)
-    parts = version.split(".")
+    parts = version.string.split(".")
     tags = []
     if release_type == "latest":
         tags.append(release_type)
@@ -201,7 +199,12 @@ def buildx_args(bucket_prefix: str, arch: str) -> List[str]:
 
 
 def build_and_push_image(
-    image: DockerImage, push: bool, bucket_prefix: str, os: str, tag: str, version: str
+    image: DockerImage,
+    push: bool,
+    bucket_prefix: str,
+    os: str,
+    tag: str,
+    version: ClickHouseVersion,
 ) -> List[Tuple[str, str]]:
     result = []
     if os != "ubuntu":
@@ -228,7 +231,7 @@ def build_and_push_image(
         cmd_args.extend(
             [
                 f"--metadata-file={metadata_path}",
-                f"--build-arg=VERSION='{version}'",
+                f"--build-arg=VERSION='{version.string}'",
                 "--progress=plain",
                 f"--file={dockerfile}",
                 image.full_path,
@@ -293,9 +296,10 @@ def main():
     pr_info = None
     if CI:
         pr_info = PRInfo()
+        release_or_pr = get_release_or_pr(pr_info, {"package_type": ""}, args.version)
         args.bucket_prefix = (
             f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/"
-            f"{pr_info.number}/{pr_info.sha}"
+            f"{release_or_pr}/{pr_info.sha}"
         )
 
     if args.push:
