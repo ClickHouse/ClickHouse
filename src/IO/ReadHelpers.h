@@ -880,7 +880,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
             if (s[10] == ' ')
-            buf.position() += DateTimeStringInputSize;
+                buf.position() += DateTimeStringInputSize;
             else
                 buf.position() += DateStringInputSize;
             return ReturnType(true);
