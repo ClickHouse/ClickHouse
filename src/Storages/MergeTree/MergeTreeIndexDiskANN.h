@@ -13,6 +13,27 @@
 namespace DB
 {
 
+namespace detail 
+{
+    class DiskANNWriteBuffer : public diskann::ExternalWriteBuffer {
+    public:
+        explicit DiskANNWriteBuffer(WriteBuffer& base_buffer_) : base_buffer(base_buffer_) { }
+
+        using pos_type = std::fpos<std::mbstate_t>;
+
+        virtual void write( const char* /*s*/, std::streamsize /*count*/ ) override {  }
+        virtual void seekp( pos_type /*pos*/ ) override {  }
+        virtual void seekp( pos_type /*pos*/, std::ios_base::seekdir /*dir*/ ) override { ; }
+        
+        virtual pos_type tellp() override {  }
+
+        virtual void close() override { }
+    
+    private:
+        [[maybe_unused]] WriteBuffer& base_buffer;
+    }
+}
+
 struct MergeTreeIndexGranuleDiskANN final : public IMergeTreeIndexGranule
 {
     using DiskANNIndex = diskann::Index<Float32>;
@@ -23,8 +44,8 @@ struct MergeTreeIndexGranuleDiskANN final : public IMergeTreeIndexGranule
 
     ~MergeTreeIndexGranuleDiskANN() override = default;
 
-    void serializeBinary(WriteBuffer & /*ostr*/) const override {}
-    void deserializeBinary(ReadBuffer & /*istr*/, MergeTreeIndexVersion /*version*/) override {}
+    void serializeBinary(WriteBuffer & ostr) const override;
+    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     bool empty() const override { return false; }
 
     String index_name;
@@ -41,7 +62,7 @@ struct MergeTreeIndexAggregatorDiskANN final : IMergeTreeIndexAggregator
     MergeTreeIndexAggregatorDiskANN(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorDiskANN() override = default;
 
-    bool empty() const override { /*return accumulated_data.empty();*/ return accumulated_data.empty(); }
+    bool empty() const override { return accumulated_data.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 

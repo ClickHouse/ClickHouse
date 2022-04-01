@@ -20,6 +20,7 @@ add_library(_diskann ${DISKANN_SOURCES})
 
 target_include_directories (_diskann SYSTEM PUBLIC
     "${DISKANN_PROJECT_DIR}/include"
+    "${ClickHouse_SOURCE_DIR}"
 )
 
 target_compile_options(_diskann PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-mavx2 -mfma -mf16c -mpopcnt>)

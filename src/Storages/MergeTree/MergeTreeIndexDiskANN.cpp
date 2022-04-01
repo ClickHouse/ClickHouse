@@ -37,6 +37,14 @@ MergeTreeIndexGranuleDiskANN::MergeTreeIndexGranuleDiskANN(
 {
 }
 
+void MergeTreeIndexGranuleDiskANN::serializeBinary(WriteBuffer & /*ostr*/) const {
+    // TODO: Not implemented
+}
+
+void MergeTreeIndexGranuleDiskANN::deserializeBinary(ReadBuffer & /*istr*/, MergeTreeIndexVersion /*version*/) {
+    // TODO: Not implemented
+}
+
 MergeTreeIndexAggregatorDiskANN::MergeTreeIndexAggregatorDiskANN(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
