@@ -192,7 +192,7 @@ private:
                             using Result = Element;
 
                             static TKey & extractKey(Element & elem) { return elem.value; }
-                            static Element extractResult(Element & elem) { return elem; }
+                            static Result extractResult(Element & elem) { return elem; }
                         };
 
                         if constexpr (is_descending)

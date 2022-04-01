@@ -25,6 +25,7 @@ namespace DB
 class IFileCache : private boost::noncopyable
 {
 friend class FileSegment;
+friend struct FileSegmentsHolder;
 
 public:
     using Key = UInt128;
@@ -210,6 +211,8 @@ private:
     FileSegments splitRangeIntoCells(
         const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
 
+    String dumpStructureImpl(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
+
 public:
     struct Stat
     {
@@ -222,6 +225,7 @@ public:
     Stat getStat();
 
     String dumpStructure(const Key & key_) override;
+    void assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock);
 };
 
 }

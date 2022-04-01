@@ -241,6 +241,10 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 
     std::lock_guard cache_lock(mutex);
 
+#ifndef NDEBUG
+    assertCacheCorrectness(key, cache_lock);
+#endif
+
     /// Get all segments which intersect with the given range.
     auto file_segments = getImpl(key, range, cache_lock);
 
@@ -315,7 +319,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 
 LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     const Key & key, size_t offset, size_t size, FileSegment::State state,
-    std::lock_guard<std::mutex> & /* cache_lock */)
+    std::lock_guard<std::mutex> & cache_lock)
 {
     /// Create a file segment cell and put it in `files` map by [key][offset].
 
@@ -323,8 +327,10 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
         return nullptr; /// Empty files are not cached.
 
     if (files[key].contains(offset))
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-            "Cache already exists for key: `{}`, offset: {}, size: {}", keyToStr(key), offset, size);
+        throw Exception(
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            "Cache already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
+            keyToStr(key), offset, size, dumpStructureImpl(key, cache_lock));
 
     auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, state);
     FileSegmentCell cell(std::move(file_segment), queue);
@@ -340,8 +346,10 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
 
     auto [it, inserted] = offsets.insert({offset, std::move(cell)});
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Failed to insert into cache key: `{}`, offset: {}, size: {}", keyToStr(key), offset, size);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Failed to insert into cache key: `{}`, offset: {}, size: {}",
+            keyToStr(key), offset, size);
 
     return &(it->second);
 }
@@ -563,8 +571,8 @@ void LRUFileCache::loadCacheInfoIntoMemory()
     std::lock_guard cache_lock(mutex);
 
     Key key;
-    UInt64 offset;
-    size_t size;
+    UInt64 offset = 0;
+    size_t size = 0;
     std::vector<FileSegmentCell *> cells;
 
     /// cache_base_path / key_prefix / key / offset
@@ -760,22 +768,32 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRU
     }
 }
 
-String LRUFileCache::dumpStructure(const Key & key_)
+String LRUFileCache::dumpStructure(const Key & key)
 {
     std::lock_guard cache_lock(mutex);
+    return dumpStructureImpl(key, cache_lock);
+}
 
+String LRUFileCache::dumpStructureImpl(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */)
+{
     WriteBufferFromOwnString result;
-    for (auto it = queue.begin(); it != queue.end(); ++it)
-    {
-        auto [key, offset] = *it;
-        if (key == key_)
-        {
-            auto * cell = getCell(key, offset, cache_lock);
-            result << (it != queue.begin() ? ", " : "") << cell->file_segment->range().toString();
-            result << "(state: " << cell->file_segment->download_state << ")";
-        }
-    }
+    const auto & cells_by_offset = files[key];
+
+    for (const auto & [offset, cell] : cells_by_offset)
+        result << cell.file_segment->getInfoForLog() << "\n";
+
     return result.str();
+}
+
+void LRUFileCache::assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */)
+{
+    const auto & cells_by_offset = files[key];
+
+    for (const auto & [_, cell] : cells_by_offset)
+    {
+        const auto & file_segment = cell.file_segment;
+        file_segment->assertCorrectness();
+    }
 }
 
 }
