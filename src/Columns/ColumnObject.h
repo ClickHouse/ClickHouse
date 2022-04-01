@@ -66,8 +66,8 @@ public:
         size_t byteSize() const;
         size_t allocatedBytes() const;
 
-        bool isFinalized() const { return data.size() == 1 && num_of_defaults_in_prefix == 0; }
-        const DataTypePtr & getLeastCommonType() const { return least_common_type; }
+        bool isFinalized() const;
+        const DataTypePtr & getLeastCommonType() const { return least_common_type.get(); }
 
         /// Checks the consistency of column's parts stored in @data.
         void checkTypes() const;
@@ -102,8 +102,26 @@ public:
         friend class ColumnObject;
 
     private:
+        class LeastCommonType
+        {
+        public:
+            LeastCommonType() = default;
+            explicit LeastCommonType(DataTypePtr type_);
+
+            const DataTypePtr & get() const { return type; }
+            const DataTypePtr & getBase() const { return base_type; }
+            size_t getNumberOfDimensions() const { return num_dimensions; }
+
+        private:
+            DataTypePtr type;
+            DataTypePtr base_type;
+            size_t num_dimensions = 0;
+        };
+
+        void addNewColumnPart(DataTypePtr type);
+
         /// Current least common type of all values inserted to this subcolumn.
-        DataTypePtr least_common_type;
+        LeastCommonType least_common_type;
 
         /// If true then common type type of subcolumn is Nullable
         /// and default values are NULLs.
@@ -120,20 +138,20 @@ public:
         size_t num_of_defaults_in_prefix = 0;
     };
 
-    using SubcolumnsTree = SubcolumnsTree<Subcolumn>;
+    using Subcolumns = SubcolumnsTree<Subcolumn>;
 
 private:
     /// If true then all subcolumns are nullable.
     const bool is_nullable;
 
-    SubcolumnsTree subcolumns;
+    Subcolumns subcolumns;
     size_t num_rows;
 
 public:
     static constexpr auto COLUMN_NAME_DUMMY = "_dummy";
 
     explicit ColumnObject(bool is_nullable_);
-    ColumnObject(SubcolumnsTree && subcolumns_, bool is_nullable_);
+    ColumnObject(Subcolumns && subcolumns_, bool is_nullable_);
 
     /// Checks that all subcolumns have consistent sizes.
     void checkConsistency() const;
@@ -155,8 +173,8 @@ public:
     /// It cares about consistency of sizes of Nested arrays.
     void addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size);
 
-    const SubcolumnsTree & getSubcolumns() const { return subcolumns; }
-    SubcolumnsTree & getSubcolumns() { return subcolumns; }
+    const Subcolumns & getSubcolumns() const { return subcolumns; }
+    Subcolumns & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;
 
     /// Finalizes all subcolumns.

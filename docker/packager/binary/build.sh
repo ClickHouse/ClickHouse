@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 
+exec &> >(ts)
 set -x -e
+
+cache_status () {
+    ccache --show-config ||:
+    ccache --show-stats ||:
+}
 
 mkdir -p build/cmake/toolchain/darwin-x86_64
 tar xJf MacOSX11.0.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
@@ -19,15 +25,23 @@ read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 env
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
-ccache --show-config ||:
-ccache --show-stats ||:
+cache_status
+# clear cache stats
 ccache --zero-stats ||:
 
-# shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
+# No quotes because I want it to expand to nothing if empty.
+# shellcheck disable=SC2086
 ninja $NINJA_FLAGS clickhouse-bundle
 
-ccache --show-config ||:
-ccache --show-stats ||:
+cache_status
+
+if [ -n "$MAKE_DEB" ]; then
+  rm -rf /build/packages/root
+  # No quotes because I want it to expand to nothing if empty.
+  # shellcheck disable=SC2086
+  DESTDIR=/build/packages/root ninja $NINJA_FLAGS install
+  bash -x /build/packages/build
+fi
 
 mv ./programs/clickhouse* /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
@@ -84,8 +98,7 @@ fi
 #   ../docker/packager/other/fuzzer.sh
 # fi
 
-ccache --show-config ||:
-ccache --show-stats ||:
+cache_status
 
 if [ "${CCACHE_DEBUG:-}" == "1" ]
 then
