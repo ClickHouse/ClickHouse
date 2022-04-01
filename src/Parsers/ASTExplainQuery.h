@@ -17,7 +17,7 @@ public:
         AnalyzedSyntax, /// 'EXPLAIN SYNTAX SELECT ...'
         QueryPlan, /// 'EXPLAIN SELECT ...'
         QueryPipeline, /// 'EXPLAIN PIPELINE ...'
-        QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
+        QueryEstimate, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
     };
 
@@ -109,7 +109,7 @@ private:
             case AnalyzedSyntax: return "EXPLAIN SYNTAX";
             case QueryPlan: return "EXPLAIN";
             case QueryPipeline: return "EXPLAIN PIPELINE";
-            case QueryEstimates: return "EXPLAIN ESTIMATE";
+            case QueryEstimate: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
         }
 
