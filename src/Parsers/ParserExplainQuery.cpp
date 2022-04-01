@@ -36,7 +36,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else if (s_plan.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::QueryPlan; //-V1048
         else if (s_estimates.ignore(pos, expected))
-            kind = ASTExplainQuery::ExplainKind::QueryEstimates; //-V1048
+            kind = ASTExplainQuery::ExplainKind::QueryEstimate; //-V1048
         else if (s_table_override.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::TableOverride;
     }

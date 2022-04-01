@@ -83,9 +83,10 @@ BlockIO InterpreterExplainQuery::execute()
 }
 
 
-Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind kind)
+Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind)
 {
-    if (kind == ASTExplainQuery::ExplainKind::QueryEstimates)
+    /*
+    if (kind == ASTExplainQuery::ExplainKind::QueryEstimate)
     {
         auto cols = NamesAndTypes{
             {"database", std::make_shared<DataTypeString>()},
@@ -104,14 +105,15 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
     }
     else
     {
-        Block res;
-        ColumnWithTypeAndName col;
-        col.name = "explain";
-        col.type = std::make_shared<DataTypeString>();
-        col.column = col.type->createColumn();
-        res.insert(col);
-        return res;
-    }
+        */
+    Block res;
+    ColumnWithTypeAndName col;
+    col.name = "explain";
+    col.type = std::make_shared<DataTypeString>();
+    col.column = col.type->createColumn();
+    res.insert(col);
+    return res;
+    // }
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
@@ -165,12 +167,24 @@ struct QueryPlanSettings
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
-            {"header", query_plan_options.header},
-            {"description", query_plan_options.description},
-            {"actions", query_plan_options.actions},
-            {"indexes", query_plan_options.indexes},
-            {"optimize", optimize},
-            {"json", json}
+        {"header", query_plan_options.header},
+        {"description", query_plan_options.description},
+        {"actions", query_plan_options.actions},
+        {"indexes", query_plan_options.indexes}
+    };
+};
+
+
+struct QueryEstimateSettings
+{
+    /// Apply query plan optimizations.
+    bool optimize = true;
+
+    constexpr static char name[] = "ESTIMATE";
+
+    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
+    {
+        {"optimize", optimize}
     };
 };
 
@@ -365,12 +379,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception("Only SELECT and INSERT is supported for EXPLAIN PIPELINE query", ErrorCodes::INCORRECT_QUERY);
             break;
         }
-        case ASTExplainQuery::QueryEstimates:
+        case ASTExplainQuery::QueryEstimate:
         {
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
                 throw Exception("Only SELECT is supported for EXPLAIN ESTIMATE query", ErrorCodes::INCORRECT_QUERY);
 
-            auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
+            auto settings = checkAndGetSettings<QueryEstimateSettings>(ast.getSettings());
             QueryPlan plan;
 
             InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());

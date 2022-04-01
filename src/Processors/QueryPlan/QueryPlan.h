@@ -77,6 +77,7 @@ public:
         bool indexes = false;
     };
 
+
     struct ExplainPipelineOptions
     {
         /// Show header of output ports.
@@ -114,6 +115,9 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
     std::vector<ContextPtr> interpreter_context;
+
+    /// Estimate result
+    Block estimate_result;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);
