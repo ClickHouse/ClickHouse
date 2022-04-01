@@ -19,12 +19,7 @@ namespace DB
 void CountingTransform::onConsume(Chunk chunk)
 {
     if (quota)
-    {
-        /// Do not throw if quota exceded right now, because
-        /// bytes are not written now actually.
-        quota->checkExceeded(QuotaType::WRITTEN_BYTES);
-        quota->used(QuotaType::WRITTEN_BYTES, chunk.bytes(), /*check_exceeded=*/ false);
-    }
+        quota->used(QuotaType::WRITTEN_BYTES, chunk.bytes());
 
     Progress local_progress{WriteProgress(chunk.getNumRows(), chunk.bytes())};
     progress.incrementPiecewiseAtomically(local_progress);

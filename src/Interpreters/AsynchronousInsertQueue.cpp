@@ -198,13 +198,11 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         copyData(*read_buf, write_buf);
     }
 
+    std::cerr << "bytes.size: " << bytes.size() << "\n";
+    std::cerr << "bytes: " << bytes << "\n";
+
     if (auto quota = query_context->getQuota())
-    {
-        /// Do not throw if quota exceded right now, because
-        /// bytes are not written now actually.
-        quota->checkExceeded(QuotaType::WRITTEN_BYTES);
-        quota->used(QuotaType::WRITTEN_BYTES, bytes.size(), /*check_exceeded=*/ false);
-    }
+        quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
     auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
     InsertQuery key{query, settings};

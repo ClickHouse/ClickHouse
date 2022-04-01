@@ -52,6 +52,8 @@ protected:
     ProgressCallback progress_callback;
     QueryStatus * process_elem = nullptr;
     ThreadStatus * thread_status = nullptr;
+
+    /// Quota is used to limit amount of written bytes.
     std::shared_ptr<const EnabledQuota> quota;
     Chunk cur_chunk;
 };
