@@ -42,10 +42,10 @@ public:
         }
         HashSet<StringRef> used;
         HashMap<StringRef, UInt64> tin, up;
-        UInt64 cntBridges = 0;
+        UInt64 cnt_bridges = 0;
         UInt64 timer = 0;
-        countBridges(place, graph.begin()->getKey(), graph.begin()->getKey(), used, tin, up, cntBridges, timer);
-        return cntBridges;
+        countBridges(place, graph.begin()->getKey(), graph.begin()->getKey(), used, tin, up, cnt_bridges, timer);
+        return cnt_bridges;
     }
 };
 

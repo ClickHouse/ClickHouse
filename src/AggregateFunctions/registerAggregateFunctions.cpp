@@ -2,8 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-#include <AggregateFunctions/AggregateFunctionGraphFactory.h>
-
+#include <AggregateFunctions/registerGraphAggregateFunctions.h>
 
 namespace DB
 {
@@ -15,31 +14,6 @@ void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory &);
-class GraphDiameterGeneral;
-class GraphIsTreeGeneral;
-class GraphComponentsCountGeneral;
-class GraphProbabilityConnected;
-class GraphAvgChildrenGeneral;
-class EdgeDistanceGeneral;
-class GraphTreeHeight;
-class GraphCountBridges;
-class GraphCountStronglyConnectedComponents;
-class GraphIsBipartiteGeneral;
-class GraphCountBipartiteMaximumMatching;
-class GraphMaxFlow;
-extern template void registerGraphAggregateFunction<GraphDiameterGeneral>(AggregateFunctionFactory &);
-extern template void registerGraphAggregateFunction<GraphIsTreeGeneral>(AggregateFunctionFactory & factory);
-extern template void registerGraphAggregateFunction<GraphComponentsCountGeneral>(AggregateFunctionFactory & factory);
-extern template void registerGraphAggregateFunction<GraphProbabilityConnected>(AggregateFunctionFactory & factory);
-extern template void registerGraphAggregateFunction<GraphAvgChildrenGeneral>(AggregateFunctionFactory & factory);
-extern template void registerGraphAggregateFunction<EdgeDistanceGeneral>(AggregateFunctionFactory & factory);
-extern template void registerGraphAggregateFunction<GraphTreeHeight>(AggregateFunctionFactory & factory);
-extern template void registerGraphAggregateFunction<GraphCountBridges>(AggregateFunctionFactory & factory);
-extern template void registerGraphAggregateFunction<GraphCountStronglyConnectedComponents>(AggregateFunctionFactory & factory);
-extern template void registerGraphAggregateFunction<GraphIsBipartiteGeneral>(AggregateFunctionFactory & factory);
-extern template void registerGraphAggregateFunction<GraphCountBipartiteMaximumMatching>(AggregateFunctionFactory & factory);
-extern template void registerGraphAggregateFunction<GraphMaxFlow>(AggregateFunctionFactory & factory);
-
 void registerAggregateFunctionGraphDiameter(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
@@ -113,18 +87,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCount(factory);
         registerAggregateFunctionDeltaSum(factory);
         registerAggregateFunctionDeltaSumTimestamp(factory);
-        registerGraphAggregateFunction<GraphDiameterGeneral>(factory);
-        registerGraphAggregateFunction<GraphIsTreeGeneral>(factory);
-        registerGraphAggregateFunction<GraphComponentsCountGeneral>(factory);
-        registerGraphAggregateFunction<GraphProbabilityConnected>(factory);
-        registerGraphAggregateFunction<GraphAvgChildrenGeneral>(factory);
-        registerGraphAggregateFunction<EdgeDistanceGeneral>(factory);
-        registerGraphAggregateFunction<GraphTreeHeight>(factory);
-        registerGraphAggregateFunction<GraphCountBridges>(factory);
-        registerGraphAggregateFunction<GraphCountStronglyConnectedComponents>(factory);
-        registerGraphAggregateFunction<GraphIsBipartiteGeneral>(factory);
-        registerGraphAggregateFunction<GraphCountBipartiteMaximumMatching>(factory);
-        registerGraphAggregateFunction<GraphMaxFlow>(factory);
+        registerGraphAggregateFunctions(factory);
         registerAggregateFunctionGroupArray(factory);
         registerAggregateFunctionGroupUniqArray(factory);
         registerAggregateFunctionGroupArrayInsertAt(factory);

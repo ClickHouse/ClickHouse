@@ -78,16 +78,16 @@ public:
         }
         HashMap<StringRef, UInt64> used;
         HashMap<StringRef, StringRef> matching;
-        UInt64 currentColor = 0;
-        UInt64 matchingSize = 0;
+        UInt64 current_color = 0;
+        UInt64 matching_size = 0;
         for (const auto& [vertex, neighbours] : graph) {
             if (color->at(vertex)) {
-                if (dfsMatch(vertex, ++currentColor, graph, used, matching)) {
-                    ++matchingSize;
+                if (dfsMatch(vertex, ++current_color, graph, used, matching)) {
+                    ++matching_size;
                 }
             }
         }
-        return matchingSize;
+        return matching_size;
     }
 
 };

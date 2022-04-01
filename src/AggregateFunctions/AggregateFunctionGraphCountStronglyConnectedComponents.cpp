@@ -16,12 +16,14 @@ public:
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     void dfsOrder(const HashMap<StringRef, std::vector<StringRef>>& graph, StringRef vertex, HashSet<StringRef>& used, std::vector<StringRef>& order) const {
-        used.insert(vertex);
-        if (graph.find(vertex) != graph.end()) {
-            for (StringRef next : graph.at(vertex)) {
-                if (used.has(next)) {
-                    continue;
-                }
+        HashSet<StringRef>::LookupResult it;
+        bool inserted;
+        used.emplace(vertex, it, inserted);
+        if (!inserted) {
+            return;
+        }
+        if (const auto* graph_iter = graph.find(vertex); graph_iter) {
+            for (StringRef next : graph_iter->getMapped()) {
                 dfsOrder(graph, next, used, order);
             }
         }
@@ -29,26 +31,26 @@ public:
     }
 
     void dfsColor(const HashMap<StringRef, std::vector<StringRef>>& reverseGraph, StringRef vertex, HashSet<StringRef>& used) const {
-        used.insert(vertex);
+        HashSet<StringRef>::LookupResult it;
+        bool inserted;
+        used.emplace(vertex, it, inserted);
+        if (!inserted) {
+            return;
+        }
         for (StringRef next : reverseGraph.at(vertex)) {
-            if (used.has(next)) {
-                continue;
-            }
             dfsColor(reverseGraph, next, used);
         }
     }
 
-    HashMap<StringRef, std::vector<StringRef>> createReverseGraph(const HashMap<StringRef, std::vector<StringRef>>& graph) const {
-        HashMap<StringRef, std::vector<StringRef>> reverseGraph;
+    static HashMap<StringRef, std::vector<StringRef>> createReverseGraph(const HashMap<StringRef, std::vector<StringRef>>& graph)  {
+        HashMap<StringRef, std::vector<StringRef>> reverse_graph;
         for (const auto& [vertex, neighbors] : graph) {
-            if (reverseGraph.find(vertex) == reverseGraph.end()) {
-                reverseGraph[vertex] = {};
-            }
+            reverse_graph.insert({vertex, {}});
             for (StringRef next : neighbors) {
-                reverseGraph[next].emplace_back(vertex);
+                reverse_graph[next].emplace_back(vertex);
             }
         }
-        return reverseGraph;
+        return reverse_graph;
     }
 
     UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena*) const {
@@ -68,12 +70,12 @@ public:
         std::reverse(order.begin(), order.end());
         UInt64 answer = 0;
         used = {};
-        const auto& reverseGraph = createReverseGraph(graph);
+        const auto& reverse_graph = createReverseGraph(graph);
         for (StringRef vertex : order) {
             if (used.has(vertex)) {
                 continue;
             }
-            dfsColor(reverseGraph, vertex, used);
+            dfsColor(reverse_graph, vertex, used);
             ++answer;
         }
         return answer;
