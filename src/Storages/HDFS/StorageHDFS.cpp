@@ -26,6 +26,7 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/getVirtualsForStorage.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
@@ -164,6 +165,13 @@ StorageHDFS::StorageHDFS(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+
+    auto default_virtuals = NamesAndTypesList{
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+
+    auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
+    virtual_columns = getVirtualsForStorage(columns, default_virtuals);
 }
 
 ColumnsDescription StorageHDFS::getTableStructureFromData(
@@ -273,36 +281,6 @@ private:
     Strings::iterator uris_iter;
 };
 
-Block HDFSSource::getHeader(const StorageMetadataPtr & metadata_snapshot, bool need_path_column, bool need_file_column)
-{
-    auto header = metadata_snapshot->getSampleBlock();
-    /// Note: AddingDefaultsBlockInputStream doesn't change header.
-    if (need_path_column)
-        header.insert(
-            {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
-             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-             "_path"});
-    if (need_file_column)
-        header.insert(
-            {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
-             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-             "_file"});
-    return header;
-}
-
-Block HDFSSource::getBlockForSource(
-    const StorageHDFSPtr & storage,
-    const StorageSnapshotPtr & storage_snapshot,
-    const ColumnsDescription & columns_description,
-    bool need_path_column,
-    bool need_file_column)
-{
-    if (storage->isColumnOriented())
-        return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    else
-        return getHeader(storage_snapshot->metadata, need_path_column, need_file_column);
-}
-
 HDFSSource::DisclosedGlobIterator::DisclosedGlobIterator(ContextPtr context_, const String & uri)
     : pimpl(std::make_shared<HDFSSource::DisclosedGlobIterator::Impl>(context_, uri)) {}
 
@@ -321,22 +299,28 @@ String HDFSSource::URISIterator::next()
     return pimpl->next();
 }
 
+Block HDFSSource::getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns)
+{
+    for (const auto & virtual_column : requested_virtual_columns)
+        sample_block.insert({virtual_column.type->createColumn(), virtual_column.type, virtual_column.name});
+
+    return sample_block;
+}
+
 HDFSSource::HDFSSource(
     StorageHDFSPtr storage_,
-    const StorageSnapshotPtr & storage_snapshot_,
+    const Block & block_for_format_,
+    const std::vector<NameAndTypePair> & requested_virtual_columns_,
     ContextPtr context_,
     UInt64 max_block_size_,
-    bool need_path_column_,
-    bool need_file_column_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     ColumnsDescription columns_description_)
-    : SourceWithProgress(getBlockForSource(storage_, storage_snapshot_, columns_description_, need_path_column_, need_file_column_))
+    : SourceWithProgress(getHeader(block_for_format_, requested_virtual_columns_))
     , WithContext(context_)
     , storage(std::move(storage_))
-    , storage_snapshot(storage_snapshot_)
+    , block_for_format(block_for_format_)
+    , requested_virtual_columns(requested_virtual_columns_)
     , max_block_size(max_block_size_)
-    , need_path_column(need_path_column_)
-    , need_file_column(need_file_column_)
     , file_iterator(file_iterator_)
     , columns_description(std::move(columns_description_))
 {
@@ -361,14 +345,7 @@ bool HDFSSource::initialize()
     auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
     read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef()), compression);
 
-    auto get_block_for_format = [&]() -> Block
-    {
-        if (storage->isColumnOriented())
-            return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-        return storage_snapshot->metadata->getSampleBlock();
-    };
-
-    auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, get_block_for_format(), max_block_size);
+    auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -402,20 +379,21 @@ Chunk HDFSSource::generate()
             Columns columns = chunk.getColumns();
             UInt64 num_rows = chunk.getNumRows();
 
-            /// Enrich with virtual columns.
-            if (need_path_column)
+            for (const auto & virtual_column : requested_virtual_columns)
             {
-                auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
-                columns.push_back(column->convertToFullColumnIfConst());
-            }
+                if (virtual_column.name == "_path")
+                {
+                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
+                    columns.push_back(column->convertToFullColumnIfConst());
+                }
+                else if (virtual_column.name == "_file")
+                {
+                    size_t last_slash_pos = current_path.find_last_of('/');
+                    auto file_name = current_path.substr(last_slash_pos + 1);
 
-            if (need_file_column)
-            {
-                size_t last_slash_pos = current_path.find_last_of('/');
-                auto file_name = current_path.substr(last_slash_pos + 1);
-
-                auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
-                columns.push_back(column->convertToFullColumnIfConst());
+                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
+                    columns.push_back(column->convertToFullColumnIfConst());
+                }
             }
 
             return Chunk(std::move(columns), num_rows);
@@ -526,17 +504,6 @@ Pipe StorageHDFS::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    bool need_path_column = false;
-    bool need_file_column = false;
-
-    for (const auto & column : column_names)
-    {
-        if (column == "_path")
-            need_path_column = true;
-        if (column == "_file")
-            need_file_column = true;
-    }
-
     std::shared_ptr<HDFSSource::IteratorWrapper> iterator_wrapper{nullptr};
     if (distributed_processing)
     {
@@ -563,27 +530,51 @@ Pipe StorageHDFS::read(
         });
     }
 
+    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
+    std::vector<NameAndTypePair> requested_virtual_columns;
+
+    for (const auto & virtual_column : getVirtuals())
+    {
+        if (column_names_set.contains(virtual_column.name))
+            requested_virtual_columns.push_back(virtual_column);
+    }
+
+    ColumnsDescription columns_description;
+    Block block_for_format;
+    if (isColumnOriented())
+    {
+        auto fetch_columns = column_names;
+        const auto & virtuals = getVirtuals();
+        std::erase_if(
+            fetch_columns,
+            [&](const String & col)
+            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
+
+        if (fetch_columns.empty())
+            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+
+        columns_description = ColumnsDescription{
+            storage_snapshot->getSampleBlockForColumns(fetch_columns).getNamesAndTypesList()};
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+    }
+    else
+    {
+        columns_description = storage_snapshot->metadata->getColumns();
+        block_for_format = storage_snapshot->metadata->getSampleBlock();
+    }
+
     Pipes pipes;
     auto this_ptr = std::static_pointer_cast<StorageHDFS>(shared_from_this());
     for (size_t i = 0; i < num_streams; ++i)
     {
-         const auto get_columns_for_format = [&]() -> ColumnsDescription
-        {
-            if (isColumnOriented())
-                return ColumnsDescription{storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
-            else
-                return storage_snapshot->metadata->getColumns();
-        };
-
         pipes.emplace_back(std::make_shared<HDFSSource>(
             this_ptr,
-            storage_snapshot,
+            block_for_format,
+            requested_virtual_columns,
             context_,
             max_block_size,
-            need_path_column,
-            need_file_column,
             iterator_wrapper,
-            get_columns_for_format()));
+            columns_description));
     }
     return Pipe::unitePipes(std::move(pipes));
 }
@@ -715,9 +706,7 @@ void registerStorageHDFS(StorageFactory & factory)
 
 NamesAndTypesList StorageHDFS::getVirtuals() const
 {
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+    return virtual_columns;
 }
 
 }
