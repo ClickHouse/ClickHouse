@@ -110,7 +110,6 @@ jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKe
         iter = env->NewGlobalRef(iter);
         parser.addInputIter(iter);
     }
-
     jsize plan_size = env->GetArrayLength(plan);
     jbyte * plan_address = env->GetByteArrayElements(plan, nullptr);
     std::string plan_string;
@@ -119,7 +118,7 @@ jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKe
     dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
     executor->execute(std::move(query_plan));
     env->ReleaseByteArrayElements(plan, plan_address, JNI_ABORT);
-    return 0;
+    return reinterpret_cast<jlong>(executor);
 }
 
 jboolean Java_com_intel_oap_row_RowIterator_nativeHasNext(JNIEnv * env, jobject obj, jlong executor_address)
@@ -163,11 +162,11 @@ jboolean Java_com_intel_oap_vectorized_BatchIterator_nativeHasNext(JNIEnv * env,
     return executor->hasNext();
 }
 
-jobject Java_com_intel_oap_vectorized_BatchIterator_nativeNext(JNIEnv * env, jobject obj, jlong executor_address)
+jlong Java_com_intel_oap_vectorized_BatchIterator_nativeCHNext(JNIEnv * env, jobject obj, jlong executor_address)
 {
     dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
-    Block & columnBatch = executor->nextColumnar();
-    return 0;
+    Block * columnBatch = executor->nextColumnar();
+    return reinterpret_cast<long>(columnBatch);
 }
 
 void Java_com_intel_oap_vectorized_BatchIterator_nativeClose(JNIEnv * env, jobject obj, jlong executor_address)
@@ -410,10 +409,18 @@ jlong Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_nativeMake(JNIEn
                                                                           jstring data_file,
                                                                           jstring local_dirs)
 {
-    int len = env->GetArrayLength(expr_list);
-    std::string exprs;
-    exprs.reserve(len);
-    env->GetByteArrayRegion(expr_list, 0, len, reinterpret_cast<jbyte *>(exprs.data()));
+    std::vector<std::string> expr_vec;
+    if (expr_list != nullptr)
+    {
+        std::string exprs;
+        int len = env->GetArrayLength(expr_list);
+        exprs.reserve(len);
+        env->GetByteArrayRegion(expr_list, 0, len, reinterpret_cast<jbyte *>(exprs.data()));
+        for (auto expr :stringSplit(exprs, ','))
+        {
+            expr_vec.emplace_back(expr);
+        }
+    }
     local_engine::SplitOptions options
     {
         .buffer_size = static_cast<size_t>(buffer_size),
@@ -421,7 +428,7 @@ jlong Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_nativeMake(JNIEn
         .local_tmp_dir = jstring2string(env, local_dirs),
         .map_id = static_cast<int>(map_id),
         .partition_nums = static_cast<size_t>(num_partitions),
-        .exprs = stringSplit(exprs, ','),
+        .exprs = expr_vec,
         .compress_method = jstring2string(env, codec)
     };
     local_engine::SplitterHolder * splitter = new local_engine::SplitterHolder{.splitter=local_engine::ShuffleSplitter::create(jstring2string(env, short_name), options)};

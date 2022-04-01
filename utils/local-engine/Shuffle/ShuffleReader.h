@@ -25,6 +25,7 @@ private:
     std::unique_ptr<CompressedReadBuffer> compressed_in;
     std::unique_ptr<NativeBlockInputStream> input_stream;
     std::unique_ptr<Block> cur_block;
+    Block header;
 };
 
 

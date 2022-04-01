@@ -23,6 +23,8 @@ Block* local_engine::ShuffleReader::read()
 {
     cur_block.reset();
     cur_block = std::make_unique<Block>(input_stream->read());
+    if (header.columns() == 0) header = cur_block->cloneEmpty();
+    if (cur_block->columns() == 0) cur_block = std::make_unique<Block>(header.cloneEmpty());
     return cur_block.get();
 }
 ShuffleReader::~ShuffleReader()

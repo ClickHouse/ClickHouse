@@ -874,6 +874,32 @@ static void BM_TestPlusEmbedded(benchmark::State& state)
     }
 }
 
+static void BM_TestReadColumn(benchmark::State& state)
+{
+    for (auto _ : state)
+    {
+        ReadBufferFromFile data_buf("/home/saber/Documents/test/c151.bin");
+        CompressedReadBuffer compressed(data_buf);
+        ReadBufferFromFile buf("/home/saber/Documents/test/c151.mrk2");
+        while(!buf.eof()) {
+            size_t x;
+            size_t y;
+            size_t z;
+            readIntBinary(x, buf);
+            readIntBinary(y, buf);
+            readIntBinary(z, buf);
+            std::cout << std::to_string(x) << "\n";
+            data_buf.seek(x, SEEK_SET);
+            size_t size = 6906*4;
+            std::string data;
+            data.reserve(size);
+
+            compressed.readBig(reinterpret_cast<char*>(data.data()), size);
+            std::cout << data << "\n";
+        }
+    }
+}
+
 double quantile(const vector<double>&x)
 {
     double q = 0.8;
@@ -891,8 +917,8 @@ double quantile(const vector<double>&x)
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_MergeTreeRead)->Arg(2)->Unit(benchmark::kMillisecond)->Iterations(40);
-BENCHMARK(BM_ShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
-BENCHMARK(BM_HashShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
+//BENCHMARK(BM_ShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
+//BENCHMARK(BM_HashShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
 //BENCHMARK(BM_ShuffleReader)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SimpleAggregate)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
@@ -903,6 +929,7 @@ BENCHMARK(BM_HashShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Uni
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_TestCreateExecute)->Unit(benchmark::kMillisecond)->Iterations(1000);
+BENCHMARK(BM_TestReadColumn)->Unit(benchmark::kMillisecond)->Iterations(1);
 
 //BENCHMARK(BM_TestSum)->Arg(1000000)->Unit(benchmark::kMicrosecond)->Iterations(100)->Repetitions(100)->ComputeStatistics("80%", quantile)->DisplayAggregatesOnly();
 //BENCHMARK(BM_TestSumInline)->Arg(1000000)->Unit(benchmark::kMicrosecond)->Iterations(100)->Repetitions(100)->ComputeStatistics("80%", quantile)->DisplayAggregatesOnly();

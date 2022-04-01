@@ -28,15 +28,15 @@ class SerializedPlanBuilder
 public:
     SerializedPlanBuilder();
     SerializedPlanBuilder& registerSupportedFunctions() {
-        this->registerFunction(IS_NOT_NULL, "IS_NOT_NULL")
-            .registerFunction(GREATER_THAN_OR_EQUAL, "GREATER_THAN_OR_EQUAL")
-            .registerFunction(AND, "AND")
-            .registerFunction(LESS_THAN_OR_EQUAL, "LESS_THAN_OR_EQUAL")
-            .registerFunction(LESS_THAN, "LESS_THAN")
-            .registerFunction(MULTIPLY, "MULTIPLY")
-            .registerFunction(SUM, "SUM")
+        this->registerFunction(IS_NOT_NULL, "is_not_null")
+            .registerFunction(GREATER_THAN_OR_EQUAL, "gte")
+            .registerFunction(AND, "and")
+            .registerFunction(LESS_THAN_OR_EQUAL, "lte")
+            .registerFunction(LESS_THAN, "lt")
+            .registerFunction(MULTIPLY, "multiply")
+            .registerFunction(SUM, "sum")
             .registerFunction(TO_DATE, "TO_DATE")
-            .registerFunction(EQUAL_TO, "EQUAL_TO");
+            .registerFunction(EQUAL_TO, "equal");
         return *this;
     }
     SerializedPlanBuilder& registerFunction(int id, std::string name);

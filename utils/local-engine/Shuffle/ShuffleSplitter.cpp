@@ -152,6 +152,10 @@ ShuffleSplitter::Ptr ShuffleSplitter::create(std::string short_name, SplitOption
     {
         return HashSplitter::create(std::move(options_));
     }
+    else if (short_name == "single") {
+        options_.partition_nums = 1;
+        return RoundRobinSplitter::create(std::move(options_));
+    }
     else
     {
         throw "unsupported splitter " + short_name;
@@ -170,7 +174,7 @@ std::unique_ptr<DB::WriteBuffer> ShuffleSplitter::getPartitionWriteBuffer(size_t
         partition_cached_write_buffers[partition_id] = std::make_unique<DB::WriteBufferFromFile>(file, DBMS_DEFAULT_BUFFER_SIZE, O_CREAT | O_WRONLY | O_APPEND);
     if (!options.compress_method.empty() && std::find(compress_methods.begin(), compress_methods.end(), options.compress_method) != compress_methods.end())
     {
-        auto codec = DB::CompressionCodecFactory::instance().get(options.compress_method, {});
+        auto codec = DB::CompressionCodecFactory::instance().get(boost::to_upper_copy(options.compress_method), {});
         return std::make_unique<DB::CompressedWriteBuffer>(*partition_cached_write_buffers[partition_id], codec);
     }
     else

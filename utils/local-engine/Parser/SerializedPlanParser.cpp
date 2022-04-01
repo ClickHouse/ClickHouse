@@ -370,6 +370,37 @@ void join(DB::ActionsDAG::NodeRawConstPtrs v, char c, std::string & s)
     }
 }
 
+std::string dbms::SerializedPlanParser::getFunctionName(std::string function_signature, const substrait::Type& output_type)
+{
+    auto function_name_idx = function_signature.find(":");
+    assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
+    auto function_name = function_signature.substr(0, function_name_idx);
+    if (!SCALAR_FUNCTIONS.contains(function_name))
+    {
+        throw std::runtime_error("doesn't support function " + function_name);
+    }
+    std::string ch_function_name;
+    if (function_name == "cast")
+    {
+        if (output_type.has_fp64())
+        {
+            ch_function_name = "toFloat64";
+        }
+        else if (output_type.has_string())
+        {
+            ch_function_name = "toString";
+        }
+        else
+        {
+            throw std::runtime_error("doesn't support function " + function_signature);
+        }
+    }
+    else
+    {
+        ch_function_name = SCALAR_FUNCTIONS.at(function_name);
+    }
+    return ch_function_name;
+}
 
 DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
     const DataStream & input, const substrait::Expression & rel, std::string & result_name, DB::ActionsDAGPtr actions_dag, bool keep_result)
@@ -395,17 +426,17 @@ DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
         }
     }
     auto function_signature = this->function_mapping.at(std::to_string(rel.scalar_function().function_reference()));
-    auto function_name_idx = function_signature.find(":");
-    assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
-    auto function_name = function_signature.substr(0, function_name_idx);
-    assert(SCALAR_FUNCTIONS.contains(function_name) && ("doesn't support function " + function_name).c_str());
-    auto function_builder = DB::FunctionFactory::instance().get(SCALAR_FUNCTIONS.at(function_name), this->context);
-    std::string args_name;
-    join(args, ',', args_name);
-    result_name = function_name + "(" + args_name + ")";
-    const auto* function_node = &actions_dag->addFunction(function_builder, args, result_name);
-    if (keep_result)
-        actions_dag->addOrReplaceInIndex(*function_node);
+    auto function_name = getFunctionName(function_signature, rel.scalar_function().output_type());
+    if (function_name != "skip")
+    {
+        auto function_builder = DB::FunctionFactory::instance().get(function_name, this->context);
+        std::string args_name;
+        join(args, ',', args_name);
+        result_name = function_name + "(" + args_name + ")";
+        const auto * function_node = &actions_dag->addFunction(function_builder, args, result_name);
+        if (keep_result)
+            actions_dag->addOrReplaceInIndex(*function_node);
+    }
     return actions_dag;
 }
 
@@ -559,7 +590,7 @@ void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
              "build pipeline {} ms; create executor {} ms;",
              t_pipeline / 1000.0,
              t_executor / 1000.0);
-    this->header = query_plan->getCurrentDataStream().header;
+    this->header = query_plan->getCurrentDataStream().header.cloneEmpty();
     this->ch_column_to_spark_row = std::make_unique<local_engine::CHColumnToSparkRow>();
 }
 std::unique_ptr<local_engine::SparkRowInfo> dbms::LocalExecutor::writeBlockToSparkRow(DB::Block & block)
@@ -595,10 +626,19 @@ local_engine::SparkRowInfoPtr dbms::LocalExecutor::next()
     return row_info;
 }
 
-Block& dbms::LocalExecutor::nextColumnar()
+Block* dbms::LocalExecutor::nextColumnar()
 {
-    this->columnar_batch = std::move(this->current_chunk);
-    return * this->columnar_batch;
+    columnar_batch.reset();
+    if (this->current_chunk->columns() > 0)
+    {
+        this->columnar_batch = std::move(this->current_chunk);
+    }
+    else
+    {
+        this->columnar_batch = std::make_unique<Block>(header.cloneEmpty());
+        this->current_chunk.reset();
+    }
+    return this->columnar_batch.get();
 }
 
 DB::Block & dbms::LocalExecutor::getHeader()

@@ -70,7 +70,9 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"multiply", "multiply"},
     {"sum", "sum"},
     {"TO_DATE", "toDate"},
-    {"equal", "equals"}
+    {"equal", "equals"},
+    {"cast", ""},
+    {"alias", "skip"}
 };
 
 struct QueryContext {
@@ -110,6 +112,7 @@ public:
 private:
     static DB::NamesAndTypesList blockToNameAndTypeList(const DB::Block & header);
     DB::QueryPlanPtr parseOp(const substrait::Rel &rel);
+    std::string getFunctionName(std::string function_sig, const substrait::Type& output_type);
     DB::ActionsDAGPtr parseFunction(const DataStream & input, const substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
     DB::QueryPlanStepPtr parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel &rel);
     const DB::ActionsDAG::Node * parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression &rel);
@@ -166,7 +169,7 @@ public:
     explicit LocalExecutor(QueryContext& _query_context);
     void execute(QueryPlanPtr query_plan);
     local_engine::SparkRowInfoPtr next();
-    Block& nextColumnar();
+    Block* nextColumnar();
     bool hasNext();
     ~LocalExecutor()
     {
