@@ -635,17 +635,18 @@ local_engine::SparkRowInfoPtr dbms::LocalExecutor::next()
 
 Block* dbms::LocalExecutor::nextColumnar()
 {
-    columnar_batch.reset();
+    Block * columnar_batch;
     if (this->current_chunk->columns() > 0)
     {
-        this->columnar_batch = std::move(this->current_chunk);
+        columnar_batch = new Block(*this->current_chunk);
+        this->current_chunk.reset();
     }
     else
     {
-        this->columnar_batch = std::make_unique<Block>(header.cloneEmpty());
+        columnar_batch = new Block(header.cloneEmpty());
         this->current_chunk.reset();
     }
-    return this->columnar_batch.get();
+    return columnar_batch;
 }
 
 DB::Block & dbms::LocalExecutor::getHeader()
@@ -653,8 +654,5 @@ DB::Block & dbms::LocalExecutor::getHeader()
     return header;
 }
 dbms::LocalExecutor::LocalExecutor(dbms::QueryContext & _query_context):query_context(_query_context)
-{
-}
-dbms::LocalExecutor::LocalExecutor()
 {
 }

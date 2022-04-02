@@ -21,11 +21,12 @@ local_engine::ShuffleReader::ShuffleReader(std::unique_ptr<ReadBuffer> in_, bool
 }
 Block* local_engine::ShuffleReader::read()
 {
-    cur_block.reset();
-    cur_block = std::make_unique<Block>(input_stream->read());
-    if (header.columns() == 0) header = cur_block->cloneEmpty();
-    if (cur_block->columns() == 0) cur_block = std::make_unique<Block>(header.cloneEmpty());
-    return cur_block.get();
+    Block *cur_block = new Block(input_stream->read());
+    if (header.columns() == 0)
+        header = cur_block->cloneEmpty();
+    if (cur_block->columns() == 0)
+        cur_block = new Block(header.cloneEmpty());
+    return cur_block;
 }
 ShuffleReader::~ShuffleReader()
 {

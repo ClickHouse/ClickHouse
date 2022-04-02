@@ -28,7 +28,7 @@ static jclass ch_column_batch_class;
 
 static jclass split_result_class;
 static jmethodID split_result_constructor;
-
+static JavaVM * global_vm = nullptr;
 
 jint JNI_OnLoad(JavaVM * vm, void * reserved)
 {
@@ -59,6 +59,7 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
         GetMethodID(env, local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class, "hasNext", "()Z");
     local_engine::SourceFromJavaIter::serialized_record_batch_iterator_next =
         GetMethodID(env, local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class, "next", "()[B");
+    global_vm = vm;
     return JNI_VERSION_1_8;
 }
 
@@ -99,10 +100,8 @@ jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKe
     JNIEnv* env, jobject obj, jlong , jbyteArray plan,
     jobjectArray iter_arr) {
     auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
-    JavaVM * vm;
-    assert(env->GetJavaVM(&vm) == JNI_OK);
     dbms::SerializedPlanParser parser(context);
-    parser.setJavaVM(vm);
+    parser.setJavaVM(global_vm);
     jsize iter_num = env->GetArrayLength(iter_arr);
     for (jsize i=0; i < iter_num; i++)
     {
@@ -450,7 +449,7 @@ void Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_split(JNIEnv * ,
 {
     local_engine::SplitterHolder * splitter = reinterpret_cast<local_engine::SplitterHolder *>(splitterId);
     Block * data = reinterpret_cast<Block *>(block);
-    splitter->splitter->split(*data);
+    splitter->splitter->split(data);
 }
 
 jobject Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_stop(JNIEnv * env,

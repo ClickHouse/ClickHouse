@@ -8,15 +8,17 @@ jmethodID SourceFromJavaIter::serialized_record_batch_iterator_next = nullptr;
 
 DB::Chunk SourceFromJavaIter::generate()
 {
-    JNIEnv * env;
-    assert(vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_8) == JNI_OK);
+    int attach;
+    JNIEnv * env = getENV(vm, &attach);
     jboolean has_next = env->CallBooleanMethod(java_iter,serialized_record_batch_iterator_hasNext);
     if (has_next)
     {
         jbyteArray block = static_cast<jbyteArray>(env->CallObjectMethod(java_iter, serialized_record_batch_iterator_next));
         DB::Block * data = reinterpret_cast<DB::Block *>(byteArrayToLong(env, block));
         size_t rows = data->rows();
-        return DB::Chunk(data->mutateColumns(), rows);
+        auto chunk = DB::Chunk(data->mutateColumns(), rows);
+        delete data;
+        return chunk;
     }
     else
     {
@@ -25,8 +27,8 @@ DB::Chunk SourceFromJavaIter::generate()
 }
 SourceFromJavaIter::~SourceFromJavaIter()
 {
-    JNIEnv * env;
-    assert(vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_8) == JNI_OK);
+    int attach;
+    JNIEnv * env = getENV(vm, &attach);
     env->DeleteGlobalRef(java_iter);
 }
 Int64 SourceFromJavaIter::byteArrayToLong(JNIEnv* env, jbyteArray arr)

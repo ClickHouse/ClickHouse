@@ -6,6 +6,7 @@
 #include <Parser/SerializedPlanParser.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/Logger.h>
+#include <jni.h>
 
 using namespace DB;
 #ifdef __cplusplus
@@ -44,6 +45,8 @@ bool executorHasNext(char * executor_address)
     dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
     return executor->hasNext();
 }
+
+
 
 #ifdef __cplusplus
 }

@@ -218,7 +218,7 @@ static void BM_ShuffleSplitter(benchmark::State& state) {
         while(executor.pull(chunk))
         {
             sum += chunk.rows();
-            splitter->split(chunk);
+            splitter->split(new Block(chunk));
         }
         splitter->stop();
         splitter->writeIndexFile();
@@ -302,7 +302,7 @@ static void BM_HashShuffleSplitter(benchmark::State& state) {
         while(executor.pull(chunk))
         {
             sum += chunk.rows();
-            splitter->split(chunk);
+            splitter->split(new Block(chunk));
         }
         splitter->stop();
         splitter->writeIndexFile();
@@ -878,23 +878,22 @@ static void BM_TestReadColumn(benchmark::State& state)
 {
     for (auto _ : state)
     {
-        ReadBufferFromFile data_buf("/home/saber/Documents/test/c151.bin");
+        ReadBufferFromFile data_buf("/home/saber/Documents/test/c151.bin", 100000);
         CompressedReadBuffer compressed(data_buf);
         ReadBufferFromFile buf("/home/saber/Documents/test/c151.mrk2");
-        while(!buf.eof()) {
+        while(!buf.eof() && !data_buf.eof()) {
             size_t x;
             size_t y;
             size_t z;
             readIntBinary(x, buf);
             readIntBinary(y, buf);
             readIntBinary(z, buf);
-            std::cout << std::to_string(x) << "\n";
+            std::cout << std::to_string(x) +" " << std::to_string(y) + " " << std::to_string(z) + " "  <<  "\n";
             data_buf.seek(x, SEEK_SET);
-            size_t size = 6906*4;
+            assert(!data_buf.eof());
             std::string data;
-            data.reserve(size);
-
-            compressed.readBig(reinterpret_cast<char*>(data.data()), size);
+            data.reserve(y);
+            compressed.readBig(reinterpret_cast<char*>(data.data()), y);
             std::cout << data << "\n";
         }
     }

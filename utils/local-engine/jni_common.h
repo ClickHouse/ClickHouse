@@ -48,3 +48,5 @@ jstring charTojstring(JNIEnv* env, const char* pat) {
     jstring encoding = (env)->NewStringUTF("UTF-8");
     return static_cast<jstring>((env)->NewObject(strClass, ctorID, bytes, encoding));
 }
+
+

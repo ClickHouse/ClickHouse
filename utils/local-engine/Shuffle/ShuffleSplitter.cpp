@@ -11,13 +11,14 @@
 
 namespace local_engine
 {
-void ShuffleSplitter::split(DB::Block & block)
+void ShuffleSplitter::split(DB::Block * block)
 {
     Stopwatch watch;
     watch.start();
-    computeAndCountPartitionId(block);
-    splitBlockByPartition(block);
+    computeAndCountPartitionId(* block);
+    splitBlockByPartition(*block);
     split_result.total_write_time +=watch.elapsedMilliseconds();
+    delete block;
 }
 SplitResult ShuffleSplitter::stop()
 {
@@ -116,6 +117,7 @@ void ShuffleSplitter::spillPartition(size_t partition_id)
     split_result.total_spill_time += watch.elapsedMilliseconds();
     split_result.total_bytes_spilled += result.bytes();
 }
+
 void ShuffleSplitter::mergePartitionFiles()
 {
     DB::WriteBufferFromFile data_write_buffer = DB::WriteBufferFromFile(options.data_file);
@@ -138,10 +140,12 @@ void ShuffleSplitter::mergePartitionFiles()
     }
     data_write_buffer.close();
 }
+
 ShuffleSplitter::ShuffleSplitter(SplitOptions&& options_) : options(options_)
 {
     init();
 }
+
 ShuffleSplitter::Ptr ShuffleSplitter::create(std::string short_name, SplitOptions options_)
 {
     if (short_name == "rr")
@@ -161,6 +165,7 @@ ShuffleSplitter::Ptr ShuffleSplitter::create(std::string short_name, SplitOption
         throw "unsupported splitter " + short_name;
     }
 }
+
 std::string ShuffleSplitter::getPartitionTempFile(size_t partition_id)
 {
     std::string dir = std::filesystem::path(options.local_tmp_dir)/"_shuffle_data"/std::to_string(options.map_id);
@@ -184,6 +189,7 @@ std::unique_ptr<DB::WriteBuffer> ShuffleSplitter::getPartitionWriteBuffer(size_t
 }
 
 const std::vector<std::string> ShuffleSplitter::compress_methods = {"", "ZSTD", "LZ4"};
+
 void ShuffleSplitter::writeIndexFile()
 {
     auto index_file = options.data_file + ".index";
@@ -225,10 +231,12 @@ DB::Block ColumnsBuffer::releaseColumns()
     accumulated_columns.clear();
     return header.cloneWithColumns(res);
 }
+
 DB::Block ColumnsBuffer::getHeader()
 {
     return header;
 }
+
 void RoundRobinSplitter::computeAndCountPartitionId(DB::Block & block)
 {
     Stopwatch watch;
@@ -241,6 +249,7 @@ void RoundRobinSplitter::computeAndCountPartitionId(DB::Block & block)
     }
     split_result.total_compute_pid_time += watch.elapsedMilliseconds();
 }
+
 std::unique_ptr<ShuffleSplitter> RoundRobinSplitter::create(SplitOptions&& options_)
 {
     return std::make_unique<RoundRobinSplitter>( std::move(options_));
