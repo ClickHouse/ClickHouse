@@ -6,8 +6,6 @@
 #include "base/types.h"
 
 
-#define AGGREGATE_FUNCTION_GRAPH_MAX_SIZE 0xFFFFFF
-
 namespace DB
 {
 struct Settings;
@@ -66,6 +64,9 @@ void DirectionalGraphGenericData::deserialize(ReadBuffer & buf, Arena * arena)
 
 void DirectionalGraphGenericData::add(const IColumn ** columns, size_t row_num, Arena * arena)
 {
+    if (unlikely(edges_count == AGGREGATE_FUNCTION_GRAPH_MAX_SIZE)) {
+        throw Exception("Too large graph size", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    }
     const char * begin = nullptr;
     StringRef key = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
     StringRef value = columns[1]->serializeValueIntoArena(row_num, *arena, begin);
@@ -110,6 +111,9 @@ bool DirectionalGraphGenericData::isTree() const
 
 void BidirectionalGraphGenericData::add(const IColumn ** columns, size_t row_num, Arena * arena)
 {
+    if (unlikely(edges_count == AGGREGATE_FUNCTION_GRAPH_MAX_SIZE)) {
+        throw Exception("Too large graph size", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    }
     const char * begin = nullptr;
     StringRef key = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
     StringRef value = columns[1]->serializeValueIntoArena(row_num, *arena, begin);
