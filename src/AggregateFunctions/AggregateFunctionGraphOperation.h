@@ -33,9 +33,9 @@ struct BidirectionalGraphGenericData : DirectionalGraphGenericData {
     size_t componentsCount() const;
 };
 
-template<typename Data, typename OpType, size_t ExpectedParameters = 0>
+template<typename Data, typename UnderlyingT, size_t ExpectedParameters = 0>
 class GraphOperationGeneral
-    : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data, OpType, ExpectedParameters>>
+    : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data, UnderlyingT, ExpectedParameters>>
 {
 public:
     static constexpr size_t kExpectedParameters = ExpectedParameters;
@@ -45,7 +45,7 @@ public:
             {data_type_}, parameters_) {
     }
 
-    String getName() const final { return OpType::name; }
+    String getName() const final { return UnderlyingT::name; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const final
     {
@@ -73,7 +73,7 @@ public:
     }
 
     decltype(auto) calculateOperation(ConstAggregateDataPtr __restrict place, Arena* arena) const {
-      return static_cast<const OpType&>(*this).calculateOperation(place, arena);
+      return static_cast<const UnderlyingT&>(*this).calculateOperation(place, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const final
