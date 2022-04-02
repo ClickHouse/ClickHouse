@@ -4,7 +4,9 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
+#include <Common/config.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/Hive/StorageHive.h>
 #include <Interpreters/AggregateDescription.h>
 
 #include <memory>
@@ -176,6 +178,10 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
+
+#if USE_HIVE
+    HiveSelectAnalysisResultPtr hive_select_result_ptr;
+#endif
 };
 
 }

@@ -16,6 +16,7 @@ public:
     BlockIO execute() override;
 
     static Block getSampleBlock(ASTExplainQuery::ExplainKind kind);
+    static Block getSampleEstimateBlock();
 
 private:
     ASTPtr query;

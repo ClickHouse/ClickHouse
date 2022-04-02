@@ -11,6 +11,7 @@
 #include <Core/Field.h>
 #include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/Hive/HiveSettings.h>
 
 namespace orc

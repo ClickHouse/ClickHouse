@@ -462,7 +462,6 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         for (const auto * child : node->children)
             process_node(child);
     };
-
     process_node(root);
 }
 

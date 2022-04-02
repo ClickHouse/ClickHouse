@@ -4,6 +4,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -83,30 +84,31 @@ BlockIO InterpreterExplainQuery::execute()
     return res;
 }
 
-
 Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind kind)
 {
-    Block res;
-    if (kind != ASTExplainQuery::QueryEstimate)
-    {
-        ColumnWithTypeAndName col;
-        col.name = "explain";
-        col.type = std::make_shared<DataTypeString>();
-        col.column = col.type->createColumn();
-        res.insert(col);
-        return res;
-    }
-    else
-    {
-        static const NamesAndTypesList columns = {
-            {"database", std::make_shared<DataTypeString>()},
-            {"table", std::make_shared<DataTypeString>()},
-            {"estimate", std::make_shared<DataTypeObject>("json", false)},
-        };
+    if (kind == ASTExplainQuery::QueryEstimate)
+        return getSampleEstimateBlock();
 
-        for (const auto & column : columns)
-            res.insert({column.type->createColumn(), column.type, column.name});
-    }
+    Block res;
+    ColumnWithTypeAndName col;
+    col.name = "explain";
+    col.type = std::make_shared<DataTypeString>();
+    col.column = col.type->createColumn();
+    res.insert(col);
+    return res;
+}
+
+Block InterpreterExplainQuery::getSampleEstimateBlock()
+{
+    static const NamesAndTypesList columns = {
+        {"database", std::make_shared<DataTypeString>()},
+        {"table", std::make_shared<DataTypeString>()},
+        {"estimate", std::make_shared<DataTypeObject>("json", false)},
+    };
+
+    Block res;
+    for (const auto & column : columns)
+        res.insert({column.type->createColumn(), column.type, column.name});
     return res;
 }
 
@@ -391,6 +393,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
 
             plan.explainEstimate(res_columns);
+            finalizeObjectColumns(res_columns);
             insert_buf = false;
             break;
         }

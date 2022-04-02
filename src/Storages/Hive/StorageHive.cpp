@@ -1,4 +1,5 @@
 #include <Storages/Hive/StorageHive.h>
+#include "Processors/QueryPlan/QueryPlan.h"
 
 #if USE_HIVE
 
@@ -18,6 +19,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <IO/ReadBufferFromString.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Parsers/ASTExpressionList.h>
@@ -29,6 +31,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/StorageHiveMetadata.h>
@@ -439,17 +442,17 @@ std::vector<HiveFilePtr> StorageHive::collectHiveFilesFromPartition(
     const HDFSFSPtr & fs,
     ContextPtr context_)
 {
-      LOG_DEBUG(log, "Collect hive files from partition {}", boost::join(partition.values, ","));
+    LOG_DEBUG(log, "Collect hive files from partition {}", boost::join(partition.values, ","));
 
-      /// Skip partition "__HIVE_DEFAULT_PARTITION__"
-      bool has_default_partition = false;
-      for (const auto & value : partition.values)
-      {
-          if (value == "__HIVE_DEFAULT_PARTITION__")
-          {
-              has_default_partition = true;
-              break;
-          }
+    /// Skip partition "__HIVE_DEFAULT_PARTITION__"
+    bool has_default_partition = false;
+    for (const auto & value : partition.values)
+    {
+        if (value == "__HIVE_DEFAULT_PARTITION__")
+        {
+            has_default_partition = true;
+            break;
+        }
     }
     if (has_default_partition)
         return {};
@@ -459,6 +462,8 @@ std::vector<HiveFilePtr> StorageHive::collectHiveFilesFromPartition(
         throw Exception(
             fmt::format("Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size()),
             ErrorCodes::INVALID_PARTITION_VALUE);
+    auto analysis_result = query_info.hive_select_result_ptr;
+    analysis_result->partitions_before_prune.fetch_add(1, std::memory_order_relaxed);
 
     /// Join partition values in CSV format
     WriteBufferFromOwnString wb;
@@ -491,6 +496,7 @@ std::vector<HiveFilePtr> StorageHive::collectHiveFilesFromPartition(
     const KeyCondition partition_key_condition(query_info, getContext(), partition_names, partition_minmax_idx_expr);
     if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
         return {};
+    analysis_result->partitions_after_prune.fetch_add(1, std::memory_order_relaxed);
 
     auto file_infos = listDirectory(partition.sd.location, hive_table_metadata, fs);
     std::vector<HiveFilePtr> hive_files;
@@ -499,7 +505,11 @@ std::vector<HiveFilePtr> StorageHive::collectHiveFilesFromPartition(
     {
         auto hive_file = createHiveFileIfNeeded(file_info, fields, query_info, context_);
         if (hive_file)
+        {
             hive_files.push_back(hive_file);
+            analysis_result->files_after_prune.fetch_add(1, std::memory_order_relaxed);
+        }
+        analysis_result->files_before_prune.fetch_add(1, std::memory_order_relaxed);
     }
     return hive_files;
 }
@@ -590,6 +600,30 @@ void StorageHive::getActualColumnsToRead(Block & sample_block, const Block & hea
         }
     }
 }
+
+void StorageHive::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context_,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    unsigned num_streams)
+{
+    auto pipe = read(column_names, storage_snapshot, query_info, context_, processed_stage, max_block_size, num_streams);
+    if (pipe.empty())
+    {
+        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context_);
+    }
+    else
+    {
+        auto read_step = std::make_unique<ReadFromHiveStep>(std::move(pipe), getName(), getStorageID(), query_info.hive_select_result_ptr);
+        query_plan.addStep(std::move(read_step));
+    }
+}
+
 Pipe StorageHive::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -612,6 +646,7 @@ Pipe StorageHive::read(
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
 
+    query_info.hive_select_result_ptr = std::make_shared<HiveSelectAnalysisResult>();
     ThreadPool pool{num_streams};
     if (!partitions.empty())
     {
