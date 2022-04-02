@@ -3,6 +3,7 @@ sidebar_label: Installation
 sidebar_position: 1
 keywords: [clickhouse, install, installation, docs]
 description: ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture.
+slug: /en/getting-started/install
 ---
 
 # Installation {#installation}
