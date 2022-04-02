@@ -456,7 +456,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     DDLLogEntry entry;
     entry.query = queryToString(query);
     entry.initiator = ddl_worker->getCommonHostID();
-    entry.setSettingsIfRequired(query_context);
+    entry.setSettingsIfRequired(query_context, {});
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");

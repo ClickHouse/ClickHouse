@@ -1,4 +1,6 @@
 #include <Access/UsersConfigAccessStorage.h>
+#include <Access/DefaultGrantsForNewUser.h>
+#include <Access/RBACVersion.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
@@ -207,6 +209,7 @@ namespace
         {
             user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
             user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
+            user->access.grantWithGrantOption(getDefaultGrantsForNewUser(RBACVersion::INITIAL));
             for (const String & database : *databases)
                 user->access.grantWithGrantOption(AccessFlags::allFlags(), database);
         }

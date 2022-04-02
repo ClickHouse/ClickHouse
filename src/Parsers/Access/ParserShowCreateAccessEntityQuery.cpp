@@ -77,6 +77,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
     bool current_user = false;
     String short_name;
     std::optional<std::pair<String, String>> database_and_table_name;
+    bool show_rbac_version = false;
 
     switch (type)
     {
@@ -153,6 +154,9 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
             throw Exception("Type " + toString(type) + " is not implemented in SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    if (ParserKeyword{"WITH VERSION"}.ignore(pos, expected))
+        show_rbac_version = true;
+
     auto query = std::make_shared<ASTShowCreateAccessEntityQuery>();
     node = query;
 
@@ -164,6 +168,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
     query->all = all;
     query->short_name = std::move(short_name);
     query->database_and_table_name = std::move(database_and_table_name);
+    query->show_rbac_version = show_rbac_version;
 
     return true;
 }

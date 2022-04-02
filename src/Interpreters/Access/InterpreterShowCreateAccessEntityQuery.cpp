@@ -1,4 +1,5 @@
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/Access/InterpreterShowGrantsQuery.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
@@ -9,6 +10,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -20,6 +22,7 @@
 #include <Access/RowPolicy.h>
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
+#include <Access/RBACVersion.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
@@ -37,14 +40,26 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-
 namespace
 {
-    ASTPtr getCreateQueryImpl(
+    ASTPtr getSetRBACVersionQuery()
+    {
+        auto query = std::make_shared<ASTSetQuery>();
+        query->changes.emplace_back(RBACVersion::SETTING_NAME, RBACVersion::LATEST);
+        return query;
+    }
+
+    ASTs getCreateQueriesImpl(
         const User & user,
         const AccessControl * access_control /* not used if attach_mode == true */,
-        bool attach_mode)
+        bool attach_mode,
+        bool show_rbac_version,
+        bool show_grants)
     {
+        ASTs queries;
+        if (show_rbac_version)
+            queries.emplace_back(getSetRBACVersionQuery());
+
         auto query = std::make_shared<ASTCreateUserQuery>();
         query->names = std::make_shared<ASTUserNamesWithHost>();
         query->names->push_back(user.getName());
@@ -91,12 +106,28 @@ namespace
             query->default_database = ast;
         }
 
-        return query;
+        queries.emplace_back(query);
+
+        if (show_grants)
+        {
+            ASTs grant_queries;
+            if (attach_mode)
+                grant_queries = InterpreterShowGrantsQuery::getAttachGrantQueries(user);
+            else
+                grant_queries = InterpreterShowGrantsQuery::getGrantQueries(user, *access_control);
+            queries.insert(queries.end(), grant_queries.begin(), grant_queries.end());
+        }
+
+        return queries;
     }
 
 
-    ASTPtr getCreateQueryImpl(const Role & role, const AccessControl * access_control, bool attach_mode)
+    ASTs getCreateQueriesImpl(const Role & role, const AccessControl * access_control, bool attach_mode, bool show_rbac_version, bool show_grants)
     {
+        ASTs queries;
+        if (show_rbac_version)
+            queries.emplace_back(getSetRBACVersionQuery());
+
         auto query = std::make_shared<ASTCreateRoleQuery>();
         query->names.emplace_back(role.getName());
         query->attach = attach_mode;
@@ -109,12 +140,28 @@ namespace
                 query->settings = role.settings.toASTWithNames(*access_control);
         }
 
-        return query;
+        queries.emplace_back(query);
+
+        if (show_grants)
+        {
+            ASTs grant_queries;
+            if (attach_mode)
+                grant_queries = InterpreterShowGrantsQuery::getAttachGrantQueries(role);
+            else
+                grant_queries = InterpreterShowGrantsQuery::getGrantQueries(role, *access_control);
+            queries.insert(queries.end(), grant_queries.begin(), grant_queries.end());
+        }
+
+        return queries;
     }
 
 
-    ASTPtr getCreateQueryImpl(const SettingsProfile & profile, const AccessControl * access_control, bool attach_mode)
+    ASTs getCreateQueriesImpl(const SettingsProfile & profile, const AccessControl * access_control, bool attach_mode, bool show_rbac_version)
     {
+        ASTs queries;
+        if (show_rbac_version)
+            queries.emplace_back(getSetRBACVersionQuery());
+
         auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
         query->names.emplace_back(profile.getName());
         query->attach = attach_mode;
@@ -137,15 +184,21 @@ namespace
                 query->to_roles = profile.to_roles.toASTWithNames(*access_control);
         }
 
-        return query;
+        queries.emplace_back(query);
+        return queries;
     }
 
 
-    ASTPtr getCreateQueryImpl(
+    ASTs getCreateQueriesImpl(
         const Quota & quota,
         const AccessControl * access_control /* not used if attach_mode == true */,
-        bool attach_mode)
+        bool attach_mode,
+        bool show_rbac_version)
     {
+        ASTs queries;
+        if (show_rbac_version)
+            queries.emplace_back(getSetRBACVersionQuery());
+
         auto query = std::make_shared<ASTCreateQuotaQuery>();
         query->names.emplace_back(quota.getName());
         query->attach = attach_mode;
@@ -176,15 +229,21 @@ namespace
                 query->roles = quota.to_roles.toASTWithNames(*access_control);
         }
 
-        return query;
+        queries.emplace_back(query);
+        return queries;
     }
 
 
-    ASTPtr getCreateQueryImpl(
+    ASTs getCreateQueriesImpl(
         const RowPolicy & policy,
         const AccessControl * access_control /* not used if attach_mode == true */,
-        bool attach_mode)
+        bool attach_mode,
+        bool show_rbac_version)
     {
+        ASTs queries;
+        if (show_rbac_version)
+            queries.emplace_back(getSetRBACVersionQuery());
+
         auto query = std::make_shared<ASTCreateRowPolicyQuery>();
         query->names = std::make_shared<ASTRowPolicyNames>();
         query->names->full_names.emplace_back(policy.getFullName());
@@ -212,24 +271,27 @@ namespace
                 query->roles = policy.to_roles.toASTWithNames(*access_control);
         }
 
-        return query;
+        queries.emplace_back(query);
+        return queries;
     }
 
-    ASTPtr getCreateQueryImpl(
+    ASTs getCreateQueriesImpl(
         const IAccessEntity & entity,
         const AccessControl * access_control /* not used if attach_mode == true */,
-        bool attach_mode)
+        bool attach_mode,
+        bool show_rbac_version,
+        bool show_grants)
     {
         if (const User * user = typeid_cast<const User *>(&entity))
-            return getCreateQueryImpl(*user, access_control, attach_mode);
+            return getCreateQueriesImpl(*user, access_control, attach_mode, show_rbac_version, show_grants);
         if (const Role * role = typeid_cast<const Role *>(&entity))
-            return getCreateQueryImpl(*role, access_control, attach_mode);
+            return getCreateQueriesImpl(*role, access_control, attach_mode, show_rbac_version, show_grants);
         if (const RowPolicy * policy = typeid_cast<const RowPolicy *>(&entity))
-            return getCreateQueryImpl(*policy, access_control, attach_mode);
+            return getCreateQueriesImpl(*policy, access_control, attach_mode, show_rbac_version);
         if (const Quota * quota = typeid_cast<const Quota *>(&entity))
-            return getCreateQueryImpl(*quota, access_control, attach_mode);
+            return getCreateQueriesImpl(*quota, access_control, attach_mode, show_rbac_version);
         if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
-            return getCreateQueryImpl(*profile, access_control, attach_mode);
+            return getCreateQueriesImpl(*profile, access_control, attach_mode, show_rbac_version);
         throw Exception(entity.formatTypeWithName() + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
     }
 }
@@ -350,24 +412,30 @@ ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries() const
 {
     auto entities = getEntities();
 
+    const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
+    bool show_rbac_version = show_query.show_rbac_version;
+
     ASTs list;
     const auto & access_control = getContext()->getAccessControl();
     for (const auto & entity : entities)
-        list.push_back(getCreateQuery(*entity, access_control));
+    {
+        ASTs create_queries = getCreateQueries(*entity, access_control, show_rbac_version, /* show_grants = */ false);
+        list.insert(list.end(), create_queries.begin(), create_queries.end());
+    }
 
     return list;
 }
 
 
-ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const IAccessEntity & entity, const AccessControl & access_control)
+ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries(const IAccessEntity & entity, const AccessControl & access_control, bool show_rbac_version, bool show_grants)
 {
-    return getCreateQueryImpl(entity, &access_control, false);
+    return getCreateQueriesImpl(entity, &access_control,  /* attach_mode = */ false, show_rbac_version, show_grants);
 }
 
 
-ASTPtr InterpreterShowCreateAccessEntityQuery::getAttachQuery(const IAccessEntity & entity)
+ASTs InterpreterShowCreateAccessEntityQuery::getAttachQueries(const IAccessEntity & entity)
 {
-    return getCreateQueryImpl(entity, nullptr, true);
+    return getCreateQueriesImpl(entity, nullptr, /* attach_mode = */ true, /* show_rbac_version = */ true, /* show_grants = */ true);
 }
 
 

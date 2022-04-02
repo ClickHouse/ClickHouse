@@ -1,6 +1,7 @@
 #include <Interpreters/Access/InterpreterShowAccessQuery.h>
 
 #include <Parsers/formatAST.h>
+#include <Parsers/Access/ASTShowAccessQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
@@ -9,6 +10,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/AccessControl.h>
+#include <Access/RBACVersion.h>
+#include <Parsers/ASTSetQuery.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <base/insertAtEnd.h>
@@ -16,6 +19,16 @@
 
 namespace DB
 {
+
+namespace
+{
+    ASTPtr getSetRBACVersionQuery()
+    {
+        auto query = std::make_shared<ASTSetQuery>();
+        query->changes.emplace_back(RBACVersion::SETTING_NAME, RBACVersion::LATEST);
+        return query;
+    }
+}
 
 BlockIO InterpreterShowAccessQuery::execute()
 {
@@ -28,7 +41,7 @@ BlockIO InterpreterShowAccessQuery::execute()
 QueryPipeline InterpreterShowAccessQuery::executeImpl() const
 {
     /// Build a create query.
-    ASTs queries = getCreateAndGrantQueries();
+    ASTs queries = getQueries();
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
@@ -66,22 +79,26 @@ std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
 }
 
 
-ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
+ASTs InterpreterShowAccessQuery::getQueries() const
 {
     auto entities = getEntities();
     const auto & access_control = getContext()->getAccessControl();
 
-    ASTs create_queries, grant_queries;
+    const auto & show_query = query_ptr->as<const ASTShowAccessQuery &>();
+    bool show_rbac_version = show_query.show_rbac_version;
+
+    ASTs queries;
+    if (show_rbac_version)
+        queries.emplace_back(getSetRBACVersionQuery());
+
     for (const auto & entity : entities)
     {
-        create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, access_control));
-        if (entity->isTypeOf(AccessEntityType::USER) || entity->isTypeOf(AccessEntityType::ROLE))
-            insertAtEnd(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
+        auto new_queries = InterpreterShowCreateAccessEntityQuery::getCreateQueries(
+            *entity, access_control, /* show_rbac_version = */ false, /* show_grants = */ true);
+        queries.insert(queries.end(), new_queries.begin(), new_queries.end());
     }
 
-    ASTs result = std::move(create_queries);
-    insertAtEnd(result, std::move(grant_queries));
-    return result;
+    return queries;
 }
 
 }

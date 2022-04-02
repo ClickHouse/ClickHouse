@@ -12,9 +12,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDatabaseOrNone.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <base/range.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
 
 

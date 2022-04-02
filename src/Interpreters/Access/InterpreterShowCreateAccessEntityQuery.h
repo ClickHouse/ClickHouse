@@ -26,8 +26,8 @@ public:
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }
 
-    static ASTPtr getCreateQuery(const IAccessEntity & entity, const AccessControl & access_control);
-    static ASTPtr getAttachQuery(const IAccessEntity & entity);
+    static ASTs getCreateQueries(const IAccessEntity & entity, const AccessControl & access_control, bool show_rbac_version, bool show_grants);
+    static ASTs getAttachQueries(const IAccessEntity & entity);
 
 private:
     QueryPipeline executeImpl();
@@ -37,6 +37,5 @@ private:
 
     ASTPtr query_ptr;
 };
-
 
 }

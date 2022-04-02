@@ -72,7 +72,7 @@ struct DDLLogEntry
     String initiator; // optional
     std::optional<SettingsChanges> settings;
 
-    void setSettingsIfRequired(ContextPtr context);
+    void setSettingsIfRequired(ContextPtr context, const std::vector<std::string_view> & setting_names);
     String toString() const;
     void parse(const String & data);
     void assertVersion() const;

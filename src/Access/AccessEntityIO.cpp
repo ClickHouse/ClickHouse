@@ -2,6 +2,7 @@
 #include <Access/IAccessEntity.h>
 #include <Access/IAccessStorage.h>
 #include <Access/Quota.h>
+#include <Access/RBACVersion.h>
 #include <Access/Role.h>
 #include <Access/RowPolicy.h>
 #include <Access/SettingsProfile.h>
@@ -28,6 +29,8 @@
 #include <Parsers/Access/ParserCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserGrantQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <boost/range/algorithm/copy.hpp>
@@ -56,6 +59,7 @@ namespace
             ParserCreateQuotaQuery create_quota_p;
             ParserCreateSettingsProfileQuery create_profile_p;
             ParserGrantQuery grant_p;
+            ParserSetQuery set_p;
 
             create_user_p.useAttachMode();
             create_role_p.useAttachMode();
@@ -66,7 +70,8 @@ namespace
 
             return create_user_p.parse(pos, node, expected) || create_role_p.parse(pos, node, expected)
                 || create_policy_p.parse(pos, node, expected) || create_quota_p.parse(pos, node, expected)
-                || create_profile_p.parse(pos, node, expected) || grant_p.parse(pos, node, expected);
+                || create_profile_p.parse(pos, node, expected) || grant_p.parse(pos, node, expected)
+                || set_p.parse(pos, node, expected);
         }
     };
 
@@ -76,10 +81,7 @@ namespace
 String serializeAccessEntity(const IAccessEntity & entity)
 {
     /// Build list of ATTACH queries.
-    ASTs queries;
-    queries.push_back(InterpreterShowCreateAccessEntityQuery::getAttachQuery(entity));
-    if ((entity.getType() == AccessEntityType::USER) || (entity.getType() == AccessEntityType::ROLE))
-        boost::range::push_back(queries, InterpreterShowGrantsQuery::getAttachGrantQueries(entity));
+    auto queries = InterpreterShowCreateAccessEntityQuery::getAttachQueries(entity);
 
     /// Serialize the list of ATTACH queries to a string.
     WriteBufferFromOwnString buf;
@@ -105,22 +107,36 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
             ++pos;
     }
 
+    UInt64 rbac_version = RBACVersion::INITIAL;
+
+    /// Number of queries interpreted.
+    size_t query_index = 0;
+
     /// Interpret the AST to build an access entity.
     std::shared_ptr<User> user;
     std::shared_ptr<Role> role;
     std::shared_ptr<RowPolicy> policy;
     std::shared_ptr<Quota> quota;
     std::shared_ptr<SettingsProfile> profile;
+    std::shared_ptr<ASTSetQuery> query_settings;
     AccessEntityPtr res;
 
     for (const auto & query : queries)
     {
-        if (auto * create_user_query = query->as<ASTCreateUserQuery>())
+        if (auto * set_query = query->as<ASTSetQuery>())
+        {
+            if (query_index != 0)
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "SET {} should be the first query in the file", RBACVersion::SETTING_NAME);
+            if ((set_query->changes.size() != 1) || (set_query->changes[0].name != RBACVersion::SETTING_NAME))
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "SET query in this file is only allowed to set {}", RBACVersion::SETTING_NAME);
+            rbac_version = set_query->changes[0].value.safeGet<UInt64>();
+        }
+        else if (auto * create_user_query = query->as<ASTCreateUserQuery>())
         {
             if (res)
                 throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = user = std::make_unique<User>();
-            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true);
+            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, rbac_version, /* allow_no_password = */ true, /* allow_plaintext_password = */ true);
         }
         else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
         {
@@ -161,6 +177,8 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
         }
         else
             throw Exception("No interpreter found for query " + query->getID(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+
+        ++query_index;
     }
 
     if (!res)

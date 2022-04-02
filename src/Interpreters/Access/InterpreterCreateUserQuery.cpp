@@ -6,6 +6,8 @@
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
+#include <Access/DefaultGrantsForNewUser.h>
+#include <Access/RBACVersion.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -28,6 +30,7 @@ namespace
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<SettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
+        UInt64 rbac_version,
         bool allow_no_password,
         bool allow_plaintext_password)
     {
@@ -92,15 +95,20 @@ namespace
             user.grantees = *override_grantees;
         else if (query.grantees)
             user.grantees = *query.grantees;
+
+        user.access.grant(getDefaultGrantsForNewUser(rbac_version));
     }
 }
 
 BlockIO InterpreterCreateUserQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
+    const auto & query = query_ptr->as<ASTCreateUserQuery &>();
     auto & access_control = getContext()->getAccessControl();
+
     auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
+
+    UInt64 rbac_version = getContext()->getSettingsRef().rbac_version;
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
 
@@ -114,8 +122,10 @@ BlockIO InterpreterCreateUserQuery::execute()
                 access->checkAdminOption(role);
         }
     }
+
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(query_ptr, getContext(), {}, {RBACVersion::SETTING_NAME});
+
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)
         settings_from_query = SettingsProfileElements{*query.settings, access_control};
@@ -129,7 +139,16 @@ BlockIO InterpreterCreateUserQuery::execute()
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
-            updateUserFromQueryImpl(*updated_user, query, {}, default_roles_from_query, settings_from_query, grantees_from_query, no_password_allowed, plaintext_password_allowed);
+            updateUserFromQueryImpl(
+                *updated_user,
+                query,
+                {},
+                default_roles_from_query,
+                settings_from_query,
+                grantees_from_query,
+                rbac_version,
+                no_password_allowed,
+                plaintext_password_allowed);
             return updated_user;
         };
 
@@ -148,7 +167,16 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
-            updateUserFromQueryImpl(*new_user, query, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{}, no_password_allowed, plaintext_password_allowed);
+            updateUserFromQueryImpl(
+                *new_user,
+                query,
+                name,
+                default_roles_from_query,
+                settings_from_query,
+                RolesOrUsersSet::AllTag{},
+                rbac_version,
+                no_password_allowed,
+                plaintext_password_allowed);
             new_users.emplace_back(std::move(new_user));
         }
 
@@ -176,9 +204,10 @@ BlockIO InterpreterCreateUserQuery::execute()
 }
 
 
-void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query, bool allow_no_password, bool allow_plaintext_password)
+void InterpreterCreateUserQuery::updateUserFromQuery(
+    User & user, const ASTCreateUserQuery & query, UInt64 rbac_version, bool allow_no_password, bool allow_plaintext_password)
 {
-    updateUserFromQueryImpl(user, query, {}, {}, {}, {}, allow_no_password, allow_plaintext_password);
+    updateUserFromQueryImpl(user, query, {}, {}, {}, {}, rbac_version, allow_no_password, allow_plaintext_password);
 }
 
 }

@@ -10,16 +10,16 @@ class ASTRowPolicyNames;
 
 using Strings = std::vector<String>;
 
-/** SHOW CREATE USER [name | CURRENT_USER]
-  * SHOW CREATE USERS [name [, name2 ...]
-  * SHOW CREATE ROLE name
-  * SHOW CREATE ROLES [name [, name2 ...]]
-  * SHOW CREATE [SETTINGS] PROFILE name
-  * SHOW CREATE [SETTINGS] PROFILES [name [, name2 ...]]
-  * SHOW CREATE [ROW] POLICY name ON [database.]table
-  * SHOW CREATE [ROW] POLICIES [name ON [database.]table [, name2 ON database2.table2 ...] | name | ON database.table]
-  * SHOW CREATE QUOTA [name]
-  * SHOW CREATE QUOTAS [name [, name2 ...]]
+/** SHOW CREATE USER [name | CURRENT_USER] [WITH VERSION]
+  * SHOW CREATE USERS [name [, name2 ...] [WITH VERSION]
+  * SHOW CREATE ROLE name [WITH VERSION]
+  * SHOW CREATE ROLES [name [, name2 ...]] [WITH VERSION]
+  * SHOW CREATE [SETTINGS] PROFILE name [WITH VERSION]
+  * SHOW CREATE [SETTINGS] PROFILES [name [, name2 ...]] [WITH VERSION]
+  * SHOW CREATE [ROW] POLICY name ON [database.]table [WITH VERSION]
+  * SHOW CREATE [ROW] POLICIES [name ON [database.]table [, name2 ON database2.table2 ...] | name | ON database.table] [WITH VERSION]
+  * SHOW CREATE QUOTA [name] [WITH VERSION]
+  * SHOW CREATE QUOTAS [name [, name2 ...]] [WITH VERSION]
   */
 class ASTShowCreateAccessEntityQuery : public ASTQueryWithOutput
 {
@@ -34,6 +34,8 @@ public:
 
     String short_name;
     std::optional<std::pair<String, String>> database_and_table_name;
+
+    bool show_rbac_version = false;
 
     String getID(char) const override;
     ASTPtr clone() const override;

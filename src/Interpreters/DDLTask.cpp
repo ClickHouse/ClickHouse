@@ -55,11 +55,21 @@ void DDLLogEntry::assertVersion() const
                                                             "Maximum supported version is {}", version, max_version);
 }
 
-void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
+void DDLLogEntry::setSettingsIfRequired(ContextPtr context, const std::vector<std::string_view> & setting_names)
 {
-    version = context->getSettingsRef().distributed_ddl_entry_format_version;
+    const auto & context_settings = context->getSettingsRef();
+    version = context_settings.distributed_ddl_entry_format_version;
     if (version == 2)
-        settings.emplace(context->getSettingsRef().changes());
+    {
+        settings.emplace(context_settings.changes());
+    }
+    else if (!setting_names.empty())
+    {
+        version = 2;
+        settings.emplace();
+        for (const auto & setting_name : setting_names)
+            settings->emplace_back(setting_name, context_settings.get(setting_name));
+    }
 }
 
 String DDLLogEntry::toString() const

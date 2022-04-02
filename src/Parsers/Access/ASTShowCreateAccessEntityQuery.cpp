@@ -66,6 +66,9 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & sett
         settings.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
         settings.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
     }
+
+    if (show_rbac_version)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH VERSION" << (settings.hilite ? hilite_none : "");
 }
 
 

@@ -24,7 +24,7 @@ public:
 
 private:
     QueryPipeline executeImpl() const;
-    ASTs getCreateAndGrantQueries() const;
+    ASTs getQueries() const;
     std::vector<AccessEntityPtr> getEntities() const;
 
     ASTPtr query_ptr;

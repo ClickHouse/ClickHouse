@@ -56,12 +56,12 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context)
     return executeDDLQueryOnCluster(query_ptr_, context, {});
 }
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const AccessRightsElements & query_requires_access)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const AccessRightsElements & query_requires_access, const std::vector<std::string_view> & setting_names_to_send)
 {
-    return executeDDLQueryOnCluster(query_ptr, context, AccessRightsElements{query_requires_access});
+    return executeDDLQueryOnCluster(query_ptr, context, AccessRightsElements{query_requires_access}, setting_names_to_send);
 }
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, AccessRightsElements && query_requires_access)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, AccessRightsElements && query_requires_access, const std::vector<std::string_view> & setting_names_to_send)
 {
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
@@ -164,7 +164,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     entry.hosts = std::move(hosts);
     entry.query = queryToString(query_ptr);
     entry.initiator = ddl_worker.getCommonHostID();
-    entry.setSettingsIfRequired(context);
+    entry.setSettingsIfRequired(context, setting_names_to_send);
     String node_path = ddl_worker.enqueueQuery(entry);
 
     return getDistributedDDLStatus(node_path, entry, context);

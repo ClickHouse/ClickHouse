@@ -8,6 +8,7 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Access/ImplicitGrants.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -40,92 +41,6 @@ namespace
         res.makeUnion(roles_info.access);
         return res;
     }
-
-
-    AccessRights addImplicitAccessRights(const AccessRights & access)
-    {
-        auto modifier = [&](const AccessFlags & flags, const AccessFlags & min_flags_with_children, const AccessFlags & max_flags_with_children, const std::string_view & database, const std::string_view & table, const std::string_view & column) -> AccessFlags
-        {
-            size_t level = !database.empty() + !table.empty() + !column.empty();
-            AccessFlags res = flags;
-
-            /// CREATE_TABLE => CREATE_VIEW, DROP_TABLE => DROP_VIEW, ALTER_TABLE => ALTER_VIEW
-            static const AccessFlags create_table = AccessType::CREATE_TABLE;
-            static const AccessFlags create_view = AccessType::CREATE_VIEW;
-            static const AccessFlags drop_table = AccessType::DROP_TABLE;
-            static const AccessFlags drop_view = AccessType::DROP_VIEW;
-            static const AccessFlags alter_table = AccessType::ALTER_TABLE;
-            static const AccessFlags alter_view = AccessType::ALTER_VIEW;
-
-            if (res & create_table)
-                res |= create_view;
-
-            if (res & drop_table)
-                res |= drop_view;
-
-            if (res & alter_table)
-                res |= alter_view;
-
-            /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
-            static const AccessFlags create_temporary_table = AccessType::CREATE_TEMPORARY_TABLE;
-            if ((level == 0) && (max_flags_with_children & create_table))
-                res |= create_temporary_table;
-
-            /// ALTER_TTL => ALTER_MATERIALIZE_TTL
-            static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
-            static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;
-            if (res & alter_ttl)
-                res |= alter_materialize_ttl;
-
-            /// RELOAD_DICTIONARY (global) => RELOAD_EMBEDDED_DICTIONARIES (global)
-            static const AccessFlags reload_dictionary = AccessType::SYSTEM_RELOAD_DICTIONARY;
-            static const AccessFlags reload_embedded_dictionaries = AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES;
-            if ((level == 0) && (min_flags_with_children & reload_dictionary))
-                res |= reload_embedded_dictionaries;
-
-            /// any column flag => SHOW_COLUMNS => SHOW_TABLES => SHOW_DATABASES
-            ///                  any table flag => SHOW_TABLES => SHOW_DATABASES
-            ///       any dictionary flag => SHOW_DICTIONARIES => SHOW_DATABASES
-            ///                              any database flag => SHOW_DATABASES
-            static const AccessFlags show_columns = AccessType::SHOW_COLUMNS;
-            static const AccessFlags show_tables = AccessType::SHOW_TABLES;
-            static const AccessFlags show_dictionaries = AccessType::SHOW_DICTIONARIES;
-            static const AccessFlags show_tables_or_dictionaries = show_tables | show_dictionaries;
-            static const AccessFlags show_databases = AccessType::SHOW_DATABASES;
-
-            if (res & AccessFlags::allColumnFlags())
-                res |= show_columns;
-
-            if ((res & AccessFlags::allTableFlags())
-                || (level <= 2 && (res & show_columns))
-                || (level == 2 && (max_flags_with_children & show_columns)))
-            {
-                res |= show_tables;
-            }
-
-            if (res & AccessFlags::allDictionaryFlags())
-                res |= show_dictionaries;
-
-            if ((res & AccessFlags::allDatabaseFlags())
-                || (level <= 1 && (res & show_tables_or_dictionaries))
-                || (level == 1 && (max_flags_with_children & show_tables_or_dictionaries)))
-            {
-                res |= show_databases;
-            }
-
-            return res;
-        };
-
-        AccessRights res = access;
-        res.modifyFlags(modifier);
-
-        /// Anyone has access to the "system" and "information_schema" database.
-        res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
-        return res;
-    }
-
 
     std::array<UUID, 1> to_array(const UUID & id)
     {
@@ -228,7 +143,7 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 void ContextAccess::calculateAccessRights() const
 {
     access = std::make_shared<AccessRights>(mixAccessRightsFromUserAndRoles(*user, *roles_info));
-    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access));
+    access_with_implicit = std::make_shared<AccessRights>(addImplicitGrants(*access));
 
     if (trace_log)
     {
@@ -309,7 +224,7 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
         auto full_access = std::shared_ptr<ContextAccess>(new ContextAccess);
         full_access->is_full_access = true;
         full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
-        full_access->access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*full_access->access));
+        full_access->access_with_implicit = std::make_shared<AccessRights>(addImplicitGrants(*full_access->access));
         return full_access;
     }();
     return res;

@@ -6,12 +6,18 @@
 namespace DB
 {
 
-struct ASTShowAccessQueryNames
+/** SHOW ACCESS [WITH VERSION]
+  */
+class ASTShowAccessQuery : public ASTQueryWithOutput
 {
-    static constexpr auto ID = "ShowAccessQuery";
-    static constexpr auto Query = "SHOW ACCESS";
-};
+public:
+    bool show_rbac_version = false;
 
-using ASTShowAccessQuery = ASTQueryWithOutputImpl<ASTShowAccessQueryNames>;
+    String getID(char) const override;
+    ASTPtr clone() const override;
+
+protected:
+    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+};
 
 }
