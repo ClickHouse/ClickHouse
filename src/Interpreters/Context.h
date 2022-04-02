@@ -15,6 +15,7 @@
 #include <Common/isLocalAddress.h>
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Storages/ColumnsDescription.h>
 
 
 #include "config_core.h"
