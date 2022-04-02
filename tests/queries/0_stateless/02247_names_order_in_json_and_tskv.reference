@@ -12,6 +12,7 @@ c	Nullable(String)
 e	Nullable(String)					
 1	\N	\N	\N
 \N	2	3	\N
+\N	\N	\N	\N
 \N	\N	\N	3
 3	3	1	\N
 a	Nullable(Float64)					
@@ -28,7 +29,6 @@ c	Nullable(Float64)
 e	Nullable(Float64)					
 1	\N	\N	\N
 \N	2	3	\N
-\N	\N	\N	\N
 \N	\N	\N	\N
 \N	\N	\N	3
 3	3	1	\N
