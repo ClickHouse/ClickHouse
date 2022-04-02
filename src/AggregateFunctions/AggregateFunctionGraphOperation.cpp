@@ -64,7 +64,8 @@ void DirectionalGraphGenericData::deserialize(ReadBuffer & buf, Arena * arena)
 
 void DirectionalGraphGenericData::add(const IColumn ** columns, size_t row_num, Arena * arena)
 {
-    if (unlikely(edges_count == AGGREGATE_FUNCTION_GRAPH_MAX_SIZE)) {
+    if (unlikely(edges_count == AGGREGATE_FUNCTION_GRAPH_MAX_SIZE))
+    {
         throw Exception("Too large graph size", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     }
     const char * begin = nullptr;
@@ -75,24 +76,12 @@ void DirectionalGraphGenericData::add(const IColumn ** columns, size_t row_num, 
     ++edges_count;
 }
 
-bool isTree(StringRef root, const DirectionalGraphGenericData & data, HashSet<StringRef> & visited)
-{
-    HashSet<StringRef>::LookupResult it;
-    bool inserted;
-    visited.emplace(root, it, inserted);
-    if (!inserted)
-        return false;
-    for (const auto & to : data.graph.at(root))
-        if (!isTree(to, data, visited))
-            return false;
-    return true;
-}
-
 bool DirectionalGraphGenericData::isTree() const
 {
     if (graph.empty())
         return true;
     HashSet<StringRef> leafs;
+    leafs.reserve(graph.size());
     for (const auto & [from, to] : graph)
         for (StringRef leaf : to)
             leafs.insert(leaf);
@@ -100,18 +89,39 @@ bool DirectionalGraphGenericData::isTree() const
         return false;
     StringRef root;
     for (const auto & [from, to] : graph)
-        if (leafs.find(from) == leafs.end())
+    {
+        if (!leafs.has(from))
         {
             root = from;
             break;
         }
+    }
     HashSet<StringRef> visited;
-    return ::DB::isTree(root, *this, visited);
+    visited.reserve(graph.size());
+    visited.insert(root);
+    std::queue<std::pair<StringRef, StringRef>> buffer{{{root, root}}};
+    while (!buffer.empty())
+    {
+        auto [vertex, parent] = buffer.front();
+        buffer.pop();
+        for (const auto & to : graph.at(vertex))
+        {
+            HashSet<StringRef>::LookupResult it;
+            bool inserted;
+            visited.emplace(to, it, inserted);
+            if (!inserted)
+                return false;
+            buffer.emplace(to, vertex);
+        }
+    }
+
+    return visited.size() == graph.size();
 }
 
 void BidirectionalGraphGenericData::add(const IColumn ** columns, size_t row_num, Arena * arena)
 {
-    if (unlikely(edges_count == AGGREGATE_FUNCTION_GRAPH_MAX_SIZE)) {
+    if (unlikely(edges_count == AGGREGATE_FUNCTION_GRAPH_MAX_SIZE))
+    {
         throw Exception("Too large graph size", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     }
     const char * begin = nullptr;
@@ -122,49 +132,58 @@ void BidirectionalGraphGenericData::add(const IColumn ** columns, size_t row_num
     ++edges_count;
 }
 
-bool isTree(StringRef root, StringRef parent, const BidirectionalGraphGenericData & data, HashSet<StringRef> & visited)
-{
-    HashSet<StringRef>::LookupResult it;
-    bool inserted;
-    visited.emplace(root, it, inserted);
-    if (!inserted)
-        return false;
-    for (const auto & to : data.graph.at(root))
-        if (to != parent && !isTree(to, root, data, visited))
-            return false;
-    return true;
-}
-
 bool BidirectionalGraphGenericData::isTree() const
 {
     if (graph.empty())
         return true;
     HashSet<StringRef> visited;
-    return ::DB::isTree(graph.begin()->getKey(), graph.begin()->getKey(), *this, visited) && visited.size() == graph.size();
-}
+    visited.reserve(graph.size());
+    visited.insert(graph.begin()->getKey());
+    std::queue<std::pair<StringRef, StringRef>> buffer{{{graph.begin()->getKey(), graph.begin()->getKey()}}};
+    while (!buffer.empty())
+    {
+        auto [vertex, parent] = buffer.front();
+        buffer.pop();
+        for (const auto & to : graph.at(vertex))
+        {
+            if (to == parent)
+                continue;
+            HashSet<StringRef>::LookupResult it;
+            bool inserted;
+            visited.emplace(to, it, inserted);
+            if (!inserted)
+                return false;
+            buffer.emplace(to, vertex);
+        }
+    }
 
-void visitComponent(StringRef root, StringRef parent, const BidirectionalGraphGenericData & data, HashSet<StringRef> & visited)
-{
-    HashSet<StringRef>::LookupResult it;
-    bool inserted;
-    visited.emplace(root, it, inserted);
-    if (!inserted)
-        return;
-    for (const auto & to : data.graph.at(root))
-        if (to != parent)
-            visitComponent(to, root, data, visited);
+    return true;
 }
 
 size_t BidirectionalGraphGenericData::componentsCount() const
 {
     size_t components_count = 0;
     HashSet<StringRef> visited;
-    for (const auto & [from, to] : graph)
-        if (visited.find(from) == visited.end())
+    for (const auto & [from, tos] : graph)
+    {
+        HashSet<StringRef>::LookupResult it;
+        bool inserted;
+        visited.emplace(from, it, inserted);
+        if (inserted)
         {
-            visitComponent(from, from, *this, visited);
             ++components_count;
+            std::deque<StringRef> buffer(tos.begin(), tos.end());
+            while (!buffer.empty())
+            {
+                StringRef vertex = buffer.front();
+                buffer.pop_front();
+                visited.emplace(vertex, it, inserted);
+                if (inserted)
+                    for (const auto & to : graph.at(vertex))
+                        buffer.push_back(to);
+            }
         }
+    }
     return components_count;
 }
 
