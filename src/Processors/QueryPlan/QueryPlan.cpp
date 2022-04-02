@@ -445,7 +445,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
 }
 
-Block QueryPlan::explainEstimate(MutableColumns & columns)
+void QueryPlan::explainEstimate(MutableColumns & columns)
 {
     checkInitialized();
 

@@ -101,12 +101,13 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
         static const NamesAndTypesList columns = {
             {"database", std::make_shared<DataTypeString>()},
             {"table", std::make_shared<DataTypeString>()},
-            {"estimate", std::make_shared<DataTypeObject>("json")},
+            {"estimate", std::make_shared<DataTypeObject>("json", false)},
         };
 
         for (const auto & column : columns)
             res.insert({column.type->createColumn(), column.type, column.name});
     }
+    return res;
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
