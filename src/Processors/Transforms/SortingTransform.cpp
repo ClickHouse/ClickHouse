@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeSorter::MergeSorter(Block header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
+MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
     : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     Chunks nonempty_chunks;
@@ -138,13 +138,6 @@ SortingTransform::SortingTransform(
     , limit(limit_)
 {
     const auto & sample = inputs.front().getHeader();
-
-    /// Replace column names to column position in sort_description.
-    for (auto & column_description : description)
-    {
-        if (column_description.column_name.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name empty.");
-    }
 
     /// Remove constants from header and map old indexes to new.
     size_t num_columns = sample.columns();

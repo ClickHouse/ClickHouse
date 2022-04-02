@@ -21,12 +21,12 @@ static bool isPrefix(const SortDescription & pref_descr, const SortDescription &
 }
 
 FinishSortingTransform::FinishSortingTransform(
-    Block header_,
+    const Block & header,
     const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
     size_t max_merged_block_size_,
     UInt64 limit_)
-    : SortingTransform(header_, description_to_sort_, max_merged_block_size_, limit_)
+    : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_)
 {
     /// Check for sanity non-modified descriptions
     if (!isPrefix(description_sorted_, description_to_sort_))
@@ -37,7 +37,7 @@ FinishSortingTransform::FinishSortingTransform(
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
     size_t prefix_size = description_sorted_.size();
     for (size_t i = 0; i < prefix_size; ++i)
-        description_with_positions.emplace_back(description[i], header_.getPositionByName(description[i].column_name));
+        description_with_positions.emplace_back(description[i], header_without_constants.getPositionByName(description[i].column_name));
 }
 
 void FinishSortingTransform::consume(Chunk chunk)

@@ -34,7 +34,7 @@ private:
     ColumnRawPtrs getKeyColumns(const Chunk & chunk) const;
     /// When clearing_columns changed, we can clean HashSet to memory optimization
     /// clearing_columns is a left-prefix of SortDescription exists in key_columns
-    ColumnRawPtrs getClearingColumns(const Chunk & chunk, const ColumnRawPtrs & key_columns) const;
+    ColumnRawPtrs getClearingColumns(const ColumnRawPtrs & key_columns) const;
     static bool rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m);
 
     /// return true if has new data

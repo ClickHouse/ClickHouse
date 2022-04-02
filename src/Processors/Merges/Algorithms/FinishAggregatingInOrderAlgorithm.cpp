@@ -69,7 +69,6 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
     states[source_num] = State{input.chunk, description, arenas_info->allocated_bytes};
 }
 
-// clang-format off
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 {
     if (!inputs_to_update.empty())

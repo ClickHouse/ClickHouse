@@ -88,7 +88,7 @@ private:
 };
 
 MergeSortingTransform::MergeSortingTransform(
-    Block header_,
+    const Block & header,
     const SortDescription & description_,
     size_t max_merged_block_size_,
     UInt64 limit_,
@@ -97,7 +97,7 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_before_external_sort_,
     VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
-    : SortingTransform(header_, description_, max_merged_block_size_, limit_)
+    : SortingTransform(header, description_, max_merged_block_size_, limit_)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)

@@ -103,11 +103,11 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     {
         /// Find the first position of new (not current) key in current chunk
         auto indices = collections::range(key_begin, rows);
-        auto it = std::upper_bound(
-            indices.begin(),
-            indices.end(),
-            cur_block_size - 1,
-            [&](size_t lhs_row, size_t rhs_row) { return less(res_key_columns, key_columns, lhs_row, rhs_row, group_by_description); });
+        auto it = std::upper_bound(indices.begin(), indices.end(), cur_block_size - 1,
+            [&](size_t lhs_row, size_t rhs_row)
+            {
+                return less(res_key_columns, key_columns, lhs_row, rhs_row, group_by_description);
+            });
 
         key_end = (it == indices.end() ? rows : *it);
 
