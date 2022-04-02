@@ -22,10 +22,11 @@ def test_hints_for_database_name(started_cluster):
         INSERT INTO default.table_x SELECT 1;
         """)
 
-    with pytest.raises(QueryRuntimeException, match=r'DB::Exception: Database defaul doesn\'t exist. Maybe you meant: \[\'default\'\]'):
-        node.query("""SELECT * FROM defaul.table_y LIMIT 1;""")
-    assert int(node.query('SELECT count() FROM default.table_x')) == 1
-    node.query("""DROP TABLE default.table_x;""")
+    #with pytest.raises(QueryRuntimeException, match="DB::Exception: Database defaul doesn't exist. Maybe you meant: ['default']"):
+    with pytest.raises(QueryRuntimeException, match="DB::Exception: Database defaul doesn't exist. Maybe you meant: \\['default'\\]"):
+        node.query("SELECT * FROM defaul.table_y LIMIT 1;")
+    assert int(node.query("SELECT count() FROM default.table_x;")) == 1
+    node.query("DROP TABLE default.table_x;")
 
 
 def test_hints_for_table_name(started_cluster):
@@ -34,11 +35,11 @@ def test_hints_for_table_name(started_cluster):
         CREATE TABLE default.table_z (i Int64) ENGINE=Memory;
         INSERT INTO default.table_x SELECT 1;
         """)
-    with pytest.raises(QueryRuntimeException, match=r'DB::Exception: Table default.table_y doesn\'t exist. Maybe you meant: \[\'default.table_x\'\]'):
+    with pytest.raises(QueryRuntimeException, match="DB::Exception: Table default.table_y doesn't exist. Maybe you meant: \\['default.table_x'\\]"):
         node.query("""
             SELECT * FROM default.table_y LIMIT 1;
             """)
-    assert int(node.query('SELECT count() FROM default.table_x')) == 1
+    assert int(node.query("SELECT count() FROM default.table_x;")) == 1
     node.query("""
             DROP TABLE default.table_x;
             DROP TABLE default.table_z;
