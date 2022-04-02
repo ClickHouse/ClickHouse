@@ -36,7 +36,8 @@ FinishSortingTransform::FinishSortingTransform(
     /// The target description is modified in SortingTransform constructor.
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
     size_t prefix_size = description_sorted_.size();
-    description_sorted.assign(description.begin(), description.begin() + prefix_size);
+    for (size_t i = 0; i < prefix_size; ++i)
+        description_with_positions.emplace_back(description[i], header_.getPositionByName(description[i].column_name));
 }
 
 void FinishSortingTransform::consume(Chunk chunk)
@@ -64,13 +65,7 @@ void FinishSortingTransform::consume(Chunk chunk)
         while (high - low > 1)
         {
             ssize_t mid = (low + high) / 2;
-            if (!less(
-                    header_without_constants,
-                    last_chunk.getColumns(),
-                    chunk.getColumns(),
-                    last_chunk.getNumRows() - 1,
-                    mid,
-                    description_sorted))
+            if (!less(last_chunk.getColumns(), chunk.getColumns(), last_chunk.getNumRows() - 1, mid, description_with_positions))
                 low = mid;
             else
                 high = mid;

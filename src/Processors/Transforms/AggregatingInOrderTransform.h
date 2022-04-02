@@ -51,7 +51,7 @@ private:
     MutableColumns res_aggregate_columns;
 
     AggregatingTransformParamsPtr params;
-    SortDescription group_by_description;
+    SortDescriptionsWithPositions group_by_description;
 
     Aggregator::AggregateColumns aggregate_columns;
 

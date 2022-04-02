@@ -14,8 +14,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FinishAggregatingInOrderAlgorithm::State::State(Block header_, const Chunk & chunk, const SortDescription & desc, Int64 total_bytes_)
-    : header(std::move(header_)), all_columns(chunk.getColumns()), num_rows(chunk.getNumRows()), total_bytes(total_bytes_)
+FinishAggregatingInOrderAlgorithm::State::State(const Chunk & chunk, const SortDescriptionsWithPositions & desc, Int64 total_bytes_)
+    : all_columns(chunk.getColumns()), num_rows(chunk.getNumRows()), total_bytes(total_bytes_)
 {
     if (!chunk)
         return;
@@ -23,7 +23,7 @@ FinishAggregatingInOrderAlgorithm::State::State(Block header_, const Chunk & chu
     sorting_columns.reserve(desc.size());
     for (const auto & column_desc : desc)
     {
-        const auto idx = header.getPositionByName(column_desc.column_name);
+        const auto idx = column_desc.column_number;
         sorting_columns.emplace_back(all_columns[idx].get());
     }
 }
@@ -38,16 +38,11 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     : header(header_)
     , num_inputs(num_inputs_)
     , params(params_)
-    , description(std::move(description_))
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
 {
-    /// Replace column names in description to positions.
-    for (auto & column_description : description)
-    {
-        if (column_description.column_name.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name empty.");
-    }
+    for (const auto & column_description : description_)
+        description.emplace_back(column_description, header_.getPositionByName(column_description.column_name));
 }
 
 void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
@@ -71,7 +66,7 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
     if (!arenas_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have ChunkInfoWithAllocatedBytes in FinishAggregatingInOrderAlgorithm");
 
-    states[source_num] = State{header, input.chunk, description, arenas_info->allocated_bytes};
+    states[source_num] = State{input.chunk, description, arenas_info->allocated_bytes};
 }
 
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
@@ -92,7 +87,6 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 
         if (!best_input
             || less(
-                header,
                 states[i].sorting_columns,
                 states[*best_input].sorting_columns,
                 states[i].num_rows - 1,
@@ -122,7 +116,7 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
             indices.end(),
             best_state.num_rows - 1,
             [&](size_t lhs_pos, size_t rhs_pos)
-            { return less(header, best_state.sorting_columns, states[i].sorting_columns, lhs_pos, rhs_pos, description); });
+            { return less(best_state.sorting_columns, states[i].sorting_columns, lhs_pos, rhs_pos, description); });
 
         states[i].to_row = (it == indices.end() ? states[i].num_rows : *it);
     }

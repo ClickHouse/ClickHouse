@@ -77,8 +77,32 @@ struct SortColumnDescription
     void explain(JSONBuilder::JSONMap & map, const Block & header) const;
 };
 
+struct SortColumnDescriptionWithColumnIndex : SortColumnDescription
+{
+    size_t column_number;
+
+    SortColumnDescriptionWithColumnIndex(SortColumnDescription descr, size_t column_number_)
+        : SortColumnDescription(std::move(descr)), column_number(column_number_)
+    {
+    }
+
+    SortColumnDescriptionWithColumnIndex(
+        const std::string & column_name_,
+        size_t column_number_,
+        int direction_ = 1,
+        int nulls_direction_ = 1,
+        const std::shared_ptr<Collator> & collator_ = nullptr,
+        bool with_fill_ = false,
+        const FillColumnDescription & fill_description_ = {})
+        : SortColumnDescription(column_name_, direction_, nulls_direction_, collator_, with_fill_, fill_description_)
+        , column_number(column_number_)
+    {
+    }
+};
+
 /// Description of the sorting rule for several columns.
 using SortDescription = std::vector<SortColumnDescription>;
+using SortDescriptionsWithPositions = std::vector<SortColumnDescriptionWithColumnIndex>;
 
 /// Outputs user-readable description into `out`.
 void dumpSortDescription(const SortDescription & description, const Block & header, WriteBuffer & out);
