@@ -239,7 +239,7 @@ Codecs:
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
-### Specialized Codecs {#create-query-specialized-codecs}
+### Specialized Codecs {#specialized-codecs}
 
 These codecs are designed to make compression more effective by using specific features of data. Some of these codecs do not compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
 

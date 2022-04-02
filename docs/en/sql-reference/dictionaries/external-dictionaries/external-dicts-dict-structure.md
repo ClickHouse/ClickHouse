@@ -60,7 +60,7 @@ An xml structure can contain either `<id>` or `<key>`. DDL-query must contain si
 You must not describe key as an attribute.
 :::
 
-### Numeric Key {#ext_dict-numeric-key}
+### Numeric Key {#numeric-key}
 
 Type: `UInt64`.
 
