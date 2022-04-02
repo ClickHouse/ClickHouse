@@ -69,6 +69,7 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
     states[source_num] = State{input.chunk, description, arenas_info->allocated_bytes};
 }
 
+// clang-format off
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 {
     if (!inputs_to_update.empty())
@@ -86,12 +87,8 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
             continue;
 
         if (!best_input
-            || less(
-                states[i].sorting_columns,
-                states[*best_input].sorting_columns,
-                states[i].num_rows - 1,
-                states[*best_input].num_rows - 1,
-                description))
+            || less(states[i].sorting_columns, states[*best_input].sorting_columns,
+                    states[i].num_rows - 1, states[*best_input].num_rows - 1, description))
         {
             best_input = i;
         }
@@ -111,12 +108,11 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
             continue;
 
         auto indices = collections::range(states[i].current_row, states[i].num_rows);
-        auto it = std::upper_bound(
-            indices.begin(),
-            indices.end(),
-            best_state.num_rows - 1,
+        auto it = std::upper_bound(indices.begin(), indices.end(), best_state.num_rows - 1,
             [&](size_t lhs_pos, size_t rhs_pos)
-            { return less(best_state.sorting_columns, states[i].sorting_columns, lhs_pos, rhs_pos, description); });
+            {
+                return less(best_state.sorting_columns, states[i].sorting_columns, lhs_pos, rhs_pos, description);
+            });
 
         states[i].to_row = (it == indices.end() ? states[i].num_rows : *it);
     }

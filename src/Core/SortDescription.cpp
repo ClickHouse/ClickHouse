@@ -2,7 +2,6 @@
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
-#include "Core/Field.h"
 
 namespace DB
 {
@@ -22,10 +21,7 @@ void dumpSortDescription(const SortDescription & description, const Block &, Wri
             out << ", ";
         first = false;
 
-        if (!desc.column_name.empty())
-            out << desc.column_name;
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column name.");
+        out << desc.column_name;
 
         if (desc.direction > 0)
             out << " ASC";
@@ -39,11 +35,7 @@ void dumpSortDescription(const SortDescription & description, const Block &, Wri
 
 void SortColumnDescription::explain(JSONBuilder::JSONMap & map, const Block &) const
 {
-    if (!column_name.empty())
-        map.add("Column", column_name);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column name.");
-
+    map.add("Column", column_name);
     map.add("Ascending", direction > 0);
     map.add("With Fill", with_fill);
 }

@@ -12,14 +12,13 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
 
+
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
 
 /** Cursor allows to compare rows in different blocks (and parts).
   * Cursor moves inside single block.
@@ -81,9 +80,6 @@ struct SortCursorImpl
     /// Set the cursor to the beginning of the new block.
     void reset(const Columns & columns, const Block & block, IColumn::Permutation * perm = nullptr)
     {
-        if (columns.size() > block.columns())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Block doesn't contain all input columns.");
-
         all_columns.clear();
         sort_columns.clear();
 
@@ -95,8 +91,7 @@ struct SortCursorImpl
         for (size_t j = 0, size = desc.size(); j < size; ++j)
         {
             auto & column_desc = desc[j];
-            size_t column_number = block.getPositionByName(column_desc.column_name);
-            sort_columns.push_back(columns[column_number].get());
+            sort_columns.push_back(block.getByName(column_desc.column_name).column.get());
 
             need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->isCollationSupported();
             has_collation |= need_collation[j];

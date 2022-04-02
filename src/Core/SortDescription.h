@@ -72,7 +72,7 @@ struct SortColumnDescription
         return !(*this == other);
     }
 
-    std::string dump() const { return fmt::format("{}:dir {}nulls ", column_name, direction, nulls_direction); }
+    std::string dump() const { return fmt::format("{}:{}:dir {}nulls ", column_name, direction, nulls_direction); }
 
     void explain(JSONBuilder::JSONMap & map, const Block & header) const;
 };
@@ -83,19 +83,6 @@ struct SortColumnDescriptionWithColumnIndex : SortColumnDescription
 
     SortColumnDescriptionWithColumnIndex(SortColumnDescription descr, size_t column_number_)
         : SortColumnDescription(std::move(descr)), column_number(column_number_)
-    {
-    }
-
-    SortColumnDescriptionWithColumnIndex(
-        const std::string & column_name_,
-        size_t column_number_,
-        int direction_ = 1,
-        int nulls_direction_ = 1,
-        const std::shared_ptr<Collator> & collator_ = nullptr,
-        bool with_fill_ = false,
-        const FillColumnDescription & fill_description_ = {})
-        : SortColumnDescription(column_name_, direction_, nulls_direction_, collator_, with_fill_, fill_description_)
-        , column_number(column_number_)
     {
     }
 };

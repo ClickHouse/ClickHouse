@@ -26,13 +26,8 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , current_inputs(num_inputs)
     , cursors(num_inputs)
 {
-    /// Replace column names in description to positions.
     for (auto & column_description : description)
-    {
         has_collation |= column_description.collator != nullptr;
-        if (column_description.column_name.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name empty.");
-    }
 }
 
 void MergingSortedAlgorithm::addInput()
