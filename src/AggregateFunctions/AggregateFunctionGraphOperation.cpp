@@ -80,6 +80,8 @@ bool DirectionalGraphGenericData::isTree() const
 {
     if (graph.empty())
         return true;
+    if (graph.size() != edges_count + 1)
+        return false;
     HashSet<StringRef> leafs;
     leafs.reserve(graph.size());
     for (const auto & [from, to] : graph)
@@ -136,6 +138,8 @@ bool BidirectionalGraphGenericData::isTree() const
 {
     if (graph.empty())
         return true;
+    if (graph.size() != edges_count + 1)
+        return false;
     HashSet<StringRef> visited;
     visited.reserve(graph.size());
     visited.insert(graph.begin()->getKey());
