@@ -3,8 +3,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 
-#include <Poco/Logger.h>
-#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -27,12 +25,8 @@ void AnnoyIndexSerialize<Dist>::serialize(WriteBuffer& ostr) const
     writeIntBinary(Base::_nodes_size, ostr);
     writeIntBinary(Base::_K, ostr);
     writeIntBinary(Base::_seed, ostr);
+    writeVectorBinary(Base::_roots, ostr);
     ostr.write(reinterpret_cast<const char*>(Base::_nodes), Base::_s * Base::_n_nodes);
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "{}", Base::_built);
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "{}", Base::_s * Base::_n_nodes);
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Num of items: {}", Base::get_n_items());
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Num of nodes: {}", Base::_n_nodes);
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Num of trees: {}", Base::get_n_trees());
 }
 
 template<typename Dist>
@@ -44,19 +38,14 @@ void AnnoyIndexSerialize<Dist>::deserialize(ReadBuffer& istr)
     readIntBinary(Base::_nodes_size, istr);
     readIntBinary(Base::_K, istr);
     readIntBinary(Base::_seed, istr);
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "{}", Base::_s * Base::_n_nodes);
+    readVectorBinary(Base::_roots, istr);
     Base::_nodes = realloc(Base::_nodes, Base::_s * Base::_n_nodes);
-    
     istr.read(reinterpret_cast<char*>(Base::_nodes), Base::_s * Base::_n_nodes);
-   
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Num of items: {}", Base::get_n_items());
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Num of nodes: {}", Base::_n_nodes);
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Num of trees: {}", Base::get_n_trees());
 
+    Base::_fd = 0;
     // set flags
     Base::_loaded = false;
     Base::_verbose = false;
-    Base::_fd = 0;
     Base::_on_disk = false;
     Base::_built = true;
 }
@@ -92,7 +81,6 @@ void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
 {
     writeIntBinary(index_base->get_f(), ostr); // write dimension
     index_base->serialize(ostr);
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Index was serialized");
 }
 
 void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
@@ -101,7 +89,6 @@ void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeI
     readIntBinary(dimension, istr);
     index_base = std::make_shared<AnnoyIndex>(dimension);
     index_base->deserialize(istr);
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Index was deserialized");
 }
 
 
@@ -124,7 +111,6 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy::getGranuleAndReset()
     }
 
     index_base->build(Annoy::NUM_OF_TREES);
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Index was built");
     return std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index_base);
 }
 
@@ -150,7 +136,6 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
         std::vector<Float32> flatten(pod_array.begin(), pod_array.end());
         index_base->add_item(index_base->get_n_items(), &flatten[0]);
     }
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Index added new items");
 
     *pos += rows_read;
 }
@@ -160,17 +145,17 @@ bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr i
 {
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy>(idx_granule);
     auto annoy = std::dynamic_pointer_cast<Annoy::AnnoyIndexSerialize<>>(granule->index_base);
+
     float zero[] = {0., 0.};
-    std::vector<int32_t> items(1);
-    std::vector<float> dist(1);
+    std::vector<int32_t> items;
+    std::vector<float> dist;
+    items.reserve(1);
+    dist.reserve(1);
 
     // 1 - num of nearest neighbour (NN)
     // next number - upper limit on the size of the internal queue; -1 means, that it is equal to num of trees * num of NN
-    annoy->get_nns_by_vector(zero, 1, -1, &items, &dist);
-    const float max_dist = 1;
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Closest distance: {}", dist[0]);
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Num of items: {}", annoy->get_n_items());
-    LOG_DEBUG(&Poco::Logger::get("Annoy"), "Num of trees: {}", annoy->get_n_trees());
+    annoy->get_nns_by_vector(&zero[0], 2, -1, &items, &dist);
+    const float max_dist = 1.;
     return dist[0] < max_dist;
 }
 
