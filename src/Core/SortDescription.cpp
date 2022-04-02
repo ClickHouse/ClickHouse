@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 void dumpSortDescription(const SortDescription & description, const Block &, WriteBuffer & out)
 {
     bool first = true;
