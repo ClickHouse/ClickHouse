@@ -191,4 +191,31 @@ size_t BidirectionalGraphGenericData::componentsCount() const
     return components_count;
 }
 
+size_t BidirectionalGraphGenericData::componentSize(StringRef root, HashSet<StringRef>* visited) const
+{
+    HashSet<StringRef> visited_buffer;
+    if (visited == nullptr) {
+        visited = &visited_buffer;
+    }
+    visited->insert(root);
+    size_t component_size = 0;
+    std::queue<std::pair<StringRef, StringRef>> buffer{{{root, root}}};
+    while (!buffer.empty())
+    {
+        auto [vertex, parent] = buffer.front();
+        buffer.pop();
+        ++component_size;
+        for (const auto & to : graph.at(vertex))
+            if (to != parent)
+            {
+                HashSet<StringRef>::LookupResult it;
+                bool inserted;
+                visited->emplace(to, it, inserted);
+                if (inserted)
+                    buffer.emplace(to, vertex);
+            }
+    }
+    return component_size;
+}
+
 } // namespace DB

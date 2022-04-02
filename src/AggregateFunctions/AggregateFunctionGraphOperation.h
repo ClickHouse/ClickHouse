@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
+#include "Common/HashTable/HashSet.h"
 #include <Common/HashTable/HashMap.h>
 #include "AggregateFunctionGraphFactory.h"
 #include "AggregateFunctions/FactoryHelpers.h"
@@ -31,6 +32,7 @@ struct BidirectionalGraphGenericData : DirectionalGraphGenericData
     void add(const IColumn ** columns, size_t row_num, Arena * arena);
     bool isTree() const;
     size_t componentsCount() const;
+    size_t componentSize(StringRef root, HashSet<StringRef>* visited = nullptr) const;
 };
 
 template <typename Data, typename UnderlyingT, size_t ExpectedParameters = 0>

@@ -14,17 +14,6 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeFloat64>(); }
 
-    void visitComponent(ConstAggregateDataPtr place, StringRef vertex, HashSet<StringRef> & visited) const
-    {
-        HashSet<StringRef>::LookupResult it;
-        bool inserted;
-        visited.emplace(vertex, it, inserted);
-        if (!inserted)
-            return;
-        for (StringRef to : this->data(place).graph.at(vertex))
-            visitComponent(place, to, visited);
-    }
-
     Float64 calculateOperation(ConstAggregateDataPtr place, Arena *) const
     {
         const auto & graph = this->data(place).graph;
@@ -32,15 +21,14 @@ public:
             return 1;
         UInt64 connected_vertices = 0;
         HashSet<StringRef> visited;
-        for (const auto & [from, to] : graph)
-            if (visited.find(from) == visited.end())
+        for (const auto & [from, _] : graph) 
+        {
+            if (!visited.has(from))
             {
-                UInt64 was_visited = visited.size();
-                visitComponent(place, from, visited);
-                UInt64 component_size = visited.size() - was_visited;
+                UInt64 component_size = this->data(place).componentSize(from, &visited);
                 connected_vertices += component_size * (component_size - 1);
             }
-
+        }
         return static_cast<Float64>(connected_vertices) / graph.size() / (graph.size() - 1);
     }
 };
