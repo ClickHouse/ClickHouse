@@ -4,7 +4,7 @@
 
 namespace DB
 {
-class GraphAvgChildrenGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphAvgChildrenGeneral>
+class GraphAvgChildrenGeneral final : public GraphOperationGeneral<DirectionalGraphGenericData, GraphAvgChildrenGeneral>
 {
 public:
     using GraphOperationGeneral::GraphOperationGeneral;
@@ -15,7 +15,7 @@ public:
 
     Float64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
     {
-        return this->data(place).graph.size() / static_cast<Float64>(this->data(place).edges_count);
+        return static_cast<Float64>(this->data(place).edges_count) / this->data(place).graph.size();
     }
 };
 
