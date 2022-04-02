@@ -8,7 +8,7 @@ namespace DB
 class GraphAvgChildrenGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphAvgChildrenGeneral>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData, GraphAvgChildrenGeneral>::GraphOperationGeneral;
+    using GraphOperationGeneral::GraphOperationGeneral;
 
     static constexpr const char* name = "graphAvgChildren";
 

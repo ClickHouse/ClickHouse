@@ -8,7 +8,7 @@ namespace DB
 class GraphCountBridges final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphCountBridges>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData, GraphCountBridges>::GraphOperationGeneral;
+    using GraphOperationGeneral::GraphOperationGeneral;
 
     static constexpr const char* name = "countBridges";
 

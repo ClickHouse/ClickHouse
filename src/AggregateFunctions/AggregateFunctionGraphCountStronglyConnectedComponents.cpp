@@ -9,7 +9,7 @@ namespace DB
 class GraphCountStronglyConnectedComponents final : public GraphOperationGeneral<DirectionalGraphGenericData, GraphCountStronglyConnectedComponents>
 {
 public:
-    using GraphOperationGeneral<DirectionalGraphGenericData, GraphCountStronglyConnectedComponents>::GraphOperationGeneral;
+    using GraphOperationGeneral::GraphOperationGeneral;
 
     static constexpr const char* name = "countStronglyConnectedComponents";
 

@@ -15,7 +15,7 @@ extern const int UNSUPPORTED_PARAMETER;
 class GraphCountBipartiteMaximumMatching final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphCountBipartiteMaximumMatching>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData, GraphCountBipartiteMaximumMatching>::GraphOperationGeneral;
+    using GraphOperationGeneral::GraphOperationGeneral;
 
     static constexpr const char* name = "countBipartiteMaximumMatching";
 

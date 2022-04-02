@@ -9,7 +9,7 @@ namespace DB
 class GraphProbabilityConnected final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphProbabilityConnected>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData, GraphProbabilityConnected>::GraphOperationGeneral;
+    using GraphOperationGeneral::GraphOperationGeneral;
 
     static constexpr const char* name = "graphProbabilityConnected";
 

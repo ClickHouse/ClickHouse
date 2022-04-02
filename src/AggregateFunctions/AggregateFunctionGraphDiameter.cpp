@@ -12,7 +12,7 @@ extern const int UNSUPPORTED_PARAMETER;
 class GraphDiameterGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphDiameterGeneral>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData, GraphDiameterGeneral>::GraphOperationGeneral;
+    using GraphOperationGeneral::GraphOperationGeneral;
 
     static constexpr const char* name = "treeDiameter";
 

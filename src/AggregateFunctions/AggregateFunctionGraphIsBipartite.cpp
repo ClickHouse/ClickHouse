@@ -7,7 +7,7 @@ namespace DB
 class GraphIsBipartiteGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphIsBipartiteGeneral>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData, GraphIsBipartiteGeneral>::GraphOperationGeneral;
+    using GraphOperationGeneral::GraphOperationGeneral;
 
     static constexpr const char* name = "isBipartite";
 

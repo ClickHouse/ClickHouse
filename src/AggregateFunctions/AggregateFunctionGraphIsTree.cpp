@@ -7,7 +7,7 @@ namespace DB
 class GraphIsTreeGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphIsTreeGeneral>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData, GraphIsTreeGeneral>::GraphOperationGeneral;
+    using GraphOperationGeneral::GraphOperationGeneral;
 
     static constexpr const char* name = "isTree";
 

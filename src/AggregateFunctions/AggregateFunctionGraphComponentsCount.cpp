@@ -6,7 +6,7 @@ namespace DB
 class GraphComponentsCountGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphComponentsCountGeneral>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData, GraphComponentsCountGeneral>::GraphOperationGeneral;
+    using GraphOperationGeneral::GraphOperationGeneral;
 
     static constexpr const char* name = "graphComponentsCount";
 
