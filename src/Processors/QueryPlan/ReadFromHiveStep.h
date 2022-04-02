@@ -41,6 +41,8 @@ public:
         setStepDescription(storage_id.getFullNameNotQuoted());
     }
 
+    String getName() const override { return "ReadFromHive"; }
+
     void updateEstimate(MutableColumns & columns) const override;
 
 private:
