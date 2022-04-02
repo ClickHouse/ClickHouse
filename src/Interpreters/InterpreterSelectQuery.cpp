@@ -286,7 +286,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {
     checkStackSize();
 
-    for(const auto & column : query_ptr->as<ASTSelectQuery &>().select()->children)
+    for (const auto & column : query_ptr->as<ASTSelectQuery &>().select()->children)
         original_select_set.insert(column->getColumnName());
 
     query_info.ignore_projections = options.ignore_projections;
