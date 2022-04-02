@@ -4,17 +4,16 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/HashTable/HashMap.h>
+#include "AggregateFunctionGraphFactory.h"
 #include "AggregateFunctions/FactoryHelpers.h"
 #include "DataTypes/DataTypesNumber.h"
 #include "base/types.h"
-#include "AggregateFunctionGraphFactory.h"
 
 
 #define AGGREGATE_FUNCTION_GRAPH_MAX_SIZE 0xFFFFFF
 
 namespace DB
 {
-
 struct DirectionalGraphGenericData
 {
     HashMap<StringRef, std::vector<StringRef>> graph{};
@@ -22,27 +21,27 @@ struct DirectionalGraphGenericData
 
     void merge(const DirectionalGraphGenericData & rhs);
     void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf, Arena* arena);
+    void deserialize(ReadBuffer & buf, Arena * arena);
     void add(const IColumn ** columns, size_t row_num, Arena * arena);
     bool isTree() const;
 };
 
-struct BidirectionalGraphGenericData : DirectionalGraphGenericData {
+struct BidirectionalGraphGenericData : DirectionalGraphGenericData
+{
     void add(const IColumn ** columns, size_t row_num, Arena * arena);
     bool isTree() const;
     size_t componentsCount() const;
 };
 
-template<typename Data, typename UnderlyingT, size_t ExpectedParameters = 0>
-class GraphOperationGeneral
-    : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data, UnderlyingT, ExpectedParameters>>
+template <typename Data, typename UnderlyingT, size_t ExpectedParameters = 0>
+class GraphOperationGeneral : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data, UnderlyingT, ExpectedParameters>>
 {
 public:
     static constexpr size_t kExpectedParameters = ExpectedParameters;
 
     GraphOperationGeneral(const DataTypePtr & data_type_, const Array & parameters_)
-        : IAggregateFunctionDataHelper<Data, GraphOperationGeneral>(
-            {data_type_}, parameters_) {
+        : IAggregateFunctionDataHelper<Data, GraphOperationGeneral>({data_type_}, parameters_)
+    {
     }
 
     String getName() const final { return UnderlyingT::name; }
@@ -67,19 +66,21 @@ public:
         this->data(place).deserialize(buf, arena);
     }
 
-    StringRef serializeFieldToArena(const Field& field, Arena* arena) const {
-        const char* begin = nullptr;
+    StringRef serializeFieldToArena(const Field & field, Arena * arena) const
+    {
+        const char * begin = nullptr;
         return this->argument_types[0]->createColumnConst(1, field)->serializeValueIntoArena(0, *arena, begin);
     }
 
-    decltype(auto) calculateOperation(ConstAggregateDataPtr __restrict place, Arena* arena) const {
-      return static_cast<const UnderlyingT&>(*this).calculateOperation(place, arena);
+    decltype(auto) calculateOperation(ConstAggregateDataPtr __restrict place, Arena * arena) const
+    {
+        return static_cast<const UnderlyingT &>(*this).calculateOperation(place, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const final
     {
         auto result = calculateOperation(place, arena);
-        assert_cast<ColumnVector<decltype(result)>&>(to).getData().push_back(std::move(result));
+        assert_cast<ColumnVector<decltype(result)> &>(to).getData().push_back(std::move(result));
     }
 
 
