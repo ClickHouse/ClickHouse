@@ -1,0 +1,2 @@
+ATTACH USER u0;
+ATTACH GRANT INSERT ON mydb.mytable TO u0;

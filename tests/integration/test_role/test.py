@@ -175,6 +175,7 @@ def test_set_role():
     instance.query("CREATE USER A")
     instance.query("CREATE ROLE R1, R2")
     instance.query("GRANT R1, R2 TO A")
+    instance.query("GRANT SELECT ON system.current_roles TO A")
 
     session_id = new_session_id()
     assert instance.http_query(
@@ -206,6 +207,7 @@ def test_changing_default_roles_affects_new_sessions_only():
     instance.query("CREATE USER A")
     instance.query("CREATE ROLE R1, R2")
     instance.query("GRANT R1, R2 TO A")
+    instance.query("GRANT SELECT ON system.current_roles TO A")
 
     session_id = new_session_id()
     assert instance.http_query(
@@ -232,6 +234,8 @@ def test_introspection():
     instance.query("GRANT SELECT ON test.table TO A, R2")
     instance.query("GRANT CREATE ON *.* TO B WITH GRANT OPTION")
     instance.query("REVOKE SELECT(x) ON test.table FROM R2")
+    instance.query("GRANT SELECT ON system.current_roles TO A, B")
+    instance.query("GRANT SELECT ON system.enabled_roles TO A, B")
 
     assert instance.query("SHOW ROLES") == TSV(["R1", "R2"])
     assert instance.query("SHOW CREATE ROLE R1") == TSV(["CREATE ROLE R1"])
@@ -244,11 +248,18 @@ def test_introspection():
     )
 
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT ON test.table TO A", "GRANT R1 TO A"]
+        [
+            "GRANT SELECT ON system.current_roles TO A",
+            "GRANT SELECT ON system.enabled_roles TO A",
+            "GRANT SELECT ON test.table TO A",
+            "GRANT R1 TO A",
+        ]
     )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
+            "GRANT SELECT ON system.current_roles TO B",
+            "GRANT SELECT ON system.enabled_roles TO B",
             "GRANT R2 TO B WITH ADMIN OPTION",
         ]
     )
@@ -258,11 +269,18 @@ def test_introspection():
     )
 
     assert instance.query("SHOW GRANTS", user="A") == TSV(
-        ["GRANT SELECT ON test.table TO A", "GRANT R1 TO A"]
+        [
+            "GRANT SELECT ON system.current_roles TO A",
+            "GRANT SELECT ON system.enabled_roles TO A",
+            "GRANT SELECT ON test.table TO A",
+            "GRANT R1 TO A",
+        ]
     )
     assert instance.query("SHOW GRANTS", user="B") == TSV(
         [
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
+            "GRANT SELECT ON system.current_roles TO B",
+            "GRANT SELECT ON system.enabled_roles TO B",
             "GRANT R2 TO B WITH ADMIN OPTION",
         ]
     )
@@ -286,7 +304,11 @@ def test_introspection():
         "SELECT * from system.grants WHERE user_name IN ('A', 'B') OR role_name IN ('R1', 'R2') ORDER BY user_name, role_name, access_type, database, table, column, is_partial_revoke, grant_option"
     ) == TSV(
         [
+            ["A", "\\N", "SELECT", "system", "current_roles", "\\N", 0, 0],
+            ["A", "\\N", "SELECT", "system", "enabled_roles", "\\N", 0, 0],
             ["A", "\\N", "SELECT", "test", "table", "\\N", 0, 0],
+            ["B", "\\N", "SELECT", "system", "current_roles", "\\N", 0, 0],
+            ["B", "\\N", "SELECT", "system", "enabled_roles", "\\N", 0, 0],
             ["B", "\\N", "CREATE", "\\N", "\\N", "\\N", 0, 1],
             ["\\N", "R2", "SELECT", "test", "table", "x", 1, 0],
             ["\\N", "R2", "SELECT", "test", "table", "\\N", 0, 0],

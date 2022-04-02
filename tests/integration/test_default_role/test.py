@@ -24,6 +24,7 @@ def started_cluster():
 @pytest.fixture(autouse=True)
 def reset_users_and_roles():
     instance.query("CREATE USER OR REPLACE john")
+    instance.query("GRANT SELECT ON system.current_roles TO john")
     yield
 
 

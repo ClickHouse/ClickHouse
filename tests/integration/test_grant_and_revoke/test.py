@@ -189,6 +189,10 @@ def test_grant_all_on_table():
 
 def test_implicit_show_grants():
     instance.query("CREATE USER A")
+    instance.query("GRANT SELECT ON system.databases TO A")
+    instance.query("GRANT SELECT ON system.tables TO A")
+    instance.query("GRANT SELECT ON system.columns TO A")
+
     assert (
         instance.query(
             "select count() FROM system.databases WHERE name='test'", user="A"
@@ -211,7 +215,14 @@ def test_implicit_show_grants():
     )
 
     instance.query("GRANT SELECT(x) ON test.table TO A")
-    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT(x) ON test.table TO A\n"
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT SELECT ON system.columns TO A",
+            "GRANT SELECT ON system.databases TO A",
+            "GRANT SELECT ON system.tables TO A",
+            "GRANT SELECT(x) ON test.table TO A",
+        ]
+    )
     assert (
         instance.query(
             "select count() FROM system.databases WHERE name='test'", user="A"
@@ -234,7 +245,14 @@ def test_implicit_show_grants():
     )
 
     instance.query("GRANT SELECT ON test.table TO A")
-    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT ON test.table TO A\n"
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT SELECT ON system.columns TO A",
+            "GRANT SELECT ON system.databases TO A",
+            "GRANT SELECT ON system.tables TO A",
+            "GRANT SELECT ON test.table TO A",
+        ]
+    )
     assert (
         instance.query(
             "select count() FROM system.databases WHERE name='test'", user="A"
@@ -257,7 +275,14 @@ def test_implicit_show_grants():
     )
 
     instance.query("GRANT SELECT ON test.* TO A")
-    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT ON test.* TO A\n"
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT SELECT ON system.columns TO A",
+            "GRANT SELECT ON system.databases TO A",
+            "GRANT SELECT ON system.tables TO A",
+            "GRANT SELECT ON test.* TO A",
+        ]
+    )
     assert (
         instance.query(
             "select count() FROM system.databases WHERE name='test'", user="A"
@@ -280,7 +305,7 @@ def test_implicit_show_grants():
     )
 
     instance.query("GRANT SELECT ON *.* TO A")
-    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT ON *.* TO A\n"
+    assert instance.query("SHOW GRANTS FOR A") == TSV(["GRANT SELECT ON *.* TO A"])
     assert (
         instance.query(
             "select count() FROM system.databases WHERE name='test'", user="A"
@@ -303,6 +328,9 @@ def test_implicit_show_grants():
     )
 
     instance.query("REVOKE ALL ON *.* FROM A")
+    instance.query("GRANT SELECT ON system.databases TO A")
+    instance.query("GRANT SELECT ON system.tables TO A")
+    instance.query("GRANT SELECT ON system.columns TO A")
     assert (
         instance.query(
             "select count() FROM system.databases WHERE name='test'", user="A"
@@ -429,18 +457,16 @@ def test_introspection():
     expected_error = "necessary to have grant SHOW USERS"
     assert expected_error in instance.query_and_get_error("SHOW GRANTS FOR B", user="A")
 
-    expected_access1 = (
-        "CREATE USER A\n"
-        "CREATE USER B\n"
-        "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default"
-    )
-    expected_access2 = (
-        "GRANT SELECT ON test.table TO A\n"
-        "GRANT CREATE ON *.* TO B WITH GRANT OPTION\n"
-        "GRANT ALL ON *.* TO default WITH GRANT OPTION\n"
-    )
-    assert expected_access1 in instance.query("SHOW ACCESS")
-    assert expected_access2 in instance.query("SHOW ACCESS")
+    show_access_result = instance.query("SHOW ACCESS")
+    for expected_access in [
+        "CREATE USER A",
+        "CREATE USER B",
+        "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default",
+        "GRANT SELECT ON test.table TO A",
+        "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
+        "GRANT ALL ON *.* TO default WITH GRANT OPTION",
+    ]:
+        assert expected_access in show_access_result
 
     assert instance.query(
         "SELECT name, storage, auth_type, auth_params, host_ip, host_names, host_names_regexp, host_names_like, default_roles_all, default_roles_list, default_roles_except from system.users WHERE name IN ('A', 'B') ORDER BY name"

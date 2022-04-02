@@ -1,0 +1,1 @@
+ATTACH ROLE role1;

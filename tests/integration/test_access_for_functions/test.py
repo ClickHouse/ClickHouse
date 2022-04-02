@@ -50,27 +50,3 @@ def test_access_rights_for_function():
 
     instance.query("DROP USER IF EXISTS A")
     instance.query("DROP USER IF EXISTS B")
-
-
-def test_ignore_obsolete_grant_on_database():
-    instance.stop_clickhouse()
-
-    user_id = uuid.uuid4()
-    instance.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"""
-        cat > /var/lib/clickhouse/access/{user_id}.sql << EOF
-ATTACH USER X;
-ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO X;
-EOF""",
-        ]
-    )
-
-    instance.exec_in_container(
-        ["bash", "-c", "touch /var/lib/clickhouse/access/need_rebuild_lists.mark"]
-    )
-    instance.start_clickhouse()
-
-    assert instance.query("SHOW GRANTS FOR X") == "GRANT SELECT ON mydb.* TO X\n"
