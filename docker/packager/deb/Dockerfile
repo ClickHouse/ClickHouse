@@ -64,7 +64,7 @@ RUN apt-get update \
 # Rust toolchain
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
-RUN rustup target add aarch64-unknown-linux-gnu && \
+RUN rustup target add aarch64-unknown-linux-gnu
 RUN apt-get install \
         gcc-aarch64-linux-gnu \
         build-essential \

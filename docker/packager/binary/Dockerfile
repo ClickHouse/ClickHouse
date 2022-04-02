@@ -119,5 +119,7 @@ RUN arch=${TARGETARCH:-amd64} \
   && dpkg -i /tmp/nfpm.deb \
   && rm /tmp/nfpm.deb
 
+ENV PATH="/cctools/bin:${PATH}"
+
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]
