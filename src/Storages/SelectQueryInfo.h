@@ -6,8 +6,8 @@
 #include <Core/Names.h>
 #include <Common/config.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/Hive/StorageHive.h>
 #include <Interpreters/AggregateDescription.h>
+#include <Processors/QueryPlan/ReadFromHiveStep.h>
 
 #include <memory>
 

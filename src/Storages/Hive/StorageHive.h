@@ -28,27 +28,6 @@ class StorageHive final : public shared_ptr_helper<StorageHive>, public IStorage
     friend struct shared_ptr_helper<StorageHive>;
 
 public:
-    struct AnalysisResult
-    {
-        /// Number of partitions before partition pruning.
-        std::atomic<UInt64> partitions_before_prune{0};
-        /// Number of partitions after partition pruning.
-        std::atomic<UInt64> partitions_after_prune{0};
-        /// Number of files before file pruning.
-        std::atomic<UInt64> files_before_prune{0};
-        /// Number of files after file pruning. 
-        std::atomic<UInt64> files_after_prune{0};
-
-        Object toObject() const
-        {
-            return {
-                {"partitions_before_prune", partitions_before_prune.load(std::memory_order_relaxed)},
-                {"partitions_after_prune", partitions_after_prune.load(std::memory_order_relaxed)},
-                {"files_before_prune", files_before_prune.load(std::memory_order_relaxed)},
-                {"files_after_prune", files_after_prune.load(std::memory_order_relaxed)},
-            };
-        }
-    };
 
     String getName() const override { return "Hive"; }
 
@@ -157,9 +136,6 @@ private:
 
     void lazyInitialize();
 };
-
-using HiveSelectAnalysisResult = StorageHive::AnalysisResult;
-using HiveSelectAnalysisResultPtr = std::shared_ptr<HiveSelectAnalysisResult>;
 
 }
 

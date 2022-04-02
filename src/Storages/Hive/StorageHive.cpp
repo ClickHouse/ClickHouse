@@ -31,7 +31,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromHiveStep.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/StorageHiveMetadata.h>
