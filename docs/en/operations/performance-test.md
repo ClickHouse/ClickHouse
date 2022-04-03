@@ -1,6 +1,6 @@
 ---
-toc_priority: 54
-toc_title: Testing Hardware
+sidebar_position: 54
+sidebar_label: Testing Hardware
 ---
 
 # How to Test Your Hardware with ClickHouse {#how-to-test-your-hardware-with-clickhouse}
@@ -59,7 +59,7 @@ wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/cl
 chmod a+x benchmark-new.sh
 wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 ```
-3.  Download the [web analytics dataset](../getting-started/example-datasets/metrica.md) (“hits” table containing 100 million rows).
+3.  Download the [web analytics dataset](../example-datasets/metrica.md) (“hits” table containing 100 million rows).
 ```bash
 wget https://datasets.clickhouse.com/hits/partitions/hits_100m_obfuscated_v1.tar.xz
 tar xvf hits_100m_obfuscated_v1.tar.xz -C .
