@@ -1,6 +1,6 @@
 ---
-sidebar_position: 55
-sidebar_label: hdfsCluster
+toc_priority: 55
+toc_title: hdfsCluster
 ---
 
 # hdfsCluster Table Function {#hdfsCluster-table-function}
@@ -49,9 +49,8 @@ SELECT count(*)
 FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 ```
 
-:::warning    
-If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-:::
+!!! warning "Warning"
+    If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 
 **See Also**
 

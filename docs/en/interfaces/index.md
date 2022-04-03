@@ -1,8 +1,7 @@
 ---
-sidebar_label: Interfaces
-sidebar_position: 34
-keywords: [clickhouse, network, interfaces, http, tcp, grpc, command-line, client, jdbc, odbc, driver]
-description: ClickHouse provides three network interfaces
+toc_folder_title: Interfaces
+toc_priority: 14
+toc_title: Introduction
 ---
 
 # Interfaces {#interfaces}

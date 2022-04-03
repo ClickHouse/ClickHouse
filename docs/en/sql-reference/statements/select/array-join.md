@@ -1,5 +1,5 @@
 ---
-sidebar_label: ARRAY JOIN
+toc_title: ARRAY JOIN
 ---
 
 # ARRAY JOIN Clause {#select-array-join-clause}
