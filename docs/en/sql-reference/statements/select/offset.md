@@ -1,5 +1,5 @@
 ---
-sidebar_label: OFFSET
+toc_title: OFFSET
 ---
 
 # OFFSET FETCH Clause {#offset-fetch}
@@ -30,13 +30,11 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
 
 The `WITH TIES` option is used to return any additional rows that tie for the last place in the result set according to the `ORDER BY` clause. For example, if `fetch_row_count` is set to 5 but two additional rows match the values of the `ORDER BY` columns in the fifth row, the result set will contain seven rows.
 
-:::note    
-According to the standard, the `OFFSET` clause must come before the `FETCH` clause if both are present.
-:::
+!!! note "Note"
+    According to the standard, the `OFFSET` clause must come before the `FETCH` clause if both are present.
 
-:::note    
-The real offset can also depend on the [offset](../../../operations/settings/settings.md#offset) setting.
-:::
+!!! note "Note"
+    The real offset can also depend on the [offset](../../../operations/settings/settings.md#offset) setting.
 
 ## Examples {#examples}
 

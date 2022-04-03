@@ -1,6 +1,6 @@
 ---
-sidebar_position: 18
-sidebar_label: Native Interface (TCP)
+toc_priority: 18
+toc_title: Native Interface (TCP)
 ---
 
 # Native Interface (TCP) {#native-interface-tcp}

@@ -1,7 +1,7 @@
 ---
 toc_hidden_folder: true
-sidebar_position: 42
-sidebar_label: INDEX
+toc_priority: 42
+toc_title: INDEX
 ---
 
 # Manipulating Data Skipping Indices {#manipulations-with-data-skipping-indices}
@@ -18,6 +18,5 @@ The first two commands are lightweight in a sense that they only change metadata
 
 Also, they are replicated, syncing indices metadata via ZooKeeper.
 
-:::note    
-Index manipulation is supported only for tables with [`*MergeTree`](../../../../engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](../../../../engines/table-engines/mergetree-family/replication.md) variants).
-:::
+!!! note "Note"
+    Index manipulation is supported only for tables with [`*MergeTree`](../../../../engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](../../../../engines/table-engines/mergetree-family/replication.md) variants).
