@@ -46,6 +46,7 @@ protected:
         bool has_input = false;
         bool is_finished = false;
         bool need_data = false;
+        bool no_data = false;
         size_t next_input_to_read = 0;
 
         IMergingAlgorithm::Inputs init_chunks;
@@ -98,6 +99,7 @@ public:
         : IMergingTransformBase(input_headers, output_header, have_all_inputs_, limit_hint_)
         , algorithm(std::forward<Args>(args) ...)
     {
+        empty_chunk_on_finish = true;
     }
 
     void work() override
@@ -111,6 +113,12 @@ public:
             //           << " for input " << state.next_input_to_read << std::endl;
             algorithm.consume(state.input_chunk, state.next_input_to_read);
             state.has_input = false;
+        }
+        else if (state.no_data && empty_chunk_on_finish)
+        {
+            IMergingAlgorithm::Input current_input;
+            algorithm.consume(current_input, state.next_input_to_read);
+            state.no_data = false;
         }
 
         IMergingAlgorithm::Status status = algorithm.merge();
@@ -141,6 +149,7 @@ protected:
     /// Profile info.
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
+    bool empty_chunk_on_finish = false;
 private:
     using IMergingTransformBase::state;
 };
