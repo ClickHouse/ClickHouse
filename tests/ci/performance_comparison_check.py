@@ -21,8 +21,9 @@ from rerun_helper import RerunHelper
 
 IMAGE_NAME = 'clickhouse/performance-comparison'
 
-def get_run_command(workspace, result_path, pr_to_test, sha_to_test, additional_env, image):
+def get_run_command(workspace, result_path, repo_tests_path, pr_to_test, sha_to_test, additional_env, image):
     return f"docker run --privileged --volume={workspace}:/workspace --volume={result_path}:/output " \
+        f"--volume={repo_tests_path}:/usr/share/clickhouse-test " \
         f"--cap-add syslog --cap-add sys_admin --cap-add sys_rawio " \
         f"-e PR_TO_TEST={pr_to_test} -e SHA_TO_TEST={sha_to_test} {additional_env} " \
         f"{image}"
@@ -45,6 +46,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
+    repo_tests_path = os.path.join(repo_path, "tests")
     ramdrive_path = os.getenv("RAMDRIVE_PATH", os.path.join(temp_path, "ramdrive"))
     # currently unused, doesn't make tests more stable
     ramdrive_size = os.getenv("RAMDRIVE_SIZE", '0G')
@@ -95,7 +97,7 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_command = get_run_command(result_path, result_path, pr_info.number, pr_info.sha, docker_env, docker_image)
+    run_command = get_run_command(result_path, result_path, repo_tests_path, pr_info.number, pr_info.sha, docker_env, docker_image)
     logging.info("Going to run command %s", run_command)
     run_log_path = os.path.join(temp_path, "runlog.log")
     with TeePopen(run_command, run_log_path) as process:

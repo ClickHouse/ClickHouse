@@ -15,6 +15,7 @@
 #include <base/scope_guard_safe.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
+#include <Access/AccessControl.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -313,9 +314,15 @@ void LocalServer::cleanup()
 }
 
 
+static bool checkIfStdinIsRegularFile()
+{
+    struct stat file_stat;
+    return fstat(STDIN_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+}
+
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format"))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || !config().has("query")))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
@@ -337,8 +344,9 @@ std::string LocalServer::getInitialCreateTableQuery()
         format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
     }
 
-    auto data_format
-        = backQuoteIfNeed(config().getString("table-data-format", format_from_file_name.empty() ? "TSV" : format_from_file_name));
+    auto data_format = backQuoteIfNeed(
+        config().getString("table-data-format", config().getString("format", format_from_file_name.empty() ? "TSV" : format_from_file_name)));
+
 
     if (table_structure == "auto")
         table_structure = "";
@@ -381,7 +389,9 @@ void LocalServer::setupUsers()
         "</clickhouse>";
 
     ConfigurationPtr users_config;
-
+    auto & access_control = global_context->getAccessControl();
+    access_control.setPlaintextPasswordSetting(config().getBool("allow_plaintext_password", true));
+    access_control.setNoPasswordSetting(config().getBool("allow_no_password", true));
     if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
     {
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
@@ -390,10 +400,7 @@ void LocalServer::setupUsers()
         users_config = loaded_config.configuration;
     }
     else
-    {
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
-    }
-
     if (users_config)
         global_context->setUsersConfig(users_config);
     else
@@ -404,7 +411,8 @@ void LocalServer::setupUsers()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config());
-    connection = LocalConnection::createConnection(connection_parameters, global_context, need_render_progress);
+    connection = LocalConnection::createConnection(
+        connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -518,22 +526,17 @@ void LocalServer::processConfig()
 
         if (config().has("multiquery"))
             is_multiquery = true;
-
-        load_suggestions = true;
     }
     else
     {
-        if (delayed_interactive)
-        {
-            load_suggestions = true;
-        }
-
         need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
     }
+
     print_stack_trace = config().getBool("stacktrace", false);
+    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false);
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
@@ -773,7 +776,7 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 }
 
 
-void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &)
+void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
     if (options.count("table"))
         config().setString("table-name", options["table"].as<std::string>());
@@ -798,7 +801,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 }
 
 }
-
 
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"

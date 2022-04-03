@@ -330,7 +330,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     }
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
-    return this->create(std::move(res_values), std::move(res_offsets), res_offset);
+    return this->create(res_values, std::move(res_offsets), res_offset);
 }
 
 void ColumnSparse::expand(const Filter & mask, bool inverted)
@@ -488,7 +488,8 @@ bool ColumnSparse::hasEqualValues() const
     return true;
 }
 
-void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
+void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                    size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
 {
     if (_size == 0)
         return;
@@ -508,9 +509,9 @@ void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direc
     /// Firstly we sort all values.
     /// limit + 1 for case when there are 0 default values.
     if (collator)
-        values->getPermutationWithCollation(*collator, reverse, limit + 1, null_direction_hint, perm);
+        values->getPermutationWithCollation(*collator, direction, stability, limit + 1, null_direction_hint, perm);
     else
-        values->getPermutation(reverse, limit + 1, null_direction_hint, perm);
+        values->getPermutation(direction, stability, limit + 1, null_direction_hint, perm);
 
     size_t num_of_defaults = getNumberOfDefaults();
     size_t row = 0;
@@ -548,27 +549,38 @@ void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direc
     assert(row == limit);
 }
 
-void ColumnSparse::getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
+void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int null_direction_hint, Permutation & res) const
 {
-    return getPermutationImpl(reverse, limit, null_direction_hint, res, nullptr);
+    if (unlikely(stability == IColumn::PermutationSortStability::Stable))
+    {
+        auto this_full = convertToFullColumnIfSparse();
+        this_full->getPermutation(direction, stability, limit, null_direction_hint, res);
+        return;
+    }
+
+    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
 }
 
-void ColumnSparse::updatePermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_range) const
+void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
     auto this_full = convertToFullColumnIfSparse();
-    this_full->updatePermutation(reverse, limit, null_direction_hint, res, equal_range);
+    this_full->updatePermutation(direction, stability, limit, null_direction_hint, res, equal_ranges);
 }
 
-void ColumnSparse::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
+void ColumnSparse::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int null_direction_hint, Permutation & res) const
 {
-    return getPermutationImpl(reverse, limit, null_direction_hint, res, &collator);
+    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
 }
 
 void ColumnSparse::updatePermutationWithCollation(
-    const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_range) const
+    const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const
 {
     auto this_full = convertToFullColumnIfSparse();
-    this_full->updatePermutationWithCollation(collator, reverse, limit, null_direction_hint, res, equal_range);
+    this_full->updatePermutationWithCollation(collator, direction, stability, limit, null_direction_hint, res, equal_ranges);
 }
 
 size_t ColumnSparse::byteSize() const

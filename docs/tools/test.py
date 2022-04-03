@@ -8,7 +8,7 @@ import subprocess
 
 
 def test_single_page(input_path, lang):
-    if not (lang == 'en' or lang == 'ru'):
+    if not (lang == 'en'):
         return
 
     with open(input_path) as f:

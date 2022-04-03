@@ -29,5 +29,6 @@ COPY run.sh /
 
 ENV DATASETS="hits visits"
 ENV S3_URL="https://clickhouse-datasets.s3.yandex.net"
+ENV EXPORT_S3_STORAGE_POLICIES=1
 
 CMD ["/bin/bash", "/run.sh"]

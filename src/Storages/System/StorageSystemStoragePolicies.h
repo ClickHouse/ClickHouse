@@ -32,7 +32,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 protected:
-    StorageSystemStoragePolicies(const StorageID & table_id_);
+    explicit StorageSystemStoragePolicies(const StorageID & table_id_);
 };
 
 }

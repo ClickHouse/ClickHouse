@@ -174,7 +174,7 @@ StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr
 }
 
 
-StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr, const bool table_checked) const
+StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr, bool table_checked) const
 {
     if (!cache_tables || !cached_tables.count(table_name))
     {
@@ -194,7 +194,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr,
         if (cache_tables)
             cached_tables[table_name] = storage;
 
-        return std::move(storage);
+        return storage;
     }
 
     if (table_checked || checkPostgresTable(table_name))
@@ -414,7 +414,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     assert(storage_engine_arguments->children.size() >= 2);
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, std::make_shared<ASTLiteral>(table_id.table_name));
 
-    return std::move(create_table_query);
+    return create_table_query;
 }
 
 

@@ -114,8 +114,6 @@ public:
     /// Used by InterpreterInsertQuery
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
-    /// Returns empty string if tables is used by TableFunctionRemote
-    std::string getClusterName() const { return cluster_name; }
     ClusterPtr getCluster() const;
 
     /// Used by InterpreterSystemQuery
@@ -201,6 +199,7 @@ private:
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
+    std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
 
     const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
 

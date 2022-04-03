@@ -30,6 +30,8 @@ public:
 
     off_t getPosition() override;
 
+    size_t getFileOffsetOfBufferEnd() const override { return offset; }
+
 private:
     std::unique_ptr<ReadBuffer> initialize();
 

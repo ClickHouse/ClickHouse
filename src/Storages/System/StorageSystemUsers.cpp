@@ -102,17 +102,27 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         column_storage.insertData(storage_name.data(), storage_name.length());
         column_auth_type.push_back(static_cast<Int8>(auth_data.getType()));
 
-        if (
-            auth_data.getType() == AuthenticationType::LDAP ||
-            auth_data.getType() == AuthenticationType::KERBEROS
-        )
+        if (auth_data.getType() == AuthenticationType::LDAP ||
+            auth_data.getType() == AuthenticationType::KERBEROS ||
+            auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
         {
             Poco::JSON::Object auth_params_json;
 
             if (auth_data.getType() == AuthenticationType::LDAP)
+            {
                 auth_params_json.set("server", auth_data.getLDAPServerName());
+            }
             else if (auth_data.getType() == AuthenticationType::KERBEROS)
+            {
                 auth_params_json.set("realm", auth_data.getKerberosRealm());
+            }
+            else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
+            {
+                Poco::JSON::Array::Ptr arr = new Poco::JSON::Array();
+                for (const auto & common_name : auth_data.getSSLCertificateCommonNames())
+                    arr->add(common_name);
+                auth_params_json.set("common_names", arr);
+            }
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss.exceptions(std::ios::failbit);

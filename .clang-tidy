@@ -33,6 +33,8 @@ Checks: '-*,
     performance-no-automatic-move,
     performance-trivially-destructible,
     performance-unnecessary-copy-initialization,
+    performance-noexcept-move-constructor,
+    performance-move-const-arg,
 
     readability-avoid-const-params-in-decls,
     readability-const-return-type,
@@ -205,4 +207,6 @@ CheckOptions:
   - key: readability-identifier-naming.UsingCase
     value: CamelCase
   - key: modernize-loop-convert.UseCxx20ReverseRanges
+    value: false
+  - key: performance-move-const-arg.CheckTriviallyCopyableMove
     value: false

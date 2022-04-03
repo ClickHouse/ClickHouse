@@ -28,8 +28,8 @@ struct SimdJSONParser
     class Element
     {
     public:
-        ALWAYS_INLINE Element() {}
-        ALWAYS_INLINE Element(const simdjson::dom::element & element_) : element(element_) {}
+        ALWAYS_INLINE Element() {} /// NOLINT
+        ALWAYS_INLINE Element(const simdjson::dom::element & element_) : element(element_) {} /// NOLINT
 
         ALWAYS_INLINE bool isInt64() const { return element.type() == simdjson::dom::element_type::INT64; }
         ALWAYS_INLINE bool isUInt64() const { return element.type() == simdjson::dom::element_type::UINT64; }
@@ -61,17 +61,17 @@ struct SimdJSONParser
         class Iterator
         {
         public:
-            ALWAYS_INLINE Iterator(const simdjson::dom::array::iterator & it_) : it(it_) {}
+            ALWAYS_INLINE Iterator(const simdjson::dom::array::iterator & it_) : it(it_) {} /// NOLINT
             ALWAYS_INLINE Element operator*() const { return *it; }
             ALWAYS_INLINE Iterator & operator++() { ++it; return *this; }
-            ALWAYS_INLINE Iterator operator++(int) { auto res = *this; ++it; return res; }
+            ALWAYS_INLINE Iterator operator++(int) { auto res = *this; ++it; return res; } /// NOLINT
             ALWAYS_INLINE friend bool operator!=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
             ALWAYS_INLINE friend bool operator==(const Iterator & left, const Iterator & right) { return !(left != right); }
         private:
             simdjson::dom::array::iterator it;
         };
 
-        ALWAYS_INLINE Array(const simdjson::dom::array & array_) : array(array_) {}
+        ALWAYS_INLINE Array(const simdjson::dom::array & array_) : array(array_) {} /// NOLINT
         ALWAYS_INLINE Iterator begin() const { return array.begin(); }
         ALWAYS_INLINE Iterator end() const { return array.end(); }
         ALWAYS_INLINE size_t size() const { return array.size(); }
@@ -90,17 +90,17 @@ struct SimdJSONParser
         class Iterator
         {
         public:
-            ALWAYS_INLINE Iterator(const simdjson::dom::object::iterator & it_) : it(it_) {}
+            ALWAYS_INLINE Iterator(const simdjson::dom::object::iterator & it_) : it(it_) {} /// NOLINT
             ALWAYS_INLINE KeyValuePair operator*() const { const auto & res = *it; return {res.key, res.value}; }
             ALWAYS_INLINE Iterator & operator++() { ++it; return *this; }
-            ALWAYS_INLINE Iterator operator++(int) { auto res = *this; ++it; return res; }
+            ALWAYS_INLINE Iterator operator++(int) { auto res = *this; ++it; return res; } /// NOLINT
             ALWAYS_INLINE friend bool operator!=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
             ALWAYS_INLINE friend bool operator==(const Iterator & left, const Iterator & right) { return !(left != right); }
         private:
             simdjson::dom::object::iterator it;
         };
 
-        ALWAYS_INLINE Object(const simdjson::dom::object & object_) : object(object_) {}
+        ALWAYS_INLINE Object(const simdjson::dom::object & object_) : object(object_) {} /// NOLINT
         ALWAYS_INLINE Iterator begin() const { return object.begin(); }
         ALWAYS_INLINE Iterator end() const { return object.end(); }
         ALWAYS_INLINE size_t size() const { return object.size(); }

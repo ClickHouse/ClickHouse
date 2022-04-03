@@ -238,28 +238,39 @@ void ProgressIndication::writeProgress()
                 /// at right after progress bar or at left on top of the progress bar.
                 if (width_of_progress_bar <= 1 + 2 * static_cast<int64_t>(profiling_msg.size()))
                     profiling_msg.clear();
-                else
-                    width_of_progress_bar -= profiling_msg.size();
 
                 if (width_of_progress_bar > 0)
                 {
                     double bar_width = UnicodeBar::getWidth(current_count, 0, max_count, width_of_progress_bar);
                     std::string bar = UnicodeBar::render(bar_width);
+                    size_t bar_width_in_terminal = bar.size() / UNICODE_BAR_CHAR_SIZE;
 
-                    /// Render profiling_msg at left on top of the progress bar.
-                    bool render_profiling_msg_at_left = current_count * 2 >= max_count;
-                    if (!profiling_msg.empty() && render_profiling_msg_at_left)
-                        message << "\033[30;42m" << profiling_msg << "\033[0m";
+                    if (profiling_msg.empty())
+                    {
+                        message << "\033[0;32m" << bar << "\033[0m"
+                            << std::string(width_of_progress_bar - bar_width_in_terminal, ' ');
+                    }
+                    else
+                    {
+                        bool render_profiling_msg_at_left = current_count * 2 >= max_count;
 
-                    message << "\033[0;32m" << bar << "\033[0m";
+                        if (render_profiling_msg_at_left)
+                        {
+                            /// Render profiling_msg at left on top of the progress bar.
 
-                    /// Whitespaces after the progress bar.
-                    if (width_of_progress_bar > static_cast<int64_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
-                        message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
+                            message << "\033[30;42m" << profiling_msg << "\033[0m"
+                                << "\033[0;32m" << bar.substr(profiling_msg.size() * UNICODE_BAR_CHAR_SIZE) << "\033[0m"
+                                << std::string(width_of_progress_bar - bar_width_in_terminal, ' ');
+                        }
+                        else
+                        {
+                            /// Render profiling_msg at right after the progress bar.
 
-                    /// Render profiling_msg at right after the progress bar.
-                    if (!profiling_msg.empty() && !render_profiling_msg_at_left)
-                        message << "\033[2m" << profiling_msg << "\033[0m";
+                            message << "\033[0;32m" << bar << "\033[0m"
+                                << std::string(width_of_progress_bar - bar_width_in_terminal - profiling_msg.size(), ' ')
+                                << "\033[2m" << profiling_msg << "\033[0m";
+                        }
+                    }
                 }
             }
         }

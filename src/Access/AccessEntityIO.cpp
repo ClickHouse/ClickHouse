@@ -91,7 +91,7 @@ String serializeAccessEntity(const IAccessEntity & entity)
     return buf.str();
 }
 
-AccessEntityPtr deserializeAccessEntity(const String & definition, const String & path)
+AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
 {
     ASTs queries;
     ParserAttachAccessEntity parser;
@@ -118,43 +118,42 @@ AccessEntityPtr deserializeAccessEntity(const String & definition, const String 
         if (auto * create_user_query = query->as<ASTCreateUserQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = user = std::make_unique<User>();
             InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query);
         }
         else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = role = std::make_unique<Role>();
             InterpreterCreateRoleQuery::updateRoleFromQuery(*role, *create_role_query);
         }
         else if (auto * create_policy_query = query->as<ASTCreateRowPolicyQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = policy = std::make_unique<RowPolicy>();
             InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(*policy, *create_policy_query);
         }
         else if (auto * create_quota_query = query->as<ASTCreateQuotaQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = quota = std::make_unique<Quota>();
             InterpreterCreateQuotaQuery::updateQuotaFromQuery(*quota, *create_quota_query);
         }
         else if (auto * create_profile_query = query->as<ASTCreateSettingsProfileQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = profile = std::make_unique<SettingsProfile>();
             InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(*profile, *create_profile_query);
         }
         else if (auto * grant_query = query->as<ASTGrantQuery>())
         {
             if (!user && !role)
-                throw Exception(
-                    "A user or role should be attached before grant in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("A user or role should be attached before grant", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             if (user)
                 InterpreterGrantQuery::updateUserFromQuery(*user, *grant_query);
             else
@@ -165,9 +164,27 @@ AccessEntityPtr deserializeAccessEntity(const String & definition, const String 
     }
 
     if (!res)
-        throw Exception("No access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+        throw Exception("No access entities attached", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
 
     return res;
+}
+
+
+AccessEntityPtr deserializeAccessEntity(const String & definition, const String & file_path)
+{
+    if (file_path.empty())
+        return deserializeAccessEntityImpl(definition);
+
+    try
+    {
+        return deserializeAccessEntityImpl(definition);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("Could not parse " + file_path);
+        e.rethrow();
+        __builtin_unreachable();
+    }
 }
 
 }

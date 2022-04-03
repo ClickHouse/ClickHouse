@@ -18,7 +18,7 @@ public:
     // serialize
     virtual String toString() const = 0;
 
-    // used for comparing two file metadatas are the same or not.
+    // Used for comparing two file metadatas are the same or not.
     virtual String getVersion() const = 0;
 
     String remote_path;

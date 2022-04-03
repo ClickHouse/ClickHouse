@@ -295,7 +295,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     }
 
     std::lock_guard<std::mutex> lock(dictionary_config_mutex);
-    configuration->setString("dictionary.comment", std::move(new_comment));
+    configuration->setString("dictionary.comment", new_comment);
 }
 
 void registerStorageDictionary(StorageFactory & factory)

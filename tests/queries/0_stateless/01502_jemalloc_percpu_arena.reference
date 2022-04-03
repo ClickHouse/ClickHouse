@@ -1,4 +1,5 @@
+<jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 1
-<jemalloc>: Number of CPUs is not deterministic
-<jemalloc>: Number of CPUs is not deterministic, but narenas is set. Hope you not what you are doing and you have set narenas to largest possible CPU ID.
+<jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
+100000000
 1

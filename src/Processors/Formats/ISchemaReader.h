@@ -14,7 +14,7 @@ namespace DB
 class ISchemaReader
 {
 public:
-    ISchemaReader(ReadBuffer & in_) : in(in_) {}
+    explicit ISchemaReader(ReadBuffer & in_) : in(in_) {}
 
     virtual NamesAndTypesList readSchema() = 0;
 

@@ -55,6 +55,9 @@ struct StorageInMemoryMetadata
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 
+    StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default;
+    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default;
+
     /// NOTE: Thread unsafe part. You should modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
     /// object. See example in IStorage.
@@ -150,6 +153,9 @@ struct StorageInMemoryMetadata
 
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
+
+    /// Block with ordinary + ephemeral.
+    Block getSampleBlockInsertable() const;
 
     /// Block with ordinary columns.
     Block getSampleBlockNonMaterialized() const;

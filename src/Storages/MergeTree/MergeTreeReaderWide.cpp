@@ -36,14 +36,14 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(
-        std::move(data_part_),
-        std::move(columns_),
+        data_part_,
+        columns_,
         metadata_snapshot_,
         uncompressed_cache_,
-        std::move(mark_cache_),
-        std::move(mark_ranges_),
-        std::move(settings_),
-        std::move(avg_value_size_hints_))
+        mark_cache_,
+        mark_ranges_,
+        settings_,
+        avg_value_size_hints_)
 {
     try
     {
@@ -212,7 +212,7 @@ static ReadBuffer * getStream(
         return nullptr;
 
     MergeTreeReaderStream & stream = *it->second;
-    stream.adjustForRange(MarkRange(seek_to_start ? 0 : from_mark, current_task_last_mark));
+    stream.adjustRightMark(current_task_last_mark);
 
     if (seek_to_start)
         stream.seekToStart();

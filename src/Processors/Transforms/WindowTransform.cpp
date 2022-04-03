@@ -7,6 +7,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 // Interface for true window functions. It's not much of an interface, they just
@@ -206,7 +208,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
     {
         column = std::move(column)->convertToFullColumnIfConst();
     }
-    input_header.setColumns(std::move(input_columns));
+    input_header.setColumns(input_columns);
 
     // Initialize window function workspaces.
     workspaces.reserve(functions.size());
@@ -986,7 +988,23 @@ void WindowTransform::writeOutCurrentRow()
             auto * buf = ws.aggregate_function_state.data();
             // FIXME does it also allocate the result on the arena?
             // We'll have to pass it out with blocks then...
-            a->insertResultInto(buf, *result_column, arena.get());
+
+            if (a->isState())
+            {
+                /// AggregateFunction's states should be inserted into column using specific way
+                auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(result_column);
+                if (!res_col_aggregate_function)
+                {
+                    throw Exception("State function " + a->getName() + " inserts results into non-state column ",
+                                    ErrorCodes::ILLEGAL_COLUMN);
+                }
+                res_col_aggregate_function->insertFrom(buf);
+            }
+            else
+            {
+                a->insertResultInto(buf, *result_column, arena.get());
+            }
+
         }
     }
 

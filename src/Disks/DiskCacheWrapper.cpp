@@ -23,7 +23,7 @@ public:
     {
     }
 
-    virtual ~WritingToCacheWriteBuffer() override
+    ~WritingToCacheWriteBuffer() override
     {
         try
         {
@@ -144,6 +144,14 @@ DiskCacheWrapper::readFile(
         }
     }
 
+    auto current_read_settings = settings;
+    /// Do not use RemoteFSReadMethod::threadpool for index and mark files.
+    /// Here it does not make sense since the files are small.
+    /// Note: enabling `threadpool` read requires to call setReadUntilEnd().
+    current_read_settings.remote_fs_method = RemoteFSReadMethod::read;
+    /// Disable data cache.
+    current_read_settings.remote_fs_enable_cache = false;
+
     if (metadata->status == DOWNLOADING)
     {
         FileDownloadStatus result_status = DOWNLOADED;
@@ -158,7 +166,7 @@ DiskCacheWrapper::readFile(
 
                 auto tmp_path = path + ".tmp";
                 {
-                    auto src_buffer = DiskDecorator::readFile(path, settings, read_hint, file_size);
+                    auto src_buffer = DiskDecorator::readFile(path, current_read_settings, read_hint, file_size);
                     auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite);
                     copyData(*src_buffer, *dst_buffer);
                 }
@@ -184,7 +192,7 @@ DiskCacheWrapper::readFile(
     if (metadata->status == DOWNLOADED)
         return cache_disk->readFile(path, settings, read_hint, file_size);
 
-    return DiskDecorator::readFile(path, settings, read_hint, file_size);
+    return DiskDecorator::readFile(path, current_read_settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -274,6 +282,7 @@ void DiskCacheWrapper::removeDirectory(const String & path)
 {
     if (cache_disk->exists(path))
         cache_disk->removeDirectory(path);
+
     DiskDecorator::removeDirectory(path);
 }
 
@@ -296,6 +305,18 @@ void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
     if (cache_disk->exists(path))
         cache_disk->removeSharedRecursive(path, keep_s3);
     DiskDecorator::removeSharedRecursive(path, keep_s3);
+}
+
+
+void DiskCacheWrapper::removeSharedFiles(const RemoveBatchRequest & files, bool keep_s3)
+{
+    for (const auto & file : files)
+    {
+        if (cache_disk->exists(file.path))
+            cache_disk->removeSharedFile(file.path, keep_s3);
+    }
+
+    DiskDecorator::removeSharedFiles(files, keep_s3);
 }
 
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)

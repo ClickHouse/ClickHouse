@@ -159,6 +159,7 @@ class PRInfo:
                     f"compare/{github_event['before']}...{self.sha}"
                 )
             else:
+                self.number = pull_request["number"]
                 self.labels = {label["name"] for label in pull_request["labels"]}
 
                 self.base_ref = pull_request["base"]["ref"]

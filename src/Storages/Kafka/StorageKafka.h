@@ -120,7 +120,7 @@ private:
     HandleKafkaErrorMode handle_error_mode;
 
     SettingsChanges createSettingsAdjustments();
-    ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
+    ConsumerBufferPtr createReadBuffer(size_t consumer_number);
 
     /// If named_collection is specified.
     String collection_name;

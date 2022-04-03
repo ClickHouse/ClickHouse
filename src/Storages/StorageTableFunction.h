@@ -6,6 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -148,7 +149,7 @@ public:
         if (nested)
             StorageProxy::renameInMemory(new_table_id);
         else
-            IStorage::renameInMemory(new_table_id);
+            IStorage::renameInMemory(new_table_id); /// NOLINT
     }
 
     bool isView() const override { return false; }

@@ -22,10 +22,11 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 
 
-def get_run_command(build_path, result_folder, server_log_folder, image):
+def get_run_command(build_path, result_folder, repo_tests_path, server_log_folder, image):
     cmd = "docker run --cap-add=SYS_PTRACE -e S3_URL='https://clickhouse-datasets.s3.amazonaws.com' " + \
           f"--volume={build_path}:/package_folder "  \
           f"--volume={result_folder}:/test_output " \
+          f"--volume={repo_tests_path}:/usr/share/clickhouse-test " \
           f"--volume={server_log_folder}:/var/log/clickhouse-server {image}"
 
     return cmd
@@ -72,6 +73,7 @@ if __name__ == "__main__":
     stopwatch = Stopwatch()
     temp_path = TEMP_PATH
     repo_path = REPO_COPY
+    repo_tests_path = os.path.join(repo_path, "tests")
     reports_path = REPORTS_PATH
 
     check_name = sys.argv[1]
@@ -106,7 +108,7 @@ if __name__ == "__main__":
 
     run_log_path = os.path.join(temp_path, "runlog.log")
 
-    run_command = get_run_command(packages_path, result_path, server_log_path, docker_image)
+    run_command = get_run_command(packages_path, result_path, repo_tests_path, server_log_path, docker_image)
     logging.info("Going to run func tests: %s", run_command)
 
     with TeePopen(run_command, run_log_path) as process:

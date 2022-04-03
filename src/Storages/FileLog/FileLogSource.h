@@ -52,7 +52,7 @@ private:
     Block virtual_header;
 
     /// The start pos and end pos of files responsible by this stream,
-    /// does not include end
+    /// does not include end.
     size_t start;
     size_t end;
 };

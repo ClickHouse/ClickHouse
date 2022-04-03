@@ -112,6 +112,7 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     , aggregate_descriptions(other.aggregate_descriptions)
     , destination_type(other.destination_type)
     , destination_name(other.destination_name)
+    , if_exists(other.if_exists)
     , recompression_codec(other.recompression_codec)
 {
     if (other.expression)
@@ -149,6 +150,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     aggregate_descriptions = other.aggregate_descriptions;
     destination_type = other.destination_type;
     destination_name = other.destination_name;
+    if_exists = other.if_exists;
 
     if (other.recompression_codec)
         recompression_codec = other.recompression_codec->clone();
@@ -185,9 +187,10 @@ TTLDescription TTLDescription::getTTLFromAST(
     }
     else /// rows TTL
     {
+        result.mode = ttl_element->mode;
         result.destination_type = ttl_element->destination_type;
         result.destination_name = ttl_element->destination_name;
-        result.mode = ttl_element->mode;
+        result.if_exists = ttl_element->if_exists;
 
         if (ttl_element->mode == TTLMode::DELETE)
         {

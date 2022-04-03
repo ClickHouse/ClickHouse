@@ -98,6 +98,7 @@ if __name__ == "__main__":
         'server.log': os.path.join(workspace_path, 'server.log'),
         'fuzzer.log': os.path.join(workspace_path, 'fuzzer.log'),
         'report.html': os.path.join(workspace_path, 'report.html'),
+        'core.gz': os.path.join(workspace_path, 'core.gz'),
     }
 
     s3_helper = S3Helper('https://s3.amazonaws.com')

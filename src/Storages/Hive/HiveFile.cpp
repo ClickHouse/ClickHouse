@@ -8,8 +8,10 @@
 #include <arrow/api.h>
 #include <arrow/io/api.h>
 #include <arrow/status.h>
+#include <arrow/filesystem/filesystem.h>
 #include <orc/OrcFile.hh>
 #include <orc/Reader.hh>
+#include <orc/Statistics.hh>
 #include <parquet/arrow/reader.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>

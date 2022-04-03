@@ -58,7 +58,6 @@ private:
     /// current row at which we stop reading
     size_t current_row = 0;
 
-private:
     /// Closes readers and unlock part locks
     void finish();
 };

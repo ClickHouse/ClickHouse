@@ -147,7 +147,7 @@ void BackupImpl::readBackupMetadata()
     auto in = readFileImpl(".backup");
     String str;
     readStringUntilEOF(str, *in);
-    std::istringstream stream(std::move(str)); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::istringstream stream(str); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->load(stream);
 

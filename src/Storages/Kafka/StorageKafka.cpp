@@ -405,7 +405,7 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 }
 
 
-ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
+ConsumerBufferPtr StorageKafka::createReadBuffer(size_t consumer_number)
 {
     cppkafka::Configuration conf;
 

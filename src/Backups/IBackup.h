@@ -16,7 +16,7 @@ using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
 class IBackup : public std::enable_shared_from_this<IBackup>, public TypePromotion<IBackup>
 {
 public:
-    IBackup() {}
+    IBackup() = default;
     virtual ~IBackup() = default;
 
     /// Name of the backup.
@@ -44,7 +44,7 @@ public:
     /// before the terminator. For example, list("", "") returns names of all the entries
     /// in the backup; and list("data/", "/") return kind of a list of folders and
     /// files stored in the "data/" directory inside the backup.
-    virtual Strings listFiles(const String & prefix = "", const String & terminator = "/") const = 0;
+    virtual Strings listFiles(const String & prefix = "", const String & terminator = "/") const = 0; /// NOLINT
 
     /// Checks if an entry with a specified name exists.
     virtual bool fileExists(const String & file_name) const = 0;
