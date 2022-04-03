@@ -1,5 +1,5 @@
 ---
-toc_title: FORMAT
+sidebar_label: FORMAT
 ---
 
 # FORMAT Clause {#format-clause}

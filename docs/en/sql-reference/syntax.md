@@ -1,6 +1,6 @@
 ---
-toc_priority: 31
-toc_title: Syntax
+sidebar_position: 31
+sidebar_label: Syntax
 ---
 
 # Syntax {#syntax}
