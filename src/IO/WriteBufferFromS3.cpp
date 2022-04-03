@@ -53,10 +53,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
-    size_t minimum_upload_part_size_,
-    size_t upload_part_size_multiply_factor_,
-    size_t upload_part_size_multiply_threshold_,
-    size_t max_single_part_upload_size_,
+    const S3Settings::ReadWriteSettings & s3_settings_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
     ScheduleFunc schedule_)
@@ -65,10 +62,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , key(key_)
     , object_metadata(std::move(object_metadata_))
     , client_ptr(std::move(client_ptr_))
-    , upload_part_size(minimum_upload_part_size_)
-    , upload_part_size_multiply_factor(upload_part_size_multiply_factor_)
-    , upload_part_size_multiply_threshold(upload_part_size_multiply_threshold_)
-    , max_single_part_upload_size(max_single_part_upload_size_)
+    , s3_settings(s3_settings_)
     , schedule(std::move(schedule_))
 {
     allocateBuffer();
@@ -90,7 +84,7 @@ void WriteBufferFromS3::nextImpl()
     last_part_size += offset();
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
-    if (multipart_upload_id.empty() && last_part_size > max_single_part_upload_size)
+    if (multipart_upload_id.empty() && last_part_size > s3_settings.max_single_part_upload_size)
         createMultipartUpload();
 
     if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
@@ -106,8 +100,8 @@ void WriteBufferFromS3::nextImpl()
 
 void WriteBufferFromS3::allocateBuffer()
 {
-    if (total_parts_uploaded != 0 && total_parts_uploaded % upload_part_size_multiply_threshold == 0)
-        upload_part_size *= upload_part_size_multiply_factor;
+    if (total_parts_uploaded != 0 && total_parts_uploaded % s3_settings.upload_part_size_multiply_parts_count_threshold == 0)
+        upload_part_size *= s3_settings.upload_part_size_multiply_factor;
 
     temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
     temporary_buffer->exceptions(std::ios::badbit);
