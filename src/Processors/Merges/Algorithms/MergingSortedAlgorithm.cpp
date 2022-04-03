@@ -22,12 +22,11 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , limit(limit_)
+    , has_collation(std::any_of(description.begin(), description.end(), [](const auto & descr) { return descr.collator != nullptr; }))
     , out_row_sources_buf(out_row_sources_buf_)
     , current_inputs(num_inputs)
     , cursors(num_inputs)
 {
-    for (auto & column_description : description)
-        has_collation |= column_description.collator != nullptr;
 }
 
 void MergingSortedAlgorithm::addInput()

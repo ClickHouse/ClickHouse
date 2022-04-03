@@ -12,10 +12,10 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-CheckSortedTransform::CheckSortedTransform(const Block & header, const SortDescription & sort_description_)
+CheckSortedTransform::CheckSortedTransform(const Block & header, const SortDescription & sort_description)
     : ISimpleTransform(header, header, false)
 {
-    for (const auto & column_description : sort_description_)
+    for (const auto & column_description : sort_description)
         sort_description_map.emplace_back(column_description, header.getPositionByName(column_description.column_name));
 }
 
@@ -34,7 +34,7 @@ void CheckSortedTransform::transform(Chunk & chunk)
             const IColumn * left_col = left[column_number].get();
             const IColumn * right_col = right[column_number].get();
 
-            int res = elem.direction * left_col->compareAt(left_index, right_index, *right_col, elem.nulls_direction);
+            int res = elem.base.direction * left_col->compareAt(left_index, right_index, *right_col, elem.base.nulls_direction);
             if (res < 0)
             {
                 return;

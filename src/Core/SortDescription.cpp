@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void dumpSortDescription(const SortDescription & description, const Block &, WriteBuffer & out)
+void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
 {
     bool first = true;
 
@@ -28,7 +28,7 @@ void dumpSortDescription(const SortDescription & description, const Block &, Wri
     }
 }
 
-void SortColumnDescription::explain(JSONBuilder::JSONMap & map, const Block &) const
+void SortColumnDescription::explain(JSONBuilder::JSONMap & map) const
 {
     map.add("Column", column_name);
     map.add("Ascending", direction > 0);
@@ -38,17 +38,17 @@ void SortColumnDescription::explain(JSONBuilder::JSONMap & map, const Block &) c
 std::string dumpSortDescription(const SortDescription & description)
 {
     WriteBufferFromOwnString wb;
-    dumpSortDescription(description, Block{}, wb);
+    dumpSortDescription(description, wb);
     return wb.str();
 }
 
-JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description, const Block & header)
+JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
 {
     auto json_array = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & descr : description)
     {
         auto json_map = std::make_unique<JSONBuilder::JSONMap>();
-        descr.explain(*json_map, header);
+        descr.explain(*json_map);
         json_array->add(std::move(json_map));
     }
 

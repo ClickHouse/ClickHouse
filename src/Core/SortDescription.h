@@ -72,30 +72,30 @@ struct SortColumnDescription
         return !(*this == other);
     }
 
-    std::string dump() const { return fmt::format("{}:{}:dir {}nulls ", column_name, direction, nulls_direction); }
+    std::string dump() const { return fmt::format("{}:dir {}nulls {}", column_name, direction, nulls_direction); }
 
-    void explain(JSONBuilder::JSONMap & map, const Block & header) const;
+    void explain(JSONBuilder::JSONMap & map) const;
 };
 
-struct SortColumnDescriptionWithColumnIndex : SortColumnDescription
+struct SortColumnDescriptionWithColumnIndex
 {
+    SortColumnDescription base;
     size_t column_number;
 
-    SortColumnDescriptionWithColumnIndex(SortColumnDescription descr, size_t column_number_)
-        : SortColumnDescription(std::move(descr)), column_number(column_number_)
+    SortColumnDescriptionWithColumnIndex(SortColumnDescription description_, size_t column_number_)
+        : base(std::move(description_)), column_number(column_number_)
     {
     }
 };
 
 /// Description of the sorting rule for several columns.
 using SortDescription = std::vector<SortColumnDescription>;
-using SortDescriptionsWithPositions = std::vector<SortColumnDescriptionWithColumnIndex>;
+using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumnIndex>;
 
 /// Outputs user-readable description into `out`.
-void dumpSortDescription(const SortDescription & description, const Block & header, WriteBuffer & out);
+void dumpSortDescription(const SortDescription & description, WriteBuffer & out);
 
 std::string dumpSortDescription(const SortDescription & description);
 
-JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description, const Block & header);
-
+JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description);
 }

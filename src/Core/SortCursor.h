@@ -357,12 +357,12 @@ private:
 };
 
 template <typename TLeftColumns, typename TRightColumns>
-bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t j, const SortDescriptionsWithPositions & descr)
+bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t j, const SortDescriptionWithPositions & descr)
 {
     for (const auto & elem : descr)
     {
         size_t ind = elem.column_number;
-        int res = elem.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.nulls_direction);
+        int res = elem.base.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.base.nulls_direction);
         if (res < 0)
             return true;
         else if (res > 0)

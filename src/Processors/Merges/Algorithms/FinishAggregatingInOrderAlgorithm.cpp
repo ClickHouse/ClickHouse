@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FinishAggregatingInOrderAlgorithm::State::State(const Chunk & chunk, const SortDescriptionsWithPositions & desc, Int64 total_bytes_)
+FinishAggregatingInOrderAlgorithm::State::State(const Chunk & chunk, const SortDescriptionWithPositions & desc, Int64 total_bytes_)
     : all_columns(chunk.getColumns()), num_rows(chunk.getNumRows()), total_bytes(total_bytes_)
 {
     if (!chunk)
@@ -22,24 +22,17 @@ FinishAggregatingInOrderAlgorithm::State::State(const Chunk & chunk, const SortD
 
     sorting_columns.reserve(desc.size());
     for (const auto & column_desc : desc)
-    {
-        const auto idx = column_desc.column_number;
-        sorting_columns.emplace_back(all_columns[idx].get());
-    }
+        sorting_columns.emplace_back(all_columns[column_desc.column_number].get());
 }
 
 FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     const Block & header_,
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
-    SortDescription description_,
+    const SortDescription & description_,
     size_t max_block_size_,
     size_t max_block_bytes_)
-    : header(header_)
-    , num_inputs(num_inputs_)
-    , params(params_)
-    , max_block_size(max_block_size_)
-    , max_block_bytes(max_block_bytes_)
+    : header(header_), num_inputs(num_inputs_), params(params_), max_block_size(max_block_size_), max_block_bytes(max_block_bytes_)
 {
     for (const auto & column_description : description_)
         description.emplace_back(column_description, header_.getPositionByName(column_description.column_name));
