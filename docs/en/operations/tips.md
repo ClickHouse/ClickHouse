@@ -1,6 +1,6 @@
 ---
-toc_priority: 58
-toc_title: Usage Recommendations
+sidebar_position: 58
+sidebar_label: Usage Recommendations
 ---
 
 # Usage Recommendations {#usage-recommendations}
@@ -33,8 +33,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
-!!! warning "Attention"
-    If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. The recommended amount of RAM is 32 GB or more. You can use ClickHouse in a system with a small amount of RAM, even with 2 GB of RAM, but it requires additional tuning and can ingest at a low rate.
+:::warning    
+If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. The recommended amount of RAM is 32 GB or more. You can use ClickHouse in a system with a small amount of RAM, even with 2 GB of RAM, but it requires additional tuning and can ingest at a low rate.
+:::
 
 ## Storage Subsystem {#storage-subsystem}
 
@@ -139,7 +140,7 @@ With the default settings, ZooKeeper is a time bomb:
 
 This bomb must be defused.
 
-The ZooKeeper (3.5.1) configuration below is used in the Yandex.Metrica production environment as of May 20, 2017:
+The ZooKeeper (3.5.1) configuration below is used in a large production environment:
 
 zoo.cfg:
 
@@ -275,4 +276,4 @@ end script
 
 If you use antivirus software configure it to skip folders with Clickhouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
 
-{## [Original article](https://clickhouse.com/docs/en/operations/tips/) ##}
+[Original article](https://clickhouse.com/docs/en/operations/tips/)

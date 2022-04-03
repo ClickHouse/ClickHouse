@@ -1,6 +1,6 @@
 ---
-toc_priority: 21
-toc_title: Input and Output Formats
+sidebar_position: 21
+sidebar_label: Input and Output Formats
 ---
 
 # Formats for Input and Output Data {#formats}
@@ -300,7 +300,7 @@ Result:
     <tr> <th>Search phrase</th> <th>Count</th> </tr>
     <tr> <td></td> <td>8267016</td> </tr>
     <tr> <td>bathroom interior design</td> <td>2166</td> </tr>
-    <tr> <td>yandex</td> <td>1655</td> </tr>
+    <tr> <td>clickhouse</td> <td>1655</td> </tr>
     <tr> <td>spring 2014 fashion</td> <td>1549</td> </tr>
     <tr> <td>freeform photos</td> <td>1480</td> </tr>
   </table>
@@ -371,7 +371,7 @@ Similar to TabSeparated, but outputs a value in name=value format. Names are esc
 ``` text
 SearchPhrase=   count()=8267016
 SearchPhrase=bathroom interior design    count()=2166
-SearchPhrase=yandex     count()=1655
+SearchPhrase=clickhouse     count()=1655
 SearchPhrase=2014 spring fashion    count()=1549
 SearchPhrase=freeform photos       count()=1480
 SearchPhrase=angelina jolie    count()=1245
@@ -764,8 +764,9 @@ CREATE TABLE IF NOT EXISTS example_table
 -   If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
 -   If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
-!!! note "Warning"
-    When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
+:::warning
+When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
+:::
 
 ### Selecting Data {#selecting-data}
 
@@ -787,8 +788,9 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
-!!! note "Note"
-    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
+:::info    
+Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
+:::
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
@@ -1060,7 +1062,7 @@ XML format is suitable only for output, not for parsing. Example:
                         <field>2166</field>
                 </row>
                 <row>
-                        <SearchPhrase>yandex</SearchPhrase>
+                        <SearchPhrase>clickhouse</SearchPhrase>
                         <field>1655</field>
                 </row>
                 <row>
@@ -1340,8 +1342,9 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-!!! note "Warning"
-    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
+:::warning    
+Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
+:::
 
 ## Parquet {#data-format-parquet}
 

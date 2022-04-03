@@ -71,10 +71,10 @@ struct QueryFuzzer
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
-    void collectFuzzInfoMain(const ASTPtr ast);
-    void addTableLike(const ASTPtr ast);
-    void addColumnLike(const ASTPtr ast);
-    void collectFuzzInfoRecurse(const ASTPtr ast);
+    void collectFuzzInfoMain(ASTPtr ast);
+    void addTableLike(ASTPtr ast);
+    void addColumnLike(ASTPtr ast);
+    void collectFuzzInfoRecurse(ASTPtr ast);
 };
 
 }

@@ -1,6 +1,6 @@
 ---
-toc_priority: 30
-toc_title: MergeTree
+sidebar_position: 11
+sidebar_label:  MergeTree
 ---
 
 # MergeTree {#table_engines-mergetree}
@@ -27,8 +27,9 @@ Main features:
 
     If necessary, you can set the data sampling method in the table.
 
-!!! info "Info"
-    The [Merge](../../../engines/table-engines/special/merge.md#merge) engine does not belong to the `*MergeTree` family.
+:::info
+The [Merge](../../../engines/table-engines/special/merge.md#merge) engine does not belong to the `*MergeTree` family.
+:::
 
 ## Creating a Table {#table_engine-mergetree-creating-a-table}
 
@@ -127,8 +128,9 @@ The `index_granularity` setting can be omitted because 8192 is the default value
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-!!! attention "Attention"
-    Do not use this method in new projects. If possible, switch old projects to the method described above.
+:::warning
+Do not use this method in new projects. If possible, switch old projects to the method described above.
+:::
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -304,8 +306,8 @@ CREATE TABLE table_name
 Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in the following queries:
 
 ``` sql
-SELECT count() FROM table WHERE s < 'z'
-SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
+SELECT count() FROM table WHERE s &lt; 'z'
+SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) &gt;= 1234
 ```
 
 #### Available Types of Indices {#available-types-of-indices}
@@ -364,7 +366,7 @@ The `set` index can be used with all functions. Function subsets for other index
 | Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
 |------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notEquals(!=, <>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
@@ -382,8 +384,10 @@ The `set` index can be used with all functions. Function subsets for other index
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
-!!! note "Note"
-    Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can’t be used for optimizing queries where the result of a function is expected to be false, for example:
+:::note
+Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
+
+For example:
 
 -   Can be optimized:
     -   `s LIKE '%test%'`
@@ -391,12 +395,13 @@ Functions with a constant argument that is less than ngram size can’t be used 
     -   `s = 1`
     -   `NOT s != 1`
     -   `startsWith(s, 'test')`
--   Can’t be optimized:
+-   Can not be optimized:
     -   `NOT s LIKE '%test%'`
     -   `s NOT LIKE '%test%'`
     -   `NOT s = 1`
     -   `s != 1`
     -   `NOT startsWith(s, 'test')`
+:::
 
 ## Projections {#projections}
 Projections are like [materialized views](../../../sql-reference/statements/create/view.md#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
@@ -688,7 +693,7 @@ Tags:
 -   `volume_name_N` — Volume name. Volume names must be unique.
 -   `disk` — a disk within a volume.
 -   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
--   `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
+-   `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved. 
 -   `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
 
 Cofiguration examples:
@@ -802,7 +807,7 @@ Configuration markup:
     <disks>
         <s3>
             <type>s3</type>
-            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
+            <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
             <region></region>
@@ -856,7 +861,7 @@ S3 disk can be configured as `main` or `cold` storage:
     <disks>
         <s3>
             <type>s3</type>
-            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
+            <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
         </s3>

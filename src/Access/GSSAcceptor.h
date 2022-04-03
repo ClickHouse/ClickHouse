@@ -47,7 +47,6 @@ private:
     void resetHandles() noexcept;
     void initHandles();
 
-private:
     const Params params;
 
     bool is_failed = false;

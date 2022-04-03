@@ -5,6 +5,7 @@ from rbac.requirements import *
 from rbac.helper.common import *
 import rbac.helper.errors as errors
 
+
 @TestSuite
 def privileges_granted_directly(self, node=None):
     """Check that a user is able to execute `SYSTEM SYNC REPLICA` commands if and only if
@@ -17,10 +18,18 @@ def privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=sync_replica,
-            examples=Examples("privilege on grant_target_name user_name", [
-                tuple(list(row)+[user_name,user_name]) for row in sync_replica.examples
-            ], args=Args(name="check privilege={privilege}", format_name=True)))
+        Suite(
+            run=sync_replica,
+            examples=Examples(
+                "privilege on grant_target_name user_name",
+                [
+                    tuple(list(row) + [user_name, user_name])
+                    for row in sync_replica.examples
+                ],
+                args=Args(name="check privilege={privilege}", format_name=True),
+            ),
+        )
+
 
 @TestSuite
 def privileges_granted_via_role(self, node=None):
@@ -38,21 +47,31 @@ def privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=sync_replica,
-            examples=Examples("privilege on grant_target_name user_name", [
-                tuple(list(row)+[role_name,user_name]) for row in sync_replica.examples
-            ], args=Args(name="check privilege={privilege}", format_name=True)))
+        Suite(
+            run=sync_replica,
+            examples=Examples(
+                "privilege on grant_target_name user_name",
+                [
+                    tuple(list(row) + [role_name, user_name])
+                    for row in sync_replica.examples
+                ],
+                args=Args(name="check privilege={privilege}", format_name=True),
+            ),
+        )
+
 
 @TestOutline(Suite)
-@Examples("privilege on",[
-    ("ALL", "*.*"),
-    ("SYSTEM", "*.*"),
-    ("SYSTEM SYNC REPLICA", "table"),
-    ("SYNC REPLICA", "table"),
-])
+@Examples(
+    "privilege on",
+    [
+        ("ALL", "*.*"),
+        ("SYSTEM", "*.*"),
+        ("SYSTEM SYNC REPLICA", "table"),
+        ("SYNC REPLICA", "table"),
+    ],
+)
 def sync_replica(self, privilege, on, grant_target_name, user_name, node=None):
-    """Check that user is only able to execute `SYSTEM SYNCE REPLICA` when they have privilege.
-    """
+    """Check that user is only able to execute `SYSTEM SYNCE REPLICA` when they have privilege."""
     exitcode, message = errors.not_enough_privileges(name=user_name)
     table_name = f"table_name_{getuid()}"
 
@@ -72,8 +91,12 @@ def sync_replica(self, privilege, on, grant_target_name, user_name, node=None):
                 node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
             with Then("I check the user can't sync replica"):
-                node.query(f"SYSTEM SYNC REPLICA {table_name}", settings = [("user", f"{user_name}")],
-                    exitcode=exitcode, message=message)
+                node.query(
+                    f"SYSTEM SYNC REPLICA {table_name}",
+                    settings=[("user", f"{user_name}")],
+                    exitcode=exitcode,
+                    message=message,
+                )
 
         with Scenario("SYSTEM SYNC REPLICA with privilege"):
 
@@ -81,7 +104,10 @@ def sync_replica(self, privilege, on, grant_target_name, user_name, node=None):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with Then("I check the user can sync replica"):
-                node.query(f"SYSTEM SYNC REPLICA {table_name}", settings = [("user", f"{user_name}")])
+                node.query(
+                    f"SYSTEM SYNC REPLICA {table_name}",
+                    settings=[("user", f"{user_name}")],
+                )
 
         with Scenario("SYSTEM SYNC REPLICA with revoked privilege"):
 
@@ -92,19 +118,23 @@ def sync_replica(self, privilege, on, grant_target_name, user_name, node=None):
                 node.query(f"REVOKE {privilege} ON {on} FROM {grant_target_name}")
 
             with Then("I check the user can't sync replica"):
-                node.query(f"SYSTEM SYNC REPLICA {table_name}", settings = [("user", f"{user_name}")],
-                    exitcode=exitcode, message=message)
+                node.query(
+                    f"SYSTEM SYNC REPLICA {table_name}",
+                    settings=[("user", f"{user_name}")],
+                    exitcode=exitcode,
+                    message=message,
+                )
+
 
 @TestFeature
 @Name("system sync replica")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_SyncReplica("1.0"),
     RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
+    RQ_SRS_006_RBAC_Privileges_None("1.0"),
 )
 def feature(self, node="clickhouse1"):
-    """Check the RBAC functionality of SYSTEM SYNC REPLICA.
-    """
+    """Check the RBAC functionality of SYSTEM SYNC REPLICA."""
     self.context.node = self.context.cluster.node(node)
 
     Suite(run=privileges_granted_directly, setup=instrument_clickhouse_server_log)

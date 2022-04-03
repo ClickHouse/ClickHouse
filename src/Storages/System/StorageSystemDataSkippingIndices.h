@@ -16,7 +16,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -26,7 +26,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 protected:
-    StorageSystemDataSkippingIndices(const StorageID & table_id_);
+    explicit StorageSystemDataSkippingIndices(const StorageID & table_id_);
 };
 
 }
