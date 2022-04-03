@@ -2099,6 +2099,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             dropped_columns.emplace(command.column_name);
         }
+        else if (command.type == AlterCommand::RESET_SETTING)
+        {
+            for (const auto & reset_setting : command.settings_resets)
+            {
+                if (!settings.has(reset_setting))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset setting '{}' because it doesn't exist for MergeTree engines family", reset_setting);
+            }
+        }
         else if (command.isRequireMutationStage(getInMemoryMetadata()))
         {
             /// This alter will override data on disk. Let's check that it doesn't
