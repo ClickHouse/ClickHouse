@@ -1,4 +1,4 @@
-#include "QatCodec.h"
+#include "qatCoDecApi.h"
 
 #include <Poco/Logger.h>
 #include <base/logger_useful.h>
