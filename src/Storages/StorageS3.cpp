@@ -408,26 +408,19 @@ public:
         ContextPtr context,
         std::optional<FormatSettings> format_settings_,
         const CompressionMethod compression_method,
-        const std::shared_ptr<Aws::S3::S3Client> & client,
+        const StorageS3::S3Configuration & s3_configuration_,
         const String & bucket,
-        const String & key,
-        size_t min_upload_part_size,
-        size_t upload_part_size_multiply_factor,
-        size_t upload_part_size_multiply_parts_count_threshold,
-        size_t max_single_part_upload_size)
+        const String & key)
         : SinkToStorage(sample_block_)
         , sample_block(sample_block_)
         , format_settings(format_settings_)
     {
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(
-                client,
+                s3_configuration_.client,
                 bucket,
                 key,
-                min_upload_part_size,
-                upload_part_size_multiply_factor,
-                upload_part_size_multiply_parts_count_threshold,
-                max_single_part_upload_size,
+                s3_configuration_.rw_settings,
                 std::nullopt,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 threadPoolCallbackRunner(IOThreadPool::get())),
@@ -478,25 +471,15 @@ public:
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
         const CompressionMethod compression_method_,
-        const std::shared_ptr<Aws::S3::S3Client> & client_,
-        const String & bucket_,
-        const String & key_,
-        size_t min_upload_part_size_,
-        size_t upload_part_size_multiply_factor_,
-        size_t upload_part_size_multiply_parts_count_threshold_,
-        size_t max_single_part_upload_size_)
+        const StorageS3::S3Configuration & s3_configuration_,
+        const String & key_)
         : PartitionedSink(partition_by, context_, sample_block_)
         , format(format_)
         , sample_block(sample_block_)
         , context(context_)
         , compression_method(compression_method_)
-        , client(client_)
-        , bucket(bucket_)
+        , s3_configuration(s3_configuration_)
         , key(key_)
-        , min_upload_part_size(min_upload_part_size_)
-        , upload_part_size_multiply_factor(upload_part_size_multiply_factor_)
-        , upload_part_size_multiply_parts_count_threshold(upload_part_size_multiply_parts_count_threshold_)
-        , max_single_part_upload_size(max_single_part_upload_size_)
         , format_settings(format_settings_)
     {
     }
@@ -515,13 +498,9 @@ public:
             context,
             format_settings,
             compression_method,
-            client,
+            s3_configuration,
             partition_bucket,
-            partition_key,
-            min_upload_part_size,
-            upload_part_size_multiply_factor,
-            upload_part_size_multiply_parts_count_threshold,
-            max_single_part_upload_size
+            partition_key
         );
     }
 
@@ -531,13 +510,9 @@ private:
     ContextPtr context;
     const CompressionMethod compression_method;
 
-    std::shared_ptr<Aws::S3::S3Client> client;
+    StorageS3::S3Configuration s3_configuration;
     const String bucket;
     const String key;
-    size_t min_upload_part_size;
-    size_t upload_part_size_multiply_factor;
-    size_t upload_part_size_multiply_parts_count_threshold;
-    size_t max_single_part_upload_size;
     std::optional<FormatSettings> format_settings;
 
     ExpressionActionsPtr partition_by_expr;
@@ -573,14 +548,9 @@ StorageS3::StorageS3(
     const S3::URI & uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
+    const S3Settings::ReadWriteSettings & rw_settings_from_ast,
     const StorageID & table_id_,
     const String & format_name_,
-    UInt64 max_single_read_retries_,
-    UInt64 min_upload_part_size_,
-    UInt64 upload_part_size_multiply_factor_,
-    UInt64 upload_part_size_multiply_parts_count_threshold_,
-    UInt64 max_single_part_upload_size_,
-    UInt64 max_connections_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
@@ -590,14 +560,12 @@ StorageS3::StorageS3(
     bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
-    , client_auth{uri_, access_key_id_, secret_access_key_, max_connections_, {}, {}} /// Client and settings will be updated later
+    , s3_configuration{
+        uri_,
+        S3Settings::AuthSettings{ .access_key_id = access_key_id_, .secret_access_key = secret_access_key_ },
+        {}, {}} /// Client and settings will be updated later
     , keys({uri_.key})
     , format_name(format_name_)
-    , max_single_read_retries(max_single_read_retries_)
-    , min_upload_part_size(min_upload_part_size_)
-    , upload_part_size_multiply_factor(upload_part_size_multiply_factor_)
-    , upload_part_size_multiply_parts_count_threshold(upload_part_size_multiply_parts_count_threshold_)
-    , max_single_part_upload_size(max_single_part_upload_size_)
     , compression_method(compression_method_)
     , name(uri_.storage_name)
     , distributed_processing(distributed_processing_)
@@ -608,10 +576,10 @@ StorageS3::StorageS3(
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
 
-    updateClientAndAuthSettings(context_, client_auth);
+    updateS3Configuration(context_, s3_configuration, rw_settings_from_ast);
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromDataImpl(format_name, client_auth, max_single_read_retries_, compression_method, distributed_processing_, is_key_with_globs, format_settings, context_);
+        auto columns = getTableStructureFromDataImpl(format_name, s3_configuration, compression_method, distributed_processing_, is_key_with_globs, format_settings, context_);
         storage_metadata.setColumns(columns);
     }
     else
@@ -629,7 +597,7 @@ StorageS3::StorageS3(
     virtual_columns = getVirtualsForStorage(columns, default_virtuals);
 }
 
-std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(const ClientAuthentication & client_auth, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context)
+std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(const StorageS3::S3Configuration & s3_configuration_, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context)
 {
     if (distributed_processing)
     {
@@ -641,7 +609,7 @@ std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
     else if (is_key_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
+        auto glob_iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*s3_configuration_.client, s3_configuration_.uri);
         return std::make_shared<StorageS3Source::IteratorWrapper>([glob_iterator]()
         {
             return glob_iterator->next();
@@ -671,7 +639,7 @@ Pipe StorageS3::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    updateClientAndAuthSettings(local_context, client_auth);
+    updateS3Configuration(local_context, s3_configuration);
 
     Pipes pipes;
 
@@ -684,7 +652,7 @@ Pipe StorageS3::read(
             requested_virtual_columns.push_back(virtual_column);
     }
 
-    std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, local_context);
+    std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper = createFileIterator(s3_configuration, keys, is_key_with_globs, distributed_processing, local_context);
 
     ColumnsDescription columns_description;
     Block block_for_format;
@@ -722,10 +690,10 @@ Pipe StorageS3::read(
             format_settings,
             columns_description,
             max_block_size,
-            max_single_read_retries,
+            s3_configuration.rw_settings.max_single_read_retries,
             compression_method,
-            client_auth.client,
-            client_auth.uri.bucket,
+            s3_configuration.client,
+            s3_configuration.uri.bucket,
             iterator_wrapper,
             max_download_threads));
     }
@@ -737,11 +705,11 @@ Pipe StorageS3::read(
 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    updateClientAndAuthSettings(local_context, client_auth);
+    updateS3Configuration(local_context, s3_configuration);
 
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(keys.back(), compression_method);
-    bool has_wildcards = client_auth.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
+    bool has_wildcards = s3_configuration.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
@@ -756,22 +724,17 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             local_context,
             format_settings,
             chosen_compression_method,
-            client_auth.client,
-            client_auth.uri.bucket,
-            keys.back(),
-            min_upload_part_size,
-            upload_part_size_multiply_factor,
-            upload_part_size_multiply_parts_count_threshold,
-            max_single_part_upload_size);
+            s3_configuration,
+            keys.back());
     }
     else
     {
         if (is_key_with_globs)
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", client_auth.uri.key);
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", s3_configuration.uri.key);
 
         bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
 
-        if (!truncate_in_insert && checkIfObjectExists(client_auth.client, client_auth.uri.bucket, keys.back()))
+        if (!truncate_in_insert && checkIfObjectExists(s3_configuration.client, s3_configuration.uri.bucket, keys.back()))
         {
             if (local_context->getSettingsRef().s3_create_new_file_on_insert)
             {
@@ -783,7 +746,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
                     new_key = keys[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : keys[0].substr(pos));
                     ++index;
                 }
-                while (checkIfObjectExists(client_auth.client, client_auth.uri.bucket, new_key));
+                while (checkIfObjectExists(s3_configuration.client, s3_configuration.uri.bucket, new_key));
                 keys.push_back(new_key);
             }
             else
@@ -791,7 +754,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
                     ErrorCodes::BAD_ARGUMENTS,
                     "Object in bucket {} with key {} already exists. If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
                     "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
-                    client_auth.uri.bucket,
+                    s3_configuration.uri.bucket,
                     keys.back());
         }
 
@@ -801,23 +764,19 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             local_context,
             format_settings,
             chosen_compression_method,
-            client_auth.client,
-            client_auth.uri.bucket,
-            keys.back(),
-            min_upload_part_size,
-            upload_part_size_multiply_factor,
-            upload_part_size_multiply_parts_count_threshold,
-            max_single_part_upload_size);
+            s3_configuration,
+            s3_configuration.uri.bucket,
+            keys.back());
     }
 }
 
 
 void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
-    updateClientAndAuthSettings(local_context, client_auth);
+    updateS3Configuration(local_context, s3_configuration);
 
     if (is_key_with_globs)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", client_auth.uri.key);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", s3_configuration.uri.key);
 
     Aws::S3::Model::Delete delkeys;
 
@@ -829,10 +788,10 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     }
 
     Aws::S3::Model::DeleteObjectsRequest request;
-    request.SetBucket(client_auth.uri.bucket);
+    request.SetBucket(s3_configuration.uri.bucket);
     request.SetDelete(delkeys);
 
-    auto response = client_auth.client->DeleteObjects(request);
+    auto response = s3_configuration.client->DeleteObjects(request);
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();
@@ -841,38 +800,89 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 }
 
 
-void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentication & upd)
+void StorageS3::updateS3Configuration(ContextPtr ctx, S3Configuration & upd, const std::optional<S3Settings::ReadWriteSettings> & rw_settings_from_ast)
 {
-    auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
-    if (upd.client && (!upd.access_key_id.empty() || settings == upd.auth_settings))
+    auto s3_settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
+    auto auth_settings = s3_settings.auth_settings;
+    if (upd.client && (!upd.auth_settings.access_key_id.empty() || auth_settings == upd.auth_settings))
         return;
 
-    Aws::Auth::AWSCredentials credentials(upd.access_key_id, upd.secret_access_key);
+    Aws::Auth::AWSCredentials credentials(upd.auth_settings.access_key_id, upd.auth_settings.secret_access_key);
     HeaderCollection headers;
-    if (upd.access_key_id.empty())
+    if (upd.auth_settings.access_key_id.empty())
     {
-        credentials = Aws::Auth::AWSCredentials(settings.access_key_id, settings.secret_access_key);
-        headers = settings.headers;
+        credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
+        headers = auth_settings.headers;
     }
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        settings.region,
+        auth_settings.region,
         ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
 
+    auto rw_settings = s3_settings.rw_settings;
+    if (rw_settings_from_ast)
+    {
+        if (rw_settings_from_ast->max_single_read_retries)
+            rw_settings.max_single_read_retries = rw_settings_from_ast->max_single_read_retries;
+        else if (rw_settings_from_ast->min_upload_part_size)
+            rw_settings.min_upload_part_size = rw_settings_from_ast->min_upload_part_size;
+        else if (rw_settings_from_ast->upload_part_size_multiply_factor)
+            rw_settings.upload_part_size_multiply_factor = rw_settings_from_ast->upload_part_size_multiply_factor;
+        else if (rw_settings_from_ast->upload_part_size_multiply_parts_count_threshold)
+            rw_settings.upload_part_size_multiply_parts_count_threshold = rw_settings_from_ast->upload_part_size_multiply_parts_count_threshold;
+        else if (rw_settings_from_ast->max_single_part_upload_size)
+            rw_settings.max_single_part_upload_size = rw_settings_from_ast->max_single_part_upload_size;
+        else if (rw_settings_from_ast->max_connections)
+            rw_settings.max_connections = rw_settings_from_ast->max_connections;
+    }
+
     client_configuration.endpointOverride = upd.uri.endpoint;
-    client_configuration.maxConnections = upd.max_connections;
+    client_configuration.maxConnections = rw_settings.max_connections;
 
     upd.client = S3::ClientFactory::instance().create(
         client_configuration,
         upd.uri.is_virtual_hosted_style,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
-        settings.server_side_encryption_customer_key_base64,
+        auth_settings.server_side_encryption_customer_key_base64,
         std::move(headers),
-        settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
-        settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
+        auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
+        auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
 
-    upd.auth_settings = std::move(settings);
+    upd.auth_settings = std::move(auth_settings);
+    upd.rw_settings = std::move(rw_settings);
+}
+
+
+void StorageS3::processNamedCollectionResult(StorageS3Configuration & configuration, const std::vector<std::pair<String, ASTPtr>> & key_value_args)
+{
+    for (const auto & [arg_name, arg_value] : key_value_args)
+    {
+        if (arg_name == "access_key_id")
+            configuration.auth_settings.access_key_id = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+        else if (arg_name == "secret_access_key")
+            configuration.auth_settings.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+        else if (arg_name == "filename")
+            configuration.url = std::filesystem::path(configuration.url) / arg_value->as<ASTLiteral>()->value.safeGet<String>();
+        else if (arg_name == "use_environment_credentials")
+            configuration.auth_settings.use_environment_credentials = arg_value->as<ASTLiteral>()->value.safeGet<UInt8>();
+        else if (arg_name == "max_single_read_retries")
+            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+        else if (arg_name == "min_upload_part_size")
+            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+        else if (arg_name == "upload_part_size_multiply_factor")
+            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+        else if (arg_name == "upload_part_size_multiply_parts_count_threshold")
+            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+        else if (arg_name == "max_single_part_upload_size")
+            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+        else if (arg_name == "max_connections")
+            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+        else
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
+                arg_name);
+    }
 }
 
 
@@ -884,20 +894,7 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
     {
         auto [common_configuration, storage_specific_args] = named_collection.value();
         configuration.set(common_configuration);
-
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
-        {
-            if (arg_name == "access_key_id")
-                configuration.access_key_id = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else if (arg_name == "secret_access_key")
-                configuration.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else if (arg_name == "filename")
-                configuration.url = std::filesystem::path(configuration.url) / arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
-                    arg_name);
-        }
+        processNamedCollectionResult(configuration, storage_specific_args);
     }
     else
     {
@@ -912,8 +909,8 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
         configuration.url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         if (engine_args.size() >= 4)
         {
-            configuration.access_key_id = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            configuration.secret_access_key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.auth_settings.access_key_id = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.auth_settings.secret_access_key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         if (engine_args.size() == 3 || engine_args.size() == 5)
@@ -939,30 +936,30 @@ ColumnsDescription StorageS3::getTableStructureFromData(
     const S3::URI & uri,
     const String & access_key_id,
     const String & secret_access_key,
-    UInt64 max_connections,
-    UInt64 max_single_read_retries,
     const String & compression_method,
     bool distributed_processing,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx)
 {
-    ClientAuthentication client_auth{uri, access_key_id, secret_access_key, max_connections, {}, {}};
-    updateClientAndAuthSettings(ctx, client_auth);
-    return getTableStructureFromDataImpl(format, client_auth, max_single_read_retries, compression_method, distributed_processing, uri.key.find_first_of("*?{") != std::string::npos, format_settings, ctx);
+    S3Configuration s3_configuration{ .uri = uri };
+    s3_configuration.auth_settings.access_key_id = access_key_id;
+    s3_configuration.auth_settings.secret_access_key = secret_access_key;
+
+    updateS3Configuration(ctx, s3_configuration);
+    return getTableStructureFromDataImpl(format, s3_configuration, compression_method, distributed_processing, uri.key.find_first_of("*?{") != std::string::npos, format_settings, ctx);
 }
 
 ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     const String & format,
-    const ClientAuthentication & client_auth,
-    UInt64 max_single_read_retries,
+    const S3Configuration & s3_configuration,
     const String & compression_method,
     bool distributed_processing,
     bool is_key_with_globs,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx)
 {
-    std::vector<String> keys = {client_auth.uri.key};
-    auto file_iterator = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, ctx);
+    std::vector<String> keys = {s3_configuration.uri.key};
+    auto file_iterator = createFileIterator(s3_configuration, keys, is_key_with_globs, distributed_processing, ctx);
 
     std::string current_key;
     std::string exception_messages;
@@ -982,7 +979,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
             return wrapReadBufferWithCompressionMethod(
                 std::make_unique<ReadBufferFromS3>(
-                    client_auth.client, client_auth.uri.bucket, current_key, max_single_read_retries, ctx->getReadSettings()),
+                    s3_configuration.client, s3_configuration.uri.bucket, current_key, s3_configuration.rw_settings.max_single_read_retries, ctx->getReadSettings()),
                 chooseCompressionMethod(current_key, compression_method));
         };
 
@@ -1010,6 +1007,8 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         auto & engine_args = args.engine_args;
         if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
+
+        auto context = args.getLocalContext();
 
         auto configuration = StorageS3::getConfiguration(engine_args, args.getLocalContext());
         // Use format settings from global server context + settings from
@@ -1039,13 +1038,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         }
 
         S3::URI s3_uri(Poco::URI(configuration.url));
-        auto max_single_read_retries = args.getLocalContext()->getSettingsRef().s3_max_single_read_retries;
-        auto min_upload_part_size = args.getLocalContext()->getSettingsRef().s3_min_upload_part_size;
-        auto upload_part_size_multiply_factor = args.getLocalContext()->getSettingsRef().s3_upload_part_size_multiply_factor;
-        auto upload_part_size_multiply_parts_count_threshold = args.getLocalContext()->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold;
-        auto max_single_part_upload_size = args.getLocalContext()->getSettingsRef().s3_max_single_part_upload_size;
-
-        auto max_connections = args.getLocalContext()->getSettingsRef().s3_max_connections;
 
         ASTPtr partition_by;
         if (args.storage_def->partition_by)
@@ -1053,16 +1045,11 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
 
         return StorageS3::create(
             s3_uri,
-            configuration.access_key_id,
-            configuration.secret_access_key,
+            configuration.auth_settings.access_key_id,
+            configuration.auth_settings.secret_access_key,
+            configuration.rw_settings,
             args.table_id,
             configuration.format,
-            max_single_read_retries,
-            min_upload_part_size,
-            upload_part_size_multiply_factor,
-            upload_part_size_multiply_parts_count_threshold,
-            max_single_part_upload_size,
-            max_connections,
             args.columns,
             args.constraints,
             args.comment,

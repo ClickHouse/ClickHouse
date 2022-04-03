@@ -2573,7 +2573,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
 
     if (shared->storage_s3_settings)
     {
-        shared->storage_s3_settings->loadFromConfig("s3", config);
+        shared->storage_s3_settings->loadFromConfig("s3", config, getSettingsRef());
     }
 }
 
@@ -2616,7 +2616,7 @@ const StorageS3Settings & Context::getStorageS3Settings() const
     if (!shared->storage_s3_settings)
     {
         const auto & config = getConfigRef();
-        shared->storage_s3_settings.emplace().loadFromConfig("s3", config);
+        shared->storage_s3_settings.emplace().loadFromConfig("s3", config, getSettingsRef());
     }
 
     return *shared->storage_s3_settings;
