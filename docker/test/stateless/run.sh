@@ -92,6 +92,8 @@ function run_tests()
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
+        # Cannot be used with replicated database, due to distributed_ddl_output_mode=none
+        ADDITIONAL_OPTIONS+=('--no-left-queries-check')
         ADDITIONAL_OPTIONS+=('--jobs')
         ADDITIONAL_OPTIONS+=('2')
     else
