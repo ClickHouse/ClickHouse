@@ -29,6 +29,7 @@ struct ExpressionActionsSettings;
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
+class TableJoin;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
@@ -100,7 +101,6 @@ public:
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
-
     static QueryPipelineBuilderPtr mergePipelines(
         QueryPipelineBuilderPtr left,
         QueryPipelineBuilderPtr right,
@@ -121,6 +121,7 @@ public:
     static std::unique_ptr<QueryPipelineBuilder> joinPipelines2(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
+        const TableJoin & table_join,
         const Block & out_header,
         size_t max_block_size,
         Processors * collected_processors = nullptr);

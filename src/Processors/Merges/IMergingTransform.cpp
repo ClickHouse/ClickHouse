@@ -189,6 +189,10 @@ IProcessor::Status IMergingTransformBase::prepare()
 
             state.has_input = true;
         }
+        else
+        {
+            state.no_data = true;
+        }
 
         state.need_data = false;
     }
