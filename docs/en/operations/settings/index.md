@@ -1,10 +1,10 @@
 ---
-toc_folder_title: Settings
-toc_priority: 55
-toc_title: Introduction
+sidebar_label: Settings
+sidebar_position: 52
+slug: index
 ---
 
-# Settings {#session-settings-intro}
+# Settings 
 
 There are multiple ways to make all the settings described in this section of documentation.
 
