@@ -171,6 +171,8 @@ enum class AccessType
     M(demangle, "", GLOBAL, INTROSPECTION) /* allows to execute function demangle() */\
     M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
     \
+    M(SYSTEM_CONFIGS, "", GLOBAL, ALL) /* allows to select system.configs */\
+    \
     M(FILE, "", GLOBAL, SOURCES) \
     M(URL, "", GLOBAL, SOURCES) \
     M(REMOTE, "", GLOBAL, SOURCES) \

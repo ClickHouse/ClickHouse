@@ -29,22 +29,24 @@ static JSONBuilder::ItemPtr configToJSON(
     if (keys.empty())
         return std::make_unique<JSONBuilder::JSONString>(config.getString(prefix));
 
-    std::unordered_map<String, std::vector<String>> keys_map;
+    std::unordered_map<String, std::vector<String>> key_mapping;
     for (const auto & key : keys)
     {
         auto pos = key.find_first_of('[');
-        auto obj_key = pos == std::string::npos ? key : key.substr(0, pos);
-        if (obj_key == "system" || obj_key == "daemon" || obj_key == "applicatioin")
+        auto json_key = pos == std::string::npos ? key : key.substr(0, pos);
+
+        /// Skip built-in configurations not in config.xml.
+        if (json_key == "system" || json_key == "daemon" || json_key == "application")
             continue;
-        keys_map[obj_key].push_back(key);
+        key_mapping[json_key].push_back(key);
     }
 
     auto map = std::make_unique<JSONBuilder::JSONMap>();
-    for (const auto & [obj_key, keys_list] : keys_map)
+    for (const auto & [json_key, keys_list] : key_mapping)
     {
         if (keys_list.size() == 1)
         {
-            map->add(obj_key, configToJSON(config, prefix + (prefix.empty() ? "" : ".") + keys_list[0]));
+            map->add(json_key, configToJSON(config, prefix + (prefix.empty() ? "" : ".") + keys_list[0]));
         }
         else
         {
@@ -53,7 +55,7 @@ static JSONBuilder::ItemPtr configToJSON(
             {
                 array->add(configToJSON(config, prefix + (prefix.empty() ? "" : ".") + key));
             }
-            map->add(obj_key, std::move(array));
+            map->add(json_key, std::move(array));
         }
     }
     return std::move(map);
