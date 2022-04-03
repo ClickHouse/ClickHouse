@@ -1,7 +1,6 @@
 ---
-toc_folder_title: Operations
-toc_priority: 41
-toc_title: Introduction
+sidebar_position: 41
+sidebar_label: Operations
 ---
 
 # Operations {#operations}
@@ -23,4 +22,4 @@ ClickHouse operations manual consists of the following major sections:
 -   [Settings](../operations/settings/index.md)
 -   [Utilities](../operations/utilities/index.md)
 
-{## [Original article](https://clickhouse.com/docs/en/operations/) ##}
+[Original article](https://clickhouse.com/docs/en/operations/)
