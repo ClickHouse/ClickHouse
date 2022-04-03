@@ -1,4 +1,4 @@
-# system.replication_queue {#system_tables-replication_queue}
+# replication_queue {#system_tables-replication_queue}
 
 Contains information about tasks from replication queues stored in ZooKeeper for tables in the `ReplicatedMergeTree` family.
 

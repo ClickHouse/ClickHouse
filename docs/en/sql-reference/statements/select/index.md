@@ -1,11 +1,9 @@
 ---
-title: SELECT Query
-toc_folder_title: SELECT
-toc_priority: 32
-toc_title: Overview
+sidebar_position: 32
+sidebar_label: SELECT
 ---
 
-# SELECT Query {#select-queries-syntax}
+# SELECT Query 
 
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
 
