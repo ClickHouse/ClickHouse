@@ -1,6 +1,6 @@
 ---
-sidebar_position: 69
-sidebar_label: "Named connections"
+toc_priority: 69
+toc_title: "Named connections"
 ---
 
 # Storing details for connecting to external sources in configuration files  {#named-collections}

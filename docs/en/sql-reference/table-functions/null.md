@@ -1,6 +1,6 @@
 ---
-sidebar_position: 53
-sidebar_label: null function
+toc_priority: 53
+toc_title: null function
 ---
 
 # null {#null-function}
