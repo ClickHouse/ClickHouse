@@ -1,4 +1,4 @@
-# clickhouse-obfuscator 
+# ClickHouse obfuscator
 
 A simple tool for table data obfuscation.
 
