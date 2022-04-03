@@ -122,11 +122,13 @@ private:
 
     void markTableAsSkipped(Int32 relation_id, const String & relation_name);
 
+    static void assertCorrectInsertion(StorageData::Buffer & buffer, size_t column_idx);
+
     /// lsn - log sequnce nuumber, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
         UInt32 upper_half, lower_half;
-        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half);
+        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
         return (static_cast<Int64>(upper_half) << 32) + lower_half;
     }
 

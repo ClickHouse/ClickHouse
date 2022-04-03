@@ -431,7 +431,7 @@ namespace MySQLReplication
                         UInt32 i24 = 0;
                         payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
-                        const DayNum date_day_number(DateLUT::instance().makeDayNum(
+                        const ExtendedDayNum date_day_number(DateLUT::instance().makeDayNum(
                             static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f)).toUnderType());
 
                         row.push_back(Field(date_day_number.toUnderType()));

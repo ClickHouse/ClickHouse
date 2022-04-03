@@ -442,9 +442,9 @@ namespace
                 pattern_list_args->children = {
                     std::make_shared<ASTLiteral>("^["),
                     to_remove,
-                    std::make_shared<ASTLiteral>("]*|["),
+                    std::make_shared<ASTLiteral>("]+|["),
                     to_remove,
-                    std::make_shared<ASTLiteral>("]*$")
+                    std::make_shared<ASTLiteral>("]+$")
                 };
                 func_name = "replaceRegexpAll";
             }
@@ -455,7 +455,7 @@ namespace
                     pattern_list_args->children = {
                         std::make_shared<ASTLiteral>("^["),
                         to_remove,
-                        std::make_shared<ASTLiteral>("]*")
+                        std::make_shared<ASTLiteral>("]+")
                     };
                 }
                 else
@@ -464,7 +464,7 @@ namespace
                     pattern_list_args->children = {
                         std::make_shared<ASTLiteral>("["),
                         to_remove,
-                        std::make_shared<ASTLiteral>("]*$")
+                        std::make_shared<ASTLiteral>("]+$")
                     };
                 }
                 func_name = "replaceRegexpOne";
@@ -505,32 +505,34 @@ namespace
 
     bool parseExtract(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
-        ASTPtr expr;
-
+        IParser::Pos begin = pos;
         IntervalKind interval_kind;
-        if (!parseIntervalKind(pos, expected, interval_kind))
-        {
-            ASTPtr expr_list;
-            if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
-                return false;
 
-            auto res = std::make_shared<ASTFunction>();
-            res->name = "extract";
-            res->arguments = expr_list;
-            res->children.push_back(res->arguments);
-            node = std::move(res);
-            return true;
+        if (parseIntervalKind(pos, expected, interval_kind))
+        {
+            ASTPtr expr;
+
+            ParserKeyword s_from("FROM");
+            ParserExpression elem_parser;
+
+            if (s_from.ignore(pos, expected) && elem_parser.parse(pos, expr, expected))
+            {
+                node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
+                return true;
+            }
         }
 
-        ParserKeyword s_from("FROM");
-        if (!s_from.ignore(pos, expected))
+        pos = begin;
+
+        ASTPtr expr_list;
+        if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
             return false;
 
-        ParserExpression elem_parser;
-        if (!elem_parser.parse(pos, expr, expected))
-            return false;
-
-        node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
+        auto res = std::make_shared<ASTFunction>();
+        res->name = "extract";
+        res->arguments = expr_list;
+        res->children.push_back(res->arguments);
+        node = std::move(res);
         return true;
     }
 

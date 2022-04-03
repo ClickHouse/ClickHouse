@@ -401,8 +401,9 @@ Default value: 1.
 
 When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv), [TabSeparated](../../interfaces/formats.md#tabseparated) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
-!!! note "Note"
-    When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
+:::note
+When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
+:::
 
 Possible values:
 
@@ -690,8 +691,9 @@ When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to t
 
 Changes behaviour of join operations with `ANY` strictness.
 
-!!! warning "Attention"
-    This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+:::warning
+This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+:::
 
 Possible values:
 
@@ -762,8 +764,9 @@ Default value: 64.
 
 Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
 
-!!! note "Warning"
-    Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
+:::warning
+Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
+:::
 
 When the legacy behaviour enabled:
 
@@ -1137,8 +1140,9 @@ Higher values will lead to higher memory usage.
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
-!!! note "Warning"
-    This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::warning
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
 
 Don’t confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
@@ -1154,8 +1158,9 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
 
-!!! note "Warning"
-    This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::warning
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
 
 ## max_query_size {#settings-max_query_size}
 
@@ -1243,8 +1248,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
-!!! note "Note"
-    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::note
+60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
@@ -1263,8 +1269,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
-!!! note "Note"
-    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::note
+60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1326,7 +1333,7 @@ If a query from the same user with the same ‘query_id’ already exists at thi
 
 `1` – Cancel the old query and start running the new one.
 
-Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
+Set this parameter to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
 
 ## replace_running_query_max_wait_ms {#replace-running-query-max-wait-ms}
 
@@ -1380,7 +1387,7 @@ load_balancing = nearest_hostname
 
 The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
-For instance, example01-01-1 and example01-01-2.yandex.ru are different in one position, while example01-01-1 and example01-02-2 differ in two places.
+For instance, example01-01-1 and example01-01-2 are different in one position, while example01-01-1 and example01-02-2 differ in two places.
 This method might seem primitive, but it does not require external data about network topology, and it does not compare IP addresses, which would be complicated for our IPv6 addresses.
 
 Thus, if there are equivalent replicas, the closest one by name is preferred.
@@ -1426,8 +1433,9 @@ Possible values:
 
 Default value: 1.
 
-!!! warning "Warning"
-    Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+:::warning
+Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+:::
 
 ## totals_mode {#totals-mode}
 
@@ -1458,8 +1466,9 @@ This setting is useful for replicated tables with a sampling key. A query may be
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
-!!! warning "Warning"
-    This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+:::warning
+This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+:::
 
 ## compile_expressions {#compile-expressions}
 
@@ -2111,8 +2120,9 @@ See also:
 -   [distributed_push_down_limit](#distributed-push-down-limit)
 -   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
 
-!!! note "Note"
-    Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
+:::note
+Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
+:::
 
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
@@ -2254,18 +2264,21 @@ Possible values:
 
 Default value: 0.
 
-!!! note "Note"
-    This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+:::note
+This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+:::
 
-!!! warning "Warning"
-    You should not rely on automatic batch splitting, since this may hurt performance.
+:::warning
+You should not rely on automatic batch splitting, since this may hurt performance.
+:::
 
 ## os_thread_priority {#setting-os-thread-priority}
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
 
-!!! warning "Warning"
-    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+:::warning
+To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+:::
 
 Possible values:
 
@@ -2539,9 +2552,10 @@ Possible values:
 
 Default value: `1`.
 
-!!! note "Note"
-    - with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
-    - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+:::note
+- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
+- with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+:::
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
@@ -3196,11 +3210,13 @@ Possible values:
 
 Default value: `0`.
 
-!!! warning "Warning"
-    Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
+:::warning
+Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
+:::
 
-!!! warning "Warning"
-    Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
+:::warning
+Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
+:::
 
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 

@@ -21,7 +21,12 @@ for i in $(seq $REPLICAS); do
 done
 
 for i in $(seq $REPLICAS); do
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE concurrent_mutate_mt_$i (key UInt64, value1 UInt64, value2 String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/concurrent_mutate_mt', '$i') ORDER BY key SETTINGS max_replicated_mutations_in_queue=1000, number_of_free_entries_in_pool_to_execute_mutation=0,max_replicated_merges_in_queue=1000,temporary_directories_lifetime=10,cleanup_delay_period=3,cleanup_delay_period_random_add=0"
+    $CLICKHOUSE_CLIENT -nm --query "
+        CREATE TABLE concurrent_mutate_mt_$i (key UInt64, value1 UInt64, value2 String)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/concurrent_mutate_mt', '$i')
+        ORDER BY key
+        SETTINGS max_replicated_mutations_in_queue=1000, number_of_free_entries_in_pool_to_execute_mutation=0,max_replicated_merges_in_queue=1000,temporary_directories_lifetime=10,cleanup_delay_period=3,cleanup_delay_period_random_add=0;
+    "
 done
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_1 SELECT number, number + 10, toString(number) from numbers(10)"
@@ -40,59 +45,52 @@ INITIAL_SUM=$($CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_mut
 # Run mutation on random replica
 function correct_alter_thread()
 {
-    while true; do
-        REPLICA=$(($RANDOM % 5 + 1))
-        $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_mt_$REPLICA UPDATE value1 = value1 + 1 WHERE 1";
-        sleep 1
-    done
+    REPLICA=$(($RANDOM % 5 + 1))
+    $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_mt_$REPLICA UPDATE value1 = value1 + 1 WHERE 1"
+    sleep 1
 }
 
 # This thread add some data to table.
 function insert_thread()
 {
-
     VALUES=(7 8 9)
-    while true; do
-        REPLICA=$(($RANDOM % 5 + 1))
-        VALUE=${VALUES[$RANDOM % ${#VALUES[@]} ]}
-        $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_$REPLICA VALUES($RANDOM, $VALUE, toString($VALUE))"
-        sleep 0.$RANDOM
-    done
+    REPLICA=$(($RANDOM % 5 + 1))
+    VALUE=${VALUES[$RANDOM % ${#VALUES[@]} ]}
+    $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_$REPLICA VALUES($RANDOM, $VALUE, toString($VALUE))"
+    sleep 0.$RANDOM
 }
 
 function detach_attach_thread()
 {
-    while true; do
-        REPLICA=$(($RANDOM % 5 + 1))
-        $CLICKHOUSE_CLIENT --query "DETACH TABLE concurrent_mutate_mt_$REPLICA"
-        sleep 0.$RANDOM
-        sleep 0.$RANDOM
-        sleep 0.$RANDOM
-        $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_mutate_mt_$REPLICA"
-    done
+    REPLICA=$(($RANDOM % 5 + 1))
+    $CLICKHOUSE_CLIENT --query "DETACH TABLE concurrent_mutate_mt_$REPLICA"
+    sleep 0.$RANDOM
+    sleep 0.$RANDOM
+    sleep 0.$RANDOM
+    $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_mutate_mt_$REPLICA"
 }
 
 
 echo "Starting alters"
 
-export -f correct_alter_thread;
-export -f insert_thread;
-export -f detach_attach_thread;
+export -f correct_alter_thread
+export -f insert_thread
+export -f detach_attach_thread
 
 # We assign a lot of mutations so timeout shouldn't be too big
 TIMEOUT=15
 
-timeout $TIMEOUT bash -c detach_attach_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT detach_attach_thread 2> /dev/null &
 
-timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT correct_alter_thread 2> /dev/null &
 
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
 
 wait
 
