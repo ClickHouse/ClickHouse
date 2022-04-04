@@ -77,6 +77,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.date_time_output_format = settings.date_time_output_format;
+    format_settings.input_format_ipv4_default_on_conversion_error = settings.input_format_ipv4_default_on_conversion_error;
+    format_settings.input_format_ipv6_default_on_conversion_error = settings.input_format_ipv6_default_on_conversion_error;
     format_settings.bool_true_representation = settings.bool_true_representation;
     format_settings.bool_false_representation = settings.bool_false_representation;
     format_settings.enable_streaming = settings.output_format_enable_streaming;
@@ -89,10 +91,10 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.null_as_default = settings.input_format_null_as_default;
-    format_settings.use_lowercase_column_name = settings.input_format_use_lowercase_column_name;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
+    format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
@@ -123,9 +125,11 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
     format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
     format_settings.arrow.allow_missing_columns = settings.input_format_arrow_allow_missing_columns;
+    format_settings.arrow.case_insensitive_column_matching = settings.input_format_arrow_case_insensitive_column_matching;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
     format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
     format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
+    format_settings.orc.case_insensitive_column_matching = settings.input_format_orc_case_insensitive_column_matching;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.seekable_read = settings.input_format_allow_seeks;

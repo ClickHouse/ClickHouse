@@ -80,7 +80,7 @@ public:
     {
         auto compress_method = handle.getWriter()->compression_method;
         auto compress_level = handle.getWriter()->compression_level;
-        checkCompressionMethodIsEnabled(static_cast<CompressionMethod>(compress_method));
+        checkCompressionMethodIsEnabled(compress_method);
 
         const char * password_cstr = nullptr;
         const String & password_str = handle.getWriter()->password;
@@ -238,7 +238,7 @@ ZipArchiveWriter::ZipArchiveWriter(const String & path_to_archive_)
 }
 
 ZipArchiveWriter::ZipArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_)
-    : path_to_archive(path_to_archive_)
+    : path_to_archive(path_to_archive_), compression_method(MZ_COMPRESS_METHOD_DEFLATE)
 {
     if (archive_write_buffer_)
         handle = StreamFromWriteBuffer::open(std::move(archive_write_buffer_));
@@ -246,6 +246,7 @@ ZipArchiveWriter::ZipArchiveWriter(const String & path_to_archive_, std::unique_
         handle = zipOpen64(path_to_archive.c_str(), /* append= */ false);
     if (!handle)
         throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Couldn't create zip archive {}", quoteString(path_to_archive));
+
 }
 
 ZipArchiveWriter::~ZipArchiveWriter()
@@ -274,10 +275,10 @@ bool ZipArchiveWriter::isWritingFile() const
     return !handle;
 }
 
-void ZipArchiveWriter::setCompression(int compression_method_, int compression_level_)
+void ZipArchiveWriter::setCompression(const String & compression_method_, int compression_level_)
 {
     std::lock_guard lock{mutex};
-    compression_method = compression_method_;
+    compression_method = compressionMethodToInt(compression_method_);
     compression_level = compression_level_;
 }
 
@@ -287,48 +288,62 @@ void ZipArchiveWriter::setPassword(const String & password_)
     password = password_;
 }
 
-ZipArchiveWriter::CompressionMethod ZipArchiveWriter::parseCompressionMethod(const String & str)
+int ZipArchiveWriter::compressionMethodToInt(const String & compression_method_)
 {
-    if (str.empty())
-        return CompressionMethod::kDeflate; /// Default compression method is DEFLATE.
-    else if (boost::iequals(str, "store"))
-        return CompressionMethod::kStore;
-    else if (boost::iequals(str, "deflate"))
-        return CompressionMethod::kDeflate;
-    else if (boost::iequals(str, "bzip2"))
-        return CompressionMethod::kBzip2;
-    else if (boost::iequals(str, "lzma"))
-        return CompressionMethod::kLzma;
-    else if (boost::iequals(str, "zstd"))
-        return CompressionMethod::kZstd;
-    else if (boost::iequals(str, "xz"))
-        return CompressionMethod::kXz;
+    if (compression_method_.empty())
+        return MZ_COMPRESS_METHOD_DEFLATE; /// By default the compression method is "deflate".
+    else if (compression_method_ == kStore)
+        return MZ_COMPRESS_METHOD_STORE;
+    else if (compression_method_ == kDeflate)
+        return MZ_COMPRESS_METHOD_DEFLATE;
+    else if (compression_method_ == kBzip2)
+        return MZ_COMPRESS_METHOD_BZIP2;
+    else if (compression_method_ == kLzma)
+        return MZ_COMPRESS_METHOD_LZMA;
+    else if (compression_method_ == kZstd)
+        return MZ_COMPRESS_METHOD_ZSTD;
+    else if (compression_method_ == kXz)
+        return MZ_COMPRESS_METHOD_XZ;
     else
-        throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", str);
+        throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", compression_method_);
+}
+
+String ZipArchiveWriter::intToCompressionMethod(int compression_method_)
+{
+    switch (compression_method_)
+    {
+        case MZ_COMPRESS_METHOD_STORE:   return kStore;
+        case MZ_COMPRESS_METHOD_DEFLATE: return kDeflate;
+        case MZ_COMPRESS_METHOD_BZIP2:   return kBzip2;
+        case MZ_COMPRESS_METHOD_LZMA:    return kLzma;
+        case MZ_COMPRESS_METHOD_ZSTD:    return kZstd;
+        case MZ_COMPRESS_METHOD_XZ:      return kXz;
+    }
+    throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", compression_method_);
 }
 
 /// Checks that a passed compression method can be used.
-void ZipArchiveWriter::checkCompressionMethodIsEnabled(CompressionMethod method)
+void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
 {
-    switch (method)
+    switch (compression_method_)
     {
-        case CompressionMethod::kStore: [[fallthrough]];
-        case CompressionMethod::kDeflate:
-        case CompressionMethod::kLzma:
-        case CompressionMethod::kXz:
-        case CompressionMethod::kZstd:
+        case MZ_COMPRESS_METHOD_STORE: [[fallthrough]];
+        case MZ_COMPRESS_METHOD_DEFLATE:
+        case MZ_COMPRESS_METHOD_LZMA:
+        case MZ_COMPRESS_METHOD_ZSTD:
+        case MZ_COMPRESS_METHOD_XZ:
             return;
 
-        case CompressionMethod::kBzip2:
+        case MZ_COMPRESS_METHOD_BZIP2:
         {
 #if USE_BZIP2
             return;
 #else
-            throw Exception("BZIP2 compression method is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+            throw Exception("bzip2 compression method is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
         }
     }
-    throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", static_cast<int>(method));
+    throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", compression_method_);
 }
 
 /// Checks that encryption is enabled.
