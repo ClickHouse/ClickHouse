@@ -102,6 +102,12 @@ public:
 
     virtual String getPath() const { return path; }
 
+    virtual UInt64 getLastModTs() const { return last_modify_time; }
+
+    virtual size_t getSize() const { return size; }
+
+    std::optional<size_t> getRows();
+
     virtual FieldVector getPartitionValues() const { return partition_values; }
 
     virtual String getNamenodeUrl() { return namenode_url; }
@@ -144,15 +150,16 @@ public:
         return boost::algorithm::join(strs, "|");
     }
 
-    inline UInt64 getLastModTs() const { return last_modify_time; }
-    inline size_t getSize() const { return size; }
-
 protected:
+    virtual std::optional<size_t> getRowsImpl() = 0;
+
     FieldVector partition_values;
     String namenode_url;
     String path;
     UInt64 last_modify_time;
     size_t size;
+    std::optional<size_t> rows;
+
     NamesAndTypesList index_names_and_types;
     MinMaxIndexPtr minmax_idx;
     std::vector<MinMaxIndexPtr> sub_minmax_idxes;
@@ -182,12 +189,15 @@ public:
 
     virtual FileFormat getFormat() const override { return FileFormat::TEXT; }
     virtual String getName() const override { return "TEXT"; }
+
+protected:
+    std::optional<size_t> getRowsImpl() override { return {}; }
 };
 
-class HiveOrcFile : public IHiveFile
+class HiveORCFile : public IHiveFile
 {
 public:
-    HiveOrcFile(
+    HiveORCFile(
         const FieldVector & values_,
         const String & namenode_url_,
         const String & path_,
@@ -213,6 +223,8 @@ protected:
     virtual Range buildRange(const orc::ColumnStatistics * col_stats);
     virtual void prepareReader();
     virtual void prepareColumnMapping();
+
+    std::optional<size_t> getRowsImpl() override;
 
     std::unique_ptr<ReadBufferFromHDFS> in;
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> reader;
@@ -243,6 +255,7 @@ public:
 
 protected:
     virtual void prepareReader();
+    std::optional<size_t> getRowsImpl() override;
 
     std::unique_ptr<ReadBufferFromHDFS> in;
     std::unique_ptr<parquet::arrow::FileReader> reader;

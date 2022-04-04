@@ -77,7 +77,14 @@ Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatist
     return Range(min_val, true, max_val, true);
 }
 
-Range HiveOrcFile::buildRange(const orc::ColumnStatistics * col_stats)
+std::optional<size_t> IHiveFile::getRows()
+{
+    if (!rows)
+        rows = getRowsImpl();
+    return rows;
+}
+
+Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
 {
     if (!col_stats || col_stats->hasNull())
         return {};
@@ -122,7 +129,7 @@ Range HiveOrcFile::buildRange(const orc::ColumnStatistics * col_stats)
     return {};
 }
 
-void HiveOrcFile::prepareReader()
+void HiveORCFile::prepareReader()
 {
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef());
     auto format_settings = getFormatSettings(getContext());
@@ -132,7 +139,7 @@ void HiveOrcFile::prepareReader()
     reader = std::move(result).ValueOrDie();
 }
 
-void HiveOrcFile::prepareColumnMapping()
+void HiveORCFile::prepareColumnMapping()
 {
     const orc::Type & type = reader->GetRawORCReader()->getType();
     size_t count = type.getSubtypeCount();
@@ -145,13 +152,13 @@ void HiveOrcFile::prepareColumnMapping()
     }
 }
 
-bool HiveOrcFile::hasMinMaxIndex() const
+bool HiveORCFile::hasMinMaxIndex() const
 {
     return storage_settings->enable_orc_file_minmax_index;
 }
 
 
-std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveOrcFile::buildMinMaxIndex(const orc::Statistics * statistics)
+std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const orc::Statistics * statistics)
 {
     if (!statistics)
         return nullptr;
@@ -184,7 +191,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveOrcFile::buildMinMaxIndex(c
 }
 
 
-void HiveOrcFile::loadMinMaxIndex()
+void HiveORCFile::loadMinMaxIndex()
 {
     if (!reader)
     {
@@ -196,13 +203,13 @@ void HiveOrcFile::loadMinMaxIndex()
     minmax_idx = buildMinMaxIndex(statistics.get());
 }
 
-bool HiveOrcFile::hasSubMinMaxIndex() const
+bool HiveORCFile::hasSubMinMaxIndex() const
 {
     return storage_settings->enable_orc_stripe_minmax_index;
 }
 
 
-void HiveOrcFile::loadSubMinMaxIndex()
+void HiveORCFile::loadSubMinMaxIndex()
 {
     if (!reader)
     {
@@ -224,6 +231,18 @@ void HiveOrcFile::loadSubMinMaxIndex()
         auto stripe_stats = raw_reader->getStripeStatistics(i);
         sub_minmax_idxes[i] = buildMinMaxIndex(stripe_stats.get());
     }
+}
+
+std::optional<size_t> HiveORCFile::getRowsImpl()
+{
+    if (!reader)
+    {
+        prepareReader();
+        prepareColumnMapping();
+    }
+    
+    auto * raw_reader = reader->GetRawORCReader();
+    return raw_reader->getNumberOfRows();
 }
 
 bool HiveParquetFile::hasSubMinMaxIndex() const
@@ -310,6 +329,15 @@ void HiveParquetFile::loadSubMinMaxIndex()
         }
         sub_minmax_idxes[i]->initialized = true;
     }
+}
+
+std::optional<size_t> HiveParquetFile::getRowsImpl()
+{
+    if (!reader)
+        prepareReader();
+    
+    auto meta = reader->parquet_reader()->metadata();
+    return meta->num_rows();
 }
 
 }
