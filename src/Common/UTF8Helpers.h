@@ -47,7 +47,7 @@ inline size_t seqLength(const UInt8 first_octet)
         return 1;
 
     // Possible first bytes are: 110xxxxx, 1110xxxx, 11110xxx
-    static constexpr size_t seq_length[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 3, 4};
+    static constexpr size_t seq_length[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 4};
     return seq_length[first_octet >> 4];
 }
 
