@@ -21,9 +21,8 @@ namespace DB::GatherUtils
 
 inline ALWAYS_INLINE bool hasNull(const UInt8 * null_map, size_t null_map_size)
 {
-    if (null_map == nullptr) {
+    if (null_map == nullptr)
         return false;
-    }
 
     for (size_t i = 0; i < null_map_size; ++i)
     {
