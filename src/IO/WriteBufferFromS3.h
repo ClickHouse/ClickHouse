@@ -127,7 +127,7 @@ private:
     FileCachePtr cache;
     size_t current_download_offset = 0;
     std::optional<FileSegmentsHolder> file_segments_holder;
-    void finalizeCacheIfNeeded();
+    static void finalizeCacheIfNeeded(std::optional<FileSegmentsHolder> &);
     ContextMutablePtr shared_query_context;
     ContextPtr query_context;
 };
