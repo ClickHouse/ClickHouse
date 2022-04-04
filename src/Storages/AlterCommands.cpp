@@ -1046,8 +1046,12 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
             if (!all_columns.has(column_name))
             {
                 if (!command.if_exists)
-                    throw Exception{"Wrong column name. Cannot find column " + backQuote(column_name) + " to modify",
-                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                {
+                    String exception_message = fmt::format("Wrong column. Cannot find column {} to modify", backQuote(column_name));
+                    all_columns.appendHintsMessage(exception_message, column_name);
+                    throw Exception{exception_message,
+                        ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                }
                 else
                     continue;
             }
@@ -1152,17 +1156,22 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
                 all_columns.remove(command.column_name);
             }
             else if (!command.if_exists)
-                throw Exception(
-                    "Wrong column name. Cannot find column " + backQuote(command.column_name) + " to drop",
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+            {
+                String exception_message = fmt::format("Wrong column name. Cannot find column {} to drop", backQuote(command.column_name));
+                all_columns.appendHintsMessage(exception_message, command.column_name);
+                throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+            }
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
         {
             if (!all_columns.has(command.column_name))
             {
                 if (!command.if_exists)
-                    throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to comment",
-                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                {
+                    String exception_message = fmt::format("Wrong column name. Cannot find column {} to comment", backQuote(command.column_name));
+                    all_columns.appendHintsMessage(exception_message, command.column_name);
+                    throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                }
             }
         }
         else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
@@ -1196,8 +1205,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
             if (!all_columns.has(command.column_name))
             {
                 if (!command.if_exists)
-                    throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to rename",
-                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                {
+                    String exception_message = fmt::format("Wrong column name. Cannot find column {} to rename", backQuote(command.column_name));
+                    all_columns.appendHintsMessage(exception_message, command.column_name);
+                    throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                }
                 else
                     continue;
             }
