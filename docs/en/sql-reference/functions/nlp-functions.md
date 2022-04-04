@@ -1,13 +1,12 @@
 ---
-sidebar_position: 67
-sidebar_label: NLP
+toc_priority: 67
+toc_title: NLP
 ---
 
 # [experimental] Natural Language Processing functions {#nlp-functions}
 
-:::warning    
-This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+!!! warning "Warning"
+    This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
 
 ## stem {#stem}
 

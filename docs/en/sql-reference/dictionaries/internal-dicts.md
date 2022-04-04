@@ -1,6 +1,6 @@
 ---
-sidebar_position: 39
-sidebar_label: Internal Dictionaries
+toc_priority: 39
+toc_title: Internal Dictionaries
 ---
 
 # Internal Dictionaries {#internal_dicts}
@@ -47,6 +47,4 @@ The interval to check for changes is configured in the `builtin_dictionaries_rel
 Dictionary updates (other than loading at first use) do not block queries. During updates, queries use the old versions of dictionaries. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
 
 We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
-
-There are also functions for working with OS identifiers and search engines, but they shouldn’t be used.
 

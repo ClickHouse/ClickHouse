@@ -1,6 +1,6 @@
 ---
-sidebar_position: 30
-sidebar_label: Replicated
+toc_priority: 36
+toc_title: Replicated
 ---
 
 # [experimental] Replicated {#replicated}
@@ -20,9 +20,8 @@ One ClickHouse server can have multiple replicated databases running and updatin
 -   `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
 -   `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
 
-:::warning    
-For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
-:::
+!!! note "Warning"
+    For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
