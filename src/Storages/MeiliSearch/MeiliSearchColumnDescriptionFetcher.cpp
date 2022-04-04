@@ -1,13 +1,13 @@
 #include <memory>
 #include <string>
-#include <Storages/MeiliSearch/MeiliSearchColumnDescriptionFetcher.h>
-#include <base/JSON.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/ReadHelpers.h>
+#include <Storages/MeiliSearch/MeiliSearchColumnDescriptionFetcher.h>
+#include <base/JSON.h>
 #include <base/types.h>
 
 namespace DB
