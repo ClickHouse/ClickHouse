@@ -22,6 +22,10 @@ namespace DB
 {
 class IColumn;
 
+static constexpr UInt64 operator""_Gb(unsigned long long value)
+{
+    return value * 1024 * 1024 * 1024;
+}
 
 /** List of settings: type, name, default value, description, flags
   *
@@ -361,7 +365,7 @@ class IColumn;
     M(OverflowMode, distinct_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
     \
     M(UInt64, max_memory_usage, 0, "Maximum memory usage for processing of single query. Zero means unlimited.", 0) \
-    M(UInt64, max_guaranteed_memory_usage, 0, "Maximum guaranteed memory usage for processing of single query. It represents soft limit. Zero means unlimited.", 0) \
+    M(UInt64, max_guaranteed_memory_usage, 10_Gb, "Maximum guaranteed memory usage for processing of single query. It represents soft limit. Zero means unlimited.", 0) \
     M(UInt64, max_memory_usage_for_user, 0, "Maximum memory usage for processing all concurrently running queries for the user. Zero means unlimited.", 0) \
     M(UInt64, max_guaranteed_memory_usage_for_user, 0, "Maximum guaranteed memory usage for processing all concurrently running queries for the user. It represents soft limit. Zero means unlimited.", 0) \
     M(UInt64, max_untracked_memory, (4 * 1024 * 1024), "Small allocations and deallocations are grouped in thread local variable and tracked or profiled only when amount (in absolute value) becomes larger than specified value. If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.", 0) \
