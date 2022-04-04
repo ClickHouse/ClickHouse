@@ -1047,7 +1047,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
             {
                 if (!command.if_exists)
                 {
-                    String exception_message = fmt::format("Wrong column. Cannot find colum {} to modify", backQuote(column_name));
+                    String exception_message = fmt::format("Wrong column. Cannot find column {} to modify", backQuote(column_name));
                     all_columns.appendHintsMessage(exception_message, column_name);
                     throw Exception{exception_message,
                         ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};

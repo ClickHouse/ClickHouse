@@ -124,7 +124,4 @@ public:
 private:
     NamePrompter<MaxNumHints> prompter;
 };
-
-void appendHintsString(String & message, const std::vector<String> & hints, const String & name);
-
 }
