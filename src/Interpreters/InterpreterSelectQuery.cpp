@@ -286,7 +286,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {
     checkStackSize();
 
-    for (const auto & column : query_ptr->as<ASTSelectQuery &>().select()->children) {
+    for (const auto & column : query_ptr->as<ASTSelectQuery &>().select()->children)
+    {
         std::string alias = column->tryGetAlias();
         original_select_set.insert(alias.empty() ? column->getColumnName() : alias);
     }
