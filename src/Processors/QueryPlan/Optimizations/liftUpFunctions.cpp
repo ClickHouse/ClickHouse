@@ -18,8 +18,7 @@ namespace
 const DB::DataStream & getChildOutputStream(DB::QueryPlan::Node & node)
 {
     if (node.children.size() != 1)
-        throw DB::Exception(
-            DB::ErrorCodes::LOGICAL_ERROR, "Node \"{}\" is expected to have only one child.", node.step->getStepDescription());
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Node \"{}\" is expected to have only one child.", node.step->getName());
     return node.children.front()->step->getOutputStream();
 }
 
