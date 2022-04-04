@@ -1080,10 +1080,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 && !expressions.hasHaving()
                 && !expressions.has_window)
             {
-                auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_ptr);
-                caching_step->setStepDescription("Cache query result");
-                query_plan.addStep(std::move(caching_step));
-
                 if (expressions.has_order_by)
                     executeOrder(
                         query_plan,
@@ -1101,6 +1097,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                 if (query.limitLength())
                     executePreLimit(query_plan, true);
+
+                auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_ptr);
+                caching_step->setStepDescription("Cache query result");
+                query_plan.addStep(std::move(caching_step));
             }
         };
 
