@@ -2,6 +2,8 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
@@ -167,12 +169,249 @@ struct MakeDate32Traits
     static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 11, 11);
 };
 
+/// Common implementation for makeDateTime, makeDateTime64
+class FunctionMakeDateTimeBase : public FunctionWithNumericParamsBase
+{
+protected:
+    static constexpr std::array<const char*, 6> argument_names = {"year", "month", "day", "hour", "minute", "second"};
+
+public:
+    bool isVariadic() const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+protected:
+    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, const size_t optional_argument_count) const
+    {
+        FunctionWithNumericParamsBase::checkRequiredArguments(arguments, argument_names, optional_argument_count);
+    }
+
+    void convertRequiredArguments(const ColumnsWithTypeAndName & arguments, Columns & converted_arguments) const
+    {
+        FunctionWithNumericParamsBase::convertRequiredArguments(arguments, argument_names, converted_arguments);
+    }
+
+    template <typename T>
+    static Int64 dateTime(T year, T month, T day_of_month, T hour, T minute, T second, const DateLUTImpl & lut)
+    {
+        ///  Note that hour, minute and second are checked against 99 to behave consistently with parsing DateTime from String
+        ///  E.g. "select cast('1984-01-01 99:99:99' as DateTime);" returns "1984-01-05 04:40:39"
+        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31 ||
+            hour < 0 || hour > 99 || minute < 0 || minute > 99 || second < 0 || second > 99))
+            return lut.makeDateTime(DATE_LUT_MIN_YEAR-1, 1, 1, 0, 0, 0);
+
+        if (unlikely(year > DATE_LUT_MAX_YEAR))
+            return lut.makeDateTime(DATE_LUT_MAX_YEAR+1, 1, 1, 23, 59, 59);
+
+        return lut.makeDateTime(year, month, day_of_month, hour, minute, second);
+    }
+
+    std::string extractTimezone(const ColumnWithTypeAndName & timezone_argument) const
+    {
+        std::string timezone;
+        if (!isStringOrFixedString(timezone_argument.type) || !timezone_argument.column || (timezone_argument.column->size() != 1 && !typeid_cast<const ColumnConst*>(timezone_argument.column.get())))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument 'timezone' for function {} must be const string", getName());
+        timezone = timezone_argument.column->getDataAt(0).toString();
+
+        return timezone;
+    }
+};
+
+/// makeDateTime(year, month, day, hour, minute, second, [timezone])
+class FunctionMakeDateTime : public FunctionMakeDateTimeBase
+{
+private:
+    static constexpr std::array<const char*, 1> optional_argument_names = {"timezone"};
+
+public:
+    static constexpr auto name = "makeDateTime";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMakeDateTime>(); }
+
+    String getName() const override { return name; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        checkRequiredArguments(arguments, optional_argument_names.size());
+
+        /// Optional timezone argument
+        std::string timezone;
+        if (arguments.size() == argument_names.size() + 1)
+            timezone = extractTimezone(arguments.back());
+
+        return std::make_shared<DataTypeDateTime>(timezone);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        /// Optional timezone argument
+        std::string timezone;
+        if (arguments.size() == argument_names.size() + 1)
+            timezone = extractTimezone(arguments.back());
+
+        Columns converted_arguments;
+        convertRequiredArguments(arguments, converted_arguments);
+
+        auto res_column = ColumnUInt32::create(input_rows_count);
+        auto & result_data = res_column->getData();
+
+        const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
+        const auto & month_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[1]).getData();
+        const auto & day_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[2]).getData();
+        const auto & hour_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[3]).getData();
+        const auto & minute_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[4]).getData();
+        const auto & second_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[5]).getData();
+
+        const auto & date_lut = DateLUT::instance(timezone);
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const auto year = year_data[i];
+            const auto month = month_data[i];
+            const auto day = day_data[i];
+            const auto hour = hour_data[i];
+            const auto minute = minute_data[i];
+            const auto second = second_data[i];
+
+            auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
+            if (unlikely(date_time < 0))
+                date_time = 0;
+            else if (unlikely(date_time > 0x0ffffffffll))
+                date_time = 0x0ffffffffll;
+
+            result_data[i] = date_time;
+        }
+
+        return res_column;
+    }
+};
+
+/// makeDateTime64(year, month, day, hour, minute, second, [fraction], [precision], [timezone])
+class FunctionMakeDateTime64 : public FunctionMakeDateTimeBase
+{
+private:
+    static constexpr std::array<const char*, 3> optional_argument_names = {"fraction", "precision", "timezone"};
+    static constexpr UInt8 DEFAULT_PRECISION = 3;
+
+public:
+    static constexpr auto name = "makeDateTime64";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMakeDateTime64>(); }
+
+    String getName() const override { return name; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        checkRequiredArguments(arguments, optional_argument_names.size());
+
+        if (arguments.size() >= argument_names.size() + 1)
+        {
+            const auto& fraction_argument = arguments[argument_names.size()];
+            if (!isNumber(fraction_argument.type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument 'fraction' for function {} must be number", getName());
+        }
+
+        /// Optional precision argument
+        Int64 precision = DEFAULT_PRECISION;
+        if (arguments.size() >= argument_names.size() + 2)
+            precision = extractPrecision(arguments[argument_names.size() + 1]);
+
+        /// Optional timezone argument
+        std::string timezone;
+        if (arguments.size() == argument_names.size() + 3)
+            timezone = extractTimezone(arguments.back());
+
+        return std::make_shared<DataTypeDateTime64>(precision, timezone);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        /// Optional precision argument
+        Int64 precision = DEFAULT_PRECISION;
+        if (arguments.size() >= argument_names.size() + 2)
+            precision = extractPrecision(arguments[argument_names.size() + 1]);
+
+        /// Optional timezone argument
+        std::string timezone;
+        if (arguments.size() == argument_names.size() + 3)
+            timezone = extractTimezone(arguments.back());
+
+        Columns converted_arguments;
+        convertRequiredArguments(arguments, converted_arguments);
+
+        /// Optional fraction argument
+        const ColumnVector<Float64>::Container * fraction_data = nullptr;
+        if (arguments.size() >= argument_names.size() + 1)
+        {
+            ColumnPtr fraction_column = castColumn(arguments[argument_names.size()], std::make_shared<DataTypeFloat64>());
+            fraction_column = fraction_column->convertToFullColumnIfConst();
+            converted_arguments.push_back(fraction_column);
+            fraction_data = &typeid_cast<const ColumnFloat64 &>(*converted_arguments[6]).getData();
+        }
+
+        auto res_column = ColumnDecimal<DateTime64>::create(input_rows_count, precision);
+        auto & result_data = res_column->getData();
+
+        const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
+        const auto & month_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[1]).getData();
+        const auto & day_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[2]).getData();
+        const auto & hour_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[3]).getData();
+        const auto & minute_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[4]).getData();
+        const auto & second_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[5]).getData();
+
+        const auto & date_lut = DateLUT::instance(timezone);
+
+        const auto max_fraction = pow(10, precision) - 1;
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const auto year = year_data[i];
+            const auto month = month_data[i];
+            const auto day = day_data[i];
+            const auto hour = hour_data[i];
+            const auto minute = minute_data[i];
+            const auto second = second_data[i];
+
+            auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
+
+            auto fraction = fraction_data ? (*fraction_data)[i] : 0;
+            if (unlikely(fraction < 0))
+                fraction = 0;
+            else if (unlikely(fraction > max_fraction))
+                fraction = max_fraction;
+
+            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, fraction, precision);
+        }
+
+        return res_column;
+    }
+
+private:
+    UInt8 extractPrecision(const ColumnWithTypeAndName & precision_argument) const
+    {
+        Int64 precision = DEFAULT_PRECISION;
+        if (!isNumber(precision_argument.type) || !precision_argument.column || (precision_argument.column->size() != 1 && !typeid_cast<const ColumnConst*>(precision_argument.column.get())))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument 'precision' for function {} must be constant number", getName());
+        precision = precision_argument.column->getInt(0);
+        if (precision < 0 || precision > 9)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Argument 'precision' for function {} must be in range [0, 9]", getName());
+
+        return precision;
+    }
+};
+
 }
 
 void registerFunctionsMakeDate(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMakeDate<MakeDateTraits>>();
     factory.registerFunction<FunctionMakeDate<MakeDate32Traits>>();
+    factory.registerFunction<FunctionMakeDateTime>();
+    factory.registerFunction<FunctionMakeDateTime64>();
 }
 
 }
