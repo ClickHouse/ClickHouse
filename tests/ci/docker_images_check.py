@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 
 from github import Github
 
-from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
+from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_RUN_URL
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
@@ -234,6 +234,7 @@ def build_and_push_one_image(
     with open(build_log, "wb") as bl:
         cmd = (
             "docker buildx build --builder default "
+            f"--label build-url={GITHUB_RUN_URL} "
             f"{from_tag_arg}"
             f"--build-arg BUILDKIT_INLINE_CACHE=1 "
             f"--tag {image.repo}:{version_string} "
@@ -395,17 +396,19 @@ def main():
 
     images_dict = get_images_dict(GITHUB_WORKSPACE, "docker/images.json")
 
+    pr_info = PRInfo()
     if args.all:
-        pr_info = PRInfo()
         pr_info.changed_files = set(images_dict.keys())
     elif args.image_path:
-        pr_info = PRInfo()
         pr_info.changed_files = set(i for i in args.image_path)
     else:
-        pr_info = PRInfo(need_changed_files=True)
+        pr_info.fetch_changed_files()
 
     changed_images = get_changed_docker_images(pr_info, images_dict)
-    logging.info("Has changed images %s", ", ".join([im.path for im in changed_images]))
+    if changed_images:
+        logging.info(
+            "Has changed images: %s", ", ".join([im.path for im in changed_images])
+        )
 
     image_versions, result_version = gen_versions(pr_info, args.suffix)
 
