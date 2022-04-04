@@ -713,7 +713,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
         return false;
     };
 
-    static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
+    static const std::unordered_multimap<std::type_index, const std::type_info &> allowed_conversions =
         {
             { typeid(DataTypeEnum8),    typeid(DataTypeInt8)     },
             { typeid(DataTypeEnum16),   typeid(DataTypeInt16)    },
@@ -735,7 +735,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             return true;
 
         /// Types changed, but representation on disk didn't
-        auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
+        auto it_range = allowed_conversions.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
             if (it->second == typeid(*to))
