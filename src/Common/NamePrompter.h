@@ -102,6 +102,11 @@ public:
         return prompter.getHints(name, getAllRegisteredNames());
     }
 
+    std::vector<String> getHints(const String & name, const std::vector<String> & prompting_strings)
+    {
+        return prompter.getHints(name, prompting_strings);
+    }
+
     IHints() = default;
 
     IHints(const IHints &) = default;
