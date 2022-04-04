@@ -7,41 +7,19 @@
 #include <memory>
 
 #include <boost/algorithm/string/join.hpp>
+#include <arrow/adapters/orc/adapter.h>
+#include <parquet/arrow/reader.h>
 
 #include <Core/Field.h>
 #include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/Hive/HiveSettings.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
 
 namespace orc
 {
-class Reader;
 class Statistics;
 class ColumnStatistics;
-}
-
-namespace parquet
-{
-class ParquetFileReader;
-namespace arrow
-{
-    class FileReader;
-}
-}
-
-namespace arrow
-{
-namespace io
-{
-    class RandomAccessFile;
-}
-
-namespace fs
-{
-    class FileSystem;
-}
-
-class Buffer;
 }
 
 namespace DB
@@ -178,7 +156,8 @@ protected:
     NamesAndTypesList index_names_and_types;
     MinMaxIndexPtr minmax_idx;
     std::vector<MinMaxIndexPtr> sub_minmax_idxes;
-    std::set<int> skip_splits; // skip splits for this file after applying minmax index (if any)
+    /// Skip splits for this file after applying minmax index (if any)
+    std::set<int> skip_splits;
     std::shared_ptr<HiveSettings> storage_settings;
 };
 
@@ -235,7 +214,8 @@ protected:
     virtual void prepareReader();
     virtual void prepareColumnMapping();
 
-    std::shared_ptr<orc::Reader> reader;
+    std::unique_ptr<ReadBufferFromHDFS> in;
+    std::unique_ptr<arrow::adapters::orc::ORCFileReader> reader;
     std::map<String, size_t> orc_column_positions;
 };
 
@@ -264,8 +244,8 @@ public:
 protected:
     virtual void prepareReader();
 
-    std::shared_ptr<arrow::fs::FileSystem> fs;
-    std::shared_ptr<parquet::ParquetFileReader> reader;
+    std::unique_ptr<ReadBufferFromHDFS> in;
+    std::unique_ptr<parquet::arrow::FileReader> reader;
     std::map<String, size_t> parquet_column_positions;
 };
 }

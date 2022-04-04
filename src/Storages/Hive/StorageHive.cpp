@@ -2,12 +2,12 @@
 
 #if USE_HIVE
 
-#include <fmt/core.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <fmt/core.h>
 #include <Poco/URI.h>
-
 #include <base/logger_useful.h>
+
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
