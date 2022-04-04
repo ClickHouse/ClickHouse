@@ -1,5 +1,6 @@
 #include <Access/ImplicitGrants.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <boost/algorithm/string/case_conv.hpp>
 
 
 namespace DB
@@ -124,11 +125,10 @@ const AccessRightsElements & getConstImplicitGrants()
         /// system.databases.
         constexpr std::array tables_in_information_schema_db = {"schemata", "tables", "views", "columns"};
         for (const auto * table_name : tables_in_information_schema_db)
+        {
             res.emplace_back(select_flags, DatabaseCatalog::INFORMATION_SCHEMA, table_name);
-
-        constexpr std::array tables_in_information_schema_db_uppercased = {"SCHEMATA", "TABLES", "VIEWS", "COLUMNS"};
-        for (const auto * table_name : tables_in_information_schema_db_uppercased)
-            res.emplace_back(select_flags, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, table_name);
+            res.emplace_back(select_flags, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, boost::to_upper_copy(String{table_name}));
+         }
 
         return res;
     }();
