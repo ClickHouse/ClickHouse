@@ -3,6 +3,8 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/castColumn.h>
 
@@ -17,20 +19,69 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
 {
 
-// A helper function to simplify comparisons of valid YYYY-MM-DD values for <,>,=
+/// A helper function to simplify comparisons of valid YYYY-MM-DD values for <,>,=
 inline constexpr Int64 YearMonthDayToSingleInt(Int64 year, Int64 month, Int64 day)
 {
     return year * 512 + month * 32 + day;
 }
 
-// Common implementation for makeDate, makeDate32
+/// Common logic to handle numeric arguments like year, month, day, hour, minute, second
+class FunctionWithNumericParamsBase : public IFunction
+{
+public:
+    bool isInjective(const ColumnsWithTypeAndName &) const override
+    {
+        return false; /// invalid argument values and timestamps that are out of supported range are converted into a default value
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    bool useDefaultImplementationForNulls() const override { return true; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+protected:
+    template <class AgrumentNames>
+    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, const AgrumentNames & argument_names, const size_t optional_argument_count) const
+    {
+        if (arguments.size() < argument_names.size() || arguments.size() > argument_names.size() + optional_argument_count)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires {} to {} arguments, but {} given",
+                getName(), argument_names.size(), argument_names.size() + optional_argument_count, arguments.size());
+
+        for (size_t i = 0; i < argument_names.size(); ++i)
+        {
+            DataTypePtr argument_type = arguments[i].type;
+            if (!isNumber(argument_type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument '{}' for function {} must be number", std::string(argument_names[i]), getName());
+        }
+    }
+
+    template <class AgrumentNames>
+    void convertRequiredArguments(const ColumnsWithTypeAndName & arguments, const AgrumentNames & argument_names, Columns & converted_arguments) const
+    {
+        const DataTypePtr converted_argument_type = std::make_shared<DataTypeFloat32>();
+        converted_arguments.clear();
+        converted_arguments.reserve(arguments.size());
+        for (size_t i = 0; i < argument_names.size(); ++i)
+        {
+            ColumnPtr argument_column = castColumn(arguments[i], converted_argument_type);
+            argument_column = argument_column->convertToFullColumnIfConst();
+            converted_arguments.push_back(argument_column);
+        }
+    }
+};
+
+/// Common implementation for makeDate, makeDate32
 template <typename Traits>
-class FunctionMakeDate : public IFunction
+class FunctionMakeDate : public FunctionWithNumericParamsBase
 {
 private:
     static constexpr std::array<const char*, 3> argument_names = {"year", "month", "day"};
@@ -46,45 +97,17 @@ public:
 
     size_t getNumberOfArguments() const override { return argument_names.size(); }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return false; // {year,month,day} that are out of supported range are converted into a default value
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    bool useDefaultImplementationForNulls() const override { return true; }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() != argument_names.size())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires 3 arguments, but {} given", getName(), arguments.size());
-
-        for (size_t i = 0; i < argument_names.size(); ++i)
-        {
-            DataTypePtr argument_type = arguments[i];
-            if (!isNumber(argument_type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument '{}' for function {} must be number", std::string(argument_names[i]), getName());
-        }
+        checkRequiredArguments(arguments, argument_names, 0);
 
         return std::make_shared<typename Traits::ReturnDataType>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const DataTypePtr converted_argument_type = std::make_shared<DataTypeFloat32>();
         Columns converted_arguments;
-        converted_arguments.reserve(arguments.size());
-        for (const auto & argument : arguments)
-        {
-            ColumnPtr argument_column = castColumn(argument, converted_argument_type);
-            argument_column = argument_column->convertToFullColumnIfConst();
-            converted_arguments.push_back(argument_column);
-        }
+        convertRequiredArguments(arguments, argument_names, converted_arguments);
 
         auto res_column = Traits::ReturnColumnType::create(input_rows_count);
         auto & result_data = res_column->getData();
@@ -119,7 +142,7 @@ public:
     }
 };
 
-// makeDate(year, month, day)
+/// makeDate(year, month, day)
 struct MakeDateTraits
 {
     static constexpr auto name = "makeDate";
@@ -128,11 +151,11 @@ struct MakeDateTraits
 
     static constexpr auto MIN_YEAR = 1970;
     static constexpr auto MAX_YEAR = 2149;
-    // This date has the maximum day number that fits in 16-bit uint
+    /// This date has the maximum day number that fits in 16-bit uint
     static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 6, 6);
 };
 
-// makeDate32(year, month, day)
+/// makeDate32(year, month, day)
 struct MakeDate32Traits
 {
     static constexpr auto name = "makeDate32";
