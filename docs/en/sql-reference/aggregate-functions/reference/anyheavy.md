@@ -1,5 +1,5 @@
 ---
-sidebar_position: 103
+toc_priority: 103
 ---
 
 # anyHeavy {#anyheavyx}
@@ -16,7 +16,7 @@ anyHeavy(column)
 
 **Example**
 
-Take the [OnTime](../../../example-datasets/ontime.md) data set and select any frequently occurring value in the `AirlineID` column.
+Take the [OnTime](../../../getting-started/example-datasets/ontime.md) data set and select any frequently occurring value in the `AirlineID` column.
 
 ``` sql
 SELECT anyHeavy(AirlineID) AS res
