@@ -26,6 +26,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/ParallelMergeJoin.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
 
@@ -1016,7 +1017,7 @@ bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & 
 JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & converting_join_columns)
 {
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
-    JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns, converting_join_columns);
+    JoinPtr table_join = makeTableJoin(syntax->ast_join, left_sample_columns, converting_join_columns);
 
     if (converting_join_columns)
     {
@@ -1053,6 +1054,8 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
         }
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
     }
+    else if (analyzed_join->forceParallelMergeJoin())
+        return std::make_shared<ParallelMergeJoin>(analyzed_join, sample_block);
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
         return std::make_shared<MergeJoin>(analyzed_join, sample_block);
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
@@ -1112,13 +1115,13 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
 }
 
 JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
-    const ASTTablesInSelectQueryElement & join_element,
+    const ASTTablesInSelectQueryElements & join_elements,
     const ColumnsWithTypeAndName & left_columns,
     ActionsDAGPtr & left_convert_actions)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
 
-    if (joined_plan)
+    if (!joined_plans.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join was already created for query");
 
     ActionsDAGPtr right_convert_actions = nullptr;
@@ -1132,22 +1135,29 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         return storage->getJoinLocked(analyzed_join, getContext());
     }
 
-    joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
 
-    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
-    std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
-    if (right_convert_actions)
+    for (auto & join_element : join_elements)
     {
-        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), right_convert_actions);
-        converting_step->setStepDescription("Convert joined columns");
-        joined_plan->addStep(std::move(converting_step));
+        auto joined_plan = buildJoinedPlan(getContext(), *join_element, *analyzed_join, query_options);
+
+        const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
+        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
+        if (right_convert_actions)
+        {
+            auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), right_convert_actions);
+            converting_step->setStepDescription("Convert joined columns");
+            joined_plan->addStep(std::move(converting_step));
+        }
+        joined_plans.push_back(std::move(joined_plan));
     }
 
-    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
+
+
+    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plans[0]->getCurrentDataStream().header, getContext());
 
     /// Do not make subquery for join over dictionary.
     if (analyzed_join->getDictionaryReader())
-        joined_plan.reset();
+        joined_plans[0].reset();
 
     return join;
 }
@@ -1688,9 +1698,9 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAn
     return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
 }
 
-std::unique_ptr<QueryPlan> SelectQueryExpressionAnalyzer::getJoinedPlan()
+std::vector<std::unique_ptr<QueryPlan>> SelectQueryExpressionAnalyzer::getJoinedPlan()
 {
-    return std::move(joined_plan);
+    return std::move(joined_plans);
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::simpleSelectActions()

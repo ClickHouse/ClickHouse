@@ -21,13 +21,14 @@ struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;
+using ASTTablesInSelectQueryElements = std::vector<const ASTTablesInSelectQueryElement *>;
 
 struct TreeRewriterResult
 {
     ConstStoragePtr storage;
     StorageSnapshotPtr storage_snapshot;
     std::shared_ptr<TableJoin> analyzed_join;
-    const ASTTablesInSelectQueryElement * ast_join = nullptr;
+    /* const */ ASTTablesInSelectQueryElements ast_join;
 
     NamesAndTypesList source_columns;
     NameSet source_columns_set; /// Set of names of source_columns.

@@ -190,6 +190,7 @@ public:
     VolumePtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
     bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
+    bool forceParallelMergeJoin() const { return join_algorithm == JoinAlgorithm::PARALLEL_MERGE; }
     bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
     bool allowParallelHashJoin() const;
     bool forceHashJoin() const

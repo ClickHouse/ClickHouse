@@ -278,11 +278,34 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
             if (!joined_table)
                 joined_table = &tables_element;
             else
-                throw Exception("Multiple JOIN does not support the query.", ErrorCodes::NOT_IMPLEMENTED);
+                // throw Exception("Multiple JOIN does not support the query.", ErrorCodes::NOT_IMPLEMENTED);
+                joined_table->multiple = true;
         }
     }
 
     return joined_table;
+}
+
+static ASTTablesInSelectQueryElements getAllTableJoin(const ASTSelectQuery & select)
+{
+    ASTTablesInSelectQueryElements joined_tables;
+    if (!select.tables())
+        return joined_tables;
+
+    const auto & tables_in_select_query = select.tables()->as<ASTTablesInSelectQuery &>();
+    if (tables_in_select_query.children.empty())
+        return joined_tables;
+
+    for (const auto & child : tables_in_select_query.children)
+    {
+        const auto & tables_element = child->as<ASTTablesInSelectQueryElement &>();
+        if (tables_element.table_join)
+        {
+            joined_tables.push_back(&tables_element);
+        }
+    }
+
+    return joined_tables;
 }
 
 
@@ -342,6 +365,11 @@ std::pair<ASTPtr, bool> ASTSelectQuery::arrayJoinExpressionList() const
 const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 {
     return getFirstTableJoin(*this);
+}
+
+const ASTTablesInSelectQueryElements ASTSelectQuery::join_all() const
+{
+    return getAllTableJoin(*this);
 }
 
 static String getTableExpressionAlias(const ASTTableExpression * table_expression)

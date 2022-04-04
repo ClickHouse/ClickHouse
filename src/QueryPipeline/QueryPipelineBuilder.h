@@ -30,6 +30,10 @@ struct ExpressionActionsSettings;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
+using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
+
 class QueryPipelineBuilder
 {
 public:
@@ -96,6 +100,15 @@ public:
             std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
+
+    /// Join several pipelines together using JoinPtr.
+    /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
+    static std::unique_ptr<QueryPipelineBuilder> parallelJoinPipelines(
+        QueryPipelineBuilders join_streams,
+        JoinPtr join,
+        size_t max_block_size,
+        Processors * collected_processors = nullptr);
+
 
     /// Join two pipelines together using JoinPtr.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.

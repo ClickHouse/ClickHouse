@@ -298,6 +298,31 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     return pipeline;
 }
 
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::parallelJoinPipelines(
+    QueryPipelineBuilders join_streams,
+    JoinPtr join,
+    size_t /*max_block_size*/,
+    Processors * collected_processors)
+{
+
+    for (auto & js : join_streams)
+    {
+        auto transform = std::make_shared<ParallelJoinTransform>(join);
+        js->checkInitializedAndNotCompleted();
+        js->pipe.dropExtremes();
+        js->pipe.collected_processors = collected_processors;
+
+        js->resize(1);
+
+        transform->add_header(js->getHeader());
+    }
+
+    // transform->mk_ports();
+
+    return {};
+
+}
+
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,

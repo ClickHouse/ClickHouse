@@ -297,4 +297,96 @@ void FillingRightJoinSideTransform::work()
     set_totals = for_totals;
 }
 
+IProcessor::Status ParallelJoinTransform::prepare()
+{
+    auto & output = outputs.front();
+
+    /// Check can output.
+
+    if (output.isFinished())
+    {
+        for (; current_input != inputs.end(); ++current_input)
+            current_input->close();
+
+        return Status::Finished;
+    }
+
+    if (!output.isNeeded())
+    {
+        if (current_input != inputs.end())
+            current_input->setNotNeeded();
+
+        return Status::PortFull;
+    }
+
+    if (!output.canPush())
+        return Status::PortFull;
+
+    /// Check can input.
+
+
+    for (auto previous_input = current_input++;
+         current_input != previous_input;
+         ++current_input)
+    {
+        if (current_input == inputs.end())
+        {
+            current_input = inputs.begin();
+        }
+
+
+
+        if (!current_input->isFinished())
+        {
+            auto & input = *current_input;
+
+            input.setNeeded();
+
+            if (!input.hasData())
+                return Status::NeedData;
+
+            /// Move data.
+            output.push(input.pull());
+
+            /// Now, we pushed to output, and it must be full.
+            return Status::PortFull;
+        }
+
+    }
+
+    output.finish();
+    return Status::Finished;
+}
+
+void ParallelJoinTransform::work()
+{
+    // current_output_chunk = std::move(current_input_chunk);
+}
+
+void ParallelJoinTransform::add_header(Block block)
+{
+    input_headers.push_back(block);
+}
+
+void ParallelJoinTransform::mk_ports()
+{
+    // inputs = input_headers;
+
+    // auto & first = input_headers.front();
+    // for(size_t block_num = 1; block_num < input_headers; ++block_num)
+    // {
+    //     auto & current = input_headers[block_num];
+    //     for ( auto it = current.begin(); it != current.end(); ++it)
+    //     {
+    //         first.insert(*it);
+    //     }
+    // }
+    // outputs.emplace_back(first) ;
+
+}
+
+
+
+
+
 }

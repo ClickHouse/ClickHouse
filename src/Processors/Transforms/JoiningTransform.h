@@ -103,4 +103,33 @@ private:
     bool set_totals = false;
 };
 
+
+class ParallelJoinTransform : public IProcessor
+{
+public:
+    ParallelJoinTransform(JoinPtr join_)
+      : join(join_)
+    {
+    }
+
+    String getName() const override { return "ParallelJoinTransform"; }
+    void add_header(Block input_header);
+    void mk_ports();
+
+    InputPort * addTotalsPort();
+
+protected:
+    Status prepare() override;
+    void work() override;
+
+private:
+    // Chunk current_input_chunk;
+    // Chunk current_output_chunk;
+    InputPorts::iterator current_input;
+
+    JoinPtr join;
+    Blocks input_headers;
+
+};
+
 }

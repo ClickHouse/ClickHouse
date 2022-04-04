@@ -51,4 +51,24 @@ private:
     size_t max_block_size;
 };
 
+
+class ParallelJoinStep : public IQueryPlanStep
+{
+public:
+    /// max_threads is used to limit the number of threads for result pipeline.
+    explicit ParallelJoinStep(DataStreams input_streams_, JoinPtr join_, size_t max_threads_ = 0);
+
+    String getName() const override { return "ParallelJoin"; }
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+
+    void describePipeline(FormatSettings & settings) const override;
+
+private:
+    JoinPtr join;
+    size_t max_block_size;
+    Processors processors;
+};
+
+
+
 }

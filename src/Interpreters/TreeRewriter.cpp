@@ -1190,15 +1190,48 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     if (tables_with_columns.size() > 1)
     {
-        const auto & right_table = tables_with_columns[1];
-        auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
-        cols_from_joined = right_table.columns;
-        /// query can use materialized or aliased columns from right joined table,
-        /// we want to request it for right table
-        cols_from_joined.insert(cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
+        LOG_TRACE(&Poco::Logger::get("TreeRewriter"), "tables_with_columns.size() {}", tables_with_columns.size());
+        NamesAndTypesList all_right_tables;
 
-        result.analyzed_join->deduplicateAndQualifyColumnNames(
-            source_columns_set, right_table.table.getQualifiedNamePrefix());
+        for (size_t right_col_ind = 1; right_col_ind < tables_with_columns.size(); ++right_col_ind)
+        {
+            // all_right_tables.insert(all_right_tables.begin(), tables_with_columns[right_col_ind].columns.begin(), tables_with_columns[right_col_ind].columns.end());
+
+
+            const auto & right_table = tables_with_columns[right_col_ind];  /* !!! */
+
+            auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
+
+            // cols_from_joined = right_table.columns;
+            cols_from_joined.insert(cols_from_joined.begin(), right_table.columns.begin(), right_table.columns.end());
+
+            /// query can use materialized or aliased columns from right joined table,
+            /// we want to request it for right table
+            cols_from_joined.insert(cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
+
+            result.analyzed_join->deduplicateAndQualifyColumnNames(
+                source_columns_set, right_table.table.getQualifiedNamePrefix());
+        }
+
+        WriteBufferFromOwnString ss;
+        ss << "result.analyzed_join->columnsFromJoinedTable()";
+
+        for (const auto & column : result.analyzed_join->columnsFromJoinedTable())
+            ss << " '" << column.name << "'";
+        LOG_TRACE(&Poco::Logger::get("TreeRewriter"), "analyzeSelect {}", ss.str());
+
+
+        // /// query can use materialized or aliased columns from right joined table,
+        // /// we want to request it for right table
+        // cols_from_joined.insert(cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
+
+        WriteBufferFromOwnString ss1;
+        for (const auto & column : source_columns_set)
+            ss1 << " '" << column << "'";
+        LOG_TRACE(&Poco::Logger::get("TreeRewriter"), "analyzeSelect source_columns_set {}", ss1.str());
+
+        // result.analyzed_join->deduplicateAndQualifyColumnNames(
+        //     source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
@@ -1282,7 +1315,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         RewriteShardNumVisitor(data_rewrite_shard_num).visit(query);
     }
 
-    result.ast_join = select_query->join();
+    result.ast_join = select_query->join_all();
 
     if (result.optimize_trivial_count)
         result.optimize_trivial_count = settings.optimize_trivial_count_query &&

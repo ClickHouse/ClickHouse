@@ -47,6 +47,10 @@ public:
 
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
+    /// Processes all data streams in parallel,
+    /// does not collect right part
+    virtual bool isParallel() const { return false; }
+
 
     virtual std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;

@@ -21,6 +21,8 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageValues.h>
 
+#include <base/logger_useful.h>
+
 namespace DB
 {
 
@@ -294,22 +296,31 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     auto settings = context->getSettingsRef();
     auto table_join = std::make_shared<TableJoin>(settings, context->getTemporaryVolume());
 
-    const ASTTablesInSelectQueryElement * ast_join = select_query.join();
-    const auto & table_to_join = ast_join->table_expression->as<ASTTableExpression &>();
+    const ASTTablesInSelectQueryElements ast_joins = select_query.join_all();
 
-    /// TODO This syntax does not support specifying a database name.
-    if (table_to_join.database_and_table_name)
+    for (auto & ast_join : ast_joins)
     {
-        auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
-        StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
-        if (storage)
+
+        const auto & table_to_join = ast_join->table_expression->as<ASTTableExpression &>();
+
+        /// TODO This syntax does not support specifying a database name.
+        if (table_to_join.database_and_table_name)
         {
-            if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
-                table_join->setStorageJoin(storage_join);
-            else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict)
-                table_join->setStorageJoin(storage_dict);
+            auto str = table_to_join.database_and_table_name->dumpTree();
+            LOG_TRACE(&Poco::Logger::get("JoinedTables"), "{}", str);
+
+            auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
+            StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
+            if (storage)
+            {
+                if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
+                    table_join->setStorageJoin(storage_join);
+                else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict)
+                    table_join->setStorageJoin(storage_dict);
+            }
         }
     }
+
 
     if (!table_join->isSpecialStorage() &&
         settings.enable_optimize_predicate_expression)

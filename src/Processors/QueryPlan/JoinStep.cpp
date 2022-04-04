@@ -87,4 +87,39 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     });
 }
 
+    ParallelJoinStep::ParallelJoinStep(DataStreams input_streams_, JoinPtr join_, size_t /*max_threads_*/)
+    :  join(std::move(join_))
+//    , max_threads(max_threads_)
+{
+    input_streams = std::move(input_streams_);
+
+    Block joined_header;
+
+    for (const auto & an_input_stream : input_streams)
+    {
+        const auto & current = an_input_stream.header;
+        for (auto it = current.begin(); it != current.end(); ++it)
+        {
+            joined_header.insert(*it);
+        }
+    }
+
+
+
+    output_stream = DataStream
+    {
+        .header = joined_header // JoiningTransform::transformHeader(left_stream_.header, join),
+    };
+}
+
+QueryPipelineBuilderPtr ParallelJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+{
+    return QueryPipelineBuilder::parallelJoinPipelines(std::move(pipelines), join, max_block_size, &processors);
+}
+
+void ParallelJoinStep::describePipeline(FormatSettings & settings) const
+{
+    IQueryPlanStep::describePipeline(processors, settings);
+}
+
 }

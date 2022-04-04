@@ -154,12 +154,15 @@ struct ASTTablesInSelectQueryElement : public IAST
     ASTPtr table_join;       /// How to JOIN a table, if table_expression is non-nullptr.
     ASTPtr table_expression; /// Table.
     ASTPtr array_join;       /// Arrays to JOIN.
+    mutable /* !!! */ bool multiple = false;
 
     using IAST::IAST;
     String getID(char) const override { return "TablesInSelectQueryElement"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
+
+using ASTTablesInSelectQueryElements = std::vector<const ASTTablesInSelectQueryElement *>;
 
 
 /// The list. Elements are in 'children' field.

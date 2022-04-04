@@ -395,7 +395,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     /// Rewrite JOINs
-    if (!has_input && joined_tables.tablesCount() > 1)
+    if (settings.join_algorithm != JoinAlgorithm::PARALLEL_MERGE && !has_input && joined_tables.tablesCount() > 1)
     {
         rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context->getSettingsRef());
 
@@ -733,6 +733,11 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     analysis_result = ExpressionAnalysisResult(
         *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, source_header);
+
+    const auto str = analysis_result.dump();
+    LOG_TRACE(log, "analysis_result.dump() {}", str);
+
+
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -1334,16 +1339,29 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     filled_join_step->setStepDescription("JOIN");
                     query_plan.addStep(std::move(filled_join_step));
                 }
+                else if (expressions.join->isParallel())
+                {
+                    DataStreams data_streams{query_plan.getCurrentDataStream()};
+
+                    QueryPlanStepPtr parallel_join_step = std::make_unique<ParallelJoinStep>(
+                        data_streams, //query_plan.getCurrentDataStream(),
+                        expressions.join,
+                        settings.max_block_size);
+
+                    parallel_join_step->setStepDescription("JOIN");
+                    query_plan.addStep(std::move(parallel_join_step));
+                }
+
                 else
                 {
-                    auto joined_plan = query_analyzer->getJoinedPlan();
+                    auto joined_plans = query_analyzer->getJoinedPlan();
 
-                    if (!joined_plan)
+                    if (joined_plans.empty())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
 
                     QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                         query_plan.getCurrentDataStream(),
-                        joined_plan->getCurrentDataStream(),
+                        joined_plans[0]->getCurrentDataStream(),
                         expressions.join,
                         settings.max_block_size,
                         max_streams,
@@ -1352,7 +1370,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     join_step->setStepDescription("JOIN");
                     std::vector<QueryPlanPtr> plans;
                     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
-                    plans.emplace_back(std::move(joined_plan));
+                    plans.emplace_back(std::move(joined_plans[0]));
 
                     query_plan = QueryPlan();
                     query_plan.unitePlans(std::move(join_step), {std::move(plans)});

@@ -1,2 +1,5 @@
 add_executable (comma_separated_streams comma_separated_streams.cpp)
 target_link_libraries (comma_separated_streams PRIVATE dbms)
+
+add_executable (processors_test_multiple_join processors_test_multiple_join.cpp)
+target_link_libraries (processors_test_multiple_join PRIVATE dbms)
