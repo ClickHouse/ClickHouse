@@ -2,7 +2,7 @@ import os
 import logging
 import ast
 
-from env_helper import GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID
+from env_helper import GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_URL
 from report import create_test_html_report
 
 
