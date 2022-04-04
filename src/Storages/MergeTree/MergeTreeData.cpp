@@ -2953,7 +2953,8 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
     {
         auto lock = lockParts();
 
-        LOG_TRACE(log, "Trying to immediately remove part {}", part->getNameWithState());
+        auto part_name_with_state = part->getNameWithState();
+        LOG_TRACE(log, "Trying to immediately remove part {}", part_name_with_state);
 
         if (part->getState() != DataPartState::Temporary)
         {
@@ -2964,7 +2965,16 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
             part.reset();
 
             if (!((*it)->getState() == DataPartState::Outdated && it->unique()))
+            {
+                if (!(*it)->getState() == DataPartState::Outdated)
+                    LOG_WARNING("Cannot immediately remove part {} because it's not in Outdated state "
+                             "usage counter {}", part_name_with_state, it->use_count());
+
+                if (!it->unique())
+                    LOG_WARNING("Cannot immediately remove part {} because someone using it right now "
+                             "usage counter {}", part_name_with_state, it->use_count());
                 return;
+            }
 
             modifyPartState(it, DataPartState::Deleting);
 
