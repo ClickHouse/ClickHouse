@@ -8,6 +8,7 @@
 #include <Common/JSONBuilder.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>
+#include <Access/Common/AccessFlags.h>
 
 #include "StorageSystemConfigs.h"
 
@@ -70,7 +71,12 @@ Pipe StorageSystemConfigs::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
+    /// Need access SYSTEM_CONFIGS to select system.configs.
+    if (getStorageID().getFullNameNotQuoted() == "system.configs")
+        context->checkAccess(AccessType::SYSTEM_CONFIGS, getStorageID());
+
     storage_snapshot->check(column_names);
+
 
     Block header;
     for (const auto & name_and_type : names_and_types_list)

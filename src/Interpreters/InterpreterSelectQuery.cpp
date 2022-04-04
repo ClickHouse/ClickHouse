@@ -251,10 +251,6 @@ static void checkAccessRightsForSelect(
 
     /// General check.
     context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
-
-    /// Need access SYSTEM_CONFIGS to select system.configs.
-    if (table_id.getFullNameNotQuoted() == "system.configs")
-        context->checkAccess(AccessType::SYSTEM_CONFIGS, table_id);
 }
 
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
