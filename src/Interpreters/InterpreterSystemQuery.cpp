@@ -37,6 +37,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -437,6 +438,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::SYNC_REPLICA:
             syncReplica(query);
             break;
+        case Type::SYNC_DATABASE:
+            syncReplicatedDatabase(query);
+            break;
         case Type::FLUSH_DISTRIBUTED:
             flushDistributed(query);
             break;
@@ -726,15 +730,36 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
         if (!storage_replicated->waitForShrinkingQueueSize(0, getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
-            throw Exception(
-                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out. "
-                    "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
+                    "See the 'receive_timeout' setting", table_id.getNameForLogs());
         }
         LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
+
+
+void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
+{
+    const auto database_name = query.getDatabase();
+    auto database = DatabaseCatalog::instance().getDatabase(database_name);
+
+    if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
+    {
+        LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
+        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
+        {
+            LOG_ERROR(log, "SYNC DATABASE {}: Timed out!", database_name);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
+                    "See the 'receive_timeout' setting", database_name);
+        }
+        LOG_TRACE(log, "SYNC DATABASE {}: OK", database_name);
+    }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC REPLICATED DATABASE query is intended to work ony with Replicated engine");
+}
+
 
 void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
@@ -903,6 +928,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESTART_REPLICAS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA);
+            break;
+        }
+        case Type::SYNC_DATABASE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE, query.getDatabase());
             break;
         }
         case Type::FLUSH_DISTRIBUTED:

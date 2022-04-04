@@ -245,6 +245,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::SYNC_DATABASE:
+        {
+            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseDatabaseAsAST(pos, expected, res->database))
+                return false;
+            break;
+        }
+
         case Type::RESTART_DISK:
         {
             if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))

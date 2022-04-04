@@ -85,6 +85,39 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
     return enqueueQueryImpl(zookeeper, entry, database);
 }
 
+
+bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
+{
+    auto zookeeper = getAndSetZooKeeper();
+    UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(database->replica_path + "/log_ptr"));
+    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+    assert(our_log_ptr <= max_log_ptr);
+
+    /// max_log_ptr is the number of the last successfully executed request on the initiator
+    /// The log could contain other entries which are not commited yet
+    /// This equality is enough to say that current replicas is up-to-date
+    if (our_log_ptr == max_log_ptr)
+        return true;
+
+    /// We create an empty entry to a the log to reuse existing approach (a bit of copy-paste)
+    /// One big disadvantage is that it triggers other replicas to update their state which is not really needed
+    DDLLogEntry entry{};
+    auto entry_path = enqueueQueryImpl(current_zookeeper, entry, database, /*committed=*/true);
+    auto entry_name = entry_path.substr(entry_path.rfind('/') + 1);
+
+    LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
+
+    std::unique_lock lock{mutex};
+    bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
+    {
+        assert(zookeeper->expired() || current_task <= entry_name);
+        return zookeeper->expired() || current_task == entry_name || stop_flag;
+    });
+
+    return processed;
+}
+
+
 String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
                                DatabaseReplicated * const database, bool committed)
 {
