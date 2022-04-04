@@ -268,7 +268,7 @@ void ClientBase::setupSignalHandler()
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
-    ParserQuery parser(end);
+    ParserQuery parser(end, global_context->getSettings().allow_settings_after_format_in_insert);
     ASTPtr res;
 
     const auto & settings = global_context->getSettingsRef();
