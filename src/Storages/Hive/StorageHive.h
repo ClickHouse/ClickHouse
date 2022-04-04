@@ -39,7 +39,6 @@ public:
         return true;
     }
 
-
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
