@@ -164,6 +164,8 @@ Checks: '-*,
     clang-analyzer-unix.cstring.NullArg,
 
     boost-use-to-string,
+
+    alpha.security.cert.env.InvalidPtr,
 '
 WarningsAsErrors: '*'
 
