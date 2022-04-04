@@ -206,17 +206,17 @@ void SortingStep::describeActions(FormatSettings & settings) const
     if (!prefix_description.empty())
     {
         settings.out << prefix << "Prefix sort description: ";
-        dumpSortDescription(prefix_description, input_streams.front().header, settings.out);
+        dumpSortDescription(prefix_description, settings.out);
         settings.out << '\n';
 
         settings.out << prefix << "Result sort description: ";
-        dumpSortDescription(result_description, input_streams.front().header, settings.out);
+        dumpSortDescription(result_description, settings.out);
         settings.out << '\n';
     }
     else
     {
         settings.out << prefix << "Sort description: ";
-        dumpSortDescription(result_description, input_streams.front().header, settings.out);
+        dumpSortDescription(result_description, settings.out);
         settings.out << '\n';
     }
 
@@ -228,11 +228,11 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     if (!prefix_description.empty())
     {
-        map.add("Prefix Sort Description", explainSortDescription(prefix_description, input_streams.front().header));
-        map.add("Result Sort Description", explainSortDescription(result_description, input_streams.front().header));
+        map.add("Prefix Sort Description", explainSortDescription(prefix_description));
+        map.add("Result Sort Description", explainSortDescription(result_description));
     }
     else
-        map.add("Sort Description", explainSortDescription(result_description, input_streams.front().header));
+        map.add("Sort Description", explainSortDescription(result_description));
 
     if (limit)
         map.add("Limit", limit);
