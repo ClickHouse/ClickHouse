@@ -286,8 +286,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {
     checkStackSize();
 
-    for (const auto & column : query_ptr->as<ASTSelectQuery &>().select()->children)
-        original_select_set.insert(column->getColumnName());
+    for (const auto & column : query_ptr->as<ASTSelectQuery &>().select()->children) {
+        std::string alias = column->tryGetAlias();
+        original_select_set.insert(alias.empty() ? column->getColumnName() : alias);
+    }
 
     query_info.ignore_projections = options.ignore_projections;
     query_info.is_projection_query = options.is_projection_query;
