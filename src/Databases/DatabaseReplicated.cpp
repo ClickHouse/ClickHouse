@@ -675,6 +675,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         }
     }
     current_zookeeper->set(replica_path + "/log_ptr", toString(max_log_ptr));
+    ddl_worker->updateLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
 }
 
 std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr)

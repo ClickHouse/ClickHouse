@@ -32,6 +32,8 @@ public:
     static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
                                    DatabaseReplicated * const database, bool committed = false); /// NOLINT
 
+    void updateLogPointer(const String & processed_entry_name);
+    UInt32 getLogPointer() const;
 private:
     bool initializeMainThread() override;
     void initializeReplication();
