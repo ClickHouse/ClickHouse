@@ -262,9 +262,14 @@ if __name__ == "__main__":
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
     if description_report:
-        print("::notice ::Cannot run, description does not match the template")
+        print(
+            "::error ::Cannot run, PR description does not match the template: "
+            f"{description_report}"
+        )
         logging.info(
-            "PR body doesn't match the template: (start)\n%s\n(end)", pr_info.body
+            "PR body doesn't match the template: (start)\n%s\n(end)\n" "Reason: %s",
+            pr_info.body,
+            description_report,
         )
         url = (
             f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
