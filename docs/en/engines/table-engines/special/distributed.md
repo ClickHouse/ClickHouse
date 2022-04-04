@@ -1,6 +1,6 @@
 ---
-sidebar_position: 10
-sidebar_label: Distributed
+toc_priority: 33
+toc_title: Distributed
 ---
 
 # Distributed Table Engine {#distributed}
@@ -64,19 +64,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 - `monitor_max_sleep_time_ms` - same as [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)
 
-:::note
-**Durability settings** (`fsync_...`):
+!!! note "Note"
 
-- Affect only asynchronous INSERTs (i.e. `insert_distributed_sync=false`) when data first stored on the initiator node disk and later asynchronously send to shards.
-- May significantly decrease the inserts' performance
-- Affect writing the data stored inside Distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to underlying MergeTree tables - see durability settings (`...fsync...`) in `system.merge_tree_settings`
+    **Durability settings** (`fsync_...`):
 
-For **Insert limit settings** (`..._insert`) see also:
+    - Affect only asynchronous INSERTs (i.e. `insert_distributed_sync=false`) when data first stored on the initiator node disk and later asynchronously send to shards.
+    - May significantly decrease the inserts' performance
+    - Affect writing the data stored inside Distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to underlying MergeTree tables - see durability settings (`...fsync...`) in `system.merge_tree_settings`
 
-- [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
-- [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) setting
-- `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
-:::
+    For **Insert limit settings** (`..._insert`) see also:
+
+    - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
+    - [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) setting
+    - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
 
 **Example**
 
@@ -215,9 +215,8 @@ To learn more about how distibuted `in` and `global in` queries are processed, r
 
 -   `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
-:::note    
-Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.
-:::
+!!! note "Note"
+    Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.
 
 **See Also**
 
@@ -226,4 +225,3 @@ Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](.
 -   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) and [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) functions
 
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/distributed/) <!--hide-->

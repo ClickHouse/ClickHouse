@@ -1,5 +1,5 @@
 ---
-sidebar_label: WITH
+toc_title: WITH
 ---
 
 # WITH Clause {#with-clause}

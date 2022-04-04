@@ -1,7 +1,0 @@
-position: 100 
-label: 'Building ClickHouse'
-collapsible: true 
-collapsed: true 
-link:
-  type: generated-index
-  title: Building ClickHouse

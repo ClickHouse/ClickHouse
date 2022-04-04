@@ -1,5 +1,5 @@
 ---
-sidebar_position: 209
+toc_priority: 209
 ---
 
 # quantileBFloat16 {#quantilebfloat16}

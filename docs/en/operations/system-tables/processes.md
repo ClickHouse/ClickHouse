@@ -1,4 +1,4 @@
-# processes {#system_tables-processes}
+# system.processes {#system_tables-processes}
 
 This system table is used for implementing the `SHOW PROCESSLIST` query.
 

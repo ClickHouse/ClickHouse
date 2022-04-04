@@ -1,4 +1,4 @@
-# zookeeper {#system-zookeeper}
+# system.zookeeper {#system-zookeeper}
 
 The table does not exist if ZooKeeper is not configured. Allows reading data from the ZooKeeper cluster defined in the config.
 The query must either have a ‘path =’   condition or a `path IN`  condition set with the `WHERE` clause as shown below. This corresponds to the path of the children in ZooKeeper that you want to get data for.
