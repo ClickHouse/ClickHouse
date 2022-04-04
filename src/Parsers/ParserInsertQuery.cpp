@@ -186,6 +186,31 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
+    /// Read SETTINGS after FORMAT.
+    ///
+    /// Note, that part of SETTINGS can be interpreted as values,
+    /// hence it is done only under option.
+    ///
+    /// Refs: https://github.com/ClickHouse/ClickHouse/issues/35100
+    if (allow_settings_after_format_in_insert && s_settings.ignore(pos, expected))
+    {
+        if (settings_ast)
+            throw Exception("You have SETTINGS before and after FORMAT, "
+                            "this is not allowed. "
+                            "Consider switching to SETTINGS before FORMAT "
+                            "and disable allow_settings_after_format_in_insert.",
+                            ErrorCodes::SYNTAX_ERROR);
+
+        /// Settings are written like SET query, so parse them with ParserSetQuery
+        ParserSetQuery parser_settings(true);
+        if (!parser_settings.parse(pos, settings_ast, expected))
+            return false;
+        /// In case of INSERT INTO ... VALUES SETTINGS ... (...), (...), ...
+        /// we should move data pointer after all settings.
+        if (data != nullptr)
+            data = pos->begin;
+    }
+
     if (select)
     {
         /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS
