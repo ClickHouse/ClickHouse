@@ -1909,6 +1909,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
 
     const auto & settings = local_context->getSettingsRef();
+    const auto & settings_from_storage = getSettings();
 
     if (!settings.allow_non_metadata_alters)
     {
@@ -2103,7 +2104,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             for (const auto & reset_setting : command.settings_resets)
             {
-                if (!settings.has(reset_setting))
+                if (!settings_from_storage->has(reset_setting))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset setting '{}' because it doesn't exist for MergeTree engines family", reset_setting);
             }
         }
