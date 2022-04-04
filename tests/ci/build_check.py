@@ -264,7 +264,7 @@ def main():
         version_type = "stable"
         official_flag = True
 
-    update_version_local(REPO_COPY, version, version_type)
+    update_version_local(version, version_type)
 
     logging.info("Updated local files with version")
 
