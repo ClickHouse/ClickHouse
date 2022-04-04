@@ -595,7 +595,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    if (auto query_result = cache.get({query_ptr, source_header}); context->getSettingsRef().use_query_cache && query_result)
+    if (auto query_result = cache.get({query_ptr, source_header}); query_result)
     {
         const auto &header= query_result->first;
         const auto &chunks = query_result->second;
@@ -608,12 +608,6 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     }
     executeImpl(query_plan, std::move(input_pipe));
 
-    if (context->getSettingsRef().use_query_cache)
-    {
-        auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_ptr);
-        caching_step->setStepDescription("Cache query result");
-        query_plan.addStep(std::move(caching_step));
-    }
     /// We must guarantee that result structure is the same as in getSampleBlock()
     ///
     /// But if it's a projection query, plan header does not match result_header.
@@ -1086,6 +1080,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 && !expressions.hasHaving()
                 && !expressions.has_window)
             {
+                auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_ptr);
+                caching_step->setStepDescription("Cache query result");
+                query_plan.addStep(std::move(caching_step));
+
                 if (expressions.has_order_by)
                     executeOrder(
                         query_plan,
