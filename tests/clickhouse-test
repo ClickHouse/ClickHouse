@@ -1140,7 +1140,7 @@ def run_tests_array(all_tests_with_params):
     sys.stdout.flush()
 
 
-server_logs_level = "warning"
+server_logs_level = "fatal"
 
 
 def check_server_started(args):
