@@ -91,7 +91,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
                 << (settings.hilite ? hilite_keyword : "")
                 << " COMPRESSION "
                 << (settings.hilite ? hilite_none : "")
-                << compression->as<ASTLiteral &>().value.safeGet<std::string>();
+                << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
     }
 
     if (select)
