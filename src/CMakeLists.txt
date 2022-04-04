@@ -87,9 +87,7 @@ if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
-if (ENABLE_CURL)
-    add_headers_and_sources(dbms Storages/MeiliSearch)
-endif()
+add_headers_and_sources(dbms Storages/MeiliSearch)
 
 if (USE_AMQPCPP)
     add_headers_and_sources(dbms Storages/RabbitMQ)

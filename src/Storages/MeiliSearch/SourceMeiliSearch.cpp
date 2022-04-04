@@ -9,8 +9,10 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MeiliSearch/SourceMeiliSearch.h>
 #include <base/JSON.h>
@@ -42,13 +44,22 @@ MeiliSearchSource::MeiliSearchSource(
 {
     description.init(sample_block);
 
-    String columns_to_get = "[";
-    for (const auto & col : description.sample_block)
-        columns_to_get += doubleQuoteString(col.name) + ",";
+    WriteBufferFromOwnString columns_to_get;
 
-    columns_to_get.back() = ']';
+    columns_to_get << "[";
+    auto it = description.sample_block.begin();
 
-    query_params[doubleQuoteString("attributesToRetrieve")] = columns_to_get;
+    while (it != description.sample_block.end())
+    {
+        columns_to_get << doubleQuoteString(it->name);
+        ++it;
+        if (it != description.sample_block.end())
+            columns_to_get << ",";
+    }
+
+    columns_to_get << "]";
+
+    query_params[doubleQuoteString("attributesToRetrieve")] = columns_to_get.str();
     query_params[doubleQuoteString("limit")] = std::to_string(max_block_size);
 }
 

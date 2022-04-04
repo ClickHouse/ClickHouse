@@ -1,7 +1,10 @@
+#include <sstream>
 #include <string_view>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
-#include <curl/curl.h>
 #include <Common/Exception.h>
+
 
 namespace DB
 {
@@ -12,78 +15,72 @@ namespace ErrorCodes
 
 MeiliSearchConnection::MeiliSearchConnection(const MeiliConfig & conf) : config{conf}
 {
+    Poco::URI uri(config.connection_string);
+    session.setHost(uri.getHost());
+    session.setPort(uri.getPort());
 }
 
-static size_t writeCallback(void * contents, size_t size, size_t nmemb, void * userp)
+void MeiliSearchConnection::execQuery(const String & url, std::string_view post_fields, std::string & response_buffer) const
 {
-    (static_cast<std::string *>(userp))->append(static_cast<char *>(contents), size * nmemb);
-    return size * nmemb;
-}
+    Poco::URI uri(url);
 
-CURLcode MeiliSearchConnection::execQuery(std::string_view url, std::string_view post_fields, std::string & response_buffer) const
-{
-    CURLcode ret_code;
-    CURL * handle;
-    struct curl_slist * headers_list;
+    String path(uri.getPathAndQuery());
+    if (path.empty())
+        path = "/";
 
-    headers_list = nullptr;
-    headers_list = curl_slist_append(headers_list, "Content-Type: application/json");
-
-    String full_key;
+    Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_POST, path, Poco::Net::HTTPMessage::HTTP_1_1);
+    req.setContentType("application/json");
 
     if (!config.key.empty())
-    {
-        full_key = config.key_prefix + config.key;
-        headers_list = curl_slist_append(headers_list, full_key.c_str());
-    }
+        req.add("Authorization", "Bearer " + config.key);
 
-    handle = curl_easy_init();
-    curl_easy_setopt(handle, CURLOPT_URL, url.data());
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, post_fields.data());
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, post_fields.size());
-    curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers_list);
-    curl_easy_setopt(handle, CURLOPT_MAXREDIRS, 50L);
-    curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "POST");
-    curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, writeCallback);
-    curl_easy_setopt(handle, CURLOPT_WRITEDATA, &response_buffer);
+    req.setContentLength(post_fields.length());
 
-    ret_code = curl_easy_perform(handle);
+    std::ostream & os = session.sendRequest(req);
+    os << post_fields;
 
-    curl_easy_cleanup(handle);
-    curl_slist_free_all(headers_list);
-    return ret_code;
+    Poco::Net::HTTPResponse res;
+    std::istream & is = session.receiveResponse(res);
+
+    if (res.getStatus() / 100 == 2 || res.getStatus() / 100 == 4)
+        response_buffer = String(std::istreambuf_iterator<char>(is), {});
+    else
+        throw Exception(ErrorCodes::NETWORK_ERROR, res.getReason());
 }
 
 String MeiliSearchConnection::searchQuery(const std::unordered_map<String, String> & query_params) const
 {
     std::string response_buffer;
 
-    std::string post_fields = "{";
-    for (const auto & q_attr : query_params)
-        post_fields += q_attr.first + ":" + q_attr.second + ",";
+    WriteBufferFromOwnString post_fields;
 
-    post_fields.back() = '}';
+    post_fields << "{";
 
-    std::string url = config.connection_string + "search";
+    auto it = query_params.begin();
+    while (it != query_params.end())
+    {
+        post_fields << it->first << ":" << it->second;
+        ++it;
+        if (it != query_params.end())
+            post_fields << ",";
+    }
 
-    CURLcode ret_code = execQuery(url, post_fields, response_buffer);
+    post_fields << "}";
 
-    if (ret_code != CURLE_OK)
-        throw Exception(ErrorCodes::NETWORK_ERROR, curl_easy_strerror(ret_code));
+    String url = config.connection_string + "search";
+
+    execQuery(url, post_fields.str(), response_buffer);
 
     return response_buffer;
 }
 
 String MeiliSearchConnection::updateQuery(std::string_view data) const
 {
-    std::string response_buffer;
+    String response_buffer;
 
-    std::string url = config.connection_string + "documents";
+    String url = config.connection_string + "documents";
 
-    CURLcode ret_code = execQuery(url, data, response_buffer);
-
-    if (ret_code != CURLE_OK)
-        throw Exception(ErrorCodes::NETWORK_ERROR, curl_easy_strerror(ret_code));
+    execQuery(url, data, response_buffer);
 
     return response_buffer;
 }

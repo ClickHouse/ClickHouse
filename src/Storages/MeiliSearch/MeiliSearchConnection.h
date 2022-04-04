@@ -6,12 +6,17 @@
 #include <base/types.h>
 #include <curl/curl.h>
 
+#include <Poco/Exception.h>
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/Path.h>
+#include <Poco/URI.h>
+
 namespace DB
 {
 struct MeiliSearchConfiguration
 {
-    inline const static String key_prefix = "Authorization: Bearer ";
-
     String key;
     String index;
     String connection_string;
@@ -34,9 +39,10 @@ public:
     String updateQuery(std::string_view data) const;
 
 private:
-    CURLcode execQuery(std::string_view url, std::string_view post_fields, std::string & response_buffer) const;
+    void execQuery(const String & url, std::string_view post_fields, std::string & response_buffer) const;
 
     MeiliConfig config;
+    mutable Poco::Net::HTTPClientSession session;
 };
 
 }
