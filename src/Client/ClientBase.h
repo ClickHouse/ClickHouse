@@ -252,6 +252,8 @@ protected:
 
     QueryProcessingStage::Enum query_processing_stage;
 
+    bool fake_drop = false;
+
     struct HostAndPort
     {
         String host;
