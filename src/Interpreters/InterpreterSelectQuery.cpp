@@ -105,7 +105,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
 }
 
-LRUCache<CacheKey, Data, CacheKeyHasher> InterpreterSelectQuery::cache{42};
+LRUCache<CacheKey, Data, CacheKeyHasher> InterpreterSelectQuery::cache{100500};
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
 String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns) const
