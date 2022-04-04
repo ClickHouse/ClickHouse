@@ -187,6 +187,13 @@ public:
     VolumePtr getTemporaryVolume() { return tmp_volume; }
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
+    // bool allowMergeJoin() const;
+    // bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
+    // bool forceParallelMergeJoin() const { return join_algorithm == JoinAlgorithm::PARALLEL_MERGE; }
+    // bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
+    // bool allowParallelHashJoin() const;
+    // bool forceHashJoin() const
+
     {
         /// When join_algorithm = 'default' (not specified by user) we use hash or direct algorithm.
         /// It's behaviour that was initially supported by clickhouse.

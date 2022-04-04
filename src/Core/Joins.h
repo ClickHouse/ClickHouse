@@ -104,6 +104,7 @@ enum class JoinAlgorithm
     PARALLEL_HASH,
     DIRECT,
     FULL_SORTING_MERGE,
+    PARALLEL_MERGE
 };
 
 const char * toString(JoinAlgorithm join_algorithm);

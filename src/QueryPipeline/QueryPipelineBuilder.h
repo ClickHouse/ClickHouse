@@ -33,6 +33,10 @@ class TableJoin;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
+using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
+
 class QueryPipelineBuilder
 {
 public:
@@ -110,6 +114,15 @@ public:
         QueryPipelineBuilderPtr right,
         ProcessorPtr transform,
         Processors * collected_processors);
+
+    /// Join several pipelines together using JoinPtr.
+    /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
+    static std::unique_ptr<QueryPipelineBuilder> parallelJoinPipelines(
+        QueryPipelineBuilders join_streams,
+        JoinPtr join,
+        size_t max_block_size,
+        Processors * collected_processors = nullptr);
+
 
     /// Join two pipelines together using JoinPtr.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.

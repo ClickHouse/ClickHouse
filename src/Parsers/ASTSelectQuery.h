@@ -8,6 +8,7 @@ namespace DB
 {
 
 struct ASTTablesInSelectQueryElement;
+using ASTTablesInSelectQueryElements = std::vector<const ASTTablesInSelectQueryElement *>;
 struct StorageID;
 
 
@@ -132,6 +133,7 @@ public:
 
     const ASTTablesInSelectQueryElement * join() const;
     bool hasJoin() const;
+    const ASTTablesInSelectQueryElements join_all() const;
     bool final() const;
     bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);

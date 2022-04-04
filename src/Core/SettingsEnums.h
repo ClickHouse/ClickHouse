@@ -31,6 +31,17 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 DECLARE_SETTING_ENUM(JoinStrictness)
 
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
+// enum class JoinAlgorithm
+// {
+//     AUTO = 0,
+//     HASH,
+//     PARTIAL_MERGE,
+//     PREFER_PARTIAL_MERGE,
+//     PARALLEL_HASH,
+//     PARALLEL_MERGE,
+// };
+
+// DECLARE_SETTING_ENUM(JoinAlgorithm)
 
 
 /// Which rows should be included in TOTALS.

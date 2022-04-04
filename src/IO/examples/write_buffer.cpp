@@ -10,6 +10,7 @@
 
 int main(int, char **)
 {
+#if 0
     try
     {
         DB::Int64 a = -123456;
@@ -43,6 +44,7 @@ int main(int, char **)
         std::cerr << e.what() << ", " << e.displayText() << std::endl;
         return 1;
     }
+#endif
 
     return 0;
 }
