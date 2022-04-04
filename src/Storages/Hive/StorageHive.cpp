@@ -60,7 +60,7 @@ public:
     struct SourcesInfo
     {
         HiveMetastoreClientPtr hive_metastore_client;
-        std::string database;
+        std::string database_name;
         std::string table_name;
         HiveFiles hive_files;
         NamesAndTypesList partition_name_types;
@@ -159,7 +159,7 @@ public:
                 {
                     if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
                     {
-                        source_info->hive_metastore_client->clearTableMetadata(source_info->database, source_info->table_name);
+                        source_info->hive_metastore_client->clearTableMetadata(source_info->database_name, source_info->table_name);
                         throw;
                     }
                 }
@@ -562,6 +562,7 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
     }
     return hive_file;
 }
+
 bool StorageHive::isColumnOriented() const
 {
     return format_name == "Parquet" || format_name == "ORC";
@@ -651,7 +652,7 @@ Pipe StorageHive::read(
 
     auto sources_info = std::make_shared<StorageHiveSource::SourcesInfo>();
     sources_info->hive_files = std::move(hive_files);
-    sources_info->database = hive_database;
+    sources_info->database_name = hive_database;
     sources_info->table_name = hive_table;
     sources_info->hive_metastore_client = hive_metastore_client;
     sources_info->partition_name_types = partition_name_types;

@@ -172,6 +172,7 @@ std::vector<Apache::Hadoop::Hive::Partition> HiveMetastoreClient::HiveTableMetad
     std::vector<Apache::Hadoop::Hive::Partition> result;
 
     std::lock_guard lock{mutex};
+    result.reserve(partition_infos.size());
     for (const auto & partition_info : partition_infos)
         result.emplace_back(partition_info.second.partition);
     return result;
