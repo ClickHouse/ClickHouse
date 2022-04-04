@@ -162,7 +162,7 @@ def check_pr_description(pr_info):
 
     i = 0
     while i < len(lines):
-        if re.match(r"(?i)^[>*_ ]*change\s*log\s*category", lines[i]):
+        if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
             i += 1
             if i >= len(lines):
                 break
@@ -191,7 +191,7 @@ def check_pr_description(pr_info):
                 return result_status[:140], category
 
         elif re.match(
-            r"(?i)^[>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
+            r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
         ):
             i += 1
             # Can have one empty line between header and the entry itself.
