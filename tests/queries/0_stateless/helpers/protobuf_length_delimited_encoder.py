@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 
+
 def read_varint(input):
     res = 0
     multiplier = 1
@@ -26,35 +27,43 @@ def read_varint(input):
         multiplier *= 0x80
     return res
 
+
 def write_varint(output, value):
     while True:
         if value < 0x80:
             b = value
-            output.write(b.to_bytes(1, byteorder='little'))
+            output.write(b.to_bytes(1, byteorder="little"))
             break
         b = (value & 0x7F) + 0x80
-        output.write(b.to_bytes(1, byteorder='little'))
+        output.write(b.to_bytes(1, byteorder="little"))
         value = value >> 7
 
+
 def write_hexdump(output, data):
-    with subprocess.Popen(["hexdump", "-C"], stdin=subprocess.PIPE, stdout=output, shell=False) as proc:
+    with subprocess.Popen(
+        ["hexdump", "-C"], stdin=subprocess.PIPE, stdout=output, shell=False
+    ) as proc:
         proc.communicate(data)
         if proc.returncode != 0:
             raise RuntimeError("hexdump returned code " + str(proc.returncode))
     output.flush()
 
+
 class FormatSchemaSplitted:
     def __init__(self, format_schema):
         self.format_schema = format_schema
-        splitted = self.format_schema.split(':')
+        splitted = self.format_schema.split(":")
         if len(splitted) < 2:
-            raise RuntimeError('The format schema must have the format "schemafile:MessageType"')
+            raise RuntimeError(
+                'The format schema must have the format "schemafile:MessageType"'
+            )
         path = splitted[0]
         self.schemadir = os.path.dirname(path)
         self.schemaname = os.path.basename(path)
         if not self.schemaname.endswith(".proto"):
             self.schemaname = self.schemaname + ".proto"
         self.message_type = splitted[1]
+
 
 def decode(input, output, format_schema):
     if not type(format_schema) is FormatSchemaSplitted:
@@ -64,23 +73,29 @@ def decode(input, output, format_schema):
         sz = read_varint(input)
         if sz is None:
             break
-        output.write("MESSAGE #{msgindex} AT 0x{msgoffset:08X}\n".format(msgindex=msgindex, msgoffset=input.tell()).encode())
+        output.write(
+            "MESSAGE #{msgindex} AT 0x{msgoffset:08X}\n".format(
+                msgindex=msgindex, msgoffset=input.tell()
+            ).encode()
+        )
         output.flush()
         msg = input.read(sz)
         if len(msg) < sz:
-            raise EOFError('Unexpected end of file')
-        protoc = os.getenv('PROTOC_BINARY', 'protoc')
-        with subprocess.Popen([protoc,
-                                "--decode", format_schema.message_type, format_schema.schemaname],
-                              cwd=format_schema.schemadir,
-                              stdin=subprocess.PIPE,
-                              stdout=output,
-                              shell=False) as proc:
+            raise EOFError("Unexpected end of file")
+        protoc = os.getenv("PROTOC_BINARY", "protoc")
+        with subprocess.Popen(
+            [protoc, "--decode", format_schema.message_type, format_schema.schemaname],
+            cwd=format_schema.schemadir,
+            stdin=subprocess.PIPE,
+            stdout=output,
+            shell=False,
+        ) as proc:
             proc.communicate(msg)
             if proc.returncode != 0:
                 raise RuntimeError("protoc returned code " + str(proc.returncode))
         output.flush()
         msgindex = msgindex + 1
+
 
 def encode(input, output, format_schema):
     if not type(format_schema) is FormatSchemaSplitted:
@@ -91,7 +106,11 @@ def encode(input, output, format_schema):
         if len(line) == 0:
             break
         if not line.startswith(b"MESSAGE #"):
-            raise RuntimeError("The line at 0x{line_offset:08X} must start with the text 'MESSAGE #'".format(line_offset=line_offset))
+            raise RuntimeError(
+                "The line at 0x{line_offset:08X} must start with the text 'MESSAGE #'".format(
+                    line_offset=line_offset
+                )
+            )
         msg = b""
         while True:
             line_offset = input.tell()
@@ -99,19 +118,21 @@ def encode(input, output, format_schema):
             if line.startswith(b"MESSAGE #") or len(line) == 0:
                 break
             msg += line
-        protoc = os.getenv('PROTOC_BINARY', 'protoc')
-        with subprocess.Popen([protoc,
-                                "--encode", format_schema.message_type, format_schema.schemaname],
-                              cwd=format_schema.schemadir,
-                              stdin=subprocess.PIPE,
-                              stdout=subprocess.PIPE,
-                              shell=False) as proc:
+        protoc = os.getenv("PROTOC_BINARY", "protoc")
+        with subprocess.Popen(
+            [protoc, "--encode", format_schema.message_type, format_schema.schemaname],
+            cwd=format_schema.schemadir,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            shell=False,
+        ) as proc:
             msgbin = proc.communicate(msg)[0]
             if proc.returncode != 0:
                 raise RuntimeError("protoc returned code " + str(proc.returncode))
         write_varint(output, len(msgbin))
         output.write(msgbin)
         output.flush()
+
 
 def decode_and_check(input, output, format_schema):
     input_data = input.read()
@@ -139,23 +160,50 @@ def decode_and_check(input, output, format_schema):
         output.write(b"\nBinary representation is as expected\n")
         output.flush()
     else:
-        output.write(b"\nBinary representation differs from the expected one (listed below):\n")
+        output.write(
+            b"\nBinary representation differs from the expected one (listed below):\n"
+        )
         output.flush()
         write_hexdump(output, encoded_data)
         sys.exit(1)
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Encodes or decodes length-delimited protobuf messages.')
-    parser.add_argument('--input', help='The input file, the standard input will be used if not specified.')
-    parser.add_argument('--output', help='The output file, the standard output will be used if not specified')
-    parser.add_argument('--format_schema', required=True, help='Format schema in the format "schemafile:MessageType"')
+    parser = argparse.ArgumentParser(
+        description="Encodes or decodes length-delimited protobuf messages."
+    )
+    parser.add_argument(
+        "--input",
+        help="The input file, the standard input will be used if not specified.",
+    )
+    parser.add_argument(
+        "--output",
+        help="The output file, the standard output will be used if not specified",
+    )
+    parser.add_argument(
+        "--format_schema",
+        required=True,
+        help='Format schema in the format "schemafile:MessageType"',
+    )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--encode', action='store_true', help='Specify to encode length-delimited messages.'
-                       'The utility will read text-format messages of the given type from the input and write it in binary to the output.')
-    group.add_argument('--decode', action='store_true', help='Specify to decode length-delimited messages.'
-                       'The utility will read messages in binary from the input and write text-format messages to the output.')
-    group.add_argument('--decode_and_check', action='store_true', help='The same as --decode, and the utility will then encode '
-                       ' the decoded data back to the binary form to check that the result of that encoding is the same as the input was.')
+    group.add_argument(
+        "--encode",
+        action="store_true",
+        help="Specify to encode length-delimited messages."
+        "The utility will read text-format messages of the given type from the input and write it in binary to the output.",
+    )
+    group.add_argument(
+        "--decode",
+        action="store_true",
+        help="Specify to decode length-delimited messages."
+        "The utility will read messages in binary from the input and write text-format messages to the output.",
+    )
+    group.add_argument(
+        "--decode_and_check",
+        action="store_true",
+        help="The same as --decode, and the utility will then encode "
+        " the decoded data back to the binary form to check that the result of that encoding is the same as the input was.",
+    )
     args = parser.parse_args()
 
     custom_input_file = None
