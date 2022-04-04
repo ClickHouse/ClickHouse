@@ -14,7 +14,8 @@
     #include <immintrin.h>
 #endif
 
-#include <Functions/TargetSpecific.h>
+#include <Common/TargetSpecific.h>
+
 
 namespace DB::GatherUtils
 {
