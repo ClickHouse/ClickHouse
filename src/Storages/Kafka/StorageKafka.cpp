@@ -779,11 +779,13 @@ void registerStorageKafka(StorageFactory & factory)
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
-        auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
+        auto max_consumers = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
 
-        if (num_consumers > physical_cpu_cores)
+        if (num_consumers > max_consumers)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be bigger than {}", physical_cpu_cores);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be bigger than {}, it just doesn't make sense. "
+                            "Note that kafka_num_consumers is not number of consumers for Kafka partitions -- they are managed by Kafka client library. "
+                            "kafka_num_consumers is internal amount of threads for ClickHouse and it shouldn't be big", max_consumers);
         }
         else if (num_consumers < 1)
         {
