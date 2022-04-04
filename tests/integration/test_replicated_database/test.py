@@ -828,11 +828,11 @@ def test_sync_replica(started_cluster):
     )
 
     assert(
-        main_node.query("SELECT count() FROM system.tables where database=\'test_sync_database\'").strip()
+        dummy_node.query("SELECT count() FROM system.tables where database=\'test_sync_database\'").strip()
         == str(number_of_tables)
     )
 
     assert(
-        dummy_node.query("SELECT count() FROM system.tables where database=\'test_sync_database\'").strip()
+        main_node.query("SELECT count() FROM system.tables where database=\'test_sync_database\'").strip()
         == str(number_of_tables)
     )
