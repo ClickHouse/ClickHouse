@@ -757,7 +757,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
         LOG_TRACE(log, "SYNC DATABASE {}: OK", database_name);
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC REPLICATED DATABASE query is intended to work ony with Replicated engine");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC REPLICATED DATABASE query is intended to work only with Replicated engine");
 }
 
 
