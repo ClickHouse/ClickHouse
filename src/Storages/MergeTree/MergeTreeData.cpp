@@ -2967,11 +2967,11 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
             if (!((*it)->getState() == DataPartState::Outdated && it->unique()))
             {
                 if ((*it)->getState() != DataPartState::Outdated)
-                    LOG_WARNING("Cannot immediately remove part {} because it's not in Outdated state "
+                    LOG_WARNING(log, "Cannot immediately remove part {} because it's not in Outdated state "
                              "usage counter {}", part_name_with_state, it->use_count());
 
                 if (!it->unique())
-                    LOG_WARNING("Cannot immediately remove part {} because someone using it right now "
+                    LOG_WARNING(log, "Cannot immediately remove part {} because someone using it right now "
                              "usage counter {}", part_name_with_state, it->use_count());
                 return;
             }
