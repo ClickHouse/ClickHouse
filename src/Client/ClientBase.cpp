@@ -1298,6 +1298,13 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
     }
 
+    if (const auto * set_query = parsed_query->as<ASTSetQuery>())
+    {
+        const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
+        if (logs_level_field)
+            setLogger(logs_level_field->safeGet<String>());
+    }
+
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();

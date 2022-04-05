@@ -434,6 +434,11 @@ catch (...)
     return getCurrentExceptionCode();
 }
 
+void LocalServer::setLogger(const String & logs_level)
+{
+    config().setString("logger.level", logs_level);
+    updateLevels(config(), logger());
+}
 
 void LocalServer::processConfig()
 {
@@ -463,19 +468,19 @@ void LocalServer::processConfig()
                     || config().has("send_logs_level")
                     || config().has("logger.log"));
 
-    auto level = Poco::Logger::parseLevel(config().getString("log-level", config().getString("send_logs_level", "trace")));
+    auto level = config().getString("log-level", "trace");
 
     if (config().has("server_logs_file"))
     {
-        Poco::Logger::root().setLevel(level);
+        auto poco_logs_level = Poco::Logger::parseLevel(level);
+        Poco::Logger::root().setLevel(poco_logs_level);
         Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
     }
-    else if (logging)
+    else if (logging || is_interactive)
     {
-        // force enable logging
         config().setString("logger", "logger");
-        Poco::Logger::root().setLevel(level);
-        // sensitive data rules are not used here
+        auto log_level_default = is_interactive && !logging ? "none" : level;
+        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
         buildLoggers(config(), logger(), "clickhouse-local");
     }
     else
