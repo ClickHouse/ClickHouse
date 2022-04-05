@@ -86,7 +86,7 @@
     M(KafkaProducers, "Number of active Kafka producer created") \
     M(KafkaLibrdkafkaThreads, "Number of active librdkafka threads") \
     M(KafkaBackgroundReads, "Number of background reads currently working (populating materialized views from Kafka)") \
-    M(KafkaDirectReads, "Number of direct selects from Kafka currently executing") \
+    M(KafkaConsumersInUse, "Number of consumers which are currently used by direct or background reads") \
     M(KafkaWrites, "Number of currently running inserts to Kafka") \
     M(KafkaAssignedPartitions, "Number of partitions Kafka tables currently assigned to") \
 
