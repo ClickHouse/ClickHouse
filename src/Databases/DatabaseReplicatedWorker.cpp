@@ -68,11 +68,14 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     if (our_log_ptr == 0 || our_log_ptr + logs_to_keep < max_log_ptr)
     {
         database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
+        zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
+        initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
     }
     else
     {
-        last_skipped_entry_name.emplace(DDLTaskBase::getLogEntryName(our_log_ptr));
-        updateLogPointer(DDLTaskBase::getLogEntryName(our_log_ptr));
+        String log_entry_name = DDLTaskBase::getLogEntryName(our_log_ptr);
+        last_skipped_entry_name.emplace(log_entry_name);
+        initializeLogPointer(log_entry_name);
     }
 }
 
@@ -313,7 +316,7 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
     return entry_number + logs_to_keep < max_log_ptr;
 }
 
-void DatabaseReplicatedDDLWorker::updateLogPointer(const String & processed_entry_name)
+void DatabaseReplicatedDDLWorker::initializeLogPointer(const String & processed_entry_name)
 {
     updateMaxDDLEntryID(processed_entry_name);
     assert(max_id.load() == parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->replica_path) / "log_ptr")));
@@ -321,7 +324,7 @@ void DatabaseReplicatedDDLWorker::updateLogPointer(const String & processed_entr
 
 UInt32 DatabaseReplicatedDDLWorker::getLogPointer() const
 {
-    /// NOTE it main not be equal to the log_ptr in zk:
+    /// NOTE it may not be equal to the log_ptr in zk:
     ///  - max_id can be equal to log_ptr - 1 due to race condition (when it's updated in zk, but not updated in memory yet)
     ///  - max_id can be greater than log_ptr, because log_ptr is not updated for failed and dummy entries
     return max_id.load();
