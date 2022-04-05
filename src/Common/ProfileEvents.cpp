@@ -112,6 +112,8 @@
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.") \
     M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.") \
     \
+    M(ExecuteShellCommand, "Number of shell command executions.") \
+    \
     M(ExternalSortWritePart, "") \
     M(ExternalSortMerge, "") \
     M(ExternalAggregationWritePart, "") \
