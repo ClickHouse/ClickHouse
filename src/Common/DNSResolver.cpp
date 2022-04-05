@@ -123,7 +123,7 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
     }
 
     if (addresses.empty())
-        throw Poco::Net::DNSException("Not found address of host: " + host);
+        throw Exception("Not found address of host: " + host, ErrorCodes::DNS_ERROR);
 
     return addresses;
 }
@@ -268,8 +268,13 @@ bool DNSResolver::updateCacheImpl(
             updated |= (this->*update_func)(it->first);
             it->second = 0;
         }
-        catch (const Poco::Net::NetException &)
+        catch (const DB::Exception & e)
         {
+            if (e.code() != ErrorCodes::DNS_ERROR)
+            {
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
+                continue;
+            }
             ProfileEvents::increment(ProfileEvents::DNSError);
             if (!lost_elems.empty())
                 lost_elems += ", ";
