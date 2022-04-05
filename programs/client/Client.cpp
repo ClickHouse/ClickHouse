@@ -163,9 +163,23 @@ void Client::initialize(Poco::Util::Application & self)
 
     configReadClient(config(), home_path);
 
+    /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
+      * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
+      *
+      * man getenv:
+      *
+      * As typically implemented, getenv() returns a pointer to a string within the environment list.
+      * The caller must take care not to modify this string, since that would change the environment of
+      * the process.
+      *
+      * The implementation of getenv() is not required to be reentrant. The string pointed to by the return value of getenv()
+      * may be statically allocated, and can be modified by a subsequent call to getenv(), putenv(3), setenv(3), or unsetenv(3).
+      */
+
     const char * env_user = getenv("CLICKHOUSE_USER");
     if (env_user)
         config().setString("user", env_user);
+
     const char * env_password = getenv("CLICKHOUSE_PASSWORD");
     if (env_password)
         config().setString("password", env_password);
