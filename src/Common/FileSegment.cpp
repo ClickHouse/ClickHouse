@@ -532,11 +532,8 @@ FileSegmentsHolder::~FileSegmentsHolder()
         }
         catch (...)
         {
-#ifdef NDEBUG
             tryLogCurrentException(__PRETTY_FUNCTION__);
-#else
-            throw;
-#endif
+            assert(false);
         }
     }
 }
