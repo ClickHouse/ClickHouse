@@ -867,7 +867,8 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 minute = 0;
             UInt8 second = 0;
             ///simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
-            if (s[10] == ' ')
+            bool dt_long = (s[10] == ' ' || s[10] == 'T');
+            if (dt_long)
             {
                 hour = (s[11] - '0') * 10 + (s[12] - '0');
                 minute = (s[14] - '0') * 10 + (s[15] - '0');
@@ -879,7 +880,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
-            if (s[10] == ' ')
+            if (dt_long)
                 buf.position() += DateTimeStringInputSize;
             else
                 buf.position() += DateStringInputSize;
