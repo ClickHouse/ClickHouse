@@ -287,12 +287,22 @@ def test_user_access_ip_change(cluster_with_dns_cache_update, node):
     )
 
 
-def test_host_is_drop_from_cache_after_consecutive_failures(cluster_with_dns_cache_update):
+def test_host_is_drop_from_cache_after_consecutive_failures(
+    cluster_with_dns_cache_update,
+):
     with pytest.raises(QueryRuntimeException):
-        node4.query("SELECT * FROM remote('InvalidHostThatDoesNotExist', 'system', 'one')")
+        node4.query(
+            "SELECT * FROM remote('InvalidHostThatDoesNotExist', 'system', 'one')"
+        )
 
     # Note that the list of hosts in variable since lost_host will be there too (and it's dropped and added back)
     # dns_update_short -> dns_max_consecutive_failures set to 6
-    assert node4.wait_for_log_line("Cannot resolve host \\(InvalidHostThatDoesNotExist\\), error 0: Host not found.")
-    assert node4.wait_for_log_line("Cached hosts not found:.*InvalidHostThatDoesNotExist**", repetitions=6)
-    assert node4.wait_for_log_line("Cached hosts dropped:.*InvalidHostThatDoesNotExist.*")
+    assert node4.wait_for_log_line(
+        "Cannot resolve host \\(InvalidHostThatDoesNotExist\\), error 0: Host not found."
+    )
+    assert node4.wait_for_log_line(
+        "Cached hosts not found:.*InvalidHostThatDoesNotExist**", repetitions=6
+    )
+    assert node4.wait_for_log_line(
+        "Cached hosts dropped:.*InvalidHostThatDoesNotExist.*"
+    )
