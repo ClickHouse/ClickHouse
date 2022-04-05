@@ -946,6 +946,8 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
+    hello.insertOrReplace("hello", 3);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
     hello.erase("hello");
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
@@ -958,6 +960,8 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateDataSize(), 18);
+    hello.insertOrReplace("hello", 1);
+    EXPECT_EQ(hello.getApproximateDataSize(), 27);
 
     hello.clearOutdatedNodes();
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
