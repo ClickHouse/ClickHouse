@@ -50,6 +50,8 @@ drop table if exists d;
 create table d (dt DateTime, j int) engine MergeTree partition by (toDate(dt), ceiling(j), toDate(dt), CEILING(j)) order by tuple();
 insert into d values ('2021-10-24 10:00:00', 10), ('2021-10-25 10:00:00', 10), ('2021-10-26 10:00:00', 10), ('2021-10-27 10:00:00', 10);
 select min(dt), max(dt), count() from d where toDate(dt) >= '2021-10-25';
+-- fuzz crash
+select min(dt), max(dt), count(toDate(dt) >= '2021-10-25') from d where toDate(dt) >= '2021-10-25';
 select count() from d group by toDate(dt);
 
 -- fuzz crash

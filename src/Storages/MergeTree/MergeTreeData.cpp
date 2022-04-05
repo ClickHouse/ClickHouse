@@ -4681,12 +4681,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         column.insertFrom(place);
     };
 
-    std::optional<PartitionPruner> partition_pruner;
-    std::optional<KeyCondition> minmax_idx_condition;
-    DataTypes minmax_columns_types;
-    size_t rows = parts.size();
-    ColumnPtr part_name_column;
-
     Block virtual_columns_block;
     auto virtual_block = getSampleBlockWithVirtualColumns();
     bool has_virtual_column = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
@@ -4697,6 +4691,11 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             return {};
     }
 
+    size_t rows = parts.size();
+    ColumnPtr part_name_column;
+    std::optional<PartitionPruner> partition_pruner;
+    std::optional<KeyCondition> minmax_idx_condition;
+    DataTypes minmax_columns_types;
     if (has_filter)
     {
         if (metadata_snapshot->hasPartitionKey())
@@ -4730,7 +4729,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     real_parts.reserve(rows);
     for (size_t row = 0, part_idx = 0; row < rows; ++row, ++part_idx)
     {
-        if (has_filter)
+        if (part_name_column)
         {
             while (parts[part_idx]->name != part_name_column->getDataAt(row))
                 ++part_idx;
@@ -4776,7 +4775,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     if (real_parts.empty())
         return {};
 
-    size_t minmax_idx_size = real_parts.front()->minmax_idx->hyperrectangle.size();
     FilterDescription filter(*filter_column);
     for (size_t i = 0; i < virtual_columns_block.columns(); ++i)
     {
@@ -4793,6 +4791,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         ++pos;
     }
 
+    size_t minmax_idx_size = real_parts.front()->minmax_idx->hyperrectangle.size();
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
         if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
@@ -5039,7 +5038,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     };
 
     auto virtual_block = getSampleBlockWithVirtualColumns();
-    auto add_projection_candidate = [&](const ProjectionDescription & projection, bool normalize_count_not_null = false)
+    auto add_projection_candidate = [&](const ProjectionDescription & projection, bool minmax_count_projection = false)
     {
         ProjectionCandidate candidate{};
         candidate.desc = &projection;
@@ -5076,11 +5075,13 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
                     continue;
                 }
 
-                if (normalize_count_not_null && dynamic_cast<const AggregateFunctionCount *>(aggregate.function.get()))
+                // We can treat every count_not_null_column as count() when selecting minmax_count_projection
+                if (minmax_count_projection && dynamic_cast<const AggregateFunctionCount *>(aggregate.function.get()))
                 {
                     const auto * count_column = sample_block.findByName("count()");
                     if (!count_column)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "count_column is missing when normalize_count_not_null == true. It is a bug");
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR, "`count()` column is missing when minmax_count_projection == true. It is a bug");
                     aggregates.insert({count_column->column, count_column->type, aggregate.column_name});
                     continue;
                 }
@@ -5107,9 +5108,20 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             candidate.before_aggregation->reorderAggregationKeysForProjection(key_name_pos_map);
             candidate.before_aggregation->addAggregatesViaProjection(aggregates);
 
+            // minmax_count_projections only have aggregation actions
+            if (minmax_count_projection)
+                candidate.required_columns = {required_columns.begin(), required_columns.end()};
+
             if (rewrite_before_where(candidate, projection, required_columns, sample_block_for_keys, aggregates))
             {
-                candidate.required_columns = {required_columns.begin(), required_columns.end()};
+                if (minmax_count_projection)
+                {
+                    candidate.before_where = nullptr;
+                    candidate.prewhere_info = nullptr;
+                }
+                else
+                    candidate.required_columns = {required_columns.begin(), required_columns.end()};
+
                 for (const auto & aggregate : aggregates)
                     candidate.required_columns.push_back(aggregate.name);
                 candidates.push_back(std::move(candidate));
