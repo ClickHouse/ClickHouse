@@ -197,4 +197,8 @@ if __name__ == "__main__":
         report_url,
         CHECK_NAME,
     )
-    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+
+    if state == "error":
+        sys.exit(1)

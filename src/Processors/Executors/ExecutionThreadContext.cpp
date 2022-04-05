@@ -7,7 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int QUOTA_EXPIRED;
+    extern const int QUOTA_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
 }
 
@@ -34,7 +34,7 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
 {
     /// Don't add additional info to limits and quota exceptions, and in case of kill query (to pass tests).
     return exception.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES
-           && exception.code() != ErrorCodes::QUOTA_EXPIRED
+           && exception.code() != ErrorCodes::QUOTA_EXCEEDED
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
 }
 

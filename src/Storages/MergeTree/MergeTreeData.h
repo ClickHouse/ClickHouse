@@ -383,6 +383,8 @@ public:
     /// Build a block of minmax and count values of a MergeTree table. These values are extracted
     /// from minmax_indices, the first expression of primary key, and part rows.
     ///
+    /// has_filter - if query has no filter, bypass partition pruning completely
+    ///
     /// query_info - used to filter unneeded parts
     ///
     /// parts - part set to filter
@@ -393,6 +395,7 @@ public:
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
+        bool has_filter,
         const SelectQueryInfo & query_info,
         const DataPartsVector & parts,
         DataPartsVector & normal_parts,
@@ -946,6 +949,7 @@ protected:
     friend class StorageReplicatedMergeTree;
     friend class MergeTreeDataWriter;
     friend class MergeTask;
+    friend class IPartMetadataManager;
 
     bool require_part_metadata;
 
@@ -1028,6 +1032,7 @@ protected:
     /// And for ReplicatedMergeTree we don't have LogEntry type for this operation.
     BackgroundJobsAssignee background_operations_assignee;
     BackgroundJobsAssignee background_moves_assignee;
+    bool use_metadata_cache;
 
     /// Strongly connected with two fields above.
     /// Every task that is finished will ask to assign a new one into an executor.
