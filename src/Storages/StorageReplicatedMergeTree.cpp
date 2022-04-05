@@ -3322,7 +3322,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         if (!broken_part_info.contains(part->info))
             continue;
 
-        /// Broken part itself ether already moved to detached or does not exist.
+        /// Broken part itself either already moved to detached or does not exist.
         assert(broken_part_info != part->info);
         part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
     }
