@@ -479,6 +479,7 @@ public:
         , context(context_)
         , compression_method(compression_method_)
         , s3_configuration(s3_configuration_)
+        , bucket(s3_configuration.uri.bucket)
         , key(key_)
         , format_settings(format_settings_)
     {
@@ -803,23 +804,14 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 void StorageS3::updateS3Configuration(ContextPtr ctx, S3Configuration & upd, const std::optional<S3Settings::ReadWriteSettings> & rw_settings_from_ast)
 {
     auto s3_settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
+
+    auto rw_settings = s3_settings.rw_settings;
+    upd.rw_settings = std::move(rw_settings);
+
     auto auth_settings = s3_settings.auth_settings;
     if (upd.client && (!upd.auth_settings.access_key_id.empty() || auth_settings == upd.auth_settings))
         return;
 
-    Aws::Auth::AWSCredentials credentials(upd.auth_settings.access_key_id, upd.auth_settings.secret_access_key);
-    HeaderCollection headers;
-    if (upd.auth_settings.access_key_id.empty())
-    {
-        credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
-        headers = auth_settings.headers;
-    }
-
-    S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        auth_settings.region,
-        ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
-
-    auto rw_settings = s3_settings.rw_settings;
     if (rw_settings_from_ast)
     {
         if (rw_settings_from_ast->max_single_read_retries)
@@ -836,6 +828,18 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, S3Configuration & upd, con
             rw_settings.max_connections = rw_settings_from_ast->max_connections;
     }
 
+    Aws::Auth::AWSCredentials credentials(upd.auth_settings.access_key_id, upd.auth_settings.secret_access_key);
+    HeaderCollection headers;
+    if (upd.auth_settings.access_key_id.empty())
+    {
+        credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
+        headers = auth_settings.headers;
+    }
+
+    S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
+        auth_settings.region,
+        ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
+
     client_configuration.endpointOverride = upd.uri.endpoint;
     client_configuration.maxConnections = rw_settings.max_connections;
 
@@ -850,7 +854,6 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, S3Configuration & upd, con
         auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
 
     upd.auth_settings = std::move(auth_settings);
-    upd.rw_settings = std::move(rw_settings);
 }
 
 
