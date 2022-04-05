@@ -4,6 +4,7 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/RadixSort.h>
 
 #include <base/unaligned.h>
 #include <base/sort.h>
@@ -121,6 +122,26 @@ void ColumnDecimal<T>::updateHashFast(SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
 }
 
+namespace
+{
+    template <typename T>
+    struct ValueWithIndex
+    {
+        T value;
+        UInt32 index;
+    };
+
+    template <typename T>
+    struct RadixSortTraits : RadixSortNumTraits<T>
+    {
+        using Element = ValueWithIndex<T>;
+        using Result = size_t;
+
+        static T & extractKey(Element & elem) { return elem.value; }
+        static size_t extractResult(Element & elem) { return elem.index; }
+    };
+}
+
 template <is_decimal T>
 void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int, IColumn::Permutation & res) const
@@ -141,6 +162,39 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
 
         return data[lhs] > data[rhs];
     };
+
+    size_t data_size = data.size();
+    res.resize(data_size);
+
+    if (limit >= data_size) {
+        limit = 0;
+    }
+
+    if (!limit)
+    {
+        /// A case for radix sort
+        /// LSD RadixSort is stable
+        if constexpr (is_arithmetic_v<NativeT> && !is_big_int_v<NativeT>)
+        {
+            bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+            bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+            bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
+
+            /// TODO: LSD RadixSort is currently not stable if direction is descending
+            bool use_radix_sort = (sort_is_stable && ascending) || !sort_is_stable;
+
+            /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
+            if (data_size >= 256 && data_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+            {
+                PaddedPODArray<ValueWithIndex<NativeT>> pairs(data_size);
+                for (UInt32 i = 0; i < UInt32(data_size); ++i)
+                    pairs[i] = {data[i].value, i};
+
+                RadixSort<RadixSortTraits<NativeT>>::executeLSD(pairs.data(), data_size, reverse, res.data());
+                return;
+            }
+        }
+    }
 
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
         this->getPermutationImpl(limit, res, comparator_ascending, DefaultSort(), DefaultPartialSort());
