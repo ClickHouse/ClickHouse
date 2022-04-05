@@ -334,15 +334,17 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getImplementationBuffer(File
                 read_buffer_for_file_segment->seek(file_offset_of_buffer_end, SEEK_SET);
             }
 
-            auto impl_range = read_buffer_for_file_segment->getRemainingReadRange();
             auto download_offset = file_segment->getDownloadOffset();
             if (download_offset != static_cast<size_t>(read_buffer_for_file_segment->getPosition()))
+            {
+                auto impl_range = read_buffer_for_file_segment->getRemainingReadRange();
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Buffer's offsets mismatch; cached buffer offset: {}, download_offset: {}, position: {}, implementation buffer offset: {}, "
                     "implementation buffer reading until: {}, file segment info: {}",
                     file_offset_of_buffer_end, download_offset, read_buffer_for_file_segment->getPosition(),
                     impl_range.left, *impl_range.right, file_segment->getInfoForLog());
+            }
 
             break;
         }
@@ -802,12 +804,14 @@ std::optional<size_t> CachedReadBufferFromRemoteFS::getLastNonDownloadedOffset()
 
 String CachedReadBufferFromRemoteFS::getInfoForLog()
 {
-    auto implementation_buffer_read_range_str =
-        implementation_buffer ?
-        std::to_string(implementation_buffer->getRemainingReadRange().left)
-        + '-'
-        + (implementation_buffer->getRemainingReadRange().right ? std::to_string(*implementation_buffer->getRemainingReadRange().right) : "None")
-        : "None";
+    String implementation_buffer_read_range_str;
+    if (implementation_buffer)
+    {
+        auto read_range = implementation_buffer->getRemainingReadRange();
+        implementation_buffer_read_range_str = std::to_string(read_range.left) + '-' + (read_range.right ? std::to_string(*read_range.right) : "None");
+    }
+    else
+        implementation_buffer_read_range_str = "None";
 
     auto current_file_segment_info = current_file_segment_it == file_segments_holder->file_segments.end() ? "None" : (*current_file_segment_it)->getInfoForLog();
 
