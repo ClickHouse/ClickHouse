@@ -16,8 +16,6 @@ ASTPtr ASTCreateFunctionQuery::clone() const
     res->function_name = function_name->clone();
     res->children.push_back(res->function_name);
 
-    res->function_core = function_core->clone();
-    res->children.push_back(res->function_core);
     return res;
 }
 
@@ -38,9 +36,6 @@ void ASTCreateFunctionQuery::formatImpl(const IAST::FormatSettings & settings, I
     settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getFunctionName()) << (settings.hilite ? hilite_none : "");
 
     formatOnCluster(settings);
-
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
-    function_core->formatImpl(settings, state, frame);
 }
 
 String ASTCreateFunctionQuery::getFunctionName() const
@@ -48,6 +43,39 @@ String ASTCreateFunctionQuery::getFunctionName() const
     String name;
     tryGetIdentifierNameInto(function_name, name);
     return name;
+}
+
+ASTPtr ASTCreateLambdaFunctionQuery::clone() const {
+    auto res = ASTCreateFunctionQuery::clone();
+    res->as<ASTCreateLambdaFunctionQuery>()->function_core = function_core->clone();
+    res->children.push_back(res->as<ASTCreateLambdaFunctionQuery>()->function_core);
+    return res;
+}
+
+void ASTCreateLambdaFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const {
+    ASTCreateFunctionQuery::formatImpl(settings, state, frame);
+
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
+    function_core->formatImpl(settings, state, frame);
+}
+
+ASTPtr ASTCreateInterpFunctionQuery::clone() const {
+    auto res = ASTCreateFunctionQuery::clone();
+
+    res->as<ASTCreateInterpFunctionQuery>()->function_args = function_args->clone();
+    res->children.push_back(res->as<ASTCreateInterpFunctionQuery>()->function_args);
+    res->as<ASTCreateInterpFunctionQuery>()->function_body = function_body->clone();
+    res->children.push_back(res->as<ASTCreateInterpFunctionQuery>()->function_body);
+    res->as<ASTCreateInterpFunctionQuery>()->interpreter_name = interpreter_name->clone();
+    res->children.push_back(res->as<ASTCreateInterpFunctionQuery>()->interpreter_name);
+
+    return res;
+}
+
+void ASTCreateInterpFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const {
+    ASTCreateFunctionQuery::formatImpl(settings, state, frame);
+    // !! use real values
+    settings.ostr << "foo(bar) 'do_foo(bar)' USING python";
 }
 
 }
