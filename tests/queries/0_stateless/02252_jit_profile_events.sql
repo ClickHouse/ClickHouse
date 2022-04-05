@@ -26,6 +26,6 @@ SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE
     current_database = currentDatabase()
     AND type = 'QueryFinish'
-    AND query == 'SELECT sum(number), sum(number), sum(number) FROM numbers(1) GROUP BY number;'
+    AND query == 'SELECT sum(number), sum(number + 1), sum(number + 2) FROM numbers(1) GROUP BY number;'
     AND event_date >= yesterday() AND event_time > now() - interval 10 minute
     LIMIT 1;
