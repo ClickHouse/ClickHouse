@@ -3,6 +3,7 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/IProcessor.h>
 #include <Common/Stopwatch.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {

@@ -156,7 +156,8 @@ private:
 
     /// Create converting actions and change key column names if required
     ActionsDAGPtr applyKeyConvertToTable(
-        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename,
+        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping,
+        NameToNameMap & key_column_rename,
         bool make_nullable) const;
 
     void addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast = nullptr);
@@ -278,7 +279,9 @@ public:
     /// For `USING` join we will convert key columns inplace and affect into types in the result table
     /// For `JOIN ON` we will create new columns with converted keys to join by.
     std::pair<ActionsDAGPtr, ActionsDAGPtr>
-    createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
+    createConvertingActions(
+        const ColumnsWithTypeAndName & left_sample_columns,
+        const ColumnsWithTypeAndName & right_sample_columns);
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }
