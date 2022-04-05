@@ -822,9 +822,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
         if (!metadata.table_ttl.definition_ast)
             return true;
         /// If TTL had not been changed, do not require mutations
-        if (queryToString(metadata.table_ttl.definition_ast) == queryToString(ttl))
-            return false;
-        return true;
+        return queryToString(metadata.table_ttl.definition_ast) != queryToString(ttl);
     }
 
     if (!ttl || type != MODIFY_COLUMN)
