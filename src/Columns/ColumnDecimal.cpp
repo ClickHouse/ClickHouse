@@ -166,9 +166,8 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
     size_t data_size = data.size();
     res.resize(data_size);
 
-    if (limit >= data_size) {
+    if (limit >= data_size)
         limit = 0;
-    }
 
     if (!limit)
     {

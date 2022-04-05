@@ -240,7 +240,8 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
     if (limit >= data_size)
         limit = 0;
 
-    if (!limit) {
+    if (!limit)
+    {
         /// A case for radix sort
         /// LSD RadixSort is stable
         if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
