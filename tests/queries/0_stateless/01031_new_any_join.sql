@@ -10,6 +10,8 @@ INSERT INTO t2 (x, s) VALUES (2, 'b1'), (4, 'b3'), (5, 'b6');
 SET join_use_nulls = 0;
 SET any_join_distinct_right_table_keys = 0;
 
+SET join_algorithm = 'full_sorting_merge';
+
 SELECT 'any left';
 SELECT t1.*, t2.* FROM t1 ANY LEFT JOIN t2 USING(x) ORDER BY t1.x, t2.x;
 

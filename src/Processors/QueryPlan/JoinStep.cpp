@@ -36,7 +36,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (join->pipelineType() == JoinPipelineType::YShaped)
         return QueryPipelineBuilder::joinPipelines2(
             std::move(pipelines[0]), std::move(pipelines[1]),
-            join->getTableJoin(), output_stream->header,
+            join, output_stream->header,
             max_block_size, &processors);
 
     return QueryPipelineBuilder::joinPipelines(std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, max_streams, keep_left_read_in_order, &processors);
