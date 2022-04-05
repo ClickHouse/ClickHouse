@@ -106,7 +106,7 @@ def create_clickhouse_postgres_db(ip, port, name="postgres_database"):
 def create_materialized_table(ip, port, table_name='postgresql_replica'):
     instance.query(
         f"""
-        CREATE TABLE test.{table_name} (key UInt64, value UInt64)
+        CREATE TABLE test.{table_name} (key Int64, value Int64)
             ENGINE = MaterializedPostgreSQL(
             '{ip}:{port}', 'postgres_database', '{table_name}', 'postgres', 'mysecretpassword')
             PRIMARY KEY key; """
@@ -703,10 +703,20 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
     table_name = "postgresql_replica_697"
     create_postgres_table(cursor, table_name)
 
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT -1, 1"
+    )
     instance.query(f"DROP TABLE IF EXISTS test.{table_name}")
     create_materialized_table(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, table_name=table_name
     )
+
+    n = 1
+    while int(instance.query(f"select count() from test.{table_name}")) != 1:
+        sleep(1)
+        n += 1
+        if n > 10:
+            break;
 
     for query in queries:
         cursor.execute(query.format(table_name))
