@@ -1,4 +1,4 @@
-Changelog category (leave one):
+### Changelog category (leave one):
 - New Feature
 - Improvement
 - Bug Fix (user-visible misbehaviour in official stable or prestable release)
@@ -9,7 +9,7 @@ Changelog category (leave one):
 - Not for changelog (changelog entry is not required)
 
 
-Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
+### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
 ...
 
 
