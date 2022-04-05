@@ -43,6 +43,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTCheckQuery.h>
@@ -3322,7 +3323,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         if (!broken_part_info.contains(part->info))
             continue;
 
-        /// Broken part itself ether already moved to detached or does not exist.
+        /// Broken part itself either already moved to detached or does not exist.
         assert(broken_part_info != part->info);
         part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
     }
@@ -4943,15 +4944,37 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool de
         throw Exception("DROP PARTITION cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
-    LogEntry entry;
 
-    String partition_id = getPartitionIDFromQuery(partition, query_context);
-    bool did_drop = dropAllPartsInPartition(*zookeeper, partition_id, entry, query_context, detach);
-
-    if (did_drop)
+    const auto * partition_ast = partition->as<ASTPartition>();
+    if (partition_ast && partition_ast->all)
     {
-        waitForLogEntryToBeProcessedIfNecessary(entry, query_context);
-        cleanLastPartNode(partition_id);
+        Strings partitions = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
+
+        std::vector<std::pair<String, std::unique_ptr<LogEntry>>> entries_with_partitionid_to_drop;
+        entries_with_partitionid_to_drop.reserve(partitions.size());
+        for (String & partition_id : partitions)
+        {
+            auto entry = std::make_unique<LogEntry>();
+            if (dropAllPartsInPartition(*zookeeper, partition_id, *entry, query_context, detach))
+                entries_with_partitionid_to_drop.emplace_back(partition_id, std::move(entry));
+        }
+
+        for (const auto & entry : entries_with_partitionid_to_drop)
+        {
+            waitForLogEntryToBeProcessedIfNecessary(*entry.second, query_context);
+            cleanLastPartNode(entry.first);
+        }
+    }
+    else
+    {
+        LogEntry entry;
+        String partition_id = getPartitionIDFromQuery(partition, query_context);
+        bool did_drop = dropAllPartsInPartition(*zookeeper, partition_id, entry, query_context, detach);
+        if (did_drop)
+        {
+            waitForLogEntryToBeProcessedIfNecessary(entry, query_context);
+            cleanLastPartNode(partition_id);
+        }
     }
 }
 
