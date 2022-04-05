@@ -95,7 +95,7 @@ protected:
         std::optional<ProgramOptionsDescription> hosts_and_ports_description;
     };
 
-    virtual void setLogger(const String &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `initializeLogger()` is not implemented for `{}`", getName()); }
+    virtual void updateLoggerLevel(const String &) {}
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
     virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
@@ -266,6 +266,8 @@ protected:
     bool allow_repeated_settings = false;
 
     bool cancelled = false;
+
+    bool logging_initialized = false;
 };
 
 }
