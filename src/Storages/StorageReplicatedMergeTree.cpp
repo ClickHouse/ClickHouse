@@ -828,13 +828,14 @@ void StorageReplicatedMergeTree::drop()
             throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
         shutdown();
-        dropReplica(zookeeper, zookeeper_path, replica_name, log);
+        dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings());
     }
 
     dropAllData();
 }
 
-void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger)
+void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
+                                             Poco::Logger * logger, MergeTreeSettingsPtr table_settings)
 {
     if (zookeeper->expired())
         throw Exception("Table was not dropped because ZooKeeper session has expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
@@ -871,12 +872,14 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         assert(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE);
 
         /// Then try to remove paths that are known to be flat (all children are leafs)
-        Strings flat_nodes = {"flags", "parts", "queue"};
+        Strings flat_nodes = {"flags", "queue"};
+        if (table_settings && table_settings->use_minimalistic_part_header_in_zookeeper)
+            flat_nodes.emplace_back("parts");
         for (const auto & node : flat_nodes)
         {
-            bool removed_quickly = zookeeper->tryRemoveChildrenRecursive(fs::path(zookeeper_path) / node, /* probably flat */ true);
+            bool removed_quickly = zookeeper->tryRemoveChildrenRecursive(fs::path(remote_replica_path) / node, /* probably flat */ true);
             if (!removed_quickly)
-                LOG_WARNING(logger, "Cannot quickly remove node {} and its children (replica: {}). Will remove recursively.",
+                LOG_WARNING(logger, "Failed to quickly remove node '{}' and its children, fell back to recursive removal (replica: {})",
                             node, remote_replica_path);
         }
 
@@ -898,7 +901,6 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         if (code != Coordination::Error::ZOK)
             LOG_WARNING(logger, "Cannot quickly remove nodes without children: {} (replica: {}). Will remove recursively.",
                         Coordination::errorMessage(code), remote_replica_path);
-
 
         /// And finally remove everything else recursively
         zookeeper->tryRemoveRecursive(remote_replica_path);
@@ -962,14 +964,16 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 {
     bool completely_removed = false;
 
-    Strings flat_nodes = {"block_numbers", "blocks", "leader_election", "log", "mutations", "pinned_part_uuids", "log"};
+    /// NOTE /block_numbers/ actually is not flat, because /block_numbers/<partition_id>/ may have ephemeral children,
+    /// but we assume that all ephemeral block locks are already removed when table is being dropped.
+    static constexpr std::array flat_nodes = {"block_numbers", "blocks", "leader_election", "log", "mutations", "pinned_part_uuids"};
 
     /// First try to remove paths that are known to be flat
     for (const auto & node : flat_nodes)
     {
         bool removed_quickly = zookeeper->tryRemoveChildrenRecursive(fs::path(zookeeper_path) / node, /* probably flat */ true);
         if (!removed_quickly)
-            LOG_WARNING(logger, "Cannot quickly remove node {} and its children (table: {}). Will remove recursively.",
+            LOG_WARNING(logger, "Failed to quickly remove node '{}' and its children, fell back to recursive removal (table: {})",
                         node, zookeeper_path);
     }
 
@@ -981,11 +985,6 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/alter_partition_version", -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/columns", -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/metadata", -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/table_shared_id", -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/max_processed_insert_time", -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/min_unprocessed_insert_time", -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/metadata_version", -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/mutation_pointer", -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/table_shared_id", -1));
     Coordination::Responses res;
     auto code = zookeeper->tryMulti(ops, res);
