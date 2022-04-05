@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <rbac_version>2</rbac_version>
+        </default>
+    </profiles>
+</clickhouse>

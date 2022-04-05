@@ -2,7 +2,9 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance", stay_alive=True)
+instance = cluster.add_instance(
+    "instance", stay_alive=True, user_configs=["../helpers/latest_rbac_version.xml"]
+)
 
 
 @pytest.fixture(scope="module", autouse=True)

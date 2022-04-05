@@ -4,10 +4,4 @@
             <access_management>1</access_management>
         </default>
     </users>
-
-    <profiles>
-        <default>
-            <rbac_version>2</rbac_version>
-        </default>
-    </profiles>
 </clickhouse>
