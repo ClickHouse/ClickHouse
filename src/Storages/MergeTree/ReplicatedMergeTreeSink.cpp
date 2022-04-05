@@ -150,7 +150,8 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     if (quorum)
         checkQuorumPrecondition(zookeeper);
 
-    const Settings & settings = context->getSettingsRef();
+    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot);
+    storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<ReplicatedMergeTreeSink::DelayedChunk::Partition>;
@@ -158,6 +159,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
 
     size_t streams = 0;
     bool support_parallel_write = false;
+    const Settings & settings = context->getSettingsRef();
 
     for (auto & current_block : part_blocks)
     {

@@ -236,6 +236,15 @@ class PRInfo:
                 return True
         return False
 
+    def has_changes_in_submodules(self):
+        if self.changed_files is None or not self.changed_files:
+            return True
+
+        for f in self.changed_files:
+            if "contrib" in f:
+                return True
+        return False
+
     def can_skip_builds_and_use_version_from_master(self):
         # TODO: See a broken loop
         if "force tests" in self.labels:
