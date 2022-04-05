@@ -137,11 +137,10 @@ public:
         storage_snapshot->metadata->check(block, true);
         if (!storage_snapshot->object_columns.empty())
         {
-            auto columns = storage_snapshot->metadata->getColumns().getAllPhysical().filter(block.getNames());
             auto extended_storage_columns = storage_snapshot->getColumns(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
 
-            convertObjectsToTuples(columns, block, extended_storage_columns);
+            convertObjectsToTuples(block, extended_storage_columns);
         }
 
         if (storage.compress)
