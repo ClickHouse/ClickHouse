@@ -11,7 +11,7 @@ from env_helper import (
     TEMP_PATH,
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
-    GITHUB_RUN_ID,
+    GITHUB_RUN_URL,
 )
 from report import create_build_html_report
 from s3_helper import S3Helper
@@ -148,6 +148,17 @@ if __name__ == "__main__":
                         build_name,
                     )
 
+    some_builds_are_missing = len(build_reports_map) < len(reports_order)
+
+    if some_builds_are_missing:
+        logging.info(
+            "Expected to get %s build results, got %s",
+            len(reports_order),
+            len(build_reports_map),
+        )
+    else:
+        logging.info("Got exactly %s builds", len(build_reports_map))
+
     build_reports = [
         build_reports_map[build_name]
         for build_name in reports_order
@@ -180,9 +191,7 @@ if __name__ == "__main__":
         branch_name = "PR #{}".format(pr_info.number)
         branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/pull/{pr_info.number}"
     commit_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commit/{pr_info.sha}"
-    task_url = (
-        f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID or '0'}"
-    )
+    task_url = GITHUB_RUN_URL
     report = create_build_html_report(
         build_check_name,
         build_results,
@@ -221,10 +230,14 @@ if __name__ == "__main__":
         if build_result.status == "success":
             ok_builds += 1
 
-    if ok_builds == 0:
+    if ok_builds == 0 or some_builds_are_missing:
         summary_status = "error"
 
-    description = "{}/{} builds are OK".format(ok_builds, total_builds)
+    addition = ""
+    if some_builds_are_missing:
+        addition = "(some builds are missing)"
+
+    description = f"{ok_builds}/{total_builds} builds are OK {addition}"
 
     print("::notice ::Report url: {}".format(url))
 
@@ -235,3 +248,6 @@ if __name__ == "__main__":
         state=summary_status,
         target_url=url,
     )
+
+    if summary_status == "error":
+        sys.exit(1)
