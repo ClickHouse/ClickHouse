@@ -2,7 +2,6 @@ import os
 import uuid
 import time
 import xml.etree.ElementTree as xmltree
-import packaging.version as pkg_version
 from collections import namedtuple
 
 import testflows.settings as settings
@@ -13,40 +12,46 @@ from testflows._core.testtype import TestSubType
 
 
 def check_clickhouse_version(version):
-    """Compare ClickHouse version."""
+    """Compare ClickHouse version.
+    """
 
     def check(test):
         if getattr(test.context, "clickhouse_version", None) is None:
             return False
 
-        clickhouse_version = pkg_version.parse(str(test.context.clickhouse_version))
+        version_list = version.translate({ord(i): None for i in "<>="}).split(".")
+        clickhouse_version_list = test.context.clickhouse_version.split(".")
+
+        index = None
+
+        for i in clickhouse_version_list:
+            if i.isnumeric():
+                continue
+            index = clickhouse_version_list.index(i)
+
+        index = (
+            min(len(version_list), len(clickhouse_version_list))
+            if index is None
+            else min(len(version_list), index)
+        )
+
+        version_list = [int(i) for i in version_list[0:index]]
+        clickhouse_version_list = [int(i) for i in clickhouse_version_list[0:index]]
 
         if version.startswith("=="):
-            return clickhouse_version == pkg_version.parse(
-                str(version.split("==", 1)[-1])
-            )
+            return clickhouse_version_list == version_list
         elif version.startswith(">="):
-            return clickhouse_version >= pkg_version.parse(
-                str(version.split(">=", 1)[-1])
-            )
+            return clickhouse_version_list >= version_list
         elif version.startswith("<="):
-            return clickhouse_version <= pkg_version.parse(
-                str(version.split("<=", 1)[-1])
-            )
+            return clickhouse_version_list <= version_list
         elif version.startswith("="):
-            return clickhouse_version == pkg_version.parse(
-                str(version.split("=", 1)[-1])
-            )
+            return clickhouse_version_list == version_list
         elif version.startswith(">"):
-            return clickhouse_version > pkg_version.parse(
-                str(version.split(">", 1)[-1])
-            )
+            return clickhouse_version_list > version_list
         elif version.startswith("<"):
-            return clickhouse_version < pkg_version.parse(
-                str(version.split("<", 1)[-1])
-            )
+            return clickhouse_version_list < version_list
         else:
-            return clickhouse_version == pkg_version.parse(str(version))
+            return clickhouse_version_list == version_list
 
     return check
 
@@ -389,15 +394,24 @@ def add_config(
 
         with Then("I wait for config reload message in the log file"):
             if restart:
-                bash.expect(
-                    f"ConfigReloader: Loaded config '/etc/clickhouse-server/config.xml', performed update on configuration",
+                choice = bash.expect(
+                    (
+                        f"(ConfigReloader: Loaded config '/etc/clickhouse-server/config.xml', performed update on configuration)|"
+                        f"(ConfigReloader: Error updating configuration from '/etc/clickhouse-server/config.xml')"
+                    ),
                     timeout=timeout,
                 )
             else:
-                bash.expect(
-                    f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration",
+                choice = bash.expect(
+                    (
+                        f"(ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration)|"
+                        f"(ConfigReloader: Error updating configuration from '/etc/clickhouse-server/{config.preprocessed_name}')"
+                    ),
                     timeout=timeout,
                 )
+            if choice.group(2):
+                bash.expect(".+\n", timeout=5, expect_timeout=True)
+                fail("ConfigReloader: Error updating configuration")
 
     try:
         with Given(f"{config.name}"):
