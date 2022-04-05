@@ -128,22 +128,21 @@ static auto extractVector(const std::vector<Tuple> & vec)
     return res;
 }
 
-void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns)
+void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_storage_columns)
 {
     std::unordered_map<String, DataTypePtr> storage_columns_map;
     for (const auto & [name, type] : extended_storage_columns)
         storage_columns_map[name] = type;
 
-    for (auto & name_type : columns_list)
+    for (auto & column : block)
     {
-        if (!isObject(name_type.type))
+        if (!isObject(column.type))
             continue;
 
-        auto & column = block.getByName(name_type.name);
         if (!isObject(column.type))
             throw Exception(ErrorCodes::TYPE_MISMATCH,
                 "Type for column '{}' mismatch in columns list and in block. In list: {}, in block: {}",
-                name_type.name, name_type.type->getName(), column.type->getName());
+                column.name, column.type->getName(), column.type->getName());
 
         const auto & column_object = assert_cast<const ColumnObject &>(*column.column);
         const auto & subcolumns = column_object.getSubcolumns();
@@ -151,7 +150,7 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
         if (!column_object.isFinalized())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert to tuple column '{}' from type {}. Column should be finalized first",
-                name_type.name, name_type.type->getName());
+                column.name, column.type->getName());
 
         PathsInData tuple_paths;
         DataTypes tuple_types;
@@ -164,12 +163,11 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
             tuple_columns.emplace_back(entry->data.getFinalizedColumnPtr());
         }
 
-        auto it = storage_columns_map.find(name_type.name);
+        auto it = storage_columns_map.find(column.name);
         if (it == storage_columns_map.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", name_type.name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", column.name);
 
         std::tie(column.column, column.type) = unflattenTuple(tuple_paths, tuple_types, tuple_columns);
-        name_type.type = column.type;
 
         /// Check that constructed Tuple type and type in storage are compatible.
         getLeastCommonTypeForObject({column.type, it->second}, true);

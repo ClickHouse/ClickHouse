@@ -112,6 +112,8 @@
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.") \
     M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.") \
     \
+    M(ExecuteShellCommand, "Number of shell command executions.") \
+    \
     M(ExternalSortWritePart, "") \
     M(ExternalSortMerge, "") \
     M(ExternalAggregationWritePart, "") \
@@ -284,6 +286,9 @@
     M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
     \
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
+    \
+    M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
+    M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
     \
     M(MergeTreeMetadataCacheGet, "Number of rocksdb reads(used for merge tree metadata cache)") \
     M(MergeTreeMetadataCachePut, "Number of rocksdb puts(used for merge tree metadata cache)") \
