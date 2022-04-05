@@ -49,7 +49,7 @@ namespace CurrentMetrics
 {
     extern const Metric KafkaLibrdkafkaThreads;
     extern const Metric KafkaBackgroundReads;
-    extern const Metric KafkaDirectReads;
+    extern const Metric KafkaConsumersInUse;
     extern const Metric KafkaWrites;
 }
 
@@ -301,7 +301,6 @@ Pipe StorageKafka::read(
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaDirectReads};
     ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
 
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
@@ -386,6 +385,7 @@ void StorageKafka::pushReadBuffer(ConsumerBufferPtr buffer)
     std::lock_guard lock(mutex);
     buffers.push_back(buffer);
     semaphore.set();
+    CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse, 1);
 }
 
 
@@ -410,6 +410,7 @@ ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
     std::lock_guard lock(mutex);
     auto buffer = buffers.back();
     buffers.pop_back();
+    CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse, 1);
     return buffer;
 }
 
