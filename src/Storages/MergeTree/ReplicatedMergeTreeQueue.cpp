@@ -359,7 +359,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
             virtual_parts.remove(*drop_range_part_name);
 
-            removeCoveredPartsFromMutations(*drop_range_part_name, /*remove_part = */ true, /*remove_covered_parts = */ false);
+            removeCoveredPartsFromMutations(*drop_range_part_name, /*remove_part = */ true, /*remove_covered_parts = */ true);
         }
 
         if (entry->type == LogEntry::DROP_RANGE)
