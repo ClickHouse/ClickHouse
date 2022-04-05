@@ -289,8 +289,6 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
     {
         for (const auto & shard : shards)
         {
-            auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
-
             if (shard.lazy)
                 addLazyPipe(pipes, shard, /*coordinator=*/nullptr, /*pool*/{}, /*replica_info*/std::nullopt);
             else

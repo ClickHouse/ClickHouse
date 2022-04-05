@@ -28,6 +28,7 @@ apt-get update
 
 apt-get install --yes --no-install-recommends \
     apt-transport-https \
+    binfmt-support \
     build-essential \
     ca-certificates \
     curl \
@@ -37,6 +38,7 @@ apt-get install --yes --no-install-recommends \
     pigz \
     python3-dev \
     python3-pip \
+    qemu-user-static \
     unzip
 
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -60,6 +62,10 @@ cat <<EOT > /etc/docker/daemon.json
 EOT
 
 systemctl restart docker
+
+# buildx builder is user-specific
+sudo -u ubuntu docker buildx version
+sudo -u ubuntu docker buildx create --use --name default-builder
 
 pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory
 

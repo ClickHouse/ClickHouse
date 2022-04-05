@@ -14,7 +14,7 @@ class WriteBuffer;
 /** The stream for outputting data in csv format.
   * Does not conform with https://tools.ietf.org/html/rfc4180 because it uses LF, not CR LF.
   */
-class CSVRowOutputFormat : public IRowOutputFormat
+class CSVRowOutputFormat final : public IRowOutputFormat
 {
 public:
     /** with_names - output in the first line a header with column names

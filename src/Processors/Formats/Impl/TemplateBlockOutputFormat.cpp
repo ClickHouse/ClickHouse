@@ -235,5 +235,19 @@ void registerOutputFormatTemplate(FormatFactory & factory)
 
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
+
+    factory.registerAppendSupportChecker("Template", [](const FormatSettings & settings)
+    {
+        if (settings.template_settings.resultset_format.empty())
+            return true;
+        auto resultset_format = ParsedTemplateFormatString(
+            FormatSchemaInfo(settings.template_settings.resultset_format, "Template", false,
+                             settings.schema.is_server, settings.schema.format_schema_path),
+            [&](const String & partName)
+            {
+                return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
+            });
+        return resultset_format.delimiters.empty() || resultset_format.delimiters.back().empty();
+    });
 }
 }

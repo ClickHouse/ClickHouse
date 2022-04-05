@@ -158,6 +158,19 @@ void SerializationInfoByName::add(const SerializationInfoByName & other)
     }
 }
 
+void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
+{
+    for (const auto & [name, new_info] : other)
+    {
+        auto & old_info = (*this)[name];
+
+        if (old_info)
+            old_info->replaceData(*new_info);
+        else
+            old_info = new_info->clone();
+    }
+}
+
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
     Poco::JSON::Object object;
@@ -168,10 +181,10 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     {
         auto info_json = info->toJSON();
         info_json.set(KEY_NAME, name);
-        column_infos.add(std::move(info_json));
+        column_infos.add(std::move(info_json)); /// NOLINT
     }
 
-    object.set(KEY_COLUMNS, std::move(column_infos));
+    object.set(KEY_COLUMNS, std::move(column_infos)); /// NOLINT
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);

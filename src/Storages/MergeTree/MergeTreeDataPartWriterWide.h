@@ -29,12 +29,15 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) final;
+    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) final;
+
+    void finish(bool sync) final;
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
+    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums);
+    void finishDataSerialization(bool sync);
 
     /// Write data of one column.
     /// Return how many marks were written and

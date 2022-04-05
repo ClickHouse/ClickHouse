@@ -410,7 +410,7 @@ Useful for breaking away from a specific network interface.
 **Example**
 
 ``` xml
-<interserver_http_host>example.yandex.ru</interserver_http_host>
+<interserver_http_host>example.clickhouse.com</interserver_http_host>
 ```
 
 ## interserver_https_port {#interserver-https-port}
@@ -430,7 +430,7 @@ Similar to `interserver_http_host`, except that this hostname can be used by oth
 **Example**
 
 ``` xml
-<interserver_https_host>example.yandex.ru</interserver_https_host>
+<interserver_https_host>example.clickhouse.com</interserver_https_host>
 ```
 
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
@@ -672,7 +672,8 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+The maximum number of simultaneously processed queries related to MergeTree table.
+Queries may be limited by other settings: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Note"
 	These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -680,12 +681,54 @@ The maximum number of simultaneously processed queries related to MergeTree tabl
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `100`.
 
 **Example**
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_insert_queries {#max-concurrent-insert-queries}
+
+The maximum number of simultaneously processed `INSERT` queries.
+
+!!! info "Note"
+    These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_insert_queries>100</max_concurrent_insert_queries>
+```
+
+## max_concurrent_select_queries {#max-concurrent-select-queries}
+
+The maximum number of simultaneously processed `SELECT` queries.
+
+!!! info "Note"
+    These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_select_queries>100</max_concurrent_select_queries>
 ```
 
 ## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
@@ -695,7 +738,9 @@ The maximum number of simultaneously processed queries related to MergeTree tabl
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -711,7 +756,12 @@ Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users a
 
 Modifying the setting for one query or user does not affect other queries.
 
-Default value: `0` that means no limit.
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -1197,7 +1247,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 **Example**
 
 ``` xml
-<timezone>Europe/Moscow</timezone>
+<timezone>Asia/Istanbul</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
@@ -1236,6 +1286,20 @@ Example
 
 ``` xml
 <mysql_port>9004</mysql_port>
+```
+
+## postgresql_port {#server_configuration_parameters-postgresql_port}
+
+Port for communicating with clients over PostgreSQL protocol.
+
+**Possible values**
+
+Positive integer.
+
+Example
+
+``` xml
+<postgresql_port>9005</postgresql_port>
 ```
 
 ## tmp_path {#tmp-path}
@@ -1551,4 +1615,15 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
+
+## global_memory_usage_overcommit_max_wait_microseconds {#global_memory_usage_overcommit_max_wait_microseconds}
+
+Sets maximum waiting time for global overcommit tracker.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `0`.
+
 

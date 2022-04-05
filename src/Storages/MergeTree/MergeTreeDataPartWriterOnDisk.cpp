@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <utility>
+#include "IO/WriteBufferFromFileDecorator.h"
 
 namespace DB
 {
@@ -9,12 +11,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void MergeTreeDataPartWriterOnDisk::Stream::finalize()
+void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
 {
     compressed.next();
     /// 'compressed_buf' doesn't call next() on underlying buffer ('plain_hashing'). We should do it manually.
     plain_hashing.next();
     marks.next();
+
+    plain_file->preFinalize();
+    marks_file->preFinalize();
+
+    is_prefinalized = true;
+}
+
+void MergeTreeDataPartWriterOnDisk::Stream::finalize()
+{
+    if (!is_prefinalized)
+        preFinalize();
 
     plain_file->finalize();
     marks_file->finalize();
@@ -184,7 +197,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          * And otherwise it will look like excessively growing memory consumption in context of query.
          *  (observed in long INSERT SELECTs)
          */
-        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
         for (const auto & granule : granules_to_write)
@@ -244,8 +257,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
     }
 }
 
-void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
-        MergeTreeData::DataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
     bool write_final_mark = (with_final_mark && data_written);
     if (write_final_mark && compute_granularity)
@@ -268,6 +280,14 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
+        index_file_stream->preFinalize();
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(bool sync)
+{
+    if (index_stream)
+    {
         index_file_stream->finalize();
         if (sync)
             index_file_stream->sync();
@@ -275,8 +295,7 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
     }
 }
 
-void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
-        MergeTreeData::DataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
@@ -287,8 +306,16 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
 
     for (auto & stream : skip_indices_streams)
     {
-        stream->finalize();
+        stream->preFinalize();
         stream->addToChecksums(checksums);
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
+{
+    for (auto & stream : skip_indices_streams)
+    {
+        stream->finalize();
         if (sync)
             stream->sync();
     }

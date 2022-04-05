@@ -55,14 +55,13 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 }
 
 MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
+MergedColumnOnlyOutputStream::fillChecksums(
     MergeTreeData::MutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & all_checksums,
-    bool sync)
+    MergeTreeData::DataPart::Checksums & all_checksums)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->finish(checksums, sync);
+    writer->fillChecksums(checksums);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -71,14 +70,32 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
             projection_part->checksums.getTotalChecksumUInt128());
 
     auto columns = new_part->getColumns();
+    auto serialization_infos = new_part->getSerializationInfos();
+    serialization_infos.replaceData(new_serialization_infos);
 
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, new_serialization_infos, checksums);
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
+
+    auto disk = new_part->volume->getDisk();
     for (const String & removed_file : removed_files)
+    {
+        auto file_path = new_part->getFullRelativePath() + removed_file;
+        /// Can be called multiple times, don't need to remove file twice
+        if (disk->exists(file_path))
+            disk->removeFile(file_path);
+
         if (all_checksums.files.count(removed_file))
             all_checksums.files.erase(removed_file);
+    }
 
-    new_part->setColumns(columns, new_serialization_infos);
+    new_part->setColumns(columns);
+    new_part->setSerializationInfos(serialization_infos);
+
     return checksums;
+}
+
+void MergedColumnOnlyOutputStream::finish(bool sync)
+{
+    writer->finish(sync);
 }
 
 }

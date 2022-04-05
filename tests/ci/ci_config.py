@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+from typing import Dict, TypeVar
+
+ConfValue = TypeVar("ConfValue", str, bool)
+BuildConfig = Dict[str, ConfValue]
+
 CI_CONFIG = {
     "build_config": {
         "package_release": {
@@ -9,7 +14,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
-            "alien_pkgs": True,
+            "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -40,7 +45,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
-            "alien_pkgs": True,
+            "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -99,6 +104,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "amd64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -109,6 +115,7 @@ CI_CONFIG = {
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "debug-amd64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
@@ -129,6 +136,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "macos",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -139,6 +147,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "aarch64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -149,6 +158,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "freebsd",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -159,6 +169,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "macos-aarch64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -195,9 +206,12 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
+            "binary_gcc",
         ],
     },
     "tests_config": {
+        # required_build - build name for artifacts
+        # force_tests - force success status for tests
         "Stateful tests (address, actions)": {
             "required_build": "package_asan",
         },
@@ -215,6 +229,9 @@ CI_CONFIG = {
         },
         "Stateful tests (release, actions)": {
             "required_build": "package_release",
+        },
+        "Stateful tests (aarch64, actions)": {
+            "required_build": "package_aarch64",
         },
         "Stateful tests (release, DatabaseOrdinary, actions)": {
             "required_build": "package_release",
@@ -240,6 +257,9 @@ CI_CONFIG = {
         "Stateless tests (release, actions)": {
             "required_build": "package_release",
         },
+        "Stateless tests (aarch64, actions)": {
+            "required_build": "package_aarch64",
+        },
         "Stateless tests (release, wide parts enabled, actions)": {
             "required_build": "package_release",
         },
@@ -247,6 +267,9 @@ CI_CONFIG = {
             "required_build": "package_release",
         },
         "Stateless tests (release, DatabaseReplicated, actions)": {
+            "required_build": "package_release",
+        },
+        "Stateless tests (release, s3 storage, actions)": {
             "required_build": "package_release",
         },
         "Stress test (address, actions)": {
@@ -327,6 +350,9 @@ CI_CONFIG = {
         "Stateless tests flaky check (address, actions)": {
             "required_build": "package_asan",
         },
+        "Stateless tests bugfix validate check (address, actions)": {
+            "required_build": "package_asan",
+        },
         "ClickHouse Keeper Jepsen (actions)": {
             "required_build": "binary_release",
         },
@@ -334,4 +360,4 @@ CI_CONFIG = {
             "required_build": "performance",
         },
     },
-}
+}  # type: dict

@@ -226,6 +226,8 @@ if __name__ == "__main__":
             [image, tag] = img_tag.split(":")
             if image == "clickhouse/mysql-golang-client":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
+            elif image == "clickhouse/dotnet-client":
+                env_tags += "-e {}={} ".format("DOCKER_DOTNET_CLIENT_TAG", tag)
             elif image == "clickhouse/mysql-java-client":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
             elif image == "clickhouse/mysql-js-client":
@@ -236,8 +238,10 @@ if __name__ == "__main__":
                 env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
             elif image == "clickhouse/integration-test":
                 env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
+            elif image == "clickhouse/kerberized-hadoop":
+                env_tags += "-e {}={} ".format("DOCKER_KERBERIZED_HADOOP_TAG", tag)
             elif image == "clickhouse/kerberos-kdc":
-                env_tags += "-e {}={}".format("DOCKER_KERBEROS_KDC_TAG", tag)
+                env_tags += "-e {}={} ".format("DOCKER_KERBEROS_KDC_TAG", tag)
             else:
                 logging.info("Unknown image %s" % (image))
 

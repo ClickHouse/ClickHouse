@@ -5,4 +5,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT --hardware_utilization 2>&1 | grep -q "Code: 552. DB::Exception: Unrecognized option '--hardware_utilization'. Maybe you meant \['--hardware-utilization'\]. (UNRECOGNIZED_ARGUMENTS)" && echo 'OK' || echo 'FAIL' ||:
+$CLICKHOUSE_CLIENT --secuer 2>&1 | grep -q "Code: 552. DB::Exception: Unrecognized option '--secuer'. Maybe you meant \['--secure'\]. (UNRECOGNIZED_ARGUMENTS)" && echo 'OK' || echo 'FAIL' ||:

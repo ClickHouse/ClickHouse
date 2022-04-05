@@ -38,7 +38,7 @@ namespace ErrorCodes
  *
  * To get files for upload run:
  * clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>
- * (--metadata-path can be found in query: `select data_paths from system.tables where name='<table_name>';`)
+ * (--metadata-path can be found in query: `select data_paths from system.tables where name='<table_name>';`) /// NOLINT
  *
  * When loading files by <endpoint> they must be loaded into <endpoint>/store/ path, but config must conrain only <endpoint>.
  *
@@ -63,7 +63,8 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & path,
                                                      const ReadSettings & settings,
-                                                     std::optional<size_t> size) const override;
+                                                     std::optional<size_t> read_hint,
+                                                     std::optional<size_t> file_size) const override;
 
     /// Disk info
 

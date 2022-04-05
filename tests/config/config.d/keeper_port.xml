@@ -5,7 +5,8 @@
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
-            <session_timeout_ms>30000</session_timeout_ms>
+            <session_timeout_ms>100000</session_timeout_ms>
+            <min_session_timeout_ms>10000</min_session_timeout_ms>
             <force_sync>false</force_sync>
             <startup_timeout>240000</startup_timeout>
             <!-- we want all logs for complex problems investigation -->

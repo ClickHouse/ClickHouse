@@ -28,12 +28,12 @@ struct ParsedTemplateFormatString
     /// For diagnostic info
     Strings column_names;
 
-    typedef std::function<std::optional<size_t>(const String &)> ColumnIdxGetter;
+    using ColumnIdxGetter = std::function<std::optional<size_t>(const String &)>;
 
     ParsedTemplateFormatString() = default;
-    ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name);
+    ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name, bool allow_indexes = true);
 
-    void parse(const String & format_string, const ColumnIdxGetter & idx_by_name);
+    void parse(const String & format_string, const ColumnIdxGetter & idx_by_name, bool allow_indexes = true);
 
     static const char * readMayBeQuotedColumnNameInto(const char * pos, size_t size, String & s);
     size_t columnsCount() const;

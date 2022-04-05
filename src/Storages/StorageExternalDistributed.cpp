@@ -172,7 +172,7 @@ StorageExternalDistributed::StorageExternalDistributed(
 
 Pipe StorageExternalDistributed::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -184,7 +184,7 @@ Pipe StorageExternalDistributed::read(
     {
         pipes.emplace_back(shard->read(
             column_names,
-            metadata_snapshot,
+            storage_snapshot,
             query_info,
             context,
             processed_stage,
@@ -272,7 +272,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             ExternalDataSourceConfiguration configuration;
             if (auto named_collection = getExternalDataSourceConfiguration(inner_engine_args, args.getLocalContext()))
             {
-                auto [common_configuration, storage_specific_args] = named_collection.value();
+                auto [common_configuration, storage_specific_args, _] = named_collection.value();
                 configuration.set(common_configuration);
 
                 for (const auto & [name, value] : storage_specific_args)

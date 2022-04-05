@@ -3,7 +3,6 @@
 #include <set>
 #include <unordered_map>
 #include <vector>
-#include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -37,7 +36,7 @@ public:
     using OrGroup = std::set<AtomicFormula>;
     using AndGroup = std::set<OrGroup>;
 
-    CNFQuery(AndGroup && statements_) : statements(std::move(statements_)) { }
+    CNFQuery(AndGroup && statements_) : statements(std::move(statements_)) { } /// NOLINT
 
     template <typename P>
     CNFQuery & filterAlwaysTrueGroups(P predicate_is_unknown)  /// delete always true groups
@@ -92,7 +91,7 @@ public:
     CNFQuery & appendGroup(AndGroup&& and_group)
     {
         for (auto && or_group : and_group)
-            statements.emplace(std::move(or_group));
+            statements.emplace(or_group);
         return *this;
     }
 

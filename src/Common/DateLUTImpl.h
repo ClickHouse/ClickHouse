@@ -52,15 +52,17 @@ private:
     friend class DateLUT;
     explicit DateLUTImpl(const std::string & time_zone);
 
-    DateLUTImpl(const DateLUTImpl &) = delete;
-    DateLUTImpl & operator=(const DateLUTImpl &) = delete;
-    DateLUTImpl(const DateLUTImpl &&) = delete;
-    DateLUTImpl & operator=(const DateLUTImpl &&) = delete;
+    DateLUTImpl(const DateLUTImpl &) = delete; /// NOLINT
+    DateLUTImpl & operator=(const DateLUTImpl &) = delete; /// NOLINT
+    DateLUTImpl(const DateLUTImpl &&) = delete; /// NOLINT
+    DateLUTImpl & operator=(const DateLUTImpl &&) = delete; /// NOLINT
 
     // Normalized and bound-checked index of element in lut,
     // has to be a separate type to support overloading
     // TODO: make sure that any arithmetic on LUTIndex actually results in valid LUTIndex.
     STRONG_TYPEDEF(UInt32, LUTIndex)
+    // Same as above but select different function overloads for zero saturation.
+    STRONG_TYPEDEF(UInt32, LUTIndexWithSaturation)
 
     template <typename T>
     friend inline LUTIndex operator+(const LUTIndex & index, const T v)
@@ -147,12 +149,12 @@ public:
         Int8 amount_of_offset_change_value; /// Usually -4 or 4, but look at Lord Howe Island. Multiply by OffsetChangeFactor
         UInt8 time_at_offset_change_value; /// In seconds from beginning of the day. Multiply by OffsetChangeFactor
 
-        inline Int32 amount_of_offset_change() const
+        inline Int32 amount_of_offset_change() const /// NOLINT
         {
             return static_cast<Int32>(amount_of_offset_change_value) * OffsetChangeFactor;
         }
 
-        inline UInt32 time_at_offset_change() const
+        inline UInt32 time_at_offset_change() const /// NOLINT
         {
             return static_cast<UInt32>(time_at_offset_change_value) * OffsetChangeFactor;
         }
@@ -181,6 +183,9 @@ private:
     /// Table is relatively large, so better not to place the object on stack.
     /// In comparison to std::vector, plain array is cheaper by one indirection.
     Values lut[DATE_LUT_SIZE + 1];
+
+    /// Same as above but with dates < 1970-01-01 saturated to 1970-01-01.
+    Values lut_saturated[DATE_LUT_SIZE + 1];
 
     /// Year number after DATE_LUT_MIN_YEAR -> LUTIndex in lut for start of year.
     LUTIndex years_lut[DATE_LUT_YEARS];
@@ -225,12 +230,12 @@ private:
         return LUTIndex(guess ? guess - 1 : 0);
     }
 
-    inline LUTIndex toLUTIndex(DayNum d) const
+    static inline LUTIndex toLUTIndex(DayNum d)
     {
         return LUTIndex{(d + daynum_offset_epoch) & date_lut_mask};
     }
 
-    inline LUTIndex toLUTIndex(ExtendedDayNum d) const
+    static inline LUTIndex toLUTIndex(ExtendedDayNum d)
     {
         return LUTIndex{static_cast<UInt32>(d + daynum_offset_epoch) & date_lut_mask};
     }
@@ -240,7 +245,7 @@ private:
         return findIndex(t);
     }
 
-    inline LUTIndex toLUTIndex(LUTIndex i) const
+    static inline LUTIndex toLUTIndex(LUTIndex i)
     {
         return i;
     }
@@ -278,19 +283,39 @@ public:
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
 
-    auto getDayNumOffsetEpoch() const { return daynum_offset_epoch; }
+    static auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
 
     /// All functions below are thread-safe; arguments are not checked.
 
-    inline ExtendedDayNum toDayNum(ExtendedDayNum d) const
+    static ExtendedDayNum toDayNum(ExtendedDayNum d)
     {
         return d;
     }
 
-    template <typename DateOrTime>
-    inline ExtendedDayNum toDayNum(DateOrTime v) const
+    static UInt32 saturateMinus(UInt32 x, UInt32 y)
     {
-        return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(toLUTIndex(v).toUnderType() - daynum_offset_epoch)};
+        UInt32 res = x - y;
+        res &= -Int32(res <= x);
+        return res;
+    }
+
+    static ExtendedDayNum toDayNum(LUTIndex d)
+    {
+        return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(d.toUnderType() - daynum_offset_epoch)};
+    }
+
+    static DayNum toDayNum(LUTIndexWithSaturation d)
+    {
+        return DayNum{static_cast<DayNum::UnderlyingType>(saturateMinus(d.toUnderType(), daynum_offset_epoch))};
+    }
+
+    template <typename DateOrTime>
+    inline auto toDayNum(DateOrTime v) const
+    {
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return DayNum{static_cast<DayNum::UnderlyingType>(saturateMinus(toLUTIndex(v).toUnderType(), daynum_offset_epoch))};
+        else
+            return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(toLUTIndex(v).toUnderType() - daynum_offset_epoch)};
     }
 
     /// Round down to start of monday.
@@ -298,14 +323,20 @@ public:
     inline Time toFirstDayOfWeek(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
-        return lut[i - (lut[i].day_of_week - 1)].date;
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return lut_saturated[i - (lut[i].day_of_week - 1)].date;
+        else
+            return lut[i - (lut[i].day_of_week - 1)].date;
     }
 
     template <typename DateOrTime>
-    inline ExtendedDayNum toFirstDayNumOfWeek(DateOrTime v) const
+    inline auto toFirstDayNumOfWeek(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
-        return toDayNum(i - (lut[i].day_of_week - 1));
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(i - (lut[i].day_of_week - 1)));
+        else
+            return toDayNum(LUTIndex(i - (lut[i].day_of_week - 1)));
     }
 
     /// Round down to start of month.
@@ -313,21 +344,51 @@ public:
     inline Time toFirstDayOfMonth(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
-        return lut[i - (lut[i].day_of_month - 1)].date;
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return lut_saturated[i - (lut[i].day_of_month - 1)].date;
+        else
+            return lut[i - (lut[i].day_of_month - 1)].date;
     }
 
     template <typename DateOrTime>
-    inline ExtendedDayNum toFirstDayNumOfMonth(DateOrTime v) const
+    inline auto toFirstDayNumOfMonth(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
-        return toDayNum(i - (lut[i].day_of_month - 1));
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(i - (lut[i].day_of_month - 1)));
+        else
+            return toDayNum(LUTIndex(i - (lut[i].day_of_month - 1)));
+    }
+
+    /// Round up to last day of month.
+    template <typename DateOrTime>
+    inline Time toLastDayOfMonth(DateOrTime v) const
+    {
+        const LUTIndex i = toLUTIndex(v);
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return lut_saturated[i - lut[i].day_of_month + lut[i].days_in_month].date;
+        else
+            return lut[i - lut[i].day_of_month + lut[i].days_in_month].date;
+    }
+
+    template <typename DateOrTime>
+    inline auto toLastDayNumOfMonth(DateOrTime v) const
+    {
+        const LUTIndex i = toLUTIndex(v);
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(i - lut[i].day_of_month + lut[i].days_in_month));
+        else
+            return toDayNum(LUTIndex(i - lut[i].day_of_month + lut[i].days_in_month));
     }
 
     /// Round down to start of quarter.
     template <typename DateOrTime>
-    inline ExtendedDayNum toFirstDayNumOfQuarter(DateOrTime v) const
+    inline auto toFirstDayNumOfQuarter(DateOrTime v) const
     {
-        return toDayNum(toFirstDayOfQuarterIndex(v));
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(toFirstDayOfQuarterIndex(v)));
+        else
+            return toDayNum(LUTIndex(toFirstDayOfQuarterIndex(v)));
     }
 
     template <typename DateOrTime>
@@ -365,9 +426,12 @@ public:
     }
 
     template <typename DateOrTime>
-    inline ExtendedDayNum toFirstDayNumOfYear(DateOrTime v) const
+    inline auto toFirstDayNumOfYear(DateOrTime v) const
     {
-        return toDayNum(toFirstDayNumOfYearIndex(v));
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(toFirstDayNumOfYearIndex(v)));
+        else
+            return toDayNum(LUTIndex(toFirstDayNumOfYearIndex(v)));
     }
 
     inline Time toFirstDayOfNextMonth(Time t) const
@@ -514,11 +578,17 @@ public:
       *  because the same calendar day starts/ends at different timestamps in different time zones)
       */
 
-    inline Time fromDayNum(DayNum d) const { return lut[toLUTIndex(d)].date; }
+    inline Time fromDayNum(DayNum d) const { return lut_saturated[toLUTIndex(d)].date; }
     inline Time fromDayNum(ExtendedDayNum d) const { return lut[toLUTIndex(d)].date; }
 
     template <typename DateOrTime>
-    inline Time toDate(DateOrTime v) const { return lut[toLUTIndex(v)].date; }
+    inline Time toDate(DateOrTime v) const
+    {
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return lut_saturated[toLUTIndex(v)].date;
+        else
+            return lut[toLUTIndex(v)].date;
+    }
 
     template <typename DateOrTime>
     inline unsigned toMonth(DateOrTime v) const { return lut[toLUTIndex(v)].month; }
@@ -581,9 +651,12 @@ public:
     }
 
     template <typename DateOrTime>
-    inline ExtendedDayNum toFirstDayNumOfISOYear(DateOrTime v) const
+    inline auto toFirstDayNumOfISOYear(DateOrTime v) const
     {
-        return toDayNum(toFirstDayNumOfISOYearIndex(v));
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(toFirstDayNumOfISOYearIndex(v)));
+        else
+            return toDayNum(LUTIndex(toFirstDayNumOfISOYearIndex(v)));
     }
 
     inline Time toFirstDayOfISOYear(Time t) const
@@ -596,7 +669,7 @@ public:
     template <typename DateOrTime>
     inline unsigned toISOWeek(DateOrTime v) const
     {
-        return 1 + (toFirstDayNumOfWeek(v) - toFirstDayNumOfISOYear(v)) / 7;
+        return 1 + (toFirstDayNumOfWeek(v) - toDayNum(toFirstDayNumOfISOYearIndex(v))) / 7;
     }
 
     /*
@@ -662,7 +735,7 @@ public:
         {
             if (!week_year_mode && ((first_weekday_mode && weekday != 0) || (!first_weekday_mode && weekday >= 4)))
                 return yw;
-            week_year_mode = 1;
+            week_year_mode = true;
             (yw.first)--;
             first_daynr -= (days = calc_days_in_year(yw.first));
             weekday = (weekday + 53 * 7 - days) % 7;
@@ -724,7 +797,7 @@ public:
 
     /// Get first day of week with week_mode, return Sunday or Monday
     template <typename DateOrTime>
-    inline ExtendedDayNum toFirstDayNumOfWeek(DateOrTime v, UInt8 week_mode) const
+    inline auto toFirstDayNumOfWeek(DateOrTime v, UInt8 week_mode) const
     {
         bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
         if (monday_first_mode)
@@ -733,12 +806,15 @@ public:
         }
         else
         {
-            return (toDayOfWeek(v) != 7) ? ExtendedDayNum(v - toDayOfWeek(v)) : toDayNum(v);
+            if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+                return (toDayOfWeek(v) != 7) ? DayNum(saturateMinus(v, toDayOfWeek(v))) : toDayNum(v);
+            else
+                return (toDayOfWeek(v) != 7) ? ExtendedDayNum(v - toDayOfWeek(v)) : toDayNum(v);
         }
     }
 
     /// Check and change mode to effective.
-    inline UInt8 check_week_mode(UInt8 mode) const
+    inline UInt8 check_week_mode(UInt8 mode) const /// NOLINT
     {
         UInt8 week_format = (mode & 7);
         if (!(week_format & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST)))
@@ -750,7 +826,7 @@ public:
       * Returns 0 for monday, 1 for tuesday...
       */
     template <typename DateOrTime>
-    inline unsigned calc_weekday(DateOrTime v, bool sunday_first_day_of_week) const
+    inline unsigned calc_weekday(DateOrTime v, bool sunday_first_day_of_week) const /// NOLINT
     {
         const LUTIndex i = toLUTIndex(v);
         if (!sunday_first_day_of_week)
@@ -760,7 +836,7 @@ public:
     }
 
     /// Calculate days in one year.
-    inline unsigned calc_days_in_year(Int32 year) const
+    inline unsigned calc_days_in_year(Int32 year) const /// NOLINT
     {
         return ((year & 3) == 0 && (year % 100 || (year % 400 == 0 && year)) ? 366 : 365);
     }
@@ -797,7 +873,7 @@ public:
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
     }
 
-    inline Time toRelativeMinuteNum(Time t) const
+    inline Time toRelativeMinuteNum(Time t) const /// NOLINT
     {
         return (t + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
     }
@@ -809,7 +885,7 @@ public:
     }
 
     template <typename DateOrTime>
-    inline ExtendedDayNum toStartOfYearInterval(DateOrTime v, UInt64 years) const
+    inline auto toStartOfYearInterval(DateOrTime v, UInt64 years) const
     {
         if (years == 1)
             return toFirstDayNumOfYear(v);
@@ -822,39 +898,59 @@ public:
         if (unlikely(year < DATE_LUT_MIN_YEAR))
             year = DATE_LUT_MIN_YEAR;
 
-        return toDayNum(years_lut[year - DATE_LUT_MIN_YEAR]);
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(years_lut[year - DATE_LUT_MIN_YEAR]));
+        else
+            return toDayNum(years_lut[year - DATE_LUT_MIN_YEAR]);
     }
 
-    inline ExtendedDayNum toStartOfQuarterInterval(ExtendedDayNum d, UInt64 quarters) const
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
+    inline auto toStartOfQuarterInterval(Date d, UInt64 quarters) const
     {
         if (quarters == 1)
             return toFirstDayNumOfQuarter(d);
         return toStartOfMonthInterval(d, quarters * 3);
     }
 
-    inline ExtendedDayNum toStartOfMonthInterval(ExtendedDayNum d, UInt64 months) const
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
+    inline auto toStartOfMonthInterval(Date d, UInt64 months) const
     {
         if (months == 1)
             return toFirstDayNumOfMonth(d);
         const Values & values = lut[toLUTIndex(d)];
         UInt32 month_total_index = (values.year - DATE_LUT_MIN_YEAR) * 12 + values.month - 1;
-        return toDayNum(years_months_lut[month_total_index / months * months]);
+        if constexpr (std::is_same_v<Date, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(years_months_lut[month_total_index / months * months]));
+        else
+            return toDayNum(years_months_lut[month_total_index / months * months]);
     }
 
-    inline ExtendedDayNum toStartOfWeekInterval(ExtendedDayNum d, UInt64 weeks) const
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
+    inline auto toStartOfWeekInterval(Date d, UInt64 weeks) const
     {
         if (weeks == 1)
             return toFirstDayNumOfWeek(d);
         UInt64 days = weeks * 7;
         // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
-        return ExtendedDayNum(4 + (d - 4) / days * days);
+        if constexpr (std::is_same_v<Date, DayNum>)
+            return DayNum(4 + (d - 4) / days * days);
+        else
+            return ExtendedDayNum(4 + (d - 4) / days * days);
     }
 
-    inline Time toStartOfDayInterval(ExtendedDayNum d, UInt64 days) const
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
+    inline Time toStartOfDayInterval(Date d, UInt64 days) const
     {
         if (days == 1)
             return toDate(d);
-        return lut[toLUTIndex(ExtendedDayNum(d / days * days))].date;
+        if constexpr (std::is_same_v<Date, DayNum>)
+            return lut_saturated[toLUTIndex(ExtendedDayNum(d / days * days))].date;
+        else
+            return lut[toLUTIndex(ExtendedDayNum(d / days * days))].date;
     }
 
     inline Time toStartOfHourInterval(Time t, UInt64 hours) const
@@ -926,8 +1022,12 @@ public:
 
     inline LUTIndex makeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
-        if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return LUTIndex(0);
+
+        if (unlikely(year > DATE_LUT_MAX_YEAR))
+            return LUTIndex(DATE_LUT_SIZE - 1);
+
         auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
         UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
         /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2283-11-11)
@@ -937,7 +1037,7 @@ public:
     /// Create DayNum from year, month, day of month.
     inline ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
-        if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return ExtendedDayNum(default_error_day_num);
 
         return toDayNum(makeLUTIndex(year, month, day_of_month));
@@ -978,12 +1078,12 @@ public:
         return values.year * 10000 + values.month * 100 + values.day_of_month;
     }
 
-    inline Time YYYYMMDDToDate(UInt32 num) const
+    inline Time YYYYMMDDToDate(UInt32 num) const /// NOLINT
     {
         return makeDate(num / 10000, num / 100 % 100, num % 100);
     }
 
-    inline ExtendedDayNum YYYYMMDDToDayNum(UInt32 num) const
+    inline ExtendedDayNum YYYYMMDDToDayNum(UInt32 num) const /// NOLINT
     {
         return makeDayNum(num / 10000, num / 100 % 100, num % 100);
     }
@@ -1064,7 +1164,7 @@ public:
             + UInt64(components.date.year) * 10000000000;
     }
 
-    inline Time YYYYMMDDhhmmssToTime(UInt64 num) const
+    inline Time YYYYMMDDhhmmssToTime(UInt64 num) const /// NOLINT
     {
         return makeDateTime(
             num / 10000000000,
@@ -1140,7 +1240,9 @@ public:
 
     /// If resulting month has less deys than source month, then saturation can happen.
     /// Example: 31 Aug + 1 month = 30 Sep.
-    inline Time NO_SANITIZE_UNDEFINED addMonths(Time t, Int64 delta) const
+    template <typename DateTime>
+    requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
+    inline Time NO_SANITIZE_UNDEFINED addMonths(DateTime t, Int64 delta) const
     {
         const auto result_day = addMonthsIndex(t, delta);
 
@@ -1154,20 +1256,28 @@ public:
         if (time >= lut[result_day].time_at_offset_change())
             time -= lut[result_day].amount_of_offset_change();
 
-        return lut[result_day].date + time;
+        auto res = lut[result_day].date + time;
+        if constexpr (std::is_same_v<DateTime, UInt32>)
+        {
+            /// Common compiler should generate branchless code for this saturation operation.
+            return res <= 0 ? 0 : res;
+        }
+        else
+            return res;
     }
 
-    inline ExtendedDayNum NO_SANITIZE_UNDEFINED addMonths(ExtendedDayNum d, Int64 delta) const
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
+    inline auto NO_SANITIZE_UNDEFINED addMonths(Date d, Int64 delta) const
     {
-        return toDayNum(addMonthsIndex(d, delta));
+        if constexpr (std::is_same_v<Date, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(addMonthsIndex(d, delta)));
+        else
+            return toDayNum(addMonthsIndex(d, delta));
     }
 
-    inline Time NO_SANITIZE_UNDEFINED addQuarters(Time t, Int32 delta) const
-    {
-        return addMonths(t, static_cast<Int64>(delta) * 3);
-    }
-
-    inline ExtendedDayNum addQuarters(ExtendedDayNum d, Int32 delta) const
+    template <typename DateOrTime>
+    inline auto addQuarters(DateOrTime d, Int32 delta) const
     {
         return addMonths(d, static_cast<Int64>(delta) * 3);
     }
@@ -1189,7 +1299,9 @@ public:
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
-    inline Time addYears(Time t, Int64 delta) const
+    template <typename DateTime>
+    requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
+    inline Time addYears(DateTime t, Int64 delta) const
     {
         auto result_day = addYearsIndex(t, delta);
 
@@ -1203,12 +1315,24 @@ public:
         if (time >= lut[result_day].time_at_offset_change())
             time -= lut[result_day].amount_of_offset_change();
 
-        return lut[result_day].date + time;
+        auto res = lut[result_day].date + time;
+        if constexpr (std::is_same_v<DateTime, UInt32>)
+        {
+            /// Common compiler should generate branchless code for this saturation operation.
+            return res <= 0 ? 0 : res;
+        }
+        else
+            return res;
     }
 
-    inline ExtendedDayNum addYears(ExtendedDayNum d, Int64 delta) const
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
+    inline auto addYears(Date d, Int64 delta) const
     {
-        return toDayNum(addYearsIndex(d, delta));
+        if constexpr (std::is_same_v<Date, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(addYearsIndex(d, delta)));
+        else
+            return toDayNum(addYearsIndex(d, delta));
     }
 
 

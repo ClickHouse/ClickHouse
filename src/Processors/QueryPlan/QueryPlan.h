@@ -44,8 +44,8 @@ class QueryPlan
 public:
     QueryPlan();
     ~QueryPlan();
-    QueryPlan(QueryPlan &&);
-    QueryPlan & operator=(QueryPlan &&);
+    QueryPlan(QueryPlan &&) noexcept;
+    QueryPlan & operator=(QueryPlan &&) noexcept;
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
     void addStep(QueryPlanStepPtr step);

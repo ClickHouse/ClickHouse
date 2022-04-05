@@ -69,7 +69,7 @@ public:
     }
 
     /** Get the text that identifies this element. */
-    virtual String getID(char delimiter = '_') const = 0;
+    virtual String getID(char delimiter = '_') const = 0; /// NOLINT
 
     ASTPtr ptr() { return shared_from_this(); }
 
@@ -245,10 +245,23 @@ public:
 
     void cloneChildren();
 
-    // Return query_kind string representation of this AST query.
-    virtual const char * getQueryKindString() const { return ""; }
+    enum class QueryKind : uint8_t
+    {
+        None = 0,
+        Alter,
+        Create,
+        Drop,
+        Grant,
+        Insert,
+        Rename,
+        Revoke,
+        SelectIntersectExcept,
+        Select,
+        System,
+    };
+    /// Return QueryKind of this AST query.
+    virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
-public:
     /// For syntax highlighting.
     static const char * hilite_keyword;
     static const char * hilite_identifier;

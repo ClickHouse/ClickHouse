@@ -5,6 +5,7 @@
 #include <IO/AsynchronousReader.h>
 #include <utility>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -32,7 +33,7 @@ public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
         AsynchronousReaderPtr reader_, const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
-        size_t min_bytes_for_seek = 1024 * 1024);
+        size_t min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~AsynchronousReadIndirectBufferFromRemoteFS() override;
 
@@ -44,9 +45,11 @@ public:
 
     void prefetch() override;
 
-    void setReadUntilPosition(size_t position) override;
+    void setReadUntilPosition(size_t position) override; /// [..., position).
 
     void setReadUntilEnd() override;
+
+    String getInfoForLog() override;
 
 private:
     bool nextImpl() override;
@@ -76,6 +79,8 @@ private:
     std::optional<size_t> read_until_position;
 
     bool must_read_until_position;
+
+    Poco::Logger * log;
 };
 
 }

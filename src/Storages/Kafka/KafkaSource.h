@@ -18,7 +18,7 @@ class KafkaSource : public SourceWithProgress
 public:
     KafkaSource(
         StorageKafka & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         const Names & columns,
         Poco::Logger * log_,
@@ -35,7 +35,7 @@ public:
 
 private:
     StorageKafka & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     Names column_names;
     Poco::Logger * log;

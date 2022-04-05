@@ -67,6 +67,7 @@ void registerOutputFormatMarkdown(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Markdown");
+    factory.registerFileExtension("md", "Markdown");
 }
 
 }

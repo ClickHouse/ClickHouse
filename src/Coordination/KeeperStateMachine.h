@@ -30,10 +30,10 @@ public:
     /// Currently not supported
     nuraft::ptr<nuraft::buffer> pre_commit(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
-    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override;
+    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override; /// NOLINT
 
     /// Save new cluster config to our snapshot (copy of the config stored in StateManager)
-    void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override;
+    void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
 
     /// Currently not supported
     void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
@@ -97,12 +97,15 @@ public:
     uint64_t getSessionWithEphemeralNodesCount() const;
     uint64_t getTotalEphemeralNodesCount() const;
     uint64_t getApproximateDataSize() const;
+    uint64_t getKeyArenaSize() const;
+    uint64_t getLatestSnapshotBufSize() const;
 
 private:
 
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
+    std::string latest_snapshot_path;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
@@ -120,7 +123,7 @@ private:
     SnapshotsQueue & snapshots_queue;
 
     /// Mutex for snapshots
-    std::mutex snapshots_lock;
+    mutable std::mutex snapshots_lock;
 
     /// Lock for storage and responses_queue. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise

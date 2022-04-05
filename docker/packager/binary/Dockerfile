@@ -1,4 +1,5 @@
-#  docker build -t clickhouse/binary-builder .
+# rebuild in #33610
+# docker build -t clickhouse/binary-builder .
 FROM ubuntu:20.04
 
 # ARG for quick switch to a given ubuntu mirror
@@ -94,6 +95,14 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get install gcc-11 g++-11 --yes \
     && apt-get clean
 
+# Architecture of the image when BuildKit/buildx is used
+ARG TARGETARCH
+ARG NFPM_VERSION=2.15.0
+
+RUN arch=${TARGETARCH:-amd64} \
+  && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
+  && dpkg -i /tmp/nfpm.deb \
+  && rm /tmp/nfpm.deb
 
 COPY build.sh /
-CMD ["bash", "-c", "/build.sh 2>&1 | ts"]
+CMD ["bash", "-c", "/build.sh 2>&1"]

@@ -19,6 +19,7 @@
 #include <base/range.h>
 #include <base/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -145,8 +146,7 @@ namespace
                 break;
             case ValueType::vtUInt64:
             {
-                //we don't have enum enum_field_types definition in mysqlxx/Types.h, so we use literal values directly here.
-                if (static_cast<int>(mysql_type) == 16)
+                if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
                 {
                     size_t n = value.size();
                     UInt64 val = 0UL;
@@ -175,9 +175,32 @@ namespace
                 read_bytes_size += 4;
                 break;
             case ValueType::vtInt64:
-                assert_cast<ColumnInt64 &>(column).insertValue(value.getInt());
-                read_bytes_size += 8;
+            {
+                if (mysql_type == enum_field_types::MYSQL_TYPE_TIME)
+                {
+                    String time_str(value.data(), value.size());
+                    bool negative = time_str.starts_with("-");
+                    if (negative) time_str = time_str.substr(1);
+                    std::vector<String> hhmmss;
+                    boost::split(hhmmss, time_str, [](char c) { return c == ':'; });
+                    Int64 v = 0;
+                    if (hhmmss.size() == 3)
+                    {
+                        v = (std::stoi(hhmmss[0]) * 3600 + std::stoi(hhmmss[1]) * 60 + std::stold(hhmmss[2])) * 1000000;
+                    }
+                    else
+                        throw Exception("Unsupported value format", ErrorCodes::NOT_IMPLEMENTED);
+                    if (negative) v = -v;
+                    assert_cast<ColumnInt64 &>(column).insertValue(v);
+                    read_bytes_size += value.size();
+                }
+                else
+                {
+                    assert_cast<ColumnInt64 &>(column).insertValue(value.getInt());
+                    read_bytes_size += 8;
+                }
                 break;
+            }
             case ValueType::vtFloat32:
                 assert_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
                 read_bytes_size += 4;
@@ -201,6 +224,10 @@ namespace
             case ValueType::vtDate:
                 assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
                 read_bytes_size += 2;
+                break;
+            case ValueType::vtDate32:
+                assert_cast<ColumnInt32 &>(column).insertValue(Int32(value.getDate().getExtenedDayNum()));
+                read_bytes_size += 4;
                 break;
             case ValueType::vtDateTime:
             {

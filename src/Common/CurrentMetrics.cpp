@@ -63,8 +63,10 @@
     M(MaxDDLEntryID, "Max processed DDL entry of DDLWorker.") \
     M(MaxPushedDDLEntryID, "Max DDL entry of DDLWorker that pushed to zookeeper.") \
     M(PartsTemporary, "The part is generating now, it is not in data_parts list.") \
-    M(PartsPreCommitted, "The part is in data_parts, but not used for SELECTs.") \
-    M(PartsCommitted, "Active data part, used by current and upcoming SELECTs.") \
+    M(PartsPreCommitted, "Deprecated. See PartsPreActive.") \
+    M(PartsCommitted, "Deprecated. See PartsActive.") \
+    M(PartsPreActive, "The part is in data_parts, but not used for SELECTs.") \
+    M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
@@ -78,6 +80,7 @@
     M(SyncDrainedConnections, "Number of connections drained synchronously.") \
     M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
+    M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
 
 namespace CurrentMetrics
 {

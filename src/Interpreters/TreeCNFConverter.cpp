@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/checkStackSize.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -26,7 +27,7 @@ bool isLogicalFunction(const ASTFunction & func)
 size_t countAtoms(const ASTPtr & node)
 {
     checkStackSize();
-    if (node->as<ASTIdentifier>())
+    if (node->as<ASTIdentifier>() || node->as<ASTLiteral>())
         return 1;
 
     const auto * func = node->as<ASTFunction>();

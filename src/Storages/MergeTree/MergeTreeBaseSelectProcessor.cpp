@@ -22,13 +22,14 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 
 MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     Block header,
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
     UInt64 max_block_size_rows_,
@@ -40,7 +41,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     std::optional<ParallelReadingExtension> extension_)
     : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, storage_.getPartitionValueType(), virt_column_names_))
     , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_size_bytes(preferred_block_size_bytes_)
@@ -131,8 +132,9 @@ bool MergeTreeBaseSelectProcessor::getTaskFromBuffer()
         if (Status::Accepted == res)
             return true;
 
+        /// To avoid any possibility of ignoring cancellation, exception will be thrown.
         if (Status::Cancelled == res)
-            break;
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query had been cancelled");
     }
     return false;
 }
@@ -165,8 +167,18 @@ Chunk MergeTreeBaseSelectProcessor::generate()
 {
     while (!isCancelled())
     {
-        if ((!task || task->isFinished()) && !getNewTask())
-            return {};
+        try
+        {
+            if ((!task || task->isFinished()) && !getNewTask())
+                return {};
+        }
+        catch (const Exception & e)
+        {
+            /// See MergeTreeBaseSelectProcessor::getTaskFromBuffer()
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+                return {};
+            throw;
+        }
 
         auto res = readFromPart();
 

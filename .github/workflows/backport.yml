@@ -33,11 +33,11 @@ jobs:
       - name: Cherry pick
         run: |
           sudo pip install GitPython
-          cd $GITHUB_WORKSPACE/tests/ci
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 cherry_pick.py
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"

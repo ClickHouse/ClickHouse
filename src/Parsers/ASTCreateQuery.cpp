@@ -198,8 +198,6 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->storage, storage->clone());
     if (select)
         res->set(res->select, select->clone());
-    if (tables)
-        res->set(res->tables, tables->clone());
     if (table_overrides)
         res->set(res->table_overrides, table_overrides->clone());
 
@@ -359,7 +357,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (as_table_function)
     {
-        if (columns_list)
+        if (columns_list && !columns_list->empty())
         {
             frame.expression_list_always_start_on_new_line = true;
             settings.ostr << (settings.one_line ? " (" : "\n(");
@@ -375,7 +373,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     frame.expression_list_always_start_on_new_line = true;
 
-    if (columns_list && !as_table_function)
+    if (columns_list && !columns_list->empty() && !as_table_function)
     {
         settings.ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
@@ -432,12 +430,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                       << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
         settings.ostr << (comment ? ")" : "");
-    }
-
-    if (tables)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
-        tables->formatImpl(settings, state, frame);
     }
 
     if (comment)

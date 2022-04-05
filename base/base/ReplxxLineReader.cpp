@@ -25,13 +25,6 @@ void trim(String & s)
     s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
 }
 
-/// Check if string ends with given character after skipping whitespaces.
-bool ends_with(const std::string_view & s, const std::string_view & p)
-{
-    auto ss = std::string_view(s.data(), s.rend() - std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }));
-    return ss.ends_with(p);
-}
-
 std::string getEditor()
 {
     const char * editor = std::getenv("EDITOR");
@@ -132,8 +125,14 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 
 }
 
+static bool replxx_last_is_delimiter = false;
+void ReplxxLineReader::setLastIsDelimiter(bool flag)
+{
+    replxx_last_is_delimiter = flag;
+}
+
 ReplxxLineReader::ReplxxLineReader(
-    const Suggest & suggest,
+    Suggest & suggest,
     const String & history_file_path_,
     bool multiline_,
     Patterns extenders_,
@@ -179,14 +178,13 @@ ReplxxLineReader::ReplxxLineReader(
 
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
-        if (auto range = suggest.getCompletions(context, context_size))
-            return Replxx::completions_t(range->first, range->second);
-        return Replxx::completions_t();
+        return suggest.getCompletions(context, context_size);
     };
 
     rx.set_completion_callback(callback);
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
+    rx.set_ignore_case(true);
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
@@ -198,21 +196,11 @@ ReplxxLineReader::ReplxxLineReader(
 
     auto commit_action = [this](char32_t code)
     {
-        std::string_view str = rx.get_state().text();
-
-        /// Always commit line when we see extender at the end. It will start a new prompt.
-        for (const auto * extender : extenders)
-            if (ends_with(str, extender))
-                return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
-
-        /// If we see an delimiter at the end, commit right away.
-        for (const auto * delimiter : delimiters)
-            if (ends_with(str, delimiter))
-                return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
-
         /// If we allow multiline and there is already something in the input, start a newline.
-        if (multiline && !input.empty())
+        /// NOTE: Lexer is only available if we use highlighter.
+        if (highlighter && multiline && !replxx_last_is_delimiter)
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+        replxx_last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
     /// bind C-j to ENTER action.

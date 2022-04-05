@@ -351,8 +351,6 @@ Checks whether the string matches the `pattern` regular expression. A `re2` regu
 
 Returns 0 if it does not match, or 1 if it matches.
 
-Note that the backslash symbol (`\`) is used for escaping in the regular expression. The same symbol is used for escaping in string literals. So in order to escape the symbol in a regular expression, you must write two backslashes (\\) in a string literal.
-
 The regular expression works with the string as if it is a set of bytes. The regular expression can’t contain null bytes.
 For patterns to search for substrings in a string, it is better to use LIKE or ‘position’, since they work much faster.
 

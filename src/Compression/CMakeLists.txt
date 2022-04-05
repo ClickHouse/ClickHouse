@@ -6,7 +6,7 @@ if (ENABLE_FUZZING)
     list(REMOVE_ITEM ${fuzz_compression_sources} CompressionFactoryAdditions.cpp)
 
     add_library(fuzz_compression ${fuzz_compression_headers} ${fuzz_compression_sources})
-    target_link_libraries(fuzz_compression PUBLIC clickhouse_parsers clickhouse_common_io common lz4)
+    target_link_libraries(fuzz_compression PUBLIC clickhouse_parsers clickhouse_common_io common ch_contrib::lz4)
 endif()
 
 if (ENABLE_EXAMPLES)

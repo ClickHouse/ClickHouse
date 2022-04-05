@@ -19,22 +19,22 @@ const auto MAX_FAILED_POLL_ATTEMPTS = 10;
 
 KafkaSource::KafkaSource(
     StorageKafka & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const Names & columns,
     Poco::Logger * log_,
     size_t max_block_size_,
     bool commit_in_suffix_)
-    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns, storage_.getVirtuals(), storage_.getStorageID()))
+    : SourceWithProgress(storage_snapshot_->getSampleBlockForColumns(columns))
     , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , context(context_)
     , column_names(columns)
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
-    , virtual_header(metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
+    , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
+    , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
     , handle_error_mode(storage.getHandleKafkaErrorMode())
 {
 }
