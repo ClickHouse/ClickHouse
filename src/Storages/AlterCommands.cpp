@@ -818,22 +818,29 @@ bool AlterCommand::isCommentAlter() const
 bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
 {
     if (type == MODIFY_TTL)
+    {
+        if (!metadata.table_ttl.definition_ast)
+            return true;
+        /// If TTL had not been changed, do not require mutations
+        if (queryToString(metadata.table_ttl.definition_ast) == queryToString(ttl))
+            return false;
         return true;
+    }
 
     if (!ttl || type != MODIFY_COLUMN)
         return false;
 
-    bool ttl_changed = true;
+    bool column_ttl_changed = true;
     for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
     {
         if (name == column_name && queryToString(*ttl) == queryToString(*ttl_ast))
         {
-            ttl_changed = false;
+            column_ttl_changed = false;
             break;
         }
     }
 
-    return ttl_changed;
+    return column_ttl_changed;
 }
 
 bool AlterCommand::isRemovingProperty() const
