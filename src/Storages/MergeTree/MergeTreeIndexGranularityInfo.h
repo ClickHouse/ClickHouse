@@ -28,7 +28,7 @@ public:
 
     MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_);
 
-    void changeGranularityIfRequired(const DiskPtr & disk, const String & path_to_part);
+    void changeGranularityIfRequired(const DataPartStoragePtr & data_part_storage);
 
     String getMarksFilePath(const String & path_prefix) const
     {
@@ -37,7 +37,7 @@ public:
 
     size_t getMarkSizeInBytes(size_t columns_num = 1) const;
 
-    static std::optional<std::string> getMarksExtensionFromFilesystem(const DiskPtr & disk, const String & path_to_part);
+    static std::optional<std::string> getMarksExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
 
 private:
     MergeTreeDataPartType type;

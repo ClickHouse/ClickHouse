@@ -2273,14 +2273,14 @@ MergeTreeDataPartType MergeTreeData::choosePartTypeOnDisk(size_t bytes_uncompres
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
     MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-    const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
+    const DataPartStoragePtr & data_part_storage, const String & relative_path, const IMergeTreeDataPart * parent_part) const
 {
     if (type == MergeTreeDataPartType::COMPACT)
-        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, volume, relative_path, parent_part);
+        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, data_part_storage, parent_part);
     else if (type == MergeTreeDataPartType::WIDE)
-        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, volume, relative_path, parent_part);
+        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, data_part_storage, parent_part);
     else if (type == MergeTreeDataPartType::IN_MEMORY)
-        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, volume, relative_path, parent_part);
+        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, data_part_storage, parent_part);
     else
         throw Exception("Unknown type of part " + relative_path, ErrorCodes::UNKNOWN_PART_TYPE);
 }
@@ -2298,18 +2298,18 @@ static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
-    const String & name, const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
+    const String & name, const DataPartStoragePtr & data_part_storage, const String & relative_path, const IMergeTreeDataPart * parent_part) const
 {
-    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), volume, relative_path, parent_part);
+    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), data_part_storage, relative_path, parent_part);
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const String & name, const MergeTreePartInfo & part_info,
-    const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
+    const DataPartStoragePtr & data_part_storage, const String & relative_path, const IMergeTreeDataPart * parent_part) const
 {
     MergeTreeDataPartType type;
-    auto full_path = fs::path(relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
-    auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(volume->getDisk(), full_path);
+    // auto full_path = fs::path(relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
+    auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(data_part_storage);
 
     if (mrk_ext)
         type = getPartTypeFromMarkExtension(*mrk_ext);
@@ -2319,7 +2319,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
         type = choosePartTypeOnDisk(0, 0);
     }
 
-    return createPart(name, type, part_info, volume, relative_path, parent_part);
+    return createPart(name, type, part_info, data_part_storage, relative_path, parent_part);
 }
 
 void MergeTreeData::changeSettings(

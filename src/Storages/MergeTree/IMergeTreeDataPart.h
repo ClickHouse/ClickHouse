@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -68,7 +69,7 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const VolumePtr & volume,
+        const DataPartStoragePtr & data_part_storage_,
         const std::optional<String> & relative_path,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
@@ -76,7 +77,7 @@ public:
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
-        const VolumePtr & volume,
+        const DataPartStoragePtr & data_part_storage_,
         const std::optional<String> & relative_path,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
@@ -194,7 +195,7 @@ public:
     /// processed by multiple shards.
     UUID uuid = UUIDHelpers::Nil;
 
-    VolumePtr volume;
+    DataPartStoragePtr data_part_storage;
 
     /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
@@ -338,10 +339,10 @@ public:
     size_t getFileSizeOrZero(const String & file_name) const;
 
     /// Returns path to part dir relatively to disk mount point
-    String getFullRelativePath() const;
+    // String getFullRelativePath() const;
 
     /// Returns full path to part dir
-    String getFullPath() const;
+    // String getFullPath() const;
 
     /// Moves a part to detached/ directory and adds prefix to its name
     void renameToDetached(const String & prefix) const;
