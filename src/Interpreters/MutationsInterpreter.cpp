@@ -1025,7 +1025,7 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     for (size_t i = 0; i < sort_columns_size; ++i)
     {
         if (header.has(sort_columns[i]))
-            sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+            sort_description.emplace_back(sort_columns[i], 1, 1);
         else
             return {};
     }
