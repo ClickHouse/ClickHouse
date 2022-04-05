@@ -1,7 +1,7 @@
-position: 50 
+position: 50
 label: 'Reference Guides'
-collapsible: true 
-collapsed: true 
+collapsible: true
+collapsed: true
 link:
   type: generated-index
   title: Reference Guides
