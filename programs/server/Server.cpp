@@ -358,7 +358,7 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
     return address;
 }
 
-std::vector<std::string> getListenHosts(const Poco::Util::AbstractConfiguration & config)
+Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
     auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
     if (listen_hosts.empty())
@@ -369,13 +369,14 @@ std::vector<std::string> getListenHosts(const Poco::Util::AbstractConfiguration 
     return listen_hosts;
 }
 
-std::vector<std::string> getInterserverListenHosts(const Poco::Util::AbstractConfiguration & config, std::vector<std::string> listen_hosts)
+Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
     auto interserver_listen_hosts = DB::getMultipleValuesFromConfig(config, "", "interserver_listen_host");
-    if (interserver_listen_hosts.empty())
-      return listen_hosts;
-    else
+    if (!interserver_listen_hosts.empty())
       return interserver_listen_hosts;
+
+    /// Use more general restriction in case of emptiness
+    return getListenHosts(config);
 }
 
 bool getListenTry(const Poco::Util::AbstractConfiguration & config)
@@ -987,7 +988,7 @@ if (ThreadFuzzer::instance().isEffective())
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
     const auto listen_hosts = getListenHosts(config());
-    const auto interserver_listen_hosts = getInterserverListenHosts(config(), listen_hosts);
+    const auto interserver_listen_hosts = getInterserverListenHosts(config());
     const auto listen_try = getListenTry(config());
 
     if (config().has("keeper_server"))
@@ -1558,8 +1559,8 @@ if (ThreadFuzzer::instance().isEffective())
 
 void Server::createServers(
     Poco::Util::AbstractConfiguration & config,
-    const std::vector<std::string> & listen_hosts,
-    const std::vector<std::string> & interserver_listen_hosts,
+    const Strings & listen_hosts,
+    const Strings & interserver_listen_hosts,
     bool listen_try,
     Poco::ThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
@@ -1735,6 +1736,7 @@ void Server::createServers(
         });
     }
 
+    /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)
     {
          /// Interserver IO HTTP
@@ -1794,7 +1796,7 @@ void Server::updateServers(
     Poco::Logger * log = &logger();
     /// Gracefully shutdown servers when their port is removed from config
     const auto listen_hosts = getListenHosts(config);
-    const auto interserver_listen_hosts = getInterserverListenHosts(config, listen_hosts);
+    const auto interserver_listen_hosts = getInterserverListenHosts(config);
     const auto listen_try = getListenTry(config);
 
     for (auto & server : servers)
