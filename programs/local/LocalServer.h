@@ -46,7 +46,7 @@ protected:
 
     void processConfig() override;
 
-    void setLogger(const String & logs_level) override;
+    void updateLoggerLevel(const String & logs_level) override;
 
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
