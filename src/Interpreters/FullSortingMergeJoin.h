@@ -9,14 +9,14 @@ namespace DB
 class FullSortingMergeJoin : public IJoin
 {
 public:
-    explicit FullSortingMergeJoin(TableJoin & table_join_, const Block & right_sample_block_)
+    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
     {
         LOG_TRACE(&Poco::Logger::get("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
 
-    const TableJoin & getTableJoin() const override { return table_join; }
+    const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addJoinedBlock(const Block & /* block */, bool /* check_limits */) override { __builtin_unreachable(); }
 
@@ -48,7 +48,7 @@ public:
     virtual JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
 
 private:
-    TableJoin & table_join;
+    std::shared_ptr<TableJoin> table_join;
     Block right_sample_block;
     Block totals;
 };

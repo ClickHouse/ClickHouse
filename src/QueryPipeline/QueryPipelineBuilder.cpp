@@ -331,7 +331,7 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines2(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
-    const TableJoin & table_join,
+    JoinPtr join,
     const Block & out_header,
     size_t max_block_size,
     Processors * collected_processors)
@@ -349,7 +349,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines2(
 
     Blocks inputs = {left->getHeader(), right->getHeader()};
 
-    auto joining = std::make_shared<MergeJoinTransform>(table_join, inputs, out_header);
+    auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header);
 
     auto result = mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     return result;
