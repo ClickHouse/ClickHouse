@@ -779,11 +779,16 @@ void registerStorageKafka(StorageFactory & factory)
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
-        auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
+        auto max_consumers = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
 
-        if (num_consumers > physical_cpu_cores)
+        if (num_consumers > max_consumers)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be bigger than {}", physical_cpu_cores);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The number of consumers can not be bigger than {}. "
+                            "A single consumer can read any number of partitions. Extra consumers are relatively expensive, "
+                            "and using a lot of them can lead to high memory and CPU usage. To achieve better performance "
+                            "of getting data from Kafka, consider using a setting kafka_thread_per_consumer=1, "
+                            "and ensure you have enough threads in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
+                            "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance", max_consumers);
         }
         else if (num_consumers < 1)
         {
