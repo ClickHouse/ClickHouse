@@ -7,6 +7,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTInterpolateElement.h>
 
 namespace DB
 {
@@ -121,6 +122,29 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
             data.addColumnIdentifier(*identifier);
         else
             data.addColumnAliasIfAny(*node);
+    }
+
+    if (auto interpolate_list = select.interpolate())
+    {
+        auto find_columns = [&data](IAST * function)
+        {
+            auto fImpl = [&data](IAST * fn, auto fi)
+            {
+                if (auto ident = fn->as<ASTIdentifier>())
+                {
+                    data.addColumnIdentifier(*ident);
+                    return;
+                }
+                if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())
+                    for (auto ch : fn->children)
+                        fi(ch.get(), fi);
+                return;
+            };
+            fImpl(function, fImpl);
+        };
+
+        for (const auto & interpolate : interpolate_list->children)
+            find_columns(interpolate->as<ASTInterpolateElement>()->expr.get());
     }
 
     if (const auto & with = select.with())

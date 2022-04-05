@@ -286,12 +286,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {
     checkStackSize();
 
-    for (const auto & column : query_ptr->as<ASTSelectQuery &>().select()->children)
-    {
-        std::string alias = column->tryGetAlias();
-        original_select_set.insert(alias.empty() ? column->getColumnName() : alias);
-    }
-
     query_info.ignore_projections = options.ignore_projections;
     query_info.is_projection_query = options.is_projection_query;
 
@@ -841,7 +835,7 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
 }
 
 static InterpolateDescriptionPtr getInterpolateDescription(
-    const ASTSelectQuery & query, Block block, const Aliases & aliases, const NameSet & original_select_set, ContextPtr context)
+    const ASTSelectQuery & query, const Block & source_block, const Block & result_block, const Aliases & aliases, ContextPtr context)
 {
     InterpolateDescriptionPtr interpolate_descr;
     if (query.interpolate())
@@ -849,26 +843,41 @@ static InterpolateDescriptionPtr getInterpolateDescription(
         std::unordered_set<std::string> col_set;
         ColumnsWithTypeAndName columns;
         ASTPtr exprs = std::make_shared<ASTExpressionList>();
-        for (const auto & elem : query.interpolate()->children)
-        {
-            const auto & interpolate = elem->as<ASTInterpolateElement &>();
-            ColumnWithTypeAndName *block_column = block.findByName(interpolate.column);
-            if (!block_column)
-            {
-                if (original_select_set.count(interpolate.column)) /// column was removed
-                    continue;
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                    "Missing column '{}' as an INTERPOLATE expression target", interpolate.column);
-            }
-            if (!col_set.insert(block_column->name).second)
-                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Duplicate INTERPOLATE column '{}'", interpolate.column);
 
-            columns.emplace_back(block_column->type, block_column->name);
-            exprs->children.emplace_back(interpolate.expr->clone());
+        if (query.interpolate()->children.empty())
+        {
+            std::unordered_map<String, DataTypePtr> column_names;
+            for (const auto & column : result_block.getColumnsWithTypeAndName())
+                column_names[column.name] = column.type;
+            for (const auto & elem : query.orderBy()->children)
+                if (elem->as<ASTOrderByElement>()->with_fill)
+                    column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+            for (const auto & [name, type] : column_names)
+            {
+                columns.emplace_back(type, name);
+                exprs->children.emplace_back(std::make_shared<ASTIdentifier>(name));
+            }
+        }
+        else
+        {
+            for (const auto & elem : query.interpolate()->children)
+            {
+                const auto & interpolate = elem->as<ASTInterpolateElement &>();
+                const ColumnWithTypeAndName *block_column = source_block.findByName(interpolate.column);
+                if (!block_column)
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Missing column '{}' as an INTERPOLATE expression target", interpolate.column);
+
+                if (!col_set.insert(block_column->name).second)
+                    throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                        "Duplicate INTERPOLATE column '{}'", interpolate.column);
+
+                columns.emplace_back(block_column->type, block_column->name);
+                exprs->children.emplace_back(interpolate.expr->clone());
+            }
         }
 
-        auto syntax_result = TreeRewriter(context).analyze(exprs, block.getNamesAndTypesList());
+        auto syntax_result = TreeRewriter(context).analyze(exprs, source_block.getNamesAndTypesList());
         ExpressionAnalyzer analyzer(exprs, syntax_result, context);
         ActionsDAGPtr actions = analyzer.getActionsDAG(true);
         ActionsDAGPtr conv_dag = ActionsDAG::makeConvertingActions(actions->getResultColumns(),
@@ -2545,7 +2554,7 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
             return;
 
         InterpolateDescriptionPtr interpolate_descr =
-            getInterpolateDescription(query, result_header, syntax_analyzer_result->aliases, original_select_set, context);
+            getInterpolateDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
         auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr), interpolate_descr);
         query_plan.addStep(std::move(filling_step));
     }

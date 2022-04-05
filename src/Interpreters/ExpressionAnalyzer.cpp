@@ -9,6 +9,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/DumpASTNode.h>
+#include <Parsers/ASTInterpolateElement.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
@@ -1340,6 +1341,29 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
         if (ast->with_fill)
             with_fill = true;
+    }
+
+    if (auto interpolate_list = select_query->interpolate())
+    {
+        auto find_columns = [&step](IAST * function)
+        {
+            auto fImpl = [&step](IAST * fn, auto fi)
+            {
+                if (auto ident = fn->as<ASTIdentifier>())
+                {
+                    step.addRequiredOutput(ident->getColumnName());
+                    return;
+                }
+                if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())
+                    for (auto ch : fn->children)
+                        fi(ch.get(), fi);
+                return;
+            };
+            fImpl(function, fImpl);
+        };
+
+        for (const auto & interpolate : interpolate_list->children)
+            find_columns(interpolate->as<ASTInterpolateElement>()->expr.get());
     }
 
     if (optimize_read_in_order)

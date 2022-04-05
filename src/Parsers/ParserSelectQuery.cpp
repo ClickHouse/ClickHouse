@@ -261,28 +261,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                         return false;
                 } else
                     interpolate_expression_list = std::make_shared<ASTExpressionList>();
-
-                if (interpolate_expression_list->children.empty())
-                {
-                    std::unordered_map<std::string, ASTPtr> columns;
-                    for (const auto & elem : select_expression_list->children)
-                    {
-                        std::string alias = elem->tryGetAlias();
-                        columns[alias.empty() ? elem->getColumnName() : alias] = elem;
-                    }
-
-                    for (const auto & elem : order_expression_list->children)
-                        if (elem->as<ASTOrderByElement>()->with_fill)
-                            columns.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
-
-                    for (const auto & [column, ast] : columns)
-                    {
-                        auto elem = std::make_shared<ASTInterpolateElement>();
-                        elem->column = column;
-                        elem->expr = std::make_shared<ASTIdentifier>(column);
-                        interpolate_expression_list->children.push_back(elem);
-                    }
-                }
             }
         }
     }
