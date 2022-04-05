@@ -37,10 +37,11 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr) con
 {
     size_t size;
     readVarUInt(size, istr);
-    field = Array(size);
+    field = Array();
     Array & arr = get<Array &>(field);
+    arr.reserve(size);
     for (size_t i = 0; i < size; ++i)
-        nested->deserializeBinary(arr[i], istr);
+        nested->deserializeBinary(arr.emplace_back(), istr);
 }
 
 

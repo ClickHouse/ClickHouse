@@ -320,25 +320,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
     if (blocks.size() == 1)
         return blocks[0];
 
-    Block out = blocks[0].cloneEmpty();
-
-    { /// Concatenate blocks
-        MutableColumns columns = out.mutateColumns();
-
-        for (size_t i = 0; i < columns.size(); ++i)
-        {
-            columns[i]->reserve(num_rows);
-            for (const auto & block : blocks)
-            {
-                const auto & tmp_column = *block.getByPosition(i).column;
-                columns[i]->insertRangeFrom(tmp_column, 0, block.rows());
-            }
-        }
-
-        out.setColumns(std::move(columns));
-    }
-
-    return out;
+    return concatenateBlocks(blocks);
 }
 
 }

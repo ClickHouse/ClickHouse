@@ -169,7 +169,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     processors.push_back(std::move(sink));
     processors.push_back(std::move(exception_handling));
 
-    auto executor = std::make_shared<PipelineExecutor>(processors);
+    auto executor = std::make_shared<PipelineExecutor>(processors, getContext()->getProcessListElement());
     executor->execute(/*num_threads = */ 1);
 
     /// We are ready to receive the next file, for this we clear all the information received

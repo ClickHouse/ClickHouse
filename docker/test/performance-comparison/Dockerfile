@@ -1,5 +1,5 @@
 # docker build -t clickhouse/performance-comparison .
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"

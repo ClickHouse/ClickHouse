@@ -13,6 +13,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 
 #include <avro/DataFile.hh>
 #include <avro/Decoder.hh>
@@ -60,7 +61,7 @@ private:
             , target_column_idx(target_column_idx_)
             , deserialize_fn(deserialize_fn_) {}
 
-        Action(SkipFn skip_fn_)
+        explicit Action(SkipFn skip_fn_)
             : type(Skip)
             , skip_fn(skip_fn_) {}
 
@@ -114,7 +115,7 @@ private:
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
 };
 
-class AvroRowInputFormat : public IRowInputFormat
+class AvroRowInputFormat final : public IRowInputFormat
 {
 public:
     AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
@@ -136,7 +137,7 @@ private:
 /// 2. SchemaRegistry: schema cache (schema_id -> schema)
 /// 3. AvroConfluentRowInputFormat: deserializer cache (schema_id -> AvroDeserializer)
 /// This is needed because KafkaStorage creates a new instance of InputFormat per a batch of messages
-class AvroConfluentRowInputFormat : public IRowInputFormat
+class AvroConfluentRowInputFormat final : public IRowInputFormat
 {
 public:
     AvroConfluentRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
@@ -158,6 +159,20 @@ private:
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
     FormatSettings format_settings;
+};
+
+class AvroSchemaReader : public ISchemaReader
+{
+public:
+    AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);
+
+    NamesAndTypesList readSchema() override;
+
+private:
+    DataTypePtr avroNodeToDataType(avro::NodePtr node);
+
+    bool confluent;
+    const FormatSettings format_settings;
 };
 
 }

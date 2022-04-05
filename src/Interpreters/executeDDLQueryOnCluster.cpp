@@ -18,6 +18,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/Pipe.h>
 #include <filesystem>
+#include <base/sort.h>
 
 
 namespace fs = std::filesystem;
@@ -124,7 +125,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
                     use_local_default_database = true;
             }
         }
-        std::sort(shard_default_databases.begin(), shard_default_databases.end());
+        ::sort(shard_default_databases.begin(), shard_default_databases.end());
         shard_default_databases.erase(std::unique(shard_default_databases.begin(), shard_default_databases.end()), shard_default_databases.end());
         assert(use_local_default_database || !shard_default_databases.empty());
 
@@ -319,8 +320,9 @@ Chunk DDLQueryStatusSource::generate()
             if (throw_on_timeout)
             {
                 if (!first_exception)
-                    first_exception = std::make_unique<Exception>(ErrorCodes::TIMEOUT_EXCEEDED, msg_format,
-                        node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+                    first_exception = std::make_unique<Exception>(
+                        fmt::format(msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts),
+                        ErrorCodes::TIMEOUT_EXCEEDED);
                 return {};
             }
 
@@ -357,9 +359,12 @@ Chunk DDLQueryStatusSource::generate()
             /// Paradoxically, this exception will be throw even in case of "never_throw" mode.
 
             if (!first_exception)
-                first_exception = std::make_unique<Exception>(ErrorCodes::UNFINISHED,
-                    "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
-                    " since it was finished (or its lifetime is expired)", node_path);
+                first_exception = std::make_unique<Exception>(
+                    fmt::format(
+                        "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
+                        " since it was finished (or its lifetime is expired)",
+                        node_path),
+                    ErrorCodes::UNFINISHED);
             return {};
         }
 
@@ -385,7 +390,8 @@ Chunk DDLQueryStatusSource::generate()
             if (status.code != 0 && !first_exception
                 && context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW)
             {
-                first_exception = std::make_unique<Exception>(status.code, "There was an error on [{}:{}]: {}", host, port, status.message);
+                first_exception = std::make_unique<Exception>(
+                    fmt::format("There was an error on [{}:{}]: {}", host, port, status.message), status.code);
             }
 
             ++num_hosts_finished;

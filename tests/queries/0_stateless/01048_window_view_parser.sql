@@ -5,8 +5,10 @@ DROP DATABASE IF EXISTS test_01048;
 CREATE DATABASE test_01048 ENGINE=Ordinary;
 
 DROP TABLE IF EXISTS test_01048.mt;
+DROP TABLE IF EXISTS test_01048.mt_2;
 
 CREATE TABLE test_01048.mt(a Int32, b Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
+CREATE TABLE test_01048.mt_2(a Int32, b Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
 
 SELECT '---TUMBLE---';
 SELECT '||---WINDOW COLUMN NAME---';
@@ -42,6 +44,16 @@ DROP TABLE IF EXISTS test_01048.wv;
 CREATE WINDOW VIEW test_01048.wv AS SELECT count(a) AS count, tumble(timestamp, INTERVAL '1' SECOND, 'Asia/Shanghai') AS wid FROM test_01048.mt GROUP BY wid;
 SHOW CREATE TABLE test_01048.`.inner.wv`;
 
+SELECT '||---DATA COLUMN ALIAS---';
+DROP TABLE IF EXISTS test_01048.wv;
+CREATE WINDOW VIEW test_01048.wv AS SELECT count(a) AS count, b as id FROM test_01048.mt GROUP BY id, tumble(timestamp, INTERVAL '1' SECOND);
+SHOW CREATE TABLE test_01048.`.inner.wv`;
+
+SELECT '||---JOIN---';
+DROP TABLE IF EXISTS test_01048.wv;
+CREATE WINDOW VIEW test_01048.wv AS SELECT count(test_01048.mt.a), count(test_01048.mt_2.b), wid FROM test_01048.mt JOIN test_01048.mt_2 ON test_01048.mt.timestamp = test_01048.mt_2.timestamp GROUP BY tumble(test_01048.mt.timestamp, INTERVAL '1' SECOND) AS wid;
+SHOW CREATE TABLE test_01048.`.inner.wv`;
+
 
 SELECT '---HOP---';
 SELECT '||---WINDOW COLUMN NAME---';
@@ -68,15 +80,25 @@ DROP TABLE IF EXISTS test_01048.wv;
 CREATE WINDOW VIEW test_01048.wv AS SELECT count(a) AS count FROM test_01048.mt GROUP BY plus(a, b) as _type, hop(timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid;
 SHOW CREATE TABLE test_01048.`.inner.wv`;
 
+DROP TABLE IF EXISTS test_01048.wv;
+CREATE WINDOW VIEW test_01048.wv AS SELECT count(a) AS count FROM test_01048.mt GROUP BY hop(timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid, plus(a, b);
+SHOW CREATE TABLE test_01048.`.inner.wv`;
+
 SELECT '||---TimeZone---';
 DROP TABLE IF EXISTS test_01048.wv;
 CREATE WINDOW VIEW test_01048.wv AS SELECT count(a) AS count, hopEnd(wid) as wend FROM test_01048.mt GROUP BY hop(timestamp, INTERVAL 1 SECOND, INTERVAL 3 SECOND, 'Asia/Shanghai') as wid;
 SHOW CREATE TABLE test_01048.`.inner.wv`;
 
-
+SELECT '||---DATA COLUMN ALIAS---';
 DROP TABLE IF EXISTS test_01048.wv;
-CREATE WINDOW VIEW test_01048.wv AS SELECT count(a) AS count FROM test_01048.mt GROUP BY hop(timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid, plus(a, b);
+CREATE WINDOW VIEW test_01048.wv AS SELECT count(a) AS count, b as id FROM test_01048.mt GROUP BY id, hop(timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND);
+SHOW CREATE TABLE test_01048.`.inner.wv`;
+
+SELECT '||---JOIN---';
+DROP TABLE IF EXISTS test_01048.wv;
+CREATE WINDOW VIEW test_01048.wv AS SELECT count(test_01048.mt.a), count(test_01048.mt_2.b), wid FROM test_01048.mt JOIN test_01048.mt_2 ON test_01048.mt.timestamp = test_01048.mt_2.timestamp GROUP BY hop(test_01048.mt.timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid;
 SHOW CREATE TABLE test_01048.`.inner.wv`;
 
 DROP TABLE test_01048.wv;
 DROP TABLE test_01048.mt;
+DROP TABLE test_01048.mt_2;

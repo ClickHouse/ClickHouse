@@ -8,7 +8,7 @@ add_executable (compressed_buffer_fuzzer compressed_buffer_fuzzer.cpp)
 target_link_libraries (compressed_buffer_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})
 
 add_executable (lz4_decompress_fuzzer lz4_decompress_fuzzer.cpp)
-target_link_libraries (lz4_decompress_fuzzer PUBLIC dbms lz4 ${LIB_FUZZING_ENGINE})
+target_link_libraries (lz4_decompress_fuzzer PUBLIC dbms ch_contrib::lz4 ${LIB_FUZZING_ENGINE})
 
 add_executable (delta_decompress_fuzzer delta_decompress_fuzzer.cpp)
 target_link_libraries (delta_decompress_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})

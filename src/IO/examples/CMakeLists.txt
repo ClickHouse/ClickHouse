@@ -65,10 +65,17 @@ add_executable (parse_date_time_best_effort parse_date_time_best_effort.cpp)
 target_link_libraries (parse_date_time_best_effort PRIVATE clickhouse_common_io)
 
 add_executable (zlib_ng_bug zlib_ng_bug.cpp)
-target_link_libraries (zlib_ng_bug PRIVATE ${ZLIB_LIBRARIES})
+target_link_libraries (zlib_ng_bug PRIVATE ch_contrib::zlib)
 
 add_executable (dragonbox_test dragonbox_test.cpp)
-target_link_libraries (dragonbox_test PRIVATE dragonbox_to_chars)
+target_link_libraries (dragonbox_test PRIVATE ch_contrib::dragonbox_to_chars)
 
 add_executable (zstd_buffers zstd_buffers.cpp)
 target_link_libraries (zstd_buffers PRIVATE clickhouse_common_io)
+
+add_executable (snappy_read_buffer snappy_read_buffer.cpp)
+target_link_libraries (snappy_read_buffer PRIVATE clickhouse_common_io)
+
+add_executable (hadoop_snappy_read_buffer hadoop_snappy_read_buffer.cpp)
+target_link_libraries (hadoop_snappy_read_buffer PRIVATE clickhouse_common_io)
+

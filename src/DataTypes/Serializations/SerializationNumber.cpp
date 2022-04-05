@@ -8,7 +8,6 @@
 #include <Common/assert_cast.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <Core/Field.h>
 
 namespace DB
@@ -95,7 +94,7 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
 {
     FieldType x;
     readCSV(x, istr);

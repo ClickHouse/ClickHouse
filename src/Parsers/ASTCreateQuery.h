@@ -50,6 +50,12 @@ public:
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+    bool empty() const
+    {
+        return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
+            && (!projections || projections->children.empty());
+    }
 };
 
 
@@ -67,7 +73,6 @@ public:
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
 
     ASTColumns * columns_list = nullptr;
-    ASTExpressionList * tables = nullptr;
 
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
     UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
@@ -113,7 +118,7 @@ public:
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
-    const char * getQueryKindString() const override { return "Create"; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

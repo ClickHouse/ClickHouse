@@ -21,6 +21,7 @@ void registerFunctionReplaceAll(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionReplaceAll>();
     factory.registerAlias("replace", NameReplaceAll::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("REGEXP_REPLACE", NameReplaceAll::name, FunctionFactory::CaseInsensitive);
 }
 
 }

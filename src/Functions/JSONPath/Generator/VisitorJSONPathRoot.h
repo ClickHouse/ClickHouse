@@ -10,7 +10,7 @@ template <typename JSONParser>
 class VisitorJSONPathRoot : public IVisitor<JSONParser>
 {
 public:
-    VisitorJSONPathRoot(ASTPtr) { }
+    explicit VisitorJSONPathRoot(ASTPtr) { }
 
     const char * getName() const override { return "VisitorJSONPathRoot"; }
 

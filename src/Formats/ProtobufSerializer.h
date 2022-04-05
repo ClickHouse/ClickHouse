@@ -4,6 +4,7 @@
 
 #if USE_PROTOBUF
 #   include <Columns/IColumn.h>
+#include <Core/NamesAndTypes.h>
 
 
 namespace google::protobuf { class Descriptor; }
@@ -25,6 +26,7 @@ public:
 
     virtual void setColumns(const ColumnPtr * columns, size_t num_columns) = 0;
     virtual void writeRow(size_t row_num) = 0;
+    virtual void finalizeWrite() {}
 
     virtual void setColumns(const MutableColumnPtr * columns, size_t num_columns) = 0;
     virtual void readRow(size_t row_num) = 0;
@@ -38,6 +40,7 @@ public:
         std::vector<size_t> & missing_column_indices,
         const google::protobuf::Descriptor & message_descriptor,
         bool with_length_delimiter,
+        bool with_envelope,
         ProtobufReader & reader);
 
     static std::unique_ptr<ProtobufSerializer> create(
@@ -45,8 +48,11 @@ public:
         const DataTypes & data_types,
         const google::protobuf::Descriptor & message_descriptor,
         bool with_length_delimiter,
+        bool with_envelope,
         ProtobufWriter & writer);
 };
+
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor);
 
 }
 #endif

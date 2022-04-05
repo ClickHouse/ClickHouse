@@ -19,14 +19,10 @@
 namespace DB
 {
 
-/** A stream, that get child process and sends data using tasks in background threads.
-  * For each send data task background thread is created. Send data task must send data to process input pipes.
-  * ShellCommandPoolSource receives data from process stdout.
-  *
-  * If process_pool is passed in constructor then after source is destroyed process is returned to pool.
-  */
+class ShellCommandHolder;
+using ShellCommandHolderPtr = std::unique_ptr<ShellCommandHolder>;
 
-using ProcessPool = BorrowedObjectPool<std::unique_ptr<ShellCommand>>;
+using ProcessPool = BorrowedObjectPool<ShellCommandHolderPtr>;
 
 struct ShellCommandSourceConfiguration
 {
@@ -37,148 +33,92 @@ struct ShellCommandSourceConfiguration
     /// Valid only if read_fixed_number_of_rows = true
     size_t number_of_rows_to_read = 0;
     /// Max block size
-    size_t max_block_size = DBMS_DEFAULT_BUFFER_SIZE;
+    size_t max_block_size = DEFAULT_BLOCK_SIZE;
 };
 
-class ShellCommandSource final : public SourceWithProgress
+class ShellCommandSourceCoordinator
 {
 public:
 
-    using SendDataTask = std::function<void(void)>;
+    struct Configuration
+    {
 
-    ShellCommandSource(
+        /// Script output format
+        std::string format;
+
+        /// Command termination timeout in seconds
+        size_t command_termination_timeout_seconds = 10;
+
+        /// Timeout for reading data from command stdout
+        size_t command_read_timeout_milliseconds = 10000;
+
+        /// Timeout for writing data to command stdin
+        size_t command_write_timeout_milliseconds = 10000;
+
+        /// Pool size valid only if executable_pool = true
+        size_t pool_size = 16;
+
+        /// Max command execution time in milliseconds. Valid only if executable_pool = true
+        size_t max_command_execution_time_seconds = 10;
+
+        /// Should pool of processes be created.
+        bool is_executable_pool = false;
+
+        /// Send number_of_rows\n before sending chunk to process.
+        bool send_chunk_header = false;
+
+        /// Execute script direct or with /bin/bash.
+        bool execute_direct = true;
+
+    };
+
+    explicit ShellCommandSourceCoordinator(const Configuration & configuration_);
+
+    const Configuration & getConfiguration() const
+    {
+        return configuration;
+    }
+
+    Pipe createPipe(
+        const std::string & command,
+        const std::vector<std::string> & arguments,
+        std::vector<Pipe> && input_pipes,
+        Block sample_block,
         ContextPtr context,
-        const std::string & format,
-        const Block & sample_block,
-        std::unique_ptr<ShellCommand> && command_,
-        std::vector<SendDataTask> && send_data_tasks = {},
-        const ShellCommandSourceConfiguration & configuration_ = {},
-        std::shared_ptr<ProcessPool> process_pool_ = nullptr)
-        : SourceWithProgress(sample_block)
-        , command(std::move(command_))
-        , configuration(configuration_)
-        , process_pool(process_pool_)
+        const ShellCommandSourceConfiguration & source_configuration = {});
+
+    Pipe createPipe(
+        const std::string & command,
+        std::vector<Pipe> && input_pipes,
+        Block sample_block,
+        ContextPtr context,
+        const ShellCommandSourceConfiguration & source_configuration = {})
     {
-        for (auto && send_data_task : send_data_tasks)
-        {
-            send_data_threads.emplace_back([task = std::move(send_data_task), this]()
-            {
-                try
-                {
-                    task();
-                }
-                catch (...)
-                {
-                    std::lock_guard<std::mutex> lock(send_data_lock);
-                    exception_during_send_data = std::current_exception();
-                }
-            });
-        }
-
-        size_t max_block_size = configuration.max_block_size;
-
-        if (configuration.read_fixed_number_of_rows)
-        {
-            /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-              * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-              */
-            auto context_for_reading = Context::createCopy(context);
-            context_for_reading->setSetting("input_format_parallel_parsing", false);
-            context = context_for_reading;
-
-            if (configuration.read_number_of_rows_from_process_output)
-            {
-                readText(configuration.number_of_rows_to_read, command->out);
-                char dummy;
-                readChar(dummy, command->out);
-            }
-
-            max_block_size = configuration.number_of_rows_to_read;
-        }
-
-        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, command->out, sample_block, max_block_size)));
-        executor = std::make_unique<PullingPipelineExecutor>(pipeline);
+        return createPipe(command, {}, std::move(input_pipes), std::move(sample_block), std::move(context), source_configuration);
     }
 
-    ~ShellCommandSource() override
+    Pipe createPipe(
+        const std::string & command,
+        const std::vector<std::string> & arguments,
+        Block sample_block,
+        ContextPtr context)
     {
-        for (auto & thread : send_data_threads)
-            if (thread.joinable())
-                thread.join();
-
-        if (command && process_pool)
-            process_pool->returnObject(std::move(command));
+        return createPipe(command, arguments, {}, std::move(sample_block), std::move(context), {});
     }
 
-protected:
-
-    Chunk generate() override
+    Pipe createPipe(
+        const std::string & command,
+        Block sample_block,
+        ContextPtr context)
     {
-        rethrowExceptionDuringSendDataIfNeeded();
-
-        if (configuration.read_fixed_number_of_rows && configuration.number_of_rows_to_read == current_read_rows)
-            return {};
-
-        Chunk chunk;
-
-        try
-        {
-            if (!executor->pull(chunk))
-                return {};
-
-            current_read_rows += chunk.getNumRows();
-        }
-        catch (...)
-        {
-            command = nullptr;
-            throw;
-        }
-
-        return chunk;
+        return createPipe(command, {}, {}, std::move(sample_block), std::move(context), {});
     }
-
-    Status prepare() override
-    {
-        auto status = SourceWithProgress::prepare();
-
-        if (status == Status::Finished)
-        {
-            for (auto & thread : send_data_threads)
-                if (thread.joinable())
-                    thread.join();
-
-            rethrowExceptionDuringSendDataIfNeeded();
-        }
-
-        return status;
-    }
-
-    String getName() const override { return "ShellCommandSource"; }
 
 private:
 
-    void rethrowExceptionDuringSendDataIfNeeded()
-    {
-        std::lock_guard<std::mutex> lock(send_data_lock);
-        if (exception_during_send_data)
-        {
-            command = nullptr;
-            std::rethrow_exception(exception_during_send_data);
-        }
-    }
+    Configuration configuration;
 
-    std::unique_ptr<ShellCommand> command;
-    ShellCommandSourceConfiguration configuration;
-
-    size_t current_read_rows = 0;
-
-    std::shared_ptr<ProcessPool> process_pool;
-
-    QueryPipeline pipeline;
-    std::unique_ptr<PullingPipelineExecutor> executor;
-
-    std::vector<ThreadFromGlobalPool> send_data_threads;
-    std::mutex send_data_lock;
-    std::exception_ptr exception_during_send_data;
+    std::shared_ptr<ProcessPool> process_pool = nullptr;
 };
+
 }

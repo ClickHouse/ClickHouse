@@ -7,13 +7,7 @@
 
 #include "config_functions.h"
 #include <Common/config.h>
-
-#if USE_RE2_ST
-#    include <re2_st/re2.h>
-#else
-#    include <re2/re2.h>
-#    define re2_st re2
-#endif
+#include <re2_st/re2.h>
 
 
 namespace DB
@@ -39,8 +33,8 @@ struct ReplaceRegexpImpl
         /// Otherwise - paste this string verbatim.
         std::string literal;
 
-        Instruction(int substitution_num_) : substitution_num(substitution_num_) {}
-        Instruction(std::string literal_) : literal(std::move(literal_)) {}
+        Instruction(int substitution_num_) : substitution_num(substitution_num_) {} /// NOLINT
+        Instruction(std::string literal_) : literal(std::move(literal_)) {} /// NOLINT
     };
 
     using Instructions = std::vector<Instruction>;
@@ -143,8 +137,14 @@ struct ReplaceRegexpImpl
 
                 if (replace_one)
                     can_finish_current_string = true;
-                else if (match.length() == 0)
-                    ++match_pos; /// Step one character to avoid infinite loop.
+
+                if (match.length() == 0)
+                {
+                    /// Step one character to avoid infinite loop
+                    ++match_pos;
+                    if (match_pos >= static_cast<size_t>(input.length()))
+                        can_finish_current_string = true;
+                }
             }
             else
                 can_finish_current_string = true;

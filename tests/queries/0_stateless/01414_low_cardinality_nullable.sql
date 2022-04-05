@@ -19,7 +19,7 @@ CREATE TABLE lc_nullable (
 
     str Array(LowCardinality(Nullable(String))),
     fixed_string Array(LowCardinality(Nullable(FixedString(5))))
-) ENGINE = MergeTree() ORDER BY order_key;
+) ENGINE = MergeTree() ORDER BY order_key SETTINGS allow_nullable_key = 1;
 
 INSERT INTO lc_nullable SELECT
     groupArray(number) AS order_key,

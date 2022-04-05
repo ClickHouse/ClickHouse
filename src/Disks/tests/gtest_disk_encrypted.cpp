@@ -6,7 +6,7 @@
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/createReadBufferFromFileBase.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Poco/TemporaryFile.h>
 #include <boost/algorithm/string/join.hpp>
 
@@ -57,7 +57,7 @@ protected:
 
     String getFileContents(const String & file_name)
     {
-        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* size= */ {});
+        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {}, /* file_size= */ {});
         String str;
         readStringUntilEOF(str, *buf);
         return str;

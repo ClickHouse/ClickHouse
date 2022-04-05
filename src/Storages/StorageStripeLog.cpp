@@ -35,9 +35,10 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 
-#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
+#include <Backups/IRestoreTask.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <base/insertAtEnd.h>
@@ -63,14 +64,13 @@ class StripeLogSource final : public SourceWithProgress
 {
 public:
     static Block getHeader(
-        const StorageStripeLog & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const Names & column_names,
         IndexForNativeFormat::Blocks::const_iterator index_begin,
         IndexForNativeFormat::Blocks::const_iterator index_end)
     {
         if (index_begin == index_end)
-            return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
+            return storage_snapshot->getSampleBlockForColumns(column_names);
 
         /// TODO: check if possible to always return storage.getSampleBlock()
 
@@ -87,16 +87,16 @@ public:
 
     StripeLogSource(
         const StorageStripeLog & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         const Names & column_names,
         ReadSettings read_settings_,
         std::shared_ptr<const IndexForNativeFormat> indices_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_,
         size_t file_size_)
-        : SourceWithProgress(getHeader(storage_, metadata_snapshot_, column_names, index_begin_, index_end_))
+        : SourceWithProgress(getHeader(storage_snapshot_, column_names, index_begin_, index_end_))
         , storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(storage_snapshot_)
         , read_settings(std::move(read_settings_))
         , indices(indices_)
         , index_begin(index_begin_)
@@ -131,7 +131,7 @@ protected:
 
 private:
     const StorageStripeLog & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     ReadSettings read_settings;
 
     std::shared_ptr<const IndexForNativeFormat> indices;
@@ -343,14 +343,14 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 
 Pipe StorageStripeLog::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     auto lock_timeout = getLockTimeout(context);
     loadIndices(lock_timeout);
@@ -361,7 +361,7 @@ Pipe StorageStripeLog::read(
 
     size_t data_file_size = file_checker.getFileSize(data_file_path);
     if (!data_file_size)
-        return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
 
     auto indices_for_selected_columns
         = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{column_names.begin(), column_names.end()}));
@@ -382,7 +382,7 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            *this, metadata_snapshot, column_names, read_settings, indices_for_selected_columns, begin, end, data_file_size));
+            *this, storage_snapshot, column_names, read_settings, indices_for_selected_columns, begin, end, data_file_size));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -491,7 +491,7 @@ void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for wri
 }
 
 
-BackupEntries StorageStripeLog::backup(const ASTs & partitions, ContextPtr context)
+BackupEntries StorageStripeLog::backupData(ContextPtr context, const ASTs & partitions)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
@@ -516,24 +516,24 @@ BackupEntries StorageStripeLog::backup(const ASTs & partitions, ContextPtr conte
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String data_file_name = fileName(data_file_path);
-        String temp_file_path = temp_dir + "/" + data_file_name;
-        disk->copy(data_file_path, disk, temp_file_path);
+        String hardlink_file_path = temp_dir + "/" + data_file_name;
+        disk->createHardLink(data_file_path, hardlink_file_path);
         backup_entries.emplace_back(
             data_file_name,
-            std::make_unique<BackupEntryFromImmutableFile>(
-                disk, temp_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
+            std::make_unique<BackupEntryFromAppendOnlyFile>(
+                disk, hardlink_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// index.mrk
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String index_file_name = fileName(index_file_path);
-        String temp_file_path = temp_dir + "/" + index_file_name;
-        disk->copy(index_file_path, disk, temp_file_path);
+        String hardlink_file_path = temp_dir + "/" + index_file_name;
+        disk->createHardLink(index_file_path, hardlink_file_path);
         backup_entries.emplace_back(
             index_file_name,
-            std::make_unique<BackupEntryFromImmutableFile>(
-                disk, temp_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
+            std::make_unique<BackupEntryFromAppendOnlyFile>(
+                disk, hardlink_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// sizes.json
@@ -553,37 +553,51 @@ BackupEntries StorageStripeLog::backup(const ASTs & partitions, ContextPtr conte
     return backup_entries;
 }
 
-RestoreDataTasks StorageStripeLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+class StripeLogRestoreTask : public IRestoreTask
 {
-    if (!partitions.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+    using WriteLock = StorageStripeLog::WriteLock;
 
-    auto restore_task = [this, backup, data_path_in_backup, context]()
+public:
+    StripeLogRestoreTask(
+        const std::shared_ptr<StorageStripeLog> storage_,
+        const BackupPtr & backup_,
+        const String & data_path_in_backup_,
+        ContextMutablePtr context_)
+        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
     {
-        WriteLock lock{rwlock, getLockTimeout(context)};
+    }
+
+    RestoreTasks run() override
+    {
+        WriteLock lock{storage->rwlock, getLockTimeout(context)};
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
+        auto & file_checker = storage->file_checker;
+
         /// Load the indices if not loaded yet. We have to do that now because we're going to update these indices.
-        loadIndices(lock);
+        storage->loadIndices(lock);
 
         /// If there were no files, save zero file sizes to be able to rollback in case of error.
-        saveFileSizes(lock);
+        storage->saveFileSizes(lock);
 
         try
         {
             /// Append the data file.
-            auto old_data_size = file_checker.getFileSize(data_file_path);
+            auto old_data_size = file_checker.getFileSize(storage->data_file_path);
             {
+                const auto & data_file_path = storage->data_file_path;
                 String file_path_in_backup = data_path_in_backup + fileName(data_file_path);
                 auto backup_entry = backup->readFile(file_path_in_backup);
+                const auto & disk = storage->disk;
                 auto in = backup_entry->getReadBuffer();
-                auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
+                auto out = disk->writeFile(data_file_path, storage->max_compress_block_size, WriteMode::Append);
                 copyData(*in, *out);
             }
 
             /// Append the index.
             {
+                const auto & index_file_path = storage->index_file_path;
                 String index_path_in_backup = data_path_in_backup + fileName(index_file_path);
                 IndexForNativeFormat extra_indices;
                 auto backup_entry = backup->readFile(index_path_in_backup);
@@ -598,23 +612,38 @@ RestoreDataTasks StorageStripeLog::restoreFromBackup(const BackupPtr & backup, c
                         column.location.offset_in_compressed_file += old_data_size;
                 }
 
-                insertAtEnd(indices.blocks, std::move(extra_indices.blocks));
+                insertAtEnd(storage->indices.blocks, std::move(extra_indices.blocks));
             }
 
             /// Finish writing.
-            saveIndices(lock);
-            saveFileSizes(lock);
+            storage->saveIndices(lock);
+            storage->saveFileSizes(lock);
+            return {};
         }
         catch (...)
         {
             /// Rollback partial writes.
             file_checker.repair();
-            removeUnsavedIndices(lock);
+            storage->removeUnsavedIndices(lock);
             throw;
         }
+    }
 
-    };
-    return {restore_task};
+private:
+    std::shared_ptr<StorageStripeLog> storage;
+    BackupPtr backup;
+    String data_path_in_backup;
+    ContextMutablePtr context;
+};
+
+
+RestoreTaskPtr StorageStripeLog::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    return std::make_unique<StripeLogRestoreTask>(
+        typeid_cast<std::shared_ptr<StorageStripeLog>>(shared_from_this()), backup, data_path_in_backup, context);
 }
 
 

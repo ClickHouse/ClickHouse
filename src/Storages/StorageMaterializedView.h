@@ -66,16 +66,19 @@ public:
     void shutdown() override;
 
     QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
+
+    /// Get the virtual column of the target table;
+    NamesAndTypesList getVirtuals() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -85,7 +88,7 @@ public:
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -93,6 +96,10 @@ public:
         unsigned num_streams) override;
 
     Strings getDataPaths() const override;
+
+    bool hasDataToBackup() const override { return hasInnerTable(); }
+    BackupEntries backupData(ContextPtr context_, const ASTs & partitions_) override;
+    RestoreTaskPtr restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_) override;
 
 private:
     /// Will be initialized in constructor

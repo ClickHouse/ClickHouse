@@ -344,9 +344,9 @@ SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val);
 Result:
 
 ``` text
-┌──────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
-│ -1.11100 │ Nullable(Decimal(9, 5))                            │
-└──────────┴────────────────────────────────────────────────────┘
+┌────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
+│ -1.111 │ Nullable(Decimal(9, 5))                            │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
 Query:
@@ -451,9 +451,9 @@ SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val);
 Result:
 
 ``` text
-┌──────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
-│ -1.11100 │ Decimal(9, 5)                                      │
-└──────────┴────────────────────────────────────────────────────┘
+┌────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
+│ -1.111 │ Decimal(9, 5)                                      │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
 Query:
@@ -1012,7 +1012,7 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Europe/Moscow')
+SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Asia/Istanbul')
 AS parseDateTimeBestEffort;
 ```
 
@@ -1206,7 +1206,7 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffortUSOrNull('02-10-2021 21:12:57 GMT', 'Europe/Moscow') AS parseDateTimeBestEffortUSOrNull;
+SELECT parseDateTimeBestEffortUSOrNull('02-10-2021 21:12:57 GMT', 'Asia/Istanbul') AS parseDateTimeBestEffortUSOrNull;
 ```
 
 Result:
@@ -1292,7 +1292,7 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02-10-2021 21:12:57 GMT', 'Europe/Moscow') AS parseDateTimeBestEffortUSOrZero;
+SELECT parseDateTimeBestEffortUSOrZero('02-10-2021 21:12:57 GMT', 'Asia/Istanbul') AS parseDateTimeBestEffortUSOrZero;
 ```
 
 Result:
@@ -1362,7 +1362,7 @@ SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346') AS a, toTypeName(a
 UNION ALL
 SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
 UNION ALL
-SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Europe/Moscow') AS a, toTypeName(a) AS t
+SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Asia/Istanbul') AS a, toTypeName(a) AS t
 FORMAT PrettyCompactMonoBlock;
 ```
 
@@ -1373,7 +1373,7 @@ Result:
 │ 2021-01-01 01:01:00.123000 │ DateTime64(3)                  │
 │ 2021-01-01 00:00:00.000000 │ DateTime64(3)                  │
 │ 2021-01-01 01:01:00.123460 │ DateTime64(6)                  │
-│ 2020-12-31 22:01:00.123000 │ DateTime64(3, 'Europe/Moscow') │
+│ 2020-12-31 22:01:00.123000 │ DateTime64(3, 'Asia/Istanbul') │
 └────────────────────────────┴────────────────────────────────┘
 ```
 

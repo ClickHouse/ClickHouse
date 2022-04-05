@@ -104,7 +104,7 @@ static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
         /// Included into PK?
         auto it = description.begin();
         for (; it != description.end(); ++it)
-            if (it->column_name == column.name || (it->column_name.empty() && it->column_number == i))
+            if (it->column_name == column.name)
                 break;
 
         if (it != description.end())
@@ -290,11 +290,10 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::initAggregateDescription
 
 
 AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
-    const Block & header, size_t num_inputs,
-    SortDescription description_, size_t max_block_size)
-    : IMergingAlgorithmWithDelayedChunk(num_inputs, std::move(description_))
-    , columns_definition(defineColumns(header, description_))
-    , merged_data(getMergedColumns(header, columns_definition), max_block_size, columns_definition)
+    const Block & header_, size_t num_inputs, SortDescription description_, size_t max_block_size)
+    : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
+    , columns_definition(defineColumns(header_, description_))
+    , merged_data(getMergedColumns(header_, columns_definition), max_block_size, columns_definition)
 {
 }
 

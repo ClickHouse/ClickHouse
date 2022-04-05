@@ -74,9 +74,9 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
 {
     if (arguments.size() < 3)
         throw Exception(
-            "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                + ", should be greater or equal to 3",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function '{}' doesn't match: passed {}, should be greater or equal to 3",
+            getName() , arguments.size());
     auto [storage_join, attr_name] = getJoin(arguments, getContext());
     DataTypes data_types(arguments.size() - 2);
     DataTypes argument_types(arguments.size());
@@ -86,8 +86,12 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
             data_types[i - 2] = arguments[i].type;
         argument_types[i] = arguments[i].type;
     }
-    auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null);
+
+    auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null || storage_join->useNulls());
     auto table_lock = storage_join->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+
+    if (storage_join->useNulls())
+        return std::make_unique<FunctionJoinGet<true>>(getContext(), table_lock, storage_join, attr_name, argument_types, return_type);
 
     return std::make_unique<FunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, attr_name, argument_types, return_type);
 }

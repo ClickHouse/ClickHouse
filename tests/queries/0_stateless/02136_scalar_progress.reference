@@ -1,0 +1,6 @@
+< X-ClickHouse-Progress: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"100000"}
+< X-ClickHouse-Progress: {"read_rows":"65505","read_bytes":"524040","written_rows":"0","written_bytes":"0","total_rows_to_read":"100000"}
+< X-ClickHouse-Progress: {"read_rows":"131010","read_bytes":"1048080","written_rows":"0","written_bytes":"0","total_rows_to_read":"100000"}
+< X-ClickHouse-Progress: {"read_rows":"131011","read_bytes":"1048081","written_rows":"0","written_bytes":"0","total_rows_to_read":"100000"}
+< X-ClickHouse-Progress: {"read_rows":"131011","read_bytes":"1048081","written_rows":"0","written_bytes":"0","total_rows_to_read":"100000"}
+< X-ClickHouse-Summary: {"read_rows":"131011","read_bytes":"1048081","written_rows":"0","written_bytes":"0","total_rows_to_read":"100000"}

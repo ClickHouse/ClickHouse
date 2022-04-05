@@ -5,11 +5,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 #include <Storages/StorageInput.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <boost/algorithm/string.hpp>
 #include "registerTableFunctions.h"
 
 
@@ -20,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -31,6 +30,12 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     auto args = function->arguments->children;
 
+    if (args.empty())
+    {
+        structure = "auto";
+        return;
+    }
+
     if (args.size() != 1)
         throw Exception("Table function '" + getName() + "' requires exactly 1 argument: structure",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -40,6 +45,16 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr context) const
 {
+    if (structure == "auto")
+    {
+        if (structure_hint.empty())
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "Table function '{}' was used without structure argument but structure could not be determined automatically. Please, "
+                "provide structure manually",
+                getName());
+        return structure_hint;
+    }
     return parseColumnsListFromString(structure, context);
 }
 

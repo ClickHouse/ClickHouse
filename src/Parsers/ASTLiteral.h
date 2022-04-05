@@ -15,8 +15,7 @@ namespace DB
 class ASTLiteral : public ASTWithAlias
 {
 public:
-    explicit ASTLiteral(Field && value_) : value(value_) {}
-    explicit ASTLiteral(const Field & value_) : value(value_) {}
+    explicit ASTLiteral(Field value_) : value(std::move(value_)) {}
 
     Field value;
 

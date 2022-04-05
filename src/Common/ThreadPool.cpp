@@ -54,6 +54,9 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     std::lock_guard lock(mutex);
     max_threads = value;
+    /// We have to also adjust queue size, because it limits the number of scheduled and already running jobs in total.
+    queue_size = std::max(queue_size, max_threads);
+    jobs.reserve(queue_size);
 }
 
 template <typename Thread>

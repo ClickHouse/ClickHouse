@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan
+# Tags: no-tsan, no-random-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -48,6 +48,10 @@ SkipList=(
 for TESTPATH in "$CURDIR"/*.sql;
 do
     TESTNAME=$(basename $TESTPATH)
+    NUM=$(echo "${TESTNAME}" | grep -o -P '^\d+' | sed 's/^0*//')
+    if [[ "${NUM}" -ge 168 ]]; then
+        continue
+    fi
 
     if [[ " ${SkipList[*]} " =~ ${TESTNAME} ]]; then
         echo  "Skipping $TESTNAME "

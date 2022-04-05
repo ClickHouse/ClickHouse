@@ -187,7 +187,7 @@ private:
     DataTypes dictionary_attributes_types;
 };
 
-static inline void insertDefaultValuesIntoColumns(
+static inline void insertDefaultValuesIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
     size_t row_index)
@@ -206,7 +206,7 @@ static inline void insertDefaultValuesIntoColumns(
 
 /// Deserialize column value and insert it in columns.
 /// Skip unnecessary columns that were not requested from deserialization.
-static inline void deserializeAndInsertIntoColumns(
+static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
     const char * place_for_serialized_columns)
@@ -667,6 +667,15 @@ static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array)
     auto column_vector = ColumnVector<T>::create();
     column_vector->getData().reserve(array.size());
     column_vector->getData().insert(array.begin(), array.end());
+
+    return column_vector;
+}
+
+template <typename T>
+static ColumnPtr getColumnFromPODArray(PaddedPODArray<T> && array)
+{
+    auto column_vector = ColumnVector<T>::create();
+    column_vector->getData() = std::move(array);
 
     return column_vector;
 }
