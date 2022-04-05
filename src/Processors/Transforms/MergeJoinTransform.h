@@ -65,8 +65,50 @@ public:
         return impl;
     }
 
+    Chunk moveCurrentChunk()
+    {
+        Chunk res = std::move(current_input.chunk);
+        current_input = {};
+        return res;
+    }
+
+    const Chunk & getCurrentChunk() const
+    {
+        return current_input.chunk;
+    }
+
+    void setInput(IMergingAlgorithm::Input && input)
+    {
+        current_input = std::move(input);
+
+        if (!current_input.chunk)
+            completeAll();
+
+        if (current_input.skip_last_row)
+            throw Exception("MergeJoinAlgorithm does not support skipLastRow", ErrorCodes::LOGICAL_ERROR);
+
+        if (current_input.chunk)
+        {
+            impl.reset(current_input.chunk.getColumns(), {}, current_input.permutation);
+        }
+    }
+
+    bool isValid() const
+    {
+        return current_input.chunk && impl.isValid();
+    }
+
+    bool fullyCompleted() const { return fully_completed; }
+
+    void completeAll() { fully_completed = true; }
+
+    SortCursorImpl * operator-> () { return &impl; }
+    const SortCursorImpl * operator-> () const { return &impl; }
+
 private:
     SortCursorImpl impl;
+    IMergingAlgorithm::Input current_input;
+    bool fully_completed = false;
     // bool has_left_nullable = false;
     // bool has_right_nullable = false;
 };
@@ -88,13 +130,8 @@ private:
     SortDescription left_desc;
     SortDescription right_desc;
 
-    std::vector<Input> current_inputs;
     std::vector<FullMergeJoinCursor> cursors;
-
     std::vector<Chunk> sample_chunks;
-
-    bool left_stream_finished = false;
-    bool right_stream_finished = false;
 
     JoinPtr table_join;
     Poco::Logger * log;

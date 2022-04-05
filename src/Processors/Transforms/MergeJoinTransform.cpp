@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <memory>
+#include <type_traits>
 #include <vector>
 #include <Processors/Transforms/MergeJoinTransform.h>
 #include <base/logger_useful.h>
@@ -7,12 +8,13 @@
 #include <Interpreters/TableJoin.h>
 #include <Core/SortDescription.h>
 #include <boost/core/noncopyable.hpp>
-#include "Columns/ColumnsNumber.h"
-#include "Columns/IColumn.h"
-#include "Core/SortCursor.h"
-#include "Parsers/ASTTablesInSelectQuery.h"
-#include "base/defines.h"
-#include "base/types.h"
+#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
+#include <Columns/ColumnNullable.h>
+#include <Core/SortCursor.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <base/defines.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -42,18 +44,87 @@ FullMergeJoinCursor createCursor(const Block & block, const Names & columns)
 }
 
 
-int ALWAYS_INLINE compareCursors(const SortCursor & lhs, const SortCursor & rhs)
+template <bool has_left_nulls, bool has_right_nulls>
+int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos, int null_direction_hint = 1)
+{
+    if constexpr (has_left_nulls && has_right_nulls)
+    {
+        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column);
+        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column);
+
+        if (left_nullable && right_nullable)
+        {
+            int res = left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+            if (res)
+                return res;
+
+            /// NULL != NULL case
+            if (left_column.isNullAt(lhs_pos))
+                return null_direction_hint;
+
+            return 0;
+        }
+    }
+
+    if constexpr (has_left_nulls)
+    {
+        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column))
+        {
+            if (left_column.isNullAt(lhs_pos))
+                return null_direction_hint;
+            return left_nullable->getNestedColumn().compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+        }
+    }
+
+    if constexpr (has_right_nulls)
+    {
+        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column))
+        {
+            if (right_column.isNullAt(rhs_pos))
+                return -null_direction_hint;
+            return left_column.compareAt(lhs_pos, rhs_pos, right_nullable->getNestedColumn(), null_direction_hint);
+        }
+    }
+
+    return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+}
+
+/// If on_pos == true, compare two columns at specified positions.
+/// Otherwise, compare two columns at the current positions, `lpos` and `rpos` are ignored.
+template <typename Cursor, bool on_pos = false>
+int ALWAYS_INLINE compareCursors(const Cursor & lhs, const Cursor & rhs,
+                                 [[ maybe_unused ]] size_t lpos = 0,
+                                 [[ maybe_unused ]] size_t rpos = 0)
 {
     for (size_t i = 0; i < lhs->sort_columns_size; ++i)
     {
         const auto & desc = lhs->desc[i];
         int direction = desc.direction;
         int nulls_direction = desc.nulls_direction;
-        int res = direction * lhs->sort_columns[i]->compareAt(lhs->getRow(), rhs->getRow(), *(rhs.impl->sort_columns[i]), nulls_direction);
-        if (res != 0)
-            return res;
+
+        int cmp = direction * nullableCompareAt<true, true>(
+            *lhs->sort_columns[i],
+            *rhs->sort_columns[i],
+            on_pos ? lpos : lhs->getRow(),
+            on_pos ? rpos : rhs->getRow(),
+            nulls_direction);
+        if (cmp != 0)
+            return cmp;
     }
     return 0;
+}
+
+bool ALWAYS_INLINE totallyLess(const FullMergeJoinCursor & lhs, const FullMergeJoinCursor & rhs)
+{
+    if (lhs->rows == 0 || rhs->rows == 0)
+        return false;
+
+    if (!lhs->isValid() || !rhs->isValid())
+        return false;
+
+    /// The last row of this cursor is no larger than the first row of the another cursor.
+    int cmp = compareCursors<FullMergeJoinCursor, true>(lhs, rhs, lhs->rows - 1, 0);
+    return cmp < 0;
 }
 
 void addIndexColumn(const Columns & columns, const IColumn & indices, Chunk & result)
@@ -108,7 +179,7 @@ void MergeJoinAlgorithm::initialize(Inputs inputs)
     if (inputs.size() != 2)
         throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
     LOG_DEBUG(log, "MergeJoinAlgorithm initialize, number of inputs: {}", inputs.size());
-    current_inputs.resize(inputs.size());
+
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         createSampleChunk(inputs[i].chunk, sample_chunks.emplace_back());
@@ -130,19 +201,15 @@ void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
 {
     LOG_DEBUG(log, "Consume from {} chunk: {}", source_num, bool(input.chunk));
 
-    left_stream_finished = left_stream_finished || (!input.chunk && source_num == 0);
-    right_stream_finished = right_stream_finished || (!input.chunk && source_num == 1);
+    if (!input.chunk)
+        cursors[source_num].completeAll();
 
     prepareChunk(input.chunk);
 
     if (input.chunk.getNumRows() >= EMPTY_VALUE)
         throw Exception("Too many rows in input", ErrorCodes::TOO_MANY_ROWS);
 
-    current_inputs[source_num] = std::move(input);
-    if (current_inputs[source_num].chunk)
-    {
-        cursors[source_num].getImpl().reset(current_inputs[source_num].chunk.getColumns(), {}, current_inputs[source_num].permutation);
-    }
+    cursors[source_num].setInput(std::move(input));
 }
 
 static size_t ALWAYS_INLINE rowsLeft(SortCursor cursor)
@@ -215,92 +282,77 @@ static void leftOrFullAny(SortCursor left_cursor, SortCursor right_cursor, Padde
     }
 }
 
+static Chunk createBlockWithDefaults(const Chunk & lhs, const Chunk & rhs)
+{
+    Chunk result;
+    size_t num_rows = std::max(lhs.getNumRows(), rhs.getNumRows());
+    createSampleChunk(lhs, result, num_rows);
+    createSampleChunk(rhs, result, num_rows);
+    return result;
+}
+
 IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 {
-    if (current_inputs[0].skip_last_row || current_inputs[1].skip_last_row)
-        throw Exception("MergeJoinAlgorithm does not support skipLastRow", ErrorCodes::LOGICAL_ERROR);
-
-    if (!current_inputs[0].chunk && !left_stream_finished)
-    {
+    if (!cursors[0].isValid() && !cursors[0].fullyCompleted())
         return Status(0);
-    }
 
-    if (!current_inputs[1].chunk && !right_stream_finished)
-    {
+    if (!cursors[1].isValid() && !cursors[1].fullyCompleted())
         return Status(1);
-    }
 
     JoinKind kind = table_join->getTableJoin().kind();
 
-    if (left_stream_finished && right_stream_finished)
+    if (cursors[0].fullyCompleted() && cursors[1].fullyCompleted())
     {
         return Status({}, true);
     }
 
-    if (isInner(kind) && (left_stream_finished || right_stream_finished))
+    if (isInner(kind) && (cursors[0].fullyCompleted() || cursors[1].fullyCompleted()))
     {
+        LOG_DEBUG(log, "{}:{} ", __FILE__, __LINE__);
         return Status({}, true);
     }
 
-    auto create_block_with_defaults = [] (const Chunk & lhs, const Chunk & rhs) -> Chunk
+    if (cursors[0].fullyCompleted() && isRightOrFull(kind))
     {
-        Chunk result;
-        size_t num_rows = std::max(lhs.getNumRows(), rhs.getNumRows());
-        createSampleChunk(lhs, result, num_rows);
-        createSampleChunk(rhs, result, num_rows);
-        return result;
-    };
-
-    if (isLeftOrFull(kind) && right_stream_finished)
-    {
-        Chunk result = create_block_with_defaults(current_inputs[0].chunk, sample_chunks[1]);
-        current_inputs[0] = {};
-        return Status(std::move(result), left_stream_finished && right_stream_finished);
+        Chunk result = createBlockWithDefaults(sample_chunks[0], cursors[1].moveCurrentChunk());
+        return Status(std::move(result));
     }
 
-    if (isRightOrFull(kind) && left_stream_finished)
+    if (isLeftOrFull(kind) && cursors[1].fullyCompleted())
     {
-        Chunk result = create_block_with_defaults(sample_chunks[0], current_inputs[1].chunk);
-        current_inputs[1] = {};
-        return Status(std::move(result), left_stream_finished && right_stream_finished);
+        Chunk result = createBlockWithDefaults(cursors[0].moveCurrentChunk(), sample_chunks[1]);
+        return Status(std::move(result));
     }
 
-    SortCursor left_cursor = cursors[0].getCursor();
-    SortCursor right_cursor = cursors[1].getCursor();
-
-    if (!left_cursor->isValid() || (right_cursor->isValid() && left_cursor.totallyLessOrEquals(right_cursor)))
+    if (!cursors[0]->isValid() || totallyLess(cursors[0], cursors[1]))
     {
-        current_inputs[0] = {};
-        if (left_stream_finished)
+        if (cursors[0]->isValid() && isLeft(kind))
         {
-            return Status({}, true);
+            Chunk result = createBlockWithDefaults(cursors[0].moveCurrentChunk(), sample_chunks[1]);
+            return Status(std::move(result), false);
         }
+        cursors[0].moveCurrentChunk();
+        if (cursors[0].fullyCompleted())
+            return Status({}, true);
         return Status(0);
     }
 
-    if (!right_cursor->isValid() || (left_cursor->isValid() && right_cursor.totallyLessOrEquals(left_cursor)))
-    {
-        current_inputs[1] = {};
-        if (right_stream_finished)
-        {
-            return Status({}, true);
-        }
-        return Status(1);
-    }
+    // if (!cursors[1]->isValid() || totallyLess(cursors[1], cursors[0]))
+    // ...
 
     auto left_map = ColumnUInt64::create();
     auto right_map = ColumnUInt64::create();
     if (isInner(kind))
     {
-        leftOrFullAny<JoinKind::Inner>(left_cursor, right_cursor, left_map->getData(), right_map->getData());
+        leftOrFullAny<JoinKind::Inner>(cursors[0].getCursor(), cursors[1].getCursor(), left_map->getData(), right_map->getData());
     }
     else if (isLeft(kind))
     {
-        leftOrFullAny<JoinKind::Left>(left_cursor, right_cursor, left_map->getData(), right_map->getData());
+        leftOrFullAny<JoinKind::Left>(cursors[0].getCursor(), cursors[1].getCursor(), left_map->getData(), right_map->getData());
     }
     else if (isRight(kind))
     {
-        leftOrFullAny<JoinKind::Right>(left_cursor, right_cursor, left_map->getData(), right_map->getData());
+        leftOrFullAny<JoinKind::Right>(cursors[0].getCursor(), cursors[1].getCursor(), left_map->getData(), right_map->getData());
     }
     else
     {
@@ -308,20 +360,10 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     }
 
     Chunk result;
-    addIndexColumn(current_inputs[0].chunk.getColumns(), *left_map, result);
-    addIndexColumn(current_inputs[1].chunk.getColumns(), *right_map, result);
+    addIndexColumn(cursors[0].getCurrentChunk().getColumns(), *left_map, result);
+    addIndexColumn(cursors[1].getCurrentChunk().getColumns(), *right_map, result);
 
-    if (!left_cursor->isValid())
-    {
-        current_inputs[0] = {};
-    }
-
-    if (!right_cursor->isValid())
-    {
-        current_inputs[1] = {};
-    }
-
-    return Status(std::move(result), left_stream_finished && right_stream_finished);
+    return Status(std::move(result), cursors[0].fullyCompleted() && cursors[1].fullyCompleted());
 }
 
 MergeJoinTransform::MergeJoinTransform(

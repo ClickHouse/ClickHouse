@@ -1047,10 +1047,13 @@ bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & 
     return true;
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & converting_join_columns)
+JoinPtr SelectQueryExpressionAnalyzer::appendJoin(
+    ExpressionActionsChain & chain,
+    ActionsDAGPtr & converting_join_columns)
 {
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
-    JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns, converting_join_columns);
+
+    JoinPtr join = makeJoin(*syntax->ast_join, left_sample_columns, converting_join_columns);
 
     if (converting_join_columns)
     {
@@ -1060,9 +1063,9 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
     chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(
-        syntax->analyzed_join, table_join, step.getResultColumns()));
+        syntax->analyzed_join, join, step.getResultColumns()));
     chain.addStep();
-    return table_join;
+    return join;
 }
 
 static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
@@ -1199,7 +1202,7 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
     return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, storage);
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
+JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
     const ASTTablesInSelectQueryElement & join_element,
     const ColumnsWithTypeAndName & left_columns,
     ActionsDAGPtr & left_convert_actions)
