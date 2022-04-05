@@ -31,7 +31,7 @@ namespace
 
 namespace ProfileEvents
 {
-    extern const int ExecuteShellCommand;
+    extern const Event ExecuteShellCommand;
 }
 
 namespace DB
