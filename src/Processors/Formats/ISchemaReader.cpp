@@ -128,21 +128,33 @@ IRowWithNamesSchemaReader::IRowWithNamesSchemaReader(ReadBuffer & in_, size_t ma
 
 NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
 {
-    auto names_and_types = readRowAndGetNamesAndDataTypes();
+    bool eof = false;
+    auto names_and_types = readRowAndGetNamesAndDataTypes(eof);
+    std::unordered_map<String, DataTypePtr> names_to_types;
+    std::vector<String> names_order;
+    names_to_types.reserve(names_and_types.size());
+    names_order.reserve(names_and_types.size());
+    for (const auto & [name, type] : names_and_types)
+    {
+        names_to_types[name] = type;
+        names_order.push_back(name);
+    }
+
     for (size_t row = 1; row < max_rows_to_read; ++row)
     {
-        auto new_names_and_types = readRowAndGetNamesAndDataTypes();
-        if (new_names_and_types.empty())
+        auto new_names_and_types = readRowAndGetNamesAndDataTypes(eof);
+        if (eof)
             /// We reached eof.
             break;
 
         for (const auto & [name, new_type] : new_names_and_types)
         {
-            auto it = names_and_types.find(name);
+            auto it = names_to_types.find(name);
             /// If we didn't see this column before, just add it.
-            if (it == names_and_types.end())
+            if (it == names_to_types.end())
             {
-                names_and_types[name] = new_type;
+                names_to_types[name] = new_type;
+                names_order.push_back(name);
                 continue;
             }
 
@@ -152,12 +164,13 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     }
 
     /// Check that we read at list one column.
-    if (names_and_types.empty())
+    if (names_to_types.empty())
         throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot read rows from the data");
 
     NamesAndTypesList result;
-    for (auto & [name, type] : names_and_types)
+    for (auto & name : names_order)
     {
+        auto & type = names_to_types[name];
         /// Check that we could determine the type of this column.
         checkTypeAndAppend(result, type, name, default_type, max_rows_to_read);
     }
