@@ -29,8 +29,9 @@ class FullMergeJoinCursor
 {
 public:
 
-    FullMergeJoinCursor(const Columns & columns, const SortDescription & desc)
-        : impl(columns, desc)
+    FullMergeJoinCursor(const Block & block, const SortDescription & desc)
+        : impl(block, desc)
+        , sample_block(block)
     {
     }
 
@@ -82,14 +83,14 @@ public:
         current_input = std::move(input);
 
         if (!current_input.chunk)
-            completeAll();
+            fully_completed = true;
 
         if (current_input.skip_last_row)
             throw Exception("MergeJoinAlgorithm does not support skipLastRow", ErrorCodes::LOGICAL_ERROR);
 
         if (current_input.chunk)
         {
-            impl.reset(current_input.chunk.getColumns(), {}, current_input.permutation);
+            impl.reset(current_input.chunk.getColumns(), sample_block, current_input.permutation);
         }
     }
 
@@ -98,17 +99,19 @@ public:
         return current_input.chunk && impl.isValid();
     }
 
-    bool fullyCompleted() const { return fully_completed; }
-
-    void completeAll() { fully_completed = true; }
+    bool fullyCompleted() const { return !isValid() && fully_completed; }
 
     SortCursorImpl * operator-> () { return &impl; }
     const SortCursorImpl * operator-> () const { return &impl; }
 
 private:
     SortCursorImpl impl;
+
     IMergingAlgorithm::Input current_input;
+
     bool fully_completed = false;
+
+    Block sample_block;
     // bool has_left_nullable = false;
     // bool has_right_nullable = false;
 };
@@ -127,9 +130,6 @@ public:
     virtual Status merge() override;
 
 private:
-    SortDescription left_desc;
-    SortDescription right_desc;
-
     std::vector<FullMergeJoinCursor> cursors;
     std::vector<Chunk> sample_chunks;
 
