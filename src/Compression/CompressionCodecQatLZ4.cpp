@@ -1,4 +1,4 @@
-#include "qatCoDecApi.h"
+#include "QatCodec.h"
 
 #include <Poco/Logger.h>
 #include <base/logger_useful.h>
@@ -51,6 +51,7 @@ protected:
 
 private:
     Poco::Logger * log = &Poco::Logger::get("CompressionCodecQatLZ4");
+    std::shared_ptr<QatCodec> qat_codec_ptr = getQatCodecInstance();
 };
 
 CompressionCodecQatLZ4::CompressionCodecQatLZ4()
@@ -86,7 +87,7 @@ void CompressionCodecQatLZ4::updateHash(SipHash & hash) const
 
 unsigned int CompressionCodecQatLZ4::getMaxCompressedDataSize(unsigned int uncompressed_size) const
 {
-    unsigned int max_compressed_size = qat_GetMaxCoDataSize(uncompressed_size);
+    unsigned int max_compressed_size = qat_codec_ptr->getMaxCompressedDataSize(uncompressed_size);
 
     LOG_TRACE(log, "QatLz4 getMaxCompressedDataSize ,uncompressed_size {}, max compressed size {} .", uncompressed_size, max_compressed_size );
 
@@ -97,7 +98,7 @@ unsigned int CompressionCodecQatLZ4::doCompressData(const char * source, unsigne
 {
     LOG_TRACE(log, "doCompressData called.");
 
-    unsigned int dest_size = qat_Compress(source, source_size, dest);
+    unsigned int dest_size = qat_codec_ptr->doCompressData(source, source_size, dest);
 
     if (0 == dest_size)
     {
@@ -114,7 +115,7 @@ void CompressionCodecQatLZ4::doDecompressData(const char * source, unsigned int 
     LOG_TRACE(log, "doDecompressData called.");
 
     int32_t  ret = QZ_OK;
-    ret = qat_Decompress(source,  source_size,  dest, uncompressed_size)
+    ret = qat_codec_ptr->doDecompressData(source,  source_size,  dest, uncompressed_size)
     if (ret != 0)
     {
         LOG_WARNING(log, "Cannot decompress, decompress return error code {}!", ret);
