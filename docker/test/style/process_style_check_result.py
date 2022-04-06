@@ -14,6 +14,7 @@ def process_result(result_folder):
         ("header duplicates", "duplicate_output.txt"),
         ("shellcheck", "shellcheck_output.txt"),
         ("style", "style_output.txt"),
+        ("black", "black_output.txt"),
         ("typos", "typos_output.txt"),
         ("whitespaces", "whitespaces_output.txt"),
         ("workflows", "workflows_output.txt"),

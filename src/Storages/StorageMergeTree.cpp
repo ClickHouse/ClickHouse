@@ -3,7 +3,7 @@
 #include <optional>
 
 #include <base/sort.h>
-
+#include <Backups/IRestoreTask.h>
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -1348,7 +1348,11 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
         String partition_id = getPartitionIDFromQuery(partition, local_context);
-        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
+        const auto * partition_ast = partition->as<ASTPartition>();
+        if (partition_ast && partition_ast->all)
+            parts_to_remove = getDataPartsVector();
+        else
+            parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
 
         /// TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(parts_to_remove, true);
@@ -1616,6 +1620,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
                 auto out = disk->writeFile(tmp_checksums_path, 4096);
                 part->checksums.write(*out);
                 disk->moveFile(tmp_checksums_path, checksums_path);
+
+                part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (const Exception & ex)
@@ -1632,6 +1638,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             try
             {
                 checkDataPart(part, true);
+                part->checkMetadata();
                 results.emplace_back(part->name, true, "");
             }
             catch (const Exception & ex)
@@ -1644,9 +1651,9 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 }
 
 
-RestoreDataTasks StorageMergeTree::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr local_context)
+RestoreTaskPtr StorageMergeTree::restoreData(ContextMutablePtr local_context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
 {
-    return restoreDataPartsFromBackup(backup, data_path_in_backup, getPartitionIDsFromQuery(partitions, local_context), &increment);
+    return restoreDataParts(getPartitionIDsFromQuery(partitions, local_context), backup, data_path_in_backup, &increment);
 }
 
 
