@@ -32,7 +32,7 @@ namespace ErrorCodes
     } while (false)
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), in_), format_settings(format_settings_)
+    : IInputFormat(std::move(header_), in_), format_settings(format_settings_), skip_row_groups(format_settings.parquet.skip_row_groups)
 {
 }
 
@@ -46,6 +46,9 @@ Chunk ParquetBlockInputFormat::generate()
 
     if (is_stopped)
         return {};
+
+    for (; row_group_current < row_group_total && skip_row_groups.contains(row_group_current); ++row_group_current)
+        ;
 
     if (row_group_current >= row_group_total)
         return res;
