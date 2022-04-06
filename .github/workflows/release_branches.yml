@@ -436,10 +436,16 @@ jobs:
     steps:
       - name: Set envs
         run: |
+          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
+          ${{ toJSON(needs) }}
+          EOF
+          )
+          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/report_check
-          REPORTS_PATH=${{runner.temp}}/reports_dir
           CHECK_NAME=ClickHouse build check (actions)
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          TEMP_PATH=${{runner.temp}}/report_check
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -455,7 +461,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME"
+          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
       - name: Cleanup
         if: always()
         run: |
