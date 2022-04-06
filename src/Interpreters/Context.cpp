@@ -29,6 +29,7 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/IDiskRemote.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -84,11 +85,15 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
 #include <filesystem>
 
+#if USE_ROCKSDB
+#include <rocksdb/table.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -275,6 +280,11 @@ struct ContextSharedPart
 
     Context::ConfigReloadCallback config_reload_callback;
 
+#if USE_ROCKSDB
+    /// Global merge tree metadata cache, stored in rocksdb.
+    MergeTreeMetadataCachePtr merge_tree_metadata_cache;
+#endif
+
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
         , global_overcommit_tracker(&process_list)
@@ -293,6 +303,17 @@ struct ContextSharedPart
 
     ~ContextSharedPart()
     {
+        /// Wait for thread pool for background writes,
+        /// since it may use per-user MemoryTracker which will be destroyed here.
+        try
+        {
+            IDiskRemote::getThreadPoolWriter().wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
         try
         {
             shutdown();
@@ -398,6 +419,15 @@ struct ContextSharedPart
             trace_collector.reset();
             /// Stop zookeeper connection
             zookeeper.reset();
+
+#if USE_ROCKSDB
+            /// Shutdown merge tree metadata cache
+            if (merge_tree_metadata_cache)
+            {
+                merge_tree_metadata_cache->shutdown();
+                merge_tree_metadata_cache.reset();
+            }
+#endif
         }
 
         /// Can be removed w/o context lock
@@ -1062,6 +1092,17 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     if (!res)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
+        if (table_function_ptr->needStructureHint())
+        {
+            const auto & insertion_table = getInsertionTable();
+            if (!insertion_table.empty())
+            {
+                const auto & structure_hint
+                    = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
+                table_function_ptr->setStructureHint(structure_hint);
+            }
+        }
+
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
 
         /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
@@ -2036,6 +2077,23 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     return zookeeper->second;
 }
 
+#if USE_ROCKSDB
+MergeTreeMetadataCachePtr Context::getMergeTreeMetadataCache() const
+{
+    auto cache = tryGetMergeTreeMetadataCache();
+    if (!cache)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Merge tree metadata cache is not initialized, please add config merge_tree_metadata_cache in config.xml and restart");
+    return cache;
+}
+
+MergeTreeMetadataCachePtr Context::tryGetMergeTreeMetadataCache() const
+{
+    return shared->merge_tree_metadata_cache;
+}
+#endif
+
 void Context::resetZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -2278,6 +2336,13 @@ void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());
 }
+
+#if USE_ROCKSDB
+void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
+{
+    shared->merge_tree_metadata_cache = MergeTreeMetadataCache::create(dir, size);
+}
+#endif
 
 bool Context::hasTraceCollector() const
 {

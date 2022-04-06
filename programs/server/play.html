@@ -266,12 +266,25 @@
             color: var(--null-color);
         }
 
+        @keyframes hourglass-animation {
+            0% {
+                transform: rotate(-180deg);
+            }
+            50% {
+                transform: rotate(-180deg);
+            }
+            100% {
+                transform: none;
+            }
+        }
+
         #hourglass
         {
             display: none;
-            padding-left: 1rem;
+            margin-left: 1rem;
             font-size: 110%;
             color: #888;
+            animation: hourglass-animation 1s linear infinite;
         }
 
         #check-mark
@@ -457,7 +470,7 @@
         }
 
         document.getElementById('check-mark').style.display = 'none';
-        document.getElementById('hourglass').style.display = 'inline';
+        document.getElementById('hourglass').style.display = 'inline-block';
 
         xhr.send(query);
     }
@@ -575,8 +588,8 @@
         const formatted_rows = formatReadableRows(rows);
         stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
 
-        /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1.
-        if (response.data.length > 3 && response.data[0][0] === "digraph" && document.getElementById('query').value.match(/^\s*EXPLAIN/i)) {
+        /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
+        if (response.data.length > 3 && response.data[0][0].startsWith("digraph") && document.getElementById('query').value.match(/^\s*EXPLAIN/i)) {
             renderGraph(response);
         } else {
             renderTable(response);

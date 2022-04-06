@@ -14,9 +14,13 @@ namespace DB
 class ISchemaReader
 {
 public:
-    ISchemaReader(ReadBuffer & in_) : in(in_) {}
+    explicit ISchemaReader(ReadBuffer & in_) : in(in_) {}
 
     virtual NamesAndTypesList readSchema() = 0;
+
+    /// True if order of columns is important in format.
+    /// Exceptions: JSON, TSKV.
+    virtual bool hasStrictOrderOfColumns() const { return true; }
 
     virtual ~ISchemaReader() = default;
 
@@ -60,13 +64,14 @@ class IRowWithNamesSchemaReader : public ISchemaReader
 public:
     IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
     NamesAndTypesList readSchema() override;
+    bool hasStrictOrderOfColumns() const override { return false; }
 
 protected:
     /// Read one row and determine types of columns in it.
-    /// Return map {column_name : type}.
+    /// Return list with names and types.
     /// If it's impossible to determine the type for some column, return nullptr for it.
-    /// Return empty map is can't read more data.
-    virtual std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypes() = 0;
+    /// Set eof = true if can't read more data.
+    virtual NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) = 0;
 
 private:
     size_t max_rows_to_read;
