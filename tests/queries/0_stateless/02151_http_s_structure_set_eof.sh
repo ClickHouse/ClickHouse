@@ -27,4 +27,8 @@ echo $?
 timeout 0.15s ${CLICKHOUSE_CURL} -sS -F "s=@$tmp_file;" "${CLICKHOUSE_URL}&s_structure=key+Int&query=SELECT+dummy+IN+s&input_format_parallel_parsing=false" -o /dev/null
 echo $?
 
+# wait until the query above will start,
+# so that clickhouse_test_wait_queries will see them.
+sleep 5
+
 clickhouse_test_wait_queries 60
