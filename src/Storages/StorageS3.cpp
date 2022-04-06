@@ -472,6 +472,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         const CompressionMethod compression_method_,
         const StorageS3::S3Configuration & s3_configuration_,
+        const String & bucket_,
         const String & key_)
         : PartitionedSink(partition_by, context_, sample_block_)
         , format(format_)
@@ -479,7 +480,7 @@ public:
         , context(context_)
         , compression_method(compression_method_)
         , s3_configuration(s3_configuration_)
-        , bucket(s3_configuration.uri.bucket)
+        , bucket(bucket_)
         , key(key_)
         , format_settings(format_settings_)
     {
@@ -511,7 +512,7 @@ private:
     ContextPtr context;
     const CompressionMethod compression_method;
 
-    StorageS3::S3Configuration s3_configuration;
+    const StorageS3::S3Configuration & s3_configuration;
     const String bucket;
     const String key;
     std::optional<FormatSettings> format_settings;
@@ -549,9 +550,9 @@ StorageS3::StorageS3(
     const S3::URI & uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
-    const S3Settings::ReadWriteSettings & rw_settings_from_ast,
     const StorageID & table_id_,
     const String & format_name_,
+    const S3Settings::ReadWriteSettings & rw_settings_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
@@ -561,10 +562,7 @@ StorageS3::StorageS3(
     bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
-    , s3_configuration{
-        uri_,
-        S3Settings::AuthSettings{ .access_key_id = access_key_id_, .secret_access_key = secret_access_key_ },
-        {}, {}} /// Client and settings will be updated later
+    , s3_configuration{uri_, access_key_id_, secret_access_key_, {}, {}, rw_settings_} /// Client and settings will be updated later
     , keys({uri_.key})
     , format_name(format_name_)
     , compression_method(compression_method_)
@@ -577,7 +575,7 @@ StorageS3::StorageS3(
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
 
-    updateS3Configuration(context_, s3_configuration, rw_settings_from_ast);
+    updateS3Configuration(context_, s3_configuration);
     if (columns_.empty())
     {
         auto columns = getTableStructureFromDataImpl(format_name, s3_configuration, compression_method, distributed_processing_, is_key_with_globs, format_settings, context_);
@@ -598,7 +596,7 @@ StorageS3::StorageS3(
     virtual_columns = getVirtualsForStorage(columns, default_virtuals);
 }
 
-std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(const StorageS3::S3Configuration & s3_configuration_, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context)
+std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(const S3Configuration & s3_configuration, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context)
 {
     if (distributed_processing)
     {
@@ -610,7 +608,7 @@ std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
     else if (is_key_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*s3_configuration_.client, s3_configuration_.uri);
+        auto glob_iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*s3_configuration.client, s3_configuration.uri);
         return std::make_shared<StorageS3Source::IteratorWrapper>([glob_iterator]()
         {
             return glob_iterator->next();
@@ -726,6 +724,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             format_settings,
             chosen_compression_method,
             s3_configuration,
+            s3_configuration.uri.bucket,
             keys.back());
     }
     else
@@ -801,59 +800,48 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 }
 
 
-void StorageS3::updateS3Configuration(ContextPtr ctx, S3Configuration & upd, const std::optional<S3Settings::ReadWriteSettings> & rw_settings_from_ast)
+void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration & upd)
 {
-    auto s3_settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
+    auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
 
-    auto rw_settings = s3_settings.rw_settings;
-    upd.rw_settings = std::move(rw_settings);
-
-    auto auth_settings = s3_settings.auth_settings;
-    if (upd.client && (!upd.auth_settings.access_key_id.empty() || auth_settings == upd.auth_settings))
-        return;
-
-    if (rw_settings_from_ast)
+    bool need_update_configuration = settings != S3Settings{};
+    if (need_update_configuration)
     {
-        if (rw_settings_from_ast->max_single_read_retries)
-            rw_settings.max_single_read_retries = rw_settings_from_ast->max_single_read_retries;
-        else if (rw_settings_from_ast->min_upload_part_size)
-            rw_settings.min_upload_part_size = rw_settings_from_ast->min_upload_part_size;
-        else if (rw_settings_from_ast->upload_part_size_multiply_factor)
-            rw_settings.upload_part_size_multiply_factor = rw_settings_from_ast->upload_part_size_multiply_factor;
-        else if (rw_settings_from_ast->upload_part_size_multiply_parts_count_threshold)
-            rw_settings.upload_part_size_multiply_parts_count_threshold = rw_settings_from_ast->upload_part_size_multiply_parts_count_threshold;
-        else if (rw_settings_from_ast->max_single_part_upload_size)
-            rw_settings.max_single_part_upload_size = rw_settings_from_ast->max_single_part_upload_size;
-        else if (rw_settings_from_ast->max_connections)
-            rw_settings.max_connections = rw_settings_from_ast->max_connections;
+        if (upd.rw_settings != settings.rw_settings)
+            upd.rw_settings = settings.rw_settings;
     }
 
-    Aws::Auth::AWSCredentials credentials(upd.auth_settings.access_key_id, upd.auth_settings.secret_access_key);
+    upd.rw_settings.updateFromSettingsIfEmpty(ctx->getSettings());
+
+    if (upd.client && (!upd.access_key_id.empty() || settings.auth_settings == upd.auth_settings))
+        return;
+
+    Aws::Auth::AWSCredentials credentials(upd.access_key_id, upd.secret_access_key);
     HeaderCollection headers;
-    if (upd.auth_settings.access_key_id.empty())
+    if (upd.access_key_id.empty())
     {
-        credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
-        headers = auth_settings.headers;
+        credentials = Aws::Auth::AWSCredentials(settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key);
+        headers = settings.auth_settings.headers;
     }
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        auth_settings.region,
+        settings.auth_settings.region,
         ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
 
     client_configuration.endpointOverride = upd.uri.endpoint;
-    client_configuration.maxConnections = rw_settings.max_connections;
+    client_configuration.maxConnections = upd.rw_settings.max_connections;
 
     upd.client = S3::ClientFactory::instance().create(
         client_configuration,
         upd.uri.is_virtual_hosted_style,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
-        auth_settings.server_side_encryption_customer_key_base64,
+        settings.auth_settings.server_side_encryption_customer_key_base64,
         std::move(headers),
-        auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
-        auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
+        settings.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
+        settings.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
 
-    upd.auth_settings = std::move(auth_settings);
+    upd.auth_settings = std::move(settings.auth_settings);
 }
 
 
@@ -944,10 +932,7 @@ ColumnsDescription StorageS3::getTableStructureFromData(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx)
 {
-    S3Configuration s3_configuration{ .uri = uri };
-    s3_configuration.auth_settings.access_key_id = access_key_id;
-    s3_configuration.auth_settings.secret_access_key = secret_access_key;
-
+    S3Configuration s3_configuration{ uri, access_key_id, secret_access_key, {}, {}, S3Settings::ReadWriteSettings(ctx->getSettingsRef()) };
     updateS3Configuration(ctx, s3_configuration);
     return getTableStructureFromDataImpl(format, s3_configuration, compression_method, distributed_processing, uri.key.find_first_of("*?{") != std::string::npos, format_settings, ctx);
 }
@@ -1011,8 +996,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
-        auto context = args.getLocalContext();
-
         auto configuration = StorageS3::getConfiguration(engine_args, args.getLocalContext());
         // Use format settings from global server context + settings from
         // the SETTINGS clause of the create query. Settings from current
@@ -1050,9 +1033,9 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             s3_uri,
             configuration.auth_settings.access_key_id,
             configuration.auth_settings.secret_access_key,
-            configuration.rw_settings,
             args.table_id,
             configuration.format,
+            configuration.rw_settings,
             args.columns,
             args.constraints,
             args.comment,

@@ -95,6 +95,7 @@ private:
     Block sample_block;
     std::optional<FormatSettings> format_settings;
 
+
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
@@ -124,9 +125,9 @@ public:
         const S3::URI & uri,
         const String & access_key_id,
         const String & secret_access_key,
-        const S3Settings::ReadWriteSettings & rw_settings_from_ast,
         const StorageID & table_id_,
         const String & format_name_,
+        const S3Settings::ReadWriteSettings & rw_settings_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
@@ -170,15 +171,17 @@ public:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
 
+    static void processNamedCollectionResult(StorageS3Configuration & configuration, const std::vector<std::pair<String, ASTPtr>> & key_value_args);
+
     struct S3Configuration
     {
-        S3::URI uri;
+        const S3::URI uri;
+        const String access_key_id;
+        const String secret_access_key;
+        std::shared_ptr<Aws::S3::S3Client> client;
         S3Settings::AuthSettings auth_settings;
         S3Settings::ReadWriteSettings rw_settings;
-        std::shared_ptr<Aws::S3::S3Client> client;
     };
-
-    static void processNamedCollectionResult(StorageS3Configuration & configuration, const std::vector<std::pair<String, ASTPtr>> & key_value_args);
 
 private:
     friend class StorageS3Cluster;
@@ -196,9 +199,9 @@ private:
     ASTPtr partition_by;
     bool is_key_with_globs = false;
 
-        static void updateS3Configuration(ContextPtr, S3Configuration &, const std::optional<S3Settings::ReadWriteSettings> & rw_settings_from_ast = std::nullopt);
+    static void updateS3Configuration(ContextPtr, S3Configuration &);
 
-    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const S3Configuration & s3_configuration_, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context);
+    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const S3Configuration & s3_configuration, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context);
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const String & format,
