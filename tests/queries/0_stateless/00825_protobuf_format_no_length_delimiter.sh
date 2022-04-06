@@ -43,7 +43,7 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM roundtrip_no_length_delimiter_protobuf
 rm "$BINARY_FILE_PATH"
 
 # The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.
-$CLICKHOUSE_CLIENT --multiquery --testmode > /dev/null <<EOF
+$CLICKHOUSE_CLIENT --multiquery > /dev/null <<EOF
 SELECT * FROM no_length_delimiter_protobuf_00825 FORMAT ProtobufSingle SETTINGS format_schema = '$SCHEMADIR/00825_protobuf_format_no_length_delimiter:Message'; -- { clientError 546 }
 EOF
 
