@@ -236,6 +236,73 @@ def test_orc_minmax_index(
         )
 
 
+@pytest.mark.parametrize(
+    "table,use_local_cache_for_remote_storage,enable_parquet_rowgroup_minmax_index",
+    [
+        pytest.param(
+            "demo_parquet_no_cache_no_index",
+            "false",
+            "false",
+            id="demo_parquet_no_cache_no_index",
+        ),
+        pytest.param(
+            "demo_parquet_with_cache_no_index",
+            "true",
+            "false",
+            id="demo_parquet_with_cache_no_index",
+        ),
+        pytest.param(
+            "demo_parquet_no_cache_rowgroup_index",
+            "false",
+            "true",
+            id="demo_parquet_no_cache_rowgroup_index",
+        ),
+        pytest.param(
+            "demo_parquet_with_cache_rowgroup_index",
+            "true",
+            "true",
+            id="demo_parquet_with_cache_rowgroup_index",
+        ),
+    ],
+)
+def test_parquet_minmax_index(
+    started_cluster,
+    table,
+    use_local_cache_for_remote_storage,
+    enable_parquet_rowgroup_minmax_index,
+):
+    node = started_cluster.instances["h0_0_0"]
+    result = node.query(
+        """
+        DROP TABLE IF EXISTS default.{table};
+        CREATE TABLE default.{table} (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+        SETTINGS enable_parquet_rowgroup_minmax_index = {enable_parquet_rowgroup_minmax_index}
+    """.format(
+            table=table,
+            enable_parquet_rowgroup_minmax_index=enable_parquet_rowgroup_minmax_index,
+        )
+    )
+    assert result.strip() == ""
+
+    for i in range(2):
+        result = node.query(
+            """
+            SELECT day, id, score FROM default.{table} where day >= '2021-11-05' and day <= '2021-11-16' and score >= 15 and score <= 30 order by day, id
+            SETTINGS use_local_cache_for_remote_storage = {use_local_cache_for_remote_storage}
+            """.format(
+                table=table,
+                use_local_cache_for_remote_storage=use_local_cache_for_remote_storage,
+            )
+        )
+
+        assert (
+            result.strip()
+            == """2021-11-05	abd	15
+2021-11-16	aaa	22
+"""
+        )
+
+
 def test_hive_columns_prunning(started_cluster):
     logging.info("Start testing groupby ...")
     node = started_cluster.instances["h0_0_0"]
