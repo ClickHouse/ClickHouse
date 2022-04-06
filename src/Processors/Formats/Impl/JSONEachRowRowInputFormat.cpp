@@ -312,7 +312,7 @@ JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, bool json_str
 }
 
 
-std::unordered_map<String, DataTypePtr> JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes()
+NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
 {
     if (first_row)
     {
@@ -339,7 +339,10 @@ std::unordered_map<String, DataTypePtr> JSONEachRowSchemaReader::readRowAndGetNa
 
     skipWhitespaceIfAny(in);
     if (in.eof())
+    {
+        eof = true;
         return {};
+    }
 
     return readRowAndGetNamesAndDataTypesForJSONEachRow(in, json_strings);
 }

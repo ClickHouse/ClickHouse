@@ -98,8 +98,6 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
     /// Skip prefix before names and types.
     format_reader->skipPrefixBeforeHeader();
 
-    /// This is a bit of abstraction leakage, but we need it in parallel parsing:
-    /// we check if this InputFormat is working with the "real" beginning of the data.
     if (with_names)
     {
         if (format_settings.with_names_use_header)

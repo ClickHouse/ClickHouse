@@ -39,10 +39,6 @@ public:
     {
     }
 
-    virtual ~ReadBufferFromFileDescriptor() override
-    {
-    }
-
     int getFD() const
     {
         return fd;
@@ -83,9 +79,6 @@ public:
         : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
     {
         use_pread = true;
-    }
-    virtual ~ReadBufferFromFileDescriptorPRead() override
-    {
     }
 };
 
