@@ -105,13 +105,13 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME" "$${{ secrets.COV_TOKEN }}"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME" "${{ secrets.COV_TOKEN }}"
       - name: Upload Coverity Analysis
         if: ${{ success() || failure() }}
         run: |
-          curl --form token=$${{ secrets.COV_TOKEN }} \
-            --form email=${{ secrets.ROBOT_CLICKHOUSE_EMAIL }} \
-            --form file=@$TEMP_PATH/$BUILD_NAME/clickhouse-scan.tgz \
+          curl --form token='${{ secrets.COV_TOKEN }}' \
+            --form email='${{ secrets.ROBOT_CLICKHOUSE_EMAIL }}' \
+            --form file="@$TEMP_PATH/$BUILD_NAME/clickhouse-scan.tgz" \
             --form version="${GITHUB_REF#refs/heads/}-${GITHUB_SHA::6}" \
             --form description="Nighly Scan: $(date +'%Y-%m-%dT%H:%M:%S')" \
             https://scan.coverity.com/builds?project=ClickHouse%2FClickHouse
