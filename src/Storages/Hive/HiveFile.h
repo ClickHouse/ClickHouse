@@ -125,9 +125,9 @@ public:
 
     virtual const std::vector<MinMaxIndexPtr> & getSubMinMaxIndexes() const { return sub_minmax_idxes; }
 
-    virtual void setSkipSplits(const std::set<int> & splits) { skip_splits = splits; }
+    virtual void setSkipSplits(const std::unordered_set<int> & skip_splits_) { skip_splits = skip_splits_; }
 
-    virtual const std::set<int> & getSkipSplits() const { return skip_splits; }
+    virtual const std::unordered_set<int> & getSkipSplits() const { return skip_splits; }
 
     inline std::string describeMinMaxIndex(const MinMaxIndexPtr & idx) const
     {
@@ -157,7 +157,7 @@ protected:
     MinMaxIndexPtr minmax_idx;
     std::vector<MinMaxIndexPtr> sub_minmax_idxes;
     /// Skip splits for this file after applying minmax index (if any)
-    std::set<int> skip_splits;
+    std::unordered_set<int> skip_splits;
     std::shared_ptr<HiveSettings> storage_settings;
 };
 

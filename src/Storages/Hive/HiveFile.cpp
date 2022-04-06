@@ -139,7 +139,7 @@ void HiveOrcFile::prepareColumnMapping()
     for (size_t pos = 0; pos < count; pos++)
     {
         /// Column names in hive is case-insensitive.
-        String columnn{type.getFieldName(pos)};
+        String column{type.getFieldName(pos)};
         boost::to_lower(column);
         orc_column_positions[column] = pos;
     }
