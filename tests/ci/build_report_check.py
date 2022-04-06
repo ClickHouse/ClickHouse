@@ -237,7 +237,7 @@ if __name__ == "__main__":
 
     addition = ""
     if some_builds_are_missing:
-        addition = "(some builds are missing)"
+        addition = f"({len(build_reports_map)} < {reports_length})"
 
     description = f"{ok_builds}/{total_builds} builds are OK {addition}"
 
