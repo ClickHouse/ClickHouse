@@ -9,6 +9,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
