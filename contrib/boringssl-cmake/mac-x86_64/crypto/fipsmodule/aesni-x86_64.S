@@ -19,9 +19,11 @@
 .p2align	4
 _aes_hw_encrypt:
 
-#ifdef BORINGSSL_DISPATCH_TEST
+#ifndef NDEBUG
+#ifndef BORINGSSL_FIPS
 
 	movb	$1,_BORINGSSL_function_hit+1(%rip)
+#endif
 #endif
 	movups	(%rdi),%xmm2
 	movl	240(%rdx),%eax
@@ -883,8 +885,10 @@ L$ecb_ret:
 .p2align	4
 _aes_hw_ctr32_encrypt_blocks:
 
-#ifdef BORINGSSL_DISPATCH_TEST
+#ifndef NDEBUG
+#ifndef BORINGSSL_FIPS
 	movb	$1,_BORINGSSL_function_hit(%rip)
+#endif
 #endif
 	cmpq	$1,%rdx
 	jne	L$ctr32_bulk
@@ -2105,8 +2109,10 @@ L$SEH_end_set_decrypt_key:
 _aes_hw_set_encrypt_key:
 __aesni_set_encrypt_key:
 
-#ifdef BORINGSSL_DISPATCH_TEST
+#ifndef NDEBUG
+#ifndef BORINGSSL_FIPS
 	movb	$1,_BORINGSSL_function_hit+3(%rip)
+#endif
 #endif
 .byte	0x48,0x83,0xEC,0x08
 
