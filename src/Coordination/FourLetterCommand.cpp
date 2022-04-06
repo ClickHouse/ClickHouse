@@ -9,6 +9,8 @@
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Coordination/Keeper4LWInfo.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <unistd.h>
 
@@ -127,7 +129,7 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr watch_command = std::make_shared<WatchCommand>(keeper_dispatcher);
         factory.registerCommand(watch_command);
 
-        factory.initializeWhiteList(keeper_dispatcher);
+        factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
 }
@@ -135,17 +137,17 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 bool FourLetterCommandFactory::isEnabled(int32_t code)
 {
     checkInitialization();
-    if (!white_list.empty() && *white_list.cbegin() == WHITE_LIST_ALL)
+    if (!allow_list.empty() && *allow_list.cbegin() == ALLOW_LIST_ALL)
         return true;
 
-    return std::find(white_list.begin(), white_list.end(), code) != white_list.end();
+    return std::find(allow_list.begin(), allow_list.end(), code) != allow_list.end();
 }
 
-void FourLetterCommandFactory::initializeWhiteList(KeeperDispatcher & keeper_dispatcher)
+void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
 {
     const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
 
-    String list_str = keeper_settings->four_letter_word_white_list;
+    String list_str = keeper_settings->four_letter_word_allow_list;
     Strings tokens;
     splitInto<','>(tokens, list_str);
 
@@ -155,15 +157,15 @@ void FourLetterCommandFactory::initializeWhiteList(KeeperDispatcher & keeper_dis
 
         if (token == "*")
         {
-            white_list.clear();
-            white_list.push_back(WHITE_LIST_ALL);
+            allow_list.clear();
+            allow_list.push_back(ALLOW_LIST_ALL);
             return;
         }
         else
         {
             if (commands.contains(IFourLetterCommand::toCode(token)))
             {
-                white_list.push_back(IFourLetterCommand::toCode(token));
+                allow_list.push_back(IFourLetterCommand::toCode(token));
             }
             else
             {
@@ -200,7 +202,7 @@ void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t 
 
 String MonitorCommand::run()
 {
-    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     if (!keeper_info.has_leader)
@@ -226,6 +228,8 @@ String MonitorCommand::run()
     print(ret, "watch_count", state_machine.getTotalWatchesCount());
     print(ret, "ephemerals_count", state_machine.getTotalEphemeralNodesCount());
     print(ret, "approximate_data_size", state_machine.getApproximateDataSize());
+    print(ret, "key_arena_size", state_machine.getKeyArenaSize());
+    print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
 
 #if defined(__linux__) || defined(__APPLE__)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
@@ -284,7 +288,7 @@ String ServerStatCommand::run()
         writeText('\n', buf);
     };
 
-    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
@@ -310,7 +314,7 @@ String StatCommand::run()
 
     auto write = [&buf] (const String & key, const String & value) { buf << key << ": " << value << '\n'; };
 
-    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);

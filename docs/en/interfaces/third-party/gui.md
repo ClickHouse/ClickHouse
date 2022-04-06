@@ -143,6 +143,10 @@ Features:
 -   Backup and restore.
 -   RBAC.
 
+### Zeppelin-Interpreter-for-ClickHouse {#zeppelin-interpreter-for-clickhouse}
+
+[Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a [Zeppelin](https://zeppelin.apache.org) interpreter for ClickHouse. Compared with JDBC interpreter, it can provide better timeout control for long running queries.
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}
@@ -219,5 +223,25 @@ SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/i
 ### Chadmin {#chadmin}
 
 [Chadmin](https://github.com/bun4uk/chadmin) is a simple UI where you can visualize your currently running queries on your ClickHouse cluster and info about them and kill them if you want.
+
+### TABLUM.IO {#tablum_io}
+
+[TABLUM.IO](https://tablum.io/) — an online query and analytics tool for ETL and visualization. It allows connecting to ClickHouse, query data via a versatile SQL console as well as to load data from static files and 3rd party services. TABLUM.IO can visualize data results as charts and tables.
+
+Features:
+- ETL: data loading from popular databases, local and remote files, API invocations.
+- Versatile SQL console with syntax highlight and visual query builder.
+- Data visualization as charts and tables.
+- Data materialization and sub-queries.
+- Data reporting to Slack, Telegram or email.
+- Data pipelining via proprietary API.
+- Data export in JSON, CSV, SQL, HTML formats.
+- Web-based interface.
+
+TABLUM.IO can be run as a self-hosted solution (as a docker image) or in the cloud.
+License: [commercial](https://tablum.io/pricing) product with 3-month free period. 
+
+Try it out for free [in the cloud](https://tablum.io/try).
+Learn more about the product at [TABLUM.IO](https://tablum.io/)
 
 [Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->

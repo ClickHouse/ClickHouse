@@ -76,6 +76,13 @@ protected:
       */
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
+    /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
+      * Otherwise, convert all sparse columns to ordinary columns.
+      * If default value doesn't change after function execution, returns sparse column as a result.
+      * Otherwise, result column is converted to full.
+      */
+    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
+
     /** Some arguments could remain constant during this implementation.
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
@@ -96,6 +103,8 @@ private:
     ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
+    ColumnPtr executeWithoutSparseColumns(
+            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 };
 
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
@@ -111,7 +120,7 @@ public:
 
     virtual ~IFunctionBase() = default;
 
-    virtual ColumnPtr execute(
+    virtual ColumnPtr execute( /// NOLINT
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
     {
         return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
@@ -258,7 +267,7 @@ public:
       */
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
-        throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Function " + getName() + " has no information about its monotonicity", ErrorCodes::NOT_IMPLEMENTED);
     }
 
 };
@@ -351,6 +360,13 @@ protected:
       */
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
+    /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
+      * Otherwise, convert all sparse columns to ordinary columns.
+      * If default value doesn't change after function execution, returns sparse column as a result.
+      * Otherwise, result column is converted to full.
+      */
+    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
+
     // /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
@@ -404,6 +420,13 @@ public:
       */
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
+    /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
+      * Otherwise, convert all sparse columns to ordinary columns.
+      * If default value doesn't change after function execution, returns sparse column as a result.
+      * Otherwise, result column is converted to full.
+      */
+    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
+
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
@@ -429,7 +452,7 @@ public:
     using Monotonicity = IFunctionBase::Monotonicity;
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
-        throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Function " + getName() + " has no information about its monotonicity", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).

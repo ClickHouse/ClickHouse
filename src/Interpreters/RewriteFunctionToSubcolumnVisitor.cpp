@@ -83,6 +83,7 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
 
     const auto & column_type = columns.get(name_in_storage).type;
     TypeIndex column_type_id = column_type->getTypeId();
+    const auto & alias = function.tryGetAlias();
 
     if (arguments.size() == 1)
     {
@@ -91,7 +92,10 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
         {
             const auto & [type_id, subcolumn_name, transformer] = it->second;
             if (column_type_id == type_id)
+            {
                 ast = transformer(name_in_storage, subcolumn_name);
+                ast->setAlias(alias);
+            }
         }
     }
     else
@@ -116,6 +120,7 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
                 return;
 
             ast = transformToSubcolumn(name_in_storage, subcolumn_name);
+            ast->setAlias(alias);
         }
         else
         {
@@ -124,7 +129,10 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
             {
                 const auto & [type_id, subcolumn_name, transformer] = it->second;
                 if (column_type_id == type_id)
+                {
                     ast = transformer(name_in_storage, subcolumn_name, arguments[1]);
+                    ast->setAlias(alias);
+                }
             }
         }
     }

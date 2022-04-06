@@ -64,7 +64,7 @@ IProcessor::Status DelayedSource::prepare()
             continue;
         }
 
-        if (!output->isNeeded())
+        if (!output->canPush())
             return Status::PortFull;
 
         if (input->isFinished())

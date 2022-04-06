@@ -342,6 +342,9 @@ private:
             }
         }
 
+        /// Now we don't block the Ctrl+C signal and second signal will terminate the program without waiting.
+        interrupt_listener.unblock();
+
         pool.wait();
         total_watch.stop();
 
@@ -431,6 +434,8 @@ private:
 
         Progress progress;
         executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
+
+        executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
         while (Block block = executor.read())
@@ -586,7 +591,6 @@ public:
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {

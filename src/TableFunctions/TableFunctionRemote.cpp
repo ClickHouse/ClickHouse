@@ -60,7 +60,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
          * Specific args (remote): sharding_key, or database (in case it is not ASTLiteral).
          * None of the common arguments is empty at this point, it is checked in getExternalDataSourceConfiguration.
          */
-        auto [common_configuration, storage_specific_args] = named_collection.value();
+        auto [common_configuration, storage_specific_args, _] = named_collection.value();
         configuration.set(common_configuration);
 
         for (const auto & [arg_name, arg_value] : storage_specific_args)
@@ -205,7 +205,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         if (name != "clusterAllReplicas")
             cluster = context->getCluster(cluster_name_expanded);
         else
-            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettings());
+            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettingsRef());
     }
     else
     {
@@ -241,7 +241,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
         cluster = std::make_shared<Cluster>(
-            context->getSettings(),
+            context->getSettingsRef(),
             names,
             configuration.username,
             configuration.password,

@@ -31,7 +31,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
-#include <Interpreters/ProfileEventsExt.h>
+#include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
@@ -81,9 +81,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_PROTOCOL;
 }
 
-TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
+    , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
     , server_display_name(std::move(server_display_name_))
@@ -109,7 +110,7 @@ void TCPHandler::runImpl()
     setThreadName("TCPHandler");
     ThreadStatus thread_status;
 
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP);
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP, socket().secure());
     extractConnectionSettingsFromContext(server.context());
 
     socket().setReceiveTimeout(receive_timeout);
@@ -172,13 +173,13 @@ void TCPHandler::runImpl()
         throw;
     }
 
-    while (true)
+    while (tcp_server.isOpen())
     {
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {
             Stopwatch idle_time;
             UInt64 timeout_ms = std::min(poll_interval, idle_connection_timeout) * 1000000;
-            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
+            while (tcp_server.isOpen() && !server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
             {
                 if (idle_time.elapsedSeconds() > idle_connection_timeout)
                 {
@@ -189,7 +190,7 @@ void TCPHandler::runImpl()
         }
 
         /// If we need to shut down, or client disconnects.
-        if (server.isCancelled() || in->eof())
+        if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
             break;
 
         Stopwatch watch;
@@ -233,8 +234,6 @@ void TCPHandler::runImpl()
             /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
             state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), receive_timeout, send_timeout);
 
-            std::mutex fatal_error_mutex;
-
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
@@ -243,7 +242,7 @@ void TCPHandler::runImpl()
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
-                CurrentThread::setFatalErrorCallback([this, &fatal_error_mutex]
+                CurrentThread::setFatalErrorCallback([this]
                 {
                     std::lock_guard lock(fatal_error_mutex);
                     sendLogs();
@@ -310,8 +309,23 @@ void TCPHandler::runImpl()
             query_context->setReadTaskCallback([this]() -> String
             {
                 std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return {};
+
                 sendReadTaskRequestAssumeLocked();
                 return receiveReadTaskResponseAssumeLocked();
+            });
+
+            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+            {
+                std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return std::nullopt;
+
+                sendMergeTreeReadTaskRequestAssumeLocked(std::move(request));
+                return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
             });
 
             /// Processing Query
@@ -336,7 +350,7 @@ void TCPHandler::runImpl()
                 /// Should not check for cancel in case of input.
                 if (!state.need_receive_data_for_input)
                 {
-                    auto callback = [this, &fatal_error_mutex]()
+                    auto callback = [this]()
                     {
                         std::lock_guard lock(fatal_error_mutex);
 
@@ -344,6 +358,7 @@ void TCPHandler::runImpl()
                             return true;
 
                         sendProgress();
+                        sendProfileEvents();
                         sendLogs();
 
                         return false;
@@ -451,7 +466,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, getExceptionMessage(e, true));
+                LOG_ERROR(log, fmt::runtime(getExceptionMessage(e, true)));
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
@@ -663,10 +678,13 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         Block block;
         while (executor.pull(block, interactive_delay / 1000))
         {
-            std::lock_guard lock(task_callback_mutex);
+            std::unique_lock lock(task_callback_mutex);
 
             if (isQueryCancelled())
             {
+                /// Several callback like callback for parallel reading could be called from inside the pipeline
+                /// and we have to unlock the mutex from our side to prevent deadlock.
+                lock.unlock();
                 /// A packet was received requesting to stop execution of the request.
                 executor.cancel();
                 break;
@@ -786,6 +804,15 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
     out->next();
 }
 
+
+void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request)
+{
+    writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
+    request.serialize(*out);
+    out->next();
+}
+
+
 void TCPHandler::sendProfileInfo(const ProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
@@ -825,164 +852,15 @@ void TCPHandler::sendExtremes(const Block & extremes)
     }
 }
 
-
-namespace
-{
-    using namespace ProfileEvents;
-
-    constexpr size_t NAME_COLUMN_INDEX  = 4;
-    constexpr size_t VALUE_COLUMN_INDEX = 5;
-
-    struct ProfileEventsSnapshot
-    {
-        UInt64 thread_id;
-        ProfileEvents::CountersIncrement counters;
-        Int64 memory_usage;
-        time_t current_time;
-    };
-
-    /*
-     * Add records about provided non-zero ProfileEvents::Counters.
-     */
-    void dumpProfileEvents(
-        ProfileEventsSnapshot const & snapshot,
-        MutableColumns & columns,
-        String const & host_name)
-    {
-        size_t rows = 0;
-        auto & name_column = columns[NAME_COLUMN_INDEX];
-        auto & value_column = columns[VALUE_COLUMN_INDEX];
-        for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
-        {
-            Int64 value = snapshot.counters[event];
-
-            if (value == 0)
-                continue;
-
-            const char * desc = ProfileEvents::getName(event);
-            name_column->insertData(desc, strlen(desc));
-            value_column->insert(value);
-            rows++;
-        }
-
-        // Fill the rest of the columns with data
-        for (size_t row = 0; row < rows; ++row)
-        {
-            size_t i = 0;
-            columns[i++]->insertData(host_name.data(), host_name.size());
-            columns[i++]->insert(UInt64(snapshot.current_time));
-            columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEvents::Type::INCREMENT);
-        }
-    }
-
-    void dumpMemoryTracker(
-        ProfileEventsSnapshot const & snapshot,
-        MutableColumns & columns,
-        String const & host_name)
-    {
-        {
-            size_t i = 0;
-            columns[i++]->insertData(host_name.data(), host_name.size());
-            columns[i++]->insert(UInt64(snapshot.current_time));
-            columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEvents::Type::GAUGE);
-
-            columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
-            columns[i++]->insert(snapshot.memory_usage);
-        }
-    }
-}
-
-
 void TCPHandler::sendProfileEvents()
 {
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
         return;
 
-    NamesAndTypesList column_names_and_types = {
-        { "host_name",    std::make_shared<DataTypeString>()   },
-        { "current_time", std::make_shared<DataTypeDateTime>() },
-        { "thread_id",    std::make_shared<DataTypeUInt64>()   },
-        { "type",         ProfileEvents::TypeEnum              },
-        { "name",         std::make_shared<DataTypeString>()   },
-        { "value",        std::make_shared<DataTypeInt64>()   },
-    };
-
-    ColumnsWithTypeAndName temp_columns;
-    for (auto const & name_and_type : column_names_and_types)
-        temp_columns.emplace_back(name_and_type.type, name_and_type.name);
-
-    Block block(std::move(temp_columns));
-
-    MutableColumns columns = block.mutateColumns();
-    auto thread_group = CurrentThread::getGroup();
-    auto const current_thread_id = CurrentThread::get().thread_id;
-    std::vector<ProfileEventsSnapshot> snapshots;
-    ThreadIdToCountersSnapshot new_snapshots;
-    ProfileEventsSnapshot group_snapshot;
+    Block block;
+    ProfileEvents::getProfileEvents(server_display_name, state.profile_queue, block, last_sent_snapshots);
+    if (block.rows() != 0)
     {
-        std::lock_guard guard(thread_group->mutex);
-        snapshots.reserve(thread_group->threads.size());
-        for (auto * thread : thread_group->threads)
-        {
-            auto const thread_id = thread->thread_id;
-            if (thread_id == current_thread_id)
-                continue;
-            auto current_time = time(nullptr);
-            auto counters = thread->performance_counters.getPartiallyAtomicSnapshot();
-            auto memory_usage = thread->memory_tracker.get();
-            auto previous_snapshot = last_sent_snapshots.find(thread_id);
-            auto increment =
-                previous_snapshot != last_sent_snapshots.end()
-                ? CountersIncrement(counters, previous_snapshot->second)
-                : CountersIncrement(counters);
-            snapshots.push_back(ProfileEventsSnapshot{
-                thread_id,
-                std::move(increment),
-                memory_usage,
-                current_time
-            });
-            new_snapshots[thread_id] = std::move(counters);
-        }
-
-        group_snapshot.thread_id    = 0;
-        group_snapshot.current_time = time(nullptr);
-        group_snapshot.memory_usage = thread_group->memory_tracker.get();
-        auto group_counters         = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-        auto prev_group_snapshot    = last_sent_snapshots.find(0);
-        group_snapshot.counters     =
-            prev_group_snapshot != last_sent_snapshots.end()
-            ? CountersIncrement(group_counters, prev_group_snapshot->second)
-            : CountersIncrement(group_counters);
-        new_snapshots[0]            = std::move(group_counters);
-    }
-    last_sent_snapshots = std::move(new_snapshots);
-
-    for (auto & snapshot : snapshots)
-    {
-        dumpProfileEvents(snapshot, columns, server_display_name);
-        dumpMemoryTracker(snapshot, columns, server_display_name);
-    }
-    dumpProfileEvents(group_snapshot, columns, server_display_name);
-    dumpMemoryTracker(group_snapshot, columns, server_display_name);
-
-    MutableColumns logs_columns;
-    Block curr_block;
-    size_t rows = 0;
-
-    for (; state.profile_queue->tryPop(curr_block); ++rows)
-    {
-        auto curr_columns = curr_block.getColumns();
-        for (size_t j = 0; j < curr_columns.size(); ++j)
-            columns[j]->insertRangeFrom(*curr_columns[j], 0, curr_columns[j]->size());
-    }
-
-    bool empty = columns[0]->empty();
-    if (!empty)
-    {
-        block.setColumns(std::move(columns));
-
         initProfileEventsBlockOutput(block);
 
         writeVarUInt(Protocol::Server::ProfileEvents, *out);
@@ -1297,6 +1175,35 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
 }
 
 
+std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != Protocol::Client::MergeTreeReadTaskResponse)
+    {
+        if (packet_type == Protocol::Client::Cancel)
+        {
+            state.is_cancelled = true;
+            /// For testing connection collector.
+            if (sleep_in_receive_cancel.totalMilliseconds())
+            {
+                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
+                std::this_thread::sleep_for(ms);
+            }
+            return std::nullopt;
+        }
+        else
+        {
+            throw Exception(fmt::format("Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        }
+    }
+    PartitionReadResponse response;
+    response.deserialize(*in);
+    return response;
+}
+
+
 void TCPHandler::receiveClusterNameAndSalt()
 {
     readStringBinary(cluster, *in);
@@ -1337,6 +1244,12 @@ void TCPHandler::receiveQuery()
     if (is_interserver_mode)
     {
         ClientInfo original_session_client_info = session->getClientInfo();
+
+        /// Cleanup fields that should not be reused from previous query.
+        original_session_client_info.current_user.clear();
+        original_session_client_info.current_query_id.clear();
+        original_session_client_info.current_address = {};
+
         session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP_INTERSERVER);
         session->getClientInfo() = original_session_client_info;
     }
@@ -1697,7 +1610,7 @@ bool TCPHandler::isQueryCancelled()
                 return true;
 
             default:
-                throw NetException("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+                throw NetException("Unknown packet from client " + toString(packet_type), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
         }
     }
 

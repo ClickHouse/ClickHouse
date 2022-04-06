@@ -30,6 +30,11 @@ void registerTableFunctions()
 
 #if USE_HDFS
     registerTableFunctionHDFS(factory);
+    registerTableFunctionHDFSCluster(factory);
+#endif
+
+#if USE_HIVE
+    registerTableFunctionHive(factory);
 #endif
 
     registerTableFunctionODBC(factory);
@@ -50,6 +55,8 @@ void registerTableFunctions()
 #endif
 
     registerTableFunctionDictionary(factory);
+
+    registerTableFunctionFormat(factory);
 }
 
 }

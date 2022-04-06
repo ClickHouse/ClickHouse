@@ -28,8 +28,6 @@ private:
     nuraft::ptr<nuraft::asio_service> asio_service;
     nuraft::ptr<nuraft::rpc_listener> asio_listener;
 
-    std::mutex append_entries_mutex;
-
     std::mutex initialized_mutex;
     std::atomic<bool> initialized_flag = false;
     std::condition_variable initialized_cv;
@@ -44,6 +42,7 @@ private:
     /// Almost copy-paste from nuraft::launcher, but with separated server init and start
     /// Allows to avoid race conditions.
     void launchRaftServer(
+        bool enable_ipv6,
         const nuraft::raft_params & params,
         const nuraft::asio_service::options & asio_opts);
 
@@ -57,7 +56,7 @@ public:
         SnapshotsQueue & snapshots_queue_);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
-    void startup();
+    void startup(bool enable_ipv6 = true);
 
     /// Put local read request and execute in state machine directly and response into
     /// responses queue

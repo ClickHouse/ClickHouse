@@ -71,18 +71,24 @@ void registerFunctionErrorCodeToName(FunctionFactory &);
 void registerFunctionTcpPort(FunctionFactory &);
 void registerFunctionGetServerPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
-void registerFunctionFile(FunctionFactory & factory);
-void registerFunctionConnectionId(FunctionFactory & factory);
-void registerFunctionPartitionId(FunctionFactory & factory);
+void registerFunctionFile(FunctionFactory &);
+void registerFunctionConnectionId(FunctionFactory &);
+void registerFunctionPartitionId(FunctionFactory &);
 void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
-void registerFunctionQueryID(FunctionFactory & factory);
-void registerFunctionInitialQueryID(FunctionFactory & factory);
+void registerFunctionQueryID(FunctionFactory &);
+void registerFunctionInitialQueryID(FunctionFactory &);
 void registerFunctionServerUUID(FunctionFactory &);
 void registerFunctionZooKeeperSessionUptime(FunctionFactory &);
 void registerFunctionGetOSKernelVersion(FunctionFactory &);
+void registerFunctionGetTypeSerializationStreams(FunctionFactory &);
+void registerFunctionFlattenTuple(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
+#endif
+
+#ifdef FUZZING_MODE
+void registerFunctionGetFuzzerData(FunctionFactory & factory);
 #endif
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
@@ -162,9 +168,15 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionServerUUID(factory);
     registerFunctionZooKeeperSessionUptime(factory);
     registerFunctionGetOSKernelVersion(factory);
+    registerFunctionGetTypeSerializationStreams(factory);
+    registerFunctionFlattenTuple(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
+#endif
+
+#ifdef FUZZING_MODE
+    registerFunctionGetFuzzerData(factory);
 #endif
 }
 

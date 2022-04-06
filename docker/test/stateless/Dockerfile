@@ -1,10 +1,9 @@
+# rebuild in #33610
 # docker build -t clickhouse/stateless-test .
-FROM clickhouse/test-base
+ARG FROM_TAG=latest
+FROM clickhouse/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
-
-RUN echo "deb [trusted=yes] http://repo.mysql.com/apt/ubuntu/ bionic mysql-5.7" >> /etc/apt/sources.list \
-    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 8C718D3B5072E1F5
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -30,9 +29,10 @@ RUN apt-get update -y \
             tree \
             unixodbc \
             wget \
-            mysql-client=5.7* \
+            mysql-client=8.0* \
             postgresql-client \
-            sqlite3
+            sqlite3 \
+            awscli
 
 RUN pip3 install numpy scipy pandas Jinja2
 
@@ -49,15 +49,18 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
 
+ARG TARGETARCH
 
 # Download Minio-related binaries
-RUN wget 'https://dl.min.io/server/minio/release/linux-amd64/minio' \
+RUN arch=${TARGETARCH:-amd64} \
+    && wget "https://dl.min.io/server/minio/release/linux-${arch}/minio" \
     && chmod +x ./minio \
-    && wget 'https://dl.min.io/client/mc/release/linux-amd64/mc' \
+    && wget "https://dl.min.io/client/mc/release/linux-${arch}/mc" \
     && chmod +x ./mc
 
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
+ENV EXPORT_S3_STORAGE_POLICIES=1
 
 COPY run.sh /
 COPY setup_minio.sh /

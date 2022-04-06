@@ -59,6 +59,7 @@ private:
 };
 
 
+bool isNullable(const DataTypePtr & type);
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
 void convertColumnToNullable(ColumnWithTypeAndName & column);
@@ -72,8 +73,8 @@ Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
-void removeLowCardinalityInplace(Block & block);
-void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type = true);
+void convertToFullColumnsInplace(Block & block);
+void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type = true);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);

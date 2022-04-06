@@ -9,12 +9,14 @@
 
 namespace DB
 {
+class TCPServer;
 
 class HTTPServerConnection : public Poco::Net::TCPServerConnection
 {
 public:
     HTTPServerConnection(
         ContextPtr context,
+        TCPServer & tcp_server,
         const Poco::Net::StreamSocket & socket,
         Poco::Net::HTTPServerParams::Ptr params,
         HTTPRequestHandlerFactoryPtr factory);
@@ -26,6 +28,7 @@ protected:
 
 private:
     ContextPtr context;
+    TCPServer & tcp_server;
     Poco::Net::HTTPServerParams::Ptr params;
     HTTPRequestHandlerFactoryPtr factory;
     bool stopped;

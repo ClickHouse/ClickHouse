@@ -147,7 +147,7 @@ TEST(Executor, RemoveTasksStress)
     for (size_t j = 0; j < tasks_kinds; ++j)
         executor->removeTasksCorrespondingToStorage({"test", std::to_string(j)});
 
-    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
-
     executor->wait();
+
+    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
 }

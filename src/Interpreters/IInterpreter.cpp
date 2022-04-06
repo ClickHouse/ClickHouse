@@ -1,5 +1,6 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

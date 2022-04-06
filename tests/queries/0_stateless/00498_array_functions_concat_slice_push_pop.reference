@@ -35,6 +35,8 @@ slice
 [2,NULL,4,5]
 ['b','c','d']
 ['b',NULL,'d']
+[]	1
+[]	1
 push back
 \N
 [1,1]

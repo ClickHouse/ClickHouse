@@ -13,7 +13,9 @@ public:
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
     SerializationTuple(const ElementSerializations & elems_, bool have_explicit_names_)
-        : elems(elems_), have_explicit_names(have_explicit_names_) {}
+        : elems(elems_), have_explicit_names(have_explicit_names_)
+    {
+    }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
@@ -34,8 +36,7 @@ public:
     void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const override;
+        const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,
@@ -62,6 +63,8 @@ public:
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,
             SubstreamsCache * cache) const override;
+
+    const ElementSerializations & getElementsSerializations() const { return elems; }
 
 private:
     ElementSerializations elems;

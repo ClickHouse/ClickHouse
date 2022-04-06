@@ -30,7 +30,7 @@ class IStorageURLBase : public IStorage
 public:
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -40,6 +40,14 @@ public:
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     bool supportsPartitionBy() const override { return true; }
+
+    static ColumnsDescription getTableStructureFromData(
+        const String & format,
+        const String & uri,
+        const String & compression_method,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context);
 
 protected:
     IStorageURLBase(
@@ -72,7 +80,7 @@ protected:
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
@@ -80,14 +88,16 @@ protected:
 
     virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
+    bool isColumnOriented() const override;
+
 private:
-    virtual Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const = 0;
+    virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
 
 class StorageURLSink : public SinkToStorage
@@ -135,9 +145,9 @@ public:
         return "URL";
     }
 
-    Block getHeaderBlock(const Names & /*column_names*/, const StorageMetadataPtr & metadata_snapshot) const override
+    Block getHeaderBlock(const Names & /*column_names*/, const StorageSnapshotPtr & storage_snapshot) const override
     {
-        return metadata_snapshot->getSampleBlock();
+        return storage_snapshot->metadata->getSampleBlock();
     }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
@@ -162,7 +172,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,

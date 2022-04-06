@@ -20,6 +20,8 @@ class WriteBufferFromHTTP : public WriteBufferFromOStream
 public:
     explicit WriteBufferFromHTTP(const Poco::URI & uri,
                                  const std::string & method = Poco::Net::HTTPRequest::HTTP_POST, // POST or PUT only
+                                 const std::string & content_type = "",
+                                 const std::string & content_encoding = "",
                                  const ConnectionTimeouts & timeouts = {},
                                  size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 

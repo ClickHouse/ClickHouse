@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -26,6 +28,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaInfo & schema_info)
@@ -425,6 +428,113 @@ void checkCapnProtoSchemaStructure(const capnp::StructSchema & schema, const Blo
             throw std::move(e);
         }
     }
+}
+
+template <typename ValueType>
+static DataTypePtr getEnumDataTypeFromEnumerants(const capnp::EnumSchema::EnumerantList & enumerants)
+{
+    std::vector<std::pair<String, ValueType>> values;
+    for (auto enumerant : enumerants)
+        values.emplace_back(enumerant.getProto().getName(), ValueType(enumerant.getOrdinal()));
+    return std::make_shared<DataTypeEnum<ValueType>>(std::move(values));
+}
+
+static DataTypePtr getEnumDataTypeFromEnumSchema(const capnp::EnumSchema & enum_schema)
+{
+    auto enumerants = enum_schema.getEnumerants();
+    if (enumerants.size() < 128)
+        return getEnumDataTypeFromEnumerants<Int8>(enumerants);
+    if (enumerants.size() < 32768)
+        return getEnumDataTypeFromEnumerants<Int16>(enumerants);
+
+    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "ClickHouse supports only 8 and 16-but Enums");
+}
+
+static DataTypePtr getDataTypeFromCapnProtoType(const capnp::Type & capnp_type)
+{
+    switch (capnp_type.which())
+    {
+        case capnp::schema::Type::INT8:
+            return std::make_shared<DataTypeInt8>();
+        case capnp::schema::Type::INT16:
+            return std::make_shared<DataTypeInt16>();
+        case capnp::schema::Type::INT32:
+            return std::make_shared<DataTypeInt32>();
+        case capnp::schema::Type::INT64:
+            return std::make_shared<DataTypeInt64>();
+        case capnp::schema::Type::BOOL: [[fallthrough]];
+        case capnp::schema::Type::UINT8:
+            return std::make_shared<DataTypeUInt8>();
+        case capnp::schema::Type::UINT16:
+            return std::make_shared<DataTypeUInt16>();
+        case capnp::schema::Type::UINT32:
+            return std::make_shared<DataTypeUInt32>();
+        case capnp::schema::Type::UINT64:
+            return std::make_shared<DataTypeUInt64>();
+        case capnp::schema::Type::FLOAT32:
+            return std::make_shared<DataTypeFloat32>();
+        case capnp::schema::Type::FLOAT64:
+            return std::make_shared<DataTypeFloat64>();
+        case capnp::schema::Type::DATA: [[fallthrough]];
+        case capnp::schema::Type::TEXT:
+            return std::make_shared<DataTypeString>();
+        case capnp::schema::Type::ENUM:
+            return getEnumDataTypeFromEnumSchema(capnp_type.asEnum());
+        case capnp::schema::Type::LIST:
+        {
+            auto list_schema = capnp_type.asList();
+            auto nested_type = getDataTypeFromCapnProtoType(list_schema.getElementType());
+            return std::make_shared<DataTypeArray>(nested_type);
+        }
+        case capnp::schema::Type::STRUCT:
+        {
+            auto struct_schema = capnp_type.asStruct();
+
+            /// Check if it can be Nullable.
+            if (checkIfStructIsNamedUnion(struct_schema))
+            {
+                auto fields = struct_schema.getUnionFields();
+                if (fields.size() != 2 || (!fields[0].getType().isVoid() && !fields[1].getType().isVoid()))
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Unions are not supported");
+                auto value_type = fields[0].getType().isVoid() ? fields[1].getType() : fields[0].getType();
+                if (value_type.isStruct() || value_type.isList())
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Tuples and Lists cannot be inside Nullable");
+
+                auto nested_type = getDataTypeFromCapnProtoType(value_type);
+                return std::make_shared<DataTypeNullable>(nested_type);
+            }
+
+            if (checkIfStructContainsUnnamedUnion(struct_schema))
+                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Unnamed union is not supported");
+
+            /// Treat Struct as Tuple.
+            DataTypes nested_types;
+            Names nested_names;
+            for (auto field : struct_schema.getNonUnionFields())
+            {
+                nested_names.push_back(field.getProto().getName());
+                nested_types.push_back(getDataTypeFromCapnProtoType(field.getType()));
+            }
+            return std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names));
+        }
+        default:
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Unsupported CapnProtoType: {}", getCapnProtoFullTypeName(capnp_type));
+    }
+}
+
+NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema)
+{
+    if (checkIfStructContainsUnnamedUnion(schema))
+        throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Unnamed union is not supported");
+
+    NamesAndTypesList names_and_types;
+    for (auto field : schema.getNonUnionFields())
+    {
+        auto name = field.getProto().getName();
+        auto type = getDataTypeFromCapnProtoType(field.getType());
+        names_and_types.emplace_back(name, type);
+    }
+    return names_and_types;
 }
 
 }

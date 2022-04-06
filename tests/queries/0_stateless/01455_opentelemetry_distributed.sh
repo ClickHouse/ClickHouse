@@ -20,7 +20,7 @@ select attribute['db.statement'] as query,
        attribute['clickhouse.tracestate'] as tracestate,
        1 as sorted_by_start_time
     from system.opentelemetry_span_log
-    where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
+    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
     order by start_time_us
     ;
@@ -31,7 +31,7 @@ select attribute['db.statement'] as query,
        attribute['clickhouse.tracestate'] as tracestate,
        1 as sorted_by_finish_time
     from system.opentelemetry_span_log
-    where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
+    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
     order by finish_time_us
     ;
@@ -43,7 +43,7 @@ select count(*) "'"'"total spans"'"'",
         uniqExactIf(parent_span_id, parent_span_id != 0)
             "'"'"unique non-zero parent spans"'"'"
     from system.opentelemetry_span_log
-    where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
+    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
     ;
 
@@ -56,7 +56,7 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
                      mapValues(attribute) as attribute_value) o
         join system.query_log on query_id = o.attribute_value
     where
-        trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
+        trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and current_database = currentDatabase()
         and operation_name = 'query'
         and parent_span_id = reinterpretAsUInt64(unhex('73'))
@@ -71,7 +71,7 @@ select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
     from system.opentelemetry_span_log
         array join mapKeys(attribute) as name,  mapValues(attribute) as value
     where
-        trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
+        trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
         and name = 'clickhouse.tracestate'
         and length(value) > 0

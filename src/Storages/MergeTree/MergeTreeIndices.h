@@ -29,7 +29,7 @@ struct MergeTreeIndexFormat
     MergeTreeIndexVersion version;
     const char* extension;
 
-    operator bool() const { return version != 0; }
+    operator bool() const { return version != 0; } /// NOLINT
 };
 
 /// Stores some info about a single block of data.
@@ -122,7 +122,7 @@ using MergeTreeIndexMergedConditions = std::vector<IMergeTreeIndexMergedConditio
 
 struct IMergeTreeIndex
 {
-    IMergeTreeIndex(const IndexDescription & index_)
+    explicit IMergeTreeIndex(const IndexDescription & index_)
         : index(index_)
     {
     }
@@ -147,9 +147,11 @@ struct IMergeTreeIndex
     /// Returns extension for deserialization.
     ///
     /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const DiskPtr, const std::string & /* relative_path_prefix */) const
+    virtual MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
     {
-        return {1, ".idx"};
+        if (disk->exists(relative_path_prefix + ".idx"))
+            return {1, ".idx"};
+        return {0 /*unknown*/, ""};
     }
 
     /// Checks whether the column is in data skipping index.
@@ -162,7 +164,7 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query_info, ContextPtr context) const = 0;
 
-    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondtition(
+    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

@@ -12,6 +12,7 @@
 
 #include <base/logger_useful.h>
 #include <base/scope_guard_safe.h>
+#include <base/sort.h>
 #include <iomanip>
 #include <filesystem>
 
@@ -151,7 +152,7 @@ DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const Filt
         if (!filter_by_table_name || filter_by_table_name(table_name))
             filtered_tables.push_back(table_name);
     }
-    std::sort(filtered_tables.begin(), filtered_tables.end());
+    ::sort(filtered_tables.begin(), filtered_tables.end());
     return std::make_unique<DatabaseLazyIterator>(*this, std::move(filtered_tables));
 }
 
@@ -269,6 +270,7 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
 }
 
 void DatabaseLazy::clearExpiredTables() const
+try
 {
     std::lock_guard lock(mutex);
     auto time_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -302,6 +304,10 @@ void DatabaseLazy::clearExpiredTables() const
     }
 
     cache_expiration_queue.splice(cache_expiration_queue.begin(), busy_tables, busy_tables.begin(), busy_tables.end());
+}
+catch (...)
+{
+    tryLogCurrentException(log, __PRETTY_FUNCTION__);
 }
 
 

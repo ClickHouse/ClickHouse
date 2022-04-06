@@ -146,7 +146,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -232,8 +232,8 @@ private:
         const StorageID & table_id_,
         ContextPtr context_,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns
-    );
+        const ColumnsDescription & columns,
+        const String & comment);
 };
 
 }

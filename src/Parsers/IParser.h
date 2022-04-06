@@ -1,7 +1,7 @@
 #pragma once
 
-#include <set>
 #include <memory>
+#include <vector>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
@@ -25,22 +25,24 @@ namespace ErrorCodes
 struct Expected
 {
     const char * max_parsed_pos = nullptr;
-    std::set<const char *> variants;
+    std::vector<const char *> variants;
 
     /// 'description' should be statically allocated string.
-    void add(const char * current_pos, const char * description)
+    ALWAYS_INLINE void add(const char * current_pos, const char * description)
     {
         if (!max_parsed_pos || current_pos > max_parsed_pos)
         {
             variants.clear();
             max_parsed_pos = current_pos;
+            variants.push_back(description);
+            return;
         }
 
-        if (!max_parsed_pos || current_pos >= max_parsed_pos)
-            variants.insert(description);
+        if ((current_pos == max_parsed_pos) && (find(variants.begin(), variants.end(), description) == variants.end()))
+            variants.push_back(description);
     }
 
-    void add(TokenIterator it, const char * description)
+    ALWAYS_INLINE void add(TokenIterator it, const char * description)
     {
         add(it->begin, description);
     }
@@ -58,20 +60,22 @@ public:
         uint32_t depth = 0;
         uint32_t max_depth = 0;
 
-        Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_) {}
+        Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_)
+        {
+        }
 
-        void increaseDepth()
+        ALWAYS_INLINE void increaseDepth()
         {
             ++depth;
-            if (max_depth > 0 && depth > max_depth)
+            if (unlikely(max_depth > 0 && depth > max_depth))
                 throw Exception(
                     "Maximum parse depth (" + std::to_string(max_depth) + ") exceeded. Consider rising max_parser_depth parameter.",
                     ErrorCodes::TOO_DEEP_RECURSION);
         }
 
-        void decreaseDepth()
+        ALWAYS_INLINE void decreaseDepth()
         {
-            if (depth == 0)
+            if (unlikely(depth == 0))
                 throw Exception("Logical error in parser: incorrect calculation of parse depth", ErrorCodes::LOGICAL_ERROR);
             --depth;
         }

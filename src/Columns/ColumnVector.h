@@ -117,7 +117,9 @@ private:
     friend class COWHelper<ColumnVectorHelper, Self>;
 
     struct less;
+    struct less_stable;
     struct greater;
+    struct greater_stable;
     struct equals;
 
 public:
@@ -125,8 +127,8 @@ public:
     using Container = PaddedPODArray<ValueType>;
 
 private:
-    ColumnVector() {}
-    ColumnVector(const size_t n) : data(n) {}
+    ColumnVector() = default;
+    explicit ColumnVector(const size_t n) : data(n) {}
     ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
 
@@ -228,9 +230,11 @@ public:
         return this->template hasEqualValuesImpl<Self>();
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                    size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
-    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
+    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                    size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
 
     void reserve(size_t n) override
     {
@@ -238,7 +242,7 @@ public:
     }
 
     const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeId<T>; }
+    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -328,10 +332,24 @@ public:
         return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
+    bool isDefaultAt(size_t n) const override { return data[n] == T{}; }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
+
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
+    }
+
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
+    {
+        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
+    }
+
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
 
     ColumnPtr compress() const override;
 

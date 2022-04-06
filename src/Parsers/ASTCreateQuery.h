@@ -4,6 +4,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTTableOverrides.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -49,6 +50,12 @@ public:
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+    bool empty() const
+    {
+        return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
+            && (!projections || projections->children.empty());
+    }
 };
 
 
@@ -66,7 +73,6 @@ public:
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
 
     ASTColumns * columns_list = nullptr;
-    ASTExpressionList * tables = nullptr;
 
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
     UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
@@ -78,6 +84,8 @@ public:
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
+
+    ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
 
     bool is_dictionary{false}; /// CREATE DICTIONARY
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
@@ -110,7 +118,7 @@ public:
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
-    const char * getQueryKindString() const override { return "Create"; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

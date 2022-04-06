@@ -66,6 +66,7 @@ public:
     bool shouldAlignRightInPrettyFormats() const override { return false; }
 
     SerializationPtr doGetDefaultSerialization() const override;
+    bool supportsSparseSerialization() const override { return false; }
 
     bool isVersioned() const { return function->isVersioned(); }
 

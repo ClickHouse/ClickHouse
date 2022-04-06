@@ -34,7 +34,7 @@ Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
 !!! warning "Attention"
-    If your system has less than 16 GB of RAM you may experience various memory exceptions because default settings does not match this amount of RAM. Recommended amount of RAM is 32 GB or more. You can use ClickHouse in system with small amount of RAM, even with 2 GB of RAM, but it requires an additional tuning and able to process small ingestion rate.
+    If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. The recommended amount of RAM is 32 GB or more. You can use ClickHouse in a system with a small amount of RAM, even with 2 GB of RAM, but it requires additional tuning and can ingest at a low rate.
 
 ## Storage Subsystem {#storage-subsystem}
 
@@ -129,13 +129,17 @@ If you want to divide an existing ZooKeeper cluster into two, the correct way is
 
 Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
 
+You can have ZooKeeper observers in an ensemble but ClickHouse servers should not interact with observers.
+
+Do not change `minSessionTimeout` setting, large values may affect ClickHouse restart stability.
+
 With the default settings, ZooKeeper is a time bomb:
 
 > The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
 
 This bomb must be defused.
 
-The ZooKeeper (3.5.1) configuration below is used in the Yandex.Metrica production environment as of May 20, 2017:
+The ZooKeeper (3.5.1) configuration below is used in a large production environment:
 
 zoo.cfg:
 

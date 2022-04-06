@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -114,10 +115,21 @@ bool canBecomeNullable(const DataTypePtr & type)
     return can_be_inside;
 }
 
+bool isNullable(const DataTypePtr & type)
+{
+    bool is_nullable = type->isNullable();
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        is_nullable |= low_cardinality_type->getDictionaryType()->isNullable();
+    return is_nullable;
+}
+
 /// Add nullability to type.
 /// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
 DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 {
+    if (isNullable(type))
+        return type;
+
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
     {
         const auto & dict_type = low_cardinality_type->getDictionaryType();
@@ -133,8 +145,11 @@ DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 
 /// Convert column to nullable. If column LowCardinality or Const, convert nested column.
 /// Returns nullptr if conversion cannot be performed.
-static ColumnPtr tryConvertColumnToNullable(const ColumnPtr & col)
+static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 {
+    if (col->isSparse())
+        col = recursiveRemoveSparse(col);
+
     if (isColumnNullable(*col) || col->canBeInsideNullable())
         return makeNullable(col);
 
@@ -225,7 +240,13 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->isNullable())
         {
+            column.column = column.column->convertToFullColumnIfConst();
             const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*column.column);
+            if (!nullable_col)
+            {
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' is expected to be nullable", column.dumpStructure());
+            }
+
             MutableColumnPtr mutable_column = nullable_col->getNestedColumn().cloneEmpty();
             insertFromNullableOrDefault(mutable_column, nullable_col);
             column.column = std::move(mutable_column);
@@ -291,7 +312,7 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     for (const auto & column_name : names)
     {
         auto & column = block.getByName(column_name).column;
-        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
+        column = recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
         ptrs.push_back(column.get());
     }
 
@@ -305,9 +326,10 @@ ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names)
 
     for (const auto & column_name : names)
     {
-        auto & column = block.getByName(column_name).column;
-        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
-        ptrs[column_name] = column.get();
+        auto & column = block.getByName(column_name);
+        column.column = recursiveRemoveLowCardinality(column.column->convertToFullColumnIfConst());
+        column.type = recursiveRemoveLowCardinality(column.type);
+        ptrs[column_name] = column.column.get();
     }
 
     return ptrs;
@@ -316,7 +338,8 @@ ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names)
 ColumnPtr materializeColumn(const Block & block, const String & column_name)
 {
     const auto & src_column = block.getByName(column_name).column;
-    return recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst());
+    return recursiveRemoveLowCardinality(
+        recursiveRemoveSparse(src_column->convertToFullColumnIfConst()));
 }
 
 Columns materializeColumns(const Block & block, const Names & names)
@@ -343,22 +366,22 @@ ColumnRawPtrs getRawPointers(const Columns & columns)
     return ptrs;
 }
 
-void removeLowCardinalityInplace(Block & block)
+void convertToFullColumnsInplace(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & col = block.getByPosition(i);
-        col.column = recursiveRemoveLowCardinality(col.column);
+        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
         col.type = recursiveRemoveLowCardinality(col.type);
     }
 }
 
-void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type)
+void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type)
 {
     for (const String & column_name : names)
     {
         auto & col = block.getByName(column_name);
-        col.column = recursiveRemoveLowCardinality(col.column);
+        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
         if (change_type)
             col.type = recursiveRemoveLowCardinality(col.type);
     }
@@ -395,6 +418,9 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
         /// We will join only keys, where all components are not NULL.
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i]))
             key_columns[i] = &nullable->getNestedColumn();
+
+        if (const auto * sparse = checkAndGetColumn<ColumnSparse>(*key_columns[i]))
+            key_columns[i] = &sparse->getValuesColumn();
     }
 
     return key_columns;
@@ -411,10 +437,13 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
         DataTypePtr right_type = removeNullable(recursiveRemoveLowCardinality(block_right.getByName(key_names_right[i]).type));
 
         if (!left_type->equals(*right_type))
-            throw Exception("Type mismatch of columns to JOIN by: "
-                            + key_names_left[i] + " " + left_type->getName() + " at left, "
-                            + key_names_right[i] + " " + right_type->getName() + " at right",
-                            ErrorCodes::TYPE_MISMATCH);
+        {
+            throw DB::Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "Type mismatch of columns to JOIN by: {} {} at left, {} {} at right",
+                key_names_left[i], left_type->getName(),
+                key_names_right[i], right_type->getName());
+        }
     }
 }
 

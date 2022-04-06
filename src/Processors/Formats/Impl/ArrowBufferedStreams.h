@@ -44,7 +44,7 @@ class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFil
 public:
     RandomAccessFileFromSeekableReadBuffer(SeekableReadBuffer & in_, off_t file_size_);
 
-    RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_);
+    explicit RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_);
 
     arrow::Result<int64_t> GetSize() override;
 
@@ -86,7 +86,7 @@ private:
     ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowInputStreamFromReadBuffer);
 };
 
-std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in, const FormatSettings & settings);
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in, const FormatSettings & settings, std::atomic<int> & is_cancelled);
 
 }
 

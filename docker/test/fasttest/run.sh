@@ -111,19 +111,6 @@ function start_server
     fi
 
     echo "ClickHouse server pid '$server_pid' started and responded"
-
-    echo "
-set follow-fork-mode child
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
-handle SIGABRT stop print
-continue
-thread apply all backtrace
-continue
-" > script.gdb
-
-    gdb -batch -command script.gdb -p "$server_pid" &
 }
 
 function clone_root
@@ -186,6 +173,8 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
+            contrib/jemalloc
+            contrib/replxx
         )
 
         git submodule sync
@@ -206,6 +195,8 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
+        "-DENABLE_JEMALLOC=1"
+        "-DENABLE_REPLXX=1"
     )
 
     # TODO remove this? we don't use ccache anyway. An option would be to download it
@@ -266,9 +257,27 @@ function run_tests
     start_server
 
     set +e
-    time clickhouse-test --hung-check -j 8 --order=random \
-            --fast-tests-only --no-long --testname --shard --zookeeper --check-zookeeper-session \
-            -- "$FASTTEST_FOCUS" 2>&1 \
+    local NPROC
+    NPROC=$(nproc)
+    NPROC=$((NPROC / 2))
+    if [[ $NPROC == 0 ]]; then
+      NPROC=1
+    fi
+
+    local test_opts=(
+        --hung-check
+        --fast-tests-only
+        --no-random-settings
+        --no-long
+        --testname
+        --shard
+        --zookeeper
+        --check-zookeeper-session
+        --order random
+        --print-time
+        --jobs "${NPROC}"
+    )
+    time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee "$FASTTEST_OUTPUT/test_result.txt"
     set -e

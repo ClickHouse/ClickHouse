@@ -4,6 +4,7 @@
 #include <Interpreters/ClusterProxy/IStreamFactory.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/StorageSnapshot.h>
 
 namespace DB
 {
@@ -11,13 +12,16 @@ namespace DB
 namespace ClusterProxy
 {
 
+using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
+
 class SelectStreamFactory final : public IStreamFactory
 {
 public:
     SelectStreamFactory(
         const Block & header_,
-        QueryProcessingStage::Enum processed_stage_,
-        bool has_virtual_shard_num_column_);
+        const ColumnsDescriptionByShardNum & objects_by_shard_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        QueryProcessingStage::Enum processed_stage_);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -31,9 +35,9 @@ public:
 
 private:
     const Block header;
+    const ColumnsDescriptionByShardNum objects_by_shard;
+    const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
-
-    bool has_virtual_shard_num_column = false;
 };
 
 }

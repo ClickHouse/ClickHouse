@@ -26,13 +26,13 @@ public:
         size_t initial_array_size;
         size_t max_array_size;
         bool require_nonempty;
+        DictionaryLifetime dict_lifetime;
     };
 
     FlatDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
         Configuration configuration_,
         BlockPtr update_field_loaded_block_ = nullptr);
 
@@ -58,12 +58,12 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, update_field_loaded_block);
+        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
-    const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
+    const DictionaryLifetime & getLifetime() const override { return configuration.dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
@@ -127,14 +127,13 @@ private:
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
+            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
             ContainerType<StringRef>,
             ContainerType<Array>>
             container;
-
-        std::unique_ptr<Arena> string_arena;
     };
 
     void createAttributes();
@@ -156,14 +155,10 @@ private:
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);
 
-    template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, UInt64 key, const T & value);
-
     void setAttributeValue(Attribute & attribute, UInt64 key, const Field & value);
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
-    const DictionaryLifetime dict_lifetime;
     const Configuration configuration;
 
     std::vector<Attribute> attributes;
@@ -176,6 +171,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
+    Arena string_arena;
 };
 
 }

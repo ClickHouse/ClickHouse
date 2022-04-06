@@ -3,7 +3,7 @@
 #include <Storages/System/attachSystemTablesImpl.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <base/getResource.h>
+#include <Common/getResource.h>
 
 namespace DB
 {
@@ -32,6 +32,8 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
         assert(view_name == ast_create.getTable());
+        ast_create.attach = false;
+        ast_create.setDatabase(database.getDatabaseName());
         if (is_uppercase)
             ast_create.setTable(Poco::toUpper(view_name));
 
