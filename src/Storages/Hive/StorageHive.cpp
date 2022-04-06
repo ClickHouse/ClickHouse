@@ -176,7 +176,8 @@ public:
 
                 /// Use local cache for remote storage if enabled.
                 std::unique_ptr<ReadBuffer> remote_read_buf;
-                if (ExternalDataSourceCache::instance().isInitialized() && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
+                if (ExternalDataSourceCache::instance().isInitialized()
+                    && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
                 {
                     size_t buff_size = raw_read_buf->internalBuffer().size();
                     if (buff_size == 0)
@@ -547,7 +548,8 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
         if (!hivefile_key_condition.checkInHyperrectangle(hive_file->getMinMaxIndex()->hyperrectangle, hivefile_name_types.getTypes())
                  .can_be_true)
         {
-            LOG_TRACE(log, "Skip hive file {} by index {}", hive_file->getPath(), hive_file->describeMinMaxIndex(hive_file->getMinMaxIndex()));
+            LOG_TRACE(
+                log, "Skip hive file {} by index {}", hive_file->getPath(), hive_file->describeMinMaxIndex(hive_file->getMinMaxIndex()));
             return {};
         }
     }
@@ -563,7 +565,12 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
             if (!hivefile_key_condition.checkInHyperrectangle(sub_minmax_idxes[i]->hyperrectangle, hivefile_name_types.getTypes())
                      .can_be_true)
             {
-                LOG_TRACE(log, "Skip split {} of hive file {}", i, hive_file->getPath());
+                LOG_TRACE(
+                    log,
+                    "Skip split {} of hive file {} by index {}",
+                    i,
+                    hive_file->getPath(),
+                    hive_file->describeMinMaxIndex(sub_minmax_idxes[i]));
                 skip_splits.insert(i);
             }
         }
