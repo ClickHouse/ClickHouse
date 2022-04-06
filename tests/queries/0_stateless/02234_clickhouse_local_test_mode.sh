@@ -6,5 +6,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 $CLICKHOUSE_LOCAL --query="SELECT n" 2>&1 | grep -q "Code: 47. DB::Exception: Missing columns:" && echo 'OK' || echo 'FAIL' ||:
-$CLICKHOUSE_LOCAL --testmode --query="SELECT n -- { serverError 47 }"
-
+$CLICKHOUSE_LOCAL --query="SELECT n -- { serverError 47 }"
