@@ -51,6 +51,7 @@ StorageS3Cluster::StorageS3Cluster(
     const StorageID & table_id_,
     String cluster_name_,
     const String & format_name_,
+    UInt64 max_single_read_retries_,
     UInt64 max_connections_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -63,17 +64,32 @@ StorageS3Cluster::StorageS3Cluster(
     , format_name(format_name_)
     , compression_method(compression_method_)
 {
+    context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI{filename});
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    StorageS3::updateClientAndAuthSettings(context_, client_auth);
+
+    if (columns_.empty())
+    {
+        const bool is_key_with_globs = filename.find_first_of("*?{") != std::string::npos;
+
+        /// `distributed_processing` is set to false, because this code is executed on the initiator, so there is no callback set
+        /// for asking for the next tasks.
+        /// `format_settings` is set to std::nullopt, because StorageS3Cluster is used only as table function
+        auto columns = StorageS3::getTableStructureFromDataImpl(format_name, client_auth, max_single_read_retries_, compression_method,
+            /*distributed_processing_*/false, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-    StorageS3::updateClientAndAuthSettings(context_, client_auth);
 }
 
 /// The code executes on initiator
 Pipe StorageS3Cluster::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -83,7 +99,6 @@ Pipe StorageS3Cluster::read(
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
-    StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
     auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String
@@ -132,12 +147,12 @@ Pipe StorageS3Cluster::read(
         }
     }
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
     return Pipe::unitePipes(std::move(pipes));
 }
 
 QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
-    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageMetadataPtr &, SelectQueryInfo &) const
+    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)

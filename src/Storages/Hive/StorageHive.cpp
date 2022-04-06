@@ -124,7 +124,8 @@ public:
         /// Initialize to_read_block, which is used to read data from HDFS.
         for (const auto & name_type : source_info->partition_name_types)
         {
-            to_read_block.erase(name_type.name);
+            if (to_read_block.has(name_type.name))
+                to_read_block.erase(name_type.name);
         }
 
         /// Initialize format settings
@@ -288,6 +289,7 @@ StorageHive::StorageHive(
     , partition_by_ast(partition_by_ast_)
     , storage_settings(std::move(storage_settings_))
 {
+    /// Check hive metastore url.
     getContext()->getRemoteHostFilter().checkURL(Poco::URI(hive_metastore_url));
 
     StorageInMemoryMetadata storage_metadata;
@@ -303,11 +305,13 @@ void StorageHive::lazyInitialize()
     if (has_initialized)
         return;
 
-
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
     auto hive_table_metadata = hive_metastore_client->getHiveTable(hive_database, hive_table);
 
     hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->sd.location);
+    /// Check HDFS namenode url.
+    getContext()->getRemoteHostFilter().checkURL(Poco::URI(hdfs_namenode_url));
+
     table_schema = hive_table_metadata->sd.cols;
 
     FileFormat hdfs_file_format = IHiveFile::toFileFormat(hive_table_metadata->sd.inputFormat);
@@ -318,10 +322,8 @@ void StorageHive::lazyInitialize()
             format_name = "HiveText";
             break;
         case FileFormat::RC_FILE:
-            /// TODO to be implemented
             throw Exception("Unsopported hive format rc_file", ErrorCodes::NOT_IMPLEMENTED);
         case FileFormat::SEQUENCE_FILE:
-            /// TODO to be implemented
             throw Exception("Unsopported hive format sequence_file", ErrorCodes::NOT_IMPLEMENTED);
         case FileFormat::AVRO:
             format_name = "Avro";
@@ -590,7 +592,7 @@ void StorageHive::getActualColumnsToRead(Block & sample_block, const Block & hea
 }
 Pipe StorageHive::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /* processed_stage */,
@@ -654,7 +656,7 @@ Pipe StorageHive::read(
     sources_info->hive_metastore_client = hive_metastore_client;
     sources_info->partition_name_types = partition_name_types;
 
-    const auto & header_block = metadata_snapshot->getSampleBlock();
+    const auto & header_block = storage_snapshot->metadata->getSampleBlock();
     Block sample_block;
     for (const auto & column : column_names)
     {
@@ -740,6 +742,7 @@ void registerStorageHive(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
+            .source_access_type = AccessType::HIVE,
         });
 }
 

@@ -1,4 +1,5 @@
 #include "ORCBlockInputFormat.h"
+#include <boost/algorithm/string/case_conv.hpp>
 #if USE_ORC
 
 #include <Formats/FormatFactory.h>
@@ -130,12 +131,17 @@ void ORCBlockInputFormat::prepareReader()
         return;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(), "ORC", format_settings.orc.import_nested, format_settings.orc.allow_missing_columns);
+        getPort().getHeader(),
+        "ORC",
+        format_settings.orc.import_nested,
+        format_settings.orc.allow_missing_columns,
+        format_settings.orc.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
+    const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     std::unordered_set<String> nested_table_names;
     if (format_settings.orc.import_nested)
-        nested_table_names = Nested::getAllTableNames(getPort().getHeader());
+        nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
 
     /// In ReadStripe column indices should be started from 1,
     /// because 0 indicates to select all columns.
@@ -146,17 +152,18 @@ void ORCBlockInputFormat::prepareReader()
         /// so we should recursively count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
         const auto & name = schema->field(i)->name();
-        if (getPort().getHeader().has(name) || nested_table_names.contains(name))
+        if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
         {
-            column_names.push_back(name);
             for (int j = 0; j != indexes_count; ++j)
                 include_indices.push_back(index + j);
         }
+
         index += indexes_count;
     }
 }
 
-ORCSchemaReader::ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_) : ISchemaReader(in_), format_settings(format_settings_)
+ORCSchemaReader::ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+    : ISchemaReader(in_), format_settings(format_settings_)
 {
 }
 

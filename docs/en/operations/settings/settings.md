@@ -1326,7 +1326,7 @@ If a query from the same user with the same ‘query_id’ already exists at thi
 
 `1` – Cancel the old query and start running the new one.
 
-Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
+Set this parameter to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
 
 ## replace_running_query_max_wait_ms {#replace-running-query-max-wait-ms}
 
@@ -1380,7 +1380,7 @@ load_balancing = nearest_hostname
 
 The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
-For instance, example01-01-1 and example01-01-2.yandex.ru are different in one position, while example01-01-1 and example01-02-2 differ in two places.
+For instance, example01-01-1 and example01-01-2 are different in one position, while example01-01-1 and example01-02-2 differ in two places.
 This method might seem primitive, but it does not require external data about network topology, and it does not compare IP addresses, which would be complicated for our IPv6 addresses.
 
 Thus, if there are equivalent replicas, the closest one by name is preferred.
@@ -3290,6 +3290,19 @@ Possible values:
 
 Default value: `16`.
 
+## max_insert_delayed_streams_for_parallel_write {#max-insert-delayed-streams-for-parallel-write}
+
+The maximum number of streams (columns) to delay final part flush.
+
+It makes difference only if underlying storage supports parallel write (i.e. S3), otherwise it will not give any benefit.
+
+Possible values:
+
+-   Positive integer.
+-   0 or 1 — Disabled.
+
+Default value: `1000` for S3 and `0` otherwise.
+
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 
 Sets the probability that the ClickHouse can start a trace for executed queries (if no parent [trace context](https://www.w3.org/TR/trace-context/) is supplied).
@@ -4207,10 +4220,36 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled. The wait time equal shutdown_wait_unfinished config.
 
-Default value: 0.
+Default value: `0`.
 
 ## shutdown_wait_unfinished
 
 The waiting time in seconds for currently handled connections when shutdown server.
 
-Default Value: 5.
+Default Value: `5`.
+
+## max_guaranteed_memory_usage
+
+Maximum guaranteed memory usage for processing of single query.
+It represents soft limit in case when hard limit is reached on user level.
+Zero means unlimited.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `0`.
+
+## memory_usage_overcommit_max_wait_microseconds
+
+Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
+If the timeout is reached and memory is not freed, an exception is thrown.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `0`.
+
+## max_guaranteed_memory_usage_for_user
+
+Maximum guaranteed memory usage for processing all concurrently running queries for the user.
+It represents soft limit in case when hard limit is reached on global level.
+Zero means unlimited.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `0`.

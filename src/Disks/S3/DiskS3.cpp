@@ -20,6 +20,7 @@
 #include <Common/getRandomASCIIString.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -264,21 +265,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
               mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + blob_name);
 
-    ScheduleFunc schedule = [pool = &getThreadPoolWriter(), thread_group = CurrentThread::getGroup()](auto callback)
-    {
-        pool->scheduleOrThrow([callback = std::move(callback), thread_group]()
-        {
-            if (thread_group)
-                CurrentThread::attachTo(thread_group);
-
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
-            );
-            callback();
-        });
-    };
-
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
         bucket,
@@ -288,7 +274,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
-        buf_size, std::move(schedule));
+        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()));
 
     auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
     {

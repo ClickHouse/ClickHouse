@@ -1,5 +1,6 @@
 from testflows.core import *
 
+
 @TestFeature
 @Name("syntax")
 def feature(self):
@@ -12,10 +13,10 @@ def feature(self):
     Feature(run=load("rbac.tests.syntax.drop_role", "feature"))
     Feature(run=load("rbac.tests.syntax.show_create_role", "feature"))
     Feature(run=load("rbac.tests.syntax.grant_role", "feature"))
-    Feature(run=load("rbac.tests.syntax.grant_privilege","feature"))
+    Feature(run=load("rbac.tests.syntax.grant_privilege", "feature"))
     Feature(run=load("rbac.tests.syntax.show_grants", "feature"))
     Feature(run=load("rbac.tests.syntax.revoke_role", "feature"))
-    Feature(run=load("rbac.tests.syntax.revoke_privilege","feature"))
+    Feature(run=load("rbac.tests.syntax.revoke_privilege", "feature"))
     Feature(run=load("rbac.tests.syntax.create_row_policy", "feature"))
     Feature(run=load("rbac.tests.syntax.alter_row_policy", "feature"))
     Feature(run=load("rbac.tests.syntax.drop_row_policy", "feature"))
@@ -31,4 +32,4 @@ def feature(self):
     Feature(run=load("rbac.tests.syntax.drop_settings_profile", "feature"))
     Feature(run=load("rbac.tests.syntax.show_create_settings_profile", "feature"))
     Feature(run=load("rbac.tests.syntax.set_default_role", "feature"))
-    Feature(run=load("rbac.tests.syntax.set_role","feature"))
+    Feature(run=load("rbac.tests.syntax.set_role", "feature"))

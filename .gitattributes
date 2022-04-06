@@ -1,2 +1,3 @@
 contrib/* linguist-vendored
 *.h linguist-language=C++
+tests/queries/0_stateless/data_json/* binary

@@ -11,7 +11,7 @@ namespace DB
 
 struct ChunkInfoWithAllocatedBytes : public ChunkInfo
 {
-    ChunkInfoWithAllocatedBytes(Int64 allocated_bytes_)
+    explicit ChunkInfoWithAllocatedBytes(Int64 allocated_bytes_)
         : allocated_bytes(allocated_bytes_) {}
     Int64 allocated_bytes;
 };
@@ -51,7 +51,7 @@ private:
     MutableColumns res_aggregate_columns;
 
     AggregatingTransformParamsPtr params;
-    SortDescription group_by_description;
+    SortDescriptionWithPositions group_by_description;
 
     Aggregator::AggregateColumns aggregate_columns;
 
