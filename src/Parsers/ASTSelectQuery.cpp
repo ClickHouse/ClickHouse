@@ -133,7 +133,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         if (interpolate())
         {
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTERPOLATE" << (s.hilite ? hilite_none : "");
-            if (interpolate()->children.size())
+            if (!interpolate()->children.empty())
             {
                 s.ostr << " (";
                 interpolate()->formatImpl(s, state, frame);
