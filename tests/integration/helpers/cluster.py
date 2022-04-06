@@ -37,6 +37,7 @@ except Exception as e:
 from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
+from kazoo.handlers.threading import KazooTimeoutError
 from minio import Minio
 
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
@@ -2525,19 +2526,20 @@ class ClickHouseCluster:
     def run_kazoo_commands_with_retries(
         self, kazoo_callback, zoo_instance_name="zoo1", repeats=1, sleep_for=1
     ):
-        zk = self.get_kazoo_client(zoo_instance_name)
         logging.debug(
             f"run_kazoo_commands_with_retries: {zoo_instance_name}, {kazoo_callback}"
         )
-        for i in range(repeats - 1):
+        for i in range(repeats):
             try:
+                zk = self.get_kazoo_client(zoo_instance_name)
                 kazoo_callback(zk)
+                zk.stop()
                 return
-            except KazooException as e:
+            except (KazooException, KazooTimeoutError) as e:
+                if i == repeats-1:
+                    raise
                 logging.debug(repr(e))
                 time.sleep(sleep_for)
-        kazoo_callback(zk)
-        zk.stop()
 
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
