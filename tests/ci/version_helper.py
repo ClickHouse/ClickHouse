@@ -150,6 +150,9 @@ class ClickHouseVersion:
 
         return False
 
+    def __le__(self, other: "ClickHouseVersion") -> bool:
+        return self == other or self < other
+
 
 class VersionType:
     LTS = "lts"
