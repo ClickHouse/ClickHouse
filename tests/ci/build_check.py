@@ -302,7 +302,7 @@ def main():
         version.string,
         image_version,
         ccache_path,
-        official=official_flag,
+        official_flag,
         cov_token,
     )
 
