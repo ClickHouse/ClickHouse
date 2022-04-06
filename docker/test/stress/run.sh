@@ -106,17 +106,6 @@ function stop()
 
 function start()
 {
-    # Rename existing log file - it will be more convenient to read separate files for separate server runs.
-    if [ -f '/var/log/clickhouse-server/clickhouse-server.log' ]
-    then
-        log_file_counter=1
-        while [ -f "/var/log/clickhouse-server/clickhouse-server.log.${log_file_counter}" ]
-        do
-            log_file_counter=$((log_file_counter + 1))
-        done
-        mv '/var/log/clickhouse-server/clickhouse-server.log' "/var/log/clickhouse-server/clickhouse-server.log.${log_file_counter}"
-    fi
-
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
@@ -190,6 +179,8 @@ clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordin
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
 stop
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
+
 start
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
@@ -205,6 +196,8 @@ clickhouse-client --query "SHOW TABLES FROM test"
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
 stop
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
+
 start
 
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
@@ -263,10 +256,12 @@ mkdir previous_release_package_folder
 clickhouse-client --query="SELECT version()" | ./download_previous_release && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
+stop
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
+
 if [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
 then
     echo -e "Successfully downloaded previous release packets\tOK" >> /test_output/test_results.tsv
-    stop
 
     # Uninstall current packages
     dpkg --remove clickhouse-client
