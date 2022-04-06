@@ -969,7 +969,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
     static constexpr std::array flat_nodes = {"block_numbers", "blocks", "leader_election", "log", "mutations", "pinned_part_uuids"};
 
     /// First try to remove paths that are known to be flat
-    for (const auto & node : flat_nodes)
+    for (const auto * node : flat_nodes)
     {
         bool removed_quickly = zookeeper->tryRemoveChildrenRecursive(fs::path(zookeeper_path) / node, /* probably flat */ true);
         if (!removed_quickly)
@@ -979,7 +979,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 
     /// Then try to remove nodes that are known to have no children (and should always exist)
     Coordination::Requests ops;
-    for (const auto & node : flat_nodes)
+    for (const auto * node : flat_nodes)
         ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/" + node, -1));
 
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/alter_partition_version", -1));
