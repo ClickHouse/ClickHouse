@@ -205,9 +205,6 @@ String MonitorCommand::run()
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
-    if (!keeper_info.has_leader)
-        return "This instance is not currently serving requests";
-
     const auto & state_machine = keeper_dispatcher.getStateMachine();
 
     StringBuffer ret;
