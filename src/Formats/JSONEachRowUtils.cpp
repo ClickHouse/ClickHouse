@@ -271,13 +271,13 @@ struct JSONEachRowFieldsExtractor
     std::vector<String> column_names;
 };
 
-std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings)
+NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings)
 {
     JSONEachRowFieldsExtractor extractor;
     auto data_types = determineColumnDataTypesFromJSONEachRowDataImpl<JSONEachRowFieldsExtractor, '{', '}'>(in, json_strings, extractor);
-    std::unordered_map<String, DataTypePtr> result;
+    NamesAndTypesList result;
     for (size_t i = 0; i != extractor.column_names.size(); ++i)
-        result[extractor.column_names[i]] = data_types[i];
+        result.emplace_back(extractor.column_names[i], data_types[i]);
     return result;
 }
 

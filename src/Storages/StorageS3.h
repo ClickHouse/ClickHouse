@@ -58,11 +58,10 @@ public:
 
     using IteratorWrapper = std::function<String()>;
 
-    static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column);
+    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     StorageS3Source(
-        bool need_path,
-        bool need_file,
+        const std::vector<NameAndTypePair> & requested_virtual_columns_,
         const String & format,
         String name_,
         const Block & sample_block,
@@ -102,8 +101,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
     /// onCancel and generate can be called concurrently
     std::mutex reader_mutex;
-    bool with_file_column = false;
-    bool with_path_column = false;
+    std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IteratorWrapper> file_iterator;
     size_t download_thread_num = 1;
 
@@ -196,6 +194,7 @@ private:
 
     ClientAuthentication client_auth;
     std::vector<String> keys;
+    NamesAndTypesList virtual_columns;
 
     String format_name;
     UInt64 max_single_read_retries;
