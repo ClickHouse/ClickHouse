@@ -50,7 +50,9 @@ struct MergeTreeSink::DelayedChunk
 void MergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot);
 
+    storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<MergeTreeSink::DelayedChunk::Partition>;

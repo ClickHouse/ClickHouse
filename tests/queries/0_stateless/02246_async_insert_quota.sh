@@ -20,7 +20,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA q02246 FOR INTERVAL 100 YEAR MAX QUERY INS
 
 ${CLICKHOUSE_CLIENT} --user u02246 --async_insert 1 -q "INSERT INTO async_inserts_02246 VALUES (1, 'a')"
 ${CLICKHOUSE_CLIENT} --user u02246 --async_insert 1 -q "INSERT INTO async_inserts_02246 VALUES (2, 'b')"
-${CLICKHOUSE_CLIENT} --user u02246 --async_insert 1 -q "INSERT INTO async_inserts_02246 VALUES (3, 'c')" 2>&1 | grep -m1 -o QUOTA_EXPIRED
+${CLICKHOUSE_CLIENT} --user u02246 --async_insert 1 -q "INSERT INTO async_inserts_02246 VALUES (3, 'c')" 2>&1 | grep -m1 -o QUOTA_EXCEEDED
 
 sleep 1.0
 
