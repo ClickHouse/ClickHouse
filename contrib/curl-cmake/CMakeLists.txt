@@ -153,22 +153,6 @@ set (SRCS
 
 add_library (_curl ${SRCS})
 
-set(CURL_LIBS "")
-if(APPLE)
-
-    find_library(SYSTEMCONFIGURATION_FRAMEWORK "SystemConfiguration")
-    if(NOT SYSTEMCONFIGURATION_FRAMEWORK)
-        message(FATAL_ERROR "SystemConfiguration framework not found")
-    endif()
-    set(CURL_LIBS ${CURL_LIBS} "-framework SystemConfiguration")
-
-    find_library(COREFOUNDATION_FRAMEWORK "CoreFoundation")
-    if(NOT COREFOUNDATION_FRAMEWORK)
-        message(FATAL_ERROR "CoreFoundation framework not found")
-    endif()
-    set(CURL_LIBS ${CURL_LIBS} "-framework CoreFoundation")
-endif()
-
 target_compile_definitions (_curl PRIVATE
     HAVE_CONFIG_H
     BUILDING_LIBCURL
@@ -182,8 +166,7 @@ target_include_directories (_curl SYSTEM PUBLIC
     . # curl_config.h
 )
 
-set(CURL_LIBS ${CURL_LIBS} OpenSSL::SSL)
-target_link_libraries (_curl PRIVATE ${CURL_LIBS})
+target_link_libraries (_curl PRIVATE OpenSSL::SSL)
 
 # The library is large - avoid bloat (XXX: is it?)
 target_compile_options (_curl PRIVATE -g0)
