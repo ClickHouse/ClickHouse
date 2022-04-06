@@ -1338,19 +1338,19 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     {
         auto find_columns = [&step](IAST * function)
         {
-            auto fImpl = [&step](IAST * fn, auto fi)
+            auto f_impl = [&step](IAST * fn, auto fi)
             {
-                if (auto ident = fn->as<ASTIdentifier>())
+                if (auto * ident = fn->as<ASTIdentifier>())
                 {
                     step.addRequiredOutput(ident->getColumnName());
                     return;
                 }
                 if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())
-                    for (auto ch : fn->children)
+                    for (const auto & ch : fn->children)
                         fi(ch.get(), fi);
                 return;
             };
-            fImpl(function, fImpl);
+            f_impl(function, f_impl);
         };
 
         for (const auto & interpolate : interpolate_list->children)

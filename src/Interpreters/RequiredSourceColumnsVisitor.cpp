@@ -128,19 +128,19 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
     {
         auto find_columns = [&data](IAST * function)
         {
-            auto fImpl = [&data](IAST * fn, auto fi)
+            auto f_impl = [&data](IAST * fn, auto fi)
             {
-                if (auto ident = fn->as<ASTIdentifier>())
+                if (auto * ident = fn->as<ASTIdentifier>())
                 {
                     data.addColumnIdentifier(*ident);
                     return;
                 }
                 if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())
-                    for (auto ch : fn->children)
+                    for (const auto & ch : fn->children)
                         fi(ch.get(), fi);
                 return;
             };
-            fImpl(function, fImpl);
+            f_impl(function, f_impl);
         };
 
         for (const auto & interpolate : interpolate_list->children)
