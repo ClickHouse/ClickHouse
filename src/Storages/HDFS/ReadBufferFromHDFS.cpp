@@ -22,8 +22,6 @@ ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
-    /// HDFS create/open functions are not thread safe
-    static std::mutex hdfs_init_mutex;
 
     String hdfs_uri;
     String hdfs_file_path;
@@ -46,8 +44,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         , builder(createHDFSBuilder(hdfs_uri_, config_))
         , read_until_position(read_until_position_)
     {
-        std::lock_guard lock(hdfs_init_mutex);
-
         fs = createHDFSFS(builder.get());
         fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
 
@@ -59,7 +55,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     ~ReadBufferFromHDFSImpl() override
     {
-        std::lock_guard lock(hdfs_init_mutex);
         hdfsCloseFile(fs.get(), fin);
     }
 
@@ -123,9 +118,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         return offset;
     }
 };
-
-
-std::mutex ReadBufferFromHDFS::ReadBufferFromHDFSImpl::hdfs_init_mutex;
 
 ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_uri_,
