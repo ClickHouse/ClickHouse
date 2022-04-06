@@ -120,6 +120,7 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     build_check_name = sys.argv[1]
+    reports_length = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 
     gh = Github(get_best_robot_token())
     pr_info = PRInfo()
@@ -148,7 +149,8 @@ if __name__ == "__main__":
                         build_name,
                     )
 
-    some_builds_are_missing = len(build_reports_map) < len(reports_order)
+    reports_length = reports_length or len(reports_order)
+    some_builds_are_missing = len(build_reports_map) < reports_length
 
     if some_builds_are_missing:
         logging.info(
