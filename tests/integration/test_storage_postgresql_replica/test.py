@@ -174,6 +174,7 @@ def test_initial_load_from_snapshot(started_cluster):
 
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
+    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 @pytest.mark.timeout(320)
@@ -210,6 +211,7 @@ def test_no_connection_at_startup(started_cluster):
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
+    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 @pytest.mark.timeout(320)
@@ -248,6 +250,7 @@ def test_detach_attach_is_ok(started_cluster):
 
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
+    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 @pytest.mark.timeout(320)
@@ -301,6 +304,7 @@ def test_replicating_insert_queries(started_cluster):
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
+    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 @pytest.mark.timeout(320)
@@ -657,6 +661,7 @@ def test_virtual_columns(started_cluster):
     )
     print(result)
     cursor.execute("DROP TABLE postgresql_replica;")
+    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
@@ -691,6 +696,7 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
 
     result = instance.query("SELECT count() FROM test.postgresql_replica")
     print(result)  # Just debug
+    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
@@ -706,7 +712,7 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
     instance.query(
         f"INSERT INTO postgres_database.{table_name} SELECT -1, 1"
     )
-    instance.query(f"DROP TABLE IF EXISTS test.{table_name}")
+    instance.query(f"DROP TABLE IF EXISTS test.{table_name} NO DELAY")
     create_materialized_table(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, table_name=table_name
     )
@@ -731,6 +737,7 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
 
     result = instance.query(f"SELECT count() FROM test.{table_name}")
     print(result)  # Just debug
+    instance.query(f"DROP TABLE test.{table_name} NO DELAY")
 
 
 def test_drop_table_immediately(started_cluster):
@@ -754,7 +761,7 @@ def test_drop_table_immediately(started_cluster):
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
     )
     check_tables_are_synchronized("postgresql_replica")
-    instance.query("DROP TABLE test.postgresql_replica")
+    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 if __name__ == "__main__":
