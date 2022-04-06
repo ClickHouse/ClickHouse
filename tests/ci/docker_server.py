@@ -16,6 +16,7 @@ from commit_status_helper import post_commit_status
 from docker_images_check import DockerImage
 from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from git_helper import removeprefix
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
@@ -25,6 +26,7 @@ from version_helper import (
     get_tagged_versions,
     get_version_from_repo,
     get_version_from_string,
+    get_version_from_tag,
 )
 
 TEMP_PATH = p.join(RUNNER_TEMP, "docker_images_check")
@@ -49,7 +51,8 @@ def parse_args() -> argparse.Namespace:
         "--version",
         type=version_arg,
         default=get_version_from_repo().string,
-        help="a version to build",
+        help="a version to build, automaticaly got from version_helper, accepts either "
+        "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
     )
     parser.add_argument(
         "--release-type",
@@ -112,10 +115,19 @@ def parse_args() -> argparse.Namespace:
 
 
 def version_arg(version: str) -> ClickHouseVersion:
+    version = removeprefix(version, "refs/tags/")
     try:
         return get_version_from_string(version)
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(e)
+    except ValueError:
+        pass
+    try:
+        return get_version_from_tag(version)
+    except ValueError:
+        pass
+
+    raise argparse.ArgumentTypeError(
+        f"version {version} does not match tag of plain version"
+    )
 
 
 def auto_release_type(version: ClickHouseVersion, release_type: str) -> str:
@@ -125,7 +137,7 @@ def auto_release_type(version: ClickHouseVersion, release_type: str) -> str:
     git_versions = get_tagged_versions()
     reference_version = git_versions[0]
     for i in reversed(range(len(git_versions))):
-        if git_versions[i] < version:
+        if git_versions[i] <= version:
             if i == len(git_versions) - 1:
                 return "latest"
             reference_version = git_versions[i + 1]
@@ -209,7 +221,7 @@ def build_and_push_image(
     result = []
     if os != "ubuntu":
         tag += f"-{os}"
-    init_args = ["docker", "buildx", "build"]
+    init_args = ["docker", "buildx", "build", "--build-arg BUILDKIT_INLINE_CACHE=1"]
     if push:
         init_args.append("--push")
         init_args.append("--output=type=image,push-by-digest=true")
