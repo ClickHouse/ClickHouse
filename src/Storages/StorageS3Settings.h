@@ -60,10 +60,30 @@ struct S3Settings
         size_t upload_part_size_multiply_parts_count_threshold = 0;
         size_t max_single_part_upload_size = 0;
         size_t max_connections = 0;
+
+        ReadWriteSettings() = default;
+        explicit ReadWriteSettings(const Settings & settings);
+
+        inline bool operator==(const ReadWriteSettings & other) const
+        {
+            return max_single_read_retries == other.max_single_read_retries
+                && min_upload_part_size == other.min_upload_part_size
+                && upload_part_size_multiply_factor == other.upload_part_size_multiply_factor
+                && upload_part_size_multiply_parts_count_threshold == other.upload_part_size_multiply_parts_count_threshold
+                && max_single_part_upload_size == other.max_single_part_upload_size
+                && max_connections == other.max_connections;
+        }
+
+        void updateFromSettingsIfEmpty(const Settings & settings);
     };
 
     AuthSettings auth_settings;
     ReadWriteSettings rw_settings;
+
+    inline bool operator==(const S3Settings & other) const
+    {
+        return auth_settings == other.auth_settings && rw_settings == other.rw_settings;
+    }
 };
 
 /// Settings for the StorageS3.

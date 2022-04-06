@@ -56,10 +56,7 @@ StorageS3Cluster::StorageS3Cluster(
     ContextPtr context_,
     const String & compression_method_)
     : IStorage(table_id_)
-    , s3_configuration{
-        S3::URI{Poco::URI{filename_}},
-        S3Settings::AuthSettings{ .access_key_id = access_key_id_, .secret_access_key = secret_access_key_},
-        {}, {}} /// Client and settings will be updated later
+    , s3_configuration{S3::URI{Poco::URI{filename_}}, access_key_id_, secret_access_key_, {}, {}, S3Settings::ReadWriteSettings(context_->getSettingsRef())}
     , filename(filename_)
     , cluster_name(cluster_name_)
     , format_name(format_name_)

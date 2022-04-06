@@ -147,7 +147,8 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
 
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    S3::URI s3_uri(Poco::URI(configuration.url));
+    Poco::URI uri (configuration.url);
+    S3::URI s3_uri (uri);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
@@ -159,9 +160,9 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         s3_uri,
         configuration.auth_settings.access_key_id,
         configuration.auth_settings.secret_access_key,
-        configuration.rw_settings,
         StorageID(getDatabaseName(), table_name),
         configuration.format,
+        configuration.rw_settings,
         columns,
         ConstraintsDescription{},
         String{},
