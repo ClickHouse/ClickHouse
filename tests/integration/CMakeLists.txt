@@ -10,7 +10,7 @@ find_program(PYTEST_CMD pytest)
 find_program(SUDO_CMD sudo)
 
 # will mount only one binary to docker container - build with .so cant work
-if(MAKE_STATIC_LIBRARIES AND DOCKER_CMD)
+if(USE_STATIC_LIBRARIES AND DOCKER_CMD)
     if(INTEGRATION_USE_RUNNER AND SUDO_CMD)
         add_test(NAME integration-runner WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} COMMAND ${SUDO_CMD} ${CMAKE_CURRENT_SOURCE_DIR}/runner --binary ${ClickHouse_BINARY_DIR}/programs/clickhouse --configs-dir ${ClickHouse_SOURCE_DIR}/programs/server/)
         message(STATUS "Using tests in docker with runner SUDO=${SUDO_CMD}; DOCKER=${DOCKER_CMD};")

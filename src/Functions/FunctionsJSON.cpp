@@ -35,9 +35,9 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Functions/DummyJSONParser.h>
-#include <Functions/SimdJSONParser.h>
-#include <Functions/RapidJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Interpreters/Context.h>
@@ -1249,7 +1249,7 @@ public:
     {
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
         auto & chars = col_str.getChars();
-        WriteBufferFromVector<ColumnString::Chars> buf(chars, WriteBufferFromVector<ColumnString::Chars>::AppendModeTag());
+        WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
         traverse(element, buf);
         buf.finalize();
         chars.push_back(0);

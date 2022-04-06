@@ -31,6 +31,7 @@ class StorageMergeTree final : public shared_ptr_helper<StorageMergeTree>, publi
     friend struct shared_ptr_helper<StorageMergeTree>;
 public:
     void startup() override;
+    void flush() override;
     void shutdown() override;
     ~StorageMergeTree() override;
 
@@ -42,7 +43,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -52,7 +53,7 @@ public:
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -96,7 +97,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
-    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
@@ -139,8 +140,8 @@ private:
     std::map<std::pair<Int64, Int64>, UInt64> updated_version_by_block_range;
 
     std::atomic<bool> shutdown_called {false};
+    std::atomic<bool> flush_called {false};
 
-private:
     void loadMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting

@@ -37,7 +37,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> size) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 
@@ -47,6 +48,7 @@ public:
     void removeRecursive(const String & path) override;
     void removeSharedFile(const String & path, bool keep_s3) override;
     void removeSharedRecursive(const String & path, bool keep_s3) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_s3) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
     ReservationPtr reserve(UInt64 bytes) override;
 

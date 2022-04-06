@@ -41,7 +41,7 @@ Example of a polygon dictionary configuration:
 </dictionary>
 ```
 
-Tne corresponding [DDL-query](../../../sql-reference/statements/create/dictionary.md#create-dictionary-query):
+The corresponding [DDL-query](../../../sql-reference/statements/create/dictionary.md#create-dictionary-query):
 ``` sql
 CREATE DICTIONARY polygon_dict_name (
     key Array(Array(Array(Array(Float64)))),

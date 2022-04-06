@@ -271,7 +271,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ## Модификатор ORDER BY expr WITH FILL  {#orderby-with-fill}
 
-Этот модификатор также может быть скобинирован с модификатором [LIMIT ... WITH TIES](../../../sql-reference/statements/select/limit.md#limit-with-ties)
+Этот модификатор также может быть скомбинирован с модификатором [LIMIT ... WITH TIES](../../../sql-reference/statements/select/limit.md#limit-with-ties)
 
 Модификатор `WITH FILL` может быть установлен после `ORDER BY expr` с опциональными параметрами `FROM expr`, `TO expr` и `STEP expr`. 
 Все пропущенные значения для колонки `expr` будут заполнены значениями, соответствующими предполагаемой последовательности значений колонки, другие колонки будут заполнены значениями по умолчанию.

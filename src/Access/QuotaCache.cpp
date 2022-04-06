@@ -4,7 +4,6 @@
 #include <Access/QuotaUsage.h>
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
-#include <Common/thread_local_rng.h>
 #include <base/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -19,17 +18,6 @@ namespace ErrorCodes
 {
     extern const int QUOTA_REQUIRES_CLIENT_KEY;
     extern const int LOGICAL_ERROR;
-}
-
-
-namespace
-{
-    std::chrono::system_clock::duration randomDuration(std::chrono::seconds max)
-    {
-        auto count = std::chrono::duration_cast<std::chrono::system_clock::duration>(max).count();
-        std::uniform_int_distribution<Int64> distribution{0, count - 1};
-        return std::chrono::system_clock::duration(distribution(thread_local_rng));
-    }
 }
 
 
@@ -94,18 +82,21 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::getOrBui
     auto it = key_to_intervals.find(key);
     if (it != key_to_intervals.end())
         return it->second;
-    return rebuildIntervals(key);
+    return rebuildIntervals(key, std::chrono::system_clock::now());
 }
 
 
 void QuotaCache::QuotaInfo::rebuildAllIntervals()
 {
+    if (key_to_intervals.empty())
+        return;
+    auto current_time = std::chrono::system_clock::now();
     for (const String & key : key_to_intervals | boost::adaptors::map_keys)
-        rebuildIntervals(key);
+        rebuildIntervals(key, current_time);
 }
 
 
-boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildIntervals(const String & key)
+boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildIntervals(const String & key, std::chrono::system_clock::time_point current_time)
 {
     auto new_intervals = boost::make_shared<Intervals>();
     new_intervals->quota_name = quota->getName();
@@ -115,14 +106,8 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
     intervals.reserve(quota->all_limits.size());
     for (const auto & limits : quota->all_limits)
     {
-        intervals.emplace_back();
+        intervals.emplace_back(limits.duration, limits.randomize_interval, current_time);
         auto & interval = intervals.back();
-        interval.duration = limits.duration;
-        std::chrono::system_clock::time_point end_of_interval{};
-        interval.randomize_interval = limits.randomize_interval;
-        if (limits.randomize_interval)
-            end_of_interval += randomDuration(limits.duration);
-        interval.end_of_interval = end_of_interval.time_since_epoch();
         for (auto quota_type : collections::range(QuotaType::MAX))
         {
             auto quota_type_i = static_cast<size_t>(quota_type);

@@ -20,6 +20,7 @@ void registerFunctionBitXor(FunctionFactory & factory);
 void registerFunctionBitNot(FunctionFactory & factory);
 void registerFunctionBitShiftLeft(FunctionFactory & factory);
 void registerFunctionBitShiftRight(FunctionFactory & factory);
+void registerFunctionBitSlice(FunctionFactory & factory);
 void registerFunctionBitRotateLeft(FunctionFactory & factory);
 void registerFunctionBitRotateRight(FunctionFactory & factory);
 void registerFunctionBitCount(FunctionFactory & factory);
@@ -40,6 +41,7 @@ void registerFunctionBitBoolMaskOr(FunctionFactory & factory);
 void registerFunctionBitBoolMaskAnd(FunctionFactory & factory);
 void registerFunctionBitWrapperFunc(FunctionFactory & factory);
 void registerFunctionBitSwapLastTwo(FunctionFactory & factory);
+void registerFunctionZTest(FunctionFactory & factory);
 
 
 void registerFunctionsArithmetic(FunctionFactory & factory)
@@ -64,6 +66,7 @@ void registerFunctionsArithmetic(FunctionFactory & factory)
     registerFunctionBitRotateLeft(factory);
     registerFunctionBitRotateRight(factory);
     registerFunctionBitCount(factory);
+    registerFunctionBitSlice(factory);
     registerFunctionLeast(factory);
     registerFunctionGreatest(factory);
     registerFunctionBitTest(factory);
@@ -82,6 +85,8 @@ void registerFunctionsArithmetic(FunctionFactory & factory)
     registerFunctionBitBoolMaskAnd(factory);
     registerFunctionBitWrapperFunc(factory);
     registerFunctionBitSwapLastTwo(factory);
+
+    registerFunctionZTest(factory);
 }
 
 }

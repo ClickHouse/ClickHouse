@@ -16,6 +16,8 @@
 
 #include <Compression/ICompressionCodec.h>
 
+#include <Storages/MergeTree/RequestResponse.h>
+
 #include <atomic>
 #include <optional>
 
@@ -103,6 +105,8 @@ public:
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
+
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 
@@ -255,6 +259,7 @@ private:
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
+    PartitionReadRequest receivePartitionReadRequest() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();

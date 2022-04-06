@@ -4,10 +4,13 @@
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -20,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 // Interface for true window functions. It's not much of an interface, they just
@@ -204,7 +208,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
     {
         column = std::move(column)->convertToFullColumnIfConst();
     }
-    input_header.setColumns(std::move(input_columns));
+    input_header.setColumns(input_columns);
 
     // Initialize window function workspaces.
     workspaces.reserve(functions.size());
@@ -383,7 +387,7 @@ void WindowTransform::advancePartitionEnd()
 //            prev_frame_start, partition_end);
 
         size_t i = 0;
-        for (; i < partition_by_columns; i++)
+        for (; i < partition_by_columns; ++i)
         {
             const auto * reference_column
                 = inputAt(prev_frame_start)[partition_by_indices[i]].get();
@@ -484,7 +488,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset)
         }
     }
 
-    return std::tuple{x, offset};
+    return std::tuple<RowNumber, int64_t>{x, offset};
 }
 
 auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
@@ -501,7 +505,7 @@ auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
     assert(oo == 0);
 #endif
 
-    return std::tuple{x, o};
+    return std::tuple<RowNumber, int64_t>{x, o};
 }
 
 
@@ -665,7 +669,7 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
     }
 
     size_t i = 0;
-    for (; i < n; i++)
+    for (; i < n; ++i)
     {
         const auto * column_x = inputAt(x)[order_by_indices[i]].get();
         const auto * column_y = inputAt(y)[order_by_indices[i]].get();
@@ -984,7 +988,23 @@ void WindowTransform::writeOutCurrentRow()
             auto * buf = ws.aggregate_function_state.data();
             // FIXME does it also allocate the result on the arena?
             // We'll have to pass it out with blocks then...
-            a->insertResultInto(buf, *result_column, arena.get());
+
+            if (a->isState())
+            {
+                /// AggregateFunction's states should be inserted into column using specific way
+                auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(result_column);
+                if (!res_col_aggregate_function)
+                {
+                    throw Exception("State function " + a->getName() + " inserts results into non-state column ",
+                                    ErrorCodes::ILLEGAL_COLUMN);
+                }
+                res_col_aggregate_function->insertFrom(buf);
+            }
+            else
+            {
+                a->insertResultInto(buf, *result_column, arena.get());
+            }
+
         }
     }
 
@@ -1004,6 +1024,12 @@ static void assertSameColumns(const Columns & left_all,
 
         assert(left_column);
         assert(right_column);
+
+        if (const auto * left_lc = typeid_cast<const ColumnLowCardinality *>(left_column))
+            left_column = left_lc->getDictionary().getNestedColumn().get();
+
+        if (const auto * right_lc = typeid_cast<const ColumnLowCardinality *>(right_column))
+            right_column = right_lc->getDictionary().getNestedColumn().get();
 
         assert(typeid(*left_column).hash_code()
             == typeid(*right_column).hash_code());
@@ -1056,10 +1082,13 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Another problem with Const columns is that the aggregate functions
         // can't work with them, so we have to materialize them like the
         // Aggregator does.
+        // Likewise, aggregate functions can't work with LowCardinality,
+        // so we have to materialize them too.
         // Just materialize everything.
         auto columns = chunk.detachColumns();
+        block.original_input_columns = columns;
         for (auto & column : columns)
-            column = std::move(column)->convertToFullColumnIfConst();
+            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst());
         block.input_columns = std::move(columns);
 
         // Initialize output columns.
@@ -1302,7 +1331,7 @@ IProcessor::Status WindowTransform::prepare()
             // Output the ready block.
             const auto i = next_output_block_number - first_block_number;
             auto & block = blocks[i];
-            auto columns = block.input_columns;
+            auto columns = block.original_input_columns;
             for (auto & res : block.output_columns)
             {
                 columns.push_back(ColumnPtr(std::move(res)));
@@ -1970,7 +1999,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        const auto supertype = getLeastSupertype({argument_types[0], argument_types[2]});
+        const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
         if (!supertype)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

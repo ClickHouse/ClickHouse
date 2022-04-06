@@ -20,10 +20,12 @@
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Common/quoteString.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/getTableOverride.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/applyTableOverride.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -106,6 +108,9 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     data_type_function->name = type_name_upper + " UNSIGNED";
             }
 
+            if (type_name_upper == "SET")
+                data_type_function->arguments.reset();
+
             /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
             /// Elements on a position further than 32767 are assigned negative values, starting with -32768.
@@ -125,6 +130,9 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     child = new_child;
                 }
             }
+
+            if (type_name_upper == "DATE")
+                data_type_function->name = "Date32";
         }
         if (is_nullable)
             data_type = makeASTFunction("Nullable", data_type);
@@ -142,12 +150,12 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
 
     ColumnsDescription columns_description;
 
-    for (
-        auto [column_name_and_type, declare_column_ast] = std::tuple{columns_name_and_type.begin(), columns_definition->children.begin()};
-        column_name_and_type != columns_name_and_type.end();
-        column_name_and_type++,
-        declare_column_ast++
-    )
+    /// FIXME: we could write it like auto [a, b] = std::tuple(x, y),
+    /// but this produce endless recursion in gcc-11, and leads to SIGSEGV
+    /// (see git blame for details).
+    auto column_name_and_type = columns_name_and_type.begin();
+    auto declare_column_ast = columns_definition->children.begin();
+    for (; column_name_and_type != columns_name_and_type.end(); column_name_and_type++, declare_column_ast++)
     {
         const auto & declare_column = (*declare_column_ast)->as<MySQLParser::ASTDeclareColumn>();
         String comment;
@@ -330,7 +338,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
         if (which.isNullable())
             throw Exception("LOGICAL ERROR: MySQL primary key must be not null, it is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (which.isDate() || which.isDateTime() || which.isDateTime64())
+        if (which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64())
         {
             /// In any case, date or datetime is always the best partitioning key
             return makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(primary_key.name));
@@ -518,6 +526,12 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     rewritten_query->if_not_exists = create_query.if_not_exists;
     rewritten_query->set(rewritten_query->storage, storage);
     rewritten_query->set(rewritten_query->columns_list, columns);
+
+    if (auto override_ast = tryGetTableOverride(mapped_to_database, create_query.table))
+    {
+        const auto & override = override_ast->as<const ASTTableOverride &>();
+        applyTableOverrideToCreateQuery(override, rewritten_query.get());
+    }
 
     return ASTs{rewritten_query};
 }

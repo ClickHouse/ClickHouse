@@ -1,4 +1,6 @@
 #pragma once
+#include <filesystem>
+#include <system_error>
 #include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperStorage.h>
 #include <IO/WriteBuffer.h>
@@ -18,9 +20,10 @@ enum SnapshotVersion : uint8_t
     V1 = 1, /// with ACL map
     V2 = 2, /// with 64 bit buffer header
     V3 = 3, /// compress snapshots with ZSTD codec
+    V4 = 4, /// add Node size to snapshots
 };
 
-static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V3;
+static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V4;
 
 /// What is stored in binary shapsnot
 struct SnapshotDeserializationResult
@@ -100,6 +103,9 @@ public:
     /// Serialize already compressed snapshot to disk (return path)
     std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
+    /// Serialize snapshot directly to disk
+    std::pair<std::string, std::error_code> serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
+
     SnapshotDeserializationResult deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
     /// Deserialize snapshot with log index up_to_log_idx from disk into compressed nuraft buffer.
@@ -123,6 +129,18 @@ public:
         if (!existing_snapshots.empty())
             return existing_snapshots.rbegin()->first;
         return 0;
+    }
+
+    std::string getLatestSnapshotPath() const
+    {
+        if (!existing_snapshots.empty())
+        {
+            const auto & path = existing_snapshots.at(getLatestSnapshotIndex());
+            std::error_code ec;
+            if (std::filesystem::exists(path, ec))
+                return path;
+        }
+        return "";
     }
 
 private:

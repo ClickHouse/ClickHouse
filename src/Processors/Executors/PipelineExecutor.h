@@ -26,7 +26,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(Processors & processors, QueryStatus * elem = nullptr);
+    explicit PipelineExecutor(Processors & processors, QueryStatus * elem);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -42,6 +42,11 @@ public:
 
     /// Cancel execution. May be called from another thread.
     void cancel();
+
+    /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
+    bool checkTimeLimit();
+    /// Same as checkTimeLimit but it never throws. It returns false on cancellation or time limit reached
+    [[nodiscard]] bool checkTimeLimitSoft();
 
 private:
     ExecutingGraphPtr graph;

@@ -91,5 +91,8 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("NCHAR LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BINARY LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BINARY VARYING", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("VARBINARY", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("GEOMETRY", "String", DataTypeFactory::CaseInsensitive); //mysql
+
 }
 }

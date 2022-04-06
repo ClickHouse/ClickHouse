@@ -29,6 +29,11 @@ namespace
     };
 }
 
+namespace ProfileEvents
+{
+    extern const Event ExecuteShellCommand;
+}
+
 namespace DB
 {
 
@@ -65,14 +70,14 @@ ShellCommand::~ShellCommand()
         size_t try_wait_timeout = config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds;
         bool process_terminated_normally = tryWaitProcessWithTimeout(try_wait_timeout);
 
-        if (!process_terminated_normally)
-        {
-            LOG_TRACE(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
+        if (process_terminated_normally)
+            return;
 
-            int retcode = kill(pid, SIGTERM);
-            if (retcode != 0)
-                LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
-        }
+        LOG_TRACE(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
+
+        int retcode = kill(pid, SIGTERM);
+        if (retcode != 0)
+            LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
     }
     else
     {
@@ -91,7 +96,7 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
 {
     int status = 0;
 
-    LOG_TRACE(getLogger(), "Try wait for shell command pid ({}) with timeout ({})", pid, timeout_in_seconds);
+    LOG_TRACE(getLogger(), "Try wait for shell command pid {} with timeout {}", pid, timeout_in_seconds);
 
     wait_called = true;
     struct timespec interval {.tv_sec = 1, .tv_nsec = 0};
@@ -119,7 +124,9 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
         bool process_terminated_normally = (waitpid_res == pid);
 
         if (process_terminated_normally)
+        {
             return true;
+        }
         else if (waitpid_res == 0)
         {
             --timeout_in_seconds;
@@ -128,7 +135,9 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
             continue;
         }
         else if (waitpid_res == -1 && errno != EINTR)
+        {
             return false;
+        }
     }
 
     return false;
@@ -154,13 +163,19 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     const Config & config)
 {
     logCommand(filename, argv);
+    ProfileEvents::increment(ProfileEvents::ExecuteShellCommand);
 
+#if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
       * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
       * Therefore, separate the resolving of the symbol from the call.
       */
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
+#else
+    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
+    static void * real_vfork = reinterpret_cast<void *>(&vfork);
+#endif
 
     if (!real_vfork)
         throwFromErrno("Cannot find symbol vfork in myself", ErrorCodes::CANNOT_DLSYM);

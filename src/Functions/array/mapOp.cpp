@@ -204,7 +204,7 @@ private:
 
         std::map<KeyType, ValType> summing_map;
 
-        for (size_t i = 0; i < row_count; i++)
+        for (size_t i = 0; i < row_count; ++i)
         {
             [[maybe_unused]] bool first = true;
             for (auto & arg : args)
@@ -222,10 +222,10 @@ private:
                 }
 
                 Field temp_val;
-                for (size_t j = 0; j < len; j++)
+                for (size_t j = 0; j < len; ++j)
                 {
                     KeyType key;
-                    if constexpr (std::is_same<KeyType, String>::value)
+                    if constexpr (std::is_same_v<KeyType, String>)
                     {
                         if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(arg.key_column.get()))
                             key = col_fixed->getDataAt(offset + j).toString();

@@ -17,7 +17,7 @@ ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, S
         << " user=" << DB::quote << user
         << " password=" << DB::quote << password
         << " connect_timeout=10";
-    return std::make_pair(out.str(), host + ':' + DB::toString(port));
+    return {out.str(), host + ':' + DB::toString(port)};
 }
 
 String getConnectionForLog(const String & host, UInt16 port)

@@ -41,6 +41,7 @@ sleep 5
 ./mc admin user add clickminio test testtest
 ./mc admin policy set clickminio readwrite user=test
 ./mc mb clickminio/test
+./mc policy set public clickminio/test
 
 
 # Upload data to Minio. By default after unpacking all tests will in
@@ -55,3 +56,10 @@ for FILE in $(ls "${MINIO_DATA_PATH}"); do
     echo "$FILE";
     ./mc cp "${MINIO_DATA_PATH}"/"$FILE" clickminio/test/"$FILE";
 done
+
+mkdir -p ~/.aws
+cat <<EOT >> ~/.aws/credentials
+[default]
+aws_access_key_id=clickhouse
+aws_secret_access_key=clickhouse
+EOT

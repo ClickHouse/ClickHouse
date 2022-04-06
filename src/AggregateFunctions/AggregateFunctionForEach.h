@@ -90,7 +90,7 @@ private:
                 throw;
             }
 
-            for (i = 0; i < old_size; i++)
+            for (i = 0; i < old_size; ++i)
             {
                 nested_func->merge(&new_state[i * nested_size_of_data],
                         &old_state[i * nested_size_of_data],

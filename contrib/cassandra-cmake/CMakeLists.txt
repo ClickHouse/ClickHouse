@@ -1,3 +1,14 @@
+option(ENABLE_CASSANDRA "Enable Cassandra" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_CASSANDRA)
+    message(STATUS "Not using cassandra")
+    return()
+endif()
+
+if (APPLE)
+    set(CMAKE_MACOSX_RPATH ON)
+endif()
+
 # Need to use C++17 since the compilation is not possible with C++20 currently.
 set (CMAKE_CXX_STANDARD 17)
 
@@ -42,22 +53,14 @@ endif()
 list(APPEND SOURCES ${CASS_SRC_DIR}/atomic/atomic_std.hpp)
 
 
-add_library(curl_hostcheck OBJECT ${CASS_SRC_DIR}/third_party/curl/hostcheck.cpp)
-add_library(hdr_histogram OBJECT ${CASS_SRC_DIR}/third_party/hdr_histogram/hdr_histogram.cpp)
-add_library(http-parser OBJECT ${CASS_SRC_DIR}/third_party/http-parser/http_parser.c)
-add_library(minizip OBJECT
-    ${CASS_SRC_DIR}/third_party/minizip/ioapi.c
-    ${CASS_SRC_DIR}/third_party/minizip/zip.c
-    ${CASS_SRC_DIR}/third_party/minizip/unzip.c)
-
-target_link_libraries(minizip zlib)
-target_compile_definitions(minizip PRIVATE "-Dz_crc_t=unsigned long")
+add_library(_curl_hostcheck OBJECT ${CASS_SRC_DIR}/third_party/curl/hostcheck.cpp)
+add_library(_hdr_histogram OBJECT ${CASS_SRC_DIR}/third_party/hdr_histogram/hdr_histogram.cpp)
+add_library(_http-parser OBJECT ${CASS_SRC_DIR}/third_party/http-parser/http_parser.c)
 
 list(APPEND INCLUDE_DIRS
   ${CASS_SRC_DIR}/third_party/curl
   ${CASS_SRC_DIR}/third_party/hdr_histogram
   ${CASS_SRC_DIR}/third_party/http-parser
-  ${CASS_SRC_DIR}/third_party/minizip
   ${CASS_SRC_DIR}/third_party/mt19937_64
   ${CASS_SRC_DIR}/third_party/rapidjson/rapidjson
   ${CASS_SRC_DIR}/third_party/sparsehash/src)
@@ -108,20 +111,21 @@ configure_file(
   ${CMAKE_CURRENT_BINARY_DIR}/driver_config.hpp)
 
 
-add_library(cassandra
+add_library(_cassandra
     ${SOURCES}
-    $<TARGET_OBJECTS:curl_hostcheck>
-    $<TARGET_OBJECTS:hdr_histogram>
-    $<TARGET_OBJECTS:http-parser>
-    $<TARGET_OBJECTS:minizip>)
+    $<TARGET_OBJECTS:_curl_hostcheck>
+    $<TARGET_OBJECTS:_hdr_histogram>
+    $<TARGET_OBJECTS:_http-parser>)
 
-target_link_libraries(cassandra zlib)
-add_library(cassandra_static ALIAS cassandra)
-target_include_directories(cassandra PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${INCLUDE_DIRS})
-target_compile_definitions(cassandra PRIVATE CASS_BUILDING)
+target_link_libraries(_cassandra ch_contrib::zlib ch_contrib::minizip)
+target_include_directories(_cassandra PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${INCLUDE_DIRS})
+target_include_directories(_cassandra SYSTEM BEFORE PUBLIC ${CASS_INCLUDE_DIR})
+target_compile_definitions(_cassandra PRIVATE CASS_BUILDING)
 
-target_link_libraries(cassandra uv)
+target_link_libraries(_cassandra ch_contrib::uv)
 
 if(CASS_USE_OPENSSL)
-    target_link_libraries(cassandra ssl)
+    target_link_libraries(_cassandra OpenSSL::SSL)
 endif()
+
+add_library(ch_contrib::cassandra ALIAS _cassandra)

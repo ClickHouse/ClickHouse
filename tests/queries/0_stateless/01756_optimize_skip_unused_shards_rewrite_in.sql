@@ -9,6 +9,7 @@ drop table if exists dist_01756;
 drop table if exists dist_01756_str;
 drop table if exists dist_01756_column;
 drop table if exists data_01756_str;
+drop table if exists data_01756_signed;
 
 -- SELECT
 --     intHash64(0) % 2,
@@ -32,11 +33,11 @@ select '(0, 2)';
 with (select currentDatabase()) as id_no select *, ignore(id_no) from dist_01756 where dummy in (0, 2);
 system flush logs;
 select query from system.query_log where
-    event_date = today() and
+    event_date >= yesterday() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_no %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_no` %') and
     type = 'QueryFinish'
 order by query;
 
@@ -51,11 +52,11 @@ select 'optimize_skip_unused_shards_rewrite_in(0, 2)';
 with (select currentDatabase()) as id_02 select *, ignore(id_02) from dist_01756 where dummy in (0, 2);
 system flush logs;
 select query from system.query_log where
-    event_date = today() and
+    event_date >= yesterday() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_02 %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_02` %') and
     type = 'QueryFinish'
 order by query;
 
@@ -63,11 +64,11 @@ select 'optimize_skip_unused_shards_rewrite_in(2,)';
 with (select currentDatabase()) as id_2 select *, ignore(id_2) from dist_01756 where dummy in (2,);
 system flush logs;
 select query from system.query_log where
-    event_date = today() and
+    event_date >= yesterday() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_2 %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_2` %') and
     type = 'QueryFinish'
 order by query;
 
@@ -75,17 +76,32 @@ select 'optimize_skip_unused_shards_rewrite_in(0,)';
 with (select currentDatabase()) as id_0 select *, ignore(id_0) from dist_01756 where dummy in (0,);
 system flush logs;
 select query from system.query_log where
-    event_date = today() and
+    event_date >= yesterday() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_0 %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_0` %') and
+    type = 'QueryFinish'
+order by query;
+
+-- signed column
+select 'signed column';
+create table data_01756_signed (key Int) engine=Null;
+with (select currentDatabase()) as key_signed select *, ignore(key_signed) from cluster(test_cluster_two_shards, currentDatabase(), data_01756_signed, key) where key in (-1, -2);
+system flush logs;
+select query from system.query_log where
+    event_date >= yesterday() and
+    event_time > now() - interval 1 hour and
+    not is_initial_query and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `key_signed` %') and
     type = 'QueryFinish'
 order by query;
 
 -- not tuple
 select * from dist_01756 where dummy in (0);
 select * from dist_01756 where dummy in ('0');
+
 
 --
 -- errors
@@ -118,8 +134,8 @@ create table data_01756_str (key String) engine=Memory();
 create table dist_01756_str as data_01756_str engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01756_str, cityHash64(key));
 select * from dist_01756_str where key in ('0', '2');
 select * from dist_01756_str where key in ('0', Null); -- { serverError 507 }
-select * from dist_01756_str where key in (0, 2); -- { serverError 53 }
-select * from dist_01756_str where key in (0, Null); -- { serverError 53 }
+-- select * from dist_01756_str where key in (0, 2); -- { serverError 53 }
+-- select * from dist_01756_str where key in (0, Null); -- { serverError 53 }
 
 -- different type #2
 select 'different types -- conversion';
@@ -138,3 +154,4 @@ drop table dist_01756;
 drop table dist_01756_str;
 drop table dist_01756_column;
 drop table data_01756_str;
+drop table data_01756_signed;

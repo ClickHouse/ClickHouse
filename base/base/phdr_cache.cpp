@@ -123,6 +123,12 @@ bool hasPHDRCache()
 #else
 
 void updatePHDRCache() {}
-bool hasPHDRCache() { return false; }
+
+#if defined(USE_MUSL)
+    /// With statically linked with musl, dl_iterate_phdr is immutable.
+    bool hasPHDRCache() { return true; }
+#else
+    bool hasPHDRCache() { return false; }
+#endif
 
 #endif

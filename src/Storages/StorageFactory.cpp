@@ -66,6 +66,7 @@ StoragePtr StorageFactory::get(
     bool has_force_restore_data_flag) const
 {
     String name, comment;
+
     ASTStorage * storage_def = query.storage;
 
     bool has_engine_args = false;
@@ -107,7 +108,10 @@ StoragePtr StorageFactory::get(
         }
         else
         {
-            if (!storage_def)
+            if (!query.storage)
+                throw Exception("Incorrect CREATE query: storage required", ErrorCodes::INCORRECT_QUERY);
+
+            if (!storage_def->engine)
                 throw Exception("Incorrect CREATE query: ENGINE required", ErrorCodes::ENGINE_REQUIRED);
 
             const ASTFunction & engine_def = *storage_def->engine;
@@ -156,9 +160,6 @@ StoragePtr StorageFactory::get(
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
 
-            if (query.comment)
-                comment = query.comment->as<ASTLiteral &>().value.get<String>();
-
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
                 if (!feature_matcher_fn(it->second.features))
@@ -203,6 +204,9 @@ StoragePtr StorageFactory::get(
                     [](StorageFeatures features) { return features.supports_projections; });
         }
     }
+
+    if (query.comment)
+        comment = query.comment->as<ASTLiteral &>().value.get<String>();
 
     ASTs empty_engine_args;
     Arguments arguments{

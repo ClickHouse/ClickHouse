@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/config.h>
+
 #if USE_ODBC
 
 #include <Interpreters/Context.h>

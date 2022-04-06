@@ -22,38 +22,20 @@ namespace ErrorCodes
 ASTPtr ASTSelectQuery::clone() const
 {
     auto res = std::make_shared<ASTSelectQuery>(*this);
+
+    /** NOTE Members must clone exactly in the same order in which they were inserted into `children` in ParserSelectQuery.
+     * This is important because the AST hash depends on the children order and this hash is used for multiple things,
+     * like the column identifiers in the case of subqueries in the IN statement or caching scalar queries (reused in CTEs so it's
+     * important for them to have the same hash).
+     * For distributed query processing, in case one of the servers is localhost and the other one is not, localhost query is executed
+     * within the process and is cloned, and the request is sent to the remote server in text form via TCP.
+     * And if the cloning order does not match the parsing order then different servers will get different identifiers.
+     *
+     * Since the positions map uses <key, position> we can copy it as is and ensure the new children array is created / pushed
+     * in the same order as the existing one */
     res->children.clear();
-    res->positions.clear();
-
-#define CLONE(expr) res->setExpression(expr, getExpression(expr, true))
-
-    /** NOTE Members must clone exactly in the same order,
-        *  in which they were inserted into `children` in ParserSelectQuery.
-        * This is important because of the children's names the identifier (getTreeHash) is compiled,
-        *  which can be used for column identifiers in the case of subqueries in the IN statement.
-        * For distributed query processing, in case one of the servers is localhost and the other one is not,
-        *  localhost query is executed within the process and is cloned,
-        *  and the request is sent to the remote server in text form via TCP.
-        * And if the cloning order does not match the parsing order,
-        *  then different servers will get different identifiers.
-        */
-    CLONE(Expression::WITH);
-    CLONE(Expression::SELECT);
-    CLONE(Expression::TABLES);
-    CLONE(Expression::PREWHERE);
-    CLONE(Expression::WHERE);
-    CLONE(Expression::GROUP_BY);
-    CLONE(Expression::HAVING);
-    CLONE(Expression::WINDOW);
-    CLONE(Expression::ORDER_BY);
-    CLONE(Expression::LIMIT_BY_OFFSET);
-    CLONE(Expression::LIMIT_BY_LENGTH);
-    CLONE(Expression::LIMIT_BY);
-    CLONE(Expression::LIMIT_OFFSET);
-    CLONE(Expression::LIMIT_LENGTH);
-    CLONE(Expression::SETTINGS);
-
-#undef CLONE
+    for (const auto & child : children)
+        res->children.push_back(child->clone());
 
     return res;
 }

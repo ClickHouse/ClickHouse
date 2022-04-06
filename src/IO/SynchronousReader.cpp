@@ -82,10 +82,8 @@ std::future<IAsynchronousReader::Result> SynchronousReader::submit(Request reque
         watch.stop();
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-        return bytes_read;
+        return Result{ .size = bytes_read, .offset = request.ignore };
     });
 }
 
 }
-
-

@@ -17,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Poco/String.h>
 #include <algorithm>
+#include <base/sort.h>
 
 
 namespace DB
@@ -74,10 +75,10 @@ AvailableCollationLocales::LocalesVector AvailableCollationLocales::getAvailable
         result.push_back(name_and_locale.second);
 
     auto comparator = [] (const LocaleAndLanguage & f, const LocaleAndLanguage & s)
-        {
-            return f.locale_name < s.locale_name;
-        };
-    std::sort(result.begin(), result.end(), comparator);
+    {
+        return f.locale_name < s.locale_name;
+    };
+    ::sort(result.begin(), result.end(), comparator);
 
     return result;
 }

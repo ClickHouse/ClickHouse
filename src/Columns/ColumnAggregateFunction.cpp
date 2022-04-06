@@ -28,13 +28,20 @@ namespace ErrorCodes
 }
 
 
-static String getTypeString(const AggregateFunctionPtr & func)
+static String getTypeString(const AggregateFunctionPtr & func, std::optional<size_t> version = std::nullopt)
 {
     WriteBufferFromOwnString stream;
-    stream << "AggregateFunction(" << func->getName();
+
+    stream << "AggregateFunction(";
+
+    /// If aggregate function does not support versioning its version is 0 and is not printed.
+    if (version && *version)
+        stream << *version << ", ";
+
+    stream << func->getName();
+
     const auto & parameters = func->getParameters();
     const auto & argument_types = func->getArgumentTypes();
-
     if (!parameters.empty())
     {
         stream << '(';
@@ -56,7 +63,7 @@ static String getTypeString(const AggregateFunctionPtr & func)
 
 
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
-    : func(func_), type_string(getTypeString(func)), version(version_)
+    : func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
 }
 
@@ -66,10 +73,11 @@ ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & fu
 
 }
 
-void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
+void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, size_t version_)
 {
     func = func_;
-    type_string = getTypeString(func);
+    version = version_;
+    type_string = getTypeString(func, version);
 }
 
 
@@ -196,6 +204,8 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
 
 void ColumnAggregateFunction::ensureOwnership()
 {
+    force_data_ownership = true;
+
     if (src)
     {
         /// We must copy all data from src and take ownership.
@@ -261,7 +271,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
                 + ").",
             ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-    if (!empty() && src.get() != &from_concrete)
+    if (force_data_ownership || (!empty() && src.get() != &from_concrete))
     {
         /// Must create new states of aggregate function and take ownership of it,
         ///  because ownership of states of aggregate function cannot be shared for individual rows,
@@ -287,7 +297,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 {
     size_t size = data.size();
     if (size != filter.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter.size(), size);
 
     if (size == 0)
         return cloneEmpty();
@@ -403,7 +413,7 @@ void ColumnAggregateFunction::protect()
 
 MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
-    return create(func);
+    return create(func, version);
 }
 
 Field ColumnAggregateFunction::operator[](size_t n) const
@@ -610,7 +620,8 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     return columns;
 }
 
-void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
+void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
+                                            size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
 {
     size_t s = data.size();
     res.resize(s);
@@ -618,7 +629,8 @@ void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/,
         res[i] = i;
 }
 
-void ColumnAggregateFunction::updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const {}
+void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,
+                                            size_t, int, Permutation &, EqualRanges&) const {}
 
 void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
 {

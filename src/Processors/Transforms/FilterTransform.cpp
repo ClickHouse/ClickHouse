@@ -138,8 +138,6 @@ void FilterTransform::transform(Chunk & chunk)
         return;
     }
 
-    FilterDescription filter_and_holder(*filter_column);
-
     /** Let's find out how many rows will be in result.
       * To do this, we filter out the first non-constant column
       *  or calculate number of set bytes in the filter.
@@ -154,14 +152,20 @@ void FilterTransform::transform(Chunk & chunk)
         }
     }
 
+    std::unique_ptr<IFilterDescription> filter_description;
+    if (filter_column->isSparse())
+        filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
+    else
+        filter_description = std::make_unique<FilterDescription>(*filter_column);
+
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)
     {
-        columns[first_non_constant_column] = columns[first_non_constant_column]->filter(*filter_and_holder.data, -1);
+        columns[first_non_constant_column] = filter_description->filter(*columns[first_non_constant_column], -1);
         num_filtered_rows = columns[first_non_constant_column]->size();
     }
     else
-        num_filtered_rows = countBytesInFilter(*filter_and_holder.data);
+        num_filtered_rows = filter_description->countBytesInFilter();
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
@@ -207,7 +211,7 @@ void FilterTransform::transform(Chunk & chunk)
         if (isColumnConst(*current_column))
             current_column = current_column->cut(0, num_filtered_rows);
         else
-            current_column = current_column->filter(*filter_and_holder.data, num_filtered_rows);
+            current_column = filter_description->filter(*current_column, num_filtered_rows);
     }
 
     chunk.setColumns(std::move(columns), num_filtered_rows);

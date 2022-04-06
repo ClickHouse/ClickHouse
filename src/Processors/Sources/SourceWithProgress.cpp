@@ -26,6 +26,8 @@ SourceWithProgress::SourceWithProgress(Block header, bool enable_auto_progress)
 void SourceWithProgress::setProcessListElement(QueryStatus * elem)
 {
     process_list_elem = elem;
+    if (!elem)
+        return;
 
     /// Update total_rows_approx as soon as possible.
     ///

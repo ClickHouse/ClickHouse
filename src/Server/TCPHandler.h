@@ -3,9 +3,10 @@
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <base/getFQDNOrHostName.h>
-#include "Common/ProfileEvents.h"
+#include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
@@ -13,7 +14,11 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include "IServer.h"
 #include "base/types.h"
@@ -33,6 +38,9 @@ class Session;
 struct Settings;
 class ColumnsDescription;
 struct ProfileInfo;
+class TCPServer;
+class NativeWriter;
+class NativeReader;
 
 /// State of query processing.
 struct QueryState
@@ -125,7 +133,7 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
+    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
     ~TCPHandler() override;
 
     void run() override;
@@ -135,6 +143,7 @@ public:
 
 private:
     IServer & server;
+    TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
     Poco::Logger * log;
 
@@ -175,6 +184,7 @@ private:
     String cluster_secret;
 
     std::mutex task_callback_mutex;
+    std::mutex fatal_error_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
@@ -184,9 +194,7 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
 
-    using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, ProfileEvents::Counters::Snapshot>;
-
-    ThreadIdToCountersSnapshot last_sent_snapshots;
+    ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     /// It is the name of the server that will be sent to the client.
     String server_display_name;
@@ -201,6 +209,7 @@ private:
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
+    std::optional<PartitionReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext();
     void readData();
@@ -233,6 +242,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
+    void sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);

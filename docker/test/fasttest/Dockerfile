@@ -1,5 +1,7 @@
+# rebuild in #33610
 #  docker build -t clickhouse/fasttest .
-FROM clickhouse/test-util
+ARG FROM_TAG=latest
+FROM clickhouse/test-util:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -28,12 +30,14 @@ RUN apt-get update \
         software-properties-common \
         --yes --no-install-recommends
 
+# Architecture of the image when BuildKit/buildx is used
+ARG TARGETARCH
+
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
-    && chmod +x dpkg-deb \
-    && cp dpkg-deb /usr/bin
+RUN arch=${TARGETARCH:-amd64} \
+  && curl -Lo /usr/bin/dpkg-deb https://github.com/ClickHouse-Extras/dpkg/releases/download/1.21.1-clickhouse/dpkg-deb-${arch}
 
 RUN apt-get update \
     && apt-get install \

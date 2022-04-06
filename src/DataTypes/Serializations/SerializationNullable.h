@@ -11,13 +11,12 @@ private:
     SerializationPtr nested;
 
 public:
-    SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
+    explicit SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
 
     void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const override;
+        const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,
@@ -97,7 +96,7 @@ private:
     {
         const ColumnPtr null_map;
 
-        SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
+        explicit SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         SerializationPtr create(const SerializationPtr & prev) const override;

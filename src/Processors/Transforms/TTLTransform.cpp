@@ -105,6 +105,7 @@ void TTLTransform::consume(Chunk chunk)
         return;
     }
 
+    convertToFullIfSparse(chunk);
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     for (const auto & algorithm : algorithms)
@@ -138,8 +139,10 @@ void TTLTransform::finalize()
 
     if (delete_algorithm)
     {
-        size_t rows_removed = all_data_dropped ? data_part->rows_count : delete_algorithm->getNumberOfRemovedRows();
-        LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", rows_removed, data_part->name);
+        if (all_data_dropped)
+            LOG_DEBUG(log, "Removed all rows from part {} due to expired TTL", data_part->name);
+        else
+            LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", delete_algorithm->getNumberOfRemovedRows(), data_part->name);
     }
 }
 

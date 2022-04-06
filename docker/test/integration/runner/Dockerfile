@@ -21,7 +21,6 @@ RUN apt-get update \
     cgroupfs-mount \
     python3-pip \
     tzdata \
-    libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
@@ -41,12 +40,12 @@ RUN apt-get update \
         /tmp/* \
     && apt-get clean
 
-ENV TZ=Europe/Moscow
+ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV DOCKER_CHANNEL stable
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
+RUN add-apt-repository "deb https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -73,11 +72,13 @@ RUN python3 -m pip install \
     grpcio-tools \
     kafka-python \
     kazoo \
+    lz4 \
     minio \
     protobuf \
     psycopg2-binary==2.8.6 \
-    pymongo \
+    pymongo==3.11.0 \
     pytest \
+    pytest-order==1.0.0 \
     pytest-timeout \
     pytest-xdist \
     pytest-repeat \
@@ -86,7 +87,8 @@ RUN python3 -m pip install \
     tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
-    pyhdfs
+    pyhdfs \
+    azure-storage-blob
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
@@ -99,8 +101,6 @@ RUN set -x \
   && adduser dockremap dockremap \
   && echo 'dockremap:165536:65536' >> /etc/subuid \
     && echo 'dockremap:165536:65536' >> /etc/subgid
-
-RUN echo '127.0.0.1 localhost test.com' >> /etc/hosts
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]

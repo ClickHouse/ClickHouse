@@ -74,8 +74,6 @@ public:
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
-    void startup() override;
-
     void shutdown() override;
 
     /// Used only for single MaterializedPostgreSQL storage.
@@ -87,7 +85,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
@@ -99,7 +97,11 @@ public:
     /// only once - when nested table is successfully created and is never changed afterwards.
     bool hasNested() { return has_nested.load(); }
 
-    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure);
+    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
+
+    ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
+
+    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(const NamesAndTypesList & columns) const;
 
     StoragePtr getNested() const;
 
@@ -120,8 +122,6 @@ public:
 
     bool supportsFinal() const override { return true; }
 
-    ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure);
-
 protected:
     StorageMaterializedPostgreSQL(
         const StorageID & table_id_,
@@ -135,7 +135,7 @@ protected:
 
 private:
     static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
-            const String name, const String type, UInt64 default_value);
+            String name, String type, UInt64 default_value);
 
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 

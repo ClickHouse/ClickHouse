@@ -9,7 +9,3 @@ add_subdirectory (pcg-random)
 add_subdirectory (widechar_width)
 add_subdirectory (readpassphrase)
 add_subdirectory (bridge)
-
-if (USE_MYSQL)
-    add_subdirectory (mysqlxx)
-endif ()

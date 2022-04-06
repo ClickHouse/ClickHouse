@@ -16,6 +16,7 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <regex>
 #include <Common/setThreadName.h>
@@ -62,10 +63,11 @@ static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
 static String selectLimitReplacementQuery(const String & query);
 
-MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
+MySQLHandler::MySQLHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, size_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
+    , tcp_server(tcp_server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
@@ -138,11 +140,14 @@ void MySQLHandler::run()
         OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
         packet_endpoint->sendPacket(ok_packet, true);
 
-        while (true)
+        while (tcp_server.isOpen())
         {
             packet_endpoint->resetSequenceId();
             MySQLPacketPayloadReadBuffer payload = packet_endpoint->getPayload();
 
+            while (!in->poll(1000000))
+                if (!tcp_server.isOpen())
+                    return;
             char command = 0;
             payload.readStrict(command);
 
@@ -152,6 +157,8 @@ void MySQLHandler::run()
             LOG_DEBUG(log, "Received command: {}. Connection id: {}.",
                 static_cast<int>(static_cast<unsigned char>(command)), connection_id);
 
+            if (!tcp_server.isOpen())
+                return;
             try
             {
                 switch (command)
@@ -369,8 +376,8 @@ void MySQLHandler::finishHandshakeSSL(
 }
 
 #if USE_SSL
-MySQLHandlerSSL::MySQLHandlerSSL(IServer & server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_)
-    : MySQLHandler(server_, socket_, ssl_enabled, connection_id_)
+MySQLHandlerSSL::MySQLHandlerSSL(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_)
     , public_key(public_key_)
     , private_key(private_key_)
 {}

@@ -60,7 +60,7 @@ public:
 
     bool hasUpdateField() const override;
 
-    DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_shared<ClickHouseDictionarySource>(*this); }
 
     std::string toString() const override;
 

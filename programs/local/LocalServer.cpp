@@ -15,6 +15,7 @@
 #include <base/scope_guard_safe.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
+#include <Access/AccessControl.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -28,6 +29,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <Parsers/IAST.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -36,10 +38,15 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <Formats/FormatFactory.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
+
+#if defined(FUZZING_MODE)
+    #include <Functions/getFuzzerData.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -81,92 +88,6 @@ void LocalServer::processError(const String &) const
             server_exception->rethrow();
         if (client_exception)
             client_exception->rethrow();
-    }
-}
-
-
-bool LocalServer::executeMultiQuery(const String & all_queries_text)
-{
-    bool echo_query = echo_queries;
-
-    /// Several queries separated by ';'.
-    /// INSERT data is ended by the end of line, not ';'.
-    /// An exception is VALUES format where we also support semicolon in
-    /// addition to end of line.
-    const char * this_query_begin = all_queries_text.data();
-    const char * this_query_end;
-    const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
-
-    String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
-    String query_to_execute;
-    ASTPtr parsed_query;
-    std::optional<Exception> current_exception;
-
-    while (true)
-    {
-        auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
-                                           query_to_execute, parsed_query, all_queries_text, current_exception);
-        switch (stage)
-        {
-            case MultiQueryProcessingStage::QUERIES_END:
-            case MultiQueryProcessingStage::PARSING_FAILED:
-            {
-                return true;
-            }
-            case MultiQueryProcessingStage::CONTINUE_PARSING:
-            {
-                continue;
-            }
-            case MultiQueryProcessingStage::PARSING_EXCEPTION:
-            {
-                if (current_exception)
-                    current_exception->rethrow();
-                return true;
-            }
-            case MultiQueryProcessingStage::EXECUTE_QUERY:
-            {
-                full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
-
-                try
-                {
-                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
-                }
-                catch (...)
-                {
-                    if (!is_interactive && !ignore_error)
-                        throw;
-
-                    // Surprisingly, this is a client error. A server error would
-                    // have been reported w/o throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
-                    have_error = true;
-                }
-
-                // For INSERTs with inline data: use the end of inline data as
-                // reported by the format parser (it is saved in sendData()).
-                // This allows us to handle queries like:
-                //   insert into t values (1); select 1
-                // , where the inline data is delimited by semicolon and not by a
-                // newline.
-                auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-                if (insert_ast && insert_ast->data)
-                {
-                    this_query_end = insert_ast->end;
-                    adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
-                }
-
-                // Report error.
-                if (have_error)
-                    processError(full_query);
-
-                // Stop processing queries if needed.
-                if (have_error && !ignore_error)
-                    return is_interactive;
-
-                this_query_begin = this_query_end;
-                break;
-            }
-        }
     }
 }
 
@@ -263,6 +184,11 @@ void LocalServer::tryInitPath()
     if (path.back() != '/')
         path += '/';
 
+    fs::create_directories(fs::path(path) / "user_defined/");
+    fs::create_directories(fs::path(path) / "data/");
+    fs::create_directories(fs::path(path) / "metadata/");
+    fs::create_directories(fs::path(path) / "metadata_dropped/");
+
     global_context->setPath(path);
 
     global_context->setTemporaryStorage(path + "tmp");
@@ -307,28 +233,46 @@ void LocalServer::cleanup()
 }
 
 
+static bool checkIfStdinIsRegularFile()
+{
+    struct stat file_stat;
+    return fstat(STDIN_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+}
+
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure"))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || !config().has("query")))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
-    auto table_structure = config().getString("table-structure");
-    auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
+    auto table_structure = config().getString("table-structure", "auto");
 
     String table_file;
+    String format_from_file_name;
     if (!config().has("table-file") || config().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
+        format_from_file_name = FormatFactory::instance().getFormatFromFileDescriptor(STDIN_FILENO);
     }
     else
     {
         /// Use regular file
-        table_file = quoteString(config().getString("table-file"));
+        auto file_name = config().getString("table-file");
+        table_file = quoteString(file_name);
+        format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
     }
 
-    return fmt::format("CREATE TABLE {} ({}) ENGINE = File({}, {});",
+    auto data_format = backQuoteIfNeed(
+        config().getString("table-data-format", config().getString("format", format_from_file_name.empty() ? "TSV" : format_from_file_name)));
+
+
+    if (table_structure == "auto")
+        table_structure = "";
+    else
+        table_structure = "(" + table_structure + ")";
+
+    return fmt::format("CREATE TABLE {} {} ENGINE = File({}, {});",
                        table_name, table_structure, data_format, table_file);
 }
 
@@ -364,7 +308,9 @@ void LocalServer::setupUsers()
         "</clickhouse>";
 
     ConfigurationPtr users_config;
-
+    auto & access_control = global_context->getAccessControl();
+    access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
+    access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
     if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
     {
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
@@ -373,10 +319,7 @@ void LocalServer::setupUsers()
         users_config = loaded_config.configuration;
     }
     else
-    {
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
-    }
-
     if (users_config)
         global_context->setUsersConfig(users_config);
     else
@@ -384,16 +327,11 @@ void LocalServer::setupUsers()
 }
 
 
-String LocalServer::getQueryTextPrefix()
-{
-    return getInitialCreateTableQuery();
-}
-
-
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config());
-    connection = LocalConnection::createConnection(connection_parameters, global_context, need_render_progress);
+    connection = LocalConnection::createConnection(
+        connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -407,10 +345,25 @@ try
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
+#if defined(FUZZING_MODE)
+    static bool first_time = true;
+    if (first_time)
+    {
+
+    if (queries_files.empty() && !config().has("query"))
+    {
+        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode." << "\033[0m" << std::endl;
+        std::cerr << "\033[31m" << "You have to provide a query with --query or --queries-file option." << "\033[0m" << std::endl;
+        std::cerr << "\033[31m" << "The query have to use function getFuzzerData() inside." << "\033[0m" << std::endl;
+        exit(1);
+    }
+
+    is_interactive = false;
+#else
     is_interactive = stdin_is_a_tty
         && (config().hasOption("interactive")
-            || (!config().has("query") && !config().has("table-structure") && queries_files.empty()));
-
+            || (!config().has("query") && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
+#endif
     if (!is_interactive)
     {
         /// We will terminate process on error
@@ -439,6 +392,15 @@ try
 
     connect();
 
+#ifdef FUZZING_MODE
+    first_time = false;
+    }
+#endif
+
+    String initial_query = getInitialCreateTableQuery();
+    if (!initial_query.empty())
+        processQueryText(initial_query);
+
     if (is_interactive && !delayed_interactive)
     {
         runInteractive();
@@ -451,7 +413,9 @@ try
             runInteractive();
     }
 
+#ifndef FUZZING_MODE
     cleanup();
+#endif
     return Application::EXIT_OK;
 }
 catch (const DB::Exception & e)
@@ -481,22 +445,17 @@ void LocalServer::processConfig()
 
         if (config().has("multiquery"))
             is_multiquery = true;
-
-        load_suggestions = true;
     }
     else
     {
-        if (delayed_interactive)
-        {
-            load_suggestions = true;
-        }
-
         need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
     }
+
     print_stack_trace = config().getBool("stacktrace", false);
+    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false);
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
@@ -611,7 +570,6 @@ void LocalServer::processConfig()
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
-        fs::create_directories(fs::path(path) / "user_defined/");
         LOG_DEBUG(log, "Loading user defined objects from {}", path);
         Poco::File(path + "user_defined/").createDirectories();
         UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
@@ -619,9 +577,6 @@ void LocalServer::processConfig()
         LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        fs::create_directories(fs::path(path) / "data/");
-        fs::create_directories(fs::path(path) / "metadata/");
-
         loadMetadataSystem(global_context);
         attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
@@ -653,7 +608,7 @@ void LocalServer::processConfig()
 }
 
 
-static std::string getHelpHeader()
+[[ maybe_unused ]] static std::string getHelpHeader()
 {
     return
         "usage: clickhouse-local [initial table definition] [--query <query>]\n"
@@ -669,7 +624,7 @@ static std::string getHelpHeader()
 }
 
 
-static std::string getHelpFooter()
+[[ maybe_unused ]] static std::string getHelpFooter()
 {
     return
         "Example printing memory used by each Unix user:\n"
@@ -680,18 +635,29 @@ static std::string getHelpFooter()
 }
 
 
-void LocalServer::printHelpMessage(const OptionsDescription & options_description)
+void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & options_description)
 {
+#if defined(FUZZING_MODE)
+    std::cout <<
+        "usage: clickhouse <clickhouse-local arguments> -- <libfuzzer arguments>\n"
+        "Note: It is important not to use only one letter keys with single dash for \n"
+        "for clickhouse-local arguments. It may work incorrectly.\n"
+
+        "ClickHouse is build with coverage guided fuzzer (libfuzzer) inside it.\n"
+        "You have to provide a query which contains getFuzzerData function.\n"
+        "This will take the data from fuzzing engine, pass it to getFuzzerData function and execute a query.\n"
+        "Each time the data will be different, and it will last until some segfault or sanitizer assertion is found. \n";
+#else
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
+#endif
 }
 
 
 void LocalServer::addOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
-        ("database,d", po::value<std::string>(), "database")
         ("table,N", po::value<std::string>(), "name of the initial table")
 
         /// If structure argument is omitted then initial query is not generated
@@ -725,7 +691,7 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 }
 
 
-void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &)
+void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
     if (options.count("table"))
         config().setString("table-name", options["table"].as<std::string>());
@@ -751,15 +717,14 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 
 }
 
-
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
-    DB::LocalServer app;
     try
     {
+        DB::LocalServer app;
         app.init(argc, argv);
         return app.run();
     }
@@ -781,3 +746,51 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
         return code ? code : 1;
     }
 }
+
+#if defined(FUZZING_MODE)
+
+std::optional<DB::LocalServer> fuzz_app;
+
+extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
+{
+    int & argc = *pargc;
+    char ** argv = *pargv;
+
+    /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
+    /// clickhouse <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
+
+    /// Calculate the position of delimiter "--" that separates arguments
+    /// of clickhouse-local and libfuzzer
+    int pos_delim = argc;
+    for (int i = 0; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--") == 0)
+        {
+            pos_delim = i;
+            break;
+        }
+    }
+
+    /// Initialize clickhouse-local app
+    fuzz_app.emplace();
+    fuzz_app->init(pos_delim, argv);
+
+    /// We will leave clickhouse-local specific arguments as is, because libfuzzer will ignore
+    /// all keys starting with --
+    return 0;
+}
+
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
+try
+{
+    auto input = String(reinterpret_cast<const char *>(data), size);
+    DB::FunctionGetFuzzerData::update(input);
+    fuzz_app->run();
+    return 0;
+}
+catch (...)
+{
+    return 1;
+}
+#endif

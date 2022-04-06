@@ -54,7 +54,7 @@ namespace
         const Poco::SHA1Engine::Digest & digest = engine.digest();
 
         Poco::SHA1Engine::Digest calculated_password_sha1(sha1_size);
-        for (size_t i = 0; i < sha1_size; i++)
+        for (size_t i = 0; i < sha1_size; ++i)
             calculated_password_sha1[i] = scrambled_password[i] ^ digest[i];
 
         auto calculated_password_double_sha1 = Util::encodeSHA1(calculated_password_sha1);
@@ -87,6 +87,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::KERBEROS:
                 return external_authenticators.checkKerberosCredentials(auth_data.getKerberosRealm(), *gss_acceptor_context);
 
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
             case AuthenticationType::MAX:
                 break;
         }
@@ -109,6 +112,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::LDAP:
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::MAX:
                 break;
@@ -136,6 +142,31 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::MAX:
+                break;
+        }
+    }
+
+    if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
+    {
+        switch (auth_data.getType())
+        {
+            case AuthenticationType::NO_PASSWORD:
+            case AuthenticationType::PLAINTEXT_PASSWORD:
+            case AuthenticationType::SHA256_PASSWORD:
+            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::LDAP:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+
+            case AuthenticationType::KERBEROS:
+                throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                return auth_data.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
 
             case AuthenticationType::MAX:
                 break;
