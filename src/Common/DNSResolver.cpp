@@ -123,7 +123,10 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
     }
 
     if (addresses.empty())
+    {
+        ProfileEvents::increment(ProfileEvents::DNSError);
         throw Exception("Not found address of host: " + host, ErrorCodes::DNS_ERROR);
+    }
 
     return addresses;
 }
@@ -142,8 +145,8 @@ static String reverseResolveImpl(const Poco::Net::IPAddress & address)
 
 struct DNSResolver::Impl
 {
-    using HostWithConsecutiveFailures = std::unordered_map<String, UInt8>;
-    using AddressWithConsecutiveFailures = std::unordered_map<Poco::Net::IPAddress, UInt8>;
+    using HostWithConsecutiveFailures = std::unordered_map<String, UInt32>;
+    using AddressWithConsecutiveFailures = std::unordered_map<Poco::Net::IPAddress, UInt32>;
 
     CachedFn<&resolveIPAddressImpl> cache_host;
     CachedFn<&reverseResolveImpl> cache_address;
@@ -275,7 +278,6 @@ bool DNSResolver::updateCacheImpl(
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
                 continue;
             }
-            ProfileEvents::increment(ProfileEvents::DNSError);
             if (!lost_elems.empty())
                 lost_elems += ", ";
             lost_elems += cacheElemToString(it->first);
