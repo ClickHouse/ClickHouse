@@ -23,6 +23,7 @@ show create table build_options;
 show create table clusters;
 show create table collations;
 show create table columns;
+show create table configs;
 show create table contributors;
 show create table current_roles;
 show create table data_skipping_indices;

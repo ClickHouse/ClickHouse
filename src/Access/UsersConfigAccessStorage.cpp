@@ -225,6 +225,13 @@ namespace
             user->access.revokeGrantOption(AccessType::ALL);
         }
 
+        bool system_configs = config.getBool(user_config + ".system_configs", false);
+        if (!system_configs)
+        {
+            user->access.revoke(AccessType::SYSTEM_CONFIGS);
+            user->access.revokeGrantOption(AccessType::SYSTEM_CONFIGS);
+        }
+
         String default_database = config.getString(user_config + ".default_database", "");
         user->default_database = default_database;
 

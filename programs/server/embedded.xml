@@ -27,6 +27,7 @@
             <profile>default</profile>
             <quota>default</quota>
             <access_management>1</access_management>
+            <system_configs>1</system_configs>
         </default>
     </users>
 

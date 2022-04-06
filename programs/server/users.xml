@@ -99,6 +99,9 @@
 
             <!-- User can create other users and grant rights to them. -->
             <!-- <access_management>1</access_management> -->
+
+            <!-- User can query system.configs and grant rights to them -->
+            <!-- <system_configs>1</system_configs> -->
         </default>
     </users>
 

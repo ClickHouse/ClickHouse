@@ -90,6 +90,9 @@ users:
         # User can create other users and grant rights to them.
         # access_management: 1
 
+        # User can query system.configs and grant rights to them
+        # system_configs: 1
+
 # Quotas.
 quotas:
     # Name of quota.

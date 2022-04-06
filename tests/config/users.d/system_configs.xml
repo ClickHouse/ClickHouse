@@ -1,0 +1,7 @@
+<clickhouse>
+    <users>
+        <default>
+            <system_configs>1</system_configs>
+        </default>
+    </users>
+</clickhouse>
