@@ -229,7 +229,7 @@ def test_orc_minmax_index(
         )
 
         assert (
-            result.strip()
+            result
             == """2021-11-05	abd	15
 2021-11-16	aaa	22
 """
@@ -296,7 +296,7 @@ def test_parquet_minmax_index(
         )
 
         assert (
-            result.strip()
+            result
             == """2021-11-05	abd	15
 2021-11-16	aaa	22
 """
