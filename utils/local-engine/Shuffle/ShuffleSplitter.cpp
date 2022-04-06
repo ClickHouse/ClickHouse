@@ -267,7 +267,7 @@ void HashSplitter::computeAndCountPartitionId(DB::Block & block)
     if (!hash_function)
     {
         auto & factory = DB::FunctionFactory::instance();
-        auto function = factory.get("murmurHash3_32", dbms::SerializedPlanParser::global_context);
+        auto function = factory.get("murmurHash3_32", local_engine::SerializedPlanParser::global_context);
         ColumnsWithTypeAndName args;
         for (auto &name : options.exprs)
         {

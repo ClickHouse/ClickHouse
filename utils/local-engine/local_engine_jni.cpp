@@ -99,8 +99,8 @@ jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKe
 jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithIterator(
     JNIEnv* env, jobject obj, jlong , jbyteArray plan,
     jobjectArray iter_arr) {
-    auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
-    dbms::SerializedPlanParser parser(context);
+    auto context = Context::createCopy(local_engine::SerializedPlanParser::global_context);
+    local_engine::SerializedPlanParser parser(context);
     parser.setJavaVM(global_vm);
     jsize iter_num = env->GetArrayLength(iter_arr);
     for (jsize i=0; i < iter_num; i++)
@@ -114,7 +114,7 @@ jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKe
     std::string plan_string;
     plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
     auto query_plan = parser.parse(plan_string);
-    dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
+    local_engine::LocalExecutor * executor = new local_engine::LocalExecutor(parser.query_context);
     executor->execute(std::move(query_plan));
     env->ReleaseByteArrayElements(plan, plan_address, JNI_ABORT);
     return reinterpret_cast<jlong>(executor);
@@ -122,14 +122,14 @@ jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKe
 
 jboolean Java_com_intel_oap_row_RowIterator_nativeHasNext(JNIEnv * env, jobject obj, jlong executor_address)
 {
-    dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
+    local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(executor_address);
     return executor->hasNext();
 //    return false;
 }
 
 jobject Java_com_intel_oap_row_RowIterator_nativeNext(JNIEnv * env, jobject obj, jlong executor_address)
 {
-    dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
+    local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(executor_address);
     local_engine::SparkRowInfoPtr spark_row_info = executor->next();
 
     auto *offsets_arr = env->NewLongArray(spark_row_info->getNumRows());
@@ -150,27 +150,27 @@ jobject Java_com_intel_oap_row_RowIterator_nativeNext(JNIEnv * env, jobject obj,
 
 void Java_com_intel_oap_row_RowIterator_nativeClose(JNIEnv * env, jobject obj, jlong executor_address)
 {
-    dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
+    local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(executor_address);
     delete executor;
 }
 
 // Columnar Iterator
 jboolean Java_com_intel_oap_vectorized_BatchIterator_nativeHasNext(JNIEnv * env, jobject obj, jlong executor_address)
 {
-    dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
+    local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(executor_address);
     return executor->hasNext();
 }
 
 jlong Java_com_intel_oap_vectorized_BatchIterator_nativeCHNext(JNIEnv * env, jobject obj, jlong executor_address)
 {
-    dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
+    local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(executor_address);
     Block * column_batch = executor->nextColumnar();
     return reinterpret_cast<Int64>(column_batch);
 }
 
 void Java_com_intel_oap_vectorized_BatchIterator_nativeClose(JNIEnv * env, jobject obj, jlong executor_address)
 {
-    dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
+    local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(executor_address);
     delete executor;
 }
 

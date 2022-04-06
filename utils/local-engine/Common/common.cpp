@@ -22,27 +22,27 @@ void registerAllFunctions()
 void init()
 {
     registerAllFunctions();
-    dbms::SerializedPlanParser::shared_context = SharedContextHolder(Context::createShared());
-    dbms::SerializedPlanParser::global_context = Context::createGlobal(dbms::SerializedPlanParser::shared_context.get());
-    dbms::SerializedPlanParser::global_context->makeGlobalContext();
-    dbms::SerializedPlanParser::global_context->setConfig(dbms::SerializedPlanParser::config);
-    dbms::SerializedPlanParser::global_context->setPath("/");
+    local_engine::SerializedPlanParser::shared_context = SharedContextHolder(Context::createShared());
+    local_engine::SerializedPlanParser::global_context = Context::createGlobal(local_engine::SerializedPlanParser::shared_context.get());
+    local_engine::SerializedPlanParser::global_context->makeGlobalContext();
+    local_engine::SerializedPlanParser::global_context->setConfig(local_engine::SerializedPlanParser::config);
+    local_engine::SerializedPlanParser::global_context->setPath("/");
     local_engine::Logger::initConsoleLogger();
 }
 
 char * createExecutor(std::string plan_string)
 {
-    auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
-    dbms::SerializedPlanParser parser(context);
+    auto context = Context::createCopy(local_engine::SerializedPlanParser::global_context);
+    local_engine::SerializedPlanParser parser(context);
     auto query_plan = parser.parse(plan_string);
-    dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
+    local_engine::LocalExecutor * executor = new local_engine::LocalExecutor(parser.query_context);
     executor->execute(std::move(query_plan));
     return reinterpret_cast<char* >(executor);
 }
 
 bool executorHasNext(char * executor_address)
 {
-    dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
+    local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(executor_address);
     return executor->hasNext();
 }
 

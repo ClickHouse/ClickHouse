@@ -107,12 +107,6 @@ message ReadRel {
   }
 }
 
-message InputRel {
-  RelCommon common = 1;
-  NamedStruct input_schema = 2;
-  int64 iter_idx = 3;
-}
-
 message ProjectRel {
   RelCommon common = 1;
   Rel input = 2;
@@ -254,7 +248,6 @@ message Rel {
     ExtensionMultiRel extension_multi = 10;
     ExtensionLeafRel extension_leaf = 11;
     CrossRel cross = 12;
-    InputRel input = 13;
   }
 }
 

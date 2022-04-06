@@ -30,7 +30,14 @@
 #include <Poco/Util/MapConfiguration.h>
 #include <common/logger_useful.h>
 
-DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const substrait::ReadRel & rel)
+bool local_engine::SerializedPlanParser::isReadRelFromJava(const substrait::ReadRel& rel) {
+    assert(rel.has_local_files());
+    assert(rel.has_base_schema());
+    return rel.local_files().items().size() == 1 && rel.local_files().items().at(0).uri_file().starts_with("iterator");
+}
+
+
+DB::QueryPlanPtr local_engine::SerializedPlanParser::parseReadRealWithLocalFile(const substrait::ReadRel & rel)
 {
     assert(rel.has_local_files());
     assert(rel.has_base_schema());
@@ -40,21 +47,28 @@ DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocal
         Poco::URI uri(item.uri_file());
         files_info->files.push_back(uri.getPath());
     }
-    return std::make_shared<BatchParquetFileSource>(files_info, parseNameStruct(rel.base_schema()));
+    auto query_plan = std::make_unique<DB::QueryPlan>();
+    std::shared_ptr<IProcessor> source = std::make_shared<BatchParquetFileSource>(files_info, parseNameStruct(rel.base_schema()));
+    auto source_step = std::make_unique<ReadFromStorageStep>(Pipe(source), "Parquet");
+    query_plan->addStep(std::move(source_step));
+    return query_plan;
 }
 
-DB::QueryPlanPtr dbms::SerializedPlanParser::parseInputRel(const substrait::InputRel& rel)
-{
-    assert(!input_iters.empty());
-    assert(rel.has_input_schema());
+DB::QueryPlanPtr local_engine::SerializedPlanParser::parseReadRealWithJavaIter(const substrait::ReadRel& rel){
+    assert(rel.has_local_files());
+    assert(rel.local_files().items().size() == 1);
+    assert(rel.has_base_schema());
+    auto iter = rel.local_files().items().at(0).uri_file();
+    auto pos = iter.find(':');
+    auto iter_index = std::stoi(iter.substr(pos+1, iter.size()));
     auto plan = std::make_unique<DB::QueryPlan>();
-    auto source = std::make_shared<local_engine::SourceFromJavaIter>(parseNameStruct(rel.input_schema()), input_iters[0], vm);
+    auto source = std::make_shared<local_engine::SourceFromJavaIter>(parseNameStruct(rel.base_schema()), input_iters[iter_index], vm);
     DB::QueryPlanStepPtr source_step = std::make_unique<DB::ReadFromPreparedSource>(Pipe(source), context);
     plan->addStep(std::move(source_step));
     return plan;
 }
 
-DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait::ReadRel& rel)
+DB::QueryPlanPtr local_engine::SerializedPlanParser::parseMergeTreeTable(const substrait::ReadRel& rel)
 {
     Stopwatch watch;
     watch.start();
@@ -117,7 +131,7 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait
 }
 
 
-DB::Block dbms::SerializedPlanParser::parseNameStruct(const substrait::NamedStruct & struct_)
+DB::Block local_engine::SerializedPlanParser::parseNameStruct(const substrait::NamedStruct & struct_)
 {
     auto internal_cols = std::make_unique<std::vector<DB::ColumnWithTypeAndName>>();
     internal_cols->reserve(struct_.names_size());
@@ -130,7 +144,7 @@ DB::Block dbms::SerializedPlanParser::parseNameStruct(const substrait::NamedStru
     }
     return DB::Block(*std::move(internal_cols));
 }
-DB::DataTypePtr dbms::SerializedPlanParser::parseType(const substrait::Type & type)
+DB::DataTypePtr local_engine::SerializedPlanParser::parseType(const substrait::Type & type)
 {
     auto & factory = DB::DataTypeFactory::instance();
     if (type.has_bool_() || type.has_i8())
@@ -170,7 +184,7 @@ DB::DataTypePtr dbms::SerializedPlanParser::parseType(const substrait::Type & ty
         throw std::runtime_error("doesn't support type " + type.DebugString());
     }
 }
-DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
+DB::QueryPlanPtr local_engine::SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
 {
     if (plan->extensions_size() > 0)
     {
@@ -195,16 +209,10 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<substrait::Pl
     }
 }
 
-DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const substrait::Rel & rel)
+DB::QueryPlanPtr local_engine::SerializedPlanParser::parseOp(const substrait::Rel & rel)
 {
     switch (rel.rel_type_case())
     {
-        case substrait::Rel::RelTypeCase::kInput:
-        {
-            const auto & input = rel.input();
-            DB::QueryPlanPtr query_plan = parseInputRel(input);
-            return query_plan;
-        }
         case substrait::Rel::RelTypeCase::kFetch:
         {
             const auto & limit = rel.fetch();
@@ -272,10 +280,14 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const substrait::Rel & rel)
             DB::QueryPlanPtr query_plan;
             if (read.has_local_files())
             {
-                query_plan = std::make_unique<DB::QueryPlan>();
-                std::shared_ptr<IProcessor> source = std::dynamic_pointer_cast<IProcessor>(parseReadRealWithLocalFile(read));
-                auto source_step = std::make_unique<ReadFromStorageStep>(Pipe(source), "Parquet");
-                query_plan->addStep(std::move(source_step));
+                if(isReadRelFromJava(read))
+                {
+                    query_plan = parseReadRealWithJavaIter(read);
+                }
+                else
+                {
+                    query_plan = parseReadRealWithLocalFile(read);
+                }
             }
             else
             {
@@ -295,7 +307,7 @@ DB::AggregateFunctionPtr getAggregateFunction(const std::string & name, DB::Data
     return factory.get(name, arg_types, DB::Array{}, properties);
 }
 
-DB::QueryPlanStepPtr dbms::SerializedPlanParser::parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel & rel)
+DB::QueryPlanStepPtr local_engine::SerializedPlanParser::parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel & rel)
 {
     auto input = plan.getCurrentDataStream();
     DB::ActionsDAGPtr expression = std::make_shared<ActionsDAG>(blockToNameAndTypeList(input.header));
@@ -352,7 +364,7 @@ DB::QueryPlanStepPtr dbms::SerializedPlanParser::parseAggregate(DB::QueryPlan & 
     return aggregating_step;
 }
 
-DB::NamesAndTypesList dbms::SerializedPlanParser::blockToNameAndTypeList(const DB::Block & header)
+DB::NamesAndTypesList local_engine::SerializedPlanParser::blockToNameAndTypeList(const DB::Block & header)
 {
     DB::NamesAndTypesList types;
     for (const auto & name : header.getNames())
@@ -374,7 +386,7 @@ void join(DB::ActionsDAG::NodeRawConstPtrs v, char c, std::string & s)
     }
 }
 
-std::string dbms::SerializedPlanParser::getFunctionName(std::string function_signature, const substrait::Type& output_type)
+std::string local_engine::SerializedPlanParser::getFunctionName(std::string function_signature, const substrait::Type& output_type)
 {
     auto function_name_idx = function_signature.find(":");
     assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
@@ -406,7 +418,7 @@ std::string dbms::SerializedPlanParser::getFunctionName(std::string function_sig
     return ch_function_name;
 }
 
-DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
+DB::ActionsDAGPtr local_engine::SerializedPlanParser::parseFunction(
     const DataStream & input, const substrait::Expression & rel, std::string & result_name, DB::ActionsDAGPtr actions_dag, bool keep_result)
 {
     assert(rel.has_scalar_function() && "the root of expression should be a scalar function");
@@ -447,7 +459,7 @@ DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
     return actions_dag;
 }
 
-const DB::ActionsDAG::Node * dbms::SerializedPlanParser::
+const DB::ActionsDAG::Node * local_engine::SerializedPlanParser::
     parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression & rel)
 {
     switch (rel.rex_type_case())
@@ -501,27 +513,27 @@ const DB::ActionsDAG::Node * dbms::SerializedPlanParser::
 }
 
 
-DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::string & plan)
+DB::QueryPlanPtr local_engine::SerializedPlanParser::parse(std::string & plan)
 {
     auto plan_ptr = std::make_unique<substrait::Plan>();
     plan_ptr->ParseFromString(plan);
     return parse(std::move(plan_ptr));
 }
-void dbms::SerializedPlanParser::initFunctionEnv()
+void local_engine::SerializedPlanParser::initFunctionEnv()
 {
-    dbms::registerFunctions();
-    dbms::registerAggregateFunctions();
+    DB::registerFunctions();
+    DB::registerAggregateFunctions();
 }
-dbms::SerializedPlanParser::SerializedPlanParser(const DB::ContextPtr & context) : context(context)
+local_engine::SerializedPlanParser::SerializedPlanParser(const DB::ContextPtr & context) : context(context)
 {
 }
-dbms::ContextMutablePtr dbms::SerializedPlanParser::global_context = nullptr;
+local_engine::ContextMutablePtr local_engine::SerializedPlanParser::global_context = nullptr;
 
-Context::ConfigurationPtr dbms::SerializedPlanParser::config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+Context::ConfigurationPtr local_engine::SerializedPlanParser::config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
-SharedContextHolder dbms::SerializedPlanParser::shared_context;
+SharedContextHolder local_engine::SerializedPlanParser::shared_context;
 
-DB::Chunk DB::BatchParquetFileSource::generate()
+DB::Chunk local_engine::BatchParquetFileSource::generate()
 {
     while (!finished_generate)
     {
@@ -574,11 +586,11 @@ DB::Chunk DB::BatchParquetFileSource::generate()
 
     return {};
 }
-DB::BatchParquetFileSource::BatchParquetFileSource(FilesInfoPtr files, const DB::Block & sample)
+local_engine::BatchParquetFileSource::BatchParquetFileSource(FilesInfoPtr files, const DB::Block & sample)
     : SourceWithProgress(sample), files_info(files), header(sample)
 {
 }
-void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
+void local_engine::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
 {
     Stopwatch stopwatch;
     stopwatch.start();
@@ -600,11 +612,11 @@ void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
     this->header = query_plan->getCurrentDataStream().header.cloneEmpty();
     this->ch_column_to_spark_row = std::make_unique<local_engine::CHColumnToSparkRow>();
 }
-std::unique_ptr<local_engine::SparkRowInfo> dbms::LocalExecutor::writeBlockToSparkRow(DB::Block & block)
+std::unique_ptr<local_engine::SparkRowInfo> local_engine::LocalExecutor::writeBlockToSparkRow(DB::Block & block)
 {
     return this->ch_column_to_spark_row->convertCHColumnToSparkRow(block);
 }
-bool dbms::LocalExecutor::hasNext()
+bool local_engine::LocalExecutor::hasNext()
 {
     bool has_next;
     if (!this->current_chunk || this->current_chunk->rows() == 0)
@@ -618,7 +630,7 @@ bool dbms::LocalExecutor::hasNext()
     }
     return has_next;
 }
-local_engine::SparkRowInfoPtr dbms::LocalExecutor::next()
+local_engine::SparkRowInfoPtr local_engine::LocalExecutor::next()
 {
     local_engine::SparkRowInfoPtr row_info = writeBlockToSparkRow(*this->current_chunk);
     this->current_chunk.reset();
@@ -633,7 +645,7 @@ local_engine::SparkRowInfoPtr dbms::LocalExecutor::next()
     return row_info;
 }
 
-Block* dbms::LocalExecutor::nextColumnar()
+Block* local_engine::LocalExecutor::nextColumnar()
 {
     Block * columnar_batch;
     if (this->current_chunk->columns() > 0)
@@ -649,10 +661,10 @@ Block* dbms::LocalExecutor::nextColumnar()
     return columnar_batch;
 }
 
-DB::Block & dbms::LocalExecutor::getHeader()
+DB::Block & local_engine::LocalExecutor::getHeader()
 {
     return header;
 }
-dbms::LocalExecutor::LocalExecutor(dbms::QueryContext & _query_context):query_context(_query_context)
+local_engine::LocalExecutor::LocalExecutor(local_engine::QueryContext & _query_context):query_context(_query_context)
 {
 }

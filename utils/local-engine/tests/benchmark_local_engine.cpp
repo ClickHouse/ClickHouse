@@ -31,6 +31,7 @@
 #endif
 
 
+using namespace local_engine;
 using namespace dbms;
 
 bool inside_main=true;
@@ -62,9 +63,9 @@ static void BM_CHColumnToSparkRow(benchmark::State& state) {
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
         auto plan = plan_builder.readMergeTree("default", "test", "home/saber/Documents/data/mergetree", 1, 10, std::move(schema)).build();
-        dbms::SerializedPlanParser parser(global_context);
+        local_engine::SerializedPlanParser parser(global_context);
         auto query_plan = parser.parse(std::move(plan));
-        dbms::LocalExecutor local_executor;
+        local_engine::LocalExecutor local_executor;
         state.ResumeTiming();
         local_executor.execute(std::move(query_plan));
         while (local_executor.hasNext())
@@ -355,9 +356,9 @@ static void BM_SimpleAggregate(benchmark::State& state) {
         // sum(l_quantity)
         auto * measure = dbms::measureFunction(dbms::SUM, {dbms::selection(6)});
         auto plan = plan_builder.registerSupportedFunctions().aggregate({}, {measure}).read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
-        dbms::SerializedPlanParser parser(global_context);
+        local_engine::SerializedPlanParser parser(global_context);
         auto query_plan = parser.parse(std::move(plan));
-        dbms::LocalExecutor local_executor;
+        local_engine::LocalExecutor local_executor;
         state.ResumeTiming();
         local_executor.execute(std::move(query_plan));
         while (local_executor.hasNext())
@@ -409,9 +410,9 @@ static void BM_TPCH_Q6(benchmark::State& state) {
                                                                     scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
                                                                 }))
                         .read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
-        dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
+        local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
         auto query_plan = parser.parse(std::move(plan));
-        dbms::LocalExecutor local_executor;
+        local_engine::LocalExecutor local_executor;
         state.ResumeTiming();
         local_executor.execute(std::move(query_plan));
         while (local_executor.hasNext())
@@ -424,7 +425,7 @@ static void BM_TPCH_Q6(benchmark::State& state) {
 
 static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
     SerializedPlanParser::global_context = global_context;
-    dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
+    local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
     for (auto _: state)
     {
         state.PauseTiming();
@@ -468,7 +469,7 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
                         .readMergeTree("default", "test", "tpch-mergetree/lineorder/", 1, 12, std::move(schema)).build();
 
         auto query_plan = parser.parse(std::move(plan));
-        dbms::LocalExecutor local_executor;
+        local_engine::LocalExecutor local_executor;
         state.ResumeTiming();
         local_executor.execute(std::move(query_plan));
         while (local_executor.hasNext())
@@ -502,9 +503,9 @@ static void BM_CHColumnToSparkRowWithString(benchmark::State& state) {
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
         auto plan = plan_builder.read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
-        dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
+        local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
         auto query_plan = parser.parse(std::move(plan));
-        dbms::LocalExecutor local_executor;
+        local_engine::LocalExecutor local_executor;
         state.ResumeTiming();
         local_executor.execute(std::move(query_plan));
         while (local_executor.hasNext())
@@ -539,9 +540,9 @@ static void BM_SparkRowToCHColumn(benchmark::State& state) {
         dbms::SerializedPlanBuilder plan_builder;
         auto plan = plan_builder.read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
 
-        dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
+        local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
         auto query_plan = parser.parse(std::move(plan));
-        dbms::LocalExecutor local_executor;
+        local_engine::LocalExecutor local_executor;
 
         local_executor.execute(std::move(query_plan));
         local_engine::SparkColumnToCHColumn converter;
@@ -581,9 +582,9 @@ static void BM_SparkRowToCHColumnWithString(benchmark::State& state) {
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
         auto plan = plan_builder.read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
-        dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
+        local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
         auto query_plan = parser.parse(std::move(plan));
-        dbms::LocalExecutor local_executor;
+        local_engine::LocalExecutor local_executor;
 
         local_executor.execute(std::move(query_plan));
         local_engine::SparkColumnToCHColumn converter;
@@ -723,19 +724,19 @@ static void BM_TestCreateExecute(benchmark::State& state)
                                                             }))
                     .readMergeTree("default", "test", "home/saber/Documents/data/mergetree", 1, 4, std::move(schema)).build();
     std::string plan_string = plan->SerializeAsString();
-    dbms::SerializedPlanParser::global_context = global_context;
-    dbms::SerializedPlanParser::global_context->setConfig(dbms::SerializedPlanParser::config);
+    local_engine::SerializedPlanParser::global_context = global_context;
+    local_engine::SerializedPlanParser::global_context->setConfig(local_engine::SerializedPlanParser::config);
     for (auto _: state)
     {
         Stopwatch stopwatch;
         stopwatch.start();
-        auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
+        auto context = Context::createCopy(local_engine::SerializedPlanParser::global_context);
         context->setPath("/");
         auto _context = stopwatch.elapsedMicroseconds();
-        dbms::SerializedPlanParser parser(context);
+        local_engine::SerializedPlanParser parser(context);
         auto query_plan = parser.parse(plan_string);
         auto _parser = stopwatch.elapsedMicroseconds() - _context;
-        dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
+        local_engine::LocalExecutor * executor = new local_engine::LocalExecutor(parser.query_context);
         auto _executor = stopwatch.elapsedMicroseconds() - _parser;
         executor->execute(std::move(query_plan));
         auto _execute = stopwatch.elapsedMicroseconds() - _executor;
@@ -943,11 +944,11 @@ int main(int argc, char** argv) {
     SharedContextHolder shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
-    global_context->setConfig(dbms::SerializedPlanParser::config);
+    global_context->setConfig(local_engine::SerializedPlanParser::config);
     auto path = "/";
     global_context->setPath(path);
     SerializedPlanParser::global_context = global_context;
-    dbms::SerializedPlanParser::initFunctionEnv();
+    local_engine::SerializedPlanParser::initFunctionEnv();
     ::benchmark::Initialize(&argc, argv);
     if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
     ::benchmark::RunSpecifiedBenchmarks();

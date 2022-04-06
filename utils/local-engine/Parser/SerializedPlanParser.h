@@ -17,7 +17,7 @@
 #include <Storages/SourceFromJavaIter.h>
 #include <Parser/CHColumnToSparkRow.h>
 
-namespace DB
+namespace local_engine
 {
 
 struct FilesInfo
@@ -55,7 +55,7 @@ using BatchParquetFileSourcePtr = std::shared_ptr<BatchParquetFileSource>;
 }
 
 
-namespace dbms
+namespace local_engine
 {
 using namespace DB;
 
@@ -88,9 +88,10 @@ public:
     DB::QueryPlanPtr parse(std::string& plan);
     DB::QueryPlanPtr parse(std::unique_ptr<substrait::Plan> plan);
 
-    DB::BatchParquetFileSourcePtr parseReadRealWithLocalFile(const substrait::ReadRel& rel);
+    DB::QueryPlanPtr parseReadRealWithLocalFile(const substrait::ReadRel& rel);
+    DB::QueryPlanPtr parseReadRealWithJavaIter(const substrait::ReadRel& rel);
     DB::QueryPlanPtr parseMergeTreeTable(const substrait::ReadRel& rel);
-    DB::QueryPlanPtr parseInputRel(const substrait::InputRel& rel);
+    bool isReadRelFromJava(const substrait::ReadRel& rel);
     DB::Block parseNameStruct(const substrait::NamedStruct& struct_);
     DB::DataTypePtr parseType(const substrait::Type& type);
 

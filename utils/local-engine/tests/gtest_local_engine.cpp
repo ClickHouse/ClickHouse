@@ -24,6 +24,7 @@
 //#include <Poco/URI.h>
 
 using namespace dbms;
+using namespace local_engine;
 
 TEST(TestSelect, ReadRel)
 {
@@ -41,8 +42,8 @@ TEST(TestSelect, ReadRel)
     ASSERT_TRUE(plan->relations(0).root().input().has_read());
     ASSERT_EQ(plan->relations_size(), 1);
     std::cout << "start execute" <<std::endl;
-    dbms::LocalExecutor local_executor;
-    dbms::SerializedPlanParser parser(dbms::SerializedPlanParser::global_context);
+    local_engine::LocalExecutor local_executor;
+    local_engine::SerializedPlanParser parser(local_engine::SerializedPlanParser::global_context);
     auto query_plan = parser.parse(std::move(plan));
     local_executor.execute(std::move(query_plan));
     ASSERT_TRUE(local_executor.hasNext());
@@ -69,8 +70,8 @@ TEST(TestSelect, ReadDate)
     ASSERT_TRUE(plan->relations(0).root().input().has_read());
     ASSERT_EQ(plan->relations_size(), 1);
     std::cout << "start execute" <<std::endl;
-    dbms::LocalExecutor local_executor;
-    dbms::SerializedPlanParser parser(dbms::SerializedPlanParser::global_context);
+    local_engine::LocalExecutor local_executor;
+    local_engine::SerializedPlanParser parser(local_engine::SerializedPlanParser::global_context);
     auto query_plan = parser.parse(std::move(plan));
     local_executor.execute(std::move(query_plan));
     ASSERT_TRUE(local_executor.hasNext());
@@ -119,8 +120,8 @@ TEST(TestSelect, TestFilter)
 //    ASSERT_TRUE(plan->relations(0).has_read());
     ASSERT_EQ(plan->relations_size(), 1);
     std::cout << "start execute" <<std::endl;
-    dbms::LocalExecutor local_executor;
-    dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
+    local_engine::LocalExecutor local_executor;
+    local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
     auto query_plan = parser.parse(std::move(plan));
     local_executor.execute(std::move(query_plan));
     ASSERT_TRUE(local_executor.hasNext());
@@ -166,8 +167,8 @@ TEST(TestSelect, TestAgg)
     //    ASSERT_TRUE(plan->relations(0).has_read());
     ASSERT_EQ(plan->relations_size(), 1);
     std::cout << "start execute" <<std::endl;
-    dbms::LocalExecutor local_executor;
-    dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
+    local_engine::LocalExecutor local_executor;
+    local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
     auto query_plan = parser.parse(std::move(plan));
     local_executor.execute(std::move(query_plan));
     ASSERT_TRUE(local_executor.hasNext());
@@ -344,9 +345,9 @@ TEST(ReadBufferFromFile, seekBackwards)
 int main(int argc, char **argv)
 {
     SharedContextHolder shared_context = Context::createShared();
-    dbms::SerializedPlanParser::global_context = Context::createGlobal(shared_context.get());
-    dbms::SerializedPlanParser::global_context->makeGlobalContext();
-    dbms::SerializedPlanParser::initFunctionEnv();
+    local_engine::SerializedPlanParser::global_context = Context::createGlobal(shared_context.get());
+    local_engine::SerializedPlanParser::global_context->makeGlobalContext();
+    local_engine::SerializedPlanParser::initFunctionEnv();
     ::testing::InitGoogleTest(&argc,argv);
     return RUN_ALL_TESTS();
 }
