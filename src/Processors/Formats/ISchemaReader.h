@@ -38,9 +38,9 @@ protected:
 class IRowSchemaReader : public ISchemaReader
 {
 public:
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_);
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, const DataTypes & default_types_);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, bool allow_bools_as_numbers_ = false);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_, bool allow_bools_as_numbers_ = false);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, const DataTypes & default_types_, bool allow_bools_as_numbers_ = false);
 
     NamesAndTypesList readSchema() override;
 
@@ -54,9 +54,12 @@ protected:
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
 
 private:
+
+    DataTypePtr getDefaultType(size_t column) const;
     size_t max_rows_to_read;
     DataTypePtr default_type;
     DataTypes default_types;
+    bool allow_bools_as_numbers;
     std::vector<String> column_names;
 };
 
@@ -68,7 +71,7 @@ private:
 class IRowWithNamesSchemaReader : public ISchemaReader
 {
 public:
-    IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
+    IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr, bool allow_bools_as_numbers_ = false);
     NamesAndTypesList readSchema() override;
     bool hasStrictOrderOfColumns() const override { return false; }
 
@@ -82,6 +85,7 @@ protected:
 private:
     size_t max_rows_to_read;
     DataTypePtr default_type;
+    bool allow_bools_as_numbers;
 };
 
 /// Base class for schema inference for formats that don't need any data to

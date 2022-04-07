@@ -35,6 +35,7 @@ public:
 #endif
 
     const size_t thread_number;
+    const bool profile_processors;
 
     void wait(std::atomic_bool & finished);
     void wakeUp();
@@ -55,7 +56,10 @@ public:
     void setException(std::exception_ptr exception_) { exception = std::move(exception_); }
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_) : thread_number(thread_number_) {}
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_)
+        : thread_number(thread_number_)
+        , profile_processors(profile_processors_)
+    {}
 };
 
 }

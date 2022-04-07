@@ -182,7 +182,15 @@ bool JSONCompactEachRowFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer &
 }
 
 JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_)
-    : FormatWithNamesAndTypesSchemaReader(in_, format_settings_, with_names_, with_types_, &reader), reader(in_, yield_strings_, format_settings_)
+    : FormatWithNamesAndTypesSchemaReader(
+        in_,
+        format_settings_
+        with_names_,
+        with_types_,
+        &reader,
+        nullptr,
+        format_settings_.json.read_bools_as_numbers)
+    , reader(in_, yield_strings_, format_settings_)
 {
 }
 
