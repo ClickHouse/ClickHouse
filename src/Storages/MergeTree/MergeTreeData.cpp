@@ -3567,7 +3567,14 @@ void MergeTreeData::checkAlterPartitionIsPossible(
             else
             {
                 /// We are able to parse it
-                getPartitionIDFromQuery(command.partition, getContext());
+                const auto * partition_ast = command.partition->as<ASTPartition>();
+                if (partition_ast && partition_ast->all)
+                {
+                    if (command.type != PartitionCommand::DROP_PARTITION)
+                        throw DB::Exception("Only support DETACH PARTITION ALL currently", ErrorCodes::SUPPORT_IS_DISABLED);
+                }
+                else
+                    getPartitionIDFromQuery(command.partition, getContext());
             }
         }
     }
@@ -3575,14 +3582,15 @@ void MergeTreeData::checkAlterPartitionIsPossible(
 
 void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition, ContextPtr local_context)
 {
-    const String partition_id = getPartitionIDFromQuery(partition, local_context);
     DataPartsVector parts_to_remove;
     const auto * partition_ast = partition->as<ASTPartition>();
     if (partition_ast && partition_ast->all)
         parts_to_remove = getVisibleDataPartsVector(local_context);
     else
+    {
+        const String partition_id = getPartitionIDFromQuery(partition, local_context);
         parts_to_remove = getVisibleDataPartsVectorInPartition(local_context, partition_id);
-
+    }
     UInt64 partition_size = 0;
 
     for (const auto & part : parts_to_remove)
@@ -4013,6 +4021,9 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
+    if (partition_ast.all)
+        throw Exception("Only Support DETACH PARTITION ALL currently", ErrorCodes::SUPPORT_IS_DISABLED);
+
     if (!partition_ast.value)
     {
         MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
@@ -4032,11 +4043,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     }
 
     /// Re-parse partition key fields using the information about expected field types.
-
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
-    if (partition_ast.all)
-        return "ALL";
     size_t fields_count = key_sample_block.columns();
     if (partition_ast.fields_count != fields_count)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
