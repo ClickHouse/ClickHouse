@@ -73,14 +73,14 @@ ASTPtr getFunctionParams(ASTPtr node, const String & name)
 
 Pipe StorageMeiliSearch::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     ASTPtr original_where = query_info.query->clone()->as<ASTSelectQuery &>().where();
     ASTPtr query_params = getFunctionParams(original_where, "meiliMatch");
@@ -108,16 +108,16 @@ Pipe StorageMeiliSearch::read(
     }
 
     for (const auto & el : kv_pairs_params)
-        LOG_TRACE(log, "Parsed parameter: key = " + el.first + ", value = " + el.second);
+        LOG_TRACE(log, "Parsed parameter: key = {}, value = {}", el.first, el.second);
 
-    auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
     return Pipe(std::make_shared<MeiliSearchSource>(config, sample_block, max_block_size, kv_pairs_params));
 }
 
 SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    LOG_TRACE(log, "Trying update index: " + config.index);
+    LOG_TRACE(log, "Trying update index: {}", config.index);
     return std::make_shared<SinkMeiliSearch>(config, metadata_snapshot->getSampleBlock(), local_context);
 }
 
@@ -125,7 +125,7 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
 {
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
+        auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
         String url = common_configuration.addresses_expr;
         String index = common_configuration.table;

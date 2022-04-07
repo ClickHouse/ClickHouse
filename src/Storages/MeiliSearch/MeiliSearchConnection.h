@@ -4,7 +4,6 @@
 #include <string_view>
 #include <unordered_map>
 #include <base/types.h>
-#include <curl/curl.h>
 
 #include <Poco/Exception.h>
 #include <Poco/Net/HTTPClientSession.h>
