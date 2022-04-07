@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/IDisk.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 
 namespace DB
 {

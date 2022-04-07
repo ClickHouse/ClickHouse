@@ -19,15 +19,13 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const VolumePtr & volume,
-        const std::optional<String> & relative_path_ = {},
+        const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeDataPartWide(
         MergeTreeData & storage_,
         const String & name_,
-        const VolumePtr & volume,
-        const std::optional<String> & relative_path_ = {},
+        const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeReaderPtr getReader(
