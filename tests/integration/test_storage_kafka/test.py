@@ -1146,6 +1146,7 @@ def test_kafka_read_consumers_in_parallel(kafka_cluster):
     kafka_create_topic(admin_client, topic_name, num_partitions=8)
 
     cancel = threading.Event()
+
     def produce():
         while not cancel.is_set():
             messages = []
@@ -1188,14 +1189,14 @@ def test_kafka_read_consumers_in_parallel(kafka_cluster):
         "kafka.*Polled batch of [0-9]+.*read_consumers_in_parallel",
         repetitions=64,
         look_behind_lines=100,
-        timeout=30 # we should get 64 polls in ~8 seconds, but when read sequentially it will take more than 64 sec
+        timeout=30,  # we should get 64 polls in ~8 seconds, but when read sequentially it will take more than 64 sec
     )
 
     cancel.set()
     kafka_thread.join()
 
     instance.query(
-    """
+        """
         DROP TABLE test.consumer;
         DROP TABLE test.view;
         DROP TABLE test.kafka;
