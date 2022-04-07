@@ -102,19 +102,34 @@ KeeperServer::KeeperServer(
                         checkAndGetSuperdigest(configuration_and_settings_->super_digest)))
     , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
+    , recover(config.getBool("recover"))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 }
 
-void KeeperServer::startup(bool enable_ipv6)
+void KeeperServer::loadLatestConfig()
 {
-    state_machine->init();
-
-    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
-
     auto latest_snapshot_config = state_machine->getClusterConfig();
     auto latest_log_store_config = state_manager->getLatestConfigFromLogStore();
+
+    if (recover)
+    {
+        auto local_cluster_config = state_manager->getLocalConfig();
+        latest_log_store_config = std::make_shared<nuraft::cluster_config>(0, latest_log_store_config ? latest_log_store_config->get_log_idx() : 0);
+        latest_log_store_config->get_servers() = local_cluster_config->get_servers();
+        latest_log_store_config->set_log_idx(state_manager->getLogStore()->next_slot());
+
+        for (auto & server : latest_log_store_config->get_servers())
+        {
+            LOG_INFO(log, "Having server {} with log idx {}", server->get_id(), latest_log_store_config->get_log_idx());
+        }
+
+
+        state_manager->save_config(*latest_log_store_config);
+        state_machine->commit_config(latest_log_store_config->get_log_idx(), latest_log_store_config);
+        return;
+    }
 
     if (latest_snapshot_config && latest_log_store_config)
     {
@@ -143,6 +158,13 @@ void KeeperServer::startup(bool enable_ipv6)
     {
         LOG_INFO(log, "No config in log store and snapshot, probably it's initial run. Will use config from .xml on disk");
     }
+}
+
+void KeeperServer::startup(bool enable_ipv6)
+{
+    state_machine->init();
+
+    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
 
     nuraft::raft_params params;
     params.heart_beat_interval_ = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
@@ -203,6 +225,8 @@ void KeeperServer::launchRaftServer(
 
     nuraft::ptr<nuraft::state_mgr> casted_state_manager = state_manager;
     nuraft::ptr<nuraft::state_machine> casted_state_machine = state_machine;
+
+    loadLatestConfig();
 
     /// raft_server creates unique_ptr from it
     nuraft::context * ctx = new nuraft::context(
