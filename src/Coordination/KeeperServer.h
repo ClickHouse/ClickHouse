@@ -48,6 +48,9 @@ private:
 
     void shutdownRaftServer();
 
+    void loadLatestConfig();
+    bool recover = false;
+
 public:
     KeeperServer(
         const KeeperConfigurationAndSettingsPtr & settings_,

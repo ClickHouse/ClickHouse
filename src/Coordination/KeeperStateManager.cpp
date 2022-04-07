@@ -248,6 +248,7 @@ void KeeperStateManager::flushLogStore()
 
 void KeeperStateManager::save_config(const nuraft::cluster_config & config)
 {
+    LOG_INFO(&Poco::Logger::get("State Manager"), "Save config called");
     std::lock_guard lock(configuration_wrapper_mutex);
     nuraft::ptr<nuraft::buffer> buf = config.serialize();
     configuration_wrapper.cluster_config = nuraft::cluster_config::deserialize(*buf);
