@@ -47,6 +47,8 @@ public:
     /// If include_projection is true, also update metadatas in projection parts.
     virtual void updateAll(bool include_projection) = 0;
 
+    virtual void move(const String & from, const String & to) = 0;
+
     /// Check all metadatas in part.
     virtual std::unordered_map<String, uint128> check() const = 0;
 

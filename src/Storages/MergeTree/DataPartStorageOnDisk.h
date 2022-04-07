@@ -13,7 +13,7 @@ using VolumePtr = std::shared_ptr<IVolume>;
 class DataPartStorageOnDisk final : public IDataPartStorage
 {
 public:
-    explicit DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_, std::string relative_root_path_);
+    explicit DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_);
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & path,
@@ -29,13 +29,17 @@ public:
     DiskDirectoryIteratorPtr iterate() const override;
     DiskDirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 
-    std::string getFullPath() const override { return root_path; }
-    std::string getFullRelativePath() const override { return relative_root_path; }
+    std::string getFullPath() const override;
+    std::string getFullRelativePath() const override { return root_path; }
 
     UInt64 calculateTotalSizeOnDisk() const override;
 
     void writeChecksums(MergeTreeDataPartChecksums & checksums) const override;
     void writeColumns(NamesAndTypesList & columns) const override;
+
+    bool shallParticipateInMerges(const IStoragePolicy &) const;
+
+    void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync) override;
 
     std::string getName() const override;
 
@@ -44,7 +48,6 @@ public:
 private:
     VolumePtr volume;
     std::string root_path;
-    std::string relative_root_path;
 };
 
 }
