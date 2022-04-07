@@ -779,7 +779,6 @@ namespace S3
         static constexpr auto OBS = "OBS";
         static constexpr auto OSS = "OSS";
 
-
         uri = uri_;
         storage_name = S3;
 
@@ -796,11 +795,8 @@ namespace S3
             if (start != std::string::npos)
             {
                 start += version_key.length();
-
                 auto end = query_string.find_first_of('&', start);
-                end = end == std::string::npos ? query_string.length() : end - start;
-
-                version_id = query_string.substr(start, end);
+                version_id = query_string.substr(start, end == std::string::npos ? std::string::npos : end - start);
             }
         }
 
