@@ -272,7 +272,7 @@ bool StorageS3Source::initialize()
 
     file_path = fs::path(bucket) / current_key;
 
-    read_buf = wrapReadBufferWithCompressionMethod(createS3ReadBuffer(current_key, version_id), chooseCompressionMethod(current_key, compression_hint));
+    read_buf = wrapReadBufferWithCompressionMethod(createS3ReadBuffer(current_key), chooseCompressionMethod(current_key, compression_hint));
 
     auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;
@@ -291,7 +291,7 @@ bool StorageS3Source::initialize()
     return true;
 }
 
-std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key, const String & version_id)
+std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key)
 {
     const size_t object_size = DB::S3::getObjectSize(client, bucket, key, version_id, false);
 
