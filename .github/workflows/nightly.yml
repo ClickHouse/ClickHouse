@@ -79,13 +79,14 @@ jobs:
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          BUILD_NAME=coverity
           CACHES_PATH=${{runner.temp}}/../ccaches
           CHECK_NAME=ClickHouse build check (actions)
-          BUILD_NAME=coverity
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          TEMP_PATH=${{runner.temp}}/build_check
           EOF
+          echo "COVERITY_TOKEN=${{ secrets.COVERITY_TOKEN }}" >> "$GITHUB_ENV"
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
@@ -105,12 +106,12 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME" "${{ secrets.COV_TOKEN }}"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload Coverity Analysis
         if: ${{ success() || failure() }}
         run: |
-          curl --form token='${{ secrets.COV_TOKEN }}' \
-            --form email='${{ secrets.ROBOT_CLICKHOUSE_EMAIL }}' \
+          curl --form token="${COVERITY_TOKEN}" \
+            --form email='security+coverity@clickhouse.com' \
             --form file="@$TEMP_PATH/$BUILD_NAME/clickhouse-scan.tgz" \
             --form version="${GITHUB_REF#refs/heads/}-${GITHUB_SHA::6}" \
             --form description="Nighly Scan: $(date +'%Y-%m-%dT%H:%M:%S')" \
