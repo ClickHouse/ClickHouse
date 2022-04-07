@@ -22,16 +22,6 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-// template<typename Key, typename Value>
-// using NeededHashMap = std::conditional_t<is_arithmetic_v<Key>, FixedHashMap<Key, Value>, HashMap<Key, Value>>;
-// template<typename Key>
-// using NeededHashSet = std::conditional_t<is_arithmetic_v<Key>, FixedHashSet<Key>, HashSet<Key>>;
-
-template<typename Key, typename Value>
-using NeededHashMap = HashMap<Key, Value>;
-template<typename Key>
-using NeededHashSet = HashSet<Key>;
-
 namespace impl 
 {
 
@@ -39,9 +29,9 @@ template<typename DataType>
 struct DirectionalGraphDataImpl 
 {
     using Vertex = std::conditional_t<is_arithmetic_v<DataType>, DataType, StringRef>;
-    using VertexSet = NeededHashSet<Vertex>;
-    using VertexMap = NeededHashMap<Vertex, Vertex>;
-    using GraphType = NeededHashMap<Vertex, std::vector<Vertex>>;
+    using VertexSet = HashSet<Vertex>;
+    using VertexMap = HashMap<Vertex, Vertex>;
+    using GraphType = HashMap<Vertex, std::vector<Vertex>>;
     GraphType graph{};
     size_t edges_count = 0;
 

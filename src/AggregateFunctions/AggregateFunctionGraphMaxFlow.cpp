@@ -25,7 +25,7 @@ public:
         if (from == to)
             return std::numeric_limits<UInt64>::max();
         MaxFlow helper(from, to);
-        for (const auto & [vertex, neighbors] : this->data(place).graph)
+        for (const auto & [vertex, neighbors] : data(place).graph)
             for (Vertex next : neighbors)
                 helper.addEdge(vertex, next);
         return helper.getMaxFlow();

@@ -27,7 +27,7 @@ public:
         if (data(place).edges_count == 0) {
             return 0;
         }
-        const auto& graph = this->data(place).graph;
+        const auto& graph = data(place).graph;
         Vertex root;
         VertexSet not_roots;
         for (const auto& [from, to] : graph) {

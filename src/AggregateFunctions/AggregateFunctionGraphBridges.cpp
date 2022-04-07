@@ -21,8 +21,8 @@ public:
         Vertex vertex,
         Vertex parent,
         VertexSet & used,
-        NeededHashMap<Vertex, UInt64> & tin,
-        NeededHashMap<Vertex, UInt64> & up,
+        HashMap<Vertex, UInt64> & tin,
+        HashMap<Vertex, UInt64> & up,
         UInt64 & cntBridges,
         UInt64 & timer) const
     {
@@ -53,7 +53,7 @@ public:
         if (graph.size() < 2)
             return 0;
         VertexSet used;
-        NeededHashMap<Vertex, UInt64> tin, up;
+        HashMap<Vertex, UInt64> tin, up;
         UInt64 cnt_bridges = 0;
         UInt64 timer = 0;
         countBridges(place, graph.begin()->getKey(), graph.begin()->getKey(), used, tin, up, cnt_bridges, timer);

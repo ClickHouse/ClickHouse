@@ -18,7 +18,7 @@ public:
     bool isBipartite(
         const GraphType & graph,
         Vertex vertex,
-        NeededHashMap<Vertex, bool> & color,
+        HashMap<Vertex, bool> & color,
         bool currentColor = true) const
     {
         color[vertex] = currentColor;
@@ -38,7 +38,7 @@ public:
     bool calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
     {
         const auto & graph = data(place).graph;
-        NeededHashMap<Vertex, bool> color;
+        HashMap<Vertex, bool> color;
         for (const auto & [vertex, neighbours] : graph)
             if (!color.has(vertex))
                 if (!isBipartite(graph, vertex, color))

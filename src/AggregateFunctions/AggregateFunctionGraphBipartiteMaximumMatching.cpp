@@ -26,7 +26,7 @@ public:
     bool isBipartite(
         const GraphType & graph,
         Vertex vertex,
-        NeededHashMap<Vertex, bool> & color,
+        HashMap<Vertex, bool> & color,
         bool currentColor = true) const
     {
         color[vertex] = currentColor;
@@ -43,9 +43,9 @@ public:
         return true;
     }
 
-    std::optional<NeededHashMap<Vertex, bool>> getColor(const GraphType & graph) const
+    std::optional<HashMap<Vertex, bool>> getColor(const GraphType & graph) const
     {
-        NeededHashMap<Vertex, bool> color;
+        HashMap<Vertex, bool> color;
         for (const auto & [vertex, neighbours] : graph)
             if (!color.has(vertex))
                 if (!isBipartite(graph, vertex, color))
@@ -57,7 +57,7 @@ public:
         Vertex vertex,
         UInt64 currentColor,
         const GraphType & graph,
-        NeededHashMap<Vertex, UInt64> & used,
+        HashMap<Vertex, UInt64> & used,
         VertexMap & matching) const
     {
         if (std::exchange(used[vertex], currentColor) == currentColor)
@@ -85,7 +85,7 @@ public:
         const auto color = getColor(graph);
         if (color == std::nullopt)
             throw Exception("Graph must be bipartite", ErrorCodes::UNSUPPORTED_PARAMETER);
-        NeededHashMap<Vertex, UInt64> used;
+        HashMap<Vertex, UInt64> used;
         VertexMap matching;
         UInt64 current_color = 0;
         UInt64 matching_size = 0;
