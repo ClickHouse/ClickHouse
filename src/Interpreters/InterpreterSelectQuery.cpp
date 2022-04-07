@@ -840,8 +840,8 @@ static InterpolateDescriptionPtr getInterpolateDescription(
     InterpolateDescriptionPtr interpolate_descr;
     if (query.interpolate())
     {
-        std::unordered_set<std::string> col_set;
-        ColumnsWithTypeAndName columns;
+        NamesAndTypesList source_columns;
+        ColumnsWithTypeAndName result_columns;
         ASTPtr exprs = std::make_shared<ASTExpressionList>();
 
         if (query.interpolate()->children.empty())
@@ -854,34 +854,49 @@ static InterpolateDescriptionPtr getInterpolateDescription(
                     column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
             for (const auto & [name, type] : column_names)
             {
-                columns.emplace_back(type, name);
+                source_columns.emplace_back(name, type);
+                result_columns.emplace_back(type, name);
                 exprs->children.emplace_back(std::make_shared<ASTIdentifier>(name));
             }
         }
         else
         {
+            NameSet col_set;
             for (const auto & elem : query.interpolate()->children)
             {
                 const auto & interpolate = elem->as<ASTInterpolateElement &>();
-                const ColumnWithTypeAndName *block_column = source_block.findByName(interpolate.column);
-                if (!block_column)
+
+                if (const ColumnWithTypeAndName *result_block_column = result_block.findByName(interpolate.column))
+                {
+                    if (!col_set.insert(result_block_column->name).second)
+                        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "Duplicate INTERPOLATE column '{}'", interpolate.column);
+
+                    result_columns.emplace_back(result_block_column->type, result_block_column->name);
+                }
+                else
                     throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                         "Missing column '{}' as an INTERPOLATE expression target", interpolate.column);
 
-                if (!col_set.insert(block_column->name).second)
-                    throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                        "Duplicate INTERPOLATE column '{}'", interpolate.column);
-
-                columns.emplace_back(block_column->type, block_column->name);
                 exprs->children.emplace_back(interpolate.expr->clone());
             }
+
+            col_set.clear();
+            for (const auto & column : source_block)
+            {
+                source_columns.emplace_back(column.name, column.type);
+                col_set.insert(column.name);
+            }
+            for (const auto & column : result_block)
+                if( col_set.count(column.name) == 0)
+                    source_columns.emplace_back(column.name, column.type);
         }
 
-        auto syntax_result = TreeRewriter(context).analyze(exprs, source_block.getNamesAndTypesList());
+        auto syntax_result = TreeRewriter(context).analyze(exprs, source_columns);
         ExpressionAnalyzer analyzer(exprs, syntax_result, context);
         ActionsDAGPtr actions = analyzer.getActionsDAG(true);
         ActionsDAGPtr conv_dag = ActionsDAG::makeConvertingActions(actions->getResultColumns(),
-            columns, ActionsDAG::MatchColumnsMode::Position, true);
+            result_columns, ActionsDAG::MatchColumnsMode::Position, true);
         ActionsDAGPtr merge_dag = ActionsDAG::merge(std::move(*actions->clone()), std::move(*conv_dag));
 
         interpolate_descr = std::make_shared<InterpolateDescription>(merge_dag, aliases);

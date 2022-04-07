@@ -1336,13 +1336,19 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
     if (auto interpolate_list = select_query->interpolate())
     {
-        auto find_columns = [&step](IAST * function)
+
+        NameSet select;
+        for (const auto & child : select_query->select()->children)
+            select.insert(child->getAliasOrColumnName());
+
+        auto find_columns = [&step, &select](IAST * function)
         {
-            auto f_impl = [&step](IAST * fn, auto fi)
+            auto f_impl = [&step, &select](IAST * fn, auto fi)
             {
                 if (auto * ident = fn->as<ASTIdentifier>())
                 {
-                    step.addRequiredOutput(ident->getColumnName());
+                    if (select.count(ident->getColumnName()) == 0)
+                        step.addRequiredOutput(ident->getColumnName());
                     return;
                 }
                 if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())

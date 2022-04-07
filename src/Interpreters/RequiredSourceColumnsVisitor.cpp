@@ -115,9 +115,12 @@ void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
 
 void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
+    NameSet select_columns;
     /// special case for top-level SELECT items: they are publics
     for (auto & node : select.select()->children)
     {
+        select_columns.insert(node->getAliasOrColumnName());
+
         if (const auto * identifier = node->as<ASTIdentifier>())
             data.addColumnIdentifier(*identifier);
         else
@@ -126,13 +129,14 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
 
     if (auto interpolate_list = select.interpolate())
     {
-        auto find_columns = [&data](IAST * function)
+        auto find_columns = [&data, &select_columns](IAST * function)
         {
-            auto f_impl = [&data](IAST * fn, auto fi)
+            auto f_impl = [&data, &select_columns](IAST * fn, auto fi)
             {
                 if (auto * ident = fn->as<ASTIdentifier>())
                 {
-                    data.addColumnIdentifier(*ident);
+                    if (select_columns.count(ident->getColumnName()) == 0)
+                        data.addColumnIdentifier(*ident);
                     return;
                 }
                 if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())

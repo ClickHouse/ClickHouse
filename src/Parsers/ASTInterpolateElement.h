@@ -12,12 +12,13 @@ public:
     String column;
     ASTPtr expr;
 
-    String getID(char) const override { return "InterpolateElement"; }
+    String getID(char delim) const override { return String("InterpolateElement") + delim + "(column " + column + ")"; }
 
     ASTPtr clone() const override
     {
         auto clone = std::make_shared<ASTInterpolateElement>(*this);
         clone->cloneChildren();
+        clone->expr = clone->expr->clone();
         return clone;
     }
 
