@@ -40,15 +40,40 @@ select makeDateTime64(1984, 1, 1, 0, 70, 0, 0, 9, 'UTC');
 select makeDateTime64(1984, 1, 1, 0, 0, 70, 0, 9, 'UTC');
 select makeDateTime64(1984, 1, 1, 0, 0, 0, 0, 9, 'not a timezone'); -- { serverError 1000 }
 
-select makeDateTime64(1984, 1, 1, 0, 0, 0, 0, 9, 'UTC');
-select makeDateTime64(1983, 2, 29, 0, 0, 0, 0, 9, 'UTC');
-select makeDateTime64(-1984, 1, 1, 0, 0, 0, 0, 9, 'UTC');
-select makeDateTime64(1984, -1, 1, 0, 0, 0, 0, 9, 'UTC');
-select makeDateTime64(1984, 1, -1, 0, 0, 0, 0, 9, 'UTC');
-select makeDateTime64(1984, 1, 1, -1, 0, 0, 0, 9, 'UTC');
-select makeDateTime64(1984, 1, 1, 0, -1, 0, 0, 9, 'UTC');
-select makeDateTime64(1984, 1, 1, 0, 0, -1, 0, 9, 'UTC');
-select makeDateTime64(1984, 1, 1, 0, 0, 0, -1, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 2, 29, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1983, 2, 29, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 2, 30, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1983, 2, 30, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 2, 31, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1983, 2, 31, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 2, 32, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1983, 2, 32, 2, 3, 4, 5, 9, 'UTC');
+
+select makeDateTime64(-1984, 1, 1, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, -1, 1, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 1, -1, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, -1, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 2, -1, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 2, 3, -1, 5, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 2, 3, 4, -1, 9, 'UTC');
+
+select makeDateTime64(NaN, 1, 1, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, NaN, 1, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 1, NaN, 2, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, NaN, 3, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 2, NaN, 4, 5, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 2, 3, NaN, 5, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 2, 3, 4, NaN, 9, 'UTC');
+
+select makeDateTime64(1984.5, 1, 1, 0, 0, 0, 0, 9, 'UTC');
+select makeDateTime64(1984, 1.5, 1, 0, 0, 0, 0, 9, 'UTC');
+select makeDateTime64(1984, 1, 1.5, 0, 0, 0, 0, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 0.5, 0, 0, 0, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 0, 0.5, 0, 0, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 0, 0, 0.5, 0, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 0, 0, 0, 0.5, 9, 'UTC');
+select makeDateTime64(1984, 1, 1, 0, 0, 0, 0, 9.5, 'UTC');
 
 select makeDateTime64(65537, 8, 24, 21, 4, 0);
 select makeDateTime64(1991, 65537, 24, 21, 4, 0);
