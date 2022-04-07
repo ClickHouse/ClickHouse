@@ -308,6 +308,8 @@ StorageHive::StorageHive(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment_);
+    storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
+
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -517,7 +519,15 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     {
         auto hive_file = createHiveFileIfNeeded(file_info, fields, query_info, context_, prune_level);
         if (hive_file)
+        {
+            LOG_TRACE(
+                log,
+                "Append hive file {} from partition {}, prune_level:{}",
+                hive_file->getPath(),
+                boost::join(partition.values, ","),
+                pruneLevelToString(prune_level));
             hive_files.push_back(hive_file);
+        }
     }
     return hive_files;
 }
@@ -535,11 +545,11 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
     ContextPtr context_,
     PruneLevel prune_level) const
 {
-    LOG_TRACE(log, "create hive file {} if needed, prune_level:{}", file_info.path, pruneLevelToString(prune_level));
+    LOG_TRACE(log, "Create hive file {} if needed, prune_level:{}", file_info.path, pruneLevelToString(prune_level));
 
     String filename = getBaseName(file_info.path);
     /// Skip temporary files starts with '.'
-    if (startsWith(filename, ".") == 0)
+    if (startsWith(filename, "."))
         return {};
 
     auto hive_file = createHiveFile(
@@ -553,12 +563,12 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
         storage_settings,
         context_);
 
-    /// Load file level minmax index and apply
     if (prune_level >= PruneLevel::File)
     {
         const KeyCondition hivefile_key_condition(query_info, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
         if (hive_file->useFileMinMaxIndex())
         {
+            /// Load file level minmax index and apply
             hive_file->loadFileMinMaxIndex();
             if (!hivefile_key_condition.checkInHyperrectangle(hive_file->getMinMaxIndex()->hyperrectangle, hivefile_name_types.getTypes())
                      .can_be_true)
@@ -574,9 +584,9 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
 
         if (prune_level >= PruneLevel::Split)
         {
-            /// Load sub-file level minmax index and apply
             if (hive_file->useSplitMinMaxIndex())
             {
+                /// Load sub-file level minmax index and apply
                 std::unordered_set<int> skip_splits;
                 hive_file->loadSplitMinMaxIndex();
                 const auto & sub_minmax_idxes = hive_file->getSubMinMaxIndexes();
