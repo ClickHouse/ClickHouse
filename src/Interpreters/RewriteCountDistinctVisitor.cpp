@@ -42,19 +42,21 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
     func->parameters = nullptr;
     if (!selectq->tables() || selectq->tables()->children.size() != 1)
         return;
-    auto table_name = selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children[0]->as<ASTTableExpression>()->children[0]->as<ASTTableIdentifier>()->name();
-    auto * te = selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children[0]->as<ASTTableExpression>();
-    te->children.clear();
-    te->children.emplace_back(std::make_shared<ASTSubquery>());
-    te->database_and_table_name = nullptr;
-    te->table_function = nullptr;
-    te->subquery = te->children[0];
+
+    auto * table_expr = selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children[0]->as<ASTTableExpression>();
+    if (!table_expr || !table_expr->database_and_table_name)
+        return;
+    auto table_name = table_expr->database_and_table_name->as<ASTTableIdentifier>()->name();
+    table_expr->children.clear();
+    table_expr->children.emplace_back(std::make_shared<ASTSubquery>());
+    table_expr->database_and_table_name = nullptr;
+    table_expr->table_function = nullptr;
+    table_expr->subquery = table_expr->children[0];
 
     std::string sub_sql = "SELECT " + column_name + " FROM " + table_name +  " GROUP BY " + column_name + "  ";
     ParserQuery parser(&sub_sql[sub_sql.length()-1]);
-    auto parsed_ast = parseQuery(parser, &sub_sql[0], &sub_sql[sub_sql.length()-1], "", 1024, 1024);
-    te->children[0]->as<ASTSubquery>()->children.clear();
-    te->children[0]->as<ASTSubquery>()->children.emplace_back(parsed_ast);
+    auto parsed_ast = parseQuery(parser, &sub_sql[0], &sub_sql[sub_sql.length()-1], "", 10240, 1024);
+    table_expr->children[0]->as<ASTSubquery>()->children.emplace_back(parsed_ast);
 }
 
 }
