@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
+#include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
 #include <IO/SynchronousReader.h>
 #include <Common/ProfileEvents.h>
@@ -74,6 +75,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         else if (settings.local_fs_method == LocalFSReadMethod::pread || settings.local_fs_method == LocalFSReadMethod::mmap)
         {
             res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+        }
+        else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
+        {
+#if defined(OS_LINUX)
+            static std::shared_ptr<IOUringReader> reader = std::make_shared<IOUringReader>(4096);
+            if (!reader->isSupported())
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
+
+            res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
+                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
