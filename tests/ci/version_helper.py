@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import os.path as p
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, ArgumentTypeError
 from typing import Dict, List, Tuple, Union
 
 from git_helper import Git, removeprefix
@@ -218,6 +218,20 @@ def get_version_from_tag(tag: str) -> ClickHouseVersion:
     git.check_tag(tag)
     tag = tag[1:].split("-")[0]
     return get_version_from_string(tag)
+
+
+def version_arg(version: str) -> ClickHouseVersion:
+    version = removeprefix(version, "refs/tags/")
+    try:
+        return get_version_from_string(version)
+    except ValueError:
+        pass
+    try:
+        return get_version_from_tag(version)
+    except ValueError:
+        pass
+
+    raise ArgumentTypeError(f"version {version} does not match tag of plain version")
 
 
 def get_tagged_versions() -> List[ClickHouseVersion]:
