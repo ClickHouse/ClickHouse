@@ -1503,7 +1503,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     else
     {
         /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(global_context, config().getInt("dns_cache_update_period", 15));
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
     }
 
 #if defined(OS_LINUX)

@@ -307,7 +307,9 @@ void JSONEachRowRowInputFormat::readSuffix()
 }
 
 JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings_, const FormatSettings & format_settings)
-    : IRowWithNamesSchemaReader(in_, format_settings.max_rows_to_read_for_schema_inference), json_strings(json_strings_)
+    : IRowWithNamesSchemaReader(
+        in_, format_settings.max_rows_to_read_for_schema_inference, nullptr, format_settings.json.read_bools_as_numbers)
+    , json_strings(json_strings_)
 {
 }
 

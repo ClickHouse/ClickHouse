@@ -225,7 +225,10 @@ public:
     /// If keep_child_node is not empty, this method will not remove path/keep_child_node (but will remove its subtree).
     /// It can be useful to keep some child node as a flag which indicates that path is currently removing.
     void removeChildrenRecursive(const std::string & path, const String & keep_child_node = {});
-    void tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node = {});
+    /// If probably_flat is true, this method will optimistically try to remove children non-recursive
+    /// and will fall back to recursive removal if it gets ZNOTEMPTY for some child.
+    /// Returns true if no kind of fallback happened.
+    bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, const String & keep_child_node = {});
 
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
