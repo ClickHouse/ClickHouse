@@ -90,7 +90,7 @@ int decompressFiles(int input_fd, char* argv[])
     }
 
     /// mmap input file
-    char * input = static_cast<char*>(mmap(nullptr, info_in.st_size, PROT_READ, MAP_PRIVATE , input_fd, 0));
+    char * input = static_cast<char*>(mmap(nullptr, info_in.st_size, PROT_READ, MAP_PRIVATE, input_fd, 0));
     if (input == MAP_FAILED)
     {
         perror(nullptr);
