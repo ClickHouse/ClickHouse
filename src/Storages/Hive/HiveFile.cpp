@@ -152,7 +152,7 @@ void HiveORCFile::prepareColumnMapping()
     }
 }
 
-bool HiveORCFile::hasMinMaxIndex() const
+bool HiveORCFile::useFileMinMaxIndex() const
 {
     return storage_settings->enable_orc_file_minmax_index;
 }
@@ -203,11 +203,10 @@ void HiveORCFile::loadMinMaxIndex()
     minmax_idx = buildMinMaxIndex(statistics.get());
 }
 
-bool HiveORCFile::hasSubMinMaxIndex() const
+bool HiveORCFile::useSplitMinMaxIndex() const
 {
     return storage_settings->enable_orc_stripe_minmax_index;
 }
-
 
 void HiveORCFile::loadSubMinMaxIndex()
 {
@@ -240,12 +239,12 @@ std::optional<size_t> HiveORCFile::getRowsImpl()
         prepareReader();
         prepareColumnMapping();
     }
-    
+
     auto * raw_reader = reader->GetRawORCReader();
     return raw_reader->getNumberOfRows();
 }
 
-bool HiveParquetFile::hasSubMinMaxIndex() const
+bool HiveParquetFile::useSplitMinMaxIndex() const
 {
     return storage_settings->enable_parquet_rowgroup_minmax_index;
 }
@@ -335,7 +334,7 @@ std::optional<size_t> HiveParquetFile::getRowsImpl()
 {
     if (!reader)
         prepareReader();
-    
+
     auto meta = reader->parquet_reader()->metadata();
     return meta->num_rows();
 }

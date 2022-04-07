@@ -83,7 +83,7 @@ private:
         Split,
         Max = Split,
     };
-    
+
     static String pruneLevelToString(PruneLevel level)
     {
         return String(magic_enum::enum_name(level));
