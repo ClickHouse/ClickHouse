@@ -53,7 +53,7 @@ public:
     void tryGetTask(ExecutionThreadContext & context);
     void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(size_t num_threads_);
+    void init(size_t num_threads_, bool profile_processors);
     void fill(Queue & queue);
 
     void processAsyncTasks();
