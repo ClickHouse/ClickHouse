@@ -190,10 +190,6 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
     return idx;
 }
 
-<<<<<<< HEAD
-=======
-
->>>>>>> master
 void HiveORCFile::loadFileMinMaxIndex()
 {
     if (!reader)
