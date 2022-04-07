@@ -219,7 +219,7 @@ static void BM_ShuffleSplitter(benchmark::State& state) {
         while(executor.pull(chunk))
         {
             sum += chunk.rows();
-            splitter->split(new Block(chunk));
+            splitter->split(chunk);
         }
         splitter->stop();
         splitter->writeIndexFile();
@@ -303,7 +303,7 @@ static void BM_HashShuffleSplitter(benchmark::State& state) {
         while(executor.pull(chunk))
         {
             sum += chunk.rows();
-            splitter->split(new Block(chunk));
+            splitter->split(chunk);
         }
         splitter->stop();
         splitter->writeIndexFile();
