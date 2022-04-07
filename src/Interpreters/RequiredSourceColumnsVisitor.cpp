@@ -47,7 +47,7 @@ bool RequiredSourceColumnsMatcher::needChildVisit(const ASTPtr & node, const AST
         return false;
 
     /// Processed. Do not need children.
-    if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>() || node->as<ASTSelectQuery>())
+    if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>() || node->as<ASTSelectQuery>() || node->as<ASTInterpolateElement>())
         return false;
 
     if (const auto * f = node->as<ASTFunction>())
