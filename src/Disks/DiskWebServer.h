@@ -77,7 +77,7 @@ public:
     UInt64 getTotalSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     UInt64 getAvailableSpace() const final override { return std::numeric_limits<UInt64>::max(); }
-UInt64 getUnreservedSpace() const final override { return std::numeric_limits<UInt64>::max(); }
+    UInt64 getUnreservedSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     /// Read-only part
 

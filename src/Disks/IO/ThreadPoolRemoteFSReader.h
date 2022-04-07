@@ -15,7 +15,6 @@ class ThreadPoolRemoteFSReader : public IAsynchronousReader
 
 private:
     ThreadPool pool;
-    ContextMutablePtr shared_query_context;
 
 public:
     ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_);

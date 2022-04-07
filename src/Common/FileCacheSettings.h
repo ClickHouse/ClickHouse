@@ -2,7 +2,7 @@
 
 #include <Common/FileCache_fwd.h>
 
-namespace Poco { namespace Util { class AbstractConfiguration; }}
+namespace Poco { namespace Util { class AbstractConfiguration; } }
 
 namespace DB
 {

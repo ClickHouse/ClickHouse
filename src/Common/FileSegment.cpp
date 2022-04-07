@@ -73,6 +73,12 @@ size_t FileSegment::getDownloadOffset() const
     return range().left + getDownloadedSize(segment_lock);
 }
 
+size_t FileSegment::getDownloadedSize() const
+{
+    std::lock_guard segment_lock(mutex);
+    return getDownloadedSize(segment_lock);
+}
+
 size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_lock */) const
 {
     if (download_state == State::DOWNLOADED)
@@ -84,24 +90,15 @@ size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_l
 
 String FileSegment::getCallerId()
 {
-    return getCallerIdImpl(false);
+    return getCallerIdImpl();
 }
 
-String FileSegment::getCallerIdImpl(bool allow_non_strict_checking)
+String FileSegment::getCallerIdImpl()
 {
-    if (IFileCache::shouldBypassCache())
-    {
-        /// getCallerId() can be called from completeImpl(), which can be called from complete().
-        /// complete() is called from destructor of CachedReadBufferFromRemoteFS when there is no query id anymore.
-        /// Allow non strict checking in this case. This works correctly as if getCallerIdImpl() is called from destructor,
-        /// then we know that caller is not a downloader, because downloader is reset each nextImpl() call either
-        /// manually or via SCOPE_EXIT.
-
-        if (allow_non_strict_checking)
-            return "None";
-
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cannot use cache without query id");
-    }
+    if (!CurrentThread::isInitialized()
+        || !CurrentThread::get().getQueryContext()
+        || CurrentThread::getQueryId().size == 0)
+        return "None:" + toString(getThreadId());
 
     return CurrentThread::getQueryId().toString() + ":" + toString(getThreadId());
 }
@@ -244,15 +241,9 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
     {
         std::lock_guard segment_lock(mutex);
 
-        auto info = getInfoForLogImpl(segment_lock);
-        e.addMessage("while writing into cache, info: " + info);
+        wrapWithCacheInfo(e, "while writing into cache", segment_lock);
 
-        LOG_ERROR(log, "Failed to write to cache. File segment info: {}", info);
-
-        download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
-
-        cache_writer->finalize();
-        cache_writer.reset();
+        setDownloadFailed(segment_lock);
 
         cv.notify_all();
 
@@ -265,7 +256,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
 void FileSegment::writeInMemory(const char * from, size_t size)
 {
     if (!size)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Writing zero size is not allowed");
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Attempt to write zero size cache file");
 
     if (availableSize() < size)
         throw Exception(
@@ -284,14 +275,13 @@ void FileSegment::writeInMemory(const char * from, size_t size)
     {
         cache_writer->write(from, size);
     }
-    catch (...)
+    catch (Exception & e)
     {
-        LOG_ERROR(log, "Failed to write to cache. File segment info: {}", getInfoForLogImpl(segment_lock));
+        wrapWithCacheInfo(e, "while writing into cache", segment_lock);
 
-        download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+        setDownloadFailed(segment_lock);
 
-        cache_writer->finalize();
-        cache_writer.reset();
+        cv.notify_all();
 
         throw;
     }
@@ -313,23 +303,23 @@ size_t FileSegment::finalizeWrite()
     {
         cache_writer->next();
     }
-    catch (...)
+    catch (Exception & e)
     {
-        download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+        wrapWithCacheInfo(e, "while writing into cache", segment_lock);
 
-        cache_writer->finalize();
-        cache_writer.reset();
+        setDownloadFailed(segment_lock);
+
+        cv.notify_all();
 
         throw;
     }
 
     downloaded_size += size;
-    cache_writer.reset();
-    downloader_id.clear();
-    download_state = State::DOWNLOADED;
 
     if (downloaded_size != range().size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} == {}", downloaded_size, range().size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected downloaded size to equal file segment size ({} == {})", downloaded_size, range().size());
+
+    setDownloaded(segment_lock);
 
     return size;
 }
@@ -398,6 +388,20 @@ void FileSegment::setDownloaded(std::lock_guard<std::mutex> & /* segment_lock */
 {
     download_state = State::DOWNLOADED;
     is_downloaded = true;
+    downloader_id.clear();
+
+    if (cache_writer)
+    {
+        cache_writer->finalize();
+        cache_writer.reset();
+        remote_file_reader.reset();
+    }
+}
+
+void FileSegment::setDownloadFailed(std::lock_guard<std::mutex> & /* segment_lock */)
+{
+    download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+    downloader_id.clear();
 
     if (cache_writer)
     {
@@ -455,7 +459,7 @@ void FileSegment::complete(State state)
     }
     catch (...)
     {
-        if (!downloader_id.empty() && downloader_id == getCallerIdImpl(true))
+        if (!downloader_id.empty() && downloader_id == getCallerIdImpl())
             downloader_id.clear();
 
         cv.notify_all();
@@ -480,7 +484,7 @@ void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
         /// Segment state can be changed from DOWNLOADING or EMPTY only if the caller is the
         /// downloader or the only owner of the segment.
 
-        bool can_update_segment_state = downloader_id == getCallerIdImpl(true)
+        bool can_update_segment_state = downloader_id == getCallerIdImpl()
             || cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
 
         if (can_update_segment_state)
@@ -489,11 +493,11 @@ void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 
     try
     {
-        completeImpl(cache_lock, segment_lock, /* allow_non_strict_checking */true);
+        completeImpl(cache_lock, segment_lock);
     }
     catch (...)
     {
-        if (!downloader_id.empty() && downloader_id == getCallerIdImpl(true))
+        if (!downloader_id.empty() && downloader_id == getCallerIdImpl())
             downloader_id.clear();
 
         cv.notify_all();
@@ -503,7 +507,7 @@ void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
     cv.notify_all();
 }
 
-void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock, bool allow_non_strict_checking)
+void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
 {
     bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
 
@@ -539,7 +543,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
         }
     }
 
-    if (!downloader_id.empty() && (downloader_id == getCallerIdImpl(allow_non_strict_checking) || is_last_holder))
+    if (!downloader_id.empty() && (downloader_id == getCallerIdImpl() || is_last_holder))
     {
         LOG_TEST(log, "Clearing downloader id: {}, current state: {}", downloader_id, stateToString(download_state));
         downloader_id.clear();
@@ -564,6 +568,11 @@ String FileSegment::getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock
     info << "caller id: " << getCallerId();
 
     return info.str();
+}
+
+void FileSegment::wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const
+{
+    e.addMessage(fmt::format("{}, current cache state: {}", message, getInfoForLogImpl(segment_lock)));
 }
 
 String FileSegment::stateToString(FileSegment::State state)
@@ -597,6 +606,22 @@ void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment
     assert(downloader_id.empty() == (download_state != FileSegment::State::DOWNLOADING));
     assert(!downloader_id.empty() == (download_state == FileSegment::State::DOWNLOADING));
     assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
+}
+
+FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
+{
+    auto snapshot = std::make_shared<FileSegment>(
+        file_segment->offset(),
+        file_segment->range().size(),
+        file_segment->key(),
+        nullptr,
+        file_segment->state());
+
+    snapshot->hits_count = file_segment->getHitsCount();
+    snapshot->ref_count = file_segment.use_count();
+    snapshot->downloaded_size = file_segment->getDownloadedSize();
+
+    return snapshot;
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()

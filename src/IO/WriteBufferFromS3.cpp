@@ -100,28 +100,6 @@ void WriteBufferFromS3::nextImpl()
             ? CurrentThread::get().getThreadGroup()
             : MainThreadStatus::getInstance().getThreadGroup();
 
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
-
-    if (!query_context)
-    {
-        if (!shared_query_context)
-        {
-            ContextPtr global_context = CurrentThread::isInitialized() ? CurrentThread::get().getGlobalContext() : nullptr;
-            if (global_context)
-            {
-                shared_query_context = Context::createCopy(global_context);
-                shared_query_context->makeQueryContext();
-            }
-        }
-
-        if (shared_query_context)
-        {
-            shared_query_context->setCurrentQueryId(toString(UUIDHelpers::generateV4()));
-            query_context = shared_query_context;
-        }
-    }
-
     if (cacheEnabled())
     {
         if (blob_name.empty())
@@ -132,8 +110,10 @@ void WriteBufferFromS3::nextImpl()
         current_download_offset += size;
 
         size_t remaining_size = size;
-        for (const auto & file_segment : file_segments_holder->file_segments)
+        auto & file_segments = file_segments_holder->file_segments;
+        for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end(); ++file_segment_it)
         {
+            auto & file_segment = *file_segment_it;
             size_t current_size = std::min(file_segment->range().size(), remaining_size);
             remaining_size -= current_size;
 
@@ -143,6 +123,7 @@ void WriteBufferFromS3::nextImpl()
             }
             else
             {
+                file_segments.erase(file_segment_it, file_segments.end());
                 break;
             }
         }
@@ -190,7 +171,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
 bool WriteBufferFromS3::cacheEnabled() const
 {
-    return cache != nullptr && !IFileCache::shouldBypassCache();
+    return cache != nullptr;
 }
 
 void WriteBufferFromS3::preFinalize()
@@ -317,7 +298,7 @@ void WriteBufferFromS3::writePart()
                 /// Releasing lock and condvar notification.
                 bg_tasks_condvar.notify_one();
             }
-        }, query_context);
+        });
     }
     else
     {
@@ -454,7 +435,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
                 /// Releasing lock and condvar notification.
                 bg_tasks_condvar.notify_one();
             }
-        }, query_context);
+        });
     }
     else
     {

@@ -7,12 +7,14 @@ namespace DB
 {
 
 /**
+ * Usgae example. How to get mapping from local paths to remote paths:
  * SELECT
  *     cache_path,
  *     cache_hits,
  *     remote_path,
  *     local_path,
- *     file_segment_range,
+ *     file_segment_range_begin,
+ *     file_segment_range_end,
  *     size,
  *     state
  * FROM

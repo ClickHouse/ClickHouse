@@ -68,9 +68,9 @@ public:
 
     String getCacheBasePath() const final override;
 
-    std::vector<String> getRemotePaths(const String & path) const final override;
+    std::vector<String> getRemotePaths(const String & local_path) const final override;
 
-    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
+    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 
     /// Methods for working with metadata. For some operations (like hardlink
     /// creation) metadata can be updated concurrently from multiple threads
