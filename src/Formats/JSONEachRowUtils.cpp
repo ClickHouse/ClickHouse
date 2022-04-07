@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
@@ -118,7 +119,7 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
         return nullptr;
 
     if (field.isBool())
-        return makeNullable(std::make_shared<DataTypeUInt8>());
+        return DataTypeFactory::instance().get("Nullable(Bool)");
 
     if (field.isInt64() || field.isUInt64() || field.isDouble())
         return makeNullable(std::make_shared<DataTypeFloat64>());
