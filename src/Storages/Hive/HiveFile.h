@@ -198,8 +198,9 @@ public:
     void loadSubMinMaxIndex() override;
 
 private:
+    static Range buildRange(const orc::ColumnStatistics * col_stats);
+
     std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const orc::Statistics * statistics);
-    Range buildRange(const orc::ColumnStatistics * col_stats);
     void prepareReader();
     void prepareColumnMapping();
 
