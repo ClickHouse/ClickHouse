@@ -196,14 +196,26 @@ protected:
     {
         ///  Note that hour, minute and second are checked against 99 to behave consistently with parsing DateTime from String
         ///  E.g. "select cast('1984-01-01 99:99:99' as DateTime);" returns "1984-01-05 04:40:39"
-        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31 ||
+        if (unlikely(std::isnan(year) || std::isnan(month) || std::isnan(day_of_month) ||
+            std::isnan(hour) || std::isnan(minute) || std::isnan(second) ||
+            year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31 ||
             hour < 0 || hour > 99 || minute < 0 || minute > 99 || second < 0 || second > 99))
-            return lut.makeDateTime(DATE_LUT_MIN_YEAR-1, 1, 1, 0, 0, 0);
+            return minDateTime(lut);
 
         if (unlikely(year > DATE_LUT_MAX_YEAR))
-            return lut.makeDateTime(DATE_LUT_MAX_YEAR+1, 1, 1, 23, 59, 59);
+            return maxDateTime(lut);
 
         return lut.makeDateTime(year, month, day_of_month, hour, minute, second);
+    }
+
+    static Int64 minDateTime(const DateLUTImpl & lut)
+    {
+        return lut.makeDateTime(DATE_LUT_MIN_YEAR - 1, 1, 1, 0, 0, 0);
+    }
+
+    static Int64 maxDateTime(const DateLUTImpl & lut)
+    {
+        return lut.makeDateTime(DATE_LUT_MAX_YEAR + 1, 1, 1, 23, 59, 59);
     }
 
     std::string extractTimezone(const ColumnWithTypeAndName & timezone_argument) const
@@ -364,6 +376,8 @@ public:
         const auto & date_lut = DateLUT::instance(timezone);
 
         const auto max_fraction = pow(10, precision) - 1;
+        const auto min_date_time = minDateTime(date_lut);
+        const auto max_date_time = maxDateTime(date_lut);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -376,11 +390,24 @@ public:
 
             auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
 
-            auto fraction = fraction_data ? (*fraction_data)[i] : 0;
-            if (unlikely(fraction < 0))
+            double fraction = 0;
+            if (unlikely(date_time == min_date_time))
                 fraction = 0;
-            else if (unlikely(fraction > max_fraction))
-                fraction = max_fraction;
+            else if (unlikely(date_time == max_date_time))
+                fraction = 999999999ll;
+            else
+            {
+                fraction = fraction_data ? (*fraction_data)[i] : 0;
+                if (unlikely(std::isnan(fraction)))
+                {
+                    date_time = min_date_time;
+                    fraction = 0;
+                }
+                else if (unlikely(fraction < 0))
+                    fraction = 0;
+                else if (unlikely(fraction > max_fraction))
+                    fraction = max_fraction;
+            }
 
             result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, fraction, precision);
         }
