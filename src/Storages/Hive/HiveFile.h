@@ -102,8 +102,8 @@ public:
     size_t getSize() const { return size; }
     const FieldVector & getPartitionValues() const { return partition_values; }
     const String & getNamenodeUrl() { return namenode_url; }
-    MinMaxIndexPtr getMinMaxIndex() const { return minmax_idx; }
-    const std::vector<MinMaxIndexPtr> & getSubMinMaxIndexes() const { return sub_minmax_idxes; }
+    MinMaxIndexPtr getMinMaxIndex() const { return file_minmax_idx; }
+    const std::vector<MinMaxIndexPtr> & getSubMinMaxIndexes() const { return split_minmax_idxes; }
 
     const std::unordered_set<int> & getSkipSplits() const { return skip_splits; }
     void setSkipSplits(const std::unordered_set<int> & skip_splits_) { skip_splits = skip_splits_; }
@@ -125,17 +125,17 @@ public:
 
     virtual bool useFileMinMaxIndex() const { return false; }
 
-    virtual void loadMinMaxIndex()
+    virtual void loadFileMinMaxIndex()
     {
-        throw Exception("Method loadMinMaxIndex is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Method loadFileMinMaxIndex is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// If hive query could use contains sub-file level minmax index?
     virtual bool useSplitMinMaxIndex() const { return false; }
 
-    virtual void loadSubMinMaxIndex()
+    virtual void loadSplitMinMaxIndex()
     {
-        throw Exception("Method loadSubMinMaxIndex is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Method loadSplitMinMaxIndex is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
 protected:
@@ -145,8 +145,8 @@ protected:
     UInt64 last_modify_time;
     size_t size;
     NamesAndTypesList index_names_and_types;
-    MinMaxIndexPtr minmax_idx;
-    std::vector<MinMaxIndexPtr> sub_minmax_idxes;
+    MinMaxIndexPtr file_minmax_idx;
+    std::vector<MinMaxIndexPtr> split_minmax_idxes;
     /// Skip splits for this file after applying minmax index (if any)
     std::unordered_set<int> skip_splits;
     std::shared_ptr<HiveSettings> storage_settings;
@@ -192,10 +192,10 @@ public:
 
     FileFormat getFormat() const override { return FileFormat::ORC; }
     bool useFileMinMaxIndex() const override;
-    void loadMinMaxIndex() override;
+    void loadFileMinMaxIndex() override;
 
     bool useSplitMinMaxIndex() const override;
-    void loadSubMinMaxIndex() override;
+    void loadSplitMinMaxIndex() override;
 
 private:
     static Range buildRange(const orc::ColumnStatistics * col_stats);
@@ -228,7 +228,7 @@ public:
     FileFormat getFormat() const override { return FileFormat::PARQUET; }
 
     bool useSplitMinMaxIndex() const override;
-    void loadSubMinMaxIndex() override;
+    void loadSplitMinMaxIndex() override;
 
 private:
     void prepareReader();
