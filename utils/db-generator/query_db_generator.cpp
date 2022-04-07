@@ -229,7 +229,7 @@ std::map<std::string, FuncRet> func_to_return_type = {
         {"torelativeweeknum", FuncRet(Type::i, "")}, {"torelativedaynum", FuncRet(Type::i, "")}, {"torelativehournum", FuncRet(Type::i, "")},
         {"torelativeminutenum", FuncRet(Type::i, "")}, {"torelativesecondsnum", FuncRet(Type::i, "")}, {"datediff", FuncRet(Type::d | Type::dt, "")},
         {"formatdatetime", FuncRet(Type::s, "")}, {"now", FuncRet(Type::dt | Type::d, "now()")}, {"today", FuncRet(Type::d | Type::dt, "today()")},
-        {"yesterday", FuncRet(Type::d | Type::dt, "yesterday()")}
+        {"yesterday", FuncRet(Type::d | Type::dt, "yesterday()")}, {"tolastdayofmonth", FuncRet(Type::dt | Type::d, "")}
 };
 
 std::set<std::string> func_args_same_types = {
@@ -253,7 +253,7 @@ std::map<std::string, ColumnType> func_to_param_type = {
         {"tostartofinterval", Type::d | Type::dt}, {"totime", Type::d | Type::dt}, {"torelativehonthnum", Type::d | Type::dt},
         {"torelativeweeknum", Type::d | Type::dt}, {"torelativedaynum", Type::d | Type::dt}, {"torelativehournum", Type::d | Type::dt},
         {"torelativeminutenum", Type::d | Type::dt}, {"torelativesecondnum", Type::d | Type::dt}, {"datediff", Type::d | Type::dt},
-        {"formatdatetime", Type::dt}
+        {"formatdatetime", Type::dt}, {"tolastdayofmonth", Type::d | Type::dt}
 };
 
 

@@ -286,9 +286,9 @@ void HiveParquetFile::loadSubMinMaxIndex()
         auto it = index_names_and_types.begin();
         for (; it != index_names_and_types.end(); ++j, ++it)
         {
-            String name{it->name};
-            boost::to_lower(name);
-            auto mit = parquet_column_positions.find(name);
+            String column{it->name};
+            boost::to_lower(column);
+            auto mit = parquet_column_positions.find(column);
             if (mit == parquet_column_positions.end())
                 continue;
 
