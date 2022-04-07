@@ -44,7 +44,7 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
     {
         return std::make_unique<ReadBufferFromS3>(
             client_ptr, bucket, version_id, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries,
-            settings, /* use_external_buffer */true, read_until_position, /* restricted_seek */true);
+            settings, /* use_external_buffer */true, /* offset */ 0, read_until_position, /* restricted_seek */true);
     };
 
     if (with_cache)

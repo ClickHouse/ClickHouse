@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include "IO/S3Common.h"
 
 #if USE_AWS_S3
 
@@ -43,6 +44,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     UInt64 max_single_read_retries_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
+    size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_)
     : SeekableReadBufferWithSize(nullptr, 0)
@@ -51,9 +53,10 @@ ReadBufferFromS3::ReadBufferFromS3(
     , key(key_)
     , version_id(version_id_)
     , max_single_read_retries(max_single_read_retries_)
+    , offset(offset_)
+    , read_until_position(read_until_position_)
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
-    , read_until_position(read_until_position_)
     , restricted_seek(restricted_seek_)
 {
 }
@@ -219,17 +222,14 @@ std::optional<size_t> ReadBufferFromS3::getTotalSize()
     if (file_size)
         return file_size;
 
-    Aws::S3::Model::HeadObjectRequest request;
-    request.SetBucket(bucket);
-    request.SetKey(key);
-    if (!version_id.empty())
+    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, false);
+
+    if (!object_size)
     {
-        request.SetVersionId(version_id);
+        return std::nullopt;
     }
 
-    auto outcome = client_ptr->HeadObject(request);
-    auto head_result = outcome.GetResultWithOwnership();
-    file_size = head_result.GetContentLength();
+    file_size = object_size;
     return file_size;
 }
 
@@ -245,6 +245,11 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
         read_until_position = position;
         impl.reset();
     }
+}
+
+SeekableReadBuffer::Range ReadBufferFromS3::getRemainingReadRange() const
+{
+    return Range{ .left = static_cast<size_t>(offset), .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt };
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
@@ -302,6 +307,37 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
+SeekableReadBufferPtr ReadBufferS3Factory::getReader()
+{
+    const auto next_range = range_generator.nextRange();
+    if (!next_range)
+    {
+        return nullptr;
+    }
+
+    auto reader = std::make_shared<ReadBufferFromS3>(
+        client_ptr,
+        bucket,
+        key,
+        verion_id,
+        s3_max_single_read_retries,
+        read_settings,
+        false /*use_external_buffer*/,
+        next_range->first,
+        next_range->second);
+    return reader;
+}
+
+off_t ReadBufferS3Factory::seek(off_t off, [[maybe_unused]] int whence)
+{
+    range_generator = RangeGenerator{object_size, range_step, static_cast<size_t>(off)};
+    return off;
+}
+
+std::optional<size_t> ReadBufferS3Factory::getTotalSize()
+{
+    return object_size;
+}
 }
 
 #endif

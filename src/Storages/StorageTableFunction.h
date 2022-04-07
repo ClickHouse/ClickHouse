@@ -93,7 +93,7 @@ public:
 
     Pipe read(
             const Names & column_names,
-            const StorageMetadataPtr & metadata_snapshot,
+            const StorageSnapshotPtr & storage_snapshot,
             SelectQueryInfo & query_info,
             ContextPtr context,
             QueryProcessingStage::Enum processed_stage,
@@ -104,12 +104,12 @@ public:
         for (const auto & c : column_names)
             cnames += c + " ";
         auto storage = getNested();
-        auto nested_metadata = storage->getInMemoryMetadataPtr();
-        auto pipe = storage->read(column_names, nested_metadata, query_info, context,
+        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr());
+        auto pipe = storage->read(column_names, nested_snapshot, query_info, context,
                                   processed_stage, max_block_size, num_streams);
         if (!pipe.empty() && add_conversion)
         {
-            auto to_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot,
+            auto to_header = getHeaderForProcessingStage(column_names, storage_snapshot,
                                                          query_info, context, processed_stage);
 
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
