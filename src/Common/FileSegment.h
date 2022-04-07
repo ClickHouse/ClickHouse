@@ -142,7 +142,7 @@ public:
 
     void assertCorrectness() const;
 
-    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment);
+    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
 
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }

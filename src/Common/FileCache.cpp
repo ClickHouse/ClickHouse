@@ -717,7 +717,7 @@ FileSegments LRUFileCache::getSnapshot() const
     for (const auto & [key, cells_by_offset] : files)
     {
         for (const auto & [offset, cell] : cells_by_offset)
-            file_segments.push_back(FileSegment::getSnapshot(cell.file_segment));
+            file_segments.push_back(FileSegment::getSnapshot(cell.file_segment, cache_lock));
     }
 
     return file_segments;
