@@ -17,7 +17,7 @@ void ShuffleSplitter::split(DB::Block& block)
     watch.start();
     computeAndCountPartitionId(block);
     splitBlockByPartition(block);
-    split_result.total_write_time +=watch.elapsedMilliseconds();
+    split_result.total_write_time +=watch.elapsedNanoseconds();
 }
 SplitResult ShuffleSplitter::stop()
 {
@@ -34,7 +34,7 @@ SplitResult ShuffleSplitter::stop()
     partition_cached_write_buffers.clear();
     partition_write_buffers.clear();
     mergePartitionFiles();
-    split_result.total_write_time += watch.elapsedMilliseconds();
+    split_result.total_write_time += watch.elapsedNanoseconds();
     stopped = true;
     return split_result;
 }
@@ -113,7 +113,7 @@ void ShuffleSplitter::spillPartition(size_t partition_id)
     }
     DB::Block result = partition_buffer[partition_id].releaseColumns();
     partition_outputs[partition_id]->write(result);
-    split_result.total_spill_time += watch.elapsedMilliseconds();
+    split_result.total_spill_time += watch.elapsedNanoseconds();
     split_result.total_bytes_spilled += result.bytes();
 }
 
@@ -246,7 +246,7 @@ void RoundRobinSplitter::computeAndCountPartitionId(DB::Block & block)
         pid = pid_selection_;
         pid_selection_ = (pid_selection_ + 1) % options.partition_nums;
     }
-    split_result.total_compute_pid_time += watch.elapsedMilliseconds();
+    split_result.total_compute_pid_time += watch.elapsedNanoseconds();
 }
 
 std::unique_ptr<ShuffleSplitter> RoundRobinSplitter::create(SplitOptions&& options_)
@@ -281,7 +281,7 @@ void HashSplitter::computeAndCountPartitionId(DB::Block & block)
     {
         partition_ids.emplace_back(static_cast<UInt64>(hash_column->getUInt(i) % options.partition_nums));
     }
-    split_result.total_compute_pid_time += watch.elapsedMilliseconds();
+    split_result.total_compute_pid_time += watch.elapsedNanoseconds();
 }
 
 }

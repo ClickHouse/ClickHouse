@@ -41,11 +41,11 @@ private:
 
 struct SplitResult
 {
-    Int64 total_compute_pid_time;
-    Int64 total_write_time;
-    Int64 total_spill_time;
-    Int64 total_bytes_written;
-    Int64 total_bytes_spilled;
+    Int64 total_compute_pid_time = 0;
+    Int64 total_write_time = 0;
+    Int64 total_spill_time = 0;
+    Int64 total_bytes_written = 0;
+    Int64 total_bytes_spilled = 0;
     std::vector<Int64> partition_length;
     std::vector<Int64> raw_partition_length;
 };
