@@ -1248,8 +1248,15 @@ try
 {
     assertOnDisk();
 
-    String from = getFullRelativePath();
-    String to = fs::path(storage.relative_data_path) / (parent_part ? parent_part->relative_path : "") / new_relative_path / "";
+    if (parent_part)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, 
+            "Move is not supported for projection parts: moving form {} to {}",
+            data_part_storage->getFullPath(), new_relative_path);
+
+    String to = fs::path(storage.relative_data_path) / new_relative_path / "";
+    
+    data_part_storage->move(to);
 
     if (!volume->getDisk()->exists(from))
         throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is a logical error.", ErrorCodes::FILE_DOESNT_EXIST);
@@ -1277,6 +1284,8 @@ try
     volume->getDisk()->moveDirectory(from, to);
     relative_path = new_relative_path;
     metadata_manager->updateAll(true);
+
+    metadata_manager->move(from, to);
 
     SyncGuardPtr sync_guard;
     if (storage.getSettings()->fsync_part_directory)

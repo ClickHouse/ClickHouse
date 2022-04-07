@@ -15,6 +15,8 @@ using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
 
 struct MergeTreeDataPartChecksums;
 
+class IStoragePolicy;
+
 /// This is an abstraction of storage for data part files.
 /// Generally, it contains read-only methods from IDisk.
 class IDataPartStorage
@@ -46,6 +48,11 @@ public:
     /// Should remove it later
     virtual void writeChecksums(MergeTreeDataPartChecksums & checksums) const = 0;
     virtual void writeColumns(NamesAndTypesList & columns) const = 0;
+
+    /// A leak of abstraction
+    virtual bool shallParticipateInMerges(const IStoragePolicy &) const { return true; }
+
+    virtual void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync);
 
     /// Disk name
     virtual std::string getName() const = 0;

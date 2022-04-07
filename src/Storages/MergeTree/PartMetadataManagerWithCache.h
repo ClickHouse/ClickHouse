@@ -34,6 +34,8 @@ public:
     /// Need to be called after part directory is renamed.
     void updateAll(bool include_projection) override;
 
+    void move(const String & from, const String & to) override;
+
     /// Check if all metadatas in part from RocksDB cache are up to date.
     std::unordered_map<String, uint128> check() const override;
 
@@ -48,6 +50,10 @@ private:
     /// Get cache keys and checksums of corresponding metadata in a part(including projection parts)
     void getKeysAndCheckSums(Strings & keys, std::vector<uint128> & checksums) const;
 
+
+    void deleteAllImpl(const String & path, bool include_projection);
+    void assertAllDeletedImpl(const String & path, bool include_projection) const;
+    void updateAllImpl(const String & path, bool include_projection);
 
     MergeTreeMetadataCachePtr cache;
 };
