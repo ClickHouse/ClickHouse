@@ -9,6 +9,18 @@ on: # yamllint disable-line rule:truthy
     branches:
       - 'backport/**'
 jobs:
+  PythonUnitTests:
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Python unit tests
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 -m unittest discover -s . -p '*_test.py'
   DockerHubPushAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
