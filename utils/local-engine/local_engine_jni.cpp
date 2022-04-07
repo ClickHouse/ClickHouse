@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Shuffle/ShuffleReader.h>
 #include <Shuffle/ShuffleSplitter.h>
+#include <Operator/BlockCoalesceOperator.h>
 #include <numeric>
 #include <regex>
 
@@ -280,6 +281,13 @@ jstring Java_com_intel_oap_vectorized_CHColumnVector_nativeGetString(JNIEnv * en
 }
 
 // native block
+void Java_com_intel_oap_vectorized_CHNativeBlock_nativeClose(JNIEnv * env, jobject obj, jlong block_address)
+{
+    Block * block = reinterpret_cast<Block *>(block_address);
+    block->clear();
+    delete block;
+}
+
 jint Java_com_intel_oap_vectorized_CHNativeBlock_nativeNumRows(JNIEnv * env, jobject obj, jlong block_address)
 {
     Block * block = reinterpret_cast<Block *>(block_address);
@@ -375,6 +383,46 @@ void Java_com_intel_oap_vectorized_CHStreamReader_nativeClose(JNIEnv * env, jobj
     local_engine::ShuffleReader::env = nullptr;
 }
 
+// CHCoalesceOperator
+
+jlong Java_com_intel_oap_vectorized_CHCoalesceOperator_createNativeOperator(JNIEnv * env, jobject obj, jint buf_size)
+{
+    local_engine::BlockCoalesceOperator * instance = new local_engine::BlockCoalesceOperator(buf_size);
+    return reinterpret_cast<jlong>(instance);
+}
+
+void Java_com_intel_oap_vectorized_CHCoalesceOperator_nativeMergeBlock(JNIEnv * env, jobject obj, jlong instance_address, jlong block_address)
+{
+    local_engine::BlockCoalesceOperator * instance = reinterpret_cast<local_engine::BlockCoalesceOperator *>(instance_address);
+    DB::Block * block = reinterpret_cast<DB::Block *>(block_address);
+    auto new_block = DB::Block(*block);
+    instance->mergeBlock(new_block);
+    delete block;
+}
+
+jboolean Java_com_intel_oap_vectorized_CHCoalesceOperator_nativeIsFull(JNIEnv * env, jobject obj, jlong instance_address)
+{
+    local_engine::BlockCoalesceOperator * instance = reinterpret_cast<local_engine::BlockCoalesceOperator *>(instance_address);
+    bool full = instance->isFull();
+    return full ? JNI_TRUE : JNI_FALSE;
+}
+
+jlong Java_com_intel_oap_vectorized_CHCoalesceOperator_nativeRelease(JNIEnv * env, jobject obj, jlong instance_address)
+{
+    local_engine::BlockCoalesceOperator * instance = reinterpret_cast<local_engine::BlockCoalesceOperator *>(instance_address);
+    auto block = instance->releaseBlock();
+    DB::Block * new_block = new DB::Block();
+    new_block->swap(block);
+    long address = reinterpret_cast<jlong>(new_block);
+    return address;
+}
+
+void Java_com_intel_oap_vectorized_CHCoalesceOperator_nativeClose(JNIEnv * env, jobject obj, jlong instance_address)
+{
+    local_engine::BlockCoalesceOperator * instance = reinterpret_cast<local_engine::BlockCoalesceOperator *>(instance_address);
+    delete instance;
+}
+
 std::string jstring2string(JNIEnv *env, jstring jStr) {
     if (!jStr)
         return "";
@@ -402,6 +450,8 @@ std::vector<std::string> stringSplit(const std::string& str, char delim) {
                                    std::sregex_token_iterator());
     return elems;
 }
+
+
 
 // Splitter Jni Wrapper
 jlong Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_nativeMake(JNIEnv * env,

@@ -16,6 +16,7 @@ add_headers_and_sources(storages Storages)
 add_headers_and_sources(common Common)
 add_headers_and_sources(external External)
 add_headers_and_sources(shuffle Shuffle)
+add_headers_and_sources(operator Operator)
 
 include_directories(
         ${JNI_INCLUDE_DIRS}
@@ -33,6 +34,7 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${common_sources}
         ${external_sources}
         ${shuffle_sources}
+        ${operator_sources}
         local_engine_jni.cpp
         )
 
