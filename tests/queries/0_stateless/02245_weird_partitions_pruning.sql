@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 -- We use a hack - partition by ignore(d1). In some cases there are two columns 
 -- not fully correlated (<1) (date_begin - date_end or datetime - datetime_in_TZ_with_DST)
 -- If we partition by these columns instead of one it will be twice more partitions.

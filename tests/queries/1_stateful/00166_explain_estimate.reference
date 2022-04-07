@@ -1,5 +1,6 @@
-test	hits	1	57344	7
-test	hits	1	8839168	1079
-test	hits	1	835584	102
-test	hits	1	8003584	977
-test	hits	2	581632	71
+test	hits	{"selected_marks":12,"selected_parts":6,"selected_rows":98304}
+test	hits	{"selected_marks":1092,"selected_parts":6,"selected_rows":8849322}
+test	hits	{"selected_marks":114,"selected_parts":6,"selected_rows":837546}
+test	hits	{"selected_marks":981,"selected_parts":6,"selected_rows":8036352}
+test	hits	{"selected_marks":12,"selected_parts":6,"selected_rows":98304}
+test	hits	{"selected_marks":70,"selected_parts":6,"selected_rows":573440}
