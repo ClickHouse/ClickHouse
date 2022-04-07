@@ -430,7 +430,7 @@ HiveFilePtr createHiveFile(
     }
     else if (format_name == "ORC")
     {
-        hive_file = std::make_shared<HiveOrcFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context);
+        hive_file = std::make_shared<HiveORCFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context);
     }
     else if (format_name == "Parquet")
     {
