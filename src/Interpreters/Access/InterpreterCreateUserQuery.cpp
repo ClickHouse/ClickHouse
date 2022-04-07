@@ -11,7 +11,6 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -38,6 +37,7 @@ namespace
         if (query.auth_data)
         {
             user.auth_data = *query.auth_data;
+
             //User and  query IDENTIFIED WITH AUTHTYPE PLAINTEXT and NO_PASSWORD should not be allowed if allow_plaintext_and_no_password is unset.
             if ((query.auth_data->getType() == AuthenticationType::PLAINTEXT_PASSWORD  && !allow_plaintext_password) || (query.auth_data->getType() == AuthenticationType::NO_PASSWORD &&  !allow_no_password))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "User is not allowed to ALTER/CREATE USERS with type "+ toString(query.auth_data->getType())+". Please configure User with authtype"

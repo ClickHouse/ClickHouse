@@ -16,7 +16,10 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
-
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
+#include "Common/OpenSSLHelpers.h"
+#include <memory>
 
 namespace DB
 {
@@ -141,6 +144,16 @@ namespace
             }
 
             auth_data = AuthenticationData{*type};
+
+            if (type == AuthenticationType::SHA256_PASSWORD)
+            {
+                ///generate and add salt here
+                pcg64_fast rng(randomSeed());
+                UInt64 rand = rng();
+                String salt = std::to_string(rand);
+                value.append(salt);
+                auth_data.setSalt(salt);
+            }
             if (expect_password)
                 auth_data.setPassword(value);
             else if (expect_hash)
