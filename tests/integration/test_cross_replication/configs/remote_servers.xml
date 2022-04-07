@@ -1,6 +1,7 @@
 <clickhouse>
     <remote_servers>
         <test_cluster>
+            <secret>foo</secret>
             <shard>
                 <internal_replication>true</internal_replication>
                 <replica>
