@@ -145,7 +145,7 @@ void HiveOrcFile::prepareColumnMapping()
     }
 }
 
-bool HiveOrcFile::hasMinMaxIndex() const
+bool HiveOrcFile::useFileMinMaxIndex() const
 {
     return storage_settings->enable_orc_file_minmax_index;
 }
@@ -196,7 +196,7 @@ void HiveOrcFile::loadMinMaxIndex()
     minmax_idx = buildMinMaxIndex(statistics.get());
 }
 
-bool HiveOrcFile::hasSubMinMaxIndex() const
+bool HiveOrcFile::useSplitMinMaxIndex() const
 {
     return storage_settings->enable_orc_stripe_minmax_index;
 }
@@ -226,7 +226,7 @@ void HiveOrcFile::loadSubMinMaxIndex()
     }
 }
 
-bool HiveParquetFile::hasSubMinMaxIndex() const
+bool HiveParquetFile::useSplitMinMaxIndex() const
 {
     return storage_settings->enable_parquet_rowgroup_minmax_index;
 }
