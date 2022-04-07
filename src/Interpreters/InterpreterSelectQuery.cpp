@@ -2249,10 +2249,6 @@ static bool windowDescriptionComparator(const WindowDescription * _left, const W
             return true;
         else if (left[i].column_name > right[i].column_name)
             return false;
-        else if (left[i].column_number < right[i].column_number)
-            return true;
-        else if (left[i].column_number > right[i].column_number)
-            return false;
         else if (left[i].direction < right[i].direction)
             return true;
         else if (left[i].direction > right[i].direction)

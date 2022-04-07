@@ -65,6 +65,9 @@ struct FormatSettings
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
+    bool input_format_ipv4_default_on_conversion_error = false;
+    bool input_format_ipv6_default_on_conversion_error = false;
+
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
@@ -138,6 +141,7 @@ struct FormatSettings
         bool import_nested = false;
         bool allow_missing_columns = false;
         bool case_insensitive_column_matching = false;
+        std::unordered_set<int> skip_row_groups = {};
     } parquet;
 
     struct Pretty
@@ -219,6 +223,7 @@ struct FormatSettings
         bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
         bool case_insensitive_column_matching = false;
+        std::unordered_set<int> skip_stripes = {};
     } orc;
 
     /// For capnProto format we should determine how to

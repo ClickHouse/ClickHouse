@@ -112,9 +112,9 @@ public:
         : SourceWithProgress(getHeader(sample_block_, source_info_))
         , WithContext(context_)
         , source_info(std::move(source_info_))
-        , hdfs_namenode_url(hdfs_namenode_url_)
+        , hdfs_namenode_url(std::move(hdfs_namenode_url_))
         , format(std::move(format_))
-        , compression_method(compression_method_)
+        , compression_method(std::move(compression_method_))
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
         , columns_description(getColumnsDescription(sample_block, source_info))
@@ -122,15 +122,25 @@ public:
         , format_settings(getFormatSettings(getContext()))
     {
         to_read_block = sample_block;
+
         /// Initialize to_read_block, which is used to read data from HDFS.
         for (const auto & name_type : source_info->partition_name_types)
         {
             if (to_read_block.has(name_type.name))
                 to_read_block.erase(name_type.name);
         }
+    }
 
-        /// Initialize format settings
-        format_settings.hive_text.input_field_names = text_input_field_names;
+    FormatSettings updateFormatSettings(const HiveFilePtr & hive_file)
+    {
+        auto updated = format_settings;
+        if (format == "HiveText")
+            updated.hive_text.input_field_names = text_input_field_names;
+        else if (format == "ORC")
+            updated.orc.skip_stripes = hive_file->getSkipSplits();
+        else if (format == "Parquet")
+            updated.parquet.skip_row_groups = hive_file->getSkipSplits();
+        return updated;
     }
 
     String getName() const override { return "Hive"; }
@@ -167,7 +177,8 @@ public:
 
                 /// Use local cache for remote storage if enabled.
                 std::unique_ptr<ReadBuffer> remote_read_buf;
-                if (ExternalDataSourceCache::instance().isInitialized() && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
+                if (ExternalDataSourceCache::instance().isInitialized()
+                    && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
                 {
                     size_t buff_size = raw_read_buf->internalBuffer().size();
                     if (buff_size == 0)
@@ -189,7 +200,7 @@ public:
                     read_buf = std::move(remote_read_buf);
 
                 auto input_format = FormatFactory::instance().getInputFormat(
-                    format, *read_buf, to_read_block, getContext(), max_block_size, format_settings);
+                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(curr_file));
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));
@@ -566,7 +577,7 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
             /// Load sub-file level minmax index and apply
             if (hive_file->hasSubMinMaxIndex())
             {
-                std::set<int> skip_splits;
+                std::unordered_set<int> skip_splits;
                 hive_file->loadSubMinMaxIndex();
                 const auto & sub_minmax_idxes = hive_file->getSubMinMaxIndexes();
                 for (size_t i = 0; i < sub_minmax_idxes.size(); ++i)
@@ -574,14 +585,19 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
                     if (!hivefile_key_condition.checkInHyperrectangle(sub_minmax_idxes[i]->hyperrectangle, hivefile_name_types.getTypes())
                              .can_be_true)
                     {
-                        LOG_TRACE(log, "Skip split {} of hive file {}", i, hive_file->getPath());
+                        LOG_TRACE(
+                            log,
+                            "Skip split {} of hive file {} by index {}",
+                            i,
+                            hive_file->getPath(),
+                            hive_file->describeMinMaxIndex(sub_minmax_idxes[i]));
+
                         skip_splits.insert(i);
                     }
                 }
                 hive_file->setSkipSplits(skip_splits);
             }
         }
-    }
     return hive_file;
 }
 
