@@ -248,6 +248,24 @@ bool MergeTreeTransaction::rollback() noexcept
     for (const auto & table_and_mutation : mutations_to_kill)
         table_and_mutation.first->killMutation(table_and_mutation.second);
 
+    /// Discard changes in active parts set
+    /// Remove parts that were created, restore parts that were removed (except parts that were created by this transaction too)
+    for (const auto & part : parts_to_remove)
+    {
+        if (part->version.isRemovalTIDLocked())
+        {
+            /// Don't need to remove part from working set if it was created and removed by this transaction
+            assert(part->version.removal_tid_lock == tid.getHash());
+            continue;
+        }
+        /// FIXME do not lock removal_tid when rolling back part creation, it's ugly
+        const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part}, true);
+    }
+
+    for (const auto & part : parts_to_activate)
+        if (part->version.getCreationTID() != tid)
+            const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
+
     /// Kind of optimization: cleanup thread can remove these parts immediately
     for (const auto & part : parts_to_remove)
     {
@@ -264,14 +282,6 @@ bool MergeTreeTransaction::rollback() noexcept
         part->version.unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
-    /// Discard changes in active parts set
-    /// Remove parts that were created, restore parts that were removed (except parts that were created by this transaction too)
-    for (const auto & part : parts_to_remove)
-        const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part}, true);
-
-    for (const auto & part : parts_to_activate)
-        if (part->version.getCreationTID() != tid)
-            const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
 
     assert([&]()
     {
