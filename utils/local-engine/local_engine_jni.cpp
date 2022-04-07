@@ -397,7 +397,6 @@ void Java_com_intel_oap_vectorized_CHCoalesceOperator_nativeMergeBlock(JNIEnv * 
     DB::Block * block = reinterpret_cast<DB::Block *>(block_address);
     auto new_block = DB::Block(*block);
     instance->mergeBlock(new_block);
-    delete block;
 }
 
 jboolean Java_com_intel_oap_vectorized_CHCoalesceOperator_nativeIsFull(JNIEnv * env, jobject obj, jlong instance_address)
@@ -499,7 +498,7 @@ void Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_split(JNIEnv * ,
 {
     local_engine::SplitterHolder * splitter = reinterpret_cast<local_engine::SplitterHolder *>(splitterId);
     Block * data = reinterpret_cast<Block *>(block);
-    splitter->splitter->split(data);
+    splitter->splitter->split(*data);
 }
 
 jobject Java_com_intel_oap_vectorized_CHShuffleSplitterJniWrapper_stop(JNIEnv * env,

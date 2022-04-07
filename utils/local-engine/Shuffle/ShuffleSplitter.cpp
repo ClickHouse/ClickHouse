@@ -11,14 +11,13 @@
 
 namespace local_engine
 {
-void ShuffleSplitter::split(DB::Block * block)
+void ShuffleSplitter::split(DB::Block& block)
 {
     Stopwatch watch;
     watch.start();
-    computeAndCountPartitionId(* block);
-    splitBlockByPartition(*block);
+    computeAndCountPartitionId(block);
+    splitBlockByPartition(block);
     split_result.total_write_time +=watch.elapsedMilliseconds();
-    delete block;
 }
 SplitResult ShuffleSplitter::stop()
 {

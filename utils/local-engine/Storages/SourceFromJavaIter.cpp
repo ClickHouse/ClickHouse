@@ -17,7 +17,7 @@ DB::Chunk SourceFromJavaIter::generate()
         DB::Block * data = reinterpret_cast<DB::Block *>(byteArrayToLong(env, block));
         size_t rows = data->rows();
         auto chunk = DB::Chunk(data->mutateColumns(), rows);
-        delete data;
+//        delete data;
         return chunk;
     }
     else

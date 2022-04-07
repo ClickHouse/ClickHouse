@@ -61,7 +61,7 @@ public:
     {
         if (!stopped) stop();
     }
-    void split(DB::Block * block);
+    void split(DB::Block& block);
     virtual void computeAndCountPartitionId(DB::Block & block) {}
     std::vector<int64_t> getPartitionLength() {
         return split_result.partition_length;
