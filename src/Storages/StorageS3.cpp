@@ -728,13 +728,9 @@ Pipe StorageS3::read(
             compression_method,
             client_auth.client,
             client_auth.uri.bucket,
-<<<<<<< HEAD
             client_auth.uri.version_id,
-            iterator_wrapper));
-=======
             iterator_wrapper,
             max_download_threads));
->>>>>>> origin/master
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
