@@ -20,6 +20,7 @@ enum class QuotaType
     READ_ROWS,      /// Number of rows read from tables.
     READ_BYTES,     /// Number of bytes read from tables.
     EXECUTION_TIME, /// Total amount of query execution time in nanoseconds.
+    WRITTEN_BYTES,  /// Number of bytes written to tables.
 
     MAX
 };

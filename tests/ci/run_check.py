@@ -162,7 +162,7 @@ def check_pr_description(pr_info):
 
     i = 0
     while i < len(lines):
-        if re.match(r"(?i)^[>*_ ]*change\s*log\s*category", lines[i]):
+        if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
             i += 1
             if i >= len(lines):
                 break
@@ -191,7 +191,7 @@ def check_pr_description(pr_info):
                 return result_status[:140], category
 
         elif re.match(
-            r"(?i)^[>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
+            r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
         ):
             i += 1
             # Can have one empty line between header and the entry itself.
@@ -262,9 +262,14 @@ if __name__ == "__main__":
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
     if description_report:
-        print("::notice ::Cannot run, description does not match the template")
+        print(
+            "::error ::Cannot run, PR description does not match the template: "
+            f"{description_report}"
+        )
         logging.info(
-            "PR body doesn't match the template: (start)\n%s\n(end)", pr_info.body
+            "PR body doesn't match the template: (start)\n%s\n(end)\n" "Reason: %s",
+            pr_info.body,
+            description_report,
         )
         url = (
             f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
