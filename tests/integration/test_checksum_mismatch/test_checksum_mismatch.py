@@ -16,6 +16,7 @@ node2 = cluster.add_instance(
     with_zookeeper=True,
 )
 
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -24,6 +25,7 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 def test_checksum_mismatch_after_upgrade(start_cluster):
     for node in [node1, node2]:
@@ -41,19 +43,23 @@ def test_checksum_mismatch_after_upgrade(start_cluster):
             )
         )
 
-    node1.query("""INSERT INTO mt SELECT
-                        addMonths(today(), number) as RealDate,
-                        maxState(toDateTime(RealDate)) as MaxRealTime,
-                        countState() as Rows,
-                        maxState(toDateTime(RealDate)) as MaxHitTime
-                    FROM numbers(100) GROUP BY number""")
+    node1.query(
+        """INSERT INTO mt SELECT
+                addMonths(today(), number) as RealDate,
+                maxState(toDateTime(RealDate)) as MaxRealTime,
+                countState() as Rows,
+                maxState(toDateTime(RealDate)) as MaxHitTime
+            FROM numbers(100) GROUP BY number"""
+    )
 
-    node2.query("""INSERT INTO mt SELECT
-                        subtractMonths(today(), number) as RealDate,
-                        maxState(toDateTime(RealDate)) as MaxRealTime,
-                        countState() as Rows,
-                        maxState(toDateTime(RealDate)) as MaxHitTime
-                    FROM numbers(100) GROUP BY number""")
+    node2.query(
+        """INSERT INTO mt SELECT
+                subtractMonths(today(), number) as RealDate,
+                maxState(toDateTime(RealDate)) as MaxRealTime,
+                countState() as Rows,
+                maxState(toDateTime(RealDate)) as MaxHitTime
+            FROM numbers(100) GROUP BY number"""
+    )
 
     node1.query("SYSTEM SYNC REPLICA default.mt")
 
