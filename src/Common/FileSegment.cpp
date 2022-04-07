@@ -608,18 +608,19 @@ void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment
     assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
 }
 
-FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
+FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & /* cache_lock */)
 {
     auto snapshot = std::make_shared<FileSegment>(
         file_segment->offset(),
         file_segment->range().size(),
         file_segment->key(),
         nullptr,
-        file_segment->state());
+        State::EMPTY);
 
     snapshot->hits_count = file_segment->getHitsCount();
     snapshot->ref_count = file_segment.use_count();
     snapshot->downloaded_size = file_segment->getDownloadedSize();
+    snapshot->download_state = file_segment->state();
 
     return snapshot;
 }
