@@ -77,7 +77,7 @@ Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatist
     return Range(min_val, true, max_val, true);
 }
 
-Range HiveOrcFile::buildRange(const orc::ColumnStatistics * col_stats)
+Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
 {
     if (!col_stats || col_stats->hasNull())
         return {};
@@ -122,7 +122,7 @@ Range HiveOrcFile::buildRange(const orc::ColumnStatistics * col_stats)
     return {};
 }
 
-void HiveOrcFile::prepareReader()
+void HiveORCFile::prepareReader()
 {
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef());
     auto format_settings = getFormatSettings(getContext());
@@ -132,7 +132,7 @@ void HiveOrcFile::prepareReader()
     reader = std::move(result).ValueOrDie();
 }
 
-void HiveOrcFile::prepareColumnMapping()
+void HiveORCFile::prepareColumnMapping()
 {
     const orc::Type & type = reader->GetRawORCReader()->getType();
     size_t count = type.getSubtypeCount();
@@ -145,13 +145,13 @@ void HiveOrcFile::prepareColumnMapping()
     }
 }
 
-bool HiveOrcFile::useFileMinMaxIndex() const
+bool HiveORCFile::useFileMinMaxIndex() const
 {
     return storage_settings->enable_orc_file_minmax_index;
 }
 
 
-std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveOrcFile::buildMinMaxIndex(const orc::Statistics * statistics)
+std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const orc::Statistics * statistics)
 {
     if (!statistics)
         return nullptr;
@@ -184,7 +184,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveOrcFile::buildMinMaxIndex(c
 }
 
 
-void HiveOrcFile::loadFileMinMaxIndex()
+void HiveORCFile::loadFileMinMaxIndex()
 {
     if (!reader)
     {
@@ -196,13 +196,13 @@ void HiveOrcFile::loadFileMinMaxIndex()
     file_minmax_idx = buildMinMaxIndex(statistics.get());
 }
 
-bool HiveOrcFile::useSplitMinMaxIndex() const
+bool HiveORCFile::useSplitMinMaxIndex() const
 {
     return storage_settings->enable_orc_stripe_minmax_index;
 }
 
 
-void HiveOrcFile::loadSplitMinMaxIndex()
+void HiveORCFile::loadSplitMinMaxIndex()
 {
     if (!reader)
     {

@@ -174,10 +174,10 @@ public:
     virtual FileFormat getFormat() const override { return FileFormat::TEXT; }
 };
 
-class HiveOrcFile : public IHiveFile
+class HiveORCFile : public IHiveFile
 {
 public:
-    HiveOrcFile(
+    HiveORCFile(
         const FieldVector & partition_values_,
         const String & namenode_url_,
         const String & path_,
