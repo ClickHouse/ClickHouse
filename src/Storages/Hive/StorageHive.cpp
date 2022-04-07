@@ -543,7 +543,7 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
 
     /// Load file level minmax index and apply
     const KeyCondition hivefile_key_condition(query_info, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
-    if (hive_file->hasMinMaxIndex())
+    if (hive_file->useFileMinMaxIndex())
     {
         hive_file->loadMinMaxIndex();
         if (!hivefile_key_condition.checkInHyperrectangle(hive_file->getMinMaxIndex()->hyperrectangle, hivefile_name_types.getTypes())
@@ -556,7 +556,7 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
     }
 
     /// Load sub-file level minmax index and apply
-    if (hive_file->hasSubMinMaxIndex())
+    if (hive_file->useSplitMinMaxIndex())
     {
         std::unordered_set<int> skip_splits;
         hive_file->loadSubMinMaxIndex();
