@@ -557,7 +557,7 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
     if (prune_level >= PruneLevel::File)
     {
         const KeyCondition hivefile_key_condition(query_info, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
-        if (hive_file->hasMinMaxIndex())
+        if (hive_file->useFileMinMaxIndex())
         {
             hive_file->loadMinMaxIndex();
             if (!hivefile_key_condition.checkInHyperrectangle(hive_file->getMinMaxIndex()->hyperrectangle, hivefile_name_types.getTypes())
@@ -575,7 +575,7 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
         if (prune_level >= PruneLevel::Split)
         {
             /// Load sub-file level minmax index and apply
-            if (hive_file->hasSubMinMaxIndex())
+            if (hive_file->useSplitMinMaxIndex())
             {
                 std::unordered_set<int> skip_splits;
                 hive_file->loadSubMinMaxIndex();
@@ -598,6 +598,7 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
                 hive_file->setSkipSplits(skip_splits);
             }
         }
+    }
     return hive_file;
 }
 
@@ -698,7 +699,6 @@ HiveFiles StorageHive::collectHiveFiles(
     ContextPtr context_,
     PruneLevel prune_level) const
 {
-   
     std::vector<Apache::Hadoop::Hive::Partition> partitions = hive_table_metadata->getPartitions();
     /// Hive table have no partition
     if (!partition_name_types.empty() && partitions.empty())
