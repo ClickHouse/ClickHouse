@@ -343,9 +343,9 @@ void IDiskRemote::removeMetadataRecursive(const String & path, RemoteFSPathKeepe
     }
 }
 
-std::vector<String> IDiskRemote::getRemotePaths(const String & path) const
+std::vector<String> IDiskRemote::getRemotePaths(const String & local_path) const
 {
-    auto metadata = readMetadata(path);
+    auto metadata = readMetadata(local_path);
 
     std::vector<String> remote_paths;
     for (const auto & [remote_path, _] : metadata.remote_fs_objects)
@@ -354,16 +354,16 @@ std::vector<String> IDiskRemote::getRemotePaths(const String & path) const
     return remote_paths;
 }
 
-void IDiskRemote::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
+void IDiskRemote::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map)
 {
-    if (metadata_disk->isFile(path))
+    if (metadata_disk->isFile(local_path))
     {
-        paths_map.emplace_back(path, getRemotePaths(path));
+        paths_map.emplace_back(local_path, getRemotePaths(local_path));
     }
     else
     {
-        for (auto it = iterateDirectory(path); it->isValid(); it->next())
-            IDiskRemote::getRemotePathsRecursive(fs::path(path) / it->name(), paths_map);
+        for (auto it = iterateDirectory(local_path); it->isValid(); it->next())
+            IDiskRemote::getRemotePathsRecursive(fs::path(local_path) / it->name(), paths_map);
     }
 }
 

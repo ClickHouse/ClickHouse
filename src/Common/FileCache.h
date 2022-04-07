@@ -44,7 +44,7 @@ public:
 
     virtual void tryRemoveAll() = 0;
 
-    static bool shouldBypassCache();
+    static bool isReadOnly();
 
     /// Cache capacity in bytes.
     size_t capacity() const { return max_size; }
@@ -72,9 +72,9 @@ public:
      */
     virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) = 0;
 
-    virtual FileSegmentsHolder getAll() = 0;
-
     virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) = 0;
+
+    virtual FileSegments getSnapshot() const = 0;
 
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
@@ -124,7 +124,7 @@ public:
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
 
-    FileSegmentsHolder getAll() override;
+    FileSegments getSnapshot() const override;
 
     FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
 

@@ -230,7 +230,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     ReadSettings disk_read_settings{read_settings};
     if (cache)
     {
-        if (IFileCache::shouldBypassCache())
+        if (IFileCache::isReadOnly())
             disk_read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
         disk_read_settings.remote_fs_cache = cache;
@@ -272,7 +272,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
               mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + blob_name);
 
-    bool cache_on_insert = fs::path(path).extension() != ".tmp"
+    bool cache_on_write = cache
+        && fs::path(path).extension() != ".tmp"
         && write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
 
@@ -285,7 +286,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
-        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()), blob_name, cache_on_insert ? cache : nullptr);
+        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()), blob_name, cache_on_write ? cache : nullptr);
 
     auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
     {

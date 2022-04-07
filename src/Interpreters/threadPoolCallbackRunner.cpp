@@ -9,18 +9,13 @@ namespace DB
 
 CallbackRunner threadPoolCallbackRunner(ThreadPool & pool)
 {
-    return [pool = &pool, thread_group = CurrentThread::getGroup()](auto callback, ContextPtr query_context) mutable
+    return [pool = &pool, thread_group = CurrentThread::getGroup()](auto callback) mutable
     {
         pool->scheduleOrThrow(
-            [&, callback = std::move(callback), thread_group, query_context]()
+            [&, callback = std::move(callback), thread_group]()
             {
                 if (thread_group)
                     CurrentThread::attachTo(thread_group);
-
-                std::optional<CurrentThread::QueryScope> query_scope;
-
-                if (query_context && !CurrentThread::get().getQueryContext())
-                    query_scope.emplace(query_context);
 
                 SCOPE_EXIT_SAFE({
                     if (thread_group)

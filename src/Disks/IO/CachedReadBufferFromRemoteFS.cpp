@@ -389,7 +389,7 @@ bool CachedReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
     implementation_buffer = getImplementationBuffer(*current_file_segment_it);
 
     if (read_type == ReadType::CACHED)
-        (*current_file_segment_it)->hit();
+        (*current_file_segment_it)->incrementHitsCount();
 
     LOG_TEST(log, "New segment: {}", (*current_file_segment_it)->range().toString());
     return true;
@@ -573,8 +573,6 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
 
 bool CachedReadBufferFromRemoteFS::nextImplStep()
 {
-    assertCacheAllowed();
-
     last_caller_id = FileSegment::getCallerId();
 
     if (!initialized)
@@ -623,7 +621,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
         implementation_buffer = getImplementationBuffer(*current_file_segment_it);
 
         if (read_type == ReadType::CACHED)
-            (*current_file_segment_it)->hit();
+            (*current_file_segment_it)->incrementHitsCount();
     }
 
     assert(!internal_buffer.empty());
@@ -818,12 +816,6 @@ std::optional<size_t> CachedReadBufferFromRemoteFS::getLastNonDownloadedOffset()
     }
 
     return std::nullopt;
-}
-
-void CachedReadBufferFromRemoteFS::assertCacheAllowed() const
-{
-    if (IFileCache::shouldBypassCache() && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache used when not allowed");
 }
 
 String CachedReadBufferFromRemoteFS::getInfoForLog()

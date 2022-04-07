@@ -206,6 +206,8 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         return DiskDecorator::writeFile(path, buf_size, mode, settings);
 
     WriteSettings current_settings = settings;
+    /// There are two different cache implementations. Disable second one if the first is enabled.
+    /// The firts will soon be removed, this disabling is temporary.
     current_settings.enable_filesystem_cache_on_write_operations = false;
 
     LOG_TEST(log, "Write file {} to cache", backQuote(path));

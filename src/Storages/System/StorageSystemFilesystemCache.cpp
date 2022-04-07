@@ -22,6 +22,7 @@ NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
         {"state", std::make_shared<DataTypeString>()},
         {"cache_hits", std::make_shared<DataTypeUInt64>()},
         {"references", std::make_shared<DataTypeUInt64>()},
+        {"downloaded_size", std::make_shared<DataTypeUInt64>()},
     };
 }
 
@@ -37,9 +38,9 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
     for (const auto & [cache_base_path, cache_data] : caches)
     {
         const auto & cache = cache_data.cache;
-        auto holder = cache->getAll();
+        auto file_segments = cache->getSnapshot();
 
-        for (const auto & file_segment : holder.file_segments)
+        for (const auto & file_segment : file_segments)
         {
             res_columns[0]->insert(cache_base_path);
             res_columns[1]->insert(cache->getPathInLocalCache(file_segment->key(), file_segment->offset()));
@@ -49,8 +50,9 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[3]->insert(range.right);
             res_columns[4]->insert(range.size());
             res_columns[5]->insert(FileSegment::stateToString(file_segment->state()));
-            res_columns[6]->insert(file_segment->hits());
-            res_columns[7]->insert(file_segment.use_count());
+            res_columns[6]->insert(file_segment->getHitsCount());
+            res_columns[7]->insert(file_segment->getRefCount());
+            res_columns[8]->insert(file_segment->getDownloadedSize());
         }
     }
 }

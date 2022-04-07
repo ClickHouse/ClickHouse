@@ -57,7 +57,7 @@ String IFileCache::getPathInLocalCache(const Key & key)
     return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
 }
 
-bool IFileCache::shouldBypassCache()
+bool IFileCache::isReadOnly()
 {
     return !CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()
@@ -708,7 +708,7 @@ bool LRUFileCache::isLastFileSegmentHolder(
     return cell->file_segment.use_count() == 2;
 }
 
-FileSegmentsHolder LRUFileCache::getAll()
+FileSegments LRUFileCache::getSnapshot() const
 {
     std::lock_guard cache_lock(mutex);
 
@@ -717,10 +717,10 @@ FileSegmentsHolder LRUFileCache::getAll()
     for (const auto & [key, cells_by_offset] : files)
     {
         for (const auto & [offset, cell] : cells_by_offset)
-            file_segments.push_back(cell.file_segment);
+            file_segments.push_back(FileSegment::getSnapshot(cell.file_segment));
     }
 
-    return FileSegmentsHolder(std::move(file_segments));
+    return file_segments;
 }
 
 std::vector<String> LRUFileCache::tryGetCachePaths(const Key & key)
