@@ -17,8 +17,9 @@ public:
     ASTPtr clone() const override
     {
         auto clone = std::make_shared<ASTInterpolateElement>(*this);
-        clone->cloneChildren();
         clone->expr = clone->expr->clone();
+        clone->children.clear();
+        clone->children.push_back(clone->expr);
         return clone;
     }
 

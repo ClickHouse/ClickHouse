@@ -888,7 +888,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
                 col_set.insert(column.name);
             }
             for (const auto & column : result_block)
-                if( col_set.count(column.name) == 0)
+                if (col_set.count(column.name) == 0)
                     source_columns.emplace_back(column.name, column.type);
         }
 
