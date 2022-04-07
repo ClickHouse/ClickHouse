@@ -66,11 +66,10 @@ public:
         return impl;
     }
 
-    Chunk moveCurrentChunk()
+    void reset()
     {
-        Chunk res = std::move(current_input.chunk);
         current_input = {};
-        return res;
+        resetInternalCursor();
     }
 
     const Chunk & getCurrentChunk() const
@@ -80,31 +79,40 @@ public:
 
     void setInput(IMergingAlgorithm::Input && input)
     {
+        if (input.skip_last_row)
+            throw Exception("FullMergeJoinCursor does not support skipLastRow", ErrorCodes::NOT_IMPLEMENTED);
+
+        if (current_input.permutation)
+            throw DB::Exception("FullMergeJoinCursor: permutation is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+
         current_input = std::move(input);
 
         if (!current_input.chunk)
             fully_completed = true;
 
-        if (current_input.skip_last_row)
-            throw Exception("MergeJoinAlgorithm does not support skipLastRow", ErrorCodes::LOGICAL_ERROR);
-
-        if (current_input.chunk)
-        {
-            impl.reset(current_input.chunk.getColumns(), sample_block, current_input.permutation);
-        }
+        resetInternalCursor();
     }
 
-    bool isValid() const
-    {
-        return current_input.chunk && impl.isValid();
-    }
-
-    bool fullyCompleted() const { return !isValid() && fully_completed; }
+    bool fullyCompleted() const { return !impl.isValid() && fully_completed; }
 
     SortCursorImpl * operator-> () { return &impl; }
     const SortCursorImpl * operator-> () const { return &impl; }
 
 private:
+
+    void resetInternalCursor()
+    {
+        if (current_input.chunk)
+        {
+            impl.reset(current_input.chunk.getColumns(), sample_block, current_input.permutation);
+        }
+        else
+        {
+            impl.reset(sample_block.cloneEmpty().getColumns(), sample_block);
+        }
+    }
+
     SortCursorImpl impl;
 
     IMergingAlgorithm::Input current_input;
