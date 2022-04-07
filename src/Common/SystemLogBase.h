@@ -24,6 +24,7 @@
     M(SessionLogElement) \
     M(TraceLogElement) \
     M(ZooKeeperLogElement) \
+    M(ProcessorProfileLogElement) \
     M(TextLogElement)
 
 namespace Poco

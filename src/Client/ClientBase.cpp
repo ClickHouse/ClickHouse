@@ -1325,6 +1325,13 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
     }
 
+    if (const auto * set_query = parsed_query->as<ASTSetQuery>())
+    {
+        const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
+        if (logs_level_field)
+            updateLoggerLevel(logs_level_field->safeGet<String>());
+    }
+
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
@@ -1521,24 +1528,19 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
 
 bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
-    // It makes sense not to base any control flow on this, so that it is
-    // the same in tests and in normal usage. The only difference is that in
-    // normal mode we ignore the test hints.
-    const bool test_mode = config().has("testmode");
-    if (test_mode)
-    {
-        /// disable logs if expects errors
-        TestHint test_hint(test_mode, all_queries_text);
-        if (test_hint.clientError() || test_hint.serverError())
-            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-    }
-
     bool echo_query = echo_queries;
 
     /// Test tags are started with "--" so they are interpreted as comments anyway.
     /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
     /// because we don't want test tags to be echoed.
-    size_t test_tags_length = test_mode ? getTestTagsLength(all_queries_text) : 0;
+    {
+        /// disable logs if expects errors
+        TestHint test_hint(all_queries_text);
+        if (test_hint.clientError() || test_hint.serverError())
+            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+    }
+
+    size_t test_tags_length = getTestTagsLength(all_queries_text);
 
     /// Several queries separated by ';'.
     /// INSERT data is ended by the end of line, not ';'.
@@ -1575,7 +1577,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Try to find test hint for syntax error. We don't know where
                 // the query ends because we failed to parse it, so we consume
                 // the entire line.
-                TestHint hint(test_mode, String(this_query_begin, this_query_end - this_query_begin));
+                TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
                 if (hint.serverError())
                 {
                     // Syntax errors are considered as client errors
@@ -1613,7 +1615,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Look for the hint in the text of query + insert data + trailing
                 // comments, e.g. insert into t format CSV 'a' -- { serverError 123 }.
                 // Use the updated query boundaries we just calculated.
-                TestHint test_hint(test_mode, full_query);
+                TestHint test_hint(full_query);
 
                 // Echo all queries if asked; makes for a more readable reference file.
                 echo_query = test_hint.echoQueries().value_or(echo_query);
@@ -2214,8 +2216,6 @@ void ClientBase::init(int argc, char ** argv)
         ("suggestion_limit", po::value<int>()->default_value(10000),
             "Suggestion limit for how many databases, tables and columns to fetch.")
 
-        ("testmode,T", "enable test hints in comments")
-
         ("format,f", po::value<std::string>(), "default output format")
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
         ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
@@ -2321,8 +2321,6 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("interactive", true);
     if (options.count("pager"))
         config().setString("pager", options["pager"].as<std::string>());
-    if (options.count("testmode"))
-        config().setBool("testmode", true);
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());

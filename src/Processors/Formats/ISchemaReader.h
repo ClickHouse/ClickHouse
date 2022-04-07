@@ -36,7 +36,7 @@ protected:
 class IRowSchemaReader : public ISchemaReader
 {
 public:
-    IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
+    IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr, bool allow_bools_as_numbers_ = false);
     NamesAndTypesList readSchema() override;
 
 protected:
@@ -51,6 +51,7 @@ protected:
 private:
     size_t max_rows_to_read;
     DataTypePtr default_type;
+    bool allow_bools_as_numbers;
     std::vector<String> column_names;
 };
 
@@ -62,20 +63,21 @@ private:
 class IRowWithNamesSchemaReader : public ISchemaReader
 {
 public:
-    IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
+    IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr, bool allow_bools_as_numbers_ = false);
     NamesAndTypesList readSchema() override;
     bool hasStrictOrderOfColumns() const override { return false; }
 
 protected:
     /// Read one row and determine types of columns in it.
-    /// Return map {column_name : type}.
+    /// Return list with names and types.
     /// If it's impossible to determine the type for some column, return nullptr for it.
-    /// Return empty map is can't read more data.
-    virtual std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypes() = 0;
+    /// Set eof = true if can't read more data.
+    virtual NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) = 0;
 
 private:
     size_t max_rows_to_read;
     DataTypePtr default_type;
+    bool allow_bools_as_numbers;
 };
 
 /// Base class for schema inference for formats that don't need any data to
