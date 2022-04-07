@@ -280,7 +280,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ```sql
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr]
-[INTERPOLATE (col AS expr, ... colN AS exprN)]
+[INTERPOLATE [(col [AS expr], ... colN [AS exprN])]]
 ```
 
 `WITH FILL` может быть применен к полям с числовыми (все разновидности float, int, decimal) или временными (все разновидности Date, DateTime) типами. В случае применения к полям типа `String` недостающие значения заполняются пустой строкой.
@@ -290,7 +290,7 @@ ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_
 
 Когда `STEP const_numeric_expr` не указан, тогда используется `1.0` для числовых типов, `1 день` для типа Date и `1 секунда` для типа DateTime.
 
-`INTERPOLATE` может быть применен к колонкам, не участвующим в `ORDER BY WITH FILL`. Такие колонки заполняются значениями, вычисляемыми применением `expr` к предыдущему значению.
+`INTERPOLATE` может быть применен к колонкам, не участвующим в `ORDER BY WITH FILL`. Такие колонки заполняются значениями, вычисляемыми применением `expr` к предыдущему значению. Если `expr` опущен, то колонка заполняется предыдущим значением. Если список колонок не указан, то включаются все разрешенные колонки.
 
 Пример запроса без использования `WITH FILL`:
 ```sql
