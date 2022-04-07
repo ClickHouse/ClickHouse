@@ -377,7 +377,11 @@ private:
     static void visit(ASTSelectQuery & select, ASTPtr &, Data & data)
     {
         if (!data.done)
+        {
+            if (data.expression_list->children.empty())
+                data.expression_list->children.emplace_back(std::make_shared<ASTAsterisk>());
             select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(data.expression_list));
+        }
         data.done = true;
     }
 };
