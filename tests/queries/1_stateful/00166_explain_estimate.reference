@@ -1,6 +1,6 @@
-test	hits	{"selected_marks":12,"selected_parts":6,"selected_rows":98304}
-test	hits	{"selected_marks":1092,"selected_parts":6,"selected_rows":8849322}
-test	hits	{"selected_marks":114,"selected_parts":6,"selected_rows":837546}
-test	hits	{"selected_marks":981,"selected_parts":6,"selected_rows":8036352}
-test	hits	{"selected_marks":12,"selected_parts":6,"selected_rows":98304}
-test	hits	{"selected_marks":70,"selected_parts":6,"selected_rows":573440}
+test	hits	{"selected_marks":7,"selected_parts":1,"selected_rows":57344}
+test	hits	{"selected_marks":1079,"selected_parts":1,"selected_rows":8839168}
+test	hits	{"selected_marks":102,"selected_parts":1,"selected_rows":835584}
+test	hits	{"selected_marks":977,"selected_parts":1,"selected_rows":8003584}
+test	hits	{"selected_marks":7,"selected_parts":1,"selected_rows":57344}
+test	hits	{"selected_marks":64,"selected_parts":1,"selected_rows":524288}
