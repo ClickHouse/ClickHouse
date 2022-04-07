@@ -6,6 +6,7 @@
 #include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
 
+#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -133,6 +134,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     global_ctx->all_column_names = global_ctx->metadata_snapshot->getColumns().getNamesOfPhysical();
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
+
+    auto object_columns = MergeTreeData::getObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
+    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, object_columns);
+    extendObjectColumns(global_ctx->storage_columns, object_columns, false);
 
     extractMergingAndGatheringColumns(
         global_ctx->storage_columns,
@@ -414,7 +419,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
-            *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->future_part->parts[part_num], column_names, ctx->read_with_direct_io, true);
+            *global_ctx->data, global_ctx->storage_snapshot, global_ctx->future_part->parts[part_num], column_names, ctx->read_with_direct_io, true);
 
         /// Dereference unique_ptr
         column_part_source->setProgressCallback(
@@ -748,7 +753,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     for (const auto & part : global_ctx->future_part->parts)
     {
         auto input = std::make_unique<MergeTreeSequentialSource>(
-            *global_ctx->data, global_ctx->metadata_snapshot, part, global_ctx->merging_column_names, ctx->read_with_direct_io, true);
+            *global_ctx->data, global_ctx->storage_snapshot, part, global_ctx->merging_column_names, ctx->read_with_direct_io, true);
 
         /// Dereference unique_ptr and pass horizontal_stage_progress by reference
         input->setProgressCallback(
@@ -777,7 +782,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     Block header = pipes.at(0).getHeader();
     for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+        sort_description.emplace_back(sort_columns[i], 1, 1);
 
     /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
