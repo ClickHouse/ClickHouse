@@ -20,10 +20,9 @@ namespace ErrorCodes
 MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
        MergeTreeData & storage_,
         const String & name_,
-        const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
+        const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::IN_MEMORY, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -32,10 +31,9 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
+        const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::IN_MEMORY, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }

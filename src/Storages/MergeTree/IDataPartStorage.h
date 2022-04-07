@@ -45,6 +45,8 @@ public:
 
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
+    virtual bool isStoredOnRemoteDisk() const { return false; }
+
     /// Should remove it later
     virtual void writeChecksums(MergeTreeDataPartChecksums & checksums) const = 0;
     virtual void writeColumns(NamesAndTypesList & columns) const = 0;

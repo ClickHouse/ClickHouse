@@ -34,10 +34,12 @@ public:
 
     UInt64 calculateTotalSizeOnDisk() const override;
 
+    bool isStoredOnRemoteDisk() const override;
+
     void writeChecksums(MergeTreeDataPartChecksums & checksums) const override;
     void writeColumns(NamesAndTypesList & columns) const override;
 
-    bool shallParticipateInMerges(const IStoragePolicy &) const;
+    bool shallParticipateInMerges(const IStoragePolicy &) const override;
 
     void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync) override;
 

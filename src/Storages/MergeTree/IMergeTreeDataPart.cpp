@@ -299,14 +299,12 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreeData & storage_,
     const String & name_,
     const DataPartStoragePtr & data_part_storage_,
-    const std::optional<String> & relative_path_,
     Type part_type_,
     const IMergeTreeDataPart * parent_part_)
     : storage(storage_)
     , name(name_)
     , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
     , data_part_storage(parent_part_ ? parent_part_->data_part_storage : data_part_storage_)
-    , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
@@ -327,14 +325,12 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const String & name_,
     const MergeTreePartInfo & info_,
     const DataPartStoragePtr & data_part_storage_,
-    const std::optional<String> & relative_path_,
     Type part_type_,
     const IMergeTreeDataPart * parent_part_)
     : storage(storage_)
     , name(name_)
     , info(info_)
     , data_part_storage(parent_part_ ? parent_part_->data_part_storage : data_part_storage_)
-    , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
@@ -688,7 +684,7 @@ void IMergeTreeDataPart::appendFilesOfColumnsChecksumsIndexes(Strings & files, b
             Strings projection_files;
             projection_part->appendFilesOfColumnsChecksumsIndexes(projection_files, true);
             for (const auto & projection_file : projection_files)
-                files.push_back(fs::path(projection_part->relative_path) / projection_file);
+                files.push_back(fs::path(projection_part->name + ".proj") / projection_file);
         }
     }
 }
@@ -1222,12 +1218,7 @@ void IMergeTreeDataPart::appendFilesOfColumns(Strings & files)
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
 {
-    /// `IMergeTreeDataPart::volume` describes space where current part belongs, and holds
-    /// `SingleDiskVolume` object which does not contain up-to-date settings of corresponding volume.
-    /// Therefore we shall obtain volume from storage policy.
-    auto volume_ptr = storage_policy->getVolume(storage_policy->getVolumeIndexByDisk(volume->getDisk()));
-
-    return !volume_ptr->areMergesAvoided();
+    return data_part_storage->shallParticipateInMerges(*storage_policy);
 }
 
 // UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DataPartStoragePtr & data_part_storage_, const String & from)
@@ -1254,42 +1245,11 @@ try
             "Move is not supported for projection parts: moving form {} to {}",
             data_part_storage->getFullPath(), new_relative_path);
 
+    String from = data_part_storage->getFullRelativePath();
     String to = fs::path(storage.relative_data_path) / new_relative_path / "";
-    
-    data_part_storage->move(to);
 
-    if (!volume->getDisk()->exists(from))
-        throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is a logical error.", ErrorCodes::FILE_DOESNT_EXIST);
-
-    if (volume->getDisk()->exists(to))
-    {
-        if (remove_new_dir_if_exists)
-        {
-            Names files;
-            volume->getDisk()->listFiles(to, files);
-
-            LOG_WARNING(storage.log, "Part directory {} already exists and contains {} files. Removing it.", fullPath(volume->getDisk(), to), files.size());
-
-            volume->getDisk()->removeRecursive(to);
-        }
-        else
-        {
-            throw Exception("Part directory " + fullPath(volume->getDisk(), to) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-        }
-    }
-
-    metadata_manager->deleteAll(true);
-    metadata_manager->assertAllDeleted(true);
-    volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
-    volume->getDisk()->moveDirectory(from, to);
-    relative_path = new_relative_path;
-    metadata_manager->updateAll(true);
-
+    data_part_storage->rename(to, storage.log, remove_new_dir_if_exists, storage.getSettings()->fsync_part_directory);
     metadata_manager->move(from, to);
-
-    SyncGuardPtr sync_guard;
-    if (storage.getSettings()->fsync_part_directory)
-        sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
 
     storage.lockSharedData(*this);
 }

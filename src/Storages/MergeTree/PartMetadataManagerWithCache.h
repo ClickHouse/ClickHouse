@@ -50,7 +50,7 @@ private:
     /// Get cache keys and checksums of corresponding metadata in a part(including projection parts)
     void getKeysAndCheckSums(Strings & keys, std::vector<uint128> & checksums) const;
 
-
+    bool existsImpl(const String & path, const String & file_name) const;
     void deleteAllImpl(const String & path, bool include_projection);
     void assertAllDeletedImpl(const String & path, bool include_projection) const;
     void updateAllImpl(const String & path, bool include_projection);

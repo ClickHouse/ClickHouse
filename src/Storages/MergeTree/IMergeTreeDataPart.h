@@ -70,7 +70,6 @@ public:
         const String & name_,
         const MergeTreePartInfo & info_,
         const DataPartStoragePtr & data_part_storage_,
-        const std::optional<String> & relative_path,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
@@ -78,7 +77,6 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const DataPartStoragePtr & data_part_storage_,
-        const std::optional<String> & relative_path,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
@@ -200,7 +198,7 @@ public:
     /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
     /// NOTE: Cannot have trailing slash.
-    mutable String relative_path;
+    /// mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
@@ -372,7 +370,7 @@ public:
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate the total size of the entire directory with all the files
-    static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
+    // static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
 
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
