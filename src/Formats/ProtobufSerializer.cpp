@@ -102,6 +102,29 @@ namespace
         }
     };
 
+    bool isGoogleWrapperMessage(const MessageDescriptor & message_descriptor)
+    {
+        auto message_type = message_descriptor.well_known_type();
+        return (message_type >= google::protobuf::Descriptor::WELLKNOWNTYPE_DOUBLEVALUE)
+            && (message_type <= google::protobuf::Descriptor::WELLKNOWNTYPE_BOOLVALUE);
+    }
+
+    bool isGoogleWrapperField(const FieldDescriptor & field_descriptor)
+    {
+
+        const auto * message_descriptor = field_descriptor.message_type();
+        if (message_descriptor == nullptr)
+        {
+            return false;
+        }
+        return isGoogleWrapperMessage(*message_descriptor);
+    }
+
+    std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
+    {
+        assert(isGoogleWrapperField(field_descriptor));
+        return field_descriptor.message_type()->field(0)->name();
+    }
 
     // Should we omit null values (zero for numbers / empty string for strings) while storing them.
     bool shouldSkipZeroOrEmpty(const FieldDescriptor & field_descriptor)
@@ -109,6 +132,8 @@ namespace
         if (!field_descriptor.is_optional())
             return false;
         if (field_descriptor.containing_type()->options().map_entry())
+            return false;
+        if (isGoogleWrapperField(field_descriptor))
             return false;
         return field_descriptor.message_type() || (field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3);
     }
@@ -141,30 +166,6 @@ namespace
         if (field_descriptor.options().has_packed())
             return field_descriptor.options().packed();
         return field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3;
-    }
-
-    bool isGoogleWrapperMessage(const MessageDescriptor & message_descriptor)
-    {
-        auto message_type = message_descriptor.well_known_type();
-        return (message_type >= google::protobuf::Descriptor::WELLKNOWNTYPE_DOUBLEVALUE)
-            && (message_type <= google::protobuf::Descriptor::WELLKNOWNTYPE_BOOLVALUE);
-    }
-
-    bool isGoogleWrapperField(const FieldDescriptor & field_descriptor)
-    {
-
-        const auto * message_descriptor = field_descriptor.message_type();
-        if (message_descriptor == nullptr)
-        {
-            return false;
-        }
-        return isGoogleWrapperMessage(*message_descriptor);
-    }
-
-    std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
-    {
-        assert(isGoogleWrapperField(field_descriptor));
-        return field_descriptor.message_type()->field(0)->name();
     }
 
     WriteBuffer & writeIndent(WriteBuffer & out, size_t size) { return out << String(size * 4, ' '); }
