@@ -190,8 +190,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
     return idx;
 }
 
-
-void HiveORCFile::loadMinMaxIndex()
+void HiveORCFile::loadFileMinMaxIndex()
 {
     if (!reader)
     {
@@ -200,7 +199,7 @@ void HiveORCFile::loadMinMaxIndex()
     }
 
     auto statistics = reader->GetRawORCReader()->getStatistics();
-    minmax_idx = buildMinMaxIndex(statistics.get());
+    file_minmax_idx = buildMinMaxIndex(statistics.get());
 }
 
 bool HiveORCFile::useSplitMinMaxIndex() const
@@ -208,7 +207,8 @@ bool HiveORCFile::useSplitMinMaxIndex() const
     return storage_settings->enable_orc_stripe_minmax_index;
 }
 
-void HiveORCFile::loadSubMinMaxIndex()
+
+void HiveORCFile::loadSplitMinMaxIndex()
 {
     if (!reader)
     {
@@ -224,11 +224,11 @@ void HiveORCFile::loadSubMinMaxIndex()
             fmt::format("orc file:{} has different strip num {} and strip statistics num {}", path, stripe_num, stripe_stats_num),
             ErrorCodes::BAD_ARGUMENTS);
 
-    sub_minmax_idxes.resize(stripe_num);
+    split_minmax_idxes.resize(stripe_num);
     for (size_t i = 0; i < stripe_num; ++i)
     {
         auto stripe_stats = raw_reader->getStripeStatistics(i);
-        sub_minmax_idxes[i] = buildMinMaxIndex(stripe_stats.get());
+        split_minmax_idxes[i] = buildMinMaxIndex(stripe_stats.get());
     }
 }
 
@@ -257,7 +257,7 @@ void HiveParquetFile::prepareReader()
     THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped), arrow::default_memory_pool(), &reader));
 }
 
-void HiveParquetFile::loadSubMinMaxIndex()
+void HiveParquetFile::loadSplitMinMaxIndex()
 {
     if (!reader)
         prepareReader();
@@ -274,12 +274,12 @@ void HiveParquetFile::loadSubMinMaxIndex()
     }
 
 
-    sub_minmax_idxes.resize(num_row_groups);
+    split_minmax_idxes.resize(num_row_groups);
     for (size_t i = 0; i < num_row_groups; ++i)
     {
         auto row_group_meta = meta->RowGroup(i);
-        sub_minmax_idxes[i] = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-        sub_minmax_idxes[i]->hyperrectangle.resize(num_cols);
+        split_minmax_idxes[i] = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        split_minmax_idxes[i]->hyperrectangle.resize(num_cols);
 
         size_t j = 0;
         auto it = index_names_and_types.begin();
@@ -302,31 +302,31 @@ void HiveParquetFile::loadSubMinMaxIndex()
 
             if (auto bool_stats = std::dynamic_pointer_cast<parquet::BoolStatistics>(stats))
             {
-                sub_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<UInt8>(bool_stats);
+                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<UInt8>(bool_stats);
             }
             else if (auto int32_stats = std::dynamic_pointer_cast<parquet::Int32Statistics>(stats))
             {
-                sub_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Int32>(int32_stats);
+                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Int32>(int32_stats);
             }
             else if (auto int64_stats = std::dynamic_pointer_cast<parquet::Int64Statistics>(stats))
             {
-                sub_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Int64>(int64_stats);
+                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Int64>(int64_stats);
             }
             else if (auto float_stats = std::dynamic_pointer_cast<parquet::FloatStatistics>(stats))
             {
-                sub_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Float64>(float_stats);
+                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Float64>(float_stats);
             }
             else if (auto double_stats = std::dynamic_pointer_cast<parquet::FloatStatistics>(stats))
             {
-                sub_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Float64>(double_stats);
+                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Float64>(double_stats);
             }
             else if (auto string_stats = std::dynamic_pointer_cast<parquet::ByteArrayStatistics>(stats))
             {
-                sub_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics(string_stats);
+                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics(string_stats);
             }
             /// Other types are not supported for minmax index, skip
         }
-        sub_minmax_idxes[i]->initialized = true;
+        split_minmax_idxes[i]->initialized = true;
     }
 }
 
