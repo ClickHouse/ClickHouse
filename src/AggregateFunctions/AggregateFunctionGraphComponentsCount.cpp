@@ -1,19 +1,22 @@
 #include "AggregateFunctionGraphOperation.h"
+#include "AggregateFunctions/AggregateFunctionGraphBidirectionalData.h"
 
 namespace DB
 {
-class GraphComponentsCountGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphComponentsCountGeneral>
+
+template<typename VertexType>
+class GraphComponentsCount final : public GraphOperation<BidirectionalGraphData<VertexType>, GraphComponentsCount<VertexType>>
 {
 public:
-    using GraphOperationGeneral::GraphOperationGeneral;
+    INHERIT_GRAPH_OPERATION_USINGS(GraphOperation<BidirectionalGraphData<VertexType>, GraphComponentsCount<VertexType>>)
 
-    static constexpr const char * name = "graphComponentsCount";
+    static constexpr const char * name = "GraphComponentsCount";
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const { return this->data(place).componentsCount(); }
+    UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const { return data(place).componentsCount(); }
 };
 
-template void registerGraphAggregateFunction<GraphComponentsCountGeneral>(AggregateFunctionFactory & factory);
+INSTANTIATE_GRAPH_OPERATION(GraphComponentsCount)
 
 }

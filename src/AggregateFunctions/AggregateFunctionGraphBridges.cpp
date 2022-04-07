@@ -1,25 +1,28 @@
 #include "Common/HashTable/HashSet.h"
 #include "AggregateFunctionGraphOperation.h"
+#include "AggregateFunctions/AggregateFunctionGraphBidirectionalData.h"
 #include "base/types.h"
 
 namespace DB
 {
-class GraphCountBridges final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphCountBridges>
+
+template<typename VertexType>
+class GraphCountBridges final : public GraphOperation<BidirectionalGraphData<VertexType>, GraphCountBridges<VertexType>>
 {
 public:
-    using GraphOperationGeneral::GraphOperationGeneral;
+    INHERIT_GRAPH_OPERATION_USINGS(GraphOperation<BidirectionalGraphData<VertexType>, GraphCountBridges<VertexType>>)
 
-    static constexpr const char * name = "countBridges";
+    static constexpr const char * name = "GraphCountBridges";
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     void countBridges(
         ConstAggregateDataPtr __restrict place,
-        StringRef vertex,
-        StringRef parent,
-        HashSet<StringRef> & used,
-        HashMap<StringRef, UInt64> & tin,
-        HashMap<StringRef, UInt64> & up,
+        Vertex vertex,
+        Vertex parent,
+        VertexSet & used,
+        NeededHashMap<Vertex, UInt64> & tin,
+        NeededHashMap<Vertex, UInt64> & up,
         UInt64 & cntBridges,
         UInt64 & timer) const
     {
@@ -28,7 +31,7 @@ public:
         up[vertex] = timer;
         ++timer;
 
-        for (StringRef next : this->data(place).graph.at(vertex))
+        for (Vertex next : data(place).graph.at(vertex))
         {
             if (next == parent)
                 continue;
@@ -46,11 +49,11 @@ public:
 
     UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
     {
-        const auto & graph = this->data(place).graph;
+        const auto & graph = data(place).graph;
         if (graph.size() < 2)
             return 0;
-        HashSet<StringRef> used;
-        HashMap<StringRef, UInt64> tin, up;
+        VertexSet used;
+        NeededHashMap<Vertex, UInt64> tin, up;
         UInt64 cnt_bridges = 0;
         UInt64 timer = 0;
         countBridges(place, graph.begin()->getKey(), graph.begin()->getKey(), used, tin, up, cnt_bridges, timer);
@@ -58,6 +61,6 @@ public:
     }
 };
 
-template void registerGraphAggregateFunction<GraphCountBridges>(AggregateFunctionFactory & factory);
+INSTANTIATE_GRAPH_OPERATION(GraphCountBridges)
 
 }

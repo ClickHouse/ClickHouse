@@ -1,55 +1,58 @@
 #include <algorithm>
 #include "Common/HashTable/HashSet.h"
 #include "AggregateFunctionGraphOperation.h"
+#include "AggregateFunctions/AggregateFunctionGraphDirectionalData.h"
 #include "base/types.h"
 
 namespace DB
 {
+
+template<typename VertexType>
 class GraphCountStronglyConnectedComponents final
-    : public GraphOperationGeneral<DirectionalGraphGenericData, GraphCountStronglyConnectedComponents>
+    : public GraphOperation<DirectionalGraphData<VertexType>, GraphCountStronglyConnectedComponents<VertexType>>
 {
 public:
-    using GraphOperationGeneral::GraphOperationGeneral;
+    INHERIT_GRAPH_OPERATION_USINGS(GraphOperation<DirectionalGraphData<VertexType>, GraphCountStronglyConnectedComponents<VertexType>>)
 
-    static constexpr const char * name = "countStronglyConnectedComponents";
+    static constexpr const char * name = "GraphCountStronglyConnectedComponents";
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     void dfsOrder(
-        const HashMap<StringRef, std::vector<StringRef>> & graph,
-        StringRef vertex,
-        HashSet<StringRef> & used,
-        std::vector<StringRef> & order) const
+        const GraphType & graph,
+        Vertex vertex,
+        VertexSet & used,
+        std::vector<Vertex> & order) const
     {
-        HashSet<StringRef>::LookupResult it;
+        typename VertexSet::LookupResult it;
         bool inserted;
         used.emplace(vertex, it, inserted);
         if (!inserted)
             return;
         if (const auto * graph_iter = graph.find(vertex); graph_iter)
-            for (StringRef next : graph_iter->getMapped())
+            for (Vertex next : graph_iter->getMapped())
                 dfsOrder(graph, next, used, order);
         order.emplace_back(vertex);
     }
 
-    void dfsColor(const HashMap<StringRef, std::vector<StringRef>> & reverseGraph, StringRef vertex, HashSet<StringRef> & used) const
+    void dfsColor(const GraphType & reverseGraph, Vertex vertex, VertexSet & used) const
     {
-        HashSet<StringRef>::LookupResult it;
+        typename VertexSet::LookupResult it;
         bool inserted;
         used.emplace(vertex, it, inserted);
         if (!inserted)
             return;
-        for (StringRef next : reverseGraph.at(vertex))
+        for (Vertex next : reverseGraph.at(vertex))
             dfsColor(reverseGraph, next, used);
     }
 
-    static HashMap<StringRef, std::vector<StringRef>> createReverseGraph(const HashMap<StringRef, std::vector<StringRef>> & graph)
+    static GraphType createReverseGraph(const GraphType & graph)
     {
-        HashMap<StringRef, std::vector<StringRef>> reverse_graph;
+        GraphType reverse_graph;
         for (const auto & [vertex, neighbors] : graph)
         {
             reverse_graph.insert({vertex, {}});
-            for (StringRef next : neighbors)
+            for (Vertex next : neighbors)
                 reverse_graph[next].emplace_back(vertex);
         }
         return reverse_graph;
@@ -57,11 +60,11 @@ public:
 
     UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
     {
-        const auto & graph = this->data(place).graph;
+        const auto & graph = data(place).graph;
         if (graph.size() < 2)
             return graph.size();
-        HashSet<StringRef> used;
-        std::vector<StringRef> order;
+        VertexSet used;
+        std::vector<Vertex> order;
         order.reserve(graph.size());
         for (const auto & [vertex, neighbors] : graph)
         {
@@ -73,7 +76,7 @@ public:
         UInt64 answer = 0;
         used = {};
         const auto & reverse_graph = createReverseGraph(graph);
-        for (StringRef vertex : order)
+        for (Vertex vertex : order)
         {
             if (used.has(vertex))
                 continue;
@@ -84,6 +87,6 @@ public:
     }
 };
 
-template void registerGraphAggregateFunction<GraphCountStronglyConnectedComponents>(AggregateFunctionFactory & factory);
+INSTANTIATE_GRAPH_OPERATION(GraphCountStronglyConnectedComponents)
 
 }

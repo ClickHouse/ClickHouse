@@ -2,28 +2,31 @@
 #include <limits>
 #include "Common/HashTable/HashSet.h"
 #include "AggregateFunctionGraphOperation.h"
+#include "AggregateFunctions/AggregateFunctionGraphDirectionalData.h"
 #include "base/types.h"
 
 namespace DB
 {
-class GraphMaxFlow final : public GraphOperationGeneral<DirectionalGraphGenericData, GraphMaxFlow, 2>
+
+template<typename VertexType>
+class GraphMaxFlow final : public GraphOperation<DirectionalGraphData<VertexType>, GraphMaxFlow<VertexType>, 2>
 {
 public:
-    using GraphOperationGeneral::GraphOperationGeneral;
+    INHERIT_GRAPH_OPERATION_USINGS(GraphOperation<DirectionalGraphData<VertexType>, GraphMaxFlow<VertexType>, 2>)
 
-    static constexpr const char * name = "graphMaxFlow";
+    static constexpr const char * name = "GraphMaxFlow";
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena * arena) const
     {
-        StringRef from = serializeFieldToArena(parameters.at(0), arena);
-        StringRef to = serializeFieldToArena(parameters.at(1), arena);
+        Vertex from = getVertexFromField(parameters.at(0), arena);
+        Vertex to = getVertexFromField(parameters.at(1), arena);
         if (from == to)
             return std::numeric_limits<UInt64>::max();
         MaxFlow helper(from, to);
         for (const auto & [vertex, neighbors] : this->data(place).graph)
-            for (StringRef next : neighbors)
+            for (Vertex next : neighbors)
                 helper.addEdge(vertex, next);
         return helper.getMaxFlow();
     }
@@ -31,19 +34,21 @@ public:
 private:
     struct Edge
     {
-        StringRef to;
+        Vertex to;
         Int64 capacity;
         Int64 flow = 0;
-        Edge(StringRef to_, Int64 capacity_) : to(to_), capacity(capacity_) { }
+        Edge(Vertex to_, Int64 capacity_) : to(to_), capacity(capacity_) { }
         Int64 getCurrentCapacity() const { return capacity - flow; }
     };
 
     class MaxFlow
     {
     public:
-        MaxFlow(StringRef start, StringRef end) : starting_point{start}, ending_point{end} { }
+        using Vertex = GraphMaxFlow::Vertex;
 
-        void addEdge(StringRef from, StringRef to, Int64 capacity = 1)
+        MaxFlow(Vertex start, Vertex end) : starting_point{start}, ending_point{end} { }
+
+        void addEdge(Vertex from, Vertex to, Int64 capacity = 1)
         {
             graph[from].emplace_back(edges.size());
             edges.emplace_back(to, capacity);
@@ -71,7 +76,7 @@ private:
         bool bfs()
         {
             distance.clear();
-            std::queue<StringRef> buffer;
+            std::queue<Vertex> buffer;
             buffer.push(starting_point);
             distance[starting_point] = 0;
             while (!buffer.empty())
@@ -92,7 +97,7 @@ private:
             return distance.has(ending_point);
         }
 
-        UInt64 dfs(StringRef vertex, Int64 currentFlow = std::numeric_limits<Int64>::max())
+        UInt64 dfs(Vertex vertex, Int64 currentFlow = std::numeric_limits<Int64>::max())
         {
             if (vertex == ending_point)
                 return currentFlow;
@@ -114,13 +119,13 @@ private:
             return 0;
         }
 
-        HashMap<StringRef, UInt64> distance{};
-        HashMap<StringRef, std::vector<UInt64>> graph{};
+        HashMap<Vertex, UInt64> distance{};
+        HashMap<Vertex, std::vector<UInt64>> graph{};
         std::vector<Edge> edges{};
-        StringRef starting_point, ending_point;
+        Vertex starting_point, ending_point;
     };
 };
 
-template void registerGraphAggregateFunction<GraphMaxFlow>(AggregateFunctionFactory & factory);
+INSTANTIATE_GRAPH_OPERATION(GraphMaxFlow)
 
 }

@@ -1,26 +1,29 @@
 #include "Common/HashTable/HashSet.h"
 #include "AggregateFunctionGraphOperation.h"
+#include "AggregateFunctions/AggregateFunctionGraphBidirectionalData.h"
 #include "DataTypes/DataTypesNumber.h"
 #include "base/types.h"
 
 namespace DB
 {
-class GraphProbabilityConnected final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphProbabilityConnected>
+
+template<typename ValueType>
+class GraphProbabilityConnected final : public GraphOperation<BidirectionalGraphData<ValueType>, GraphProbabilityConnected<ValueType>>
 {
 public:
-    using GraphOperationGeneral::GraphOperationGeneral;
+    INHERIT_GRAPH_OPERATION_USINGS(GraphOperation<BidirectionalGraphData<ValueType>, GraphProbabilityConnected<ValueType>>)
 
-    static constexpr const char * name = "graphProbabilityConnected";
+    static constexpr const char * name = "GraphProbabilityConnected";
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeFloat64>(); }
 
     Float64 calculateOperation(ConstAggregateDataPtr place, Arena *) const
     {
-        const auto & graph = this->data(place).graph;
+        const auto & graph = data(place).graph;
         if (graph.size() < 2)
             return 1;
         UInt64 connected_vertices = 0;
-        HashSet<StringRef> visited;
+        VertexSet visited;
         for (const auto & [from, _] : graph) 
         {
             if (!visited.has(from))
@@ -33,6 +36,6 @@ public:
     }
 };
 
-template void registerGraphAggregateFunction<GraphProbabilityConnected>(AggregateFunctionFactory & factory);
+INSTANTIATE_GRAPH_OPERATION(GraphProbabilityConnected)
 
 }

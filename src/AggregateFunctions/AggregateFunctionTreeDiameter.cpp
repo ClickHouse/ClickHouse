@@ -1,4 +1,5 @@
 #include "AggregateFunctionGraphOperation.h"
+#include "AggregateFunctions/AggregateFunctionGraphBidirectionalData.h"
 #include "base/types.h"
 
 namespace DB
@@ -8,19 +9,20 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_PARAMETER;
 }
 
-class GraphDiameterGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphDiameterGeneral>
+template<typename VertexType>
+class TreeDiameter final : public GraphOperation<BidirectionalGraphData<VertexType>, TreeDiameter<VertexType>>
 {
 public:
-    using GraphOperationGeneral::GraphOperationGeneral;
+    INHERIT_GRAPH_OPERATION_USINGS(GraphOperation<BidirectionalGraphData<VertexType>, TreeDiameter<VertexType>>)
 
-    static constexpr const char * name = "treeDiameter";
+    static constexpr const char * name = "TreeDiameter";
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    std::pair<UInt64, StringRef> calculateDiameter(ConstAggregateDataPtr __restrict place, StringRef vertex, StringRef parent) const
+    std::pair<UInt64, Vertex> calculateDiameter(ConstAggregateDataPtr __restrict place, Vertex vertex, Vertex parent) const
     {
-        std::pair<UInt64, StringRef> answer = {0, vertex};
-        for (StringRef next : this->data(place).graph.at(vertex))
+        std::pair<UInt64, Vertex> answer = {0, vertex};
+        for (Vertex next : data(place).graph.at(vertex))
         {
             if (next == parent)
                 continue;
@@ -34,16 +36,16 @@ public:
 
     UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
     {
-        if (!this->data(place).isTree())
+        if (!data(place).isTree())
             throw Exception("Graph must have structure of tree", ErrorCodes::UNSUPPORTED_PARAMETER);
-        const auto & graph = this->data(place).graph;
+        const auto & graph = data(place).graph;
         if (graph.size() < 2)
             return 0;
-        StringRef first_leaf = calculateDiameter(place, graph.begin()->getKey(), graph.begin()->getKey()).second;
+        Vertex first_leaf = calculateDiameter(place, graph.begin()->getKey(), graph.begin()->getKey()).second;
         return calculateDiameter(place, first_leaf, first_leaf).first;
     }
 };
 
-template void registerGraphAggregateFunction<GraphDiameterGeneral>(AggregateFunctionFactory & factory);
+INSTANTIATE_GRAPH_OPERATION(TreeDiameter)
 
 }

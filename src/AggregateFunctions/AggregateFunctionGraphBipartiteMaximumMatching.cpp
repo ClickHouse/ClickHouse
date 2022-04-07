@@ -1,6 +1,8 @@
 #include <optional>
 #include "Common/HashTable/HashSet.h"
 #include "AggregateFunctionGraphOperation.h"
+#include "AggregateFunctions/AggregateFunctionGraphBidirectionalData.h"
+#include "AggregateFunctions/AggregateFunctionGraphDirectionalData.h"
 #include "base/types.h"
 
 namespace DB
@@ -10,27 +12,27 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_PARAMETER;
 }
 
-
+template<typename VertexType>
 class GraphCountBipartiteMaximumMatching final
-    : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphCountBipartiteMaximumMatching>
+    : public GraphOperation<BidirectionalGraphData<VertexType>, GraphCountBipartiteMaximumMatching<VertexType>>
 {
 public:
-    using GraphOperationGeneral::GraphOperationGeneral;
+    INHERIT_GRAPH_OPERATION_USINGS(GraphOperation<BidirectionalGraphData<VertexType>, GraphCountBipartiteMaximumMatching<VertexType>>)
 
-    static constexpr const char * name = "countBipartiteMaximumMatching";
+    static constexpr const char * name = "GraphCountBipartiteMaximumMatching";
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     bool isBipartite(
-        const HashMap<StringRef, std::vector<StringRef>> & graph,
-        StringRef vertex,
-        HashMap<StringRef, bool> & color,
+        const GraphType & graph,
+        Vertex vertex,
+        NeededHashMap<Vertex, bool> & color,
         bool currentColor = true) const
     {
         color[vertex] = currentColor;
-        for (StringRef next : graph.at(vertex))
+        for (Vertex next : graph.at(vertex))
         {
-            if (color.find(next) == color.end())
+            if (!color.has(next))
             {
                 if (!isBipartite(graph, next, color, true ^ currentColor))
                     return false;
@@ -41,33 +43,32 @@ public:
         return true;
     }
 
-    std::optional<HashMap<StringRef, bool>> getColor(const HashMap<StringRef, std::vector<StringRef>> & graph) const
+    std::optional<NeededHashMap<Vertex, bool>> getColor(const GraphType & graph) const
     {
-        HashMap<StringRef, bool> color;
+        NeededHashMap<Vertex, bool> color;
         for (const auto & [vertex, neighbours] : graph)
-            if (color.find(vertex) == color.end())
+            if (!color.has(vertex))
                 if (!isBipartite(graph, vertex, color))
                     return std::nullopt;
         return std::make_optional(std::move(color));
     }
 
     bool dfsMatch(
-        StringRef vertex,
+        Vertex vertex,
         UInt64 currentColor,
-        const HashMap<StringRef, std::vector<StringRef>> & graph,
-        HashMap<StringRef, UInt64> & used,
-        HashMap<StringRef, StringRef> & matching) const
+        const GraphType & graph,
+        NeededHashMap<Vertex, UInt64> & used,
+        VertexMap & matching) const
     {
-        if (used[vertex] == currentColor)
+        if (std::exchange(used[vertex], currentColor) == currentColor)
             return false;
-        used[vertex] = currentColor;
-        for (StringRef next : graph.at(vertex))
+        for (Vertex next : graph.at(vertex))
             if (!matching.has(next))
             {
                 matching[next] = vertex;
                 return true;
             }
-        for (StringRef next : graph.at(vertex))
+        for (Vertex next : graph.at(vertex))
             if (dfsMatch(matching[next], currentColor, graph, used, matching))
             {
                 matching[next] = vertex;
@@ -78,14 +79,14 @@ public:
 
     UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
     {
-        const auto & graph = this->data(place).graph;
+        const auto & graph = data(place).graph;
         if (graph.empty())
             return 0;
         const auto color = getColor(graph);
         if (color == std::nullopt)
             throw Exception("Graph must be bipartite", ErrorCodes::UNSUPPORTED_PARAMETER);
-        HashMap<StringRef, UInt64> used;
-        HashMap<StringRef, StringRef> matching;
+        NeededHashMap<Vertex, UInt64> used;
+        VertexMap matching;
         UInt64 current_color = 0;
         UInt64 matching_size = 0;
         for (const auto & [vertex, neighbours] : graph)
@@ -96,6 +97,6 @@ public:
     }
 };
 
-template void registerGraphAggregateFunction<GraphCountBipartiteMaximumMatching>(AggregateFunctionFactory & factory);
+INSTANTIATE_GRAPH_OPERATION(GraphCountBipartiteMaximumMatching)
 
 }

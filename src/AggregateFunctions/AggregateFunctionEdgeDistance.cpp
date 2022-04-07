@@ -1,39 +1,41 @@
 #include <limits>
 #include "Common/HashTable/HashSet.h"
 #include "AggregateFunctionGraphOperation.h"
+#include "AggregateFunctions/AggregateFunctionGraphBidirectionalData.h"
 #include "base/types.h"
 
 namespace DB
 {
 
-class EdgeDistanceGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, EdgeDistanceGeneral, 2>
+template <typename VertexType>
+class EdgeDistance final : public GraphOperation<BidirectionalGraphData<VertexType>, EdgeDistance<VertexType>, 2>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData, EdgeDistanceGeneral, 2>::GraphOperationGeneral;
+    INHERIT_GRAPH_OPERATION_USINGS(GraphOperation<BidirectionalGraphData<VertexType>, EdgeDistance<VertexType>, 2>)
 
-    static constexpr const char* name = "edgeDistance";
+    static constexpr const char* name = "EdgeDistance";
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena* arena) const {
-        StringRef from = serializeFieldToArena(parameters.at(0), arena);
-        StringRef to = serializeFieldToArena(parameters.at(1), arena);
+        Vertex from = getVertexFromField(this->parameters.at(0), arena);
+        Vertex to = getVertexFromField(this->parameters.at(1), arena);
         if (from == to) {
             return 0;
         }
-        HashSet<StringRef> visited;
-        std::queue<std::pair<StringRef, UInt64>> buffer;
+        VertexSet visited;
+        std::queue<std::pair<Vertex, UInt64>> buffer;
         buffer.emplace(from, 0);
         while (!buffer.empty()) {
             auto [vertex, distance] = buffer.front();
             buffer.pop();
-            HashSet<StringRef>::LookupResult it;
+            typename VertexSet::LookupResult it;
             bool inserted;
             visited.emplace(vertex, it, inserted);
             if (!inserted) {
                 continue;
             }
-            for (StringRef next_vertex : this->data(place).graph.at(vertex)) {
+            for (Vertex next_vertex : data(place).graph.at(vertex)) {
                 if (next_vertex == to) {
                     return distance + 1;
                 }
@@ -44,6 +46,6 @@ public:
     }
 };
 
-template void registerGraphAggregateFunction<EdgeDistanceGeneral>(AggregateFunctionFactory & factory);
+INSTANTIATE_GRAPH_OPERATION(EdgeDistance)
 
 }

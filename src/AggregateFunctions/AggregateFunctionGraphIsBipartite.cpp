@@ -1,25 +1,28 @@
 #include <DataTypes/DataTypeFactory.h>
 #include "AggregateFunctionGraphOperation.h"
+#include "AggregateFunctions/AggregateFunctionGraphBidirectionalData.h"
 
 namespace DB
 {
-class GraphIsBipartiteGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphIsBipartiteGeneral>
+
+template<typename VertexType>
+class GraphIsBipartite final : public GraphOperation<BidirectionalGraphData<VertexType>, GraphIsBipartite<VertexType>>
 {
 public:
-    using GraphOperationGeneral::GraphOperationGeneral;
+    INHERIT_GRAPH_OPERATION_USINGS(GraphOperation<BidirectionalGraphData<VertexType>, GraphIsBipartite<VertexType>>)
 
-    static constexpr const char * name = "isBipartite";
+    static constexpr const char * name = "GraphIsBipartite";
 
     DataTypePtr getReturnType() const override { return DataTypeFactory::instance().get("Bool"); }
 
     bool isBipartite(
-        const HashMap<StringRef, std::vector<StringRef>> & graph,
-        StringRef vertex,
-        HashMap<StringRef, bool> & color,
+        const GraphType & graph,
+        Vertex vertex,
+        NeededHashMap<Vertex, bool> & color,
         bool currentColor = true) const
     {
         color[vertex] = currentColor;
-        for (StringRef next : graph.at(vertex))
+        for (Vertex next : graph.at(vertex))
         {
             if (auto * color_next = color.find(next); color_next == nullptr)
             {
@@ -34,16 +37,16 @@ public:
 
     bool calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
     {
-        const auto & graph = this->data(place).graph;
-        HashMap<StringRef, bool> color;
+        const auto & graph = data(place).graph;
+        NeededHashMap<Vertex, bool> color;
         for (const auto & [vertex, neighbours] : graph)
-            if (color.find(vertex) == color.end())
+            if (!color.has(vertex))
                 if (!isBipartite(graph, vertex, color))
                     return false;
         return true;
     }
 };
 
-template void registerGraphAggregateFunction<GraphIsBipartiteGeneral>(AggregateFunctionFactory & factory);
+INSTANTIATE_GRAPH_OPERATION(GraphIsBipartite)
 
 }

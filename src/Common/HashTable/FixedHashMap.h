@@ -158,6 +158,18 @@ public:
 
         return it->getMapped();
     }
+    
+    Mapped & ALWAYS_INLINE at(const Key & x)
+    {
+        return const_cast<Mapped&>(std::as_const(*this).at(x));
+    }
+
+    const Mapped & ALWAYS_INLINE at(const Key & x) const
+    {
+        if (auto it = this->find(x))
+            return it->getMapped();
+        throw DB::Exception("Cannot find element in FixedHashMap::at method", DB::ErrorCodes::LOGICAL_ERROR);
+    }
 };
 
 

@@ -1,24 +1,30 @@
-#include <AggregateFunctions/AggregateFunctionGraphFactory.h>
 #include <boost/preprocessor/seq/for_each.hpp>
+
+#include <memory>
+#include "AggregateFunctionFactory.h"
+#include "FactoryHelpers.h"
+#include "Helpers.h"
+#include <boost/preprocessor/cat.hpp>
+#include <boost/preprocessor/stringize.hpp>
 
 namespace DB
 {
+
 #define GRAPH_FUNCTION_CLASSES \
-    (GraphDiameterGeneral)(GraphIsTreeGeneral)(GraphComponentsCountGeneral)(GraphProbabilityConnected)(GraphAvgChildrenGeneral)( \
-        EdgeDistanceGeneral)(GraphTreeHeight)(GraphCountBridges)(GraphCountStronglyConnectedComponents)(GraphIsBipartiteGeneral)( \
+    (TreeDiameter)(GraphIsTree)(GraphComponentsCount)(GraphProbabilityConnected)(GraphAvgChildren)( \
+        EdgeDistance)(TreeHeight)(GraphCountBridges)(GraphCountStronglyConnectedComponents)(GraphIsBipartite)( \
         GraphCountBipartiteMaximumMatching)(GraphMaxFlow)
 
 
-#define EXTERN_GRAPH_FUNCTION(r, data, elem) \
-    class elem; \
-    extern template void registerGraphAggregateFunction<elem>(AggregateFunctionFactory & factory);
+#define EXTERN_GRAPH_OPERATION_FACTORY(r, data, operation) \
+AggregateFunctionPtr \
+BOOST_PP_CAT(createGraphOperation, operation)(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *); \
 
-BOOST_PP_SEQ_FOR_EACH(EXTERN_GRAPH_FUNCTION, , GRAPH_FUNCTION_CLASSES)
-
+BOOST_PP_SEQ_FOR_EACH(EXTERN_GRAPH_OPERATION_FACTORY, , GRAPH_FUNCTION_CLASSES)
 
 void registerGraphAggregateFunctions(AggregateFunctionFactory & factory)
 {
-#define REGISTER_GRAPH_FUNCTION(r, data, elem) registerGraphAggregateFunction<elem>(factory);
+#define REGISTER_GRAPH_FUNCTION(r, data, elem) factory.registerFunction(BOOST_PP_STRINGIZE(elem), {BOOST_PP_CAT(createGraphOperation, elem), AggregateFunctionProperties{}});
 
     BOOST_PP_SEQ_FOR_EACH(REGISTER_GRAPH_FUNCTION, , GRAPH_FUNCTION_CLASSES)
 }
