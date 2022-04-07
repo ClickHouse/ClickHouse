@@ -133,6 +133,7 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool named_tuples_as_objects = false;
         bool serialize_as_strings = false;
+        bool read_bools_as_numbers = true;
     } json;
 
     struct
@@ -141,6 +142,7 @@ struct FormatSettings
         bool import_nested = false;
         bool allow_missing_columns = false;
         bool case_insensitive_column_matching = false;
+        std::unordered_set<int> skip_row_groups = {};
     } parquet;
 
     struct Pretty
@@ -222,6 +224,7 @@ struct FormatSettings
         bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
         bool case_insensitive_column_matching = false;
+        std::unordered_set<int> skip_stripes = {};
     } orc;
 
     /// For capnProto format we should determine how to

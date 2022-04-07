@@ -2493,6 +2493,17 @@ std::shared_ptr<TransactionsInfoLog> Context::getTransactionsInfoLog() const
 }
 
 
+std::shared_ptr<ProcessorsProfileLog> Context::getProcessorsProfileLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->processors_profile_log;
+}
+
+
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();

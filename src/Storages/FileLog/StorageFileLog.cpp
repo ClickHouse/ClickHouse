@@ -720,7 +720,7 @@ bool StorageFileLog::streamToViews()
 
     assertBlocksHaveEqualStructure(input.getHeader(), block_io.pipeline.getHeader(), "StorageFileLog streamToViews");
 
-    size_t rows = 0;
+    std::atomic<size_t> rows = 0;
     {
         block_io.pipeline.complete(std::move(input));
         block_io.pipeline.setNumThreads(max_streams_number);

@@ -9,6 +9,7 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -204,6 +205,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     session_log = createSystemLog<SessionLog>(global_context, "system", "session_log", config, "session_log");
     transactions_info_log = createSystemLog<TransactionsInfoLog>(
         global_context, "system", "transactions_info_log", config, "transactions_info_log");
+    processors_profile_log = createSystemLog<ProcessorsProfileLog>(global_context, "system", "processors_profile_log", config, "processors_profile_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -231,6 +233,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(session_log.get());
     if (transactions_info_log)
         logs.emplace_back(transactions_info_log.get());
+    if (processors_profile_log)
+        logs.emplace_back(processors_profile_log.get());
 
     try
     {
