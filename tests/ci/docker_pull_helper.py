@@ -56,18 +56,20 @@ def get_images_with_versions(
             for i in range(10):
                 try:
                     logging.info("Pulling image %s", docker_image)
-                    latest_error = subprocess.check_output(
+                    subprocess.check_output(
                         f"docker pull {docker_image}",
                         stderr=subprocess.STDOUT,
                         shell=True,
                     )
                     break
                 except Exception as ex:
+                    latest_error = ex
                     time.sleep(i * 3)
                     logging.info("Got execption pulling docker %s", ex)
             else:
                 raise Exception(
-                    f"Cannot pull dockerhub for image docker pull {docker_image} because of {latest_error}"
+                    "Cannot pull dockerhub for image docker pull "
+                    f"{docker_image} because of {latest_error}"
                 )
 
     return docker_images

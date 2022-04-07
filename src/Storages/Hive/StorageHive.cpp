@@ -300,6 +300,7 @@ StorageHive::StorageHive(
     , partition_by_ast(partition_by_ast_)
     , storage_settings(std::move(storage_settings_))
 {
+    /// Check hive metastore url.
     getContext()->getRemoteHostFilter().checkURL(Poco::URI(hive_metastore_url));
 
     StorageInMemoryMetadata storage_metadata;
@@ -315,11 +316,13 @@ void StorageHive::lazyInitialize()
     if (has_initialized)
         return;
 
-
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
     auto hive_table_metadata = hive_metastore_client->getHiveTable(hive_database, hive_table);
 
     hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->sd.location);
+    /// Check HDFS namenode url.
+    getContext()->getRemoteHostFilter().checkURL(Poco::URI(hdfs_namenode_url));
+
     table_schema = hive_table_metadata->sd.cols;
 
     FileFormat hdfs_file_format = IHiveFile::toFileFormat(hive_table_metadata->sd.inputFormat);
@@ -330,10 +333,8 @@ void StorageHive::lazyInitialize()
             format_name = "HiveText";
             break;
         case FileFormat::RC_FILE:
-            /// TODO to be implemented
             throw Exception("Unsopported hive format rc_file", ErrorCodes::NOT_IMPLEMENTED);
         case FileFormat::SEQUENCE_FILE:
-            /// TODO to be implemented
             throw Exception("Unsopported hive format sequence_file", ErrorCodes::NOT_IMPLEMENTED);
         case FileFormat::AVRO:
             format_name = "Avro";
@@ -758,6 +759,7 @@ void registerStorageHive(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
+            .source_access_type = AccessType::HIVE,
         });
 }
 
