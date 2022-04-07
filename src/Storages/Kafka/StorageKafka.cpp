@@ -41,6 +41,26 @@
 #include <Common/typeid_cast.h>
 
 
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric KafkaLibrdkafkaThreads;
+    extern const Metric KafkaBackgroundReads;
+    extern const Metric KafkaConsumersInUse;
+    extern const Metric KafkaWrites;
+}
+
+namespace ProfileEvents
+{
+    extern const Event KafkaDirectReads;
+    extern const Event KafkaBackgroundReads;
+    extern const Event KafkaWrites;
+}
+
+
 namespace DB
 {
 
@@ -58,6 +78,7 @@ struct StorageKafkaInterceptors
     static rd_kafka_resp_err_t rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_thread_type_t thread_type, const char *, void * ctx)
     {
         StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+        CurrentMetrics::add(CurrentMetrics::KafkaLibrdkafkaThreads, 1);
 
         const auto & storage_id = self->getStorageID();
         const auto & table = storage_id.getTableName();
@@ -89,6 +110,7 @@ struct StorageKafkaInterceptors
     static rd_kafka_resp_err_t rdKafkaOnThreadExit(rd_kafka_t *, rd_kafka_thread_type_t, const char *, void * ctx)
     {
         StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+        CurrentMetrics::sub(CurrentMetrics::KafkaLibrdkafkaThreads, 1);
 
         std::lock_guard lock(self->thread_statuses_mutex);
         const auto it = std::find_if(self->thread_statuses.begin(), self->thread_statuses.end(), [](const auto & thread_status_ptr)
@@ -279,6 +301,8 @@ Pipe StorageKafka::read(
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
 
+    ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
+
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -303,6 +327,9 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaWrites};
+    ProfileEvents::increment(ProfileEvents::KafkaWrites);
 
     if (topics.size() > 1)
         throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
@@ -358,6 +385,7 @@ void StorageKafka::pushReadBuffer(ConsumerBufferPtr buffer)
     std::lock_guard lock(mutex);
     buffers.push_back(buffer);
     semaphore.set();
+    CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse, 1);
 }
 
 
@@ -382,6 +410,7 @@ ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
     std::lock_guard lock(mutex);
     auto buffer = buffers.back();
     buffers.pop_back();
+    CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse, 1);
     return buffer;
 }
 
@@ -614,6 +643,9 @@ bool StorageKafka::streamToViews()
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
+    ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
 
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
 
