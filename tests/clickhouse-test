@@ -535,7 +535,9 @@ class TestCase:
 
                 server_version = str(clickhouse_execute(args, "SELECT version()").decode())
                 # If server version is less or equal from the version specified in tag, we should skip this test.
-                if list(map(int, server_version.split('.'))) <= list(map(int, version_from_tag.split('.'))):
+                version_from_tag_split = list(map(int, version_from_tag.split('.')))
+                server_version_split = list(map(int, server_version.split('.')))
+                if server_version_split[:len(version_from_tag_split)] <= version_from_tag_split:
                     return True
 
         return False
