@@ -553,6 +553,7 @@ def test_insert_select_schema_inference(started_cluster):
     result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test.native.zst')")
     assert int(result) == 1
 
+
 def test_cluster_join(started_cluster):
     result = node1.query(
         """
