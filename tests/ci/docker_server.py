@@ -16,7 +16,6 @@ from commit_status_helper import post_commit_status
 from docker_images_check import DockerImage
 from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
-from git_helper import removeprefix
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
@@ -25,8 +24,7 @@ from version_helper import (
     ClickHouseVersion,
     get_tagged_versions,
     get_version_from_repo,
-    get_version_from_string,
-    get_version_from_tag,
+    version_arg,
 )
 
 TEMP_PATH = p.join(RUNNER_TEMP, "docker_images_check")
@@ -112,22 +110,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
-
-
-def version_arg(version: str) -> ClickHouseVersion:
-    version = removeprefix(version, "refs/tags/")
-    try:
-        return get_version_from_string(version)
-    except ValueError:
-        pass
-    try:
-        return get_version_from_tag(version)
-    except ValueError:
-        pass
-
-    raise argparse.ArgumentTypeError(
-        f"version {version} does not match tag of plain version"
-    )
 
 
 def auto_release_type(version: ClickHouseVersion, release_type: str) -> str:
