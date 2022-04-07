@@ -319,7 +319,7 @@ SeekableReadBufferPtr ReadBufferS3Factory::getReader()
         client_ptr,
         bucket,
         key,
-        verion_id,
+        version_id,
         s3_max_single_read_retries,
         read_settings,
         false /*use_external_buffer*/,

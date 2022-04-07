@@ -112,7 +112,7 @@ private:
     /// Recreate ReadBuffer and BlockInputStream for each file.
     bool initialize();
 
-    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key, const String & version_id);
+    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
 };
 
 /**
