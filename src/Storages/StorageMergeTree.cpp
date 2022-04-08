@@ -451,7 +451,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid);
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
         version = increment.get();
         entry.commit(version);
         String mutation_id = entry.file_name;
@@ -1752,7 +1752,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             {
                 auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
-                auto out = disk->writeFile(tmp_checksums_path, 4096);
+                auto out = disk->writeFile(tmp_checksums_path, 4096, WriteMode::Rewrite, local_context->getWriteSettings());
                 part->checksums.write(*out);
                 disk->moveFile(tmp_checksums_path, checksums_path);
 

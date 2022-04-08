@@ -86,7 +86,6 @@ def parse_env_variables(
     additional_pkgs,
     with_coverage,
     with_binaries,
-    coverity_scan,
 ):
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
@@ -179,7 +178,7 @@ def parse_env_variables(
         cmake_flags.append("-DENABLE_TESTS=0")
     elif package_type == "coverity":
         result.append("COMBINED_OUTPUT=coverity")
-        result.append("COV_TOKEN={}".format(cov_token))
+        result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
     elif split_binary:
         result.append("COMBINED_OUTPUT=shared_build")
 
@@ -328,13 +327,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--docker-image-version", default="latest", help="docker image tag to use"
     )
-    parser.add_argument("--cov_token", default="")
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
         args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
 
-    image_type = "binary" if args.package_type in ("performance", "coverity") else args.package_type
+    image_type = (
+        "binary"
+        if args.package_type in ("performance", "coverity")
+        else args.package_type
+    )
     image_name = "clickhouse/binary-builder"
 
     if not os.path.isabs(args.clickhouse_repo_path):
@@ -376,7 +378,6 @@ if __name__ == "__main__":
         args.additional_pkgs,
         args.with_coverage,
         args.with_binaries,
-        args.cov_token,
     )
 
     run_docker_image_with_env(

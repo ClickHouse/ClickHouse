@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Columns/ColumnArray.h>
+#include <IO/WriteSettings.h>
 
 
 namespace DB
@@ -21,7 +22,8 @@ public:
         CompressionCodecPtr default_codec_,
         const MergeTreeTransactionPtr & txn,
         bool reset_columns_ = false,
-        bool blocks_are_granules_size = false);
+        bool blocks_are_granules_size = false,
+        const WriteSettings & write_settings = {});
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
@@ -55,7 +57,8 @@ public:
             MergeTreeData::MutableDataPartPtr & new_part,
             bool sync,
             const NamesAndTypesList * total_columns_list = nullptr,
-            MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+            MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
+            const WriteSettings & settings = {});
 
     void finalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
@@ -72,7 +75,8 @@ private:
     using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
     WrittenFiles finalizePartOnDisk(
             const MergeTreeData::DataPartPtr & new_part,
-            MergeTreeData::DataPart::Checksums & checksums);
+            MergeTreeData::DataPart::Checksums & checksums,
+            const WriteSettings & write_settings);
 
     NamesAndTypesList columns_list;
     IMergeTreeDataPart::MinMaxIndex minmax_idx;

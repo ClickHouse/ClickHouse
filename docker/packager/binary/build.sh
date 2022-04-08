@@ -27,7 +27,9 @@ cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUI
 
 if [ "coverity" == "$COMBINED_OUTPUT" ]
 then
-    wget --post-data "token=$COV_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /opt/cov-analysis --strip-components 1
+    mkdir -p /opt/cov-analysis
+
+    wget --post-data "token=$COVERITY_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /opt/cov-analysis --strip-components 1
     export PATH=$PATH:/opt/cov-analysis/bin
     cov-configure --config ./coverity.config --template --comptype clangcc --compiler "$CC"
     SCAN_WRAPPER="cov-build --config ./coverity.config --dir cov-int"
