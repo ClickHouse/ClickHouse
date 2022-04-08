@@ -64,22 +64,22 @@ def get_packager_cmd(
     )
 
     if build_config["build_type"]:
-        cmd += " --build-type={}".format(build_config["build_type"])
+        cmd += f" --build-type={build_config['build_type']}"
     if build_config["sanitizer"]:
-        cmd += " --sanitizer={}".format(build_config["sanitizer"])
+        cmd += f" --sanitizer={build_config['sanitizer']}"
     if build_config["splitted"] == "splitted":
         cmd += " --split-binary"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
     cmd += " --cache=ccache"
-    cmd += " --ccache_dir={}".format(ccache_path)
+    cmd += f" --ccache_dir={ccache_path}"
 
     if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
         cmd += " --additional-pkgs"
 
-    cmd += " --docker-image-version={}".format(image_version)
-    cmd += " --version={}".format(build_version)
+    cmd += f" --docker-image-version={image_version}"
+    cmd += f" --version={build_version}"
 
     if _can_export_binaries(build_config):
         cmd += " --with-binaries=tests"
@@ -149,16 +149,9 @@ def create_json_artifact(
 
     json_name = "build_urls_" + build_name + ".json"
 
-    print(
-        "Dump json report",
-        result,
-        "to",
-        json_name,
-        "with env",
-        "build_urls_{build_name}",
-    )
+    print(f"Dump json report {result} to {json_name} with env build_urls_{build_name}")
 
-    with open(os.path.join(temp_path, json_name), "w") as build_links:
+    with open(os.path.join(temp_path, json_name), "w", encoding="utf-8") as build_links:
         json.dump(result, build_links)
 
 
@@ -337,7 +330,7 @@ def main():
 
     print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
 
-    print("::notice ::Log URL: {}".format(log_url))
+    print(f"::notice ::Log URL: {log_url}")
 
     create_json_artifact(
         TEMP_PATH, build_name, log_url, build_urls, build_config, elapsed, success
