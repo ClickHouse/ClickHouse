@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupImpl.h>
+#include <filesystem>
 
 
 namespace DB
@@ -30,8 +31,7 @@ private:
     std::unique_ptr<WriteBuffer> writeFileImpl(const String & file_name) override;
 
     DiskPtr disk;
-    String path;
-    String dir_path; /// `path` without terminating slash
+    std::filesystem::path path;
 };
 
 }
