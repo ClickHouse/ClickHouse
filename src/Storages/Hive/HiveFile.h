@@ -83,7 +83,7 @@ public:
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & storage_settings_,
-        ContextPtr context_)
+        const ContextPtr & context_)
         : WithContext(context_)
         , partition_values(partition_values_)
         , namenode_url(namenode_url_)
@@ -166,7 +166,7 @@ protected:
 
 using HiveFilePtr = std::shared_ptr<IHiveFile>;
 using HiveFiles = std::vector<HiveFilePtr>;
-using HiveFilesCache = LRUCache<String, HiveFilePtr>;
+using HiveFilesCache = LRUCache<String, IHiveFile>;
 using HiveFilesCachePtr = std::shared_ptr<HiveFilesCache>;
 
 class HiveTextFile : public IHiveFile
@@ -180,7 +180,7 @@ public:
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
-        ContextPtr context_)
+        const ContextPtr & context_)
         : IHiveFile(partition_values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
@@ -202,7 +202,7 @@ public:
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
-        ContextPtr context_)
+        const ContextPtr & context_)
         : IHiveFile(partition_values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
@@ -238,7 +238,7 @@ public:
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
-        ContextPtr context_)
+        const ContextPtr & context_)
         : IHiveFile(partition_values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }

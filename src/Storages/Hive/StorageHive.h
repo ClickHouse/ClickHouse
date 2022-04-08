@@ -91,31 +91,32 @@ private:
 
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-    static std::vector<FileInfo> listDirectory(const String & path, HiveTableMetadataPtr hive_table_metadata, const HDFSFSPtr & fs);
+    static std::vector<FileInfo> listDirectory(const String & path, const HiveTableMetadataPtr & hive_table_metadata, const HDFSFSPtr & fs);
 
     void initMinMaxIndexExpression();
 
     HiveFiles collectHiveFiles(
         unsigned max_threads,
         const SelectQueryInfo & query_info,
-        HiveTableMetadataPtr hive_table_metadata,
+        const HiveTableMetadataPtr & hive_table_metadata,
         const HDFSFSPtr & fs,
-        ContextPtr context_,
+        const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
     HiveFiles collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition,
         const SelectQueryInfo & query_info,
-        HiveTableMetadataPtr hive_table_metadata,
+        const HiveTableMetadataPtr & hive_table_metadata,
         const HDFSFSPtr & fs,
-        ContextPtr context_,
+        const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFilePtr createHiveFileIfNeeded(
+    HiveFilePtr getHiveFileIfNeeded(
         const FileInfo & file_info,
         const FieldVector & fields,
         const SelectQueryInfo & query_info,
-        ContextPtr context_,
+        const HiveTableMetadataPtr & hive_table_metadata,
+        const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
     void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
