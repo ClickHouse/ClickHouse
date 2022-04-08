@@ -119,6 +119,7 @@ struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 class Session;
+struct WriteSettings;
 
 class IInputFormat;
 class IOutputFormat;
@@ -912,6 +913,9 @@ public:
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
+
+    /** Get settings for writing to filesystem. */
+    WriteSettings getWriteSettings() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;

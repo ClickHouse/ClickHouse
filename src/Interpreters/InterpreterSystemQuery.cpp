@@ -7,6 +7,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
+#include <Common/FileCacheFactory.h>
+#include <Common/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -297,6 +299,21 @@ BlockIO InterpreterSystemQuery::execute()
                 cache->reset();
             break;
 #endif
+        case Type::DROP_FILESYSTEM_CACHE:
+        {
+            if (query.filesystem_cache_path.empty())
+            {
+                auto caches = FileCacheFactory::instance().getAll();
+                for (const auto & [_, cache_data] : caches)
+                    cache_data.cache->tryRemoveAll();
+            }
+            else
+            {
+                auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
+                cache->tryRemoveAll();
+            }
+            break;
+        }
         case Type::RELOAD_DICTIONARY:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
@@ -760,6 +777,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+        case Type::DROP_FILESYSTEM_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
