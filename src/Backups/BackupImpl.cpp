@@ -107,6 +107,7 @@ void BackupImpl::open(OpenMode open_mode_)
         timestamp = std::time(nullptr);
         uuid = UUIDHelpers::generateV4();
         writing_finalized = false;
+        written_files.clear();
     }
 
     if (open_mode_ == OpenMode::READ)
@@ -145,7 +146,7 @@ void BackupImpl::close()
     if (open_mode == OpenMode::NONE)
         return;
 
-    closeImpl(writing_finalized);
+    closeImpl(written_files, writing_finalized);
 
     uuid = UUIDHelpers::Nil;
     timestamp = 0;
@@ -213,6 +214,7 @@ void BackupImpl::writeBackupMetadata()
     std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     config->save(stream);
     String str = stream.str();
+    written_files.push_back(".backup");
     auto out = writeFileImpl(".backup");
     out->write(str.data(), str.size());
 }
@@ -526,6 +528,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     }
 
     /// Copy the entry's data after `copy_pos`.
+    written_files.push_back(file_name);
     auto out = writeFileImpl(file_name);
     copyData(*read_buffer, *out);
 

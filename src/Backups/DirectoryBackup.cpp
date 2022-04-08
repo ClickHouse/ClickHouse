@@ -56,13 +56,14 @@ void DirectoryBackup::openImpl(OpenMode open_mode_)
         disk->createDirectories(dir_path);
 }
 
-void DirectoryBackup::closeImpl(bool writing_finalized_)
+void DirectoryBackup::closeImpl(const Strings & written_files_, bool writing_finalized_)
 {
-    if ((getOpenModeNoLock() == OpenMode::WRITE) && !writing_finalized_ && disk->isDirectory(dir_path))
+    if ((getOpenModeNoLock() == OpenMode::WRITE) && !writing_finalized_ && !written_files_.empty())
     {
         /// Creating of the backup wasn't finished correctly,
         /// so the backup cannot be used and it's better to remove its files.
-        disk->removeRecursive(dir_path);
+        for (const String & file_name : written_files_)
+            disk->removeFileIfExists(file_name);
     }
 }
 
