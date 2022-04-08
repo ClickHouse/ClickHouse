@@ -424,7 +424,7 @@ static HiveFilePtr createHiveFile(
     size_t size,
     const NamesAndTypesList & index_names_and_types,
     const std::shared_ptr<HiveSettings> & hive_settings,
-    ContextPtr context)
+    const ContextPtr & context)
 {
     HiveFilePtr hive_file;
     if (format_name == "HiveText")
@@ -449,9 +449,9 @@ static HiveFilePtr createHiveFile(
 HiveFiles StorageHive::collectHiveFilesFromPartition(
     const Apache::Hadoop::Hive::Partition & partition,
     const SelectQueryInfo & query_info,
-    HiveTableMetadataPtr hive_table_metadata,
+    const HiveTableMetadataPtr & hive_table_metadata,
     const HDFSFSPtr & fs,
-    ContextPtr context_,
+    const ContextPtr & context_,
     PruneLevel prune_level) const
 {
     LOG_DEBUG(
@@ -517,7 +517,7 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     hive_files.reserve(file_infos.size());
     for (const auto & file_info : file_infos)
     {
-        auto hive_file = createHiveFileIfNeeded(file_info, fields, query_info, context_, prune_level);
+        auto hive_file = getHiveFileIfNeeded(file_info, fields, query_info, hive_table_metadata, context_, prune_level);
         if (hive_file)
         {
             LOG_TRACE(
@@ -533,42 +533,47 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
 }
 
 std::vector<StorageHive::FileInfo>
-StorageHive::listDirectory(const String & path, HiveTableMetadataPtr hive_table_metadata, const HDFSFSPtr & fs)
+StorageHive::listDirectory(const String & path, const HiveTableMetadataPtr & hive_table_metadata, const HDFSFSPtr & fs)
 {
     return hive_table_metadata->getFilesByLocation(fs, path);
 }
 
-HiveFilePtr StorageHive::createHiveFileIfNeeded(
+HiveFilePtr StorageHive::getHiveFileIfNeeded(
     const FileInfo & file_info,
     const FieldVector & fields,
     const SelectQueryInfo & query_info,
-    ContextPtr context_,
+    const HiveTableMetadataPtr & hive_table_metadata,
+    const ContextPtr & context_,
     PruneLevel prune_level) const
 {
-    LOG_TRACE(log, "Create hive file {} if needed, prune_level:{}", file_info.path, pruneLevelToString(prune_level));
+    LOG_TRACE(log, "Get hive file {} if needed, prune_level:{}", file_info.path, pruneLevelToString(prune_level));
 
     String filename = getBaseName(file_info.path);
     /// Skip temporary files starts with '.'
     if (startsWith(filename, "."))
         return {};
 
-    auto hive_file = createHiveFile(
-        format_name,
-        fields,
-        hdfs_namenode_url,
-        file_info.path,
-        file_info.last_modify_time,
-        file_info.size,
-        hivefile_name_types,
-        storage_settings,
-        context_);
-    /*
+    auto cache = hive_table_metadata->getHiveFilesCache();
+    auto hive_file = cache->get(file_info.path);
+    if (!hive_file || hive_file->getLastModTs() < file_info.last_modify_time)
     {
-        std::lock_guard lock{init_mutex};
-        hive_files_by_path[file_info.path] = hive_file;
-        std::cout << "size:" << hive_files_by_path.size() << std::endl;
+        LOG_TRACE(log, "Create hive file {}", file_info.path);
+        hive_file = createHiveFile(
+            format_name,
+            fields,
+            hdfs_namenode_url,
+            file_info.path,
+            file_info.last_modify_time,
+            file_info.size,
+            hivefile_name_types,
+            storage_settings,
+            context_);
+        cache->set(file_info.path, hive_file);
     }
-    */
+    else
+    {
+        LOG_TRACE(log, "Get hive file {} from cache", file_info.path);
+    }
 
     if (prune_level >= PruneLevel::File)
     {
@@ -711,9 +716,9 @@ Pipe StorageHive::read(
 HiveFiles StorageHive::collectHiveFiles(
     unsigned max_threads,
     const SelectQueryInfo & query_info,
-    HiveTableMetadataPtr hive_table_metadata,
+    const HiveTableMetadataPtr & hive_table_metadata,
     const HDFSFSPtr & fs,
-    ContextPtr context_,
+    const ContextPtr & context_,
     PruneLevel prune_level) const
 {
     std::vector<Apache::Hadoop::Hive::Partition> partitions = hive_table_metadata->getPartitions();
@@ -751,7 +756,7 @@ HiveFiles StorageHive::collectHiveFiles(
             pool.scheduleOrThrowOnError(
                 [&]()
                 {
-                    auto hive_file = createHiveFileIfNeeded(file_info, {}, query_info, context_, prune_level);
+                    auto hive_file = getHiveFileIfNeeded(file_info, {}, query_info, hive_table_metadata, context_, prune_level);
                     if (hive_file)
                     {
                         std::lock_guard<std::mutex> lock(hive_files_mutex);
