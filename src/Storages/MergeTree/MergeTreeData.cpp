@@ -5462,7 +5462,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
     }
 
-    auto parts = getVisibleDataPartsVector(query_context);
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    const auto & parts = snapshot_data.parts;
 
     // If minmax_count_projection is a valid candidate, check its completeness.
     if (minmax_count_projection_candidate)
