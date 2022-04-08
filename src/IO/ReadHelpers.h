@@ -163,6 +163,7 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
+void assertNotEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
