@@ -311,15 +311,14 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     fs::directory_iterator dir_end;
     for (fs::directory_iterator dir_it(path); dir_it != dir_end; ++dir_it)
     {
-        const fs::path kpfile = dir_it->path();
-        if (kpfile.filename().compare("lost+found") != 0 && stat(kpfile.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+        const fs::path keeper_file = dir_it->path();
+        if (keeper_file.filename() == "lost+found" && stat(keeper_file.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
         {
             const auto data_owner = getUserName(statbuf.st_uid);
-            std::string message = "Effective user of the process (" + effective_user +
-                ") does not match the owner (" + data_owner + ") of a data file.";
+            std::string message = fmt::format("Effective user of the process ({}) does not match the owner ({}) of a data file.",effective_user,data_owner);
             if (effective_user_id == 0)
             {
-                message += " Run under 'sudo -u " + data_owner + "'.";
+                message += fmt::format(" Run under 'sudo -u {}'.", data_owner);
                 throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
             }
             else

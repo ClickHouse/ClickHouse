@@ -841,14 +841,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     for (fs::directory_iterator dir_it(path); dir_it != dir_end; ++dir_it)
     {
         const fs::path dbfile = dir_it->path();
-        if (dbfile.filename().compare("lost+found") != 0 && stat(dbfile.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+        if (dbfile.filename() == "lost+found" && stat(dbfile.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
         {
             const auto data_owner = getUserName(statbuf.st_uid);
-            std::string message = "Effective user of the process (" + effective_user +
-                ") does not match the owner (" + data_owner + ") of a data file.";
+            std::string message = fmt::format("Effective user of the process ({}) does not match the owner ({}) of a data file.",effective_user,data_owner);
             if (effective_user_id == 0)
             {
-                message += " Run under 'sudo -u " + data_owner + "'.";
+                message += fmt::format(" Run under 'sudo -u {}'.", data_owner);
                 throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
             }
             else
