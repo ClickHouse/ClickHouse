@@ -92,7 +92,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 {
     /// Path to store new HDFS object.
     auto file_name = getRandomName();
-    auto hdfs_path = remote_fs_root_path + file_name;
+    auto hdfs_path = fs::path(remote_fs_root_path) / file_name;
 
     LOG_TRACE(log, "{} to file by path: {}. HDFS path: {}", mode == WriteMode::Rewrite ? "Write" : "Append",
               backQuote(metadata_disk->getPath() + path), hdfs_path);
@@ -106,7 +106,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
         readOrCreateUpdateAndStoreMetadata(path, mode, false, [file_name, count] (Metadata & metadata) { metadata.addObject(file_name, count); return true; });
     };
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(create_metadata_callback), path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(create_metadata_callback), hdfs_path);
 }
 
 
