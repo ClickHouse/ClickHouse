@@ -57,7 +57,6 @@ public:
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ScheduleFunc schedule_ = {},
-        const String & blob_name = "",
         FileCachePtr cache_ = nullptr);
 
     ~WriteBufferFromS3() override;
@@ -123,7 +122,6 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
 
-    const String blob_name;
     FileCachePtr cache;
     size_t current_download_offset = 0;
     std::optional<FileSegmentsHolder> file_segments_holder;
