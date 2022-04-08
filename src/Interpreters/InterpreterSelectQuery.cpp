@@ -329,11 +329,27 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 
-        storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr);
+        storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr, context);
     }
 
     if (has_input || !joined_tables.resolveTables())
         joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
+
+
+    if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+    {
+        if (storage)
+            checkStorageSupportsTransactionsIfNeeded(storage, context);
+        for (const auto & table : joined_tables.tablesWithColumns())
+        {
+            if (table.table.table.empty())
+                continue;
+            auto maybe_storage = DatabaseCatalog::instance().tryGetTable({table.table.database, table.table.table}, context);
+            if (!maybe_storage)
+                continue;
+            checkStorageSupportsTransactionsIfNeeded(storage, context);
+        }
+    }
 
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
@@ -1791,7 +1807,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         const auto & func = desc.function;
         std::optional<UInt64> num_rows{};
 
-        if (!query.prewhere() && !query.where())
+        if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
         {
             num_rows = storage->totalRows(settings);
         }
