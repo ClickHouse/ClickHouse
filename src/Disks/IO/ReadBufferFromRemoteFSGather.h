@@ -16,8 +16,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-
-
 /**
  * Remote disk might need to split one clickhouse file into multiple files in remote fs.
  * This class works like a proxy to allow transition from one file into multiple.
