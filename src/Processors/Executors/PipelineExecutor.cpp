@@ -8,6 +8,7 @@
 #include <QueryPipeline/printPipeline.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <base/scope_guard_safe.h>
 
@@ -27,9 +28,12 @@ namespace ErrorCodes
 PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
     : process_list_element(elem)
 {
+    if (process_list_element)
+        profile_processors = process_list_element->getContext()->getSettingsRef().log_processors_profiles;
+
     try
     {
-        graph = std::make_unique<ExecutingGraph>(processors);
+        graph = std::make_unique<ExecutingGraph>(processors, profile_processors);
     }
     catch (Exception & exception)
     {
@@ -259,7 +263,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
     Queue queue;
     graph->initializeExecution(queue);
 
-    tasks.init(num_threads);
+    tasks.init(num_threads, profile_processors);
     tasks.fill(queue);
 }
 

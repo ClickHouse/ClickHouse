@@ -149,7 +149,6 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
   SplitBuildSmokeTest:
     needs: [BuilderDebSplitted]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Set envs
@@ -316,7 +315,6 @@ jobs:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinRelease:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -362,7 +360,6 @@ jobs:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinGCC:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -636,7 +633,6 @@ jobs:
 ##########################################################################################
   BuilderDebSplitted:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -682,7 +678,6 @@ jobs:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinTidy:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -728,7 +723,6 @@ jobs:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinDarwin:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -774,7 +768,6 @@ jobs:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinAarch64:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -820,7 +813,6 @@ jobs:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinFreeBSD:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -866,7 +858,6 @@ jobs:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinDarwinAarch64:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -912,7 +903,6 @@ jobs:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinPPC64:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -957,6 +947,34 @@ jobs:
           docker rm -f "$(docker ps -a -q)" ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
 ############################################################################################
+##################################### Docker images  #######################################
+############################################################################################
+  DockerServerImages:
+    needs:
+      - BuilderDebRelease
+      - BuilderDebAarch64
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # otherwise we will have no version info
+      - name: Check docker clickhouse/clickhouse-server building
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_server.py --release-type head
+          python3 docker_server.py --release-type head --no-ubuntu \
+            --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
+############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
   BuilderReport:
@@ -974,10 +992,16 @@ jobs:
     steps:
       - name: Set envs
         run: |
+          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
+          ${{ toJSON(needs) }}
+          EOF
+          )
+          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/report_check
-          REPORTS_PATH=${{runner.temp}}/reports_dir
           CHECK_NAME=ClickHouse build check (actions)
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          TEMP_PATH=${{runner.temp}}/report_check
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -993,7 +1017,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME"
+          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
       - name: Cleanup
         if: always()
         run: |

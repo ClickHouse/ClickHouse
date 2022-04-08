@@ -25,6 +25,7 @@ namespace DB
 class IFileCache : private boost::noncopyable
 {
 friend class FileSegment;
+friend struct FileSegmentsHolder;
 
 public:
     using Key = UInt128;
@@ -32,9 +33,7 @@ public:
 
     IFileCache(
         const String & cache_base_path_,
-        size_t max_size_,
-        size_t max_element_size_,
-        size_t max_file_segment_size_);
+        const FileCacheSettings & cache_settings_);
 
     virtual ~IFileCache() = default;
 
@@ -43,7 +42,9 @@ public:
 
     virtual void remove(const Key & key) = 0;
 
-    static bool shouldBypassCache();
+    virtual void tryRemoveAll() = 0;
+
+    static bool isReadOnly();
 
     /// Cache capacity in bytes.
     size_t capacity() const { return max_size; }
@@ -53,6 +54,10 @@ public:
     String getPathInLocalCache(const Key & key, size_t offset);
 
     String getPathInLocalCache(const Key & key);
+
+    const String & getBasePath() const { return cache_base_path; }
+
+    virtual std::vector<String> tryGetCachePaths(const Key & key) = 0;
 
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
@@ -66,6 +71,10 @@ public:
      * it is guaranteed that these file segments are not removed from cache.
      */
     virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) = 0;
+
+    virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) = 0;
+
+    virtual FileSegments getSnapshot() const = 0;
 
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
@@ -111,15 +120,21 @@ class LRUFileCache final : public IFileCache
 public:
     LRUFileCache(
         const String & cache_base_path_,
-        size_t max_size_,
-        size_t max_element_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS,
-        size_t max_file_segment_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE);
+        const FileCacheSettings & cache_settings_);
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
+
+    FileSegments getSnapshot() const override;
+
+    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
 
     void initialize() override;
 
     void remove(const Key & key) override;
+
+    void tryRemoveAll() override;
+
+    std::vector<String> tryGetCachePaths(const Key & key) override;
 
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
@@ -193,8 +208,10 @@ private:
 
     void loadCacheInfoIntoMemory();
 
-    FileSegments splitRangeIntoEmptyCells(
-        const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
+    FileSegments splitRangeIntoCells(
+        const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
+
+    String dumpStructureImpl(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
 
 public:
     struct Stat
@@ -208,6 +225,7 @@ public:
     Stat getStat();
 
     String dumpStructure(const Key & key_) override;
+    void assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock);
 };
 
 }

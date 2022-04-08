@@ -54,6 +54,7 @@ def get_packager_cmd(
     build_version: str,
     image_version: str,
     ccache_path: str,
+    official: bool,
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
@@ -82,6 +83,9 @@ def get_packager_cmd(
 
     if _can_export_binaries(build_config):
         cmd += " --with-binaries=tests"
+
+    if official:
+        cmd += " --official"
 
     return cmd
 
@@ -254,11 +258,13 @@ def main():
 
     logging.info("Got version from repo %s", version.string)
 
+    official_flag = pr_info.number == 0
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         version_type = "stable"
+        official_flag = True
 
-    update_version_local(REPO_COPY, version, version_type)
+    update_version_local(version, version_type)
 
     logging.info("Updated local files with version")
 
@@ -290,7 +296,9 @@ def main():
         version.string,
         image_version,
         ccache_path,
+        official_flag,
     )
+
     logging.info("Going to run packager with %s", packager_cmd)
 
     build_clickhouse_log = os.path.join(TEMP_PATH, "build_log")
