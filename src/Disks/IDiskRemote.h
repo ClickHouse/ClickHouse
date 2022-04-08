@@ -13,7 +13,6 @@
 #include <Common/ThreadPool.h>
 #include <filesystem>
 
-
 namespace CurrentMetrics
 {
     extern const Metric DiskSpaceReservedForMerge;
@@ -21,6 +20,24 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+/// Path to blob with it's size
+struct BlobPathWithSize
+{
+    std::string relative_path;
+    uint64_t bytes_size;
+
+    BlobPathWithSize() = default;
+    BlobPathWithSize(const BlobPathWithSize & other) = default;
+
+    BlobPathWithSize(const std::string & relative_path_, uint64_t bytes_size_)
+        : relative_path(relative_path_)
+        , bytes_size(bytes_size_)
+    {}
+};
+
+/// List of blobs with their sizes
+using BlobsPathToSize = std::vector<BlobPathWithSize>;
 
 /// Helper class to collect paths into chunks of maximum size.
 /// For s3 it is Aws::vector<ObjectIdentifier>, for hdfs it is std::vector<std::string>.
@@ -191,10 +208,8 @@ using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
 /// Minimum info, required to be passed to ReadIndirectBufferFromRemoteFS<T>
 struct RemoteMetadata
 {
-    using PathAndSize = std::pair<String, size_t>;
-
     /// Remote FS objects paths and their sizes.
-    std::vector<PathAndSize> remote_fs_objects;
+    std::vector<BlobPathWithSize> remote_fs_objects;
 
     /// URI
     const String & remote_fs_root_path;
