@@ -701,24 +701,34 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
     }
 }
 
-void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node)
+bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probably_flat, const String & keep_child_node)
 {
     Strings children;
     if (tryGetChildren(path, children) != Coordination::Error::ZOK)
-        return;
+        return false;
+
+    bool removed_as_expected = true;
     while (!children.empty())
     {
         Coordination::Requests ops;
         Strings batch;
+        ops.reserve(MULTI_BATCH_SIZE);
+        batch.reserve(MULTI_BATCH_SIZE);
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             String child_path = fs::path(path) / children.back();
-            tryRemoveChildrenRecursive(child_path);
+
+            /// Will try to avoid recursive getChildren calls if child_path probably has no children.
+            /// It may be extremely slow when path contain a lot of leaf children.
+            if (!probably_flat)
+                tryRemoveChildrenRecursive(child_path);
+
             if (likely(keep_child_node.empty() || keep_child_node != children.back()))
             {
                 batch.push_back(child_path);
                 ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));
             }
+
             children.pop_back();
         }
 
@@ -726,10 +736,39 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         /// this means someone is concurrently removing these children and we will have
         /// to remove them one by one.
         Coordination::Responses responses;
-        if (tryMulti(ops, responses) != Coordination::Error::ZOK)
-            for (const std::string & child : batch)
-                tryRemove(child);
+        if (tryMulti(ops, responses) == Coordination::Error::ZOK)
+            continue;
+
+        removed_as_expected = false;
+
+        std::vector<zkutil::ZooKeeper::FutureRemove> futures;
+        futures.reserve(batch.size());
+        for (const std::string & child : batch)
+            futures.push_back(asyncTryRemoveNoThrow(child, -1));
+
+        for (size_t i = 0; i < batch.size(); ++i)
+        {
+            auto res = futures[i].get();
+            if (res.error == Coordination::Error::ZOK)
+                continue;
+            if (res.error == Coordination::Error::ZNONODE)
+                continue;
+
+            if (res.error == Coordination::Error::ZNOTEMPTY)
+            {
+                if (probably_flat)
+                {
+                    /// It actually has children, let's remove them
+                    tryRemoveChildrenRecursive(batch[i]);
+                    tryRemove(batch[i]);
+                }
+                continue;
+            }
+
+            throw KeeperException(res.error, batch[i]);
+        }
     }
+    return removed_as_expected;
 }
 
 void ZooKeeper::removeRecursive(const std::string & path)

@@ -28,6 +28,16 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False,
         },
+        "coverity": {
+            "compiler": "clang-13",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "coverity",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "tidy": "disable",
+            "with_coverage": False,
+        },
         "binary_gcc": {
             "compiler": "gcc-11",
             "build_type": "",
@@ -190,6 +200,7 @@ CI_CONFIG = {
         "ClickHouse build check (actions)": [
             "package_release",
             "performance",
+            "coverity",
             "package_aarch64",
             "package_asan",
             "package_ubsan",

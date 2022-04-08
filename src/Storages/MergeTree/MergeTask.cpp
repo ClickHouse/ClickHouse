@@ -230,7 +230,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         case MergeAlgorithm::Vertical :
         {
             ctx->rows_sources_file = createTemporaryFile(ctx->tmp_disk->getPath());
-            ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->writeFile(fileName(ctx->rows_sources_file->path()));
+            ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->writeFile(fileName(ctx->rows_sources_file->path()), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, global_ctx->context->getWriteSettings());
             ctx->rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*ctx->rows_sources_uncompressed_write_buf);
 
             MergeTreeDataPartInMemory::ColumnToSize local_merged_column_to_size;
@@ -261,7 +261,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
         ctx->compression_codec,
         /*reset_columns=*/ true,
-        ctx->blocks_are_granules_size);
+        ctx->blocks_are_granules_size,
+        global_ctx->context->getWriteSettings());
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -782,7 +783,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     Block header = pipes.at(0).getHeader();
     for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+        sort_description.emplace_back(sort_columns[i], 1, 1);
 
     /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
