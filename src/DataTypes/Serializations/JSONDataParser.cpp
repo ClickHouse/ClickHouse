@@ -230,7 +230,7 @@ template <typename ParserImpl>
 bool JSONDataParser<ParserImpl>::tryInsertDefaultFromNested(
     const ParseArrayContext & ctx, const PathInData::Parts & path, Array & array)
 {
-    /// If there was a size collected of the Nested
+    /// If there is a collected size of current Nested
     /// then insert array of this size as a default value.
 
     if (array.empty())
