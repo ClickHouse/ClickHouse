@@ -565,7 +565,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
             file_info.size,
             hivefile_name_types,
             storage_settings,
-            context_);
+            context_->getGlobalContext());
         cache->set(file_info.path, hive_file);
     }
     else
