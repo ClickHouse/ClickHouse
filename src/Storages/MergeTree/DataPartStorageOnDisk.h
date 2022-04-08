@@ -24,6 +24,8 @@ public:
     bool exists(const std::string & path) const override;
     bool exists() const override;
 
+    Poco::Timestamp getLastModified() const override;
+
     size_t getFileSize(const std::string & path) const override;
 
     DiskDirectoryIteratorPtr iterate() const override;
@@ -35,9 +37,11 @@ public:
     UInt64 calculateTotalSizeOnDisk() const override;
 
     bool isStoredOnRemoteDisk() const override;
+    bool supportZeroCopyReplication() const override;
 
     void writeChecksums(MergeTreeDataPartChecksums & checksums) const override;
     void writeColumns(NamesAndTypesList & columns) const override;
+    void writeDeleteOnDestroyMarker(Poco::Logger * log) const override;
 
     bool shallParticipateInMerges(const IStoragePolicy &) const override;
 

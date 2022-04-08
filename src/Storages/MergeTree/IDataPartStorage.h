@@ -35,6 +35,8 @@ public:
     virtual bool exists(const std::string & path) const = 0;
     virtual bool exists() const = 0;
 
+    virtual Poco::Timestamp getLastModified() const = 0;
+
     virtual DiskDirectoryIteratorPtr iterate() const = 0;
     virtual DiskDirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
 
@@ -46,10 +48,12 @@ public:
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
     virtual bool isStoredOnRemoteDisk() const { return false; }
+    virtual bool supportZeroCopyReplication() const { return false; }
 
     /// Should remove it later
     virtual void writeChecksums(MergeTreeDataPartChecksums & checksums) const = 0;
     virtual void writeColumns(NamesAndTypesList & columns) const = 0;
+    virtual void writeDeleteOnDestroyMarker(Poco::Logger * log) const = 0;
 
     /// A leak of abstraction
     virtual bool shallParticipateInMerges(const IStoragePolicy &) const { return true; }

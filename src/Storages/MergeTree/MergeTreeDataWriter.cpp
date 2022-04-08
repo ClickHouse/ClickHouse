@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Columns/ColumnConst.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Exception.h>
@@ -367,12 +368,16 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
 
+    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
+        createVolumeFromReservation(reservation, volume),
+        data.relative_data_path,
+        TMP_PREFIX + part_name);
+
     auto new_data_part = data.createPart(
         part_name,
         data.choosePartType(expected_size, block.rows()),
         new_part_info,
-        createVolumeFromReservation(reservation, volume),
-        TMP_PREFIX + part_name);
+        data_part_storage);
 
     if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
