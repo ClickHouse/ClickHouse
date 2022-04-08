@@ -102,7 +102,7 @@ KeeperServer::KeeperServer(
                         checkAndGetSuperdigest(configuration_and_settings_->super_digest)))
     , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
-    , recover(config.getBool("recover"))
+    , recover(config.has("keeper_server.recover") && config.getBool("keeper_server.recover"))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
@@ -127,7 +127,6 @@ void KeeperServer::loadLatestConfig()
 
 
         state_manager->save_config(*latest_log_store_config);
-        state_machine->commit_config(latest_log_store_config->get_log_idx(), latest_log_store_config);
         return;
     }
 
@@ -182,6 +181,13 @@ void KeeperServer::startup(bool enable_ipv6)
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
+    if (recover)
+    {
+        LOG_INFO(log, "Custom quorum size");
+        params.with_custom_commit_quorum_size(1);
+        params.with_custom_election_quorum_size(1);
+    }
+
     nuraft::asio_service::options asio_opts{};
     if (state_manager->isSecure())
     {
@@ -226,13 +232,12 @@ void KeeperServer::launchRaftServer(
     nuraft::ptr<nuraft::state_mgr> casted_state_manager = state_manager;
     nuraft::ptr<nuraft::state_machine> casted_state_machine = state_machine;
 
-    loadLatestConfig();
-
     /// raft_server creates unique_ptr from it
     nuraft::context * ctx = new nuraft::context(
         casted_state_manager, casted_state_machine,
         asio_listener, logger, rpc_cli_factory, scheduler, params);
 
+    loadLatestConfig();
     raft_instance = nuraft::cs_new<nuraft::raft_server>(ctx, init_options);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);

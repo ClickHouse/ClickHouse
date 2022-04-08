@@ -239,6 +239,18 @@ std::string Keeper::getDefaultConfigFileName() const
     return "keeper_config.xml";
 }
 
+void Keeper::handleCustomArguments(const std::string & arg, const std::string & value)
+{
+    if (arg == "force-recovery")
+    {
+        assert(value.empty());
+        config().setBool("keeper_server.recover", true);
+        return;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid argument {} provided", arg);
+}
+
 void Keeper::defineOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(
@@ -251,6 +263,12 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
             .required(false)
             .repeatable(false)
             .binding("version"));
+    options.addOption(
+        Poco::Util::Option("force-recovery", "force-recovery", "Force recovery mode allowing Keeper to overwrite cluster configuration")
+        .required(false)
+        .repeatable(false)
+        .noArgument()
+        .callback(Poco::Util::OptionCallback<Keeper>(this, &Keeper::handleCustomArguments)));
     BaseDaemon::defineOptions(options);
 }
 
