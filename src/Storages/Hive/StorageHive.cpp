@@ -2,12 +2,12 @@
 
 #if USE_HIVE
 
-#include <fmt/core.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <fmt/core.h>
 #include <Poco/URI.h>
-
 #include <base/logger_useful.h>
+
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
@@ -111,9 +111,9 @@ public:
         : SourceWithProgress(getHeader(sample_block_, source_info_))
         , WithContext(context_)
         , source_info(std::move(source_info_))
-        , hdfs_namenode_url(hdfs_namenode_url_)
+        , hdfs_namenode_url(std::move(hdfs_namenode_url_))
         , format(std::move(format_))
-        , compression_method(compression_method_)
+        , compression_method(std::move(compression_method_))
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
         , columns_description(getColumnsDescription(sample_block, source_info))
@@ -121,15 +121,25 @@ public:
         , format_settings(getFormatSettings(getContext()))
     {
         to_read_block = sample_block;
+
         /// Initialize to_read_block, which is used to read data from HDFS.
         for (const auto & name_type : source_info->partition_name_types)
         {
             if (to_read_block.has(name_type.name))
                 to_read_block.erase(name_type.name);
         }
+    }
 
-        /// Initialize format settings
-        format_settings.hive_text.input_field_names = text_input_field_names;
+    FormatSettings updateFormatSettings(const HiveFilePtr & hive_file)
+    {
+        auto updated = format_settings;
+        if (format == "HiveText")
+            updated.hive_text.input_field_names = text_input_field_names;
+        else if (format == "ORC")
+            updated.orc.skip_stripes = hive_file->getSkipSplits();
+        else if (format == "Parquet")
+            updated.parquet.skip_row_groups = hive_file->getSkipSplits();
+        return updated;
     }
 
     String getName() const override { return "Hive"; }
@@ -166,7 +176,8 @@ public:
 
                 /// Use local cache for remote storage if enabled.
                 std::unique_ptr<ReadBuffer> remote_read_buf;
-                if (ExternalDataSourceCache::instance().isInitialized() && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
+                if (ExternalDataSourceCache::instance().isInitialized()
+                    && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
                 {
                     size_t buff_size = raw_read_buf->internalBuffer().size();
                     if (buff_size == 0)
@@ -188,7 +199,7 @@ public:
                     read_buf = std::move(remote_read_buf);
 
                 auto input_format = FormatFactory::instance().getInputFormat(
-                    format, *read_buf, to_read_block, getContext(), max_block_size, format_settings);
+                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(curr_file));
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));
@@ -289,6 +300,7 @@ StorageHive::StorageHive(
     , partition_by_ast(partition_by_ast_)
     , storage_settings(std::move(storage_settings_))
 {
+    /// Check hive metastore url.
     getContext()->getRemoteHostFilter().checkURL(Poco::URI(hive_metastore_url));
 
     StorageInMemoryMetadata storage_metadata;
@@ -304,11 +316,13 @@ void StorageHive::lazyInitialize()
     if (has_initialized)
         return;
 
-
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
     auto hive_table_metadata = hive_metastore_client->getHiveTable(hive_database, hive_table);
 
     hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->sd.location);
+    /// Check HDFS namenode url.
+    getContext()->getRemoteHostFilter().checkURL(Poco::URI(hdfs_namenode_url));
+
     table_schema = hive_table_metadata->sd.cols;
 
     FileFormat hdfs_file_format = IHiveFile::toFileFormat(hive_table_metadata->sd.inputFormat);
@@ -319,10 +333,8 @@ void StorageHive::lazyInitialize()
             format_name = "HiveText";
             break;
         case FileFormat::RC_FILE:
-            /// TODO to be implemented
             throw Exception("Unsopported hive format rc_file", ErrorCodes::NOT_IMPLEMENTED);
         case FileFormat::SEQUENCE_FILE:
-            /// TODO to be implemented
             throw Exception("Unsopported hive format sequence_file", ErrorCodes::NOT_IMPLEMENTED);
         case FileFormat::AVRO:
             format_name = "Avro";
@@ -418,7 +430,7 @@ HiveFilePtr createHiveFile(
     }
     else if (format_name == "ORC")
     {
-        hive_file = std::make_shared<HiveOrcFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context);
+        hive_file = std::make_shared<HiveORCFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context);
     }
     else if (format_name == "Parquet")
     {
@@ -531,29 +543,35 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
 
     /// Load file level minmax index and apply
     const KeyCondition hivefile_key_condition(query_info, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
-    if (hive_file->hasMinMaxIndex())
+    if (hive_file->useFileMinMaxIndex())
     {
-        hive_file->loadMinMaxIndex();
+        hive_file->loadFileMinMaxIndex();
         if (!hivefile_key_condition.checkInHyperrectangle(hive_file->getMinMaxIndex()->hyperrectangle, hivefile_name_types.getTypes())
                  .can_be_true)
         {
-            LOG_TRACE(log, "Skip hive file {} by index {}", hive_file->getPath(), hive_file->describeMinMaxIndex(hive_file->getMinMaxIndex()));
+            LOG_TRACE(
+                log, "Skip hive file {} by index {}", hive_file->getPath(), hive_file->describeMinMaxIndex(hive_file->getMinMaxIndex()));
             return {};
         }
     }
 
     /// Load sub-file level minmax index and apply
-    if (hive_file->hasSubMinMaxIndex())
+    if (hive_file->useSplitMinMaxIndex())
     {
-        std::set<int> skip_splits;
-        hive_file->loadSubMinMaxIndex();
+        std::unordered_set<int> skip_splits;
+        hive_file->loadSplitMinMaxIndex();
         const auto & sub_minmax_idxes = hive_file->getSubMinMaxIndexes();
         for (size_t i = 0; i < sub_minmax_idxes.size(); ++i)
         {
             if (!hivefile_key_condition.checkInHyperrectangle(sub_minmax_idxes[i]->hyperrectangle, hivefile_name_types.getTypes())
                      .can_be_true)
             {
-                LOG_TRACE(log, "Skip split {} of hive file {}", i, hive_file->getPath());
+                LOG_TRACE(
+                    log,
+                    "Skip split {} of hive file {} by index {}",
+                    i,
+                    hive_file->getPath(),
+                    hive_file->describeMinMaxIndex(sub_minmax_idxes[i]));
                 skip_splits.insert(i);
             }
         }
@@ -741,6 +759,7 @@ void registerStorageHive(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
+            .source_access_type = AccessType::HIVE,
         });
 }
 

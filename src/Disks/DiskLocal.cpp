@@ -333,6 +333,7 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 {
     fs::path from_file = fs::path(disk_path) / from_path;
     fs::path to_file = fs::path(disk_path) / to_path;
+    fs::create_directories(to_file.parent_path());
     fs::rename(from_file, to_file);
 }
 

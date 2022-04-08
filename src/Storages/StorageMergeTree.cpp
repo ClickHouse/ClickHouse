@@ -1347,9 +1347,14 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
-        String partition_id = getPartitionIDFromQuery(partition, local_context);
-        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
-
+        const auto * partition_ast = partition->as<ASTPartition>();
+        if (partition_ast && partition_ast->all)
+            parts_to_remove = getDataPartsVector();
+        else
+        {
+            String partition_id = getPartitionIDFromQuery(partition, local_context);
+            parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
+        }
         /// TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(parts_to_remove, true);
     }
