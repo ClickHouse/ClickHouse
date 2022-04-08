@@ -84,6 +84,22 @@ std::optional<size_t> IHiveFile::getRows()
     return rows;
 }
 
+void IHiveFile::loadFileMinMaxIndex()
+{
+    if (file_minmax_idx_loaded)
+        return;
+    loadFileMinMaxIndexImpl();
+    file_minmax_idx_loaded = true;
+}
+
+void IHiveFile::loadSplitMinMaxIndexes()
+{
+    if (split_minmax_idxes_loaded)
+        return;
+    loadSplitMinMaxIndexesImpl();
+    split_minmax_idxes_loaded = true;
+}
+
 Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
 {
     if (!col_stats || col_stats->hasNull())
@@ -190,7 +206,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
     return idx;
 }
 
-void HiveORCFile::loadFileMinMaxIndex()
+void HiveORCFile::loadFileMinMaxIndexImpl()
 {
     if (!reader)
     {
@@ -208,7 +224,7 @@ bool HiveORCFile::useSplitMinMaxIndex() const
 }
 
 
-void HiveORCFile::loadSplitMinMaxIndex()
+void HiveORCFile::loadSplitMinMaxIndexesImpl()
 {
     if (!reader)
     {
@@ -257,7 +273,7 @@ void HiveParquetFile::prepareReader()
     THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped), arrow::default_memory_pool(), &reader));
 }
 
-void HiveParquetFile::loadSplitMinMaxIndex()
+void HiveParquetFile::loadSplitMinMaxIndexesImpl()
 {
     if (!reader)
         prepareReader();

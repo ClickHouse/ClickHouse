@@ -319,7 +319,7 @@ void StorageHive::lazyInitialize()
     if (has_initialized)
         return;
 
-    auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
+    auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getHiveTable(hive_database, hive_table);
 
     hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->sd.location);
@@ -415,7 +415,7 @@ ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
 }
 
 
-HiveFilePtr createHiveFile(
+static HiveFilePtr createHiveFile(
     const String & format_name,
     const FieldVector & fields,
     const String & namenode_url,
@@ -562,6 +562,13 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
         hivefile_name_types,
         storage_settings,
         context_);
+    /*
+    {
+        std::lock_guard lock{init_mutex};
+        hive_files_by_path[file_info.path] = hive_file;
+        std::cout << "size:" << hive_files_by_path.size() << std::endl;
+    }
+    */
 
     if (prune_level >= PruneLevel::File)
     {
@@ -588,7 +595,7 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
             {
                 /// Load sub-file level minmax index and apply
                 std::unordered_set<int> skip_splits;
-                hive_file->loadSplitMinMaxIndex();
+                hive_file->loadSplitMinMaxIndexes();
                 const auto & sub_minmax_idxes = hive_file->getSubMinMaxIndexes();
                 for (size_t i = 0; i < sub_minmax_idxes.size(); ++i)
                 {
@@ -654,7 +661,7 @@ Pipe StorageHive::read(
 
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, context_->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
-    auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
+    auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
 
     /// Collect Hive files to read
@@ -788,7 +795,7 @@ StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & qu
     if (!isColumnOriented())
         return {};
 
-    auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
+    auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());

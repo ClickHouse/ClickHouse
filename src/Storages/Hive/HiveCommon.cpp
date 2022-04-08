@@ -128,7 +128,7 @@ HiveMetastoreClient::HiveTableMetadataPtr HiveMetastoreClient::getTableMetadata(
         }
 
         metadata = std::make_shared<HiveMetastoreClient::HiveTableMetadata>(
-            db_name, table_name, table, std::move(new_partition_infos), getContext());
+            db_name, table_name, table, std::move(new_partition_infos));
         table_metadata_cache.set(cache_key, metadata);
     }
     return metadata;
@@ -232,7 +232,7 @@ using namespace apache::thrift::protocol;
 using namespace apache::thrift::transport;
 using namespace Apache::Hadoop::Hive;
 
-HiveMetastoreClientPtr HiveMetastoreClientFactory::getOrCreate(const String & name, ContextPtr context)
+HiveMetastoreClientPtr HiveMetastoreClientFactory::getOrCreate(const String & name)
 {
 
     std::lock_guard lock(mutex);
@@ -243,7 +243,7 @@ HiveMetastoreClientPtr HiveMetastoreClientFactory::getOrCreate(const String & na
         {
             return createThriftHiveMetastoreClient(name);
         };
-        auto client = std::make_shared<HiveMetastoreClient>(builder, context->getGlobalContext());
+        auto client = std::make_shared<HiveMetastoreClient>(builder);
         clients[name] = client;
         return client;
     }

@@ -131,7 +131,7 @@ private:
     String hive_database;
     String hive_table;
 
-    std::mutex init_mutex;
+    mutable std::mutex init_mutex;
     bool has_initialized = false;
 
     /// Hive table meta
@@ -154,6 +154,8 @@ private:
     ExpressionActionsPtr hivefile_minmax_idx_expr;
 
     std::shared_ptr<HiveSettings> storage_settings;
+
+    // mutable std::map<String, HiveFilePtr> hive_files_by_path;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
 };
