@@ -8,24 +8,20 @@ CREATE TABLE t2 (key UInt32, s String) engine = MergeTree ORDER BY key;
 {% set rtable_size = 1000000 -%}
 
 INSERT INTO t1
-    SELECT key, any(s) as s FROM (
     SELECT
         sipHash64(number, 'x') % {{ ltable_size }} + 1 as key,
         'val' || toString(number) as s
     FROM numbers_mt({{ ltable_size }})
-    ) group by key
 ;
 
 INSERT INTO t2
-    SELECT key, any(s) as s FROM (
     SELECT
         sipHash64(number, 'y') % {{ rtable_size }} + 1 as key,
         'val' || toString(number) as s
     FROM numbers_mt({{ rtable_size }})
-    ) group by key
 ;
 
-SET join_algorithm = 'full_sorting_merge';
+-- SET join_algorithm = 'full_sorting_merge';
 
 {% for block_size in [32001, 65505, 65536, range(32001, 65536) | random] %}
 

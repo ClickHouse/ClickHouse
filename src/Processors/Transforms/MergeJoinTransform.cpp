@@ -27,22 +27,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
 constexpr size_t EMPTY_VALUE_IDX = std::numeric_limits<size_t>::max();
 
-FullMergeJoinCursor createCursor(const Block & block, const Names & columns)
-{
-    SortDescription desc;
-    desc.reserve(columns.size());
-    for (const auto & name : columns)
-        desc.emplace_back(name);
-    return FullMergeJoinCursor(block, desc);
-}
-
 template <bool has_left_nulls, bool has_right_nulls>
-int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos, int null_direction_hint = 1)
+static int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos, int null_direction_hint = 1)
 {
     if constexpr (has_left_nulls && has_right_nulls)
     {
@@ -84,6 +72,111 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
     }
 
     return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+}
+
+FullMergeJoinCursor::FullMergeJoinCursor(const Block & block, const SortDescription & desc_)
+    : impl(block, desc_)
+    , sample_block(block)
+{
+}
+
+bool ALWAYS_INLINE FullMergeJoinCursor::sameNext() const
+{
+    if (!impl.isValid() || impl.isLast())
+        return false;
+
+    for (size_t i = 0; i < impl.sort_columns_size; ++i)
+    {
+        const auto & col = *impl.sort_columns[i];
+        int cmp = nullableCompareAt<true, true>(
+            col, col, impl.getRow(), impl.getRow() + 1, 0);
+        if (cmp != 0)
+            return false;
+    }
+    return true;
+}
+
+bool FullMergeJoinCursor::sameUnitlEnd() const
+{
+    if (!impl.isValid() || impl.isLast())
+        return true;
+
+    for (size_t i = 0; i < impl.sort_columns_size; ++i)
+    {
+        const auto & col = *impl.sort_columns[i];
+        int cmp = nullableCompareAt<true, true>(
+            col, col, impl.getRow(), impl.rows - 1, 0);
+        if (cmp != 0)
+            return false;
+    }
+
+    return true;
+}
+
+size_t FullMergeJoinCursor::nextDistinct()
+{
+    if (sameUnitlEnd())
+        return 0;
+
+    size_t start_pos = impl.getRow();
+    while (sameNext())
+    {
+        impl.next();
+    }
+    impl.next();
+    return impl.getRow() - start_pos;
+}
+
+void FullMergeJoinCursor::reset()
+{
+    current_input = {};
+    resetInternalCursor();
+}
+
+const Chunk & FullMergeJoinCursor::getCurrentChunk() const
+{
+    return current_input.chunk;
+}
+
+void FullMergeJoinCursor::setInput(IMergingAlgorithm::Input && input)
+{
+    if (input.skip_last_row)
+        throw Exception("FullMergeJoinCursor does not support skipLastRow", ErrorCodes::NOT_IMPLEMENTED);
+
+    if (current_input.permutation)
+        throw DB::Exception("FullMergeJoinCursor: permutation is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+
+    current_input = std::move(input);
+
+    if (!current_input.chunk)
+        fully_completed = true;
+
+    resetInternalCursor();
+}
+
+void FullMergeJoinCursor::resetInternalCursor()
+{
+    if (current_input.chunk)
+    {
+        impl.reset(current_input.chunk.getColumns(), sample_block, current_input.permutation);
+    }
+    else
+    {
+        impl.reset(sample_block.cloneEmpty().getColumns(), sample_block);
+    }
+}
+
+namespace
+{
+
+FullMergeJoinCursor createCursor(const Block & block, const Names & columns)
+{
+    SortDescription desc;
+    desc.reserve(columns.size());
+    for (const auto & name : columns)
+        desc.emplace_back(name);
+    return FullMergeJoinCursor(block, desc);
 }
 
 /// If on_pos == true, compare two columns at specified positions.
@@ -224,13 +317,16 @@ void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
     if (input.chunk.getNumRows() >= EMPTY_VALUE_IDX)
         throw Exception("Too many rows in input", ErrorCodes::TOO_MANY_ROWS);
 
+    if (input.chunk)
+        stat.num_blocks[source_num] += 1;
+
     cursors[source_num].setInput(std::move(input));
 }
 
 using JoinKind = ASTTableJoin::Kind;
 
 template <JoinKind kind>
-static void anyJoin(FullMergeJoinCursor & left_cursor, FullMergeJoinCursor & right_cursor, PaddedPODArray<UInt64> & left_map, PaddedPODArray<UInt64> & right_map)
+static std::optional<size_t> anyJoin(FullMergeJoinCursor & left_cursor, FullMergeJoinCursor & right_cursor, PaddedPODArray<UInt64> & left_map, PaddedPODArray<UInt64> & right_map)
 {
     static_assert(kind == JoinKind::Left || kind == JoinKind::Right || kind == JoinKind::Inner, "Invalid join kind");
 
@@ -267,17 +363,24 @@ static void anyJoin(FullMergeJoinCursor & left_cursor, FullMergeJoinCursor & rig
         }
         else if (cmp < 0)
         {
+            size_t num = left_cursor.nextDistinct();
+            if (num == 0)
+                return 0;
+
             if constexpr (kind == JoinKind::Left)
-                right_map.emplace_back(right_cursor->rows);
-            left_cursor->next();
+                right_map.resize_fill(right_map.size() + num, right_cursor->rows);
         }
         else
         {
+            size_t num = right_cursor.nextDistinct();
+            if (num == 0)
+                return 1;
+
             if constexpr (kind == JoinKind::Right)
-                left_map.emplace_back(left_cursor->rows);
-            right_cursor->next();
+                left_map.resize_fill(left_map.size() + num, left_cursor->rows);
         }
     }
+    return std::nullopt;
 }
 
 static Chunk createBlockWithDefaults(const Chunk & lhs, const Chunk & rhs, size_t start, size_t num_rows)
@@ -311,6 +414,13 @@ static bool isFinished(const std::vector<FullMergeJoinCursor> & cursors, JoinKin
 
 IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 {
+    if (required_input.has_value())
+    {
+        size_t r = required_input.value();
+        required_input = {};
+        return Status(r);
+    }
+
     if (!cursors[0]->isValid() && !cursors[0].fullyCompleted())
     {
         return Status(0);
@@ -371,15 +481,15 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     std::pair<size_t, size_t> prev_pos = std::make_pair(cursors[0]->getRow(), cursors[1]->getRow());
     if (isInner(kind))
     {
-        anyJoin<JoinKind::Inner>(cursors[0], cursors[1], left_map->getData(), right_map->getData());
+        required_input = anyJoin<JoinKind::Inner>(cursors[0], cursors[1], left_map->getData(), right_map->getData());
     }
     else if (isLeft(kind))
     {
-        anyJoin<JoinKind::Left>(cursors[0], cursors[1], left_map->getData(), right_map->getData());
+        required_input = anyJoin<JoinKind::Left>(cursors[0], cursors[1], left_map->getData(), right_map->getData());
     }
     else if (isRight(kind))
     {
-        anyJoin<JoinKind::Right>(cursors[0], cursors[1], left_map->getData(), right_map->getData());
+        required_input = anyJoin<JoinKind::Right>(cursors[0], cursors[1], left_map->getData(), right_map->getData());
     }
     else
     {
@@ -408,7 +518,7 @@ MergeJoinTransform::MergeJoinTransform(
 
 void MergeJoinTransform::onFinish()
 {
-    LOG_TRACE(log, "TODO: remove onFinish");
+    algorithm.onFinish(total_stopwatch.elapsedSeconds());
 }
 
 
