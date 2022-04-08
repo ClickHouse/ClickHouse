@@ -3,9 +3,19 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
+#include <knnquery.h>
+#include <methodfactory.h>
+#include <object.h>
+#include <params.h>
+#include <space.h>
 #include <spacefactory.h>
 #include <Storages/MergeTree/MergeTreeIndexSimpleHnsw.h>
+#include <space/space_lp.h>
+#include <space/space_scalar.h>
+#include <Poco/Logger.h>
+#include "Storages/MergeTree/KeyCondition.h"
 
 namespace DB
 {
@@ -13,6 +23,90 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace detail{
+
+    using namespace similarity;
+
+    void freeAndClearObjectVector(ObjectVector &data) {
+    for (auto& datum: data) {
+        delete datum;
+    }
+    data.clear();
+}
+
+template<typename Dist>
+struct IndexWrap {
+    IndexWrap(const std::string &method_,
+              const std::string &space_type_,
+              const AnyParams &space_params = AnyParams()) :
+            method(method_), space_type(space_type_), space(SpaceFactoryRegistry<Dist>::Instance().CreateSpace(
+            space_type_, space_params)) {
+    }
+
+    void createIndex(const AnyParams &index_params, bool print_progress = false) {
+        index.reset(MethodFactoryRegistry<Dist>::Instance().CreateMethod(print_progress,
+                                                                           method, space_type, *space, data));
+        index->CreateIndex(index_params);
+    }
+
+    void loadIndex(std::istream &input, bool load_data = true) {
+        index.reset(MethodFactoryRegistry<Dist>::Instance().CreateMethod(false,
+                                                                           method, space_type, *space, data));
+        if (load_data) {
+            std::vector<std::string> dummy;
+            freeAndClearObjectVector(data);
+            size_t qty;
+            size_t obj_size;
+            readBinaryPOD(input, qty);
+            for (size_t i = 0; i < qty; ++i) {
+                readBinaryPOD(input, obj_size);
+                unique_ptr<char[]> buf(new char[obj_size]);
+                input.read(&buf[0], obj_size);
+                data.push_back(new Object(buf.release(), true));
+            }
+        }
+        index->LoadIndex(input);
+        index->ResetQueryTimeParams();
+    }
+
+    void saveIndex(std::ostream &output, bool save_data = true) {
+        if (save_data) {
+            writeBinaryPOD(output, data.size());
+            for (auto &i: data) {
+                writeBinaryPOD(output, i->bufferlength());
+                output.write(i->buffer(), i->bufferlength());
+            }
+        }
+        index->SaveIndex(output);
+    }
+
+    KNNQueue<Dist> knnQuery(const Object &obj, size_t k) {
+        KNNQuery<Dist> knn(*space, &obj, k);
+        index->Search(knn, -1);
+        return knn.Result()->Clone();
+    }
+
+    void addPoint(const Object &point) {
+        data.push_back(new Object(data.size(), -1, point.datalength(), point.data()));
+    }
+
+    void addBatch(const std::vector<Object> &new_data) {
+        for (const auto &elem: new_data) {
+            addPoint(elem);
+        }
+    }
+
+
+private:
+    std::string method;
+    std::string space_type;
+    std::unique_ptr<similarity::Space<Dist>> space;
+    std::unique_ptr<Index<Dist>> index;
+    ObjectVector data;
+
+};
 }
 
 MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, 
@@ -23,10 +117,11 @@ MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & 
 
 
 MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_,
-    const Block & index_sample_block_, 
+    const Block & index_sample_block_, std::unique_ptr<similarity::Space<float>> space_, similarity::ObjectVector && data_, 
     std::unique_ptr<similarity::Hnsw<float>> index_impl_)
-    : index_name(index_name_)
-    , index_sample_block(index_sample_block_), index_impl(std::move(index_impl_))
+    : index_name(index_name_),
+     index_sample_block(index_sample_block_), space(std::move(space_)),
+     data(std::move(data_)), index_impl(std::move(index_impl_))
 {}
 
 
@@ -47,6 +142,12 @@ void MergeTreeIndexGranuleSimpleHnsw::deserializeBinary(ReadBuffer & istr, Merge
     index_impl->LoadIndex(ist);
 }
 
+MergeTreeIndexGranuleSimpleHnsw::~MergeTreeIndexGranuleSimpleHnsw() {
+    for (auto & obj : data){
+        delete obj;
+    }
+ }
+
 MergeTreeIndexAggregatorSimpleHnsw::MergeTreeIndexAggregatorSimpleHnsw(const String & index_name_, 
 const Block & index_sample_block_)
     : index_name(index_name_)
@@ -55,11 +156,12 @@ const Block & index_sample_block_)
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSimpleHnsw::getGranuleAndReset()
 {
-    std::string space_type = "l2";
-    auto space_params = std::shared_ptr<similarity::AnyParams>(new similarity::AnyParams(std::vector<std::string>()));
-    auto* space(similarity::SpaceFactoryRegistry<float>::Instance().CreateSpace(space_type, *space_params));
+    auto space = std::unique_ptr<similarity::Space<float>>(new similarity::SpaceLp<float>(2));
+    similarity::AnyParams params;
     auto index_impl = std::make_unique<similarity::Hnsw<float>>(false, *space, data);
-    return std::make_shared<MergeTreeIndexGranuleSimpleHnsw>(index_name, index_sample_block, std::move(index_impl));
+    index_impl->CreateIndex(params);
+    return std::make_shared<MergeTreeIndexGranuleSimpleHnsw>(index_name, index_sample_block, std::move(space),
+    std::move(data) ,std::move(index_impl));
 }
 
 void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * pos, size_t limit){
@@ -78,7 +180,10 @@ void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * po
         column->get(i, field);
 
         auto field_array = field.safeGet<Tuple>();
-        float *raw_vector = new float[field_array.size()];
+
+        auto *obj = new similarity::Object(-1, i, field_array.size() * sizeof(float), nullptr); 
+
+        float *raw_vector = reinterpret_cast<float*>(obj->data());
 
         // Store vectors in the flatten arrays
         for (size_t j = 0; j < field_array.size();++j) {
@@ -86,7 +191,7 @@ void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * po
             raw_vector[j] = num;
         }
          // true here means that the element in vector is responsible for deleting
-        data.push_back(new similarity::Object(reinterpret_cast<char*>(raw_vector), true)); 
+        data.push_back(obj); 
     }
 
     *pos += rows_read;
@@ -103,18 +208,26 @@ MergeTreeIndexConditionSimpleHnsw::MergeTreeIndexConditionSimpleHnsw(
 
 bool MergeTreeIndexConditionSimpleHnsw::alwaysUnknownOrTrue() const
 {
-    return condition.alwaysUnknownOrTrue();
+    return false;
 }
 
-bool MergeTreeIndexConditionSimpleHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
+bool MergeTreeIndexConditionSimpleHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    // std::shared_ptr<MergeTreeIndexGranuleSimpleHnsw> granule
-    //     = std::dynamic_pointer_cast<MergeTreeIndexGranuleSimpleHnsw>(idx_granule);
-    // if (!granule)
-    //     throw Exception(
-    //         "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
-    // return condition.checkInHyperrectangle(granule->hyperrectangle, index_data_types).can_be_true;
-    return true;
+    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Here we are");
+    auto center_obj = std::make_unique<similarity::Object>(-1, -1, 3 * sizeof(float), nullptr);
+    auto *raw_center_obj = reinterpret_cast<float*>(center_obj->data());
+    raw_center_obj[0] = 0;
+    raw_center_obj[1] = 0;
+    raw_center_obj[2] = 0;
+    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Create query");
+    std::shared_ptr<MergeTreeIndexGranuleSimpleHnsw> granule
+         = std::dynamic_pointer_cast<MergeTreeIndexGranuleSimpleHnsw>(idx_granule);
+    if (!granule)
+         throw Exception(
+             "SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+    auto query = similarity::KNNQuery<float>(*granule->space, center_obj.get(), 1);
+    granule->index_impl->Search(&query, -1);
+    return query.Radius() < 10;
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexSimpleHnsw::createIndexGranule() const

@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <index.h>
+#include <space.h>
 #include "object.h"
 namespace DB
 {
@@ -14,9 +15,11 @@ namespace DB
 struct MergeTreeIndexGranuleSimpleHnsw final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_);
-    MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_, std::unique_ptr<similarity::Hnsw<float>> index_impl_);
-    ~MergeTreeIndexGranuleSimpleHnsw() override = default;
-
+    MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_,
+    std::unique_ptr<similarity::Space<float>> space_, similarity::ObjectVector && data_,
+    std::unique_ptr<similarity::Hnsw<float>> index_impl_);
+    ~MergeTreeIndexGranuleSimpleHnsw() override;
+ 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
@@ -24,6 +27,8 @@ struct MergeTreeIndexGranuleSimpleHnsw final : public IMergeTreeIndexGranule
 
     String index_name;
     Block index_sample_block;
+    std::unique_ptr<similarity::Space<float>> space;
+    similarity::ObjectVector data;
     std::unique_ptr<similarity::Hnsw<float>> index_impl; // unique_ptr for default construction
 };
 
