@@ -13,9 +13,13 @@ RUN apt-get update && apt-get --yes --allow-unauthenticated install clang-14 lib
 # repo versions doesn't work correctly with C++17
 # also we push reports to s3, so we add index.html to subfolder urls
 # https://github.com/ClickHouse-Extras/woboq_codebrowser/commit/37e15eaf377b920acb0b48dbe82471be9203f76b
-RUN git clone https://github.com/ClickHouse-Extras/woboq_codebrowser
-
-RUN cd woboq_codebrowser && cmake . -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang\+\+-14 -DCMAKE_C_COMPILER=clang-14 && make -j
+# TODO: remove branch in a few weeks after merge, e.g. in May or June 2022
+RUN git clone https://github.com/ClickHouse-Extras/woboq_codebrowser --branch llvm-14 \
+  && cd woboq_codebrowser \
+  && cmake . -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang\+\+-14 -DCMAKE_C_COMPILER=clang-14 \
+  && make -j \
+  && cd .. \
+  && rm -rf woboq_codebrowser
 
 ENV CODEGEN=/woboq_codebrowser/generator/codebrowser_generator
 ENV CODEINDEX=/woboq_codebrowser/indexgenerator/codebrowser_indexgenerator
