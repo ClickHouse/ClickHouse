@@ -27,8 +27,7 @@ friend class ReadIndirectBufferFromRemoteFS;
 public:
     ReadBufferFromRemoteFSGather(
         const RemoteMetadata & metadata_,
-        const ReadSettings & settings_,
-        const String & path_);
+        const ReadSettings & settings_);
 
     String getFileName() const;
 
@@ -89,8 +88,6 @@ private:
      */
     size_t bytes_to_ignore = 0;
 
-    String canonical_path;
-
     Poco::Logger * log;
 };
 
@@ -101,13 +98,12 @@ class ReadBufferFromS3Gather final : public ReadBufferFromRemoteFSGather
 {
 public:
     ReadBufferFromS3Gather(
-        const String & path_,
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         IDiskRemote::Metadata metadata_,
         size_t max_single_read_retries_,
         const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(metadata_, settings_, path_)
+        : ReadBufferFromRemoteFSGather(metadata_, settings_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
         , max_single_read_retries(max_single_read_retries_)
@@ -130,13 +126,12 @@ class ReadBufferFromAzureBlobStorageGather final : public ReadBufferFromRemoteFS
 {
 public:
     ReadBufferFromAzureBlobStorageGather(
-        const String & path_,
         std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         IDiskRemote::Metadata metadata_,
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
         const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(metadata_, settings_, path_)
+        : ReadBufferFromRemoteFSGather(metadata_, settings_)
         , blob_container_client(blob_container_client_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
@@ -157,12 +152,11 @@ class ReadBufferFromWebServerGather final : public ReadBufferFromRemoteFSGather
 {
 public:
     ReadBufferFromWebServerGather(
-            const String & path_,
             const String & uri_,
             RemoteMetadata metadata_,
             ContextPtr context_,
             const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(metadata_, settings_, path_)
+        : ReadBufferFromRemoteFSGather(metadata_, settings_)
         , uri(uri_)
         , context(context_)
     {
@@ -182,12 +176,11 @@ class ReadBufferFromHDFSGather final : public ReadBufferFromRemoteFSGather
 {
 public:
     ReadBufferFromHDFSGather(
-            const String & path_,
             const Poco::Util::AbstractConfiguration & config_,
             const String & hdfs_uri_,
             IDiskRemote::Metadata metadata_,
             const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(metadata_, settings_, path_)
+        : ReadBufferFromRemoteFSGather(metadata_, settings_)
         , config(config_)
     {
         const size_t begin_of_path = hdfs_uri_.find('/', hdfs_uri_.find("//") + 2);
