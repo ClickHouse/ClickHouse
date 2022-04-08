@@ -255,12 +255,16 @@ def update_cmake_version(
 
 
 def update_contributors(
-    relative_contributors_path: str = GENERATED_CONTRIBUTORS, force: bool = False
+    relative_contributors_path: str = GENERATED_CONTRIBUTORS,
+    force: bool = False,
+    raise_error: bool = False,
 ):
     # Check if we have shallow checkout by comparing number of lines
     # '--is-shallow-repository' is in git since 2.15, 2017-10-30
     if git.run("git rev-parse --is-shallow-repository") == "true" and not force:
         logging.warning("The repository is shallow, refusing to update contributors")
+        if raise_error:
+            raise RuntimeError("update_contributors executed on a shallow repository")
         return
 
     contributors = git.run("git shortlog HEAD --summary")
