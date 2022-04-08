@@ -122,7 +122,7 @@ void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & int
     {
         Columns columns = interpolate_block.getColumns();
         for (size_t i = 0; i < size; ++i)
-            interpolate_columns[i]->insertFrom(*columns[i], 0);
+            interpolate_columns[i]->insertFrom(*columns[i]->convertToFullColumnIfConst(), 0);
     }
     else
         for (const auto & interpolate_column : interpolate_columns)
