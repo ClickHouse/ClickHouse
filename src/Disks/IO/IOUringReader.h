@@ -1,4 +1,5 @@
 #pragma once
+#if defined(OS_LINUX)
 
 #include <Common/ThreadPool.h>
 #include <IO/AsynchronousReader.h>
@@ -35,6 +36,8 @@ namespace DB
 class IOUringReader final : public IAsynchronousReader
 {
 private:
+    bool is_supported;
+
     std::mutex mutex;
     struct io_uring ring;
 
@@ -69,9 +72,12 @@ private:
 
 public:
     IOUringReader(size_t queue_size_);
+
+    inline bool isSupported() { return is_supported; }
     std::future<Result> submit(Request request) override;
 
     virtual ~IOUringReader() override;
 };
 
 }
+#endif
