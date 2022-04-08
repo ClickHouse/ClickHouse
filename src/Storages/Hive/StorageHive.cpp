@@ -546,8 +546,6 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
     const ContextPtr & context_,
     PruneLevel prune_level) const
 {
-    LOG_TRACE(log, "Get hive file {} if needed, prune_level:{}", file_info.path, pruneLevelToString(prune_level));
-
     String filename = getBaseName(file_info.path);
     /// Skip temporary files starts with '.'
     if (startsWith(filename, "."))
@@ -557,7 +555,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
     auto hive_file = cache->get(file_info.path);
     if (!hive_file || hive_file->getLastModTs() < file_info.last_modify_time)
     {
-        LOG_TRACE(log, "Create hive file {}", file_info.path);
+        LOG_TRACE(log, "Create hive file {}, prune_level {}", file_info.path, pruneLevelToString(prune_level));
         hive_file = createHiveFile(
             format_name,
             fields,
@@ -572,7 +570,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
     }
     else
     {
-        LOG_TRACE(log, "Get hive file {} from cache", file_info.path);
+        LOG_TRACE(log, "Get hive file {} from cache, prune_level {}", file_info.path, pruneLevelToString(prune_level));
     }
 
     if (prune_level >= PruneLevel::File)
