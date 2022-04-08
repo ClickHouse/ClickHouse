@@ -161,7 +161,7 @@ $ clickhouse-client --query "select count(*) from datasets.ontime"
 
 
 !!! info "Info"
-    If you are using the prepared partitions or the Online Playground replace any occurrence of `IATA_CODE_Reporting_Airline` or `IATA_CODE_Reporting_Airline AS Carrier` with Carrier (see `describe ontime`).
+    If you are using the prepared partitions or the Online Playground replace any occurrence of `IATA_CODE_Reporting_Airline` or `IATA_CODE_Reporting_Airline AS Carrier` in the following queries with `Carrier` (see `describe ontime`).
 
 ## Queries {#queries}
 
