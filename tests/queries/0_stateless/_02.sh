@@ -62,3 +62,16 @@ compare "1 + 2 * 3 < a / b mod 5 AND [a, b, c] + 1 != [c, d, e] OR n as res" 0
 
 compare "'needle' LIKE 'haystack' AND NOT needle NOT ILIKE haystack" 0
 compare "'needle' LIKE 'haystack' AND (NOT needle) NOT ILIKE haystack" 0
+
+compare "[1, 2, 3, cast(['a', 'b', c] as Array(String)), 4]" 0
+compare "[1, 2, 3, cast(['a', 'b', c], Array(String)), 4]" 0
+
+compare "[1, 2, 3, cast(['a', 'b', c] as Array(String)), 4]" 0
+compare "[1, 2, 3, cast(['a', 'b', c], Array(String)), 4]" 0
+
+compare "EXTRACT(DAY FROM toDate('2017-06-15'))"
+compare "substring(toFixedString('hello12345', 16) from 1 for 8)"
+compare "position('Hello, world!' IN '!')"
+
+compare "trim(TRAILING 'x' FROM 'xxfooxx')"
+# compare "ltrim('') || rtrim('') || trim('')"
