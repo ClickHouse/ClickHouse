@@ -294,7 +294,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
+          fetch-depth: 0  # is needed for ancestor commit search
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -384,7 +384,6 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -429,7 +428,6 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -474,7 +472,6 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -519,7 +516,6 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -564,7 +560,6 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -609,7 +604,6 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -657,7 +651,6 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -702,7 +695,6 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
