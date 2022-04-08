@@ -55,7 +55,6 @@ def get_packager_cmd(
     image_version: str,
     ccache_path: str,
     official: bool,
-    cov_token: str,
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
@@ -88,8 +87,6 @@ def get_packager_cmd(
     if official:
         cmd += " --official"
 
-    if cov_token:
-        cmd += " --cov-token={}".format(cov_token)
     return cmd
 
 
@@ -206,9 +203,6 @@ def main():
 
     build_check_name = sys.argv[1]
     build_name = sys.argv[2]
-    cov_token = ""
-    if len(sys.argv) > 3:
-        cov_token = sys.argv[3]
 
     build_config = get_build_config(build_check_name, build_name)
 
@@ -303,7 +297,6 @@ def main():
         image_version,
         ccache_path,
         official_flag,
-        cov_token,
     )
 
     logging.info("Going to run packager with %s", packager_cmd)
