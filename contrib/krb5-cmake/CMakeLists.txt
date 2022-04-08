@@ -1,4 +1,4 @@
-set (ENABLE_KRB5_DEFAULT 1)
+set (ENABLE_KRB5_DEFAULT ${ENABLE_LIBRARIES})
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT (CMAKE_SYSTEM_NAME MATCHES "Darwin" AND NOT CMAKE_CROSSCOMPILING))
     message (WARNING "krb5 disabled in non-Linux and non-native-Darwin environments")
     set (ENABLE_KRB5_DEFAULT 0)

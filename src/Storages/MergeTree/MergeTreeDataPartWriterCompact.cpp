@@ -24,12 +24,14 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     , plain_file(data_part->volume->getDisk()->writeFile(
             part_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
-            WriteMode::Rewrite))
+            WriteMode::Rewrite,
+            settings_.query_write_settings))
     , plain_hashing(*plain_file)
     , marks_file(data_part->volume->getDisk()->writeFile(
         part_path + MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
         4096,
-        WriteMode::Rewrite))
+        WriteMode::Rewrite,
+        settings_.query_write_settings))
     , marks(*marks_file)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
