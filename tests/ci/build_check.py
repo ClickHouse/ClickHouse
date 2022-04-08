@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+from shutil import rmtree
 from typing import List, Optional, Tuple
 
 from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
@@ -270,7 +271,12 @@ def main():
     ccache_path = os.path.join(CACHES_PATH, build_name + "_ccache")
 
     logging.info("Will try to fetch cache for our build")
-    get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
+    try:
+        get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
+    except Exception as e:
+        # In case there are issues with ccache, remove the path and do not fail a build
+        logging.info("Failed to get ccache, building without it. Error: %s", e)
+        rmtree(ccache_path, ignore_errors=True)
 
     if not os.path.exists(ccache_path):
         logging.info("cache was not fetched, will create empty dir")
