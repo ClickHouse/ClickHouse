@@ -1,3 +1,5 @@
+#if defined(OS_LINUX)
+
 #include "IOUringReader.h"
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
@@ -237,3 +239,4 @@ IOUringReader::~IOUringReader()
 }
 
 }
+#endif

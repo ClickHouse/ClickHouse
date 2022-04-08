@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 
@@ -85,6 +86,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+#else
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
+#endif
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
