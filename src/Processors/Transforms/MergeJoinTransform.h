@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 #include <vector>
 #include <IO/ReadBuffer.h>
 #include <Common/PODArray.h>
@@ -26,6 +27,37 @@ class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
 
+class MultiCursor
+{
+    void next()
+    {
+    }
+
+    bool isLast()
+    {
+        return false;
+    }
+
+    bool isValid()
+    {
+        return false;
+    }
+
+private:
+    SortDescription desc;
+    struct CursorWithBlock
+    {
+        SortCursorImpl impl;
+        Chunk input;
+    };
+
+    using CursorList = std::list<CursorWithBlock>;
+    using CursorListIt = CursorList::iterator;
+
+    CursorListIt current;
+    CursorList inputs;
+};
+
 /*
  * Wrapper for SortCursorImpl
  * It is used to store information about the current state of the cursor.
@@ -34,70 +66,21 @@ class FullMergeJoinCursor
 {
 public:
 
-    FullMergeJoinCursor(const Block & block, const SortDescription & desc)
-        : impl(block, desc)
-        , sample_block(block)
-    {
-    }
+    FullMergeJoinCursor(const Block & block, const SortDescription & desc);
 
-    SortCursor getCursor()
-    {
-        return SortCursor(&impl);
-    }
+    SortCursor getCursor();
 
-    /*
-    /// Expects !atEnd()
-    size_t getEqualLength() const
-    {
-        size_t pos = impl.getRow() + 1;
-        for (; pos < impl.rows; ++pos)
-            if (!samePrev(pos))
-                break;
-        return pos - impl.getRow();
-    }
+    bool sameUnitlEnd() const;
 
-    /// Expects lhs_pos > 0
-    bool ALWAYS_INLINE samePrev(size_t lhs_pos) const
-    {
-        for (size_t i = 0; i < impl.sort_columns_size; ++i)
-            if (impl.sort_columns[i]->compareAt(lhs_pos - 1, lhs_pos, *(impl.sort_columns[i]), 1) != 0)
-                return false;
-        return true;
-    }
-    */
+    bool ALWAYS_INLINE sameNext() const;
 
-    SortCursorImpl & getImpl()
-    {
-        return impl;
-    }
+    size_t nextDistinct();
 
-    void reset()
-    {
-        current_input = {};
-        resetInternalCursor();
-    }
+    void reset();
 
-    const Chunk & getCurrentChunk() const
-    {
-        return current_input.chunk;
-    }
+    const Chunk & getCurrentChunk() const;
 
-    void setInput(IMergingAlgorithm::Input && input)
-    {
-        if (input.skip_last_row)
-            throw Exception("FullMergeJoinCursor does not support skipLastRow", ErrorCodes::NOT_IMPLEMENTED);
-
-        if (current_input.permutation)
-            throw DB::Exception("FullMergeJoinCursor: permutation is not supported", ErrorCodes::NOT_IMPLEMENTED);
-
-
-        current_input = std::move(input);
-
-        if (!current_input.chunk)
-            fully_completed = true;
-
-        resetInternalCursor();
-    }
+    void setInput(IMergingAlgorithm::Input && input);
 
     bool fullyCompleted() const { return !impl.isValid() && fully_completed; }
 
@@ -105,22 +88,14 @@ public:
     const SortCursorImpl * operator-> () const { return &impl; }
 
 private:
+    void resetInternalCursor();
 
-    void resetInternalCursor()
-    {
-        if (current_input.chunk)
-        {
-            impl.reset(current_input.chunk.getColumns(), sample_block, current_input.permutation);
-        }
-        else
-        {
-            impl.reset(sample_block.cloneEmpty().getColumns(), sample_block);
-        }
-    }
+
 
     SortCursorImpl impl;
 
     IMergingAlgorithm::Input current_input;
+
 
     bool fully_completed = false;
 
@@ -142,11 +117,28 @@ public:
     virtual void consume(Input & input, size_t source_num) override;
     virtual Status merge() override;
 
+    void onFinish(double seconds)
+    {
+        LOG_TRACE(log, "Finished pocessing {} left and {} right blocks in {} seconds",
+            stat.num_blocks[0],
+            stat.num_blocks[1],
+            seconds);
+    }
+
 private:
+    std::optional<size_t> required_input = std::nullopt;
+
     std::vector<FullMergeJoinCursor> cursors;
     std::vector<Chunk> sample_chunks;
 
     JoinPtr table_join;
+
+    struct Statistic
+    {
+        size_t num_blocks[2] = {0, 0};
+    };
+    Statistic stat;
+
     Poco::Logger * log;
 };
 
@@ -163,7 +155,6 @@ public:
 
 protected:
     void onFinish() override;
-    UInt64 elapsed_ns = 0;
 
     Poco::Logger * log;
 };
