@@ -53,7 +53,7 @@ private:
 
     static void fillMissedValuesInArrays(ParseArrayContext & ctx);
     static bool tryInsertDefaultFromNested(
-        const ParseArrayContext & ctx, const PathInData::Parts & path, Array & array);
+        ParseArrayContext & ctx, const PathInData::Parts & path, Array & array);
 
     ParserImpl parser;
 };
