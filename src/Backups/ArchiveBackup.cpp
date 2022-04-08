@@ -65,7 +65,7 @@ void ArchiveBackup::openImpl(OpenMode open_mode_)
     }
 }
 
-void ArchiveBackup::closeImpl(bool writing_finalized_)
+void ArchiveBackup::closeImpl(const Strings &, bool writing_finalized_)
 {
     /// mutex is already locked
     if (writer && writer->isWritingFile())
