@@ -930,10 +930,10 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
-const Block * Context::tryGetLocalScalar(const String & name) const
+const Block * Context::tryGetSpecialScalar(const String & name) const
 {
-    auto it = local_scalars.find(name);
-    if (local_scalars.end() == it)
+    auto it = special_scalars.find(name);
+    if (special_scalars.end() == it)
         return nullptr;
     return &it->second;
 }
@@ -1004,12 +1004,12 @@ void Context::addScalar(const String & name, const Block & block)
 }
 
 
-void Context::addLocalScalar(const String & name, const Block & block)
+void Context::addSpecialScalar(const String & name, const Block & block)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have local scalars");
 
-    local_scalars[name] = block;
+    special_scalars[name] = block;
 }
 
 
@@ -1092,6 +1092,17 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     if (!res)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
+        if (table_function_ptr->needStructureHint())
+        {
+            const auto & insertion_table = getInsertionTable();
+            if (!insertion_table.empty())
+            {
+                const auto & structure_hint
+                    = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
+                table_function_ptr->setStructureHint(structure_hint);
+            }
+        }
+
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
 
         /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
@@ -2460,6 +2471,17 @@ std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
         return {};
 
     return shared->system_logs->zookeeper_log;
+}
+
+
+std::shared_ptr<ProcessorsProfileLog> Context::getProcessorsProfileLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->processors_profile_log;
 }
 
 

@@ -565,6 +565,26 @@ def test_cluster_join(started_cluster):
     assert "AMBIGUOUS_COLUMN_NAME" not in result
 
 
+def test_virtual_columns_2(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    table_function = (
+        f"hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
+    )
+    node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
+
+    result = node1.query(f"SELECT _path FROM {table_function}")
+    assert result.strip() == "hdfs://hdfs1:9000/parquet_2"
+
+    table_function = (
+        f"hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
+    )
+    node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
+
+    result = node1.query(f"SELECT _path FROM {table_function}")
+    assert result.strip() == "kek"
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

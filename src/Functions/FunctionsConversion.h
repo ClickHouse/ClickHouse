@@ -887,7 +887,7 @@ struct ConvertImplGenericToString
         const IColumn & col_from = *col_with_type_and_name.column;
 
         size_t size = col_from.size();
-        auto col_to = result_type->createColumn();
+        auto col_to = removeNullable(result_type)->createColumn();
 
         {
             ColumnStringHelpers::WriteHelper write_helper(
@@ -2958,8 +2958,7 @@ private:
         /// For named tuples allow conversions for tuples with
         /// different sets of elements. If element exists in @to_type
         /// and doesn't exist in @to_type it will be filled by default values.
-        if (from_type->haveExplicitNames() && from_type->serializeNames()
-            && to_type->haveExplicitNames() && to_type->serializeNames())
+        if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
         {
             const auto & from_names = from_type->getElementNames();
             std::unordered_map<String, size_t> from_positions;
