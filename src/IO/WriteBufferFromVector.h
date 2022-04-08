@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <IO/WriteBuffer.h>
+#include <Common/formatReadable.h>
 
 
 namespace DB
@@ -11,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 struct AppendModeTag {};
@@ -26,8 +28,8 @@ template <typename VectorType>
 class WriteBufferFromVector : public WriteBuffer
 {
 public:
-    explicit WriteBufferFromVector(VectorType & vector_)
-        : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_)
+    explicit WriteBufferFromVector(VectorType & vector_, UInt64 max_memory_usage_ = 0)
+        : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_), max_memory_usage(max_memory_usage_)
     {
         if (vector.empty())
         {
@@ -37,8 +39,8 @@ public:
     }
 
     /// Append to vector instead of rewrite.
-    WriteBufferFromVector(VectorType & vector_, AppendModeTag)
-        : WriteBuffer(nullptr, 0), vector(vector_)
+    WriteBufferFromVector(VectorType & vector_, AppendModeTag, UInt64 max_memory_usage_ = 0)
+        : WriteBuffer(nullptr, 0), vector(vector_), max_memory_usage(max_memory_usage_)
     {
         size_t old_size = vector.size();
         size_t size = (old_size < initial_size) ? initial_size
@@ -83,6 +85,13 @@ private:
         size_t old_size = vector.size();
         /// pos may not be equal to vector.data() + old_size, because WriteBuffer::next() can be used to flush data
         size_t pos_offset = pos - reinterpret_cast<Position>(vector.data());
+        size_t new_size = old_size * size_multiplier;
+        if (max_memory_usage != 0 && new_size > max_memory_usage)
+            throw Exception(
+                ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                "Would use {}, maximum: {}",
+                formatReadableSizeWithBinarySuffix(new_size),
+                formatReadableSizeWithBinarySuffix(max_memory_usage));
         vector.resize(old_size * size_multiplier);
         internal_buffer = Buffer(reinterpret_cast<Position>(vector.data() + pos_offset), reinterpret_cast<Position>(vector.data() + vector.size()));
         working_buffer = internal_buffer;
@@ -92,6 +101,7 @@ private:
 
     static constexpr size_t initial_size = 32;
     static constexpr size_t size_multiplier = 2;
+    UInt64 max_memory_usage = 0;
 };
 
 }

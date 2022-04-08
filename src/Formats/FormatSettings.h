@@ -38,6 +38,8 @@ struct FormatSettings
 
     String column_names_for_schema_inference = "";
 
+    UInt64 max_memory_usage = 0;
+
     enum class DateTimeInputFormat
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.

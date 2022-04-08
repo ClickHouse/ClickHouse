@@ -148,6 +148,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
+    format_settings.max_memory_usage = context->getSettingsRef().max_memory_usage;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

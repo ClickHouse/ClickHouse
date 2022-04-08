@@ -967,9 +967,9 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     std::string current_key;
     std::string exception_messages;
     bool read_buffer_creator_was_used = false;
+    current_key = (*file_iterator)();
     do
     {
-        current_key = (*file_iterator)();
         auto read_buffer_creator = [&]()
         {
             read_buffer_creator_was_used = true;
@@ -997,6 +997,8 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
             exception_messages += getCurrentExceptionMessage(false) + "\n";
         }
+
+        current_key = (*file_iterator)();
     } while (!current_key.empty());
 
     throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from s3 files failed. Errors:\n{}", exception_messages);

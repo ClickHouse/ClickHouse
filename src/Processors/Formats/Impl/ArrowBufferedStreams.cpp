@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/copyData.h>
 #include <arrow/buffer.h>
 #include <arrow/io/memory.h>
@@ -15,6 +16,7 @@
 
 #include <sys/stat.h>
 
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -22,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FILE_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 ArrowBufferedOutputStream::ArrowBufferedOutputStream(WriteBuffer & out_) : out{out_}, is_open{true}
@@ -139,7 +142,12 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
     return arrow::Status();
 }
 
-std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in, const FormatSettings & settings, std::atomic<int> & is_cancelled)
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
+    ReadBuffer & in,
+    const FormatSettings & settings,
+    std::atomic<int> & is_cancelled,
+    const std::string & format_name,
+    const std::string & magic_bytes)
 {
     if (auto * fd_in = dynamic_cast<ReadBufferFromFileDescriptor *>(&in))
     {
@@ -158,8 +166,23 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in, const 
     // fallback to loading the entire file in memory
     std::string file_data;
     {
-        WriteBufferFromString file_buffer(file_data);
-        copyData(in, file_buffer, is_cancelled);
+        PeekableReadBuffer buf(in);
+        std::string magic_bytes_from_data;
+        magic_bytes_from_data.resize(magic_bytes.size());
+        bool read_magic_bytes = false;
+        try
+        {
+            PeekableReadBufferCheckpoint checkpoint(buf, true);
+            buf.readStrict(magic_bytes_from_data.data(), magic_bytes_from_data.size());
+            read_magic_bytes = true;
+        }
+        catch (const Exception &) {}
+
+        if (!read_magic_bytes || magic_bytes_from_data != magic_bytes)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Not a {} file", format_name);
+
+        WriteBufferFromString file_buffer(file_data, settings.max_memory_usage);
+        copyData(buf, file_buffer, is_cancelled);
     }
 
     return std::make_shared<arrow::io::BufferReader>(arrow::Buffer::FromString(std::move(file_data)));

@@ -185,13 +185,21 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
 
     std::string exception_messages;
     bool read_buffer_creator_was_used = false;
+
+    /// If there are no files in HDFS with provided path, add empty path
+    /// to make at least one iteration in the loop. It's needed
+    /// for formats with external or constant schema, because we can extract the schema
+    /// without reading the data and don't need to throw an exception.
+    if (paths.empty())
+        paths.emplace_back();
+
     for (const auto & path : paths)
     {
         auto read_buffer_creator = [&, uri_without_path = uri_without_path]()
         {
             read_buffer_creator_was_used = true;
 
-            if (paths.empty())
+            if (path.empty())
                 throw Exception(
                     ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                     "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
