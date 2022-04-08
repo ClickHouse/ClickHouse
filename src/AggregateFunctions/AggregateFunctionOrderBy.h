@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/IColumn.h>
+#include <Core/Field.h>
 #include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
@@ -25,7 +26,7 @@ private:
 	size_t num_arguments;
     mutable std::vector<MutableColumnPtr> data;
     size_t number_of_arguments_for_sorting;
-    std::vector<bool> bitmap;
+    mutable std::vector<bool> bitmap;
 
     void parseString(String& s)
     {
@@ -53,7 +54,40 @@ private:
     }
 
     std::vector<std::pair<size_t, size_t>> findEqualRanges(size_t curr_idx) { 
-        //TODO 
+        std::vector<std::pair<size_t, size_t>> ans;
+        ans.emplace_back(0, data[0]->size()); 
+        for (size_t i = 0; i != curr_idx; ++i) {
+            if (ans.empty()) {
+                return ans;
+            }
+            std::vector<std::pair<size_t, size_t>> tmp;
+            while (!ans.empty()) {
+                auto range = ans.back(); 
+                ans.pop_back();
+                flag = false;
+                size_t start;
+                size_t counter = 0;
+                Field prev = *(data[i])[range.first];
+                Field curr;
+                for (size_t j = range.first + 1, j <= range.second; ++j) {
+                    if (data[i]->get(j, curr) == prev) {
+                        counter += 1;
+                        if (!flag) {
+                            flag = true;
+                            start = j - 1;
+                        }
+                    } else {
+                        if (flag) {
+                            flag = false;
+                            tmp.emplace_back(start, start + counter);
+                            counter = 0;
+                        }
+                    }
+                }
+            }
+            ans = tmp;
+        }
+        return ans;
     }
 
 public:
@@ -114,6 +148,9 @@ public:
         size_t j = 0; 
         for (size_t i = num_arguments - number_of_arguments_for_sorting; i != num_arguments; ++i) {
             Permutation permutation;
+            for (size_t i = 0; i != data[0]->size(); ++i) {
+                permutation.push_back(i);
+            }
             
             IColumn::PermutationSortDirection directon;
             if (bitmap[j])
@@ -133,8 +170,17 @@ public:
                 data[h] = IColumn::mutate(data[h]->permute(permutation, 0));
             j += 1
         }
+
+        IColumn * columns[num_arguments - number_of_arguments_for_sorting];
+        for (size_t i = 0; i != num_arguments - number_of_arguments_for_sorting; ++i) {
+            columns[i] = data[i].get();
+        } 
+
+        for (size_t i = 0; i != data[0].size(); ++i) {
+            nested_func->add(place, columns, i, arena);
+        }
+
+        nested_func->insertResultInto(place, to, arena);
     }
-
-
 };
 }
