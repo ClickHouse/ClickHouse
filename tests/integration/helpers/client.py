@@ -55,7 +55,7 @@ class Client:
         command = self.command[:]
 
         if stdin is None:
-            command += ["--multiquery", "--testmode"]
+            command += ["--multiquery"]
             stdin = sql
         else:
             command += ["--query", sql]

@@ -25,6 +25,8 @@ namespace ErrorCodes
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
 const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
 
+std::once_flag init_libhdfs3_conf_flag;
+
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     const String & prefix, bool isUser)
 {
@@ -123,19 +125,22 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
     // Shall set env LIBHDFS3_CONF *before* HDFSBuilderWrapper construction.
-    String libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
-    if (!libhdfs3_conf.empty())
+    std::call_once(init_libhdfs3_conf_flag, [&config]()
     {
-        if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
+        String libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
+        if (!libhdfs3_conf.empty())
         {
-            const String config_path = config.getString("config-file", "config.xml");
-            const auto config_dir = std::filesystem::path{config_path}.remove_filename();
-            if (std::filesystem::exists(config_dir / libhdfs3_conf))
-                libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+            if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
+            {
+                const String config_path = config.getString("config-file", "config.xml");
+                const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+                if (std::filesystem::exists(config_dir / libhdfs3_conf))
+                    libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+            }
+            setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
         }
+    });
 
-        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
-    }
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
         throw Exception("Unable to create builder to connect to HDFS: " +

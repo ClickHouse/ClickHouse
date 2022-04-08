@@ -45,6 +45,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
@@ -422,7 +423,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_table;
     try
     {
-        ParserQuery parser(end);
+        ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
 
         /// TODO: parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
@@ -811,6 +812,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                  log_queries,
                  log_queries_min_type = settings.log_queries_min_type,
                  log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
+                 log_processors_profiles = settings.log_processors_profiles,
                  status_info_to_query_log,
                  pulling_pipeline = pipeline.pulling()
             ]
@@ -865,6 +867,44 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (auto query_log = context->getQueryLog())
                         query_log->add(elem);
+                }
+                if (log_processors_profiles)
+                {
+                    if (auto processors_profile_log = context->getProcessorsProfileLog())
+                    {
+                        ProcessorProfileLogElement processor_elem;
+                        processor_elem.event_time = time_in_seconds(finish_time);
+                        processor_elem.event_time_microseconds = time_in_microseconds(finish_time);
+                        processor_elem.query_id = elem.client_info.current_query_id;
+
+                        auto get_proc_id = [](const IProcessor & proc) -> UInt64
+                        {
+                            return reinterpret_cast<std::uintptr_t>(&proc);
+                        };
+
+                        for (const auto & processor : query_pipeline.getProcessors())
+                        {
+                            std::vector<UInt64> parents;
+                            for (const auto & port : processor->getOutputs())
+                            {
+                                if (!port.isConnected())
+                                    continue;
+                                const IProcessor & next = port.getInputPort().getProcessor();
+                                parents.push_back(get_proc_id(next));
+                            }
+
+                            processor_elem.id = get_proc_id(*processor);
+                            processor_elem.parent_ids = std::move(parents);
+
+                            processor_elem.processor_name = processor->getName();
+
+                            processor_elem.elapsed_us = processor->getElapsedUs();
+                            processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
+                            processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
+
+                            processors_profile_log->add(processor_elem);
+                        }
+                    }
                 }
 
                 if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
