@@ -166,6 +166,8 @@ protected:
 
 using HiveFilePtr = std::shared_ptr<IHiveFile>;
 using HiveFiles = std::vector<HiveFilePtr>;
+using HiveFilesCache = LRUCache<String, HiveFilePtr>;
+using HiveFilesCachePtr = std::shared_ptr<HiveFilesCache>;
 
 class HiveTextFile : public IHiveFile
 {
