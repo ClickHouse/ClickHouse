@@ -122,10 +122,25 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
 {
     auto range = file_segment->range();
 
-    size_t wait_download_max_tries = settings.remote_fs_cache_max_wait_sec;
+    size_t wait_download_max_tries = settings.filesystem_cache_max_wait_sec;
     size_t wait_download_tries = 0;
 
     auto download_state = file_segment->state();
+
+    if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    {
+        if (download_state == FileSegment::State::DOWNLOADED)
+        {
+            read_type = ReadType::CACHED;
+            return getCacheReadBuffer(range.left);
+        }
+        else
+        {
+            read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+            return getRemoteFSReadBuffer(file_segment, read_type);
+        }
+    }
+
     while (true)
     {
         switch (download_state)
@@ -334,15 +349,17 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getImplementationBuffer(File
                 read_buffer_for_file_segment->seek(file_offset_of_buffer_end, SEEK_SET);
             }
 
-            auto impl_range = read_buffer_for_file_segment->getRemainingReadRange();
             auto download_offset = file_segment->getDownloadOffset();
             if (download_offset != static_cast<size_t>(read_buffer_for_file_segment->getPosition()))
+            {
+                auto impl_range = read_buffer_for_file_segment->getRemainingReadRange();
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Buffer's offsets mismatch; cached buffer offset: {}, download_offset: {}, position: {}, implementation buffer offset: {}, "
                     "implementation buffer reading until: {}, file segment info: {}",
                     file_offset_of_buffer_end, download_offset, read_buffer_for_file_segment->getPosition(),
                     impl_range.left, *impl_range.right, file_segment->getInfoForLog());
+            }
 
             break;
         }
@@ -372,6 +389,9 @@ bool CachedReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
         return false;
 
     implementation_buffer = getImplementationBuffer(*current_file_segment_it);
+
+    if (read_type == ReadType::CACHED)
+        (*current_file_segment_it)->incrementHitsCount();
 
     LOG_TEST(log, "New segment: {}", (*current_file_segment_it)->range().toString());
     return true;
@@ -557,9 +577,6 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
-    if (IFileCache::shouldBypassCache())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Using cache when not allowed");
-
     if (!initialized)
         initialize(file_offset_of_buffer_end, getTotalSizeToRead());
 
@@ -604,6 +621,9 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
     else
     {
         implementation_buffer = getImplementationBuffer(*current_file_segment_it);
+
+        if (read_type == ReadType::CACHED)
+            (*current_file_segment_it)->incrementHitsCount();
     }
 
     assert(!internal_buffer.empty());
@@ -802,12 +822,14 @@ std::optional<size_t> CachedReadBufferFromRemoteFS::getLastNonDownloadedOffset()
 
 String CachedReadBufferFromRemoteFS::getInfoForLog()
 {
-    auto implementation_buffer_read_range_str =
-        implementation_buffer ?
-        std::to_string(implementation_buffer->getRemainingReadRange().left)
-        + '-'
-        + (implementation_buffer->getRemainingReadRange().right ? std::to_string(*implementation_buffer->getRemainingReadRange().right) : "None")
-        : "None";
+    String implementation_buffer_read_range_str;
+    if (implementation_buffer)
+    {
+        auto read_range = implementation_buffer->getRemainingReadRange();
+        implementation_buffer_read_range_str = std::to_string(read_range.left) + '-' + (read_range.right ? std::to_string(*read_range.right) : "None");
+    }
+    else
+        implementation_buffer_read_range_str = "None";
 
     auto current_file_segment_info = current_file_segment_it == file_segments_holder->file_segments.end() ? "None" : (*current_file_segment_it)->getInfoForLog();
 
