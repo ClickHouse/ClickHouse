@@ -170,6 +170,7 @@ set(
   ios-arm/crypto/fipsmodule/sha1-armv4-large.S
   ios-arm/crypto/fipsmodule/sha256-armv4.S
   ios-arm/crypto/fipsmodule/sha512-armv4.S
+  ios-arm/crypto/fipsmodule/vpaes-armv7.S
   ios-arm/crypto/test/trampoline-armv4.S
 )
 
@@ -202,6 +203,7 @@ set(
   linux-arm/crypto/fipsmodule/sha1-armv4-large.S
   linux-arm/crypto/fipsmodule/sha256-armv4.S
   linux-arm/crypto/fipsmodule/sha512-armv4.S
+  linux-arm/crypto/fipsmodule/vpaes-armv7.S
   linux-arm/crypto/test/trampoline-armv4.S
   "${BORINGSSL_SOURCE_DIR}/crypto/curve25519/asm/x25519-asm-arm.S"
   "${BORINGSSL_SOURCE_DIR}/crypto/poly1305/poly1305_arm_asm.S"
@@ -485,6 +487,7 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/crypto/ex_data.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/fipsmodule/bcm.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/fipsmodule/fips_shared_support.c"
+  "${BORINGSSL_SOURCE_DIR}/crypto/fipsmodule/is_fips.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/hkdf/hkdf.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/hrss/hrss.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/lhash/lhash.c"
@@ -526,6 +529,7 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/crypto/thread_win.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/a_digest.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/a_sign.c"
+  "${BORINGSSL_SOURCE_DIR}/crypto/x509/a_strex.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/a_verify.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/algorithm.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/asn1_gen.c"
@@ -545,7 +549,6 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_ext.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_lu.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_obj.c"
-  "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_r2x.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_req.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_set.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_trs.c"
@@ -598,10 +601,12 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/crypto/x509v3/v3_pci.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509v3/v3_pcia.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509v3/v3_pcons.c"
+  "${BORINGSSL_SOURCE_DIR}/crypto/x509v3/v3_pku.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509v3/v3_pmaps.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509v3/v3_prn.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509v3/v3_purp.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509v3/v3_skey.c"
+  "${BORINGSSL_SOURCE_DIR}/crypto/x509v3/v3_sxnet.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509v3/v3_utl.c"
   "${BORINGSSL_SOURCE_DIR}/third_party/fiat/curve25519.c"
   "${BORINGSSL_SOURCE_DIR}/third_party/sike/asm/fp_generic.c"
@@ -650,6 +655,10 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/ssl/tls13_server.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/tls_method.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/tls_record.cc"
+
+  "${BORINGSSL_SOURCE_DIR}/decrepit/ssl/ssl_decrepit.c"
+  "${BORINGSSL_SOURCE_DIR}/decrepit/cfb/cfb.c"
+  "${BORINGSSL_SOURCE_DIR}/decrepit/bio/base64_bio.c"
 )
 
 add_executable(
