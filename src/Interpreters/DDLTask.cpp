@@ -142,10 +142,11 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 {
     const char * begin = entry.query.data();
     const char * end = begin + entry.query.size();
+    const auto & settings = context->getSettingsRef();
 
-    ParserQuery parser_query(end);
+    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, context->getSettingsRef().max_parser_depth);
+    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
