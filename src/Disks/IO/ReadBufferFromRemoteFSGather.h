@@ -16,6 +16,8 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+
+
 /**
  * Remote disk might need to split one clickhouse file into multiple files in remote fs.
  * This class works like a proxy to allow transition from one file into multiple.
@@ -26,7 +28,8 @@ friend class ReadIndirectBufferFromRemoteFS;
 
 public:
     ReadBufferFromRemoteFSGather(
-        const RemoteMetadata & metadata_,
+        const std::string & common_path_prefix_,
+        const BlobsPathToSize & blobs_to_read_,
         const ReadSettings & settings_);
 
     String getFileName() const;
@@ -56,7 +59,9 @@ public:
 protected:
     virtual SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) = 0;
 
-    RemoteMetadata metadata;
+    std::string common_path_prefix;
+
+    BlobsPathToSize blobs_to_read;
 
     ReadSettings settings;
 
@@ -100,10 +105,11 @@ public:
     ReadBufferFromS3Gather(
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
-        IDiskRemote::Metadata metadata_,
+        const std::string & common_path_prefix_,
+        const BlobsPathToSize & blobs_to_read_,
         size_t max_single_read_retries_,
         const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(metadata_, settings_)
+        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
         , max_single_read_retries(max_single_read_retries_)
@@ -127,11 +133,12 @@ class ReadBufferFromAzureBlobStorageGather final : public ReadBufferFromRemoteFS
 public:
     ReadBufferFromAzureBlobStorageGather(
         std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
-        IDiskRemote::Metadata metadata_,
+        const std::string & common_path_prefix_,
+        const BlobsPathToSize & blobs_to_read_,
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
         const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(metadata_, settings_)
+        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
         , blob_container_client(blob_container_client_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
@@ -153,10 +160,11 @@ class ReadBufferFromWebServerGather final : public ReadBufferFromRemoteFSGather
 public:
     ReadBufferFromWebServerGather(
             const String & uri_,
-            RemoteMetadata metadata_,
+            const std::string & common_path_prefix_,
+            const BlobsPathToSize & blobs_to_read_,
             ContextPtr context_,
             const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(metadata_, settings_)
+        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
         , uri(uri_)
         , context(context_)
     {
@@ -178,9 +186,10 @@ public:
     ReadBufferFromHDFSGather(
             const Poco::Util::AbstractConfiguration & config_,
             const String & hdfs_uri_,
-            IDiskRemote::Metadata metadata_,
+            const std::string & common_path_prefix_,
+            const BlobsPathToSize & blobs_to_read_,
             const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(metadata_, settings_)
+        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
         , config(config_)
     {
         const size_t begin_of_path = hdfs_uri_.find('/', hdfs_uri_.find("//") + 2);

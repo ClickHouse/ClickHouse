@@ -122,7 +122,8 @@ void IDiskRemote::Metadata::load()
                 remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());
             }
             assertChar('\n', *buf);
-            remote_fs_objects[i] = {remote_fs_object_path, remote_fs_object_size};
+            remote_fs_objects[i].relative_path = remote_fs_object_path;
+            remote_fs_objects[i].bytes_size = remote_fs_object_size;
         }
 
         readIntText(ref_count, *buf);
@@ -638,7 +639,7 @@ String IDiskRemote::getUniqueId(const String & path) const
     auto metadata = readMetadata(path);
     String id;
     if (!metadata.remote_fs_objects.empty())
-        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
+        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].relative_path;
     return id;
 }
 
