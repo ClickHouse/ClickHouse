@@ -16,7 +16,6 @@
 
 #include <sys/stat.h>
 
-#include <base/logger_useful.h>
 
 namespace DB
 {
