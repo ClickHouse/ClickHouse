@@ -43,6 +43,8 @@ public:
 protected:
     void logRevision() const override;
 
+    void handleCustomArguments(const std::string & arg, const std::string & value);
+
     int run() override;
 
     void initialize(Application & self) override;
