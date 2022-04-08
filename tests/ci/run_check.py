@@ -79,6 +79,7 @@ TRUSTED_CONTRIBUTORS = {
         "ilejn",  # Arenadata, responsible for Kerberized Kafka
         "thomoco",  # ClickHouse
         "BoloniniD",  # Seasoned contributor, HSE
+        "tonickkozlov",  # Cloudflare
     ]
 }
 
