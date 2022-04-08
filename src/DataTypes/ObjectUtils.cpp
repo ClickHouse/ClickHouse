@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
+    extern const int NUMBER_OF_DIMENSIONS_MISMATHED;
 }
 
 size_t getNumberOfDimensions(const IDataType & type)
@@ -696,6 +697,35 @@ void finalizeObjectColumns(MutableColumns & columns)
     for (auto & column : columns)
         if (auto * column_object = typeid_cast<ColumnObject *>(column.get()))
             column_object->finalize();
+}
+
+Field FieldVisitorReplaceScalars::operator()(const Array & x) const
+{
+    if (num_dimensions_to_keep == 0)
+        return replacement;
+
+    const size_t size = x.size();
+    Array res(size);
+    for (size_t i = 0; i < size; ++i)
+        res[i] = applyVisitor(FieldVisitorReplaceScalars(replacement, num_dimensions_to_keep - 1), x[i]);
+    return res;
+}
+
+size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x) const
+{
+    const size_t size = x.size();
+    std::optional<size_t> dimensions;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        size_t current_dimensions = applyVisitor(*this, x[i]);
+        if (!dimensions)
+            dimensions = current_dimensions;
+        else
+            dimensions = std::max(*dimensions, current_dimensions);
+    }
+
+    return 1 + dimensions.value_or(0);
 }
 
 }
