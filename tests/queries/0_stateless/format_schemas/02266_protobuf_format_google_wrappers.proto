@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+import "wrappers.proto";
+
+message Message {
+    google.protobuf.StringValue str = 1;
+    int32 ref = 2;
+}
+
+message MessageNoWrapper {
+    string str = 1;
+    int32 ref = 2;
+}
