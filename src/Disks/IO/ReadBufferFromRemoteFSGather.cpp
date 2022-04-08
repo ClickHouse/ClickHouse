@@ -83,11 +83,10 @@ SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const
 #endif
 
 
-ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata & metadata_, const ReadSettings & settings_, const String & path_)
+ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata & metadata_, const ReadSettings & settings_)
     : ReadBuffer(nullptr, 0)
     , metadata(metadata_)
     , settings(settings_)
-    , canonical_path(path_)
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
 {
 }

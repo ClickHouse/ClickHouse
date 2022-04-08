@@ -71,7 +71,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskAzureBlobStorage::readFile(
     LOG_TEST(log, "Read from file by path: {}", backQuote(metadata_disk->getPath() + path));
 
     auto reader_impl = std::make_unique<ReadBufferFromAzureBlobStorageGather>(
-        path, blob_container_client, metadata, settings->max_single_read_retries,
+        blob_container_client, metadata, settings->max_single_read_retries,
         settings->max_single_download_retries, read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
