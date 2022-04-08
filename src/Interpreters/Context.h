@@ -917,6 +917,7 @@ public:
         CLIENT,         /// clickhouse-client
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
+        DISKS,          /// clickhouse-disks
     };
 
     ApplicationType getApplicationType() const;
