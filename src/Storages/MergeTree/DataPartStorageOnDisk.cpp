@@ -43,6 +43,11 @@ bool DataPartStorageOnDisk::exists() const
     return volume->getDisk()->exists(root_path);
 }
 
+Poco::Timestamp DataPartStorageOnDisk::getLastModified() const
+{
+    return volume->getDisk()->getLastModified(root_path);
+}
+
 size_t DataPartStorageOnDisk::getFileSize(const String & path) const
 {
     return volume->getDisk()->getFileSize(fs::path(root_path) / path);
@@ -80,6 +85,16 @@ UInt64 DataPartStorageOnDisk::calculateTotalSizeOnDisk() const
     return calculateTotalSizeOnDiskImpl(volume->getDisk(), root_path);
 }
 
+bool DataPartStorageOnDisk::isStoredOnRemoteDisk() const
+{
+    return volume->getDisk()->isRemote();
+}
+
+bool DataPartStorageOnDisk::supportZeroCopyReplication() const
+{
+    return volume->getDisk()->supportZeroCopyReplication();
+}
+
 void DataPartStorageOnDisk::writeChecksums(MergeTreeDataPartChecksums & checksums) const
 {
     std::string path = fs::path(root_path) / "checksums.txt";
@@ -102,6 +117,20 @@ void DataPartStorageOnDisk::writeColumns(NamesAndTypesList & columns) const
     }
 
     volume->getDisk()->moveFile(path + ".tmp", path);
+}
+
+void DataPartStorageOnDisk::writeDeleteOnDestroyMarker(Poco::Logger * log) const
+{
+    String marker_path = fs::path(root_path) / "delete-on-destroy.txt";
+    auto disk = volume->getDisk();
+    try
+    {
+        volume->getDisk()->createFile(marker_path);
+    }
+    catch (Poco::Exception & e)
+    {
+        LOG_ERROR(log, "{} (while creating DeleteOnDestroy marker: {})", e.what(), backQuote(fullPath(disk, marker_path)));
+    }
 }
 
 void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync)
