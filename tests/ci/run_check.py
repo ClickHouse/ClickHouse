@@ -255,7 +255,9 @@ if __name__ == "__main__":
     elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
         pr_labels_to_remove.append(SUBMODULE_CHANGED_LABEL)
 
-    print("change labels: add {}, remove {}".format(pr_labels_to_add, pr_labels_to_remove))
+    print(
+        "change labels: add {}, remove {}".format(pr_labels_to_add, pr_labels_to_remove)
+    )
     if pr_labels_to_add:
         post_labels(gh, pr_info, pr_labels_to_add)
 
