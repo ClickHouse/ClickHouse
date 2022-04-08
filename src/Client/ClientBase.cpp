@@ -225,17 +225,16 @@ std::atomic_flag exit_on_signal;
 class QueryInterruptHandler : private boost::noncopyable
 {
 public:
-    QueryInterruptHandler() { exit_on_signal.clear(); }
-
-    ~QueryInterruptHandler() { exit_on_signal.test_and_set(); }
-
+    static void start() { exit_on_signal.clear(); }
+    /// Return true if the query was stopped.
+    static bool stop() { return exit_on_signal.test_and_set(); }
     static bool cancelled() { return exit_on_signal.test(); }
 };
 
 /// This signal handler is set only for SIGINT.
 void interruptSignalHandler(int signum)
 {
-    if (exit_on_signal.test_and_set())
+    if (QueryInterruptHandler::stop())
         safeExit(128 + signum);
 }
 
@@ -254,7 +253,7 @@ ClientBase::ClientBase() = default;
 
 void ClientBase::setupSignalHandler()
 {
-    exit_on_signal.test_and_set();
+    QueryInterruptHandler::stop();
 
     struct sigaction new_act;
     memset(&new_act, 0, sizeof(new_act));
@@ -685,6 +684,9 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     {
         try
         {
+            QueryInterruptHandler::start();
+            SCOPE_EXIT({ QueryInterruptHandler::stop(); });
+
             connection->sendQuery(
                 connection_parameters.timeouts,
                 query,
@@ -724,8 +726,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query)
 {
-    QueryInterruptHandler query_interrupt_handler;
-
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
     constexpr size_t default_poll_interval = 1000000; /// in microseconds
@@ -760,7 +760,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
                 };
 
                 /// handler received sigint
-                if (query_interrupt_handler.cancelled())
+                if (QueryInterruptHandler::cancelled())
                 {
                     cancel_query();
                 }
