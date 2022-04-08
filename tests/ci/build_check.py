@@ -284,9 +284,12 @@ def main():
 
     if build_config["package_type"] == "performance" and pr_info.number != 0:
         # because perf tests store some information about git commits
-        subprocess.check_call(
-            f"cd {REPO_COPY} && git fetch origin master:master", shell=True
+        cmd = (
+            f"cd {REPO_COPY} && git fetch --depth=60 --no-recurse-submodules "
+            "--no-tags origin master:master"
         )
+        logging.info("Fetch master branch with a command: %s", cmd)
+        subprocess.check_call(cmd, shell=True)
 
     packager_cmd = get_packager_cmd(
         build_config,
