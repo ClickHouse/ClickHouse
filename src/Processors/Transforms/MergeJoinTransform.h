@@ -17,6 +17,11 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 

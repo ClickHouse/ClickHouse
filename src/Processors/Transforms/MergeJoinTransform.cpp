@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_ROWS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace

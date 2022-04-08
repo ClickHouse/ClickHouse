@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Poco/Logger.h>
