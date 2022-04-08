@@ -237,9 +237,10 @@ def build_and_push_one_image(
             "docker buildx build --builder default "
             f"--label build-url={GITHUB_RUN_URL} "
             f"{from_tag_arg}"
-            f"--build-arg BUILDKIT_INLINE_CACHE=1 "
             f"--tag {image.repo}:{version_string} "
             f"--cache-from type=registry,ref={image.repo}:{version_string} "
+            f"--cache-from type=registry,ref={image.repo}:latest "
+            f"--cache-to type=inline,mode=max "
             f"{push_arg}"
             f"--progress plain {image.full_path}"
         )

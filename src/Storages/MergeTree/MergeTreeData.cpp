@@ -305,7 +305,7 @@ MergeTreeData::MergeTreeData(
         format_version = min_format_version;
         if (!version_file.second->isReadOnly())
         {
-            auto buf = version_file.second->writeFile(version_file.first);
+            auto buf = version_file.second->writeFile(version_file.first, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, context_->getWriteSettings());
             writeIntText(format_version.toUnderType(), *buf);
             if (getContext()->getSettingsRef().fsync_metadata)
                 buf->sync();
@@ -2962,7 +2962,8 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
     {
         auto lock = lockParts();
 
-        LOG_TRACE(log, "Trying to immediately remove part {}", part->getNameWithState());
+        auto part_name_with_state = part->getNameWithState();
+        LOG_TRACE(log, "Trying to immediately remove part {}", part_name_with_state);
 
         if (part->getState() != DataPartState::Temporary)
         {
@@ -2973,7 +2974,16 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
             part.reset();
 
             if (!((*it)->getState() == DataPartState::Outdated && it->unique()))
+            {
+                if ((*it)->getState() != DataPartState::Outdated)
+                    LOG_WARNING(log, "Cannot immediately remove part {} because it's not in Outdated state "
+                             "usage counter {}", part_name_with_state, it->use_count());
+
+                if (!it->unique())
+                    LOG_WARNING(log, "Cannot immediately remove part {} because someone using it right now "
+                             "usage counter {}", part_name_with_state, it->use_count());
                 return;
+            }
 
             modifyPartState(it, DataPartState::Deleting);
 
@@ -3375,7 +3385,14 @@ void MergeTreeData::checkAlterPartitionIsPossible(
             else
             {
                 /// We are able to parse it
-                getPartitionIDFromQuery(command.partition, getContext());
+                const auto * partition_ast = command.partition->as<ASTPartition>();
+                if (partition_ast && partition_ast->all)
+                {
+                    if (command.type != PartitionCommand::DROP_PARTITION)
+                        throw DB::Exception("Only support DETACH PARTITION ALL currently", ErrorCodes::SUPPORT_IS_DISABLED);
+                }
+                else
+                    getPartitionIDFromQuery(command.partition, getContext());
             }
         }
     }
@@ -3383,9 +3400,15 @@ void MergeTreeData::checkAlterPartitionIsPossible(
 
 void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
-    const String partition_id = getPartitionIDFromQuery(partition, getContext());
-    auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
-
+    DataPartsVector parts_to_remove;
+    const auto * partition_ast = partition->as<ASTPartition>();
+    if (partition_ast && partition_ast->all)
+        parts_to_remove = getDataPartsVector();
+    else
+    {
+        const String partition_id = getPartitionIDFromQuery(partition, getContext());
+        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
+    }
     UInt64 partition_size = 0;
 
     for (const auto & part : parts_to_remove)
@@ -3775,9 +3798,9 @@ private:
 
             for (const String & filename : filenames)
             {
-                auto backup_entry = backup->readFile(data_path_in_backup + part_name + "/" + filename);
+                auto backup_entry = backup->readFile(fs::path(data_path_in_backup) / part_name / filename);
                 auto read_buffer = backup_entry->getReadBuffer();
-                auto write_buffer = disk->writeFile(temp_part_dir + "/" + filename);
+                auto write_buffer = disk->writeFile(fs::path(temp_part_dir) / filename);
                 copyData(*read_buffer, *write_buffer);
                 reservation->update(reservation->getSize() - backup_entry->getSize());
             }
@@ -3813,6 +3836,9 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
+    if (partition_ast.all)
+        throw Exception("Only Support DETACH PARTITION ALL currently", ErrorCodes::SUPPORT_IS_DISABLED);
+
     if (!partition_ast.value)
     {
         MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
@@ -3832,7 +3858,6 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     }
 
     /// Re-parse partition key fields using the information about expected field types.
-
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
     size_t fields_count = key_sample_block.columns();
@@ -4634,6 +4659,7 @@ static void selectBestProjection(
 Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
+    bool has_filter,
     const SelectQueryInfo & query_info,
     const DataPartsVector & parts,
     DataPartsVector & normal_parts,
@@ -4648,13 +4674,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     auto block = metadata_snapshot->minmax_count_projection->sample_block.cloneEmpty();
     bool need_primary_key_max_column = false;
     const auto & primary_key_max_column_name = metadata_snapshot->minmax_count_projection->primary_key_max_column_name;
+    NameSet required_columns_set(required_columns.begin(), required_columns.end());
     if (!primary_key_max_column_name.empty())
-    {
-        need_primary_key_max_column = std::any_of(
-            required_columns.begin(), required_columns.end(), [&](const auto & name) { return primary_key_max_column_name == name; });
-    }
+        need_primary_key_max_column = required_columns_set.contains(primary_key_max_column_name);
 
     auto partition_minmax_count_columns = block.mutateColumns();
+    auto partition_minmax_count_column_names = block.getNames();
     auto insert = [](ColumnAggregateFunction & column, const Field & value)
     {
         auto func = column.getAggregateFunction();
@@ -4663,50 +4688,75 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         size_t align_of_state = func->alignOfData();
         auto * place = arena.alignedAlloc(size_of_state, align_of_state);
         func->create(place);
-        auto value_column = func->getReturnType()->createColumnConst(1, value)->convertToFullColumnIfConst();
-        const auto * value_column_ptr = value_column.get();
-        func->add(place, &value_column_ptr, 0, &arena);
+        if (const AggregateFunctionCount * agg_count = typeid_cast<const AggregateFunctionCount *>(func.get()))
+            agg_count->set(place, value.get<UInt64>());
+        else
+        {
+            auto value_column = func->getReturnType()->createColumnConst(1, value)->convertToFullColumnIfConst();
+            const auto * value_column_ptr = value_column.get();
+            func->add(place, &value_column_ptr, 0, &arena);
+        }
         column.insertFrom(place);
     };
 
-    ASTPtr expression_ast;
-    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */, true /* ignore_empty */);
-    if (virtual_columns_block.rows() == 0)
-        return {};
+    Block virtual_columns_block;
+    auto virtual_block = getSampleBlockWithVirtualColumns();
+    bool has_virtual_column = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
+    if (has_virtual_column || has_filter)
+    {
+        virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */, true /* ignore_empty */);
+        if (virtual_columns_block.rows() == 0)
+            return {};
+    }
 
+    size_t rows = parts.size();
+    ColumnPtr part_name_column;
     std::optional<PartitionPruner> partition_pruner;
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
-    if (metadata_snapshot->hasPartitionKey())
+    if (has_filter)
     {
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
-        auto minmax_columns_names = getMinMaxColumnsNames(partition_key);
-        minmax_columns_types = getMinMaxColumnsTypes(partition_key);
+        if (metadata_snapshot->hasPartitionKey())
+        {
+            const auto & partition_key = metadata_snapshot->getPartitionKey();
+            auto minmax_columns_names = getMinMaxColumnsNames(partition_key);
+            minmax_columns_types = getMinMaxColumnsTypes(partition_key);
 
-        minmax_idx_condition.emplace(
-            query_info,
-            query_context,
-            minmax_columns_names,
-            getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(query_context)));
-        partition_pruner.emplace(metadata_snapshot, query_info, query_context, false /* strict */);
+            minmax_idx_condition.emplace(
+                query_info,
+                query_context,
+                minmax_columns_names,
+                getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(query_context)));
+            partition_pruner.emplace(metadata_snapshot, query_info, query_context, false /* strict */);
+        }
+
+        // Generate valid expressions for filtering
+        ASTPtr expression_ast;
+        VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, query_context, virtual_columns_block, expression_ast);
+        if (expression_ast)
+            VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, query_context, expression_ast);
+
+        rows = virtual_columns_block.rows();
+        part_name_column = virtual_columns_block.getByName("_part").column;
     }
 
-    // Generate valid expressions for filtering
-    VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, query_context, virtual_columns_block, expression_ast);
-    if (expression_ast)
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, query_context, expression_ast);
-
-    size_t rows = virtual_columns_block.rows();
-    const ColumnString & part_name_column = typeid_cast<const ColumnString &>(*virtual_columns_block.getByName("_part").column);
-    size_t part_idx = 0;
     auto filter_column = ColumnUInt8::create();
     auto & filter_column_data = filter_column->getData();
-    for (size_t row = 0; row < rows; ++row)
+
+    DataPartsVector real_parts;
+    real_parts.reserve(rows);
+    for (size_t row = 0, part_idx = 0; row < rows; ++row, ++part_idx)
     {
-        while (parts[part_idx]->name != part_name_column.getDataAt(row))
-            ++part_idx;
+        if (part_name_column)
+        {
+            while (parts[part_idx]->name != part_name_column->getDataAt(row))
+                ++part_idx;
+        }
 
         const auto & part = parts[part_idx];
+
+        if (part->isEmpty())
+            continue;
 
         if (!part->minmax_idx->initialized)
             throw Exception("Found a non-empty part with uninitialized minmax_idx. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -4736,48 +4786,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             continue;
         }
 
+        real_parts.push_back(part);
         filter_column_data.back() = 1;
-        size_t pos = 0;
-        for (size_t i : metadata_snapshot->minmax_count_projection->partition_value_indices)
-        {
-            if (i >= part->partition.value.size())
-                throw Exception("Partition value index is out of boundary. It's a bug", ErrorCodes::LOGICAL_ERROR);
-            partition_minmax_count_columns[pos++]->insert(part->partition.value[i]);
-        }
-
-        size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
-        for (size_t i = 0; i < minmax_idx_size; ++i)
-        {
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
-            const auto & range = part->minmax_idx->hyperrectangle[i];
-            insert(min_column, range.left);
-            insert(max_column, range.right);
-        }
-
-        if (!primary_key_max_column_name.empty())
-        {
-            const auto & primary_key_column = *part->index[0];
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
-            insert(min_column, primary_key_column[0]);
-            insert(max_column, primary_key_column[primary_key_column.size() - 1]);
-        }
-
-        {
-            auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
-            auto func = column.getAggregateFunction();
-            Arena & arena = column.createOrGetArena();
-            size_t size_of_state = func->sizeOfData();
-            size_t align_of_state = func->alignOfData();
-            auto * place = arena.alignedAlloc(size_of_state, align_of_state);
-            func->create(place);
-            const AggregateFunctionCount & agg_count = assert_cast<const AggregateFunctionCount &>(*func);
-            agg_count.set(place, part->rows_count);
-            column.insertFrom(place);
-        }
     }
-    block.setColumns(std::move(partition_minmax_count_columns));
+
+    if (real_parts.empty())
+        return {};
 
     FilterDescription filter(*filter_column);
     for (size_t i = 0; i < virtual_columns_block.columns(); ++i)
@@ -4786,8 +4800,78 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         column = column->filter(*filter.data, -1);
     }
 
-    if (block.rows() == 0)
-        return {};
+    size_t pos = 0;
+    for (size_t i : metadata_snapshot->minmax_count_projection->partition_value_indices)
+    {
+        if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
+            for (const auto & part : real_parts)
+                partition_minmax_count_columns[pos]->insert(part->partition.value[i]);
+        ++pos;
+    }
+
+    size_t minmax_idx_size = real_parts.front()->minmax_idx->hyperrectangle.size();
+    for (size_t i = 0; i < minmax_idx_size; ++i)
+    {
+        if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
+        {
+            for (const auto & part : real_parts)
+            {
+                const auto & range = part->minmax_idx->hyperrectangle[i];
+                auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
+                insert(min_column, range.left);
+            }
+        }
+        ++pos;
+
+        if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
+        {
+            for (const auto & part : real_parts)
+            {
+                const auto & range = part->minmax_idx->hyperrectangle[i];
+                auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
+                insert(max_column, range.right);
+            }
+        }
+        ++pos;
+    }
+
+    if (!primary_key_max_column_name.empty())
+    {
+        if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
+        {
+            for (const auto & part : real_parts)
+            {
+                const auto & primary_key_column = *part->index[0];
+                auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
+                insert(min_column, primary_key_column[0]);
+            }
+        }
+        ++pos;
+
+        if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
+        {
+            for (const auto & part : real_parts)
+            {
+                const auto & primary_key_column = *part->index[0];
+                auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
+                insert(max_column, primary_key_column[primary_key_column.size() - 1]);
+            }
+        }
+        ++pos;
+    }
+
+    bool has_count
+        = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return startsWith(name, "count"); });
+    if (has_count)
+    {
+        for (const auto & part : real_parts)
+        {
+            auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
+            insert(column, part->rows_count);
+        }
+    }
+
+    block.setColumns(std::move(partition_minmax_count_columns));
 
     Block res;
     for (const auto & name : required_columns)
@@ -4796,6 +4880,11 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             res.insert(virtual_columns_block.getByName(name));
         else if (block.has(name))
             res.insert(block.getByName(name));
+        else if (startsWith(name, "count")) // special case to match count(...) variants
+        {
+            const auto & column = block.getByName("count()");
+            res.insert({column.column, column.type, name});
+        }
         else
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -4967,7 +5056,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     };
 
     auto virtual_block = getSampleBlockWithVirtualColumns();
-    auto add_projection_candidate = [&](const ProjectionDescription & projection)
+    auto add_projection_candidate = [&](const ProjectionDescription & projection, bool minmax_count_projection = false)
     {
         ProjectionCandidate candidate{};
         candidate.desc = &projection;
@@ -4994,22 +5083,30 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
         if (projection.type == ProjectionDescription::Type::Aggregate && analysis_result.need_aggregate && can_use_aggregate_projection)
         {
-            bool match = true;
             Block aggregates;
             // Let's first check if all aggregates are provided by current projection
             for (const auto & aggregate : select.getQueryAnalyzer()->aggregates())
             {
-                const auto * column = sample_block.findByName(aggregate.column_name);
-                if (column)
-                    aggregates.insert(*column);
-                else
+                if (const auto * column = sample_block.findByName(aggregate.column_name))
                 {
-                    match = false;
-                    break;
+                    aggregates.insert(*column);
+                    continue;
                 }
-            }
-            if (!match)
+
+                // We can treat every count_not_null_column as count() when selecting minmax_count_projection
+                if (minmax_count_projection && dynamic_cast<const AggregateFunctionCount *>(aggregate.function.get()))
+                {
+                    const auto * count_column = sample_block.findByName("count()");
+                    if (!count_column)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR, "`count()` column is missing when minmax_count_projection == true. It is a bug");
+                    aggregates.insert({count_column->column, count_column->type, aggregate.column_name});
+                    continue;
+                }
+
+                // No match
                 return;
+            }
 
             // Check if all aggregation keys can be either provided by some action, or by current
             // projection directly. Reshape the `before_aggregation` action DAG so that it only
@@ -5029,9 +5126,20 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             candidate.before_aggregation->reorderAggregationKeysForProjection(key_name_pos_map);
             candidate.before_aggregation->addAggregatesViaProjection(aggregates);
 
+            // minmax_count_projections only have aggregation actions
+            if (minmax_count_projection)
+                candidate.required_columns = {required_columns.begin(), required_columns.end()};
+
             if (rewrite_before_where(candidate, projection, required_columns, sample_block_for_keys, aggregates))
             {
-                candidate.required_columns = {required_columns.begin(), required_columns.end()};
+                if (minmax_count_projection)
+                {
+                    candidate.before_where = nullptr;
+                    candidate.prewhere_info = nullptr;
+                }
+                else
+                    candidate.required_columns = {required_columns.begin(), required_columns.end()};
+
                 for (const auto & aggregate : aggregates)
                     candidate.required_columns.push_back(aggregate.name);
                 candidates.push_back(std::move(candidate));
@@ -5062,11 +5170,11 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     ProjectionCandidate * selected_candidate = nullptr;
     size_t min_sum_marks = std::numeric_limits<size_t>::max();
     if (metadata_snapshot->minmax_count_projection)
-        add_projection_candidate(*metadata_snapshot->minmax_count_projection);
-    std::optional<ProjectionCandidate> minmax_conut_projection_candidate;
+        add_projection_candidate(*metadata_snapshot->minmax_count_projection, true);
+    std::optional<ProjectionCandidate> minmax_count_projection_candidate;
     if (!candidates.empty())
     {
-        minmax_conut_projection_candidate.emplace(std::move(candidates.front()));
+        minmax_count_projection_candidate.emplace(std::move(candidates.front()));
         candidates.clear();
     }
     MergeTreeDataSelectExecutor reader(*this);
@@ -5076,24 +5184,27 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(this))
             max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
     }
-    auto parts = getDataPartsVector();
+
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    const auto & parts = snapshot_data.parts;
 
     // If minmax_count_projection is a valid candidate, check its completeness.
-    if (minmax_conut_projection_candidate)
+    if (minmax_count_projection_candidate)
     {
         DataPartsVector normal_parts;
         query_info.minmax_count_projection_block = getMinMaxCountProjectionBlock(
             metadata_snapshot,
-            minmax_conut_projection_candidate->required_columns,
+            minmax_count_projection_candidate->required_columns,
+            analysis_result.prewhere_info || analysis_result.before_where,
             query_info,
             parts,
             normal_parts,
             max_added_blocks.get(),
             query_context);
 
-        if (query_info.minmax_count_projection_block && minmax_conut_projection_candidate->prewhere_info)
+        if (query_info.minmax_count_projection_block && minmax_count_projection_candidate->prewhere_info)
         {
-            const auto & prewhere_info = minmax_conut_projection_candidate->prewhere_info;
+            const auto & prewhere_info = minmax_count_projection_candidate->prewhere_info;
             if (prewhere_info->alias_actions)
                 ExpressionActions(prewhere_info->alias_actions, actions_settings).execute(query_info.minmax_count_projection_block);
 
@@ -5112,7 +5223,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
         if (normal_parts.empty())
         {
-            selected_candidate = &*minmax_conut_projection_candidate;
+            selected_candidate = &*minmax_count_projection_candidate;
             selected_candidate->complete = true;
             min_sum_marks = query_info.minmax_count_projection_block.rows();
         }
@@ -5136,7 +5247,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
                 if (!normal_result_ptr->error())
                 {
-                    selected_candidate = &*minmax_conut_projection_candidate;
+                    selected_candidate = &*minmax_count_projection_candidate;
                     selected_candidate->merge_tree_normal_select_result_ptr = normal_result_ptr;
                     min_sum_marks = query_info.minmax_count_projection_block.rows() + normal_result_ptr->marks();
                 }

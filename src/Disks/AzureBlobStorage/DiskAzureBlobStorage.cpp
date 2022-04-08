@@ -90,7 +90,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskAzureBlobStorage::readFile(
 std::unique_ptr<WriteBufferFromFileBase> DiskAzureBlobStorage::writeFile(
     const String & path,
     size_t buf_size,
-    WriteMode mode)
+    WriteMode mode,
+    const WriteSettings &)
 {
     auto blob_path = path + "_" + getRandomASCIIString(8); /// NOTE: path contains the tmp_* prefix in the blob name
 

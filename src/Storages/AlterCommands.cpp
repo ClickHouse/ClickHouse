@@ -696,22 +696,24 @@ namespace
 /// The function works for Arrays and Nullables of the same structure.
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
-    if (from->equals(*to))
-        return true;
-
-    if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from))
+    auto is_compatible_enum_types_conversion = [](const IDataType * from_type, const IDataType * to_type)
     {
-        if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(to))
-            return to_enum8->contains(*from_enum8);
-    }
+        if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from_type))
+        {
+            if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(to_type))
+                return to_enum8->contains(*from_enum8);
+        }
 
-    if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(from))
-    {
-        if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(to))
-            return to_enum16->contains(*from_enum16);
-    }
+        if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(from_type))
+        {
+            if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(to_type))
+                return to_enum16->contains(*from_enum16);
+        }
 
-    static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
+        return false;
+    };
+
+    static const std::unordered_multimap<std::type_index, const std::type_info &> allowed_conversions =
         {
             { typeid(DataTypeEnum8),    typeid(DataTypeInt8)     },
             { typeid(DataTypeEnum16),   typeid(DataTypeInt16)    },
@@ -721,12 +723,19 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
         };
 
+    /// Unwrap some nested and check for valid conevrsions
     while (true)
     {
+        /// types are equal, obviously pure metadata alter
         if (from->equals(*to))
             return true;
 
-        auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
+        /// We just adding something to enum, nothing changed on disk
+        if (is_compatible_enum_types_conversion(from, to))
+            return true;
+
+        /// Types changed, but representation on disk didn't
+        auto it_range = allowed_conversions.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
             if (it->second == typeid(*to))

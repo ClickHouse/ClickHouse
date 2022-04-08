@@ -80,6 +80,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class SessionLog;
+class ProcessorsProfileLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -118,6 +119,7 @@ struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 class Session;
+struct WriteSettings;
 
 class IInputFormat;
 class IOutputFormat;
@@ -227,7 +229,8 @@ private:
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
-    Scalars local_scalars;
+    /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
+    Scalars special_scalars;
 
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
@@ -487,8 +490,8 @@ public:
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
-    const Block * tryGetLocalScalar(const String & name) const;
-    void addLocalScalar(const String & name, const Block & block);
+    const Block * tryGetSpecialScalar(const String & name) const;
+    void addSpecialScalar(const String & name, const Block & block);
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
     void addQueryAccessInfo(
@@ -800,6 +803,7 @@ public:
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
     std::shared_ptr<SessionLog> getSessionLog() const;
+    std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -909,6 +913,9 @@ public:
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
+
+    /** Get settings for writing to filesystem. */
+    WriteSettings getWriteSettings() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
