@@ -8,45 +8,36 @@
 #include <random>
 #include <string_view>
 
+#include "IO/WriteBuffer.h"
 #include "index.h"
 
 namespace DB
 {
 
-namespace detail 
-{
-    class DiskANNWriteBuffer : public diskann::ExternalWriteBuffer {
-    public:
-        explicit DiskANNWriteBuffer(WriteBuffer& base_buffer_) : base_buffer(base_buffer_) { }
+using DiskANNIndex = diskann::Index<Float32>;
+using DiskANNIndexPtr = std::shared_ptr<DiskANNIndex>;
 
-        using pos_type = std::fpos<std::mbstate_t>;
-
-        virtual void write( const char* /*s*/, std::streamsize /*count*/ ) override {  }
-        virtual void seekp( pos_type /*pos*/ ) override {  }
-        virtual void seekp( pos_type /*pos*/, std::ios_base::seekdir /*dir*/ ) override { ; }
-        
-        virtual pos_type tellp() override {  }
-
-        virtual void close() override { }
-    
-    private:
-        [[maybe_unused]] WriteBuffer& base_buffer;
-    }
-}
+// !TODO: Working only with Float32 type
+using DiskANNValue = Float32;
 
 struct MergeTreeIndexGranuleDiskANN final : public IMergeTreeIndexGranule
 {
-    using DiskANNIndex = diskann::Index<Float32>;
-    using DiskANNIndexPtr = std::shared_ptr<DiskANNIndex>;
-
     MergeTreeIndexGranuleDiskANN(const String & index_name_, const Block & index_sample_block_);
-    MergeTreeIndexGranuleDiskANN(const String & index_name_, const Block & index_sample_block_, DiskANNIndexPtr base_index_);
+    MergeTreeIndexGranuleDiskANN(
+        const String & index_name_, const Block & index_sample_block_, 
+        DiskANNIndexPtr base_index_, uint32_t dimensions, std::vector<DiskANNValue> datapoints
+    );
 
     ~MergeTreeIndexGranuleDiskANN() override = default;
 
-    void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void serializeBinary(WriteBuffer & out) const override;
+    uint64_t calculateIndexSize() const;
+
+    void deserializeBinary(ReadBuffer & in, MergeTreeIndexVersion version) override;
     bool empty() const override { return false; }
+
+    std::optional<uint32_t> dimensions;
+    std::vector<DiskANNValue> datapoints;
 
     String index_name;
     Block index_sample_block;
@@ -56,9 +47,6 @@ struct MergeTreeIndexGranuleDiskANN final : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexAggregatorDiskANN final : IMergeTreeIndexAggregator
 {
-    // TODO: Working only with Float32 type
-    using Value = Float32;
-
     MergeTreeIndexAggregatorDiskANN(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorDiskANN() override = default;
 
@@ -67,15 +55,14 @@ struct MergeTreeIndexAggregatorDiskANN final : IMergeTreeIndexAggregator
     void update(const Block & block, size_t * pos, size_t limit) override;
 
 private:
-    void flattenAccumulatedData(std::vector<std::vector<Value>> data);
-    void dumpDataToFile(std::string_view filename);
+    void flattenAccumulatedData(std::vector<std::vector<DiskANNValue>> data);
 
 private:
     String index_name;
     Block index_sample_block;
 
     std::optional<uint32_t> dimensions;
-    std::vector<Value> accumulated_data;
+    std::vector<DiskANNValue> accumulated_data;
 };
 
 
