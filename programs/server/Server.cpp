@@ -836,20 +836,26 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
     struct stat statbuf;
-    if (stat(path_str.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+    const auto effective_user = getUserName(effective_user_id);
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator dir_it(path); dir_it != dir_end; ++dir_it)
     {
-        const auto effective_user = getUserName(effective_user_id);
-        const auto data_owner = getUserName(statbuf.st_uid);
-        std::string message = "Effective user of the process (" + effective_user +
-            ") does not match the owner of the data (" + data_owner + ").";
-        if (effective_user_id == 0)
+        const fs::path dbfile = dir_it->path();
+        if (dbfile.filename().compare("lost+found") != 0 && stat(dbfile.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
         {
-            message += " Run under 'sudo -u " + data_owner + "'.";
-            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
-        }
-        else
-        {
-            global_context->addWarningMessage(message);
+            const auto data_owner = getUserName(statbuf.st_uid);
+            std::string message = "Effective user of the process (" + effective_user +
+                ") does not match the owner (" + data_owner + ") of a data file.";
+            if (effective_user_id == 0)
+            {
+                message += " Run under 'sudo -u " + data_owner + "'.";
+                throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+            }
+            else
+            {
+                global_context->addWarningMessage(message);
+                break;
+            }
         }
     }
 
