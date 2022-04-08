@@ -158,7 +158,8 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element & element, P
                 if (current_nested_sizes.size() == ctx.current_size)
                     current_nested_sizes.push_back(array_size);
                 else if (array_size != current_nested_sizes.back())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Array sizes mismatched");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Array sizes mismatched ({} and {})", array_size, current_nested_sizes.back());
             }
 
             path_array.push_back(std::move(values[i]));
@@ -192,7 +193,8 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element & element, P
                 if (current_nested_sizes.size() == ctx.current_size)
                     current_nested_sizes.push_back(array_size);
                 else if (array_size != current_nested_sizes.back())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Array sizes mismatched");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Array sizes mismatched ({} and {})", array_size, current_nested_sizes.back());
             }
 
             path_array.push_back(std::move(values[i]));
@@ -228,7 +230,7 @@ void JSONDataParser<ParserImpl>::fillMissedValuesInArrays(ParseArrayContext & ct
 
 template <typename ParserImpl>
 bool JSONDataParser<ParserImpl>::tryInsertDefaultFromNested(
-    const ParseArrayContext & ctx, const PathInData::Parts & path, Array & array)
+    ParseArrayContext & ctx, const PathInData::Parts & path, Array & array)
 {
     /// If there is a collected size of current Nested
     /// then insert array of this size as a default value.
@@ -240,14 +242,16 @@ bool JSONDataParser<ParserImpl>::tryInsertDefaultFromNested(
     if (nested_key.empty())
         return false;
 
-    const auto * mapped = ctx.nested_sizes_by_key.find(nested_key);
+    auto * mapped = ctx.nested_sizes_by_key.find(nested_key);
     if (!mapped)
         return false;
 
-    const auto & current_nested_sizes = mapped->getMapped();
+    auto & current_nested_sizes = mapped->getMapped();
     assert(current_nested_sizes.size() == ctx.current_size || current_nested_sizes.size() == ctx.current_size + 1);
+
+    /// If all keys of Nested were missed then add a zero length.
     if (current_nested_sizes.size() == ctx.current_size)
-        return false;
+        current_nested_sizes.push_back(0);
 
     size_t array_size = current_nested_sizes.back();
     array.push_back(Array(array_size));
