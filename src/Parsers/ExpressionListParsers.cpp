@@ -624,7 +624,10 @@ enum Action
 class Layer
 {
 public:
-    Layer(TokenType end_bracket_ = TokenType::Whitespace, String func_name_ = "") : end_bracket(end_bracket_), func_name(func_name_)
+    Layer(TokenType end_bracket_ = TokenType::Whitespace, String func_name_ = "", bool layer_zero_ = false) : 
+        end_bracket(end_bracket_),
+        func_name(func_name_),
+        layer_zero(layer_zero_)
     {
     }
 
@@ -694,7 +697,7 @@ public:
 
     virtual bool parse(IParser::Pos & pos, Expected & expected, Action & action)
     {
-        if (ParserToken(TokenType::Comma).ignore(pos, expected))
+        if (!layer_zero && ParserToken(TokenType::Comma).ignore(pos, expected))
         {
             action = Action::OPERAND;
             return wrapLayer();
@@ -702,10 +705,8 @@ public:
 
         if (end_bracket != TokenType::Whitespace && ParserToken(end_bracket).ignore(pos, expected))
         {
-            if (!wrapLayer())
-                return false;
-
             finished = true;
+            return wrapLayer();
         }
 
         return true;
@@ -770,6 +771,7 @@ protected:
     TokenType end_bracket;
     String func_name;
     bool finished = false;
+    bool layer_zero;
 };
 
 
@@ -974,7 +976,7 @@ public:
                     result = {makeASTFunction("position", result)};
                 else
                     result = {makeASTFunction("position", result[1], result[0])};
-                
+
                 finished = true;
                 return true;
             }
@@ -995,13 +997,18 @@ public:
     {
         ASTPtr node;
 
-        // Recursion
+        // Recursion :'(
         if (!ParserSelectWithUnionQuery().parse(pos, node, expected))
+            return false;
+
+        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             return false;
 
         auto subquery = std::make_shared<ASTSubquery>();
         subquery->children.push_back(node);
         result = {makeASTFunction("exists", subquery)};
+
+        finished = true;
 
         return true;
     }
@@ -1165,6 +1172,205 @@ private:
 };
 
 
+class DateAddLayer : public Layer
+{
+public:
+    DateAddLayer(const char * function_name_) : function_name(function_name_)
+    {
+    }
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        if (state == 0)
+        {
+            if (parseIntervalKind(pos, expected, interval_kind))
+            {
+                if (!ParserToken(TokenType::Comma).ignore(pos, expected))
+                    return false;
+
+                action = Action::OPERAND;
+                state = 2;
+            }
+            else
+            {
+                func_name = function_name;
+                end_bracket = TokenType::ClosingRoundBracket;
+                state = 1;
+            }
+        }
+
+        if (state == 1)
+        {
+            return Layer::parse(pos, expected, action);
+        }
+
+        if (state == 2)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!wrapLayer())
+                    return false;
+
+                state = 3;
+            }
+        }
+
+        if (state == 3)
+        {
+            if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!wrapLayer())
+                    return false;
+
+                result[0] = makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), result[0]);
+                result = {makeASTFunction(function_name, result[1], result[0])};
+                finished = true;
+            }
+        }
+        return true;
+    }
+
+private:
+    int state = 0;
+    IntervalKind interval_kind;
+    const char * function_name;
+};
+
+
+class DateDiffLayer : public Layer
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        if (state == 0)
+        {
+            if (!parseIntervalKind(pos, expected, interval_kind))
+            {
+                func_name = "dateDiff";
+                end_bracket = TokenType::ClosingRoundBracket;
+                state = 1;
+            }
+            else
+            {
+                if (!ParserToken(TokenType::Comma).ignore(pos, expected))
+                    return false;
+
+                state = 2;
+            }
+        }
+
+        if (state == 1)
+        {
+            return Layer::parse(pos, expected, action);
+        }
+
+        if (state == 2)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!wrapLayer())
+                    return false;
+
+                state = 3;
+            }
+        }
+
+        if (state == 3)
+        {
+            if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!wrapLayer())
+                    return false;
+
+                if (result.size() != 2)
+                    return false;
+
+                result = {makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), result[0], result[1])};
+                finished = true;
+            }
+        }
+
+        return true;
+    }
+
+private:
+    int state = 0;
+    IntervalKind interval_kind;
+};
+
+
+class IntervalLayer : public Layer
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
+    {
+        if (state == 0)
+        {
+            auto begin = pos;
+            auto init_expected = expected;
+            ASTPtr string_literal;
+            //// A String literal followed INTERVAL keyword,
+            /// the literal can be a part of an expression or
+            /// include Number and INTERVAL TYPE at the same time
+            if (ParserStringLiteral{}.parse(pos, string_literal, expected))
+            {
+                String literal;
+                if (string_literal->as<ASTLiteral &>().value.tryGet(literal))
+                {
+                    Tokens tokens(literal.data(), literal.data() + literal.size());
+                    IParser::Pos token_pos(tokens, 0);
+                    Expected token_expected;
+                    ASTPtr expr;
+
+                    if (!ParserNumber{}.parse(token_pos, expr, token_expected))
+                        return false;
+                    else
+                    {
+                        /// case: INTERVAL '1' HOUR
+                        /// back to begin
+                        if (!token_pos.isValid())
+                        {
+                            pos = begin;
+                            expected = init_expected;
+                        }
+                        else
+                            /// case: INTERVAL '1 HOUR'
+                            if (!parseIntervalKind(token_pos, token_expected, interval_kind))
+                                return false;
+
+                            result = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr)};
+                            finished = true;
+                    }
+                }
+            }
+            state = 1;
+        }
+
+        if (state == 1)
+        {
+            if (parseIntervalKind(pos, expected, interval_kind))
+            {
+                if (!wrapLayer())
+                    return false;
+
+                result = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), result)};
+                finished = true;
+            }
+        }
+
+        return true;
+    }
+
+private:
+    int state = 0;
+    IntervalKind interval_kind;
+};
+
+
 bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     IParser::Pos begin = pos;
@@ -1271,14 +1477,14 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Action next = Action::OPERAND;
 
     std::vector<std::unique_ptr<Layer>> storage;
-    storage.push_back(std::make_unique<Layer>());
+    storage.push_back(std::make_unique<Layer>(TokenType::Whitespace, "", true));
 
     while (pos.isValid())
     {
         // LOG_FATAL(&Poco::Logger::root(), "#pos: {}", String(pos->begin, pos->size()));
         if (!storage.back()->parse(pos, expected, next))
             return false;
-        
+
         if (storage.back()->isFinished())
         {
             next = Action::OPERATOR;
@@ -1316,6 +1522,11 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 next = Action::OPERAND;
                 storage.back()->pushOperator(cur_op->second);
+            }
+            else if (parseOperator(pos, "INTERVAL", expected))
+            {
+                next = Action::OPERAND;
+                storage.push_back(std::make_unique<IntervalLayer>());
             }
             else if (ParseDateOperatorExpression(pos, tmp, expected) ||
                      ParseTimestampOperatorExpression(pos, tmp, expected) ||
@@ -1365,6 +1576,15 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                             storage.push_back(std::make_unique<TrimLayer>(true, false));
                         else if (function_name_lowercase == "rtrim")
                             storage.push_back(std::make_unique<TrimLayer>(false, true));
+                        else if (function_name_lowercase == "dateadd" || function_name_lowercase == "date_add"
+                            || function_name_lowercase == "timestampadd" || function_name_lowercase == "timestamp_add")
+                            storage.push_back(std::make_unique<DateAddLayer>("plus"));
+                        else if (function_name_lowercase == "datesub" || function_name_lowercase == "date_sub"
+                            || function_name_lowercase == "timestampsub" || function_name_lowercase == "timestamp_sub")
+                            storage.push_back(std::make_unique<DateAddLayer>("minus"));
+                        else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
+                            || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
+                            storage.push_back(std::make_unique<DateDiffLayer>());
                         else
                             storage.push_back(std::make_unique<Layer>(TokenType::ClosingRoundBracket, function_name));
                     }

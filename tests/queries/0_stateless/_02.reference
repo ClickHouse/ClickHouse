@@ -31,3 +31,15 @@ equal (AST): SELECT 1 + 2 * 3 < a / b mod 5 OR [a, b, c] + 1 != [c, d, e] AND n 
 equal (AST): SELECT 1 + 2 * 3 < a / b mod 5 AND [a, b, c] + 1 != [c, d, e] OR n as res
 equal (AST): SELECT 'needle' LIKE 'haystack' AND NOT needle NOT ILIKE haystack
 equal (AST): SELECT 'needle' LIKE 'haystack' AND (NOT needle) NOT ILIKE haystack
+equal (AST): SELECT [1, 2, 3, cast(['a', 'b', c] as Array(String)), 4]
+equal (AST): SELECT [1, 2, 3, cast(['a', 'b', c], Array(String)), 4]
+equal (AST): SELECT [1, 2, 3, cast(['a', 'b', c] as Array(String)), 4]
+equal (AST): SELECT [1, 2, 3, cast(['a', 'b', c], Array(String)), 4]
+equal (RES): SELECT EXTRACT(DAY FROM toDate('2017-06-15'))
+equal (AST): SELECT EXTRACT(DAY FROM toDate('2017-06-15'))
+equal (RES): SELECT substring(toFixedString('hello12345', 16) from 1 for 8)
+equal (AST): SELECT substring(toFixedString('hello12345', 16) from 1 for 8)
+equal (RES): SELECT position('Hello, world!' IN '!')
+equal (AST): SELECT position('Hello, world!' IN '!')
+equal (RES): SELECT trim(TRAILING 'x' FROM 'xxfooxx')
+equal (AST): SELECT trim(TRAILING 'x' FROM 'xxfooxx')
