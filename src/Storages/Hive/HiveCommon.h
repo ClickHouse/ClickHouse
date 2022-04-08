@@ -37,7 +37,7 @@ protected:
 private:
     ThriftHiveMetastoreClientBuilder builder;
 };
-class HiveMetastoreClient : public WithContext
+class HiveMetastoreClient
 {
 public:
 
@@ -68,17 +68,15 @@ public:
 
 
     /// Used for speeding up metadata query process.
-    struct HiveTableMetadata : public WithContext
+    struct HiveTableMetadata
     {
     public:
         HiveTableMetadata(
             const String & db_name_,
             const String & table_name_,
             std::shared_ptr<Apache::Hadoop::Hive::Table> table_,
-            const std::map<String, PartitionInfo> & partition_infos_,
-            ContextPtr context_)
-            : WithContext(context_)
-            , db_name(db_name_)
+            const std::map<String, PartitionInfo> & partition_infos_)
+            : db_name(db_name_)
             , table_name(table_name_)
             , table(table_)
             , partition_infos(partition_infos_)
@@ -117,13 +115,11 @@ public:
 
     using HiveTableMetadataPtr = std::shared_ptr<HiveMetastoreClient::HiveTableMetadata>;
 
-    explicit HiveMetastoreClient(ThriftHiveMetastoreClientBuilder builder_, ContextPtr context_)
-        : WithContext(context_)
-        , table_metadata_cache(1000)
+    explicit HiveMetastoreClient(ThriftHiveMetastoreClientBuilder builder_)
+        : table_metadata_cache(1000)
         , client_pool(builder_)
     {
     }
-
 
     HiveTableMetadataPtr getTableMetadata(const String & db_name, const String & table_name);
     // Access hive table information by hive client
@@ -150,7 +146,7 @@ class HiveMetastoreClientFactory final : private boost::noncopyable
 public:
     static HiveMetastoreClientFactory & instance();
 
-    HiveMetastoreClientPtr getOrCreate(const String & name, ContextPtr context);
+    HiveMetastoreClientPtr getOrCreate(const String & name);
 
     static std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> createThriftHiveMetastoreClient(const String & name);
 
