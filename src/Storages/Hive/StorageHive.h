@@ -156,8 +156,6 @@ private:
 
     std::shared_ptr<HiveSettings> storage_settings;
 
-    // mutable std::map<String, HiveFilePtr> hive_files_by_path;
-
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
 };
 
