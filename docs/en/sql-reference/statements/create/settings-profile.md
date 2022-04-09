@@ -1,6 +1,6 @@
 ---
-sidebar_position: 43
-sidebar_label: SETTINGS PROFILE
+toc_priority: 43
+toc_title: SETTINGS PROFILE
 ---
 
 # CREATE SETTINGS PROFILE {#create-settings-profile-statement}

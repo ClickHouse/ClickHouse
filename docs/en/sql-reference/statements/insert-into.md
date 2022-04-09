@@ -1,9 +1,9 @@
 ---
-sidebar_position: 33
-sidebar_label: INSERT INTO
+toc_priority: 33
+toc_title: INSERT INTO
 ---
 
-# INSERT INTO Statement 
+## INSERT INTO Statement {#insert}
 
 Inserts data into a table.
 

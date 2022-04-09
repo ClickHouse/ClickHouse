@@ -1,12 +1,11 @@
 ---
-sidebar_position: 70
-sidebar_label: Testing
-description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
+toc_priority: 70
+toc_title: Testing
 ---
 
-# ClickHouse Testing 
+# ClickHouse Testing {#clickhouse-testing}
 
-## Functional Tests
+## Functional Tests {#functional-tests}
 
 Functional tests are the most simple and convenient to use. Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
 

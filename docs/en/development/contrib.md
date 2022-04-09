@@ -1,10 +1,9 @@
 ---
-sidebar_position: 71
-sidebar_label: Third-Party Libraries
-description: A list of third-party libraries used 
+toc_priority: 71
+toc_title: Third-Party Libraries Used
 ---
 
-# Third-Party Libraries Used 
+# Third-Party Libraries Used {#third-party-libraries-used}
 
 The list of third-party libraries:
 

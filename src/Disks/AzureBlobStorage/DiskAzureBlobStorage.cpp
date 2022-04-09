@@ -71,8 +71,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskAzureBlobStorage::readFile(
     LOG_TEST(log, "Read from file by path: {}", backQuote(metadata_disk->getPath() + path));
 
     auto reader_impl = std::make_unique<ReadBufferFromAzureBlobStorageGather>(
-        path, blob_container_client, metadata, settings->max_single_read_retries,
-        settings->max_single_download_retries, read_settings);
+        blob_container_client, metadata.remote_fs_root_path, metadata.remote_fs_objects,
+        settings->max_single_read_retries, settings->max_single_download_retries, read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
@@ -90,7 +90,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskAzureBlobStorage::readFile(
 std::unique_ptr<WriteBufferFromFileBase> DiskAzureBlobStorage::writeFile(
     const String & path,
     size_t buf_size,
-    WriteMode mode)
+    WriteMode mode,
+    const WriteSettings &)
 {
     auto blob_path = path + "_" + getRandomASCIIString(8); /// NOTE: path contains the tmp_* prefix in the blob name
 
@@ -108,7 +109,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskAzureBlobStorage::writeFile(
         readOrCreateUpdateAndStoreMetadata(path, mode, false, [blob_path, count] (Metadata & metadata) { metadata.addObject(blob_path, count); return true; });
     };
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(create_metadata_callback), path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(create_metadata_callback), blob_path);
 }
 
 

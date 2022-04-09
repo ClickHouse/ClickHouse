@@ -1,6 +1,6 @@
 ---
-sidebar_position: 50
-sidebar_label: Enum
+toc_priority: 50
+toc_title: Enum
 ---
 
 # Enum {#enum}

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 64
-sidebar_label: Machine Learning
+toc_priority: 64
+toc_title: Machine Learning
 ---
 
 # Machine Learning Functions {#machine-learning-functions}
