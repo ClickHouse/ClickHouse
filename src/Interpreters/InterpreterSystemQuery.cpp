@@ -7,6 +7,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
+#include <Common/FileCacheFactory.h>
+#include <Common/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -29,6 +31,8 @@
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -296,6 +300,21 @@ BlockIO InterpreterSystemQuery::execute()
                 cache->reset();
             break;
 #endif
+        case Type::DROP_FILESYSTEM_CACHE:
+        {
+            if (query.filesystem_cache_path.empty())
+            {
+                auto caches = FileCacheFactory::instance().getAll();
+                for (const auto & [_, cache_data] : caches)
+                    cache_data.cache->tryRemoveAll();
+            }
+            else
+            {
+                auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
+                cache->tryRemoveAll();
+            }
+            break;
+        }
         case Type::RELOAD_DICTIONARY:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
@@ -443,7 +462,9 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
                 [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
                 [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); },
-                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); }
+                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); },
+                [&] { if (auto transactions_info_log = getContext()->getTransactionsInfoLog()) transactions_info_log->flush(true); },
+                [&] { if (auto processors_profile_log = getContext()->getProcessorsProfileLog()) processors_profile_log->flush(true); }
             );
             break;
         }
@@ -758,6 +779,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+        case Type::DROP_FILESYSTEM_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;

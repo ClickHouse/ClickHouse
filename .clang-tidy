@@ -144,6 +144,7 @@ Checks: '-*,
     clang-analyzer-cplusplus.SelfAssignment,
     clang-analyzer-deadcode.DeadStores,
     clang-analyzer-cplusplus.Move,
+    clang-analyzer-optin.cplusplus.UninitializedObject,
     clang-analyzer-optin.cplusplus.VirtualCall,
     clang-analyzer-security.insecureAPI.UncheckedReturn,
     clang-analyzer-security.insecureAPI.bcmp,
@@ -163,6 +164,8 @@ Checks: '-*,
     clang-analyzer-unix.cstring.NullArg,
 
     boost-use-to-string,
+
+    alpha.security.cert.env.InvalidPtr,
 '
 WarningsAsErrors: '*'
 

@@ -1,9 +1,9 @@
 ---
-sidebar_position: 46
-sidebar_label: Polygon Dictionaries With Grids
+toc_priority: 46
+toc_title: Polygon Dictionaries With Grids
 ---
 
-# Polygon dictionaries 
+# Polygon dictionaries {#polygon-dictionaries}
 
 Polygon dictionaries allow you to efficiently search for the polygon containing specified points.
 For example: defining a city area by geographical coordinates.

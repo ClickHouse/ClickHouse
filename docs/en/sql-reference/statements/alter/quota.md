@@ -1,6 +1,6 @@
 ---
-sidebar_position: 46
-sidebar_label: QUOTA
+toc_priority: 46
+toc_title: QUOTA
 ---
 
 # ALTER QUOTA {#alter-quota-statement}

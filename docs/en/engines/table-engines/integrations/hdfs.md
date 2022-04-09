@@ -1,6 +1,6 @@
 ---
-sidebar_position: 6
-sidebar_label: HDFS
+toc_priority: 6
+toc_title: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}
@@ -98,9 +98,8 @@ Table consists of all the files in both directories (all files should satisfy fo
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-:::warning    
-If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-:::
+!!! warning "Warning"
+    If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 
 **Example**
 

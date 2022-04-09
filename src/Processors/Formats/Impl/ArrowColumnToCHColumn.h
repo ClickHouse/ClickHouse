@@ -38,7 +38,11 @@ public:
     /// Transform arrow schema to ClickHouse header. If hint_header is provided,
     /// we will skip columns in schema that are not in hint_header.
     static Block arrowSchemaToCHHeader(
-        const arrow::Schema & schema, const std::string & format_name, const Block * hint_header = nullptr, bool ignore_case = false);
+        const arrow::Schema & schema,
+        const std::string & format_name,
+        bool skip_columns_with_unsupported_types = false,
+        const Block * hint_header = nullptr,
+        bool ignore_case = false);
 
 private:
     const Block & header;

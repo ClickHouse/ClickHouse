@@ -1,11 +1,11 @@
 ---
-sidebar_position: 44
-sidebar_label: Dictionary Key and Fields
+toc_priority: 44
+toc_title: Dictionary Key and Fields
 ---
 
-# Dictionary Key and Fields
+# Dictionary Key and Fields {#dictionary-key-and-fields}
 
-The `structure` clause describes the dictionary key and fields available for queries.
+The `<structure>` clause describes the dictionary key and fields available for queries.
 
 XML description:
 
@@ -56,11 +56,10 @@ ClickHouse supports the following types of keys:
 
 An xml structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
 
-:::warning    
-You must not describe key as an attribute.
-:::
+!!! warning "Warning"
+    You must not describe key as an attribute.
 
-### Numeric Key {#numeric-key}
+### Numeric Key {#ext_dict-numeric-key}
 
 Type: `UInt64`.
 
@@ -93,9 +92,8 @@ PRIMARY KEY Id
 
 The key can be a `tuple` from any types of fields. The [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
-:::tip
-A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
-:::
+!!! tip "Tip"
+    A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
 
 The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Example:
 
