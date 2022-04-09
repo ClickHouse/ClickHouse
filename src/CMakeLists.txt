@@ -90,6 +90,8 @@ if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+add_headers_and_sources(dbms Storages/Redis)
+
 if (USE_AMQPCPP)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
@@ -344,6 +346,9 @@ if (USE_RDKAFKA)
         dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
     endif()
 endif()
+
+dbms_target_link_libraries(PRIVATE sw hiredis)
+dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/hiredis-cmake/include)
 
 if (USE_CYRUS_SASL)
     dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})

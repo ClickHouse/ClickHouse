@@ -27,6 +27,7 @@ void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
+void registerStorageRedis(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
@@ -131,6 +132,7 @@ void registerStorages()
     #if USE_RDKAFKA
     registerStorageKafka(factory);
     #endif
+    registerStorageRedis(factory);
 
 #if USE_FILELOG
     registerStorageFileLog(factory);

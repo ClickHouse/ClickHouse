@@ -19,6 +19,8 @@
 #include <Storages/MySQL/MySQLSettings.h>
 #endif
 
+#include <Storages/Redis/RedisSettings.h>
+
 #include <re2/re2.h>
 
 namespace DB
@@ -477,6 +479,9 @@ bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RabbitMQ
 template
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
 #endif
+
+template
+bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RedisSettingsTraits> & settings, ContextPtr context);
 
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
