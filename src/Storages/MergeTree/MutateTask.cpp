@@ -4,6 +4,7 @@
 #include <Common/escapeForFileName.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
@@ -546,6 +547,8 @@ struct MutationContext
 
     bool need_sync;
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+
+    MergeTreeTransactionPtr txn;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -651,6 +654,7 @@ public:
                 false, // TODO Do we need deduplicate for projections
                 {},
                 projection_merging_params,
+                NO_TRANSACTION_PTR,
                 ctx->new_data_part.get(),
                 ".tmp_proj");
 
@@ -972,7 +976,8 @@ private:
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_part_indices,
-            ctx->compression_codec);
+            ctx->compression_codec,
+            ctx->txn);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
@@ -1058,6 +1063,13 @@ private:
             ctx->files_to_skip.insert("ttl.txt");
 
         ctx->disk->createDirectories(ctx->new_part_tmp_path);
+
+        /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
+        TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
+        /// NOTE do not pass context for writing to system.transactions_info_log,
+        /// because part may have temporary name (with temporary block numbers). Will write it later.
+        ctx->new_data_part->version.setCreationTID(tid, nullptr);
+        ctx->new_data_part->storeVersionMetadata();
 
         /// Create hardlinks for unchanged files
         for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
@@ -1193,6 +1205,7 @@ MutateTask::MutateTask(
     ContextPtr context_,
     ReservationSharedPtr space_reservation_,
     TableLockHolder & table_lock_holder_,
+    const MergeTreeTransactionPtr & txn,
     MergeTreeData & data_,
     MergeTreeDataMergerMutator & mutator_,
     ActionBlocker & merges_blocker_)
@@ -1210,6 +1223,7 @@ MutateTask::MutateTask(
     ctx->metadata_snapshot = metadata_snapshot_;
     ctx->space_reservation = space_reservation_;
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
+    ctx->txn = txn;
 }
 
 
@@ -1269,7 +1283,7 @@ bool MutateTask::prepare()
         storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot));
+        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn));
         return false;
     }
     else
@@ -1294,6 +1308,8 @@ bool MutateTask::prepare()
     }
 
     ctx->single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    /// FIXME new_data_part is not used in the case when we clone part with cloneAndLoadDataPartOnSameDisk and return false
+    /// Is it possible to handle this case earlier?
     ctx->new_data_part = ctx->data->createPart(
         ctx->future_part->name, ctx->future_part->type, ctx->future_part->part_info, ctx->single_disk_volume, "tmp_mut_" + ctx->future_part->name);
 
@@ -1358,7 +1374,7 @@ bool MutateTask::prepare()
             && ctx->files_to_rename.empty())
         {
             LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {} (optimized)", ctx->source_part->name, ctx->future_part->part_info.mutation);
-            promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot));
+            promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn));
             return false;
         }
 

@@ -276,7 +276,7 @@ void ClientBase::setupSignalHandler()
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
-    ParserQuery parser(end);
+    ParserQuery parser(end, global_context->getSettings().allow_settings_after_format_in_insert);
     ASTPtr res;
 
     const auto & settings = global_context->getSettingsRef();
@@ -1129,7 +1129,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             sendDataFromPipe(
                 storage->read(
                         sample.getNames(),
-                        storage->getStorageSnapshot(metadata),
+                        storage->getStorageSnapshot(metadata, global_context),
                         query_info,
                         global_context,
                         {},
