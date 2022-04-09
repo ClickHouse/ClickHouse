@@ -129,8 +129,8 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
             decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
-            /// Read partial data from first block. We don't use nextImpl in this method
-            /// Avoid to call unnecessary memcpy in read when second block fits entirely to output buffer
+            /// Read partial data from first block.
+            /// Avoid to call unnecessary nextImpl+memcpy in read when second block fits entirely to output buffer
             size_t size_partial = std::min((size_decompressed - nextimpl_working_buffer_offset),(n - bytes_read));
             pos = working_buffer.begin() + nextimpl_working_buffer_offset;
             nextimpl_working_buffer_offset = 0;
@@ -147,7 +147,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
             decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
-            ///Read partial data from last block. We don't use nextImpl in this method as well.
+            ///Read partial data from last block.
             pos = working_buffer.begin();
             bytes_read += read(to + bytes_read, n - bytes_read);
             break;
