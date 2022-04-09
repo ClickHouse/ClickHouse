@@ -1,0 +1,8 @@
+position: 50
+label: 'Reference Guides'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: Reference Guides
+  slug: /en

@@ -1,0 +1,8 @@
+position: 4
+label: 'Integrations'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: Integrations
+  slug: /integrations

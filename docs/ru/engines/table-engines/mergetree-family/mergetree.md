@@ -1,6 +1,6 @@
 ---
-toc_priority: 30
-toc_title: MergeTree
+sidebar_position: 30
+sidebar_label: MergeTree
 ---
 
 # MergeTree {#table_engines-mergetree}
@@ -19,9 +19,9 @@ toc_title: MergeTree
 
 -   **Поддерживает сэмплирование данных.** При необходимости можно задать способ сэмплирования данных в таблице.
 
-!!! info "Info"
+    :::info
     Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
-
+    :::
 ## Создание таблицы {#table_engine-mergetree-creating-a-table}
 
 ``` sql
@@ -114,9 +114,9 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 <summary>Устаревший способ создания таблицы</summary>
 
-!!! attention "Attention"
+    :::note "Attention"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
-
+    :::
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
