@@ -13,7 +13,7 @@ namespace DB
 
 /** A stream for outputting data in XML format.
   */
-class XMLRowOutputFormat : public IRowOutputFormat
+class XMLRowOutputFormat final : public IRowOutputFormat
 {
 public:
     XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);

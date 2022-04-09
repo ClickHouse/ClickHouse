@@ -15,7 +15,7 @@ namespace DB
 class CapnProtoOutputStream : public kj::OutputStream
 {
 public:
-    CapnProtoOutputStream(WriteBuffer & out_);
+    explicit CapnProtoOutputStream(WriteBuffer & out_);
 
     void write(const void * buffer, size_t size) override;
 
@@ -23,7 +23,7 @@ private:
     WriteBuffer & out;
 };
 
-class CapnProtoRowOutputFormat : public IRowOutputFormat
+class CapnProtoRowOutputFormat final : public IRowOutputFormat
 {
 public:
     CapnProtoRowOutputFormat(

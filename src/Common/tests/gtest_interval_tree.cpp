@@ -309,6 +309,29 @@ TEST(IntervalTree, IntervalSetIterators)
     }
 }
 
+TEST(IntervalTree, IntervalSetInvalidInterval)
+{
+    IntervalSet<Int64Interval> interval_set;
+    ASSERT_TRUE(!interval_set.insert(Int64Interval(10, 0)));
+    ASSERT_TRUE(!interval_set.insert(Int64Interval(15, 10)));
+    ASSERT_TRUE(interval_set.insert(Int64Interval(20, 25)));
+
+    std::set<Int64Interval> expected;
+    expected.insert({20, 25});
+
+    auto actual = intervalSetFindIntervals(interval_set, 20);
+
+    ASSERT_TRUE(actual == expected);
+    ASSERT_TRUE(interval_set.has(20));
+
+    interval_set.build();
+
+    actual = intervalSetFindIntervals(interval_set, 20);
+
+    ASSERT_TRUE(actual == expected);
+    ASSERT_TRUE(interval_set.has(20));
+}
+
 TEST(IntervalTree, IntervalMapBasic)
 {
     for (size_t intervals_size = 0; intervals_size < 120; ++intervals_size)
@@ -537,4 +560,27 @@ TEST(IntervalTree, IntervalMapIterators)
             ASSERT_TRUE(actual == expected);
         }
     }
+}
+
+TEST(IntervalTree, IntervalMapInvalidInterval)
+{
+    IntervalMap<Int64Interval, std::string> interval_map;
+    ASSERT_TRUE(!interval_map.insert(Int64Interval(10, 0), "Value"));
+    ASSERT_TRUE(!interval_map.insert(Int64Interval(15, 10), "Value"));
+    ASSERT_TRUE(interval_map.insert(Int64Interval(20, 25), "Value"));
+
+    std::map<Int64Interval, std::string> expected;
+    expected.emplace(Int64Interval{20, 25}, "Value");
+
+    auto actual = intervalMapFindIntervals(interval_map, 20);
+
+    ASSERT_TRUE(actual == expected);
+    ASSERT_TRUE(interval_map.has(20));
+
+    interval_map.build();
+
+    actual = intervalMapFindIntervals(interval_map, 20);
+
+    ASSERT_TRUE(actual == expected);
+    ASSERT_TRUE(interval_map.has(20));
 }

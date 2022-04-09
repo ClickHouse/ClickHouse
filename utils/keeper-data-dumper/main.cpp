@@ -32,14 +32,14 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
             ", numChildren: " << value.stat.numChildren <<
             ", dataLength: " << value.stat.dataLength <<
             "}" << std::endl;
-        std::cout << "\tData: " << storage.container.getValue(key).data << std::endl;
+        std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
 
-        for (const auto & child : value.children)
+        for (const auto & child : value.getChildren())
         {
             if (key == "/")
-                keys.push(key + child);
+                keys.push(key + child.toString());
             else
-                keys.push(key + "/" + child);
+                keys.push(key + "/" + child.toString());
         }
     }
     std::cout << std::flush;

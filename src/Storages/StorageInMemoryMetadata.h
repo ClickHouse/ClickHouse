@@ -55,6 +55,9 @@ struct StorageInMemoryMetadata
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 
+    StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default;
+    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default;
+
     /// NOTE: Thread unsafe part. You should modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
     /// object. See example in IStorage.
@@ -151,6 +154,9 @@ struct StorageInMemoryMetadata
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
 
+    /// Block with ordinary + ephemeral.
+    Block getSampleBlockInsertable() const;
+
     /// Block with ordinary columns.
     Block getSampleBlockNonMaterialized() const;
 
@@ -159,13 +165,6 @@ struct StorageInMemoryMetadata
     /// Storage metadata.
     Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
 
-
-    /// Block with ordinary + materialized + aliases + virtuals. Virtuals have
-    /// to be explicitly specified, because they are part of Storage type, not
-    /// Storage metadata. StorageID required only for more clear exception
-    /// message.
-    Block getSampleBlockForColumns(
-        const Names & column_names, const NamesAndTypesList & virtuals = {}, const StorageID & storage_id = StorageID::createEmpty()) const;
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
@@ -228,10 +227,6 @@ struct StorageInMemoryMetadata
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
 
-    /// Verify that all the requested names are in the table and are set correctly:
-    /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
-
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;
 
@@ -246,5 +241,7 @@ struct StorageInMemoryMetadata
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MultiVersionStorageMetadataPtr = MultiVersion<StorageInMemoryMetadata>;
+
+String listOfColumns(const NamesAndTypesList & available_columns);
 
 }

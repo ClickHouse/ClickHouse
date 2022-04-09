@@ -1,4 +1,4 @@
--- Tags: no-debug, no-parallel, long
+-- Tags: no-debug, no-parallel, long, no-s3-storage
 
 DROP TABLE IF EXISTS table_with_single_pk;
 

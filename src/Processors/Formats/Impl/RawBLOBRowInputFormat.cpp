@@ -61,4 +61,3 @@ void registerRawBLOBSchemaReader(FormatFactory & factory)
 }
 
 }
-

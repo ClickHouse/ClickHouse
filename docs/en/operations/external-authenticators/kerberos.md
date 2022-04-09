@@ -52,6 +52,9 @@ With filtering by realm:
 ```
 
 !!! warning "Note"
+    You can define only one `kerberos` section. The presence of multiple `kerberos` sections will force ClickHouse to disable Kerberos authentication.
+
+!!! warning "Note"
     `principal` and `realm` sections cannot be specified at the same time. The presence of both `principal` and `realm` sections will force ClickHouse to disable Kerberos authentication.
 
 

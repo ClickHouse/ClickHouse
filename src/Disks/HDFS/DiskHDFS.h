@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_HDFS
+
 #include <Disks/IDiskRemote.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Core/UUID.h>
@@ -56,7 +60,7 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override;
 
     void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) override;
 
@@ -79,3 +83,4 @@ private:
 };
 
 }
+#endif

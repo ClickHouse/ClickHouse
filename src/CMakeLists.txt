@@ -11,7 +11,7 @@ if(COMPILER_PIPE)
 else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
-if(MAKE_STATIC_LIBRARIES)
+if(USE_STATIC_LIBRARIES)
     set(MAX_LINKER_MEMORY 3500)
 else()
     set(MAX_LINKER_MEMORY 2500)
@@ -23,12 +23,13 @@ set (CONFIG_COMMON "${CMAKE_CURRENT_BINARY_DIR}/Common/config.h")
 
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
+include (configure_config.cmake)
 configure_file (Common/config.h.in ${CONFIG_COMMON})
 configure_file (Common/config_version.h.in ${CONFIG_VERSION})
 configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
 
 if (USE_DEBUG_HELPERS)
-    get_target_property(MAGIC_ENUM_INCLUDE_DIR magic_enum INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(MAGIC_ENUM_INCLUDE_DIR ch_contrib::magic_enum INTERFACE_INCLUDE_DIRECTORIES)
     # CMake generator expression will do insane quoting when it encounters special character like quotes, spaces, etc.
     # Prefixing "SHELL:" will force it to use the original text.
     set (INCLUDE_DEBUG_HELPERS "SHELL:-I\"${ClickHouse_SOURCE_DIR}/base\" -I\"${MAGIC_ENUM_INCLUDE_DIR}\" -include \"${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h\"")
@@ -47,6 +48,18 @@ if (COMPILER_GCC)
 
     add_definitions ("-fno-tree-loop-distribute-patterns")
 endif ()
+
+# ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
+# If turned ON, this option defines such macro.
+# See `src/Common/TargetSpecific.h`
+option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
+
+if (ENABLE_MULTITARGET_CODE)
+    add_definitions(-DENABLE_MULTITARGET_CODE=1)
+else()
+    add_definitions(-DENABLE_MULTITARGET_CODE=0)
+endif()
+
 
 add_subdirectory (Access)
 add_subdirectory (Backups)
@@ -92,7 +105,7 @@ endif()
 
 add_headers_and_sources(dbms Storages/Redis)
 
-if (USE_AMQPCPP)
+if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
@@ -339,19 +352,13 @@ target_link_libraries(clickhouse_common_io
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
 dbms_target_link_libraries(PUBLIC roaring)
-
-if (USE_RDKAFKA)
-    dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
-    if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
-        dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
-    endif()
-endif()
+dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
 
 dbms_target_link_libraries(PRIVATE sw hiredis)
 dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/hiredis-cmake/include)
 
-if (USE_CYRUS_SASL)
-    dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})
+if (TARGET ch_contrib::rdkafka)
+    dbms_target_link_libraries(PRIVATE ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
 
 if (USE_KRB5)

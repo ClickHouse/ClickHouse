@@ -1,13 +1,14 @@
 #pragma once
 
 #include <memory>
-#include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Names.h>
 #include <Core/TypeId.h>
+#include <Common/COW.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+
 
 namespace DB
 {
@@ -81,8 +82,10 @@ public:
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
 
-    SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const;
+    ColumnPtr tryGetSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
+
+    SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const;
 
     using SubstreamData = ISerialization::SubstreamData;
     using SubstreamPath = ISerialization::SubstreamPath;
@@ -308,7 +311,7 @@ private:
         const String & subcolumn_name,
         const SubstreamData & data,
         Ptr SubstreamData::*member,
-        bool throw_if_null = true) const;
+        bool throw_if_null) const;
 };
 
 
@@ -317,12 +320,12 @@ struct WhichDataType
 {
     TypeIndex idx;
 
-    constexpr WhichDataType(TypeIndex idx_ = TypeIndex::Nothing) : idx(idx_) {}
-    constexpr WhichDataType(const IDataType & data_type) : idx(data_type.getTypeId()) {}
-    constexpr WhichDataType(const IDataType * data_type) : idx(data_type->getTypeId()) {}
+    constexpr WhichDataType(TypeIndex idx_ = TypeIndex::Nothing) : idx(idx_) {} /// NOLINT
+    constexpr WhichDataType(const IDataType & data_type) : idx(data_type.getTypeId()) {} /// NOLINT
+    constexpr WhichDataType(const IDataType * data_type) : idx(data_type->getTypeId()) {} /// NOLINT
 
     // shared ptr -> is non-constexpr in gcc
-    WhichDataType(const DataTypePtr & data_type) : idx(data_type->getTypeId()) {}
+    WhichDataType(const DataTypePtr & data_type) : idx(data_type->getTypeId()) {} /// NOLINT
 
     constexpr bool isUInt8() const { return idx == TypeIndex::UInt8; }
     constexpr bool isUInt16() const { return idx == TypeIndex::UInt16; }
@@ -372,11 +375,13 @@ struct WhichDataType
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
+    constexpr bool isObject() const { return idx == TypeIndex::Object; }
 
     constexpr bool isNothing() const { return idx == TypeIndex::Nothing; }
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
+    constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
 
     constexpr bool isLowCarnality() const { return idx == TypeIndex::LowCardinality; }
 };
@@ -398,9 +403,15 @@ inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_ty
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
 inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
-inline bool isMap(const DataTypePtr & data_type) { return WhichDataType(data_type).isMap(); }
+inline bool isMap(const DataTypePtr & data_type) {return WhichDataType(data_type).isMap(); }
 inline bool isNothing(const DataTypePtr & data_type) { return WhichDataType(data_type).isNothing(); }
 inline bool isUUID(const DataTypePtr & data_type) { return WhichDataType(data_type).isUUID(); }
+
+template <typename T>
+inline bool isObject(const T & data_type)
+{
+    return WhichDataType(data_type).isObject();
+}
 
 template <typename T>
 inline bool isUInt8(const T & data_type)
@@ -475,7 +486,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeToTypeIndex<T>;
 }
 
 template <typename T>
@@ -522,6 +533,7 @@ inline bool isBool(const DataTypePtr & data_type)
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
+template <typename DataType> constexpr bool IsDataTypeEnum = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
@@ -545,5 +557,10 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
+template <typename T>
+class DataTypeEnum;
+
+template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = true;
 
 }

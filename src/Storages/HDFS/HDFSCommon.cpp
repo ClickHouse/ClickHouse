@@ -2,6 +2,7 @@
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <re2/re2.h>
+#include <filesystem>
 
 #if USE_HDFS
 #include <Common/ShellCommand.h>
@@ -24,15 +25,17 @@ namespace ErrorCodes
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
 const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
 
+std::once_flag init_libhdfs3_conf_flag;
+
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
-    const String & config_path, bool isUser)
+    const String & prefix, bool isUser)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
 
-    config.keys(config_path, keys);
+    config.keys(prefix, keys);
     for (const auto & key : keys)
     {
-        const String key_path = config_path + "." + key;
+        const String key_path = prefix + "." + key;
 
         String key_name;
         if (key == "hadoop_kerberos_keytab")
@@ -45,11 +48,7 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
         {
             need_kinit = true;
             hadoop_kerberos_principal = config.getString(key_path);
-
-#if USE_INTERNAL_HDFS3_LIBRARY
             hdfsBuilderSetPrincipal(hdfs_builder, hadoop_kerberos_principal.c_str());
-#endif
-
             continue;
         }
         else if (key == "hadoop_kerberos_kinit_command")
@@ -126,11 +125,22 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
     // Shall set env LIBHDFS3_CONF *before* HDFSBuilderWrapper construction.
-    const String & libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
-    if (!libhdfs3_conf.empty())
+    std::call_once(init_libhdfs3_conf_flag, [&config]()
     {
-        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
-    }
+        String libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
+        if (!libhdfs3_conf.empty())
+        {
+            if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
+            {
+                const String config_path = config.getString("config-file", "config.xml");
+                const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+                if (std::filesystem::exists(config_dir / libhdfs3_conf))
+                    libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+            }
+            setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
+        }
+    });
+
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
         throw Exception("Unable to create builder to connect to HDFS: " +
@@ -170,12 +180,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         String user_config_prefix = HDFSBuilderWrapper::CONFIG_PREFIX + "_" + user;
         if (config.has(user_config_prefix))
         {
-#if USE_INTERNAL_HDFS3_LIBRARY
             builder.loadFromConfig(config, user_config_prefix, true);
-#else
-            throw Exception("Multi user HDFS configuration required internal libhdfs3",
-                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-#endif
         }
     }
 

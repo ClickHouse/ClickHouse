@@ -238,6 +238,8 @@ if __name__ == "__main__":
                 env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
             elif image == "clickhouse/integration-test":
                 env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
+            elif image == "clickhouse/kerberized-hadoop":
+                env_tags += "-e {}={} ".format("DOCKER_KERBERIZED_HADOOP_TAG", tag)
             elif image == "clickhouse/kerberos-kdc":
                 env_tags += "-e {}={} ".format("DOCKER_KERBEROS_KDC_TAG", tag)
             else:

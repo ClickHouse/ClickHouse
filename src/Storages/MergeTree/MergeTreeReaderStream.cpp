@@ -42,7 +42,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     {
         size_t left_mark = mark_range.begin;
         size_t right_mark = mark_range.end;
-        auto [right_offset, mark_range_bytes] = getRightOffsetAndBytesRange(left_mark, right_mark);
+        size_t left_offset = left_mark < marks_count ? marks_loader.getMark(left_mark).offset_in_compressed_file : 0;
+        auto mark_range_bytes = getRightOffset(right_mark) - left_offset;
 
         max_mark_range_bytes = std::max(max_mark_range_bytes, mark_range_bytes);
         sum_mark_range_bytes += mark_range_bytes;
@@ -85,6 +86,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 
         cached_buffer = std::move(buffer);
         data_buffer = cached_buffer.get();
+        compressed_data_buffer = cached_buffer.get();
     }
     else
     {
@@ -102,48 +104,86 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 
         non_cached_buffer = std::move(buffer);
         data_buffer = non_cached_buffer.get();
+        compressed_data_buffer = non_cached_buffer.get();
     }
 }
 
 
-std::pair<size_t, size_t> MergeTreeReaderStream::getRightOffsetAndBytesRange(size_t left_mark, size_t right_mark)
+size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count
     /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
 
-    /// If the end of range is inside the block, we will need to read it too.
-    size_t result_right_mark = right_mark;
-    if (right_mark < marks_count && marks_loader.getMark(right_mark).offset_in_decompressed_block > 0)
+    /// Special case, can happen in Collapsing/Replacing engines
+    if (marks_count == 0)
+        return 0;
+
+    assert(right_mark_non_included <= marks_count);
+
+    size_t result_right_offset;
+    if (0 < right_mark_non_included && right_mark_non_included < marks_count)
     {
-        auto indices = collections::range(right_mark, marks_count);
-        auto it = std::upper_bound(indices.begin(), indices.end(), right_mark, [this](size_t i, size_t j)
+        auto right_mark = marks_loader.getMark(right_mark_non_included);
+        result_right_offset = right_mark.offset_in_compressed_file;
+
+        bool need_to_check_marks_from_the_right = false;
+
+        /// If the end of range is inside the block, we will need to read it too.
+        if (right_mark.offset_in_decompressed_block > 0)
         {
-            return marks_loader.getMark(i).offset_in_compressed_file < marks_loader.getMark(j).offset_in_compressed_file;
-        });
+            need_to_check_marks_from_the_right = true;
+        }
+        else
+        {
+            size_t right_mark_included = right_mark_non_included - 1;
+            const MarkInCompressedFile & right_mark_included_in_file = marks_loader.getMark(right_mark_included);
 
-        result_right_mark = (it == indices.end() ? marks_count : *it);
+            /// Also, in LowCardinality dictionary several consecutive marks can point to
+            /// the same offset. So to get true bytes offset we have to get first
+            /// non-equal mark.
+            /// Example:
+            ///  Mark 186, points to [2003111, 0]
+            ///  Mark 187, points to [2003111, 0]
+            ///  Mark 188, points to [2003111, 0] <--- for example need to read until 188
+            ///  Mark 189, points to [2003111, 0] <--- not suitable, because have same offset
+            ///  Mark 190, points to [2003111, 0]
+            ///  Mark 191, points to [2003111, 0]
+            ///  Mark 192, points to [2081424, 0] <--- what we are looking for
+            ///  Mark 193, points to [2081424, 0]
+            ///  Mark 194, points to [2081424, 0]
+            if (right_mark_included_in_file.offset_in_compressed_file == result_right_offset)
+                need_to_check_marks_from_the_right = true;
+        }
+
+        /// Let's go to the right and find mark with bigger offset in compressed file
+        if (need_to_check_marks_from_the_right)
+        {
+            bool found_bigger_mark = false;
+            for (size_t i = right_mark_non_included + 1; i < marks_count; ++i)
+            {
+                const auto & candidate_mark =  marks_loader.getMark(i);
+                if (result_right_offset < candidate_mark.offset_in_compressed_file)
+                {
+                    result_right_offset = candidate_mark.offset_in_compressed_file;
+                    found_bigger_mark = true;
+                    break;
+                }
+            }
+
+            if (!found_bigger_mark)
+            {
+                /// If there are no marks after the end of range, just use file size
+                result_right_offset = file_size;
+            }
+        }
     }
-
-    size_t right_offset;
-    size_t mark_range_bytes;
-
-    /// If there are no marks after the end of range, just use file size
-    if (result_right_mark >= marks_count
-        || (result_right_mark + 1 == marks_count
-            && marks_loader.getMark(result_right_mark).offset_in_compressed_file == marks_loader.getMark(right_mark).offset_in_compressed_file))
-    {
-        right_offset = file_size;
-        mark_range_bytes = right_offset - (left_mark < marks_count ? marks_loader.getMark(left_mark).offset_in_compressed_file : 0);
-    }
+    else if (right_mark_non_included == 0)
+        result_right_offset = marks_loader.getMark(right_mark_non_included).offset_in_compressed_file;
     else
-    {
-        right_offset = marks_loader.getMark(result_right_mark).offset_in_compressed_file;
-        mark_range_bytes = right_offset - marks_loader.getMark(left_mark).offset_in_compressed_file;
-    }
+        result_right_offset = file_size;
 
-    return std::make_pair(right_offset, mark_range_bytes);
+    return result_right_offset;
 }
-
 
 void MergeTreeReaderStream::seekToMark(size_t index)
 {
@@ -151,10 +191,7 @@ void MergeTreeReaderStream::seekToMark(size_t index)
 
     try
     {
-        if (cached_buffer)
-            cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-        if (non_cached_buffer)
-            non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
     }
     catch (Exception & e)
     {
@@ -174,10 +211,7 @@ void MergeTreeReaderStream::seekToStart()
 {
     try
     {
-        if (cached_buffer)
-            cached_buffer->seek(0, 0);
-        if (non_cached_buffer)
-            non_cached_buffer->seek(0, 0);
+        compressed_data_buffer->seek(0, 0);
     }
     catch (Exception & e)
     {
@@ -190,24 +224,21 @@ void MergeTreeReaderStream::seekToStart()
 }
 
 
-void MergeTreeReaderStream::adjustForRange(MarkRange range)
+void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
 {
     /**
      * Note: this method is called multiple times for the same range of marks -- each time we
      * read from stream, but we must update last_right_offset only if it is bigger than
      * the last one to avoid redundantly cancelling prefetches.
      */
-    auto [right_offset, mark_range_bytes] = getRightOffsetAndBytesRange(range.begin, range.end);
+    auto right_offset = getRightOffset(right_mark);
     if (!right_offset)
     {
         if (last_right_offset && *last_right_offset == 0)
             return;
 
         last_right_offset = 0; // Zero value means the end of file.
-        if (cached_buffer)
-            cached_buffer->setReadUntilEnd();
-        if (non_cached_buffer)
-            non_cached_buffer->setReadUntilEnd();
+        data_buffer->setReadUntilEnd();
     }
     else
     {
@@ -215,10 +246,7 @@ void MergeTreeReaderStream::adjustForRange(MarkRange range)
             return;
 
         last_right_offset = right_offset;
-        if (cached_buffer)
-            cached_buffer->setReadUntilPosition(right_offset);
-        if (non_cached_buffer)
-            non_cached_buffer->setReadUntilPosition(right_offset);
+        data_buffer->setReadUntilPosition(right_offset);
     }
 }
 

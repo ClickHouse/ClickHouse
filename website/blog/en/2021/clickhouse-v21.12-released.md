@@ -2,7 +2,7 @@
 title: 'What''s New in ClickHouse 21.12'
 image: 'https://blog-images.clickhouse.com/en/2021/clickhouse-v21-12/featured.jpg'
 date: '2021-12-16'
-author: '[Alexey Milovidov](https://github.com/alexey-milovidov), [Christoph Wurm](https://github.com/cwurm)'
+author: 'Alexey Milovidov, Christoph Wurm'
 tags: ['company', 'community']
 ---
 

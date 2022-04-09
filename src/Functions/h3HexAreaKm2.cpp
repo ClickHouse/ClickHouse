@@ -53,7 +53,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * column = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * column = checkAndGetColumn<ColumnUInt8>(non_const_arguments[0].column.get());
         if (!column)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -70,12 +74,12 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 resolution = data[row];
+            const UInt8 resolution = data[row];
             if (resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
-                    resolution,
+                    toString(resolution),
                     getName(),
                     MAX_H3_RES);
 
