@@ -1,0 +1,8 @@
+position: 101
+label: 'JDBC'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: JDBC
+  slug: /integrations/jdbc

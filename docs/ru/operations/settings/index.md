@@ -1,7 +1,6 @@
 ---
-toc_folder_title: Settings
-toc_priority: 55
-toc_title: Introduction
+sidebar_label: Settings
+sidebar_position: 55
 ---
 
 # Настройки {#session-settings-intro}

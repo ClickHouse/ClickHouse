@@ -1,15 +1,12 @@
 ---
-title: General questions about ClickHouse
-toc_hidden_folder: true
-toc_priority: 1
-toc_title: General
+sidebar_position: 1
+sidebar_label: General Questions about ClickHouse
+keywords: [clickhouse, faq, questions, what is]
 ---
 
-# General Questions About ClickHouse {#general-questions}
+# General Questions About ClickHouse
 
-Questions:
-
--   [What is ClickHouse?](../../index.md#what-is-clickhouse)
+-   [What is ClickHouse?](../../intro.md)
 -   [Why ClickHouse is so fast?](../../faq/general/why-clickhouse-is-so-fast.md)
 -   [Who is using ClickHouse?](../../faq/general/who-is-using-clickhouse.md)
 -   [What does “ClickHouse” mean?](../../faq/general/dbms-naming.md)
@@ -19,7 +16,8 @@ Questions:
 -   [Why not use something like MapReduce?](../../faq/general/mapreduce.md)
 -   [How do I contribute code to ClickHouse?](../../faq/general/how-do-i-contribute-code-to-clickhouse.md)
 
-!!! info "Don’t see what you were looking for?"
-    Check out [other F.A.Q. categories](../../faq/index.md) or browse around main documentation articles found in the left sidebar.
+:::info Don’t see what you're looking for?
+Check out our [other FAQ categories](../../faq/index.md) and also browse the many helpful articles found here in the documentation.
+:::
 
-{## [Original article](https://clickhouse.com/docs/en/faq/general/) ##}
+[Original article](https://clickhouse.com/docs/en/faq/general/)

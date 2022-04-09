@@ -1,1 +1,0 @@
-../../../en/operations/system-tables/detached_parts.md

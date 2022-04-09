@@ -1,6 +1,6 @@
 ---
-toc_priority: 45
-toc_title: "Иерархические словари"
+sidebar_position: 45
+sidebar_label: "Иерархические словари"
 ---
 
 # Иерархические словари {#ierarkhicheskie-slovari}

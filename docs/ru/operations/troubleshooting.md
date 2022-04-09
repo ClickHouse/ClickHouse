@@ -1,6 +1,6 @@
 ---
-toc_priority: 46
-toc_title: "Устранение неисправностей"
+sidebar_position: 46
+sidebar_label: "Устранение неисправностей"
 ---
 
 # Устранение неисправностей {#ustranenie-neispravnostei}

@@ -1,8 +1,7 @@
 ---
 title: "Синтаксис запросов SELECT"
-toc_folder_title: SELECT
-toc_priority: 32
-toc_title: "Обзор"
+sidebar_label: SELECT
+sidebar_position: 32
 ---
 
 # Синтаксис запросов SELECT {#select-queries-syntax}

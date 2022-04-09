@@ -1,0 +1,8 @@
+position: 139 
+label: 'MySQL'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: MySQL
+  slug: /integrations/mysql
