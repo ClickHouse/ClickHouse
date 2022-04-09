@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Коммерческие услуги"
-toc_priority: 70
-toc_title: "Коммерческие услуги"
+sidebar_position: 70
+sidebar_label: "Коммерческие услуги"
 ---
 
 # Коммерческие услуги {#clickhouse-commercial-services}

@@ -1,0 +1,15 @@
+attrs==21.4.0
+avro-python3==1.10.0
+certifi==2021.10.8
+charset-normalizer==2.0.12
+confluent-kafka==1.8.2
+fastavro==1.4.9
+genson==1.2.2
+idna==3.3
+importlib-resources==5.4.0
+jsonschema==4.4.0
+protobuf==3.19.4
+pyrsistent==0.18.1
+requests==2.27.1
+urllib3==1.26.8
+zipp==3.7.0

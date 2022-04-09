@@ -1,6 +1,6 @@
 ---
-toc_priority: 31
-toc_title: "Синтаксис"
+sidebar_position: 31
+sidebar_label: "Синтаксис"
 ---
 
 # Синтаксис {#syntax}

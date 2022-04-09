@@ -1,0 +1,8 @@
+position: 111
+label: 'Kafka'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: Kafka
+  slug: /integrations/kafka
