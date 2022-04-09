@@ -1,8 +1,0 @@
-position: 191
-label: 'S3'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: S3
-  slug: /integrations/s3
