@@ -21,6 +21,23 @@ namespace CurrentMetrics
 namespace DB
 {
 
+/// Path to blob with it's size
+struct BlobPathWithSize
+{
+    std::string relative_path;
+    uint64_t bytes_size;
+
+    BlobPathWithSize() = default;
+    BlobPathWithSize(const BlobPathWithSize & other) = default;
+
+    BlobPathWithSize(const std::string & relative_path_, uint64_t bytes_size_)
+        : relative_path(relative_path_)
+        , bytes_size(bytes_size_)
+    {}
+};
+
+/// List of blobs with their sizes
+using BlobsPathToSize = std::vector<BlobPathWithSize>;
 
 class IAsynchronousReader;
 using AsynchronousReaderPtr = std::shared_ptr<IAsynchronousReader>;
