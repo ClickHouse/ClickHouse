@@ -1,7 +1,7 @@
 ---
 toc_hidden_folder: true
-toc_priority: 42
-toc_title: INDEX
+sidebar_position: 42
+sidebar_label: INDEX
 ---
 
 # 操作数据跳过索引 {#manipulations-with-data-skipping-indices}

@@ -1,6 +1,7 @@
 ---
 sidebar_position: 28
 sidebar_label: SQL Reference
+slug: en/sql-reference/
 ---
 
 # SQL Reference {#sql-reference}

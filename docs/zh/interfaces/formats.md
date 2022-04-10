@@ -1,6 +1,6 @@
 ---
-toc_priority: 21
-toc_title: 输入/输出格式
+sidebar_position: 21
+sidebar_label: 输入/输出格式
 ---
 
 # 输入/输出格式 {#formats}

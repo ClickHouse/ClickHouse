@@ -1,8 +1,8 @@
 ---
 title: ClickHouse 有关常见问题
 toc_hidden_folder: true
-toc_priority: 1
-toc_title: General
+sidebar_position: 1
+sidebar_label: General
 ---
 
 # ClickHouse 有关常见问题 {#general-questions}

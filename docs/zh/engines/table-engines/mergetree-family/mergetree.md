@@ -118,7 +118,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 <details markdown="1">
 <summary>已弃用的建表方法</summary>
 
-!!! attention "注意"
+    :::attention "注意"
     不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
     CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -186,24 +186,24 @@ ClickHouse 会为每个数据片段创建一个索引文件来存储这些标记
 
 ClickHouse 不要求主键唯一，所以您可以插入多条具有相同主键的行。
 
-您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](https://clickhouse.com/docs/zh/operations/settings/settings/#allow-nullable-key)，[NULLS_LAST](https://clickhouse.com/docs/zh/sql-reference/statements/select/order-by/#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
+您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](../../../operations/settings/#allow-nullable-key)，[NULLS_LAST](../../../sql-reference/statements/select/order-by.md/#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
 
 ### 主键的选择 {#zhu-jian-de-xuan-ze}
 
 主键中列的数量并没有明确的限制。依据数据结构，您可以在主键包含多些或少些列。这样可以：
 
-- 改善索引的性能。
+  - 改善索引的性能。
 
-    如果当前主键是 `(a, b)` ，在下列情况下添加另一个 `c` 列会提升性能：
+  - 如果当前主键是 `(a, b)` ，在下列情况下添加另一个 `c` 列会提升性能：
 
   - 查询会使用 `c` 列作为条件
   - 很长的数据范围（ `index_granularity` 的数倍）里 `(a, b)` 都是相同的值，并且这样的情况很普遍。换言之，就是加入另一列后，可以让您的查询略过很长的数据范围。
 
-- 改善数据压缩。
+  - 改善数据压缩。
 
     ClickHouse 以主键排序片段数据，所以，数据的一致性越高，压缩越好。
 
-- 在[CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里进行数据合并时会提供额外的处理逻辑。
+  - 在[CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里进行数据合并时会提供额外的处理逻辑。
 
     在这种情况下，指定与主键不同的 *排序键* 也是有意义的。
 
@@ -227,10 +227,6 @@ Clickhouse可以做到指定一个跟排序键不一样的主键，此时排序�
 
 对于 `SELECT` 查询，ClickHouse 分析是否可以使用索引。如果 `WHERE/PREWHERE` 子句具有下面这些表达式（作为完整WHERE条件的一部分或全部）则可以使用索引：进行相等/不相等的比较；对主键列或分区列进行`IN`运算、有固定前缀的`LIKE`运算(如name like 'test%')、函数运算(部分函数适用)，还有对上述表达式进行逻辑运算。
 
- <!-- It is too hard for me to translate this section as the original text completely. So I did it with my own understanding. If you have good idea, please help me. -->
-<!-- It is hard for me to translate this section too, but I think change the sentence struct is helpful for understanding. So I change the phraseology-->
-
-<!--I try to translate it in Chinese,don't worry. -->
 
 因此，在索引键的一个或多个区间上快速地执行查询是可能的。下面例子中，指定标签；指定标签和日期范围；指定标签和日期；指定多个标签和日期范围等执行查询，都会非常快。
 

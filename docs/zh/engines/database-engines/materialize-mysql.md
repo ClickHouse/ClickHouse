@@ -1,6 +1,6 @@
 ---
-toc_priority: 29
-toc_title: "[experimental] MaterializedMySQL"
+sidebar_position: 29
+sidebar_label: "[experimental] MaterializedMySQL"
 ---
 
 # [experimental] MaterializedMySQL {#materialized-mysql}

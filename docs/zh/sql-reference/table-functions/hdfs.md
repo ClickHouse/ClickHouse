@@ -1,6 +1,6 @@
 ---
-toc_priority: 45
-toc_title: hdfs
+sidebar_position: 45
+sidebar_label: hdfs
 ---
 
 # hdfs {#hdfs}
