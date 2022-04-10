@@ -1,5 +1,5 @@
 ---
-toc_title: GROUP BY
+sidebar_label: GROUP BY
 ---
 
 # GROUP BY子句 {#select-group-by-clause}

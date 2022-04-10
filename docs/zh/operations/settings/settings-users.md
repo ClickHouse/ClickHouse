@@ -1,8 +1,8 @@
 ---
 machine_translated: false
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_priority: 63
-toc_title: "\u7528\u6237\u8BBE\u7F6E"
+sidebar_position: 63
+sidebar_label: "\u7528\u6237\u8BBE\u7F6E"
 ---
 
 # 用户设置 {#user-settings}

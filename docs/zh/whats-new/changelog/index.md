@@ -1,1 +1,6 @@
-../../../en/whats-new/changelog/index.md
+---
+sidebar_position: 90
+sidebar_label:  Changelog
+---
+
+{% include "content/changelog.md" %}
