@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: ALTER
+sidebar_position: 35
+sidebar_label: ALTER
 ---
 
 ## ALTER {#query_language_queries_alter}

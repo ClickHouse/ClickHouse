@@ -1,6 +1,6 @@
 ---
-toc_priority: 29
-toc_title: MaterializedMySQL
+sidebar_position: 29
+sidebar_label: MaterializedMySQL
 ---
 
 # [experimental] MaterializedMySQL {#materialized-mysql}
@@ -53,7 +53,7 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
 - `default_authentication_plugin = mysql_native_password `，因为 `MaterializedMySQL` 只能授权使用该方法。
 - `gtid_mode = on`，因为基于GTID的日志记录是提供正确的 `MaterializedMySQL`复制的强制要求。
 
-!!! attention "注意"
+    :::info "注意"
     当打开`gtid_mode`时，您还应该指定`enforce_gtid_consistency = on`。
 
 ## 虚拟列 {#virtual-columns}

@@ -1,7 +1,6 @@
 ---
-toc_folder_title: SQL 语句
-toc_hidden: true
-toc_priority: 31
+sidebar_label: SQL 语句
+sidebar_position: 31
 ---
 
 # ClickHouse SQL 语句 {#clickhouse-sql-statements}

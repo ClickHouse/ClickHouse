@@ -1,8 +1,8 @@
 ---
 title: 关于操作ClickHouse服务器和集群的问题
 toc_hidden_folder: true
-toc_priority: 3
-toc_title: Operations
+sidebar_position: 3
+sidebar_label: Operations
 ---
 
 # 关于操作ClickHouse服务器和集群的问题 {#question-about-operating-clickhouse-servers-and-clusters}
