@@ -60,52 +60,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API)
-/// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
-class S3PathKeeper : public RemoteFSPathKeeper
-{
-public:
-    using Chunk = Aws::Vector<Aws::S3::Model::ObjectIdentifier>;
-    using Chunks = std::list<Chunk>;
-
-    explicit S3PathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
-
-    void addPath(const String & path) override
-    {
-        if (chunks.empty() || chunks.back().size() >= chunk_limit)
-        {
-            /// add one more chunk
-            chunks.push_back(Chunks::value_type());
-            chunks.back().reserve(chunk_limit);
-        }
-        Aws::S3::Model::ObjectIdentifier obj;
-        obj.SetKey(path);
-        chunks.back().push_back(obj);
-    }
-
-    void removePaths(Fn<void(Chunk &&)> auto && remove_chunk_func)
-    {
-        for (auto & chunk : chunks)
-            remove_chunk_func(std::move(chunk));
-    }
-
-    static String getChunkKeys(const Chunk & chunk)
-    {
-        String res;
-        for (const auto & obj : chunk)
-        {
-            const auto & key = obj.GetKey();
-            if (!res.empty())
-                res.append(", ");
-            res.append(key.c_str(), key.size());
-        }
-        return res;
-    }
-
-private:
-    Chunks chunks;
-};
-
 template <typename Result, typename Error>
 void throwIfError(Aws::Utils::Outcome<Result, Error> & response)
 {
@@ -168,31 +122,36 @@ DiskS3::DiskS3(
 {
 }
 
-RemoteFSPathKeeperPtr DiskS3::createFSPathKeeper() const
+void DiskS3::removeFromRemoteFS(const std::vector<String> & paths)
 {
     auto settings = current_settings.get();
-    return std::make_shared<S3PathKeeper>(settings->objects_chunk_size_to_delete);
-}
 
-void DiskS3::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
-{
-    auto settings = current_settings.get();
-    auto * s3_paths_keeper = dynamic_cast<S3PathKeeper *>(fs_paths_keeper.get());
-
-    if (s3_paths_keeper)
-        s3_paths_keeper->removePaths([&](S3PathKeeper::Chunk && chunk)
+    size_t chunk_size_limit = settings->objects_chunk_size_to_delete;
+    size_t current_position = 0;
+    while (current_position < paths.size())
+    {
+        std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
+        String keys;
+        for (; current_position < paths.size() && current_chunk.size() < chunk_size_limit; ++current_position)
         {
-            String keys = S3PathKeeper::getChunkKeys(chunk);
-            LOG_TRACE(log, "Remove AWS keys {}", keys);
-            Aws::S3::Model::Delete delkeys;
-            delkeys.SetObjects(chunk);
-            Aws::S3::Model::DeleteObjectsRequest request;
-            request.SetBucket(bucket);
-            request.SetDelete(delkeys);
-            auto outcome = settings->client->DeleteObjects(request);
-            // Do not throw here, continue deleting other chunks
-            logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
-        });
+            Aws::S3::Model::ObjectIdentifier obj;
+            obj.SetKey(paths[current_position]);
+            current_chunk.push_back(obj);
+
+            if (!keys.empty())
+                keys += ", ";
+            keys += paths[current_position];
+        }
+
+        LOG_TRACE(log, "Remove AWS keys {}", keys);
+        Aws::S3::Model::Delete delkeys;
+        delkeys.SetObjects(current_chunk);
+        Aws::S3::Model::DeleteObjectsRequest request;
+        request.SetBucket(bucket);
+        request.SetDelete(delkeys);
+        auto outcome = settings->client->DeleteObjects(request);
+        logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
+    }
 }
 
 void DiskS3::moveFile(const String & from_path, const String & to_path)
