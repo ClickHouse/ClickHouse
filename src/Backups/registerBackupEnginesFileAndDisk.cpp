@@ -29,14 +29,14 @@ namespace
     {
         String key = "backups.allowed_disk";
         if (!config.has(key))
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "The \"backups.allowed_disk\" configuration parameter is not set, cannot use Disk() backup engine");
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "The 'backups.allowed_disk' configuration parameter is not set, cannot use 'Disk' backup engine");
 
         size_t counter = 0;
         while (config.getString(key) != disk_name)
         {
             key = "backups.allowed_disk[" + std::to_string(++counter) + "]";
             if (!config.has(key))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for backups, see the \"backups.allowed_disk\" configuration parameter", disk_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for backups, see the 'backups.allowed_disk' configuration parameter", quoteString(disk_name));
         }
     }
 
@@ -49,7 +49,7 @@ namespace
 
         bool path_ok = path.empty() || (path.is_relative() && (*path.begin() != ".."));
         if (!path_ok)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} to backup must be inside the specified disk {}", quoteString(path.c_str()), disk_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} to backup must be inside the specified disk {}", quoteString(path.c_str()), quoteString(disk_name));
     }
 
     /// Checks that a path specified as parameters of File() is valid.
@@ -62,7 +62,7 @@ namespace
         String key = "backups.allowed_path";
         if (!config.has(key))
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                            "The \"backups.allowed_path\" configuration parameter is not set, cannot use File() backup engine");
+                            "The 'backups.allowed_path' configuration parameter is not set, cannot use 'File' backup engine");
 
         if (path.is_relative())
         {
@@ -86,7 +86,7 @@ namespace
             key = "backups.allowed_path[" + std::to_string(++counter) + "]";
             if (!config.has(key))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Path {} is not allowed for backups, see the \"backups.allowed_path\" configuration parameter",
+                                "Path {} is not allowed for backups, see the 'backups.allowed_path' configuration parameter",
                                 quoteString(path.c_str()));
         }
     }
@@ -104,7 +104,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Backup engine '{}' requires first argument to be a string",
+                "Backup engine '{}' requires its first argument to be a string",
                 engine_name);
         }
 
