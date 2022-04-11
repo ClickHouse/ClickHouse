@@ -103,7 +103,8 @@ protected:
 
     Names virt_column_names;
 
-    bool add_part_offset = false;
+    /// These columns will be filled by the merge tree range reader
+    Names non_const_virtual_column_names;
 
     DataTypePtr partition_value_type;
 

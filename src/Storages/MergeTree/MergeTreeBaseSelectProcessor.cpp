@@ -54,12 +54,20 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 {
     header_without_virtual_columns = getPort().getHeader();
 
+    /// Reverse order is to minimize reallocations when removing columns from the block
     for (auto it = virt_column_names.rbegin(); it != virt_column_names.rend(); ++it)
-        if (header_without_virtual_columns.has(*it))
-            header_without_virtual_columns.erase(*it);
-
-    if (std::find(virt_column_names.begin(), virt_column_names.end(), "_part_offset") != virt_column_names.end())
-        add_part_offset = true;
+    {
+        if (*it == "_part_offset")
+        {
+            non_const_virtual_column_names.emplace_back(*it);
+        }
+        else
+        {
+            /// Remove virtual columns that are going to be filled with const values
+            if (header_without_virtual_columns.has(*it))
+                header_without_virtual_columns.erase(*it);
+        }
+    }
 
     if (prewhere_info)
     {
@@ -202,23 +210,23 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     {
         if (reader->getColumns().empty())
         {
-            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), true, add_part_offset);
+            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), true, non_const_virtual_column_names);
         }
         else
         {
             MergeTreeRangeReader * pre_reader_ptr = nullptr;
             if (pre_reader != nullptr)
             {
-                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), false, add_part_offset);
+                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), false, non_const_virtual_column_names);
                 pre_reader_ptr = &current_task.pre_range_reader;
             }
 
-            current_task.range_reader = MergeTreeRangeReader(reader.get(), pre_reader_ptr, nullptr, true, add_part_offset);
+            current_task.range_reader = MergeTreeRangeReader(reader.get(), pre_reader_ptr, nullptr, true, non_const_virtual_column_names);
         }
     }
     else
     {
-        current_task.range_reader = MergeTreeRangeReader(reader.get(), nullptr, nullptr, true, add_part_offset);
+        current_task.range_reader = MergeTreeRangeReader(reader.get(), nullptr, nullptr, true, non_const_virtual_column_names);
     }
 }
 
@@ -311,12 +319,6 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
         ordered_columns.emplace_back(std::move(read_result.columns[pos_in_sample_block]));
     }
 
-    if (add_part_offset)
-    {
-        auto pos_in_sample_block = sample_block.getPositionByName("_part_offset");
-        ordered_columns.emplace_back(std::move(read_result.columns[pos_in_sample_block]));
-    }
-
     return Chunk(std::move(ordered_columns), read_result.num_rows);
 }
 
@@ -350,7 +352,25 @@ namespace
     };
 }
 
-static void injectVirtualColumnsImpl(
+/// Adds virtual columns that are not const for all rows
+static void injectNonConstVirtualColumns(
+    size_t rows,
+    VirtualColumnsInserter & inserter,
+    const Names & virtual_columns)
+{
+    if (unlikely(rows))
+        throw Exception("Cannot insert non-constant virtual column to non-empty chunk.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    for (const auto & virtual_column_name : virtual_columns)
+    {
+        if (virtual_column_name == "_part_offset")
+            inserter.insertUInt64Column(DataTypeUInt64().createColumn(), virtual_column_name);
+    }
+}
+
+/// Adds virtual columns that are const for the whole part
+static void injectPartConstVirtualColumns(
     size_t rows,
     VirtualColumnsInserter & inserter,
     MergeTreeReadTask * task,
@@ -511,20 +531,11 @@ void MergeTreeBaseSelectProcessor::injectVirtualColumns(
     Block & block, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
     VirtualColumnsInserterIntoBlock inserter{block};
-    injectVirtualColumnsImpl(block.rows(), inserter, task, partition_value_type, virtual_columns);
 
-    /// injectVirtualColumns is used to get header of a block, so we patch it here. But when generating data, it
-    /// is not a constant value, so we do not put it in injectVirtualColumnsImpl.
-    if (std::find(virtual_columns.begin(), virtual_columns.end(), "_part_offset") != virtual_columns.end())
-    {
-        ColumnPtr column;
-        if (block.rows())
-            column = DataTypeUInt64().createColumnConst(block.rows(), 0)->convertToFullColumnIfConst();
-        else
-            column = DataTypeUInt64().createColumn();
-
-        inserter.insertUInt64Column(column, "_part_offset");
-    }
+    /// First add non-const columns that are filled by the range reader and then const columns that we will fill ourselves.
+    /// Note that the order is important: virtual columns filled by the range reader must go first
+    injectNonConstVirtualColumns(block.rows(), inserter, virtual_columns);
+    injectPartConstVirtualColumns(block.rows(), inserter, task, partition_value_type, virtual_columns);
 }
 
 void MergeTreeBaseSelectProcessor::injectVirtualColumns(
@@ -534,7 +545,8 @@ void MergeTreeBaseSelectProcessor::injectVirtualColumns(
     auto columns = chunk.detachColumns();
 
     VirtualColumnsInserterIntoColumns inserter{columns};
-    injectVirtualColumnsImpl(num_rows, inserter, task, partition_value_type, virtual_columns);
+    /// Only add const virtual columns because non-const ones have already been added
+    injectPartConstVirtualColumns(num_rows, inserter, task, partition_value_type, virtual_columns);
 
     chunk.setColumns(columns, num_rows);
 }
