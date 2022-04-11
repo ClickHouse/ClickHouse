@@ -4,7 +4,7 @@ env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
 
-on: # yamllint disable-line rule:truthy
+on:  # yamllint disable-line rule:truthy
   pull_request:
     types:
       - synchronize
@@ -272,8 +272,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -317,8 +317,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -362,8 +362,50 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+  BuilderBinGCC:
+    needs: [DockerHubPush, FastTest]
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=binary_gcc
+          EOF
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/images_path
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'true'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+      - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -404,8 +446,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -449,8 +491,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -494,8 +536,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -539,8 +581,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -584,8 +626,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -629,8 +671,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -677,8 +719,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -722,8 +764,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -767,8 +809,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -812,8 +854,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -857,8 +899,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -902,8 +944,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -947,14 +989,42 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill "$(docker ps -q)" ||:
           docker rm -f "$(docker ps -a -q)" ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+############################################################################################
+##################################### Docker images  #######################################
+############################################################################################
+  DockerServerImages:
+    needs:
+      - BuilderDebRelease
+      - BuilderDebAarch64
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # otherwise we will have no version info
+      - name: Check docker clickhouse/clickhouse-server building
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_server.py --release-type head --no-push
+          python3 docker_server.py --release-type head --no-push --no-ubuntu \
+            --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
@@ -963,6 +1033,7 @@ jobs:
       - BuilderDebRelease
       - BuilderDebAarch64
       - BuilderBinRelease
+      - BuilderBinGCC
       - BuilderDebAsan
       - BuilderDebTsan
       - BuilderDebUBsan
@@ -973,10 +1044,16 @@ jobs:
     steps:
       - name: Set envs
         run: |
+          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
+          ${{ toJSON(needs) }}
+          EOF
+          )
+          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/report_check
-          REPORTS_PATH=${{runner.temp}}/reports_dir
           CHECK_NAME=ClickHouse build check (actions)
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          TEMP_PATH=${{runner.temp}}/report_check
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -992,7 +1069,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME"
+          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
       - name: Cleanup
         if: always()
         run: |
@@ -1727,6 +1804,51 @@ jobs:
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci"
           python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
+  TestsBugfixCheck:
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/tests_bugfix_check
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Tests bugfix validate check (actions)
+          KILL_TIMEOUT=3600
+          REPO_COPY=${{runner.temp}}/tests_bugfix_check/ClickHouse
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Bugfix test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+
+          TEMP_PATH="${TEMP_PATH}/integration" \
+            REPORTS_PATH="${REPORTS_PATH}/integration" \
+            python3 integration_test_check.py "Integration tests bugfix validate check" \
+              --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
+
+          TEMP_PATH="${TEMP_PATH}/stateless" \
+            REPORTS_PATH="${REPORTS_PATH}/stateless" \
+            python3 functional_test_check.py "Stateless tests bugfix validate check" "$KILL_TIMEOUT" \
+              --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
+
+          python3 bugfix_validate_check.py "${TEMP_PATH}/stateless/post_commit_status.tsv" "${TEMP_PATH}/integration/post_commit_status.tsv"
       - name: Cleanup
         if: always()
         run: |
@@ -2763,6 +2885,40 @@ jobs:
           docker kill "$(docker ps -q)" ||:
           docker rm -f "$(docker ps -a -q)" ||:
           sudo rm -fr "$TEMP_PATH"
+  UnitTestsReleaseGCC:
+    needs: [BuilderBinGCC]
+    runs-on: [self-hosted, fuzzer-unit-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/unit_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Unit tests (release-gcc, actions)
+          REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Unit test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 unit_tests_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   UnitTestsTsan:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
@@ -3016,6 +3172,7 @@ jobs:
     needs:
       - StyleCheck
       - DockerHubPush
+      - DockerServerImages
       - CheckLabels
       - BuilderReport
       - FastTest

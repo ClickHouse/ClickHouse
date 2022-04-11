@@ -81,7 +81,7 @@ struct MergeTreeDataPartTTLInfos
     bool empty() const
     {
         /// part_min_ttl in minimum of rows, rows_where and group_by TTLs
-        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty();
+        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty();
     }
 };
 

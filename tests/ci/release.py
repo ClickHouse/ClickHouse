@@ -11,7 +11,6 @@ from version_helper import (
     FILE_WITH_VERSION_PATH,
     ClickHouseVersion,
     VersionType,
-    git,
     get_abs_path,
     get_version_from_repo,
     update_cmake_version,
@@ -78,7 +77,15 @@ class Release:
         self._git.update()
         self.version = get_version_from_repo()
 
+    def check_prerequisites(self):
+        """
+        Check tooling installed in the system
+        """
+        self.run("gh auth status")
+        self.run("git status")
+
     def do(self, check_dirty: bool, check_branch: bool, with_prestable: bool):
+        self.check_prerequisites()
 
         if check_dirty:
             logging.info("Checking if repo is clean")
@@ -93,10 +100,10 @@ class Release:
             if self.release_type in self.BIG:
                 # Checkout to the commit, it will provide the correct current version
                 if with_prestable:
-                    logging.info("Skipping prestable stage")
-                else:
                     with self.prestable():
                         logging.info("Prestable part of the releasing is done")
+                else:
+                    logging.info("Skipping prestable stage")
 
                 with self.testing():
                     logging.info("Testing part of the releasing is done")
@@ -386,6 +393,12 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--commit",
+        required=True,
+        type=commit,
+        help="commit create a release",
+    )
+    parser.add_argument(
         "--repo",
         default="ClickHouse/ClickHouse",
         help="repository to create the release",
@@ -404,12 +417,6 @@ def parse_args() -> argparse.Namespace:
         choices=Release.BIG + Release.SMALL,
         dest="release_type",
         help="a release type, new branch is created only for 'major' and 'minor'",
-    )
-    parser.add_argument(
-        "--commit",
-        default=git.sha,
-        type=commit,
-        help="commit create a release, default to HEAD",
     )
     parser.add_argument("--with-prestable", default=True, help=argparse.SUPPRESS)
     parser.add_argument(

@@ -5,10 +5,10 @@ import re
 from typing import Tuple
 
 from github import Github
-from env_helper import GITHUB_RUN_ID, GITHUB_REPOSITORY, GITHUB_SERVER_URL
+from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
-from commit_status_helper import get_commit
+from commit_status_helper import get_commit, post_labels, remove_labels
 
 NAME = "Run Check (actions)"
 
@@ -22,6 +22,7 @@ OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
 CAN_BE_TESTED_LABEL = "can be tested"
 DO_NOT_TEST_LABEL = "do not test"
 FORCE_TESTS_LABEL = "force tests"
+SUBMODULE_CHANGED_LABEL = "submodule changed"
 
 # Individual trusted contirbutors who are not in any trusted organization.
 # Can be changed in runtime: we will append users that we learned to be in
@@ -78,7 +79,27 @@ TRUSTED_CONTRIBUTORS = {
         "ilejn",  # Arenadata, responsible for Kerberized Kafka
         "thomoco",  # ClickHouse
         "BoloniniD",  # Seasoned contributor, HSE
+        "tonickkozlov",  # Cloudflare
     ]
+}
+
+MAP_CATEGORY_TO_LABEL = {
+    "New Feature": "pr-feature",
+    "Bug Fix": "pr-bugfix",
+    "Bug Fix (user-visible misbehaviour in official stable or prestable release)": "pr-bugfix",
+    "Improvement": "pr-improvement",
+    "Performance Improvement": "pr-performance",
+    "Backward Incompatible Change": "pr-backward-incompatible",
+    "Build/Testing/Packaging Improvement": "pr-build",
+    "Build Improvement": "pr-build",
+    "Build/Testing Improvement": "pr-build",
+    "Build": "pr-build",
+    "Packaging Improvement": "pr-build",
+    "Not for changelog (changelog entry is not required)": "pr-not-for-changelog",
+    "Not for changelog": "pr-not-for-changelog",
+    "Documentation (changelog entry is not required)": "pr-documentation",
+    "Documentation": "pr-documentation",
+    # 'Other': doesn't match anything
 }
 
 
@@ -142,7 +163,7 @@ def check_pr_description(pr_info):
 
     i = 0
     while i < len(lines):
-        if re.match(r"(?i)^[>*_ ]*change\s*log\s*category", lines[i]):
+        if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
             i += 1
             if i >= len(lines):
                 break
@@ -168,10 +189,10 @@ def check_pr_description(pr_info):
                     + second_category
                     + "'"
                 )
-                return result_status[:140]
+                return result_status[:140], category
 
         elif re.match(
-            r"(?i)^[>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
+            r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
         ):
             i += 1
             # Can have one empty line between header and the entry itself.
@@ -190,34 +211,69 @@ def check_pr_description(pr_info):
             i += 1
 
     if not category:
-        return "Changelog category is empty"
+        return "Changelog category is empty", category
 
     # Filter out the PR categories that are not for changelog.
     if re.match(
         r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
         category,
     ):
-        return ""
+        return "", category
 
     if not entry:
-        return f"Changelog entry required for category '{category}'"
+        return f"Changelog entry required for category '{category}'", category
 
-    return ""
+    return "", category
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    pr_info = PRInfo(need_orgs=True, pr_event_from_api=True)
+    pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
-    description_report = check_pr_description(pr_info)[:139]
+    description_report, category = check_pr_description(pr_info)
+    pr_labels_to_add = []
+    pr_labels_to_remove = []
+    if (
+        category in MAP_CATEGORY_TO_LABEL
+        and MAP_CATEGORY_TO_LABEL[category] not in pr_info.labels
+    ):
+        pr_labels_to_add.append(MAP_CATEGORY_TO_LABEL[category])
+
+    for label in pr_info.labels:
+        if (
+            label in MAP_CATEGORY_TO_LABEL.values()
+            and category in MAP_CATEGORY_TO_LABEL
+            and label != MAP_CATEGORY_TO_LABEL[category]
+        ):
+            pr_labels_to_remove.append(label)
+
+    if pr_info.has_changes_in_submodules():
+        pr_labels_to_add.append(SUBMODULE_CHANGED_LABEL)
+    elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
+        pr_labels_to_remove.append(SUBMODULE_CHANGED_LABEL)
+
+    print(
+        "change labels: add {}, remove {}".format(pr_labels_to_add, pr_labels_to_remove)
+    )
+    if pr_labels_to_add:
+        post_labels(gh, pr_info, pr_labels_to_add)
+
+    if pr_labels_to_remove:
+        remove_labels(gh, pr_info, pr_labels_to_remove)
+
     if description_report:
-        print("::notice ::Cannot run, description does not match the template")
+        print(
+            "::error ::Cannot run, PR description does not match the template: "
+            f"{description_report}"
+        )
         logging.info(
-            "PR body doesn't match the template: (start)\n%s\n(end)", pr_info.body
+            "PR body doesn't match the template: (start)\n%s\n(end)\n" "Reason: %s",
+            pr_info.body,
+            description_report,
         )
         url = (
             f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
@@ -225,13 +281,13 @@ if __name__ == "__main__":
         )
         commit.create_status(
             context=NAME,
-            description=description_report,
+            description=description_report[:139],
             state="failure",
             target_url=url,
         )
         sys.exit(1)
 
-    url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
+    url = GITHUB_RUN_URL
     if not can_run:
         print("::notice ::Cannot run")
         commit.create_status(

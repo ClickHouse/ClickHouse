@@ -65,7 +65,13 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
             file_extension = path.substr(pos + 1, std::string::npos);
     }
 
-    std::string method_str = file_extension.empty() ? hint : std::move(file_extension);
+    std::string method_str;
+
+    if (file_extension.empty())
+        method_str = hint;
+    else
+        method_str = std::move(file_extension);
+
     boost::algorithm::to_lower(method_str);
 
     if (method_str == "gzip" || method_str == "gz")

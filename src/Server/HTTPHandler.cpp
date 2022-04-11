@@ -922,7 +922,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP);
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
     std::optional<CurrentThread::QueryScope> query_scope;
 
@@ -1122,7 +1122,7 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    const auto & query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
+    auto query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, std::move(query_param_name));
 
     factory->addFiltersFromConfig(server.config(), config_prefix);

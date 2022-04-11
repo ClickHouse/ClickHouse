@@ -1,3 +1,6 @@
+SET optimize_move_to_prewhere = 1;
+SET convert_query_to_cnf = 0;
+
 DROP TABLE IF EXISTS t_move_to_prewhere;
 
 CREATE TABLE t_move_to_prewhere (id UInt32, a UInt8, b UInt8, c UInt8, fat_string String)

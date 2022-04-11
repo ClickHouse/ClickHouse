@@ -202,7 +202,7 @@ void selectWithinPartition(
 
 SimpleMergeSelector::PartsRange SimpleMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const size_t max_total_size_to_merge)
+    size_t max_total_size_to_merge)
 {
     Estimator estimator;
 

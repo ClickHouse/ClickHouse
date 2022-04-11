@@ -9,3334 +9,3467 @@ from testflows.core import Requirement
 Heading = Specification.Heading
 
 RQ_SRS_019_ClickHouse_WindowFunctions = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support [window functions] that produce a result for each row inside the window.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support [window functions] that produce a result for each row inside the window.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.1.1')
+    num="3.1.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_NonDistributedTables = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.NonDistributedTables',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.NonDistributedTables",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of [window functions] on non-distributed \n'
-        'table engines such as `MergeTree`.\n'
-        '\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support correct operation of [window functions] on non-distributed \n"
+        "table engines such as `MergeTree`.\n"
+        "\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.1.2')
+    num="3.1.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_DistributedTables = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.DistributedTables',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.DistributedTables",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of [window functions] on\n'
-        '[Distributed](https://clickhouse.com/docs/en/engines/table-engines/special/distributed/) table engine.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support correct operation of [window functions] on\n"
+        "[Distributed](https://clickhouse.com/docs/en/engines/table-engines/special/distributed/) table engine.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.1.3')
+    num="3.1.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_WindowSpec = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowSpec',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.WindowSpec",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support defining a window using window specification clause.\n'
-        'The [window_spec] SHALL be defined as\n'
-        '\n'
-        '```\n'
-        'window_spec:\n'
-        '   [partition_clause] [order_clause] [frame_clause]\n'
-        '```\n'
-        '\n'
-        'that SHALL specify how to partition query rows into groups for processing by the window function.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support defining a window using window specification clause.\n"
+        "The [window_spec] SHALL be defined as\n"
+        "\n"
+        "```\n"
+        "window_spec:\n"
+        "   [partition_clause] [order_clause] [frame_clause]\n"
+        "```\n"
+        "\n"
+        "that SHALL specify how to partition query rows into groups for processing by the window function.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.2.1')
+    num="3.2.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_PartitionClause = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support [partition_clause] that indicates how to divide the query rows into groups.\n'
-        'The [partition_clause] SHALL be defined as\n'
-        '\n'
-        '```\n'
-        'partition_clause:\n'
-        '    PARTITION BY expr [, expr] ...\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support [partition_clause] that indicates how to divide the query rows into groups.\n"
+        "The [partition_clause] SHALL be defined as\n"
+        "\n"
+        "```\n"
+        "partition_clause:\n"
+        "    PARTITION BY expr [, expr] ...\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.3.1')
+    num="3.3.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_PartitionClause_MultipleExpr = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.MultipleExpr',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.MultipleExpr",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support partitioning by more than one `expr` in the [partition_clause] definition.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL support partitioning by more than one `expr` in the [partition_clause] definition.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT x,s, sum(x) OVER (PARTITION BY x,s) FROM values('x Int8, s String', (1,'a'),(1,'b'),(2,'b'))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─x─┬─s─┬─sum(x) OVER (PARTITION BY x, s)─┐\n'
-        '│ 1 │ a │                               1 │\n'
-        '│ 1 │ b │                               1 │\n'
-        '│ 2 │ b │                               2 │\n'
-        '└───┴───┴─────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─x─┬─s─┬─sum(x) OVER (PARTITION BY x, s)─┐\n"
+        "│ 1 │ a │                               1 │\n"
+        "│ 1 │ b │                               1 │\n"
+        "│ 2 │ b │                               2 │\n"
+        "└───┴───┴─────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.3.2')
+    num="3.3.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_PartitionClause_MissingExpr_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.MissingExpr.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.MissingExpr.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if `expr` is missing in the [partition_clause] definition.\n'
-        '\n'
-        '```sql\n'
-        'SELECT sum(number) OVER (PARTITION BY) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if `expr` is missing in the [partition_clause] definition.\n"
+        "\n"
+        "```sql\n"
+        "SELECT sum(number) OVER (PARTITION BY) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.3.3')
+    num="3.3.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_PartitionClause_InvalidExpr_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.InvalidExpr.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.InvalidExpr.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if `expr` is invalid in the [partition_clause] definition.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if `expr` is invalid in the [partition_clause] definition.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.3.4')
+    num="3.3.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OrderClause = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support [order_clause] that indicates how to sort rows in each window.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support [order_clause] that indicates how to sort rows in each window.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.4.1')
+    num="3.4.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OrderClause_MultipleExprs = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.MultipleExprs',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.MultipleExprs",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return support using more than one `expr` in the [order_clause] definition.\n'
-        '\n'
-        'For example, \n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return support using more than one `expr` in the [order_clause] definition.\n"
+        "\n"
+        "For example, \n"
+        "\n"
+        "```sql\n"
         "SELECT x,s, sum(x) OVER (ORDER BY x DESC, s DESC) FROM values('x Int8, s String', (1,'a'),(1,'b'),(2,'b'))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─x─┬─s─┬─sum(x) OVER (ORDER BY x DESC, s DESC)─┐\n'
-        '│ 2 │ b │                                     2 │\n'
-        '│ 1 │ b │                                     3 │\n'
-        '│ 1 │ a │                                     4 │\n'
-        '└───┴───┴───────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─x─┬─s─┬─sum(x) OVER (ORDER BY x DESC, s DESC)─┐\n"
+        "│ 2 │ b │                                     2 │\n"
+        "│ 1 │ b │                                     3 │\n"
+        "│ 1 │ a │                                     4 │\n"
+        "└───┴───┴───────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.4.2')
+    num="3.4.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OrderClause_MissingExpr_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.MissingExpr.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.MissingExpr.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if `expr` is missing in the [order_clause] definition.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if `expr` is missing in the [order_clause] definition.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.4.3')
+    num="3.4.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OrderClause_InvalidExpr_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.InvalidExpr.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.InvalidExpr.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if `expr` is invalid in the [order_clause] definition.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if `expr` is invalid in the [order_clause] definition.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.4.4')
+    num="3.4.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_FrameClause = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support [frame_clause] that SHALL specify a subset of the current window.\n'
-        '\n'
-        'The `frame_clause` SHALL be defined as\n'
-        '\n'
-        '```\n'
-        'frame_clause:\n'
-        '    {ROWS | RANGE } frame_extent\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support [frame_clause] that SHALL specify a subset of the current window.\n"
+        "\n"
+        "The `frame_clause` SHALL be defined as\n"
+        "\n"
+        "```\n"
+        "frame_clause:\n"
+        "    {ROWS | RANGE } frame_extent\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.5.1')
+    num="3.5.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_FrameClause_DefaultFrame = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause.DefaultFrame',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause.DefaultFrame",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the default `frame_clause` to be `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. \n'
-        '\n'
-        'If the `ORDER BY` clause is specified then this SHALL set the frame to be all rows from \n'
-        'the partition start up to and including current row and its peers. \n'
-        '\n'
-        'If the `ORDER BY` clause is not specified then this SHALL set the frame to include all rows\n'
-        'in the partition because all the rows are considered to be the peers of the current row.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the default `frame_clause` to be `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. \n"
+        "\n"
+        "If the `ORDER BY` clause is specified then this SHALL set the frame to be all rows from \n"
+        "the partition start up to and including current row and its peers. \n"
+        "\n"
+        "If the `ORDER BY` clause is not specified then this SHALL set the frame to include all rows\n"
+        "in the partition because all the rows are considered to be the peers of the current row.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.5.2')
+    num="3.5.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `ROWS` frame to define beginning and ending row positions.\n'
-        'Offsets SHALL be differences in row numbers from the current row number.\n'
-        '\n'
-        '```sql\n'
-        'ROWS frame_extent\n'
-        '```\n'
-        '\n'
-        'See [frame_extent] definition.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `ROWS` frame to define beginning and ending row positions.\n"
+        "Offsets SHALL be differences in row numbers from the current row number.\n"
+        "\n"
+        "```sql\n"
+        "ROWS frame_extent\n"
+        "```\n"
+        "\n"
+        "See [frame_extent] definition.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.3.1')
+    num="3.5.3.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_MissingFrameExtent_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.MissingFrameExtent.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.MissingFrameExtent.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `ROWS` frame clause is defined without [frame_extent].\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ORDER BY number ROWS) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `ROWS` frame clause is defined without [frame_extent].\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ORDER BY number ROWS) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.3.2')
+    num="3.5.3.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_InvalidFrameExtent_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.InvalidFrameExtent.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.InvalidFrameExtent.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `ROWS` frame clause has invalid [frame_extent].\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error if the `ROWS` frame clause has invalid [frame_extent].\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number ROWS '1') FROM numbers(1,3)\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.3.3')
+    num="3.5.3.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_CurrentRow = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.CurrentRow',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.CurrentRow",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include only the current row in the window partition\n'
-        'when `ROWS CURRENT ROW` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS CURRENT ROW) FROM numbers(1,2)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n'
-        '│      1 │                                                           1 │\n'
-        '│      2 │                                                           2 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include only the current row in the window partition\n"
+        "when `ROWS CURRENT ROW` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS CURRENT ROW) FROM numbers(1,2)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n"
+        "│      1 │                                                           1 │\n"
+        "│      2 │                                                           2 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.4.1')
+    num="3.5.3.4.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_UnboundedPreceding = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedPreceding',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedPreceding",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows before and including the current row in the window partition\n'
-        'when `ROWS UNBOUNDED PRECEDING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS UNBOUNDED PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                   1 │\n'
-        '│      2 │                                                                   3 │\n'
-        '│      3 │                                                                   6 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include all rows before and including the current row in the window partition\n"
+        "when `ROWS UNBOUNDED PRECEDING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS UNBOUNDED PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                   1 │\n"
+        "│      2 │                                                                   3 │\n"
+        "│      3 │                                                                   6 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.5.1')
+    num="3.5.3.5.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_ExprPreceding = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprPreceding',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprPreceding",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include `expr` rows before and including the current row in the window partition \n'
-        'when `ROWS expr PRECEDING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS 1 PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                           1 │\n'
-        '│      2 │                                                           3 │\n'
-        '│      3 │                                                           5 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include `expr` rows before and including the current row in the window partition \n"
+        "when `ROWS expr PRECEDING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS 1 PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                           1 │\n"
+        "│      2 │                                                           3 │\n"
+        "│      3 │                                                           5 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.6.1')
+    num="3.5.3.6.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_UnboundedFollowing_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedFollowing.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedFollowing.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `ROWS UNBOUNDED FOLLOWING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS UNBOUNDED FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `ROWS UNBOUNDED FOLLOWING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS UNBOUNDED FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.7.1')
+    num="3.5.3.7.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Start_ExprFollowing_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprFollowing.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprFollowing.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `ROWS expr FOLLOWING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS 1 FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `ROWS expr FOLLOWING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS 1 FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.8.1')
+    num="3.5.3.8.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_CurrentRow = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.CurrentRow',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.CurrentRow",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include only the current row in the window partition\n'
-        'when `ROWS BETWEEN CURRENT ROW AND CURRENT ROW` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN CURRENT ROW AND CURRENT ROW) FROM numbers(1,2)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n'
-        '│      1 │                                                           1 │\n'
-        '│      2 │                                                           2 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include only the current row in the window partition\n"
+        "when `ROWS BETWEEN CURRENT ROW AND CURRENT ROW` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN CURRENT ROW AND CURRENT ROW) FROM numbers(1,2)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n"
+        "│      1 │                                                           1 │\n"
+        "│      2 │                                                           2 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.9.1')
+    num="3.5.3.9.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_UnboundedPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `ROWS BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING` frame is specified.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `ROWS BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING` frame is specified.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.9.2')
+    num="3.5.3.9.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_ExprPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `ROWS BETWEEN CURRENT ROW AND expr PRECEDING` frame is specified.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `ROWS BETWEEN CURRENT ROW AND expr PRECEDING` frame is specified.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.9.3')
+    num="3.5.3.9.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_UnboundedFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include the current row and all the following rows in the window partition\n'
-        'when `ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)─┐\n'
-        '│      1 │                                                                   6 │\n'
-        '│      2 │                                                                   5 │\n'
-        '│      3 │                                                                   3 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include the current row and all the following rows in the window partition\n"
+        "when `ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)─┐\n"
+        "│      1 │                                                                   6 │\n"
+        "│      2 │                                                                   5 │\n"
+        "│      3 │                                                                   3 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.9.4')
+    num="3.5.3.9.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_CurrentRow_ExprFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include the current row and the `expr` rows that are following the current row in the window partition\n'
-        'when `ROWS BETWEEN CURRENT ROW AND expr FOLLOWING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING)─┐\n'
-        '│      1 │                                                           3 │\n'
-        '│      2 │                                                           5 │\n'
-        '│      3 │                                                           3 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include the current row and the `expr` rows that are following the current row in the window partition\n"
+        "when `ROWS BETWEEN CURRENT ROW AND expr FOLLOWING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING)─┐\n"
+        "│      1 │                                                           3 │\n"
+        "│      2 │                                                           5 │\n"
+        "│      3 │                                                           3 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.9.5')
+    num="3.5.3.9.5",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_CurrentRow = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.CurrentRow',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.CurrentRow",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all the rows before and including the current row in the window partition\n'
-        'when `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                   1 │\n'
-        '│      2 │                                                                   3 │\n'
-        '│      3 │                                                                   6 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include all the rows before and including the current row in the window partition\n"
+        "when `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                   1 │\n"
+        "│      2 │                                                                   3 │\n"
+        "│      3 │                                                                   6 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.10.1')
+    num="3.5.3.10.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_UnboundedPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED PRECEDING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED PRECEDING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.10.2')
+    num="3.5.3.10.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_ExprPreceding = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprPreceding',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprPreceding",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all the rows until and including the current row minus `expr` rows preceding it\n'
-        'when `ROWS BETWEEN UNBOUNDED PRECEDING AND expr PRECEDING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)─┐\n'
-        '│      1 │                                                                   0 │\n'
-        '│      2 │                                                                   1 │\n'
-        '│      3 │                                                                   3 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include all the rows until and including the current row minus `expr` rows preceding it\n"
+        "when `ROWS BETWEEN UNBOUNDED PRECEDING AND expr PRECEDING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)─┐\n"
+        "│      1 │                                                                   0 │\n"
+        "│      2 │                                                                   1 │\n"
+        "│      3 │                                                                   3 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.10.3')
+    num="3.5.3.10.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_UnboundedFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows in the window partition \n'
-        'when `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)─┐\n'
-        '│      1 │                                                                           6 │\n'
-        '│      2 │                                                                           6 │\n'
-        '│      3 │                                                                           6 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include all rows in the window partition \n"
+        "when `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)─┐\n"
+        "│      1 │                                                                           6 │\n"
+        "│      2 │                                                                           6 │\n"
+        "│      3 │                                                                           6 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.10.4')
+    num="3.5.3.10.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedPreceding_ExprFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all the rows until and including the current row plus `expr` rows following it\n'
-        'when `ROWS BETWEEN UNBOUNDED PRECEDING AND expr FOLLOWING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING)─┐\n'
-        '│      1 │                                                                   3 │\n'
-        '│      2 │                                                                   6 │\n'
-        '│      3 │                                                                   6 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include all the rows until and including the current row plus `expr` rows following it\n"
+        "when `ROWS BETWEEN UNBOUNDED PRECEDING AND expr FOLLOWING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING)─┐\n"
+        "│      1 │                                                                   3 │\n"
+        "│      2 │                                                                   6 │\n"
+        "│      3 │                                                                   6 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.10.5')
+    num="3.5.3.10.5",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_UnboundedFollowing_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedFollowing.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedFollowing.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `UNBOUNDED FOLLOWING` is specified as the start of the frame, including\n'
-        '\n'
-        '* `ROWS BETWEEN UNBOUNDED FOLLOWING AND CURRENT ROW`\n'
-        '* `ROWS BETWEEN UNBOUNDED FOLLOWING AND UNBOUNDED PRECEDING`\n'
-        '* `ROWS BETWEEN UNBOUNDED FOLLOWING AND UNBOUNDED FOLLOWING`\n'
-        '* `ROWS BETWEEN UNBOUNDED FOLLOWING AND expr PRECEDING`\n'
-        '* `ROWS BETWEEN UNBOUNDED FOLLOWING AND expr FOLLOWING`\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED FOLLOWING AND CURRENT ROW) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `UNBOUNDED FOLLOWING` is specified as the start of the frame, including\n"
+        "\n"
+        "* `ROWS BETWEEN UNBOUNDED FOLLOWING AND CURRENT ROW`\n"
+        "* `ROWS BETWEEN UNBOUNDED FOLLOWING AND UNBOUNDED PRECEDING`\n"
+        "* `ROWS BETWEEN UNBOUNDED FOLLOWING AND UNBOUNDED FOLLOWING`\n"
+        "* `ROWS BETWEEN UNBOUNDED FOLLOWING AND expr PRECEDING`\n"
+        "* `ROWS BETWEEN UNBOUNDED FOLLOWING AND expr FOLLOWING`\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN UNBOUNDED FOLLOWING AND CURRENT ROW) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.11.1')
+    num="3.5.3.11.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `expr FOLLOWING` is specified as the start of the frame\n'
-        'and it points to a row that is after the start of the frame inside the window partition such\n'
-        'as the following cases\n'
-        '\n'
-        '* `ROWS BETWEEN expr FOLLOWING AND CURRENT ROW`\n'
-        '* `ROWS BETWEEN expr FOLLOWING AND UNBOUNDED PRECEDING`\n'
-        '* `ROWS BETWEEN expr FOLLOWING AND expr PRECEDING`\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND CURRENT ROW) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `expr FOLLOWING` is specified as the start of the frame\n"
+        "and it points to a row that is after the start of the frame inside the window partition such\n"
+        "as the following cases\n"
+        "\n"
+        "* `ROWS BETWEEN expr FOLLOWING AND CURRENT ROW`\n"
+        "* `ROWS BETWEEN expr FOLLOWING AND UNBOUNDED PRECEDING`\n"
+        "* `ROWS BETWEEN expr FOLLOWING AND expr PRECEDING`\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND CURRENT ROW) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.12.1')
+    num="3.5.3.12.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_ExprFollowing_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `ROWS BETWEEN expr FOLLOWING AND expr FOLLOWING`\n'
-        'is specified and the end of the frame specified by the `expr FOLLOWING` is a row that is before the row \n'
-        'specified by the frame start.\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND 0 FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `ROWS BETWEEN expr FOLLOWING AND expr FOLLOWING`\n"
+        "is specified and the end of the frame specified by the `expr FOLLOWING` is a row that is before the row \n"
+        "specified by the frame start.\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND 0 FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.12.2')
+    num="3.5.3.12.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_UnboundedFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.UnboundedFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.UnboundedFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all the rows from and including current row plus `expr` rows following it \n'
-        'until and including the last row in the window partition\n'
-        'when `ROWS BETWEEN expr FOLLOWING AND UNBOUNDED FOLLOWING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING)─┐\n'
-        '│      1 │                                                                   5 │\n'
-        '│      2 │                                                                   3 │\n'
-        '│      3 │                                                                   0 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include all the rows from and including current row plus `expr` rows following it \n"
+        "until and including the last row in the window partition\n"
+        "when `ROWS BETWEEN expr FOLLOWING AND UNBOUNDED FOLLOWING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING)─┐\n"
+        "│      1 │                                                                   5 │\n"
+        "│      2 │                                                                   3 │\n"
+        "│      3 │                                                                   0 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.12.3')
+    num="3.5.3.12.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_ExprFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include the rows from and including current row plus `expr` following it \n'
-        'until and including the row specified by the frame end when the frame end \n'
-        'is the current row plus `expr` following it is right at or after the start of the frame\n'
-        'when `ROWS BETWEEN expr FOLLOWING AND expr FOLLOWING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING)─┐\n'
-        '│      1 │                                                           5 │\n'
-        '│      2 │                                                           3 │\n'
-        '│      3 │                                                           0 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include the rows from and including current row plus `expr` following it \n"
+        "until and including the row specified by the frame end when the frame end \n"
+        "is the current row plus `expr` following it is right at or after the start of the frame\n"
+        "when `ROWS BETWEEN expr FOLLOWING AND expr FOLLOWING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING)─┐\n"
+        "│      1 │                                                           5 │\n"
+        "│      2 │                                                           3 │\n"
+        "│      3 │                                                           0 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.12.4')
+    num="3.5.3.12.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_CurrentRow = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.CurrentRow',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.CurrentRow",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include the rows from and including current row minus `expr` rows\n'
-        'preceding it until and including the current row in the window frame\n'
-        'when `ROWS BETWEEN expr PRECEDING AND CURRENT ROW` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                           1 │\n'
-        '│      2 │                                                           3 │\n'
-        '│      3 │                                                           5 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include the rows from and including current row minus `expr` rows\n"
+        "preceding it until and including the current row in the window frame\n"
+        "when `ROWS BETWEEN expr PRECEDING AND CURRENT ROW` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                           1 │\n"
+        "│      2 │                                                           3 │\n"
+        "│      3 │                                                           5 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.13.1')
+    num="3.5.3.13.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_UnboundedPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error\n'
-        'when `ROWS BETWEEN expr PRECEDING AND UNBOUNDED PRECEDING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND UNBOUNDED PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error\n"
+        "when `ROWS BETWEEN expr PRECEDING AND UNBOUNDED PRECEDING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND UNBOUNDED PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.13.2')
+    num="3.5.3.13.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_UnboundedFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include the rows from and including current row minus `expr` rows\n'
-        'preceding it until and including the last row in the window partition\n'
-        'when `ROWS BETWEEN expr PRECEDING AND UNBOUNDED FOLLOWING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING)─┐\n'
-        '│      1 │                                                                   6 │\n'
-        '│      2 │                                                                   6 │\n'
-        '│      3 │                                                                   5 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include the rows from and including current row minus `expr` rows\n"
+        "preceding it until and including the last row in the window partition\n"
+        "when `ROWS BETWEEN expr PRECEDING AND UNBOUNDED FOLLOWING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING)─┐\n"
+        "│      1 │                                                                   6 │\n"
+        "│      2 │                                                                   6 │\n"
+        "│      3 │                                                                   5 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.13.3')
+    num="3.5.3.13.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_ExprPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when the frame end specified by the `expr PRECEDING`\n'
-        'evaluates to a row that is before the row specified by the frame start in the window partition\n'
-        'when `ROWS BETWEEN expr PRECEDING AND expr PRECEDING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND 2 PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when the frame end specified by the `expr PRECEDING`\n"
+        "evaluates to a row that is before the row specified by the frame start in the window partition\n"
+        "when `ROWS BETWEEN expr PRECEDING AND expr PRECEDING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND 2 PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.13.4')
+    num="3.5.3.13.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_ExprPreceding = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include the rows from and including current row minus `expr` rows preceding it\n'
-        'until and including the current row minus `expr` rows preceding it if the end\n'
-        'of the frame is after the frame start in the window partition \n'
-        'when `ROWS BETWEEN expr PRECEDING AND expr PRECEDING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND 0 PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND 0 PRECEDING)─┐\n'
-        '│      1 │                                                           1 │\n'
-        '│      2 │                                                           3 │\n'
-        '│      3 │                                                           5 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include the rows from and including current row minus `expr` rows preceding it\n"
+        "until and including the current row minus `expr` rows preceding it if the end\n"
+        "of the frame is after the frame start in the window partition \n"
+        "when `ROWS BETWEEN expr PRECEDING AND expr PRECEDING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND 0 PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND 0 PRECEDING)─┐\n"
+        "│      1 │                                                           1 │\n"
+        "│      2 │                                                           3 │\n"
+        "│      3 │                                                           5 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.13.5')
+    num="3.5.3.13.5",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_ExprFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include the rows from and including current row minus `expr` rows preceding it\n'
-        'until and including the current row plus `expr` rows following it in the window partition\n'
-        'when `ROWS BETWEEN expr PRECEDING AND expr FOLLOWING` frame is specified.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)─┐\n'
-        '│      1 │                                                           3 │\n'
-        '│      2 │                                                           6 │\n'
-        '│      3 │                                                           5 │\n'
-        '└────────┴─────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include the rows from and including current row minus `expr` rows preceding it\n"
+        "until and including the current row plus `expr` rows following it in the window partition\n"
+        "when `ROWS BETWEEN expr PRECEDING AND expr FOLLOWING` frame is specified.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)─┐\n"
+        "│      1 │                                                           3 │\n"
+        "│      2 │                                                           6 │\n"
+        "│      3 │                                                           5 │\n"
+        "└────────┴─────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.3.13.6')
+    num="3.5.3.13.6",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `RANGE` frame to define rows within a value range.\n'
-        'Offsets SHALL be differences in row values from the current row value.\n'
-        '\n'
-        '```sql\n'
-        'RANGE frame_extent\n'
-        '```\n'
-        '\n'
-        'See [frame_extent] definition.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `RANGE` frame to define rows within a value range.\n"
+        "Offsets SHALL be differences in row values from the current row value.\n"
+        "\n"
+        "```sql\n"
+        "RANGE frame_extent\n"
+        "```\n"
+        "\n"
+        "See [frame_extent] definition.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.4.1')
+    num="3.5.4.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_DataTypes_DateAndDateTime = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.DateAndDateTime',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.DateAndDateTime",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `RANGE` frame over columns with `Date` and `DateTime`\n'
-        'data types.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `RANGE` frame over columns with `Date` and `DateTime`\n"
+        "data types.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.4.2')
+    num="3.5.4.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_DataTypes_IntAndUInt = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.IntAndUInt',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.IntAndUInt",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `RANGE` frame over columns with numerical data types\n'
-        'such `IntX` and `UIntX`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `RANGE` frame over columns with numerical data types\n"
+        "such `IntX` and `UIntX`.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.4.3')
+    num="3.5.4.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_MultipleColumnsInOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MultipleColumnsInOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MultipleColumnsInOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `RANGE` frame definition is used with `ORDER BY`\n'
-        'that uses multiple columns.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `RANGE` frame definition is used with `ORDER BY`\n"
+        "that uses multiple columns.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.4.4')
+    num="3.5.4.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_MissingFrameExtent_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MissingFrameExtent.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MissingFrameExtent.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `RANGE` frame definition is missing [frame_extent].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `RANGE` frame definition is missing [frame_extent].\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.4.5')
+    num="3.5.4.5",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_InvalidFrameExtent_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.InvalidFrameExtent.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.InvalidFrameExtent.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `RANGE` frame definition has invalid [frame_extent].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `RANGE` frame definition has invalid [frame_extent].\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.4.6')
+    num="3.5.4.6",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_CurrentRow_Peers = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.CurrentRow.Peers',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.CurrentRow.Peers",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] for the `RANGE` frame SHALL define the `peers` of the `CURRENT ROW` to be all\n'
-        'the rows that are inside the same order bucket.\n'
-        '\n'
-        ),
+        "[ClickHouse] for the `RANGE` frame SHALL define the `peers` of the `CURRENT ROW` to be all\n"
+        "the rows that are inside the same order bucket.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.4.8')
+    num="3.5.4.8",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_CurrentRow_WithoutOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithoutOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithoutOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows in the window partition\n'
-        'when `RANGE CURRENT ROW` frame is specified without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE CURRENT ROW) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (RANGE BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n'
-        '│      1 │                                                            6 │\n'
-        '│      2 │                                                            6 │\n'
-        '│      3 │                                                            6 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include all rows in the window partition\n"
+        "when `RANGE CURRENT ROW` frame is specified without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE CURRENT ROW) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (RANGE BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n"
+        "│      1 │                                                            6 │\n"
+        "│      2 │                                                            6 │\n"
+        "│      3 │                                                            6 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.9.1')
+    num="3.5.4.9.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_CurrentRow_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows that are [current row peers] in the window partition\n'
-        'when `RANGE CURRENT ROW` frame is specified with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows that are [current row peers] in the window partition\n"
+        "when `RANGE CURRENT ROW` frame is specified with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE CURRENT ROW) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                                2 │\n'
-        '│      1 │                                                                                2 │\n'
-        '│      2 │                                                                                2 │\n'
-        '│      3 │                                                                                3 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                                2 │\n"
+        "│      1 │                                                                                2 │\n"
+        "│      2 │                                                                                2 │\n"
+        "│      3 │                                                                                3 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.9.2')
+    num="3.5.4.9.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_UnboundedFollowing_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedFollowing.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedFollowing.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE UNBOUNDED FOLLOWING` frame is specified with or without order by\n'
-        'as `UNBOUNDED FOLLOWING` SHALL not be supported as [frame_start].\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE UNBOUNDED FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE UNBOUNDED FOLLOWING` frame is specified with or without order by\n"
+        "as `UNBOUNDED FOLLOWING` SHALL not be supported as [frame_start].\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE UNBOUNDED FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.10.1')
+    num="3.5.4.10.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_UnboundedPreceding_WithoutOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithoutOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithoutOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows in the window partition\n'
-        'when `RANGE UNBOUNDED PRECEDING` frame is specified without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE UNBOUNDED PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                    6 │\n'
-        '│      2 │                                                                    6 │\n'
-        '│      3 │                                                                    6 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include all rows in the window partition\n"
+        "when `RANGE UNBOUNDED PRECEDING` frame is specified without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE UNBOUNDED PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                    6 │\n"
+        "│      2 │                                                                    6 │\n"
+        "│      3 │                                                                    6 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.11.1')
+    num="3.5.4.11.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_UnboundedPreceding_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include rows with values from and including the first row \n'
-        'until and including all [current row peers] in the window partition\n'
-        'when `RANGE UNBOUNDED PRECEDING` frame is specified with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ORDER BY number RANGE UNBOUNDED PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                                        1 │\n'
-        '│      2 │                                                                                        3 │\n'
-        '│      3 │                                                                                        6 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include rows with values from and including the first row \n"
+        "until and including all [current row peers] in the window partition\n"
+        "when `RANGE UNBOUNDED PRECEDING` frame is specified with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ORDER BY number RANGE UNBOUNDED PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                                        1 │\n"
+        "│      2 │                                                                                        3 │\n"
+        "│      3 │                                                                                        6 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.11.2')
+    num="3.5.4.11.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprPreceding_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE expr PRECEDING` frame is specified without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE 1 PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE expr PRECEDING` frame is specified without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE 1 PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.12.1')
+    num="3.5.4.12.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprPreceding_OrderByNonNumericalColumn_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.OrderByNonNumericalColumn.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.OrderByNonNumericalColumn.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE expr PRECEDING` is used with `ORDER BY` clause\n'
-        'over a non-numerical column.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE expr PRECEDING` is used with `ORDER BY` clause\n"
+        "over a non-numerical column.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.12.2')
+    num="3.5.4.12.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprPreceding_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include rows with values from and including current row value minus `expr`\n'
-        'until and including the value for the current row \n'
-        'when `RANGE expr PRECEDING` frame is specified with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ORDER BY number RANGE 1 PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                                1 │\n'
-        '│      2 │                                                                                3 │\n'
-        '│      3 │                                                                                5 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include rows with values from and including current row value minus `expr`\n"
+        "until and including the value for the current row \n"
+        "when `RANGE expr PRECEDING` frame is specified with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ORDER BY number RANGE 1 PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                                1 │\n"
+        "│      2 │                                                                                3 │\n"
+        "│      3 │                                                                                5 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.12.3')
+    num="3.5.4.12.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprFollowing_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE expr FOLLOWING` frame is specified without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE 1 FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE expr FOLLOWING` frame is specified without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE 1 FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.13.1')
+    num="3.5.4.13.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Start_ExprFollowing_WithOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE expr FOLLOWING` frame is specified wit the `ORDER BY` clause \n'
-        'as the value for the frame start cannot be larger than the value for the frame end.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ORDER BY number RANGE 1 FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE expr FOLLOWING` frame is specified wit the `ORDER BY` clause \n"
+        "as the value for the frame start cannot be larger than the value for the frame end.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ORDER BY number RANGE 1 FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.13.2')
+    num="3.5.4.13.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_CurrentRow = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.CurrentRow',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.CurrentRow",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all [current row peers] in the window partition \n'
-        'when `RANGE BETWEEN CURRENT ROW AND CURRENT ROW` frame is specified with or without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Without `ORDER BY`**  \n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE BETWEEN CURRENT ROW AND CURRENT ROW) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (RANGE BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n'
-        '│      1 │                                                            6 │\n'
-        '│      2 │                                                            6 │\n'
-        '│      3 │                                                            6 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        '**With `ORDER BY`**  \n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN CURRENT ROW AND CURRENT ROW) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                                1 │\n'
-        '│      2 │                                                                                2 │\n'
-        '│      3 │                                                                                3 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include all [current row peers] in the window partition \n"
+        "when `RANGE BETWEEN CURRENT ROW AND CURRENT ROW` frame is specified with or without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Without `ORDER BY`**  \n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE BETWEEN CURRENT ROW AND CURRENT ROW) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (RANGE BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n"
+        "│      1 │                                                            6 │\n"
+        "│      2 │                                                            6 │\n"
+        "│      3 │                                                            6 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+        "**With `ORDER BY`**  \n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN CURRENT ROW AND CURRENT ROW) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN CURRENT ROW AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                                1 │\n"
+        "│      2 │                                                                                2 │\n"
+        "│      3 │                                                                                3 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.14.1')
+    num="3.5.4.14.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_UnboundedPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING` frame is specified\n'
-        'with or without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Without `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '**With `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING` frame is specified\n"
+        "with or without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Without `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "**With `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.14.2')
+    num="3.5.4.14.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_UnboundedFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with values from and including [current row peers] until and including\n'
-        'the last row in the window partition when `RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING` frame is specified\n'
-        'with or without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Without `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)─┐\n'
-        '│      1 │                                                                    6 │\n'
-        '│      2 │                                                                    6 │\n'
-        '│      3 │                                                                    6 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        '**With `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)─┐\n'
-        '│      1 │                                                                                        6 │\n'
-        '│      2 │                                                                                        5 │\n'
-        '│      3 │                                                                                        3 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL include all rows with values from and including [current row peers] until and including\n"
+        "the last row in the window partition when `RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING` frame is specified\n"
+        "with or without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Without `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)─┐\n"
+        "│      1 │                                                                    6 │\n"
+        "│      2 │                                                                    6 │\n"
+        "│      3 │                                                                    6 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+        "**With `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)─┐\n"
+        "│      1 │                                                                                        6 │\n"
+        "│      2 │                                                                                        5 │\n"
+        "│      3 │                                                                                        3 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.14.3')
+    num="3.5.4.14.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_ExprFollowing_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN CURRENT ROW AND expr FOLLOWING` frame is specified\n'
-        'without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE BETWEEN CURRENT ROW AND 1 FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN CURRENT ROW AND expr FOLLOWING` frame is specified\n"
+        "without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE BETWEEN CURRENT ROW AND 1 FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.14.4')
+    num="3.5.4.14.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_ExprFollowing_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with values from and including [current row peers] until and including\n'
-        'current row value plus `expr` when `RANGE BETWEEN CURRENT ROW AND expr FOLLOWING` frame is specified\n'
-        'with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows with values from and including [current row peers] until and including\n"
+        "current row value plus `expr` when `RANGE BETWEEN CURRENT ROW AND expr FOLLOWING` frame is specified\n"
+        "with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN CURRENT ROW AND 1 FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN CURRENT ROW AND 1 FOLLOWING)─┐\n'
-        '│      1 │                                                                                4 │\n'
-        '│      1 │                                                                                4 │\n'
-        '│      2 │                                                                                5 │\n'
-        '│      3 │                                                                                3 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN CURRENT ROW AND 1 FOLLOWING)─┐\n"
+        "│      1 │                                                                                4 │\n"
+        "│      1 │                                                                                4 │\n"
+        "│      2 │                                                                                5 │\n"
+        "│      3 │                                                                                3 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.14.5')
+    num="3.5.4.14.5",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_CurrentRow_ExprPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN CURRENT ROW AND expr PRECEDING` frame is specified\n'
-        'with or without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Without `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE BETWEEN CURRENT ROW AND 1 PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        '**With `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN CURRENT ROW AND 1 PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN CURRENT ROW AND expr PRECEDING` frame is specified\n"
+        "with or without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Without `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE BETWEEN CURRENT ROW AND 1 PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+        "**With `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN CURRENT ROW AND 1 PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.14.6')
+    num="3.5.4.14.6",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_CurrentRow = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.CurrentRow',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.CurrentRow",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with values from and including the first row until and including\n'
-        '[current row peers] in the window partition when `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` frame is specified\n'
-        'with and without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Without `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows with values from and including the first row until and including\n"
+        "[current row peers] in the window partition when `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` frame is specified\n"
+        "with and without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Without `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                    7 │\n'
-        '│      1 │                                                                    7 │\n'
-        '│      2 │                                                                    7 │\n'
-        '│      3 │                                                                    7 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        '**With `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                    7 │\n"
+        "│      1 │                                                                    7 │\n"
+        "│      2 │                                                                    7 │\n"
+        "│      3 │                                                                    7 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+        "**With `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                                        2 │\n'
-        '│      1 │                                                                                        2 │\n'
-        '│      2 │                                                                                        4 │\n'
-        '│      3 │                                                                                        7 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                                        2 │\n"
+        "│      1 │                                                                                        2 │\n"
+        "│      2 │                                                                                        4 │\n"
+        "│      3 │                                                                                        7 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.15.1')
+    num="3.5.4.15.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_UnboundedPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return and error when `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED PRECEDING` frame is specified\n'
-        'with and without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Without `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return and error when `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED PRECEDING` frame is specified\n"
+        "with and without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Without `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '**With `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "```\n"
+        "\n"
+        "**With `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.15.2')
+    num="3.5.4.15.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_UnboundedFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows in the window partition when `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame is specified\n'
-        'with and without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Without `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows in the window partition when `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame is specified\n"
+        "with and without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Without `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)─┐\n'
-        '│      1 │                                                                            7 │\n'
-        '│      1 │                                                                            7 │\n'
-        '│      2 │                                                                            7 │\n'
-        '│      3 │                                                                            7 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        '**With `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)─┐\n"
+        "│      1 │                                                                            7 │\n"
+        "│      1 │                                                                            7 │\n"
+        "│      2 │                                                                            7 │\n"
+        "│      3 │                                                                            7 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+        "**With `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)─┐\n'
-        '│      1 │                                                                                                7 │\n'
-        '│      1 │                                                                                                7 │\n'
-        '│      2 │                                                                                                7 │\n'
-        '│      3 │                                                                                                7 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)─┐\n"
+        "│      1 │                                                                                                7 │\n"
+        "│      1 │                                                                                                7 │\n"
+        "│      2 │                                                                                                7 │\n"
+        "│      3 │                                                                                                7 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.15.3')
+    num="3.5.4.15.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_ExprPreceding_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED PRECEDING AND expr PRECEDING` frame is specified\n'
-        'without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED PRECEDING AND expr PRECEDING` frame is specified\n"
+        "without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.15.4')
+    num="3.5.4.15.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_ExprPreceding_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with values from and including the first row until and including\n'
-        'the value of the current row minus `expr` in the window partition\n'
-        'when `RANGE BETWEEN UNBOUNDED PRECEDING AND expr PRECEDING` frame is specified with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows with values from and including the first row until and including\n"
+        "the value of the current row minus `expr` in the window partition\n"
+        "when `RANGE BETWEEN UNBOUNDED PRECEDING AND expr PRECEDING` frame is specified with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)─┐\n'
-        '│      1 │                                                                                        0 │\n'
-        '│      1 │                                                                                        0 │\n'
-        '│      2 │                                                                                        2 │\n'
-        '│      3 │                                                                                        4 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)─┐\n"
+        "│      1 │                                                                                        0 │\n"
+        "│      1 │                                                                                        0 │\n"
+        "│      2 │                                                                                        2 │\n"
+        "│      3 │                                                                                        4 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.15.5')
+    num="3.5.4.15.5",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_ExprFollowing_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED PRECEDING AND expr FOLLOWING` frame is specified\n'
-        'without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED PRECEDING AND expr FOLLOWING` frame is specified\n"
+        "without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.15.6')
+    num="3.5.4.15.6",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedPreceding_ExprFollowing_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with values from and including the first row until and including\n'
-        'the value of the current row plus `expr` in the window partition\n'
-        'when `RANGE BETWEEN UNBOUNDED PRECEDING AND expr FOLLOWING` frame is specified with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows with values from and including the first row until and including\n"
+        "the value of the current row plus `expr` in the window partition\n"
+        "when `RANGE BETWEEN UNBOUNDED PRECEDING AND expr FOLLOWING` frame is specified with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING)─┐\n'
-        '│      1 │                                                                                        4 │\n'
-        '│      1 │                                                                                        4 │\n'
-        '│      2 │                                                                                        7 │\n'
-        '│      3 │                                                                                        7 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING)─┐\n"
+        "│      1 │                                                                                        4 │\n"
+        "│      1 │                                                                                        4 │\n"
+        "│      2 │                                                                                        7 │\n"
+        "│      3 │                                                                                        7 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.15.7')
+    num="3.5.4.15.7",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_CurrentRow_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.CurrentRow.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.CurrentRow.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED FOLLOWING AND CURRENT ROW` frame is specified \n'
-        'with or without the `ORDER BY` clause.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED FOLLOWING AND CURRENT ROW` frame is specified \n"
+        "with or without the `ORDER BY` clause.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.16.1')
+    num="3.5.4.16.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_UnboundedFollowing_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedFollowing.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedFollowing.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED FOLLOWING AND UNBOUNDED FOLLOWING` frame is specified \n'
-        'with or without the `ORDER BY` clause.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED FOLLOWING AND UNBOUNDED FOLLOWING` frame is specified \n"
+        "with or without the `ORDER BY` clause.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.16.2')
+    num="3.5.4.16.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_UnboundedPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED FOLLOWING AND UNBOUNDED PRECEDING` frame is specified \n'
-        'with or without the `ORDER BY` clause.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED FOLLOWING AND UNBOUNDED PRECEDING` frame is specified \n"
+        "with or without the `ORDER BY` clause.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.16.3')
+    num="3.5.4.16.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_ExprPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED FOLLOWING AND expr PRECEDING` frame is specified \n'
-        'with or without the `ORDER BY` clause.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED FOLLOWING AND expr PRECEDING` frame is specified \n"
+        "with or without the `ORDER BY` clause.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.16.4')
+    num="3.5.4.16.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_UnboundedFollowing_ExprFollowing_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprFollowing.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprFollowing.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED FOLLOWING AND expr FOLLOWING` frame is specified \n'
-        'with or without the `ORDER BY` clause.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN UNBOUNDED FOLLOWING AND expr FOLLOWING` frame is specified \n"
+        "with or without the `ORDER BY` clause.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.16.5')
+    num="3.5.4.16.5",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_CurrentRow_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with values from and including current row minus `expr` \n'
-        'until and including [current row peers] in the window partition\n'
-        'when `RANGE BETWEEN expr PRECEDING AND CURRENT ROW` frame is specified with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows with values from and including current row minus `expr` \n"
+        "until and including [current row peers] in the window partition\n"
+        "when `RANGE BETWEEN expr PRECEDING AND CURRENT ROW` frame is specified with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                                2 │\n'
-        '│      1 │                                                                                2 │\n'
-        '│      2 │                                                                                4 │\n'
-        '│      3 │                                                                                5 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                                2 │\n"
+        "│      1 │                                                                                2 │\n"
+        "│      2 │                                                                                4 │\n"
+        "│      3 │                                                                                5 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.17.1')
+    num="3.5.4.17.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_CurrentRow_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr PRECEDING AND CURRENT ROW` frame is specified\n'
-        'without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr PRECEDING AND CURRENT ROW` frame is specified\n"
+        "without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.17.2')
+    num="3.5.4.17.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_UnboundedPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr PRECEDING AND UNBOUNDED PRECEDING` frame is specified \n'
-        'with or without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Without `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr PRECEDING AND UNBOUNDED PRECEDING` frame is specified \n"
+        "with or without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Without `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN 1 PRECEDING AND UNBOUNDED PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '**With `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "```\n"
+        "\n"
+        "**With `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 1 PRECEDING AND UNBOUNDED PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.17.3')
+    num="3.5.4.17.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_UnboundedFollowing_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr PRECEDING AND UNBOUNDED FOLLOWING` frame is specified \n'
-        'without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr PRECEDING AND UNBOUNDED FOLLOWING` frame is specified \n"
+        "without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.17.4')
+    num="3.5.4.17.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_UnboundedFollowing_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with values from and including current row minus `expr` \n'
-        'until and including the last row in the window partition when `RANGE BETWEEN expr PRECEDING AND UNBOUNDED FOLLOWING` frame\n'
-        'is specified with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows with values from and including current row minus `expr` \n"
+        "until and including the last row in the window partition when `RANGE BETWEEN expr PRECEDING AND UNBOUNDED FOLLOWING` frame\n"
+        "is specified with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING)─┐\n'
-        '│      1 │                                                                                        7 │\n'
-        '│      1 │                                                                                        7 │\n'
-        '│      2 │                                                                                        7 │\n'
-        '│      3 │                                                                                        5 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING)─┐\n"
+        "│      1 │                                                                                        7 │\n"
+        "│      1 │                                                                                        7 │\n"
+        "│      2 │                                                                                        7 │\n"
+        "│      3 │                                                                                        5 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.17.5')
+    num="3.5.4.17.5",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprFollowing_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr PRECEDING AND expr FOLLOWING` frame is specified \n'
-        'without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr PRECEDING AND expr FOLLOWING` frame is specified \n"
+        "without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.17.6')
+    num="3.5.4.17.6",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprFollowing_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with values from and including current row minus preceding `expr` \n'
-        'until and including current row plus following `expr` in the window partition \n'
-        'when `RANGE BETWEEN expr PRECEDING AND expr FOLLOWING` frame is specified with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows with values from and including current row minus preceding `expr` \n"
+        "until and including current row plus following `expr` in the window partition \n"
+        "when `RANGE BETWEEN expr PRECEDING AND expr FOLLOWING` frame is specified with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING)─┐\n'
-        '│      1 │                                                                                4 │\n'
-        '│      1 │                                                                                4 │\n'
-        '│      2 │                                                                                7 │\n'
-        '│      3 │                                                                                5 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING)─┐\n"
+        "│      1 │                                                                                4 │\n"
+        "│      1 │                                                                                4 │\n"
+        "│      2 │                                                                                7 │\n"
+        "│      3 │                                                                                5 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.17.7')
+    num="3.5.4.17.7",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprPreceding_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr PRECEDING AND expr PRECEDING` frame is specified \n'
-        'without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT number,sum(number) OVER (RANGE BETWEEN 1 PRECEDING AND 0 PRECEDING) FROM numbers(1,3)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr PRECEDING AND expr PRECEDING` frame is specified \n"
+        "without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT number,sum(number) OVER (RANGE BETWEEN 1 PRECEDING AND 0 PRECEDING) FROM numbers(1,3)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.17.8')
+    num="3.5.4.17.8",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprPreceding_WithOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when the value of the [frame_end] specified by the \n'
-        'current row minus preceding `expr` is greater than the value of the [frame_start] in the window partition\n'
-        'when `RANGE BETWEEN expr PRECEDING AND expr PRECEDING` frame is specified with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error when the value of the [frame_end] specified by the \n"
+        "current row minus preceding `expr` is greater than the value of the [frame_start] in the window partition\n"
+        "when `RANGE BETWEEN expr PRECEDING AND expr PRECEDING` frame is specified with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN 1 PRECEDING AND 2 PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.17.9')
+    num="3.5.4.17.9",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprPreceding_ExprPreceding_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with values from and including current row minus preceding `expr` for the [frame_start]\n'
-        'until and including current row minus following `expr` for the [frame_end] in the window partition \n'
-        'when `RANGE BETWEEN expr PRECEDING AND expr PRECEDING` frame is specified with the `ORDER BY` clause\n'
-        'if an only if the [frame_end] value is equal or greater than [frame_start] value.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Greater Than**\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows with values from and including current row minus preceding `expr` for the [frame_start]\n"
+        "until and including current row minus following `expr` for the [frame_end] in the window partition \n"
+        "when `RANGE BETWEEN expr PRECEDING AND expr PRECEDING` frame is specified with the `ORDER BY` clause\n"
+        "if an only if the [frame_end] value is equal or greater than [frame_start] value.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Greater Than**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 1 PRECEDING AND 0 PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND 0 PRECEDING)─┐\n'
-        '│      1 │                                                                                2 │\n'
-        '│      1 │                                                                                2 │\n'
-        '│      2 │                                                                                4 │\n'
-        '│      3 │                                                                                5 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        'or **Equal**\n'
-        '\n'
-        '```sql\n'
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND 0 PRECEDING)─┐\n"
+        "│      1 │                                                                                2 │\n"
+        "│      1 │                                                                                2 │\n"
+        "│      2 │                                                                                4 │\n"
+        "│      3 │                                                                                5 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+        "or **Equal**\n"
+        "\n"
+        "```sql\n"
         " SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 1 PRECEDING AND 1 PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND 1 PRECEDING)─┐\n'
-        '│      1 │                                                                                0 │\n'
-        '│      1 │                                                                                0 │\n'
-        '│      2 │                                                                                2 │\n'
-        '│      3 │                                                                                2 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 PRECEDING AND 1 PRECEDING)─┐\n"
+        "│      1 │                                                                                0 │\n"
+        "│      1 │                                                                                0 │\n"
+        "│      2 │                                                                                2 │\n"
+        "│      3 │                                                                                2 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.17.10')
+    num="3.5.4.17.10",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_CurrentRow_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND CURRENT ROW` frame is specified \n'
-        'without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND CURRENT ROW` frame is specified \n"
+        "without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN 0 FOLLOWING AND CURRENT ROW) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.1')
+    num="3.5.4.18.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_CurrentRow_WithOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND CURRENT ROW` frame is specified \n'
-        'with the `ORDER BY` clause and `expr` is greater than `0`.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND CURRENT ROW` frame is specified \n"
+        "with the `ORDER BY` clause and `expr` is greater than `0`.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN 1 FOLLOWING AND CURRENT ROW) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.2')
+    num="3.5.4.18.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_CurrentRow_ZeroSpecialCase = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.ZeroSpecialCase',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.ZeroSpecialCase",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all [current row peers] in the window partition\n'
-        'when `RANGE BETWEEN expr FOLLOWING AND CURRENT ROW` frame is specified \n'
-        'with the `ORDER BY` clause if and only if the `expr` equals to `0`.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Without `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all [current row peers] in the window partition\n"
+        "when `RANGE BETWEEN expr FOLLOWING AND CURRENT ROW` frame is specified \n"
+        "with the `ORDER BY` clause if and only if the `expr` equals to `0`.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Without `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN 0 FOLLOWING AND CURRENT ROW) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (RANGE BETWEEN 0 FOLLOWING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                            7 │\n'
-        '│      1 │                                                            7 │\n'
-        '│      2 │                                                            7 │\n'
-        '│      3 │                                                            7 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        '**With `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (RANGE BETWEEN 0 FOLLOWING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                            7 │\n"
+        "│      1 │                                                            7 │\n"
+        "│      2 │                                                            7 │\n"
+        "│      3 │                                                            7 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+        "**With `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN 0 FOLLOWING AND CURRENT ROW) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 0 FOLLOWING AND CURRENT ROW)─┐\n'
-        '│      1 │                                                                                2 │\n'
-        '│      1 │                                                                                2 │\n'
-        '│      2 │                                                                                2 │\n'
-        '│      3 │                                                                                3 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 0 FOLLOWING AND CURRENT ROW)─┐\n"
+        "│      1 │                                                                                2 │\n"
+        "│      1 │                                                                                2 │\n"
+        "│      2 │                                                                                2 │\n"
+        "│      3 │                                                                                3 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.3')
+    num="3.5.4.18.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_UnboundedFollowing_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND UNBOUNDED FOLLOWING` frame is specified \n'
-        'without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND UNBOUNDED FOLLOWING` frame is specified \n"
+        "without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.4')
+    num="3.5.4.18.4",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_UnboundedFollowing_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with values from and including current row plus `expr`\n'
-        'until and including the last row in the window partition \n'
-        'when `RANGE BETWEEN expr FOLLOWING AND UNBOUNDED FOLLOWING` frame is specified with the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows with values from and including current row plus `expr`\n"
+        "until and including the last row in the window partition \n"
+        "when `RANGE BETWEEN expr FOLLOWING AND UNBOUNDED FOLLOWING` frame is specified with the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING)─┐\n'
-        '│      1 │                                                                                        5 │\n'
-        '│      1 │                                                                                        5 │\n'
-        '│      2 │                                                                                        3 │\n'
-        '│      3 │                                                                                        0 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING)─┐\n"
+        "│      1 │                                                                                        5 │\n"
+        "│      1 │                                                                                        5 │\n"
+        "│      2 │                                                                                        3 │\n"
+        "│      3 │                                                                                        0 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.5')
+    num="3.5.4.18.5",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_UnboundedPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND UNBOUNDED PRECEDING` frame is specified \n'
-        'with or without the `ORDER BY` clause.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '**Without `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND UNBOUNDED PRECEDING` frame is specified \n"
+        "with or without the `ORDER BY` clause.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "**Without `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (RANGE BETWEEN 1 FOLLOWING AND UNBOUNDED PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '**With `ORDER BY`**\n'
-        '\n'
-        '```sql\n'
+        "```\n"
+        "\n"
+        "**With `ORDER BY`**\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 1 FOLLOWING AND UNBOUNDED PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.6')
+    num="3.5.4.18.6",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprPreceding_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND expr PRECEDING` frame is specified \n'
-        'without the `ORDER BY`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND expr PRECEDING` frame is specified \n"
+        "without the `ORDER BY`.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.7')
+    num="3.5.4.18.7",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprPreceding_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND expr PRECEDING` frame is specified \n'
-        'with the `ORDER BY` clause if the value of both `expr` is not `0`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND expr PRECEDING` frame is specified \n"
+        "with the `ORDER BY` clause if the value of both `expr` is not `0`.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.8')
+    num="3.5.4.18.8",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprPreceding_WithOrderBy_ZeroSpecialCase = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithOrderBy.ZeroSpecialCase',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithOrderBy.ZeroSpecialCase",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with value equal to [current row peers] in the window partition\n'
-        'when `RANGE BETWEEN expr FOLLOWING AND expr PRECEDING` frame is specified \n'
+        "[ClickHouse] SHALL include all rows with value equal to [current row peers] in the window partition\n"
+        "when `RANGE BETWEEN expr FOLLOWING AND expr PRECEDING` frame is specified \n"
         "with the `ORDER BY` clause if and only if both `expr`'s are `0`.\n"
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 0 FOLLOWING AND 0 PRECEDING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 0 FOLLOWING AND 0 PRECEDING ─┐\n'
-        '│      1 │                                                                                2 │\n'
-        '│      1 │                                                                                2 │\n'
-        '│      2 │                                                                                2 │\n'
-        '│      3 │                                                                                3 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 0 FOLLOWING AND 0 PRECEDING ─┐\n"
+        "│      1 │                                                                                2 │\n"
+        "│      1 │                                                                                2 │\n"
+        "│      2 │                                                                                2 │\n"
+        "│      3 │                                                                                3 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.9')
+    num="3.5.4.18.9",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprFollowing_WithoutOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithoutOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithoutOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND expr FOLLOWING` frame is specified \n'
-        'without the `ORDER BY` clause.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND expr FOLLOWING` frame is specified \n"
+        "without the `ORDER BY` clause.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.10')
+    num="3.5.4.18.10",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprFollowing_WithOrderBy_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND expr FOLLOWING` frame is specified \n'
-        'with the `ORDER BY` clause but the `expr` for the [frame_end] is less than the `expr` for the [frame_start].\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL return an error when `RANGE BETWEEN expr FOLLOWING AND expr FOLLOWING` frame is specified \n"
+        "with the `ORDER BY` clause but the `expr` for the [frame_end] is less than the `expr` for the [frame_start].\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 1 FOLLOWING AND 0 FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.11')
+    num="3.5.4.18.11",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RangeFrame_Between_ExprFollowing_ExprFollowing_WithOrderBy = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL include all rows with value from and including current row plus `expr` for the [frame_start]\n'
-        'until and including current row plus `expr` for the [frame_end] in the window partition\n'
-        'when `RANGE BETWEEN expr FOLLOWING AND expr FOLLOWING` frame is specified \n'
-        'with the `ORDER BY` clause if and only if the `expr` for the [frame_end] is greater than or equal than the \n'
-        '`expr` for the [frame_start].\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL include all rows with value from and including current row plus `expr` for the [frame_start]\n"
+        "until and including current row plus `expr` for the [frame_end] in the window partition\n"
+        "when `RANGE BETWEEN expr FOLLOWING AND expr FOLLOWING` frame is specified \n"
+        "with the `ORDER BY` clause if and only if the `expr` for the [frame_end] is greater than or equal than the \n"
+        "`expr` for the [frame_start].\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT number,sum(number) OVER (ORDER BY number RANGE BETWEEN 1 FOLLOWING AND 2 FOLLOWING) FROM values('number Int8', (1),(1),(2),(3))\n"
-        '```\n'
-        '\n'
-        '```bash\n'
-        '┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 FOLLOWING AND 2 FOLLOWING)─┐\n'
-        '│      1 │                                                                                5 │\n'
-        '│      1 │                                                                                5 │\n'
-        '│      2 │                                                                                3 │\n'
-        '│      3 │                                                                                0 │\n'
-        '└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "```bash\n"
+        "┌─number─┬─sum(number) OVER (ORDER BY number ASC RANGE BETWEEN 1 FOLLOWING AND 2 FOLLOWING)─┐\n"
+        "│      1 │                                                                                5 │\n"
+        "│      1 │                                                                                5 │\n"
+        "│      2 │                                                                                3 │\n"
+        "│      3 │                                                                                0 │\n"
+        "└────────┴──────────────────────────────────────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.5.4.18.12')
+    num="3.5.4.18.12",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Frame_Extent = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Extent',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Extent",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support [frame_extent] defined as\n'
-        '\n'
-        '```\n'
-        'frame_extent:\n'
-        '    {frame_start | frame_between}\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support [frame_extent] defined as\n"
+        "\n"
+        "```\n"
+        "frame_extent:\n"
+        "    {frame_start | frame_between}\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.5.1')
+    num="3.5.5.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Frame_Start = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Start',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Start",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support [frame_start] defined as\n'
-        '\n'
-        '```\n'
-        'frame_start: {\n'
-        '    CURRENT ROW\n'
-        '  | UNBOUNDED PRECEDING\n'
-        '  | UNBOUNDED FOLLOWING\n'
-        '  | expr PRECEDING\n'
-        '  | expr FOLLOWING\n'
-        '}\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support [frame_start] defined as\n"
+        "\n"
+        "```\n"
+        "frame_start: {\n"
+        "    CURRENT ROW\n"
+        "  | UNBOUNDED PRECEDING\n"
+        "  | UNBOUNDED FOLLOWING\n"
+        "  | expr PRECEDING\n"
+        "  | expr FOLLOWING\n"
+        "}\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.6.1')
+    num="3.5.6.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Frame_Between = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Between',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Between",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support [frame_between] defined as\n'
-        '\n'
-        '```\n'
-        'frame_between:\n'
-        '    BETWEEN frame_start AND frame_end\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support [frame_between] defined as\n"
+        "\n"
+        "```\n"
+        "frame_between:\n"
+        "    BETWEEN frame_start AND frame_end\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.7.1')
+    num="3.5.7.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Frame_End = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.End',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.Frame.End",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support [frame_end] defined as\n'
-        '\n'
-        '```\n'
-        'frame_end: {\n'
-        '    CURRENT ROW\n'
-        '  | UNBOUNDED PRECEDING\n'
-        '  | UNBOUNDED FOLLOWING\n'
-        '  | expr PRECEDING\n'
-        '  | expr FOLLOWING\n'
-        '}\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support [frame_end] defined as\n"
+        "\n"
+        "```\n"
+        "frame_end: {\n"
+        "    CURRENT ROW\n"
+        "  | UNBOUNDED PRECEDING\n"
+        "  | UNBOUNDED FOLLOWING\n"
+        "  | expr PRECEDING\n"
+        "  | expr FOLLOWING\n"
+        "}\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.8.1')
+    num="3.5.8.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_CurrentRow = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.CurrentRow',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.CurrentRow",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `CURRENT ROW` as `frame_start` or `frame_end` value.\n'
-        '\n'
-        '* For `ROWS` SHALL define the bound to be the current row\n'
-        '* For `RANGE` SHALL define the bound to be the peers of the current row\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `CURRENT ROW` as `frame_start` or `frame_end` value.\n"
+        "\n"
+        "* For `ROWS` SHALL define the bound to be the current row\n"
+        "* For `RANGE` SHALL define the bound to be the peers of the current row\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.9.1')
+    num="3.5.9.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_UnboundedPreceding = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedPreceding',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedPreceding",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `UNBOUNDED PRECEDING` as `frame_start` or `frame_end` value\n'
-        'and it SHALL define that the bound is the first partition row.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `UNBOUNDED PRECEDING` as `frame_start` or `frame_end` value\n"
+        "and it SHALL define that the bound is the first partition row.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.10.1')
+    num="3.5.10.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_UnboundedFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `UNBOUNDED FOLLOWING` as `frame_start` or `frame_end` value\n'
-        'and it SHALL define that the bound is the last partition row.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `UNBOUNDED FOLLOWING` as `frame_start` or `frame_end` value\n"
+        "and it SHALL define that the bound is the last partition row.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.11.1')
+    num="3.5.11.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_ExprPreceding = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `expr PRECEDING` as `frame_start` or `frame_end` value\n'
-        '\n'
-        '* For `ROWS` it SHALL define the bound to be the `expr` rows before the current row\n'
-        '* For `RANGE` it SHALL define the bound to be the rows with values equal to the current row value minus the `expr`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `expr PRECEDING` as `frame_start` or `frame_end` value\n"
+        "\n"
+        "* For `ROWS` it SHALL define the bound to be the `expr` rows before the current row\n"
+        "* For `RANGE` it SHALL define the bound to be the rows with values equal to the current row value minus the `expr`.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.12.1')
+    num="3.5.12.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_ExprPreceding_ExprValue = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding.ExprValue',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding.ExprValue",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support only non-negative numeric literal as the value for the `expr` in the `expr PRECEDING` frame boundary.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```\n'
-        '5 PRECEDING\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support only non-negative numeric literal as the value for the `expr` in the `expr PRECEDING` frame boundary.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```\n"
+        "5 PRECEDING\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.12.2')
+    num="3.5.12.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_ExprFollowing = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `expr FOLLOWING` as `frame_start` or `frame_end` value\n'
-        '\n'
-        '* For `ROWS` it SHALL define the bound to be the `expr` rows after the current row\n'
-        '* For `RANGE` it SHALL define  the bound to be the rows with values equal to the current row value plus `expr`\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `expr FOLLOWING` as `frame_start` or `frame_end` value\n"
+        "\n"
+        "* For `ROWS` it SHALL define the bound to be the `expr` rows after the current row\n"
+        "* For `RANGE` it SHALL define  the bound to be the rows with values equal to the current row value plus `expr`\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.13.1')
+    num="3.5.13.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_ExprFollowing_ExprValue = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing.ExprValue',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing.ExprValue",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support only non-negative numeric literal as the value for the `expr` in the `expr FOLLOWING` frame boundary.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```\n'
-        '5 FOLLOWING\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support only non-negative numeric literal as the value for the `expr` in the `expr FOLLOWING` frame boundary.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```\n"
+        "5 FOLLOWING\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.5.13.2')
+    num="3.5.13.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_WindowClause = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `WINDOW` clause to define one or more windows.\n'
-        '\n'
-        '```sql\n'
-        'WINDOW window_name AS (window_spec)\n'
-        '    [, window_name AS (window_spec)] ..\n'
-        '```\n'
-        '\n'
-        'The `window_name` SHALL be the name of a window defined by a `WINDOW` clause.\n'
-        '\n'
-        'The [window_spec] SHALL specify the window.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT ... FROM table WINDOW w AS (partiton by id))\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `WINDOW` clause to define one or more windows.\n"
+        "\n"
+        "```sql\n"
+        "WINDOW window_name AS (window_spec)\n"
+        "    [, window_name AS (window_spec)] ..\n"
+        "```\n"
+        "\n"
+        "The `window_name` SHALL be the name of a window defined by a `WINDOW` clause.\n"
+        "\n"
+        "The [window_spec] SHALL specify the window.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT ... FROM table WINDOW w AS (partiton by id))\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.6.1')
+    num="3.6.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_WindowClause_MultipleWindows = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause.MultipleWindows',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause.MultipleWindows",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `WINDOW` clause that defines multiple windows.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT ... FROM table WINDOW w1 AS (partition by id), w2 AS (partition by customer)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `WINDOW` clause that defines multiple windows.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT ... FROM table WINDOW w1 AS (partition by id), w2 AS (partition by customer)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.6.2')
+    num="3.6.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_WindowClause_MissingWindowSpec_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause.MissingWindowSpec.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause.MissingWindowSpec.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `WINDOW` clause definition is missing [window_spec].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `WINDOW` clause definition is missing [window_spec].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.6.3')
+    num="3.6.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OverClause = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `OVER` clause to either use named window defined using `WINDOW` clause\n'
-        'or adhoc window defined inplace.\n'
-        '\n'
-        '\n'
-        '```\n'
-        'OVER ()|(window_spec)|named_window \n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `OVER` clause to either use named window defined using `WINDOW` clause\n"
+        "or adhoc window defined inplace.\n"
+        "\n"
+        "\n"
+        "```\n"
+        "OVER ()|(window_spec)|named_window \n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.7.1')
+    num="3.7.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OverClause_EmptyOverClause = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.EmptyOverClause',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.EmptyOverClause",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL treat the entire set of query rows as a single partition when `OVER` clause is empty.\n'
-        'For example,\n'
-        '\n'
-        '```\n'
-        'SELECT sum(x) OVER () FROM table\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL treat the entire set of query rows as a single partition when `OVER` clause is empty.\n"
+        "For example,\n"
+        "\n"
+        "```\n"
+        "SELECT sum(x) OVER () FROM table\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.7.2.1')
+    num="3.7.2.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OverClause_AdHocWindow = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.AdHocWindow',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.AdHocWindow",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support ad hoc window specification in the `OVER` clause.\n'
-        '\n'
-        '```\n'
-        'OVER [window_spec]\n'
-        '```\n'
-        '\n'
-        'See [window_spec] definition.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        '(count(*) OVER (partition by id order by time desc))\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support ad hoc window specification in the `OVER` clause.\n"
+        "\n"
+        "```\n"
+        "OVER [window_spec]\n"
+        "```\n"
+        "\n"
+        "See [window_spec] definition.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "(count(*) OVER (partition by id order by time desc))\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.7.3.1')
+    num="3.7.3.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OverClause_AdHocWindow_MissingWindowSpec_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.AdHocWindow.MissingWindowSpec.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.AdHocWindow.MissingWindowSpec.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `OVER` clause has missing [window_spec].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `OVER` clause has missing [window_spec].\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.7.3.2')
+    num="3.7.3.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OverClause_NamedWindow = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support using a previously defined named window in the `OVER` clause.\n'
-        '\n'
-        '```\n'
-        'OVER [window_name]\n'
-        '```\n'
-        '\n'
-        'See [window_name] definition.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT count(*) OVER w FROM table WINDOW w AS (partition by id)\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support using a previously defined named window in the `OVER` clause.\n"
+        "\n"
+        "```\n"
+        "OVER [window_name]\n"
+        "```\n"
+        "\n"
+        "See [window_name] definition.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT count(*) OVER w FROM table WINDOW w AS (partition by id)\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.7.4.1')
+    num="3.7.4.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OverClause_NamedWindow_InvalidName_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow.InvalidName.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow.InvalidName.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `OVER` clause reference invalid window name.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `OVER` clause reference invalid window name.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.7.4.2')
+    num="3.7.4.2",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_OverClause_NamedWindow_MultipleWindows_Error = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow.MultipleWindows.Error',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow.MultipleWindows.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `OVER` clause references more than one window name.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `OVER` clause references more than one window name.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.7.4.3')
+    num="3.7.4.3",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_FirstValue = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.FirstValue',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.FirstValue",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `first_value` window function that\n'
-        'SHALL be synonum for the `any(value)` function\n'
-        'that SHALL return the value of `expr` from first row in the window frame.\n'
-        '\n'
-        '```\n'
-        'first_value(expr) OVER ...\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `first_value` window function that\n"
+        "SHALL be synonum for the `any(value)` function\n"
+        "that SHALL return the value of `expr` from first row in the window frame.\n"
+        "\n"
+        "```\n"
+        "first_value(expr) OVER ...\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.1.1.1')
+    num="3.8.1.1.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_LastValue = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.LastValue',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.LastValue",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `last_value` window function that\n'
-        'SHALL be synonym for the `anyLast(value)` function\n'
-        'that SHALL return the value of `expr` from the last row in the window frame.\n'
-        '\n'
-        '```\n'
-        'last_value(expr) OVER ...\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `last_value` window function that\n"
+        "SHALL be synonym for the `anyLast(value)` function\n"
+        "that SHALL return the value of `expr` from the last row in the window frame.\n"
+        "\n"
+        "```\n"
+        "last_value(expr) OVER ...\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.1.2.1')
+    num="3.8.1.2.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Lag_Workaround = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.Lag.Workaround',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.Lag.Workaround",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support a workaround for the `lag(value, offset)` function as\n'
-        '\n'
-        '```\n'
-        'any(value) OVER (.... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)\n'
-        '```\n'
-        '\n'
-        'The function SHALL returns the value from the row that lags (precedes) the current row\n'
-        'by the `N` rows within its partition. Where `N` is the `value` passed to the `any` function.\n'
-        '\n'
-        'If there is no such row, the return value SHALL be default.\n'
-        '\n'
-        'For example, if `N` is 3, the return value is default for the first two rows.\n'
-        'If N or default are missing, the defaults are 1 and NULL, respectively.\n'
-        '\n'
-        '`N` SHALL be a literal non-negative integer. If N is 0, the value SHALL be\n'
-        'returned for the current row.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support a workaround for the `lag(value, offset)` function as\n"
+        "\n"
+        "```\n"
+        "any(value) OVER (.... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)\n"
+        "```\n"
+        "\n"
+        "The function SHALL returns the value from the row that lags (precedes) the current row\n"
+        "by the `N` rows within its partition. Where `N` is the `value` passed to the `any` function.\n"
+        "\n"
+        "If there is no such row, the return value SHALL be default.\n"
+        "\n"
+        "For example, if `N` is 3, the return value is default for the first two rows.\n"
+        "If N or default are missing, the defaults are 1 and NULL, respectively.\n"
+        "\n"
+        "`N` SHALL be a literal non-negative integer. If N is 0, the value SHALL be\n"
+        "returned for the current row.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.1.3.1')
+    num="3.8.1.3.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Lead_Workaround = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.Lead.Workaround',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.Lead.Workaround",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support a workaround for the `lead(value, offset)` function as\n'
-        '\n'
-        '```\n'
-        'any(value) OVER (.... ROWS BETWEEN <offset> FOLLOWING AND <offset> FOLLOWING)\n'
-        '```\n'
-        '\n'
-        'The function SHALL returns the value from the row that leads (follows) the current row by\n'
-        'the `N` rows within its partition. Where `N` is the `value` passed to the `any` function.\n'
-        '\n'
-        'If there is no such row, the return value SHALL be default.\n'
-        '\n'
-        'For example, if `N` is 3, the return value is default for the last two rows.\n'
-        'If `N` or default are missing, the defaults are 1 and NULL, respectively.\n'
-        '\n'
-        '`N` SHALL be a literal non-negative integer. If `N` is 0, the value SHALL be\n'
-        'returned for the current row.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support a workaround for the `lead(value, offset)` function as\n"
+        "\n"
+        "```\n"
+        "any(value) OVER (.... ROWS BETWEEN <offset> FOLLOWING AND <offset> FOLLOWING)\n"
+        "```\n"
+        "\n"
+        "The function SHALL returns the value from the row that leads (follows) the current row by\n"
+        "the `N` rows within its partition. Where `N` is the `value` passed to the `any` function.\n"
+        "\n"
+        "If there is no such row, the return value SHALL be default.\n"
+        "\n"
+        "For example, if `N` is 3, the return value is default for the last two rows.\n"
+        "If `N` or default are missing, the defaults are 1 and NULL, respectively.\n"
+        "\n"
+        "`N` SHALL be a literal non-negative integer. If `N` is 0, the value SHALL be\n"
+        "returned for the current row.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.1.4.1')
+    num="3.8.1.4.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_LeadInFrame = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.LeadInFrame',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.LeadInFrame",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the `leadInFrame(expr[, offset, [default]])` function.\n'
-        '\n'
-        'For example,\n'
-        '```\n'
-        'leadInFrame(column) OVER (...)\n'
-        '```\n'
-        '\n'
-        'The function SHALL return the value from the row that leads (follows) the current row\n'
-        'by the `offset` rows within the current frame. If there is no such row,\n'
-        'the return value SHALL be the `default` value. If the `default` value is not specified \n'
-        'then the default value for the corresponding column data type SHALL be returned.\n'
-        '\n'
-        'The `offset` SHALL be a literal non-negative integer. If the `offset` is set to `0`, then\n'
-        'the value SHALL be returned for the current row. If the `offset` is not specified, the default\n'
-        'value SHALL be `1`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the `leadInFrame(expr[, offset, [default]])` function.\n"
+        "\n"
+        "For example,\n"
+        "```\n"
+        "leadInFrame(column) OVER (...)\n"
+        "```\n"
+        "\n"
+        "The function SHALL return the value from the row that leads (follows) the current row\n"
+        "by the `offset` rows within the current frame. If there is no such row,\n"
+        "the return value SHALL be the `default` value. If the `default` value is not specified \n"
+        "then the default value for the corresponding column data type SHALL be returned.\n"
+        "\n"
+        "The `offset` SHALL be a literal non-negative integer. If the `offset` is set to `0`, then\n"
+        "the value SHALL be returned for the current row. If the `offset` is not specified, the default\n"
+        "value SHALL be `1`.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.1.5.1')
+    num="3.8.1.5.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_LagInFrame = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.LagInFrame',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.LagInFrame",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the `lagInFrame(expr[, offset, [default]])` function.\n'
-        '\n'
-        'For example,\n'
-        '```\n'
-        'lagInFrame(column) OVER (...)\n'
-        '```\n'
-        '\n'
-        'The function SHALL return the value from the row that lags (preceds) the current row\n'
-        'by the `offset` rows within the current frame. If there is no such row,\n'
-        'the return value SHALL be the `default` value. If the `default` value is not specified \n'
-        'then the default value for the corresponding column data type SHALL be returned.\n'
-        '\n'
-        'The `offset` SHALL be a literal non-negative integer. If the `offset` is set to `0`, then\n'
-        'the value SHALL be returned for the current row. If the `offset` is not specified, the default\n'
-        'value SHALL be `1`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the `lagInFrame(expr[, offset, [default]])` function.\n"
+        "\n"
+        "For example,\n"
+        "```\n"
+        "lagInFrame(column) OVER (...)\n"
+        "```\n"
+        "\n"
+        "The function SHALL return the value from the row that lags (preceds) the current row\n"
+        "by the `offset` rows within the current frame. If there is no such row,\n"
+        "the return value SHALL be the `default` value. If the `default` value is not specified \n"
+        "then the default value for the corresponding column data type SHALL be returned.\n"
+        "\n"
+        "The `offset` SHALL be a literal non-negative integer. If the `offset` is set to `0`, then\n"
+        "the value SHALL be returned for the current row. If the `offset` is not specified, the default\n"
+        "value SHALL be `1`.\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.1.6.1')
+    num="3.8.1.6.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_Rank = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.Rank',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.Rank",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `rank` window function that SHALL\n'
-        'return the rank of the current row within its partition with gaps.\n'
-        '\n'
-        'Peers SHALL be considered ties and receive the same rank.\n'
-        'The function SHALL not assign consecutive ranks to peer groups if groups of size greater than one exist\n'
-        'and the result is noncontiguous rank numbers.\n'
-        '\n'
-        'If the function is used without `ORDER BY` to sort partition rows into the desired order\n'
-        'then all rows SHALL be peers.\n'
-        '\n'
-        '```\n'
-        'rank() OVER ...\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `rank` window function that SHALL\n"
+        "return the rank of the current row within its partition with gaps.\n"
+        "\n"
+        "Peers SHALL be considered ties and receive the same rank.\n"
+        "The function SHALL not assign consecutive ranks to peer groups if groups of size greater than one exist\n"
+        "and the result is noncontiguous rank numbers.\n"
+        "\n"
+        "If the function is used without `ORDER BY` to sort partition rows into the desired order\n"
+        "then all rows SHALL be peers.\n"
+        "\n"
+        "```\n"
+        "rank() OVER ...\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.1.7.1')
+    num="3.8.1.7.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_DenseRank = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.DenseRank',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.DenseRank",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `dense_rank` function over a window that SHALL\n'
-        'return the rank of the current row within its partition without gaps.\n'
-        '\n'
-        'Peers SHALL be considered ties and receive the same rank.\n'
-        'The function SHALL assign consecutive ranks to peer groups and\n'
-        'the result is that groups of size greater than one do not produce noncontiguous rank numbers.\n'
-        '\n'
-        'If the function is used without `ORDER BY` to sort partition rows into the desired order\n'
-        'then all rows SHALL be peers.\n'
-        '\n'
-        '```\n'
-        'dense_rank() OVER ...\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `dense_rank` function over a window that SHALL\n"
+        "return the rank of the current row within its partition without gaps.\n"
+        "\n"
+        "Peers SHALL be considered ties and receive the same rank.\n"
+        "The function SHALL assign consecutive ranks to peer groups and\n"
+        "the result is that groups of size greater than one do not produce noncontiguous rank numbers.\n"
+        "\n"
+        "If the function is used without `ORDER BY` to sort partition rows into the desired order\n"
+        "then all rows SHALL be peers.\n"
+        "\n"
+        "```\n"
+        "dense_rank() OVER ...\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.1.8.1')
+    num="3.8.1.8.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_RowNumber = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.RowNumber',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.RowNumber",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `row_number` function over a window that SHALL\n'
-        'returns the number of the current row within its partition.\n'
-        '\n'
-        'Rows numbers SHALL range from 1 to the number of partition rows.\n'
-        '\n'
-        'The `ORDER BY` affects the order in which rows are numbered.\n'
-        'Without `ORDER BY`, row numbering MAY be nondeterministic.\n'
-        '\n'
-        '```\n'
-        'row_number() OVER ...\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `row_number` function over a window that SHALL\n"
+        "returns the number of the current row within its partition.\n"
+        "\n"
+        "Rows numbers SHALL range from 1 to the number of partition rows.\n"
+        "\n"
+        "The `ORDER BY` affects the order in which rows are numbered.\n"
+        "Without `ORDER BY`, row numbering MAY be nondeterministic.\n"
+        "\n"
+        "```\n"
+        "row_number() OVER ...\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.1.9.1')
+    num="3.8.1.9.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_AggregateFunctions = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support using aggregate functions over windows.\n'
-        '\n'
-        '* [count](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/count/)\n'
-        '* [min](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/min/)\n'
-        '* [max](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/max/)\n'
-        '* [sum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/sum/)\n'
-        '* [avg](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avg/)\n'
-        '* [any](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/any/)\n'
-        '* [stddevPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stddevpop/)\n'
-        '* [stddevSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stddevsamp/)\n'
-        '* [varPop(x)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/varpop/)\n'
-        '* [varSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/varsamp/)\n'
-        '* [covarPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/covarpop/)\n'
-        '* [covarSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/covarsamp/)\n'
-        '* [anyHeavy](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/anyheavy/)\n'
-        '* [anyLast](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/anylast/)\n'
-        '* [argMin](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/argmin/)\n'
-        '* [argMax](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/argmax/)\n'
-        '* [avgWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avgweighted/)\n'
-        '* [corr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/corr/)\n'
-        '* [topK](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/topk/)\n'
-        '* [topKWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/topkweighted/)\n'
-        '* [groupArray](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparray/)\n'
-        '* [groupUniqArray](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupuniqarray/)\n'
-        '* [groupArrayInsertAt](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparrayinsertat/)\n'
-        '* [groupArrayMovingSum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingsum/)\n'
-        '* [groupArrayMovingAvg](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingavg/)\n'
-        '* [groupArraySample](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraysample/)\n'
-        '* [groupBitAnd](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitand/)\n'
-        '* [groupBitOr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitor/)\n'
-        '* [groupBitXor](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitxor/)\n'
-        '* [groupBitmap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmap/)\n'
-        '* [groupBitmapAnd](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapand/)\n'
-        '* [groupBitmapOr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapor/)\n'
-        '* [groupBitmapXor](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapxor/)\n'
-        '* [sumWithOverflow](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/sumwithoverflow/)\n'
-        '* [deltaSum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/deltasum/)\n'
-        '* [sumMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/summap/)\n'
-        '* [minMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/minmap/)\n'
-        '* [maxMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/maxmap/)\n'
-        '* [initializeAggregation](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/initializeAggregation/)\n'
-        '* [skewPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/skewpop/)\n'
-        '* [skewSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/skewsamp/)\n'
-        '* [kurtPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/kurtpop/)\n'
-        '* [kurtSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/kurtsamp/)\n'
-        '* [uniq](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniq/)\n'
-        '* [uniqExact](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqexact/)\n'
-        '* [uniqCombined](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqcombined/)\n'
-        '* [uniqCombined64](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqcombined64/)\n'
-        '* [uniqHLL12](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqhll12/)\n'
-        '* [quantile](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantile/)\n'
-        '* [quantiles](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiles/)\n'
-        '* [quantileExact](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantileexact/)\n'
-        '* [quantileExactWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantileexactweighted/)\n'
-        '* [quantileTiming](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletiming/)\n'
-        '* [quantileTimingWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletimingweighted/)\n'
-        '* [quantileDeterministic](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiledeterministic/)\n'
-        '* [quantileTDigest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletdigest/)\n'
-        '* [quantileTDigestWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletdigestweighted/)\n'
-        '* [simpleLinearRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression/)\n'
-        '* [stochasticLinearRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlinearregression/)\n'
-        '* [stochasticLogisticRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)\n'
-        '* [categoricalInformationValue](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)\n'
-        '* [studentTTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/studentttest/)\n'
-        '* [welchTTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/welchttest/)\n'
-        '* [mannWhitneyUTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/)\n'
-        '* [median](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/median/)\n'
-        '* [rankCorr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/rankCorr/)\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support using aggregate functions over windows.\n"
+        "\n"
+        "* [count](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/count/)\n"
+        "* [min](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/min/)\n"
+        "* [max](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/max/)\n"
+        "* [sum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/sum/)\n"
+        "* [avg](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avg/)\n"
+        "* [any](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/any/)\n"
+        "* [stddevPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stddevpop/)\n"
+        "* [stddevSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stddevsamp/)\n"
+        "* [varPop(x)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/varpop/)\n"
+        "* [varSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/varsamp/)\n"
+        "* [covarPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/covarpop/)\n"
+        "* [covarSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/covarsamp/)\n"
+        "* [anyHeavy](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/anyheavy/)\n"
+        "* [anyLast](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/anylast/)\n"
+        "* [argMin](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/argmin/)\n"
+        "* [argMax](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/argmax/)\n"
+        "* [avgWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avgweighted/)\n"
+        "* [corr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/corr/)\n"
+        "* [topK](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/topk/)\n"
+        "* [topKWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/topkweighted/)\n"
+        "* [groupArray](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparray/)\n"
+        "* [groupUniqArray](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupuniqarray/)\n"
+        "* [groupArrayInsertAt](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparrayinsertat/)\n"
+        "* [groupArrayMovingSum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingsum/)\n"
+        "* [groupArrayMovingAvg](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingavg/)\n"
+        "* [groupArraySample](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraysample/)\n"
+        "* [groupBitAnd](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitand/)\n"
+        "* [groupBitOr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitor/)\n"
+        "* [groupBitXor](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitxor/)\n"
+        "* [groupBitmap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmap/)\n"
+        "* [groupBitmapAnd](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapand/)\n"
+        "* [groupBitmapOr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapor/)\n"
+        "* [groupBitmapXor](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapxor/)\n"
+        "* [sumWithOverflow](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/sumwithoverflow/)\n"
+        "* [deltaSum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/deltasum/)\n"
+        "* [sumMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/summap/)\n"
+        "* [minMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/minmap/)\n"
+        "* [maxMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/maxmap/)\n"
+        "* [initializeAggregation](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/initializeAggregation/)\n"
+        "* [skewPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/skewpop/)\n"
+        "* [skewSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/skewsamp/)\n"
+        "* [kurtPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/kurtpop/)\n"
+        "* [kurtSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/kurtsamp/)\n"
+        "* [uniq](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniq/)\n"
+        "* [uniqExact](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqexact/)\n"
+        "* [uniqCombined](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqcombined/)\n"
+        "* [uniqCombined64](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqcombined64/)\n"
+        "* [uniqHLL12](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqhll12/)\n"
+        "* [quantile](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantile/)\n"
+        "* [quantiles](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiles/)\n"
+        "* [quantileExact](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantileexact/)\n"
+        "* [quantileExactWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantileexactweighted/)\n"
+        "* [quantileTiming](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletiming/)\n"
+        "* [quantileTimingWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletimingweighted/)\n"
+        "* [quantileDeterministic](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiledeterministic/)\n"
+        "* [quantileTDigest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletdigest/)\n"
+        "* [quantileTDigestWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletdigestweighted/)\n"
+        "* [simpleLinearRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression/)\n"
+        "* [stochasticLinearRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlinearregression/)\n"
+        "* [stochasticLogisticRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)\n"
+        "* [categoricalInformationValue](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)\n"
+        "* [studentTTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/studentttest/)\n"
+        "* [welchTTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/welchttest/)\n"
+        "* [mannWhitneyUTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/)\n"
+        "* [median](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/median/)\n"
+        "* [rankCorr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/rankCorr/)\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.8.2.1')
+    num="3.8.2.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_AggregateFunctions_Combinators = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions.Combinators',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions.Combinators",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support aggregate functions with combinator prefixes over windows.\n'
-        '\n'
-        '* [-If](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-if)\n'
-        '* [-Array](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-array)\n'
-        '* [-SimpleState](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-simplestate)\n'
-        '* [-State](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-state)\n'
-        '* [-Merge](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-merge)\n'
-        '* [-MergeState](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-mergestate)\n'
-        '* [-ForEach](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-foreach)\n'
-        '* [-Distinct](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-distinct)\n'
-        '* [-OrDefault](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ordefault)\n'
-        '* [-OrNull](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ornull)\n'
-        '* [-Resample](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-resample)\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support aggregate functions with combinator prefixes over windows.\n"
+        "\n"
+        "* [-If](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-if)\n"
+        "* [-Array](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-array)\n"
+        "* [-SimpleState](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-simplestate)\n"
+        "* [-State](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-state)\n"
+        "* [-Merge](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-merge)\n"
+        "* [-MergeState](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-mergestate)\n"
+        "* [-ForEach](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-foreach)\n"
+        "* [-Distinct](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-distinct)\n"
+        "* [-OrDefault](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ordefault)\n"
+        "* [-OrNull](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ornull)\n"
+        "* [-Resample](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-resample)\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.2.2.1')
+    num="3.8.2.2.1",
+)
 
 RQ_SRS_019_ClickHouse_WindowFunctions_AggregateFunctions_Parametric = Requirement(
-    name='RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions.Parametric',
-    version='1.0',
+    name="RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions.Parametric",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support parametric aggregate functions over windows.\n'
-        '\n'
-        '* [histogram](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#histogram)\n'
-        '* [sequenceMatch(pattern)(timestamp, cond1, cond2, ...)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencematch)\n'
-        '* [sequenceCount(pattern)(time, cond1, cond2, ...)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencecount)\n'
-        '* [windowFunnel](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#windowfunnel)\n'
-        '* [retention](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#retention)\n'
-        '* [uniqUpTo(N)(x)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#uniquptonx)\n'
-        '* [sumMapFiltered(keys_to_keep)(keys, values)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#summapfilteredkeys-to-keepkeys-values)\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support parametric aggregate functions over windows.\n"
+        "\n"
+        "* [histogram](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#histogram)\n"
+        "* [sequenceMatch(pattern)(timestamp, cond1, cond2, ...)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencematch)\n"
+        "* [sequenceCount(pattern)(time, cond1, cond2, ...)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencecount)\n"
+        "* [windowFunnel](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#windowfunnel)\n"
+        "* [retention](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#retention)\n"
+        "* [uniqUpTo(N)(x)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#uniquptonx)\n"
+        "* [sumMapFiltered(keys_to_keep)(keys, values)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#summapfilteredkeys-to-keepkeys-values)\n"
+        "\n"
+    ),
     link=None,
     level=5,
-    num='3.8.2.3.1')
+    num="3.8.2.3.1",
+)
 
 SRS019_ClickHouse_Window_Functions = Specification(
-    name='SRS019 ClickHouse Window Functions', 
+    name="SRS019 ClickHouse Window Functions",
     description=None,
     author=None,
-    date=None, 
-    status=None, 
+    date=None,
+    status=None,
     approved_by=None,
     approved_date=None,
     approved_version=None,
@@ -3348,201 +3481,735 @@ SRS019_ClickHouse_Window_Functions = Specification(
     parent=None,
     children=None,
     headings=(
-        Heading(name='Revision History', level=1, num='1'),
-        Heading(name='Introduction', level=1, num='2'),
-        Heading(name='Requirements', level=1, num='3'),
-        Heading(name='General', level=2, num='3.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions', level=3, num='3.1.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.NonDistributedTables', level=3, num='3.1.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.DistributedTables', level=3, num='3.1.3'),
-        Heading(name='Window Specification', level=2, num='3.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowSpec', level=3, num='3.2.1'),
-        Heading(name='PARTITION Clause', level=2, num='3.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause', level=3, num='3.3.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.MultipleExpr', level=3, num='3.3.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.MissingExpr.Error', level=3, num='3.3.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.InvalidExpr.Error', level=3, num='3.3.4'),
-        Heading(name='ORDER Clause', level=2, num='3.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause', level=3, num='3.4.1'),
-        Heading(name='order_clause', level=4, num='3.4.1.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.MultipleExprs', level=3, num='3.4.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.MissingExpr.Error', level=3, num='3.4.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.InvalidExpr.Error', level=3, num='3.4.4'),
-        Heading(name='FRAME Clause', level=2, num='3.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause', level=3, num='3.5.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause.DefaultFrame', level=3, num='3.5.2'),
-        Heading(name='ROWS', level=3, num='3.5.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame', level=4, num='3.5.3.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.MissingFrameExtent.Error', level=4, num='3.5.3.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.InvalidFrameExtent.Error', level=4, num='3.5.3.3'),
-        Heading(name='ROWS CURRENT ROW', level=4, num='3.5.3.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.CurrentRow', level=5, num='3.5.3.4.1'),
-        Heading(name='ROWS UNBOUNDED PRECEDING', level=4, num='3.5.3.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedPreceding', level=5, num='3.5.3.5.1'),
-        Heading(name='ROWS `expr` PRECEDING', level=4, num='3.5.3.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprPreceding', level=5, num='3.5.3.6.1'),
-        Heading(name='ROWS UNBOUNDED FOLLOWING', level=4, num='3.5.3.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedFollowing.Error', level=5, num='3.5.3.7.1'),
-        Heading(name='ROWS `expr` FOLLOWING', level=4, num='3.5.3.8'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprFollowing.Error', level=5, num='3.5.3.8.1'),
-        Heading(name='ROWS BETWEEN CURRENT ROW', level=4, num='3.5.3.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.CurrentRow', level=5, num='3.5.3.9.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedPreceding.Error', level=5, num='3.5.3.9.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprPreceding.Error', level=5, num='3.5.3.9.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedFollowing', level=5, num='3.5.3.9.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprFollowing', level=5, num='3.5.3.9.5'),
-        Heading(name='ROWS BETWEEN UNBOUNDED PRECEDING', level=4, num='3.5.3.10'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.CurrentRow', level=5, num='3.5.3.10.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedPreceding.Error', level=5, num='3.5.3.10.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprPreceding', level=5, num='3.5.3.10.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedFollowing', level=5, num='3.5.3.10.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprFollowing', level=5, num='3.5.3.10.5'),
-        Heading(name='ROWS BETWEEN UNBOUNDED FOLLOWING', level=4, num='3.5.3.11'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedFollowing.Error', level=5, num='3.5.3.11.1'),
-        Heading(name='ROWS BETWEEN `expr` FOLLOWING', level=4, num='3.5.3.12'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.Error', level=5, num='3.5.3.12.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing.Error', level=5, num='3.5.3.12.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.UnboundedFollowing', level=5, num='3.5.3.12.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing', level=5, num='3.5.3.12.4'),
-        Heading(name='ROWS BETWEEN `expr` PRECEDING', level=4, num='3.5.3.13'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.CurrentRow', level=5, num='3.5.3.13.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedPreceding.Error', level=5, num='3.5.3.13.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedFollowing', level=5, num='3.5.3.13.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding.Error', level=5, num='3.5.3.13.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding', level=5, num='3.5.3.13.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprFollowing', level=5, num='3.5.3.13.6'),
-        Heading(name='RANGE', level=3, num='3.5.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame', level=4, num='3.5.4.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.DateAndDateTime', level=4, num='3.5.4.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.IntAndUInt', level=4, num='3.5.4.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MultipleColumnsInOrderBy.Error', level=4, num='3.5.4.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MissingFrameExtent.Error', level=4, num='3.5.4.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.InvalidFrameExtent.Error', level=4, num='3.5.4.6'),
-        Heading(name='`CURRENT ROW` Peers', level=4, num='3.5.4.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.CurrentRow.Peers', level=4, num='3.5.4.8'),
-        Heading(name='RANGE CURRENT ROW', level=4, num='3.5.4.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithoutOrderBy', level=5, num='3.5.4.9.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithOrderBy', level=5, num='3.5.4.9.2'),
-        Heading(name='RANGE UNBOUNDED FOLLOWING', level=4, num='3.5.4.10'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedFollowing.Error', level=5, num='3.5.4.10.1'),
-        Heading(name='RANGE UNBOUNDED PRECEDING', level=4, num='3.5.4.11'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithoutOrderBy', level=5, num='3.5.4.11.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithOrderBy', level=5, num='3.5.4.11.2'),
-        Heading(name='RANGE `expr` PRECEDING', level=4, num='3.5.4.12'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.4.12.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.OrderByNonNumericalColumn.Error', level=5, num='3.5.4.12.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithOrderBy', level=5, num='3.5.4.12.3'),
-        Heading(name='RANGE `expr` FOLLOWING', level=4, num='3.5.4.13'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.13.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithOrderBy.Error', level=5, num='3.5.4.13.2'),
-        Heading(name='RANGE BETWEEN CURRENT ROW', level=4, num='3.5.4.14'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.CurrentRow', level=5, num='3.5.4.14.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedPreceding.Error', level=5, num='3.5.4.14.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedFollowing', level=5, num='3.5.4.14.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.14.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithOrderBy', level=5, num='3.5.4.14.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprPreceding.Error', level=5, num='3.5.4.14.6'),
-        Heading(name='RANGE BETWEEN UNBOUNDED PRECEDING', level=4, num='3.5.4.15'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.CurrentRow', level=5, num='3.5.4.15.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedPreceding.Error', level=5, num='3.5.4.15.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedFollowing', level=5, num='3.5.4.15.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.4.15.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithOrderBy', level=5, num='3.5.4.15.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.15.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithOrderBy', level=5, num='3.5.4.15.7'),
-        Heading(name='RANGE BETWEEN UNBOUNDED FOLLOWING', level=4, num='3.5.4.16'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.CurrentRow.Error', level=5, num='3.5.4.16.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedFollowing.Error', level=5, num='3.5.4.16.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedPreceding.Error', level=5, num='3.5.4.16.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprPreceding.Error', level=5, num='3.5.4.16.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprFollowing.Error', level=5, num='3.5.4.16.5'),
-        Heading(name='RANGE BETWEEN expr PRECEDING', level=4, num='3.5.4.17'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithOrderBy', level=5, num='3.5.4.17.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithoutOrderBy.Error', level=5, num='3.5.4.17.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedPreceding.Error', level=5, num='3.5.4.17.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.17.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithOrderBy', level=5, num='3.5.4.17.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.17.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithOrderBy', level=5, num='3.5.4.17.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.4.17.8'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy.Error', level=5, num='3.5.4.17.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy', level=5, num='3.5.4.17.10'),
-        Heading(name='RANGE BETWEEN expr FOLLOWING', level=4, num='3.5.4.18'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithoutOrderBy.Error', level=5, num='3.5.4.18.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithOrderBy.Error', level=5, num='3.5.4.18.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.ZeroSpecialCase', level=5, num='3.5.4.18.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.18.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithOrderBy', level=5, num='3.5.4.18.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedPreceding.Error', level=5, num='3.5.4.18.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithoutOrderBy.Error', level=5, num='3.5.4.18.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.Error', level=5, num='3.5.4.18.8'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithOrderBy.ZeroSpecialCase', level=5, num='3.5.4.18.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithoutOrderBy.Error', level=5, num='3.5.4.18.10'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy.Error', level=5, num='3.5.4.18.11'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy', level=5, num='3.5.4.18.12'),
-        Heading(name='Frame Extent', level=3, num='3.5.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Extent', level=4, num='3.5.5.1'),
-        Heading(name='Frame Start', level=3, num='3.5.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Start', level=4, num='3.5.6.1'),
-        Heading(name='Frame Between', level=3, num='3.5.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Between', level=4, num='3.5.7.1'),
-        Heading(name='Frame End', level=3, num='3.5.8'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Frame.End', level=4, num='3.5.8.1'),
-        Heading(name='`CURRENT ROW`', level=3, num='3.5.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.CurrentRow', level=4, num='3.5.9.1'),
-        Heading(name='`UNBOUNDED PRECEDING`', level=3, num='3.5.10'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedPreceding', level=4, num='3.5.10.1'),
-        Heading(name='`UNBOUNDED FOLLOWING`', level=3, num='3.5.11'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedFollowing', level=4, num='3.5.11.1'),
-        Heading(name='`expr PRECEDING`', level=3, num='3.5.12'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding', level=4, num='3.5.12.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding.ExprValue', level=4, num='3.5.12.2'),
-        Heading(name='`expr FOLLOWING`', level=3, num='3.5.13'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing', level=4, num='3.5.13.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing.ExprValue', level=4, num='3.5.13.2'),
-        Heading(name='WINDOW Clause', level=2, num='3.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause', level=3, num='3.6.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause.MultipleWindows', level=3, num='3.6.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause.MissingWindowSpec.Error', level=3, num='3.6.3'),
-        Heading(name='`OVER` Clause', level=2, num='3.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause', level=3, num='3.7.1'),
-        Heading(name='Empty Clause', level=3, num='3.7.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.EmptyOverClause', level=4, num='3.7.2.1'),
-        Heading(name='Ad-Hoc Window', level=3, num='3.7.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.AdHocWindow', level=4, num='3.7.3.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.AdHocWindow.MissingWindowSpec.Error', level=4, num='3.7.3.2'),
-        Heading(name='Named Window', level=3, num='3.7.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow', level=4, num='3.7.4.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow.InvalidName.Error', level=4, num='3.7.4.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow.MultipleWindows.Error', level=4, num='3.7.4.3'),
-        Heading(name='Window Functions', level=2, num='3.8'),
-        Heading(name='Nonaggregate Functions', level=3, num='3.8.1'),
-        Heading(name='The `first_value(expr)` Function', level=4, num='3.8.1.1'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.FirstValue', level=5, num='3.8.1.1.1'),
-        Heading(name='The `last_value(expr)` Function', level=4, num='3.8.1.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.LastValue', level=5, num='3.8.1.2.1'),
-        Heading(name='The `lag(value, offset)` Function Workaround', level=4, num='3.8.1.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Lag.Workaround', level=5, num='3.8.1.3.1'),
-        Heading(name='The `lead(value, offset)` Function Workaround', level=4, num='3.8.1.4'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Lead.Workaround', level=5, num='3.8.1.4.1'),
-        Heading(name='The `leadInFrame(expr[, offset, [default]])`', level=4, num='3.8.1.5'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.LeadInFrame', level=5, num='3.8.1.5.1'),
-        Heading(name='The `lagInFrame(expr[, offset, [default]])`', level=4, num='3.8.1.6'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.LagInFrame', level=5, num='3.8.1.6.1'),
-        Heading(name='The `rank()` Function', level=4, num='3.8.1.7'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.Rank', level=5, num='3.8.1.7.1'),
-        Heading(name='The `dense_rank()` Function', level=4, num='3.8.1.8'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.DenseRank', level=5, num='3.8.1.8.1'),
-        Heading(name='The `row_number()` Function', level=4, num='3.8.1.9'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.RowNumber', level=5, num='3.8.1.9.1'),
-        Heading(name='Aggregate Functions', level=3, num='3.8.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions', level=4, num='3.8.2.1'),
-        Heading(name='Combinators', level=4, num='3.8.2.2'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions.Combinators', level=5, num='3.8.2.2.1'),
-        Heading(name='Parametric', level=4, num='3.8.2.3'),
-        Heading(name='RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions.Parametric', level=5, num='3.8.2.3.1'),
-        Heading(name='References', level=1, num='4'),
+        Heading(name="Revision History", level=1, num="1"),
+        Heading(name="Introduction", level=1, num="2"),
+        Heading(name="Requirements", level=1, num="3"),
+        Heading(name="General", level=2, num="3.1"),
+        Heading(name="RQ.SRS-019.ClickHouse.WindowFunctions", level=3, num="3.1.1"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.NonDistributedTables",
+            level=3,
+            num="3.1.2",
         ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.DistributedTables",
+            level=3,
+            num="3.1.3",
+        ),
+        Heading(name="Window Specification", level=2, num="3.2"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.WindowSpec",
+            level=3,
+            num="3.2.1",
+        ),
+        Heading(name="PARTITION Clause", level=2, num="3.3"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause",
+            level=3,
+            num="3.3.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.MultipleExpr",
+            level=3,
+            num="3.3.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.MissingExpr.Error",
+            level=3,
+            num="3.3.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.PartitionClause.InvalidExpr.Error",
+            level=3,
+            num="3.3.4",
+        ),
+        Heading(name="ORDER Clause", level=2, num="3.4"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause",
+            level=3,
+            num="3.4.1",
+        ),
+        Heading(name="order_clause", level=4, num="3.4.1.1"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.MultipleExprs",
+            level=3,
+            num="3.4.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.MissingExpr.Error",
+            level=3,
+            num="3.4.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OrderClause.InvalidExpr.Error",
+            level=3,
+            num="3.4.4",
+        ),
+        Heading(name="FRAME Clause", level=2, num="3.5"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause",
+            level=3,
+            num="3.5.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.FrameClause.DefaultFrame",
+            level=3,
+            num="3.5.2",
+        ),
+        Heading(name="ROWS", level=3, num="3.5.3"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame",
+            level=4,
+            num="3.5.3.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.MissingFrameExtent.Error",
+            level=4,
+            num="3.5.3.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.InvalidFrameExtent.Error",
+            level=4,
+            num="3.5.3.3",
+        ),
+        Heading(name="ROWS CURRENT ROW", level=4, num="3.5.3.4"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.CurrentRow",
+            level=5,
+            num="3.5.3.4.1",
+        ),
+        Heading(name="ROWS UNBOUNDED PRECEDING", level=4, num="3.5.3.5"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedPreceding",
+            level=5,
+            num="3.5.3.5.1",
+        ),
+        Heading(name="ROWS `expr` PRECEDING", level=4, num="3.5.3.6"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprPreceding",
+            level=5,
+            num="3.5.3.6.1",
+        ),
+        Heading(name="ROWS UNBOUNDED FOLLOWING", level=4, num="3.5.3.7"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.UnboundedFollowing.Error",
+            level=5,
+            num="3.5.3.7.1",
+        ),
+        Heading(name="ROWS `expr` FOLLOWING", level=4, num="3.5.3.8"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Start.ExprFollowing.Error",
+            level=5,
+            num="3.5.3.8.1",
+        ),
+        Heading(name="ROWS BETWEEN CURRENT ROW", level=4, num="3.5.3.9"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.CurrentRow",
+            level=5,
+            num="3.5.3.9.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedPreceding.Error",
+            level=5,
+            num="3.5.3.9.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprPreceding.Error",
+            level=5,
+            num="3.5.3.9.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.UnboundedFollowing",
+            level=5,
+            num="3.5.3.9.4",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.CurrentRow.ExprFollowing",
+            level=5,
+            num="3.5.3.9.5",
+        ),
+        Heading(name="ROWS BETWEEN UNBOUNDED PRECEDING", level=4, num="3.5.3.10"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.CurrentRow",
+            level=5,
+            num="3.5.3.10.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedPreceding.Error",
+            level=5,
+            num="3.5.3.10.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprPreceding",
+            level=5,
+            num="3.5.3.10.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.UnboundedFollowing",
+            level=5,
+            num="3.5.3.10.4",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedPreceding.ExprFollowing",
+            level=5,
+            num="3.5.3.10.5",
+        ),
+        Heading(name="ROWS BETWEEN UNBOUNDED FOLLOWING", level=4, num="3.5.3.11"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.UnboundedFollowing.Error",
+            level=5,
+            num="3.5.3.11.1",
+        ),
+        Heading(name="ROWS BETWEEN `expr` FOLLOWING", level=4, num="3.5.3.12"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.Error",
+            level=5,
+            num="3.5.3.12.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing.Error",
+            level=5,
+            num="3.5.3.12.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.UnboundedFollowing",
+            level=5,
+            num="3.5.3.12.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprFollowing.ExprFollowing",
+            level=5,
+            num="3.5.3.12.4",
+        ),
+        Heading(name="ROWS BETWEEN `expr` PRECEDING", level=4, num="3.5.3.13"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.CurrentRow",
+            level=5,
+            num="3.5.3.13.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedPreceding.Error",
+            level=5,
+            num="3.5.3.13.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.UnboundedFollowing",
+            level=5,
+            num="3.5.3.13.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding.Error",
+            level=5,
+            num="3.5.3.13.4",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprPreceding",
+            level=5,
+            num="3.5.3.13.5",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowsFrame.Between.ExprPreceding.ExprFollowing",
+            level=5,
+            num="3.5.3.13.6",
+        ),
+        Heading(name="RANGE", level=3, num="3.5.4"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame",
+            level=4,
+            num="3.5.4.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.DateAndDateTime",
+            level=4,
+            num="3.5.4.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.DataTypes.IntAndUInt",
+            level=4,
+            num="3.5.4.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MultipleColumnsInOrderBy.Error",
+            level=4,
+            num="3.5.4.4",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.MissingFrameExtent.Error",
+            level=4,
+            num="3.5.4.5",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.InvalidFrameExtent.Error",
+            level=4,
+            num="3.5.4.6",
+        ),
+        Heading(name="`CURRENT ROW` Peers", level=4, num="3.5.4.7"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.CurrentRow.Peers",
+            level=4,
+            num="3.5.4.8",
+        ),
+        Heading(name="RANGE CURRENT ROW", level=4, num="3.5.4.9"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithoutOrderBy",
+            level=5,
+            num="3.5.4.9.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.CurrentRow.WithOrderBy",
+            level=5,
+            num="3.5.4.9.2",
+        ),
+        Heading(name="RANGE UNBOUNDED FOLLOWING", level=4, num="3.5.4.10"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedFollowing.Error",
+            level=5,
+            num="3.5.4.10.1",
+        ),
+        Heading(name="RANGE UNBOUNDED PRECEDING", level=4, num="3.5.4.11"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithoutOrderBy",
+            level=5,
+            num="3.5.4.11.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.UnboundedPreceding.WithOrderBy",
+            level=5,
+            num="3.5.4.11.2",
+        ),
+        Heading(name="RANGE `expr` PRECEDING", level=4, num="3.5.4.12"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.12.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.OrderByNonNumericalColumn.Error",
+            level=5,
+            num="3.5.4.12.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprPreceding.WithOrderBy",
+            level=5,
+            num="3.5.4.12.3",
+        ),
+        Heading(name="RANGE `expr` FOLLOWING", level=4, num="3.5.4.13"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.13.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Start.ExprFollowing.WithOrderBy.Error",
+            level=5,
+            num="3.5.4.13.2",
+        ),
+        Heading(name="RANGE BETWEEN CURRENT ROW", level=4, num="3.5.4.14"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.CurrentRow",
+            level=5,
+            num="3.5.4.14.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedPreceding.Error",
+            level=5,
+            num="3.5.4.14.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.UnboundedFollowing",
+            level=5,
+            num="3.5.4.14.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.14.4",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprFollowing.WithOrderBy",
+            level=5,
+            num="3.5.4.14.5",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.CurrentRow.ExprPreceding.Error",
+            level=5,
+            num="3.5.4.14.6",
+        ),
+        Heading(name="RANGE BETWEEN UNBOUNDED PRECEDING", level=4, num="3.5.4.15"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.CurrentRow",
+            level=5,
+            num="3.5.4.15.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedPreceding.Error",
+            level=5,
+            num="3.5.4.15.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.UnboundedFollowing",
+            level=5,
+            num="3.5.4.15.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.15.4",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprPreceding.WithOrderBy",
+            level=5,
+            num="3.5.4.15.5",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.15.6",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedPreceding.ExprFollowing.WithOrderBy",
+            level=5,
+            num="3.5.4.15.7",
+        ),
+        Heading(name="RANGE BETWEEN UNBOUNDED FOLLOWING", level=4, num="3.5.4.16"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.CurrentRow.Error",
+            level=5,
+            num="3.5.4.16.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedFollowing.Error",
+            level=5,
+            num="3.5.4.16.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.UnboundedPreceding.Error",
+            level=5,
+            num="3.5.4.16.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprPreceding.Error",
+            level=5,
+            num="3.5.4.16.4",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.UnboundedFollowing.ExprFollowing.Error",
+            level=5,
+            num="3.5.4.16.5",
+        ),
+        Heading(name="RANGE BETWEEN expr PRECEDING", level=4, num="3.5.4.17"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithOrderBy",
+            level=5,
+            num="3.5.4.17.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.CurrentRow.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.17.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedPreceding.Error",
+            level=5,
+            num="3.5.4.17.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.17.4",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.UnboundedFollowing.WithOrderBy",
+            level=5,
+            num="3.5.4.17.5",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.17.6",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprFollowing.WithOrderBy",
+            level=5,
+            num="3.5.4.17.7",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.17.8",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy.Error",
+            level=5,
+            num="3.5.4.17.9",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprPreceding.ExprPreceding.WithOrderBy",
+            level=5,
+            num="3.5.4.17.10",
+        ),
+        Heading(name="RANGE BETWEEN expr FOLLOWING", level=4, num="3.5.4.18"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.18.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.WithOrderBy.Error",
+            level=5,
+            num="3.5.4.18.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.CurrentRow.ZeroSpecialCase",
+            level=5,
+            num="3.5.4.18.3",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.18.4",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedFollowing.WithOrderBy",
+            level=5,
+            num="3.5.4.18.5",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.UnboundedPreceding.Error",
+            level=5,
+            num="3.5.4.18.6",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.18.7",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.Error",
+            level=5,
+            num="3.5.4.18.8",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprPreceding.WithOrderBy.ZeroSpecialCase",
+            level=5,
+            num="3.5.4.18.9",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithoutOrderBy.Error",
+            level=5,
+            num="3.5.4.18.10",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy.Error",
+            level=5,
+            num="3.5.4.18.11",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RangeFrame.Between.ExprFollowing.ExprFollowing.WithOrderBy",
+            level=5,
+            num="3.5.4.18.12",
+        ),
+        Heading(name="Frame Extent", level=3, num="3.5.5"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Extent",
+            level=4,
+            num="3.5.5.1",
+        ),
+        Heading(name="Frame Start", level=3, num="3.5.6"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Start",
+            level=4,
+            num="3.5.6.1",
+        ),
+        Heading(name="Frame Between", level=3, num="3.5.7"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.Frame.Between",
+            level=4,
+            num="3.5.7.1",
+        ),
+        Heading(name="Frame End", level=3, num="3.5.8"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.Frame.End",
+            level=4,
+            num="3.5.8.1",
+        ),
+        Heading(name="`CURRENT ROW`", level=3, num="3.5.9"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.CurrentRow",
+            level=4,
+            num="3.5.9.1",
+        ),
+        Heading(name="`UNBOUNDED PRECEDING`", level=3, num="3.5.10"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedPreceding",
+            level=4,
+            num="3.5.10.1",
+        ),
+        Heading(name="`UNBOUNDED FOLLOWING`", level=3, num="3.5.11"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.UnboundedFollowing",
+            level=4,
+            num="3.5.11.1",
+        ),
+        Heading(name="`expr PRECEDING`", level=3, num="3.5.12"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding",
+            level=4,
+            num="3.5.12.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.ExprPreceding.ExprValue",
+            level=4,
+            num="3.5.12.2",
+        ),
+        Heading(name="`expr FOLLOWING`", level=3, num="3.5.13"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing",
+            level=4,
+            num="3.5.13.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.ExprFollowing.ExprValue",
+            level=4,
+            num="3.5.13.2",
+        ),
+        Heading(name="WINDOW Clause", level=2, num="3.6"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause",
+            level=3,
+            num="3.6.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause.MultipleWindows",
+            level=3,
+            num="3.6.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.WindowClause.MissingWindowSpec.Error",
+            level=3,
+            num="3.6.3",
+        ),
+        Heading(name="`OVER` Clause", level=2, num="3.7"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause",
+            level=3,
+            num="3.7.1",
+        ),
+        Heading(name="Empty Clause", level=3, num="3.7.2"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.EmptyOverClause",
+            level=4,
+            num="3.7.2.1",
+        ),
+        Heading(name="Ad-Hoc Window", level=3, num="3.7.3"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.AdHocWindow",
+            level=4,
+            num="3.7.3.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.AdHocWindow.MissingWindowSpec.Error",
+            level=4,
+            num="3.7.3.2",
+        ),
+        Heading(name="Named Window", level=3, num="3.7.4"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow",
+            level=4,
+            num="3.7.4.1",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow.InvalidName.Error",
+            level=4,
+            num="3.7.4.2",
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.OverClause.NamedWindow.MultipleWindows.Error",
+            level=4,
+            num="3.7.4.3",
+        ),
+        Heading(name="Window Functions", level=2, num="3.8"),
+        Heading(name="Nonaggregate Functions", level=3, num="3.8.1"),
+        Heading(name="The `first_value(expr)` Function", level=4, num="3.8.1.1"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.FirstValue",
+            level=5,
+            num="3.8.1.1.1",
+        ),
+        Heading(name="The `last_value(expr)` Function", level=4, num="3.8.1.2"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.LastValue",
+            level=5,
+            num="3.8.1.2.1",
+        ),
+        Heading(
+            name="The `lag(value, offset)` Function Workaround", level=4, num="3.8.1.3"
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.Lag.Workaround",
+            level=5,
+            num="3.8.1.3.1",
+        ),
+        Heading(
+            name="The `lead(value, offset)` Function Workaround", level=4, num="3.8.1.4"
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.Lead.Workaround",
+            level=5,
+            num="3.8.1.4.1",
+        ),
+        Heading(
+            name="The `leadInFrame(expr[, offset, [default]])`", level=4, num="3.8.1.5"
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.LeadInFrame",
+            level=5,
+            num="3.8.1.5.1",
+        ),
+        Heading(
+            name="The `lagInFrame(expr[, offset, [default]])`", level=4, num="3.8.1.6"
+        ),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.LagInFrame",
+            level=5,
+            num="3.8.1.6.1",
+        ),
+        Heading(name="The `rank()` Function", level=4, num="3.8.1.7"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.Rank", level=5, num="3.8.1.7.1"
+        ),
+        Heading(name="The `dense_rank()` Function", level=4, num="3.8.1.8"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.DenseRank",
+            level=5,
+            num="3.8.1.8.1",
+        ),
+        Heading(name="The `row_number()` Function", level=4, num="3.8.1.9"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.RowNumber",
+            level=5,
+            num="3.8.1.9.1",
+        ),
+        Heading(name="Aggregate Functions", level=3, num="3.8.2"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions",
+            level=4,
+            num="3.8.2.1",
+        ),
+        Heading(name="Combinators", level=4, num="3.8.2.2"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions.Combinators",
+            level=5,
+            num="3.8.2.2.1",
+        ),
+        Heading(name="Parametric", level=4, num="3.8.2.3"),
+        Heading(
+            name="RQ.SRS-019.ClickHouse.WindowFunctions.AggregateFunctions.Parametric",
+            level=5,
+            num="3.8.2.3.1",
+        ),
+        Heading(name="References", level=1, num="4"),
+    ),
     requirements=(
         RQ_SRS_019_ClickHouse_WindowFunctions,
         RQ_SRS_019_ClickHouse_WindowFunctions_NonDistributedTables,
@@ -3677,8 +4344,8 @@ SRS019_ClickHouse_Window_Functions = Specification(
         RQ_SRS_019_ClickHouse_WindowFunctions_AggregateFunctions,
         RQ_SRS_019_ClickHouse_WindowFunctions_AggregateFunctions_Combinators,
         RQ_SRS_019_ClickHouse_WindowFunctions_AggregateFunctions_Parametric,
-        ),
-    content='''
+    ),
+    content="""
 # SRS019 ClickHouse Window Functions
 # Software Requirements Specification
 
@@ -6037,4 +6704,5 @@ version: 1.0
 [GitHub]: https://github.com
 [PostreSQL]: https://www.postgresql.org/docs/9.2/tutorial-window.html
 [MySQL]: https://dev.mysql.com/doc/refman/8.0/en/window-functions.html
-''')
+""",
+)
