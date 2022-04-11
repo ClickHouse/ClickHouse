@@ -28,7 +28,7 @@ If the parameter is omitted, default value 10 is used.
 
 **Example**
 
-Take the [OnTime](../../../example-datasets/ontime.md) data set and select the three most frequently occurring values in the `AirlineID` column.
+Take the [OnTime](../../../getting-started/example-datasets/ontime.md) data set and select the three most frequently occurring values in the `AirlineID` column.
 
 ``` sql
 SELECT topK(3)(AirlineID) AS res

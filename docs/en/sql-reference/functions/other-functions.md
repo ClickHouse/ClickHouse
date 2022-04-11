@@ -1216,7 +1216,7 @@ SELECT * FROM table WHERE indexHint(<expression>)
 
 **Example**
 
-Here is the example of test data from the table [ontime](../../example-datasets/ontime.md).
+Here is the example of test data from the table [ontime](../../getting-started/example-datasets/ontime.md).
 
 Input table:
 

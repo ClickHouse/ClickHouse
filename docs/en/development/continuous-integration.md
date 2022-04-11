@@ -151,7 +151,7 @@ checks page](../development/build.md#you-dont-have-to-build-clickhouse), or buil
 
 
 ## Functional Stateful Tests
-Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [clickstream dataset](../example-datasets/metrica.md) to run.
+Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [clickstream dataset](../getting-started/example-datasets/metrica.md) to run.
 
 
 ## Integration Tests

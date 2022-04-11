@@ -7,7 +7,7 @@ sidebar_label: Command-Line Client
 
 ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
 
-[Install](../../quick-start.mdx) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
+[Install](../getting-started/install.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client

@@ -478,7 +478,7 @@ The `table` and `query` fields cannot be used together. And either one of the `t
 
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
 
-If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../../../faq/integration/oracle-odbc.md) item.
+If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../../faq/integration/oracle-odbc.md) item.
 
 ### Mysql {#dicts-external_dicts_dict_sources-mysql}
 
