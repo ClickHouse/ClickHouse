@@ -9,6 +9,7 @@ SCHEMADIR=$CURDIR/format_schemas
 set -eo pipefail
 
 CLICKHOUSE_CLIENT="/home/jk/work/tools/ClickHouse/build/programs/${CLICKHOUSE_CLIENT}"
+BINARY_FILE_PATH=$(mktemp "$CURDIR/02266_protobuf_format_google_wrappers.XXXXXX.binary")
 
 # Run the client.
 echo "Table:"
@@ -25,8 +26,6 @@ CREATE TABLE google_wrappers_02266
 INSERT INTO google_wrappers_02266 VALUES ('str1', 1), ('', 2), ('str2', 3);
 SELECT * FROM google_wrappers_02266;
 EOF
-
-BINARY_FILE_PATH=$(mktemp "$CURDIR/02266_protobuf_format_google_wrappers.XXXXXX.binary")
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM google_wrappers_02266 WHERE ref = 2 LIMIT 1 FORMAT ProtobufSingle SETTINGS format_schema = '$SCHEMADIR/02266_protobuf_format_google_wrappers:Message'" > "$BINARY_FILE_PATH"
 

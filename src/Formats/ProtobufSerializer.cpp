@@ -111,13 +111,18 @@ namespace
 
     bool isGoogleWrapperField(const FieldDescriptor & field_descriptor)
     {
-
         const auto * message_descriptor = field_descriptor.message_type();
         if (message_descriptor == nullptr)
         {
             return false;
         }
         return isGoogleWrapperMessage(*message_descriptor);
+    }
+
+    bool isGoogleWrapperValue(const FieldDescriptor & field_descriptor)
+    {
+        const auto * message_descriptor = field_descriptor.containing_type();
+        return message_descriptor != nullptr && isGoogleWrapperMessage(*message_descriptor);
     }
 
     std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
@@ -133,7 +138,7 @@ namespace
             return false;
         if (field_descriptor.containing_type()->options().map_entry())
             return false;
-        if (isGoogleWrapperField(field_descriptor))
+        if (isGoogleWrapperValue(field_descriptor))
             return false;
         return field_descriptor.message_type() || (field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3);
     }
@@ -2314,9 +2319,8 @@ namespace
                             info.field_read = false;
                         else
                         {
-                            const auto * message_descriptor = info.field_descriptor->containing_type();
-                            bool is_google_wrapper_value = message_descriptor != nullptr && isGoogleWrapperMessage(*message_descriptor);
-                            if (is_google_wrapper_value && mutable_columns[info.column_indices[0]].get()->isNullable())
+                            if (isGoogleWrapperValue(*(info.field_descriptor))
+                                && mutable_columns[info.column_indices[0]].get()->isNullable())
                             {
                                 auto * nullable_ser = reinterpret_cast<ProtobufSerializerNullable*>(info.field_serializer.get());
                                 nullable_ser->insertNestedDefaults(row_num);
