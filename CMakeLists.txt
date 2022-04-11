@@ -592,8 +592,10 @@ macro (add_executable target)
     if (${type} STREQUAL EXECUTABLE)
         # disabled for TSAN and gcc since libtsan.a provides overrides too
         if (TARGET clickhouse_new_delete)
-            # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
+            if (NOT ${target} STREQUAL Git::Git)
+                # operator::new/delete for executables (MemoryTracker stuff)
+                target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+            endif()
         endif()
 
         # In case of static jemalloc, because zone_register() is located in zone.c and
