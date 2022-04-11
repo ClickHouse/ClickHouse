@@ -150,7 +150,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     if (quorum)
         checkQuorumPrecondition(zookeeper);
 
-    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot);
+    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, context);
     storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
@@ -287,6 +287,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
     try
     {
+        part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
         commitPart(zookeeper, part, "");
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
@@ -471,12 +472,12 @@ void ReplicatedMergeTreeSink::commitPart(
         /// Information about the part.
         storage.getCommitPartOps(ops, part, block_id_path);
 
-        MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.
+        MergeTreeData::Transaction transaction(storage, NO_TRANSACTION_RAW); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
 
         try
         {
-            renamed = storage.renameTempPartAndAdd(part, nullptr, &transaction);
+            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, nullptr, &transaction);
         }
         catch (const Exception & e)
         {
