@@ -56,4 +56,4 @@ The network bandwidth is critical for processing distributed queries with a larg
 
 ClickHouse is developed primarily for the Linux family of operating systems. The recommended Linux distribution is Ubuntu. The `tzdata` package should be installed in the system.
 
-ClickHouse can also work in other operating system families. See details in the [install guide](../install.md) section of the documentation.
+ClickHouse can also work in other operating system families. See details in the [install guide](../getting-started/install.md) section of the documentation.

@@ -39,7 +39,7 @@ The data is normalized consisted of four tables:
 
 ## Create the Tables {#create-tables}
 
-We use [Decimal](../sql-reference/data-types/decimal.md) data type to store prices.
+We use [Decimal](../../sql-reference/data-types/decimal.md) data type to store prices.
 
 ```sql
 CREATE TABLE dish
@@ -115,17 +115,17 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --date_time_input_format best_effort --query "INSERT INTO menu_item FORMAT CSVWithNames" < MenuItem.csv
 ```
 
-We use [CSVWithNames](../interfaces/formats.md#csvwithnames) format as the data is represented by CSV with header.
+We use [CSVWithNames](../../interfaces/formats.md#csvwithnames) format as the data is represented by CSV with header.
 
 We disable `format_csv_allow_single_quotes` as only double quotes are used for data fields and single quotes can be inside the values and should not confuse the CSV parser.
 
-We disable [input_format_null_as_default](../operations/settings/settings.md#settings-input-format-null-as-default) as our data does not have [NULL](../sql-reference/syntax.md#null-literal). Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
+We disable [input_format_null_as_default](../../operations/settings/settings.md#settings-input-format-null-as-default) as our data does not have [NULL](../../sql-reference/syntax.md#null-literal). Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
 
-The setting [date_time_input_format best_effort](../operations/settings/settings.md#settings-date_time_input_format) allows to parse [DateTime](../sql-reference/data-types/datetime.md)  fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed DateTime format is allowed.
+The setting [date_time_input_format best_effort](../../operations/settings/settings.md#settings-date_time_input_format) allows to parse [DateTime](../../sql-reference/data-types/datetime.md)  fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed DateTime format is allowed.
 
 ## Denormalize the Data {#denormalize-data}
 
-Data is presented in multiple tables in [normalized form](https://en.wikipedia.org/wiki/Database_normalization#Normal_forms). It means you have to perform [JOIN](../sql-reference/statements/select/join.md#select-join) if you want to query, e.g. dish names from menu items.
+Data is presented in multiple tables in [normalized form](https://en.wikipedia.org/wiki/Database_normalization#Normal_forms). It means you have to perform [JOIN](../../sql-reference/statements/select/join.md#select-join) if you want to query, e.g. dish names from menu items.
 For typical analytical tasks it is way more efficient to deal with pre-JOINed data to avoid doing `JOIN` every time. It is called "denormalized" data.
 
 We will create a table `menu_item_denorm` where will contain all the data JOINed together:

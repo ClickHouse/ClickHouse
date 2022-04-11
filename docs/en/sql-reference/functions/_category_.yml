@@ -3,5 +3,5 @@ label: 'Functions'
 collapsible: true
 collapsed: true
 link:
-  type: generated-index
-  title: "Functions"
+  type: doc
+  id: en/sql-reference/functions/index

@@ -216,7 +216,7 @@ Use the `clickhouse client` to connect to the server, or `clickhouse local` to p
 
 ### From Sources {#from-sources}
 
-To manually compile ClickHouse, follow the instructions for [Linux](./development/build.md) or [Mac OS X](./development/build-osx.md).
+To manually compile ClickHouse, follow the instructions for [Linux](../development/build.md) or [Mac OS X](../development/build-osx.md).
 
 You can compile packages and install them or use programs without installing packages. Also by building manually you can disable SSE 4.2 requirement or build for AArch64 CPUs.
 
@@ -271,7 +271,7 @@ If the configuration file is in the current directory, you do not need to specif
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
 By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
-For more information, see the section [“Configuration Files”](./operations/configuration-files.md).
+For more information, see the section [“Configuration Files”](../operations/configuration-files.md).
 
 After launching server, you can use the command-line client to connect to it:
 
@@ -282,7 +282,7 @@ $ clickhouse-client
 By default, it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
 The terminal must use UTF-8 encoding.
-For more information, see the section [“Command-line client”](./interfaces/cli.md).
+For more information, see the section [“Command-line client”](../interfaces/cli.md).
 
 Example:
 
@@ -307,6 +307,6 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can download one of the test data sets or go through [tutorial](./tutorial.md).
+To continue experimenting, you can download one of the test data sets or go through [tutorial](./../tutorial.md).
 
 [Original article](https://clickhouse.com/docs/en/getting_started/install/) <!--hide-->

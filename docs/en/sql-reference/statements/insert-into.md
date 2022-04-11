@@ -88,7 +88,7 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section “[Interfaces](../../interfaces/index.md#interfaces)”.
+You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section “[Interfaces](../../interfaces)”.
 
 ### Constraints {#constraints}
 

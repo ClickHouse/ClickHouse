@@ -95,7 +95,7 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 
 So, the top countries are: the USA, Germany, and Russia.
 
-You may want to create an [External Dictionary](../sql-reference/dictionaries/external-dictionaries/external-dicts.md) in ClickHouse to decode these values.
+You may want to create an [External Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) in ClickHouse to decode these values.
 
 
 ## Use case {#use-case}
