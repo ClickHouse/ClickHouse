@@ -219,7 +219,6 @@ private:
         ResponseCallback callback;
         WatchCallback watch;
         clock::time_point time;
-        UInt64 thread_id = 0;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
