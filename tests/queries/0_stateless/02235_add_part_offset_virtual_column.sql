@@ -17,9 +17,11 @@ CREATE TABLE t_random_1
 )
 ENGINE = GenerateRandom(1, 5, 3);
 
-INSERT INTO t_1 select rowNumberInAllBlocks(),*,NOW() from t_random_1 limit 1000;
+INSERT INTO t_1 select rowNumberInAllBlocks(), *, '1984-01-01' from t_random_1 limit 1000;
 
 SELECT max(_part_offset) FROM t_1;
 SELECT count(*) FROM t_1 WHERE _part_offset != order_0;
 SELECT count(*) FROM t_1 WHERE order_0 IN (SELECT toUInt64(rand64()%1000) FROM system.numbers limit 100) AND _part_offset != order_0;
 SELECT count(*) FROM t_1 PREWHERE ordinary_1 > 5000 WHERE _part_offset != order_0;
+SELECT order_0, _part_offset, _part FROM t_1 ORDER BY order_0, _part_offset, _part LIMIT 3;
+SELECT order_0, _part_offset, _part FROM t_1 ORDER BY order_0 DESC, _part_offset DESC, _part DESC LIMIT 3;
