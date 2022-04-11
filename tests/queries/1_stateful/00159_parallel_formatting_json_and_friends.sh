@@ -11,7 +11,7 @@ FORMATS=('JSONEachRow' 'JSONCompactEachRow' 'JSONCompactStringsEachRow' 'JSONCom
 for format in "${FORMATS[@]}"
 do
     echo "$format, false";
-    $CLICKHOUSE_CLIENT --max_therads=0 --output_format_parallel_formatting=false -q \
+    $CLICKHOUSE_CLIENT --max_threads=0 --output_format_parallel_formatting=false -q \
     "SELECT ClientEventTime::DateTime('Asia/Dubai') as a, MobilePhoneModel as b, ClientIP6 as c FROM test.hits ORDER BY a, b, c LIMIT 3000000 Format $format" | md5sum
 
     echo "$format, true";
