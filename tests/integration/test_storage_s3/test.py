@@ -1421,7 +1421,7 @@ def test_wrong_format_usage(started_cluster):
         f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native', 'Parquet') settings input_format_allow_seeks=0, max_memory_usage=1000"
     )
 
-    assert 'Not a Parquet file' in result
+    assert "Not a Parquet file" in result
 
 
 def test_desc_parquet_memory_usage(started_cluster):
@@ -1436,4 +1436,4 @@ def test_desc_parquet_memory_usage(started_cluster):
         f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_usage.parquet') settings input_format_allow_seeks=0, max_memory_usage=1000"
     )
 
-    assert 'maximum: 1000.00 B' in result
+    assert "maximum: 1000.00 B" in result
