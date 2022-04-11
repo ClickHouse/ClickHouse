@@ -230,6 +230,11 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
+if (OS_DARWIN AND ARCH_AARCH64)
+    set(ENABLE_BLAKE3 0)
+    set(USE_BLAKE3 0)
+endif()
+
 # Ignored if `lld` is used
 option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
