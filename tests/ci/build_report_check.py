@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import sys
+from typing import Dict, List, Tuple
+
 from github import Github
 
 from env_helper import (
@@ -44,7 +46,7 @@ class BuildResult:
         self.with_coverage = with_coverage
 
 
-def group_by_artifacts(build_urls):
+def group_by_artifacts(build_urls: List[str]) -> Dict[str, List[str]]:
     groups = {
         "apk": [],
         "deb": [],
@@ -52,7 +54,7 @@ def group_by_artifacts(build_urls):
         "tgz": [],
         "rpm": [],
         "performance": [],
-    }
+    }  # type: Dict[str, List[str]]
     for url in build_urls:
         if url.endswith("performance.tgz"):
             groups["performance"].append(url)
@@ -74,7 +76,9 @@ def group_by_artifacts(build_urls):
     return groups
 
 
-def process_report(build_report):
+def process_report(
+    build_report,
+) -> Tuple[List[BuildResult], List[List[str]], List[str]]:
     build_config = build_report["build_config"]
     build_result = BuildResult(
         compiler=build_config["compiler"],
@@ -98,6 +102,7 @@ def process_report(build_report):
             build_logs_urls.append(build_report["log_url"])
             found_group = True
 
+    # No one group of urls is found, a failed report
     if not found_group:
         build_results.append(build_result)
         build_urls.append([""])
