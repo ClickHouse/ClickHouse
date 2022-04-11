@@ -4,24 +4,7 @@
 #include <Common/ThreadPool.h>
 #include <IO/AsynchronousReader.h>
 #include <unordered_map>
-
-#if defined(__clang__)
-#pragma clang diagnostic push
-
-#pragma clang diagnostic ignored "-Wold-style-cast"
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-
-#ifdef HAS_RESERVED_IDENTIFIER
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
-
-#endif
-
 #include <liburing.h>
-
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
