@@ -1118,6 +1118,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                 if (query.limitLength())
                     executePreLimit(query_plan, true);
+
+                auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_ptr);
+                caching_step->setStepDescription("Cache query result");
+                query_plan.addStep(std::move(caching_step));
             }
         };
 
@@ -1453,10 +1457,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             if (apply_offset)
                 executeOffset(query_plan);
-
-            auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_ptr);
-            caching_step->setStepDescription("Cache query result");
-            query_plan.addStep(std::move(caching_step));
         }
     }
 
