@@ -1838,7 +1838,7 @@ void ClientBase::runInteractive()
     }
 
     LineReader::Patterns query_extenders = {"\\"};
-    LineReader::Patterns query_delimiters = {";", "\\G"};
+    LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
 
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
@@ -1860,7 +1860,7 @@ void ClientBase::runInteractive()
             break;
 
         has_vertical_output_suffix = false;
-        if (input.ends_with("\\G"))
+        if (input.ends_with("\\G") || input.ends_with("\\G;"))
         {
             input.resize(input.size() - 2);
             has_vertical_output_suffix = true;
