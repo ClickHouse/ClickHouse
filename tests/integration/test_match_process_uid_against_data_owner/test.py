@@ -27,7 +27,7 @@ def test_different_user(started_cluster):
     with pytest.raises(Exception):
         node.stop_clickhouse()
         node.exec_in_container(
-            ["bash", "-c", f"chown {other_user_id} /var/lib/clickhouse"],
+            ["bash", "-c", f"chown {other_user_id} /var/lib/clickhouse/*"],
             privileged=True,
         )
         node.start_clickhouse(start_wait_sec=3)
@@ -41,7 +41,8 @@ def test_different_user(started_cluster):
             )
         )
     node.exec_in_container(
-        ["bash", "-c", f"chown {current_user_id} /var/lib/clickhouse"], privileged=True
+        ["bash", "-c", f"chown {current_user_id} /var/lib/clickhouse/*"],
+        privileged=True,
     )
     node.start_clickhouse()
     node.rotate_logs()
