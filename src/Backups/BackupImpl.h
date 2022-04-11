@@ -47,7 +47,7 @@ protected:
     virtual void openImpl(OpenMode open_mode_) = 0;
     OpenMode getOpenModeNoLock() const { return open_mode; }
 
-    virtual void closeImpl(bool writing_finalized_) = 0;
+    virtual void closeImpl(const Strings & written_files_, bool writing_finalized_) = 0;
 
     /// Read a file from the backup.
     /// Low level: the function doesn't check base backup or checksums.
@@ -86,6 +86,7 @@ private:
     std::optional<UUID> base_backup_uuid;
     std::map<String, FileInfo> file_infos; /// Should be ordered alphabetically, see listFiles().
     std::unordered_map<UInt128, String> file_checksums;
+    Strings written_files;
     bool writing_finalized = false;
 };
 
