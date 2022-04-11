@@ -417,7 +417,8 @@ static void BM_TPCH_Q6(benchmark::State& state) {
         local_executor.execute(std::move(query_plan));
         while (local_executor.hasNext())
         {
-            local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
+            Block * block = local_executor.nextColumnar();
+            delete block;
         }
     }
 }
@@ -439,10 +440,10 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
         dbms::SerializedPlanBuilder plan_builder;
         auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
         auto * measure1 = dbms::measureFunction(dbms::SUM, {agg_mul});
-        auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
-        auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
+//        auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
+//        auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
         auto plan = plan_builder.registerSupportedFunctions()
-                        .aggregate({}, {measure1, measure2, measure3})
+                        .aggregate({}, {measure1})
                         .project({dbms::selection(2), dbms::selection(1), dbms::selection(0)})
                         .filter(dbms::scalarFunction(dbms::AND, {
                                                                     dbms::scalarFunction(AND, {
@@ -466,7 +467,65 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
                                                                                               }),
                                                                     scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
                                                                 }))
-                        .readMergeTree("default", "test", "tpch-mergetree/lineorder/", 1, 12, std::move(schema)).build();
+                        .readMergeTree("default", "test", "home/saber/Documents/data/mergetree/", 1, 12, std::move(schema)).build();
+
+        auto query_plan = parser.parse(std::move(plan));
+        local_engine::LocalExecutor local_executor;
+        state.ResumeTiming();
+        local_executor.execute(std::move(query_plan));
+        while (local_executor.hasNext())
+        {
+            local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
+        }
+    }
+}
+
+static void BM_MERGE_TREE_TPCH_Q6_NEW(benchmark::State& state) {
+    SerializedPlanParser::global_context = global_context;
+    local_engine::SerializedPlanParser parser(SerializedPlanParser::global_context);
+    for (auto _: state)
+    {
+        state.PauseTiming();
+        dbms::SerializedSchemaBuilder schema_builder;
+        auto schema = schema_builder
+                          .column("l_discount", "FP64")
+                          .column("l_extendedprice", "FP64")
+                          .column("l_quantity", "FP64")
+                          .column("l_shipdate_new", "FP64")
+                          .build();
+        dbms::SerializedPlanBuilder plan_builder;
+        auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
+
+        auto * measure1 = dbms::measureFunction(dbms::SUM, {dbms::selection(0)});
+//        auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
+//        auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
+        auto plan = plan_builder.registerSupportedFunctions()
+                        .aggregate({}, {measure1})
+                        .project({agg_mul})
+                        .project({dbms::selection(2), dbms::selection(1), dbms::selection(0)})
+                        .filter(dbms::scalarFunction(dbms::AND, {
+                                                                    dbms::scalarFunction(AND, {
+                                                                                                  dbms::scalarFunction(AND, {
+                                                                                                                                dbms::scalarFunction(AND, {
+                                                                                                                                                              dbms::scalarFunction(AND, {
+                                                                                                                                                                                            dbms::scalarFunction(AND, {
+                                                                                                                                                                                                                          dbms::scalarFunction(AND, {
+                                                                                                                                                                                                                                                        scalarFunction(IS_NOT_NULL, {selection(3)}),
+                                                                                                                                                                                                                                                        scalarFunction(IS_NOT_NULL, {selection(0)})
+                                                                                                                                                                                                                                                    }),
+                                                                                                                                                                                                                          scalarFunction(IS_NOT_NULL, {selection(2)})
+                                                                                                                                                                                                                      }),
+                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literal(8766.0)})
+                                                                                                                                                                                        }),
+                                                                                                                                                              scalarFunction(LESS_THAN, {selection(3), literal(9131.0)})
+                                                                                                                                                          }),
+                                                                                                                                scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})
+                                                                                                                            }),
+                                                                                                  scalarFunction(LESS_THAN_OR_EQUAL, {selection(0), literal(0.07)})
+                                                                                              }),
+                                                                    scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
+                                                                }))
+                        .readMergeTree("default", "test", "home/saber/Documents/data/mergetree/", 1, 12, std::move(schema)).build();
 
         auto query_plan = parser.parse(std::move(plan));
         local_engine::LocalExecutor local_executor;
@@ -924,12 +983,14 @@ double quantile(const vector<double>&x)
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_TPCH_Q6)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-//BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100);
+BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100);
+BENCHMARK(BM_MERGE_TREE_TPCH_Q6_NEW)->Unit(benchmark::kMillisecond)->Iterations(100);
+
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_TestCreateExecute)->Unit(benchmark::kMillisecond)->Iterations(1000);
-BENCHMARK(BM_TestReadColumn)->Unit(benchmark::kMillisecond)->Iterations(1);
+//BENCHMARK(BM_TestReadColumn)->Unit(benchmark::kMillisecond)->Iterations(1);
 
 //BENCHMARK(BM_TestSum)->Arg(1000000)->Unit(benchmark::kMicrosecond)->Iterations(100)->Repetitions(100)->ComputeStatistics("80%", quantile)->DisplayAggregatesOnly();
 //BENCHMARK(BM_TestSumInline)->Arg(1000000)->Unit(benchmark::kMicrosecond)->Iterations(100)->Repetitions(100)->ComputeStatistics("80%", quantile)->DisplayAggregatesOnly();

@@ -20,25 +20,13 @@ public:
 class SparkRowReader
 {
 public:
-    template<class Type> Type getValue(int64_t address)
-    {
-        return *reinterpret_cast<Type *>(address);
-    }
-
-    template <int64_t> int64_t getValue(int64_t address);
-    template <int32_t> int32_t getValue(int64_t address);
-    template <int16_t> int16_t getValue(int64_t address);
-    template <int8_t> int8_t getValue(int64_t address);
-    template <float_t> float_t getValue(int64_t address);
-    template <double_t> double_t getValue(int64_t address);
-
 
     bool isSet(int index)
     {
         assert(index >= 0);
         int64_t mask = 1 << (index & 63);
         int64_t word_offset = base_offset + static_cast<int64_t>(index >> 6) * 8L;
-        int64_t word = getValue<int64_t>(word_offset);
+        int64_t word = *reinterpret_cast<int64_t *>(word_offset);
         return (word & mask) != 0;
     }
 
@@ -57,56 +45,56 @@ public:
     int8_t getByte(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return getValue<int8_t>(getFieldOffset(ordinal));
+        return *reinterpret_cast<int8_t *>(getFieldOffset(ordinal));
     }
 
     uint8_t getUnsignedByte(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return getValue<uint8_t>(getFieldOffset(ordinal));
+        return *reinterpret_cast<uint8_t *>(getFieldOffset(ordinal));
     }
 
 
     int16_t getShort(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return getValue<int16_t>(getFieldOffset(ordinal));
+        return *reinterpret_cast<int16_t *>(getFieldOffset(ordinal));
     }
 
     uint16_t getUnsignedShort(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return getValue<uint16_t>(getFieldOffset(ordinal));
+        return *reinterpret_cast<uint16_t *>(getFieldOffset(ordinal));
     }
 
     int32_t getInt(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return getValue<int32_t>(getFieldOffset(ordinal));
+        return *reinterpret_cast<int32_t *>(getFieldOffset(ordinal));
     }
 
     uint32_t getUnsignedInt(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return getValue<uint32_t>(getFieldOffset(ordinal));
+        return *reinterpret_cast<uint32_t *>(getFieldOffset(ordinal));
     }
 
     int64_t getLong(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return getValue<int64_t>(getFieldOffset(ordinal));
+        return *reinterpret_cast<int64_t *>(getFieldOffset(ordinal));
     }
 
     float_t getFloat(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return getValue<float_t>(getFieldOffset(ordinal));
+        return *reinterpret_cast<float_t *>(getFieldOffset(ordinal));
     }
 
     double_t getDouble(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return getValue<double_t>(getFieldOffset(ordinal));
+        return *reinterpret_cast<double_t *>(getFieldOffset(ordinal));
     }
 
     StringRef getString(int ordinal)
