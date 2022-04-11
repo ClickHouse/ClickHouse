@@ -675,14 +675,9 @@ void Client::printChangedSettings() const
 }
 
 
-static bool queryHasWithClause(const IAST * ast)
+static bool queryHasWithClause(const IAST & ast)
 {
-    if (!ast)
-    {
-        return false;
-    }
-
-    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(ast); select && select->with())
+    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(&ast); select && select->with())
     {
         return true;
     }
@@ -694,9 +689,9 @@ static bool queryHasWithClause(const IAST * ast)
     // defensive and avoid weird unexpected errors.
     // clang-tidy is confused by this function: it thinks that if `select` is
     // nullptr, `ast` is also nullptr, and complains about nullptr dereference.
-    for (const auto & child : ast->children)
+    for (const auto & child : ast.children)
     {
-        if (queryHasWithClause(child.get()))
+        if (queryHasWithClause(*child))
         {
             return true;
         }
@@ -920,7 +915,7 @@ bool Client::processWithFuzzing(const String & full_query)
         // query, but second and third.
         // If you have to add any more workarounds to this check, just remove
         // it altogether, it's not so useful.
-        if (!have_error && !queryHasWithClause(*parsed_query))
+        if (parsed_query && !have_error && !queryHasWithClause(*parsed_query))
         {
             ASTPtr ast_2;
             try
