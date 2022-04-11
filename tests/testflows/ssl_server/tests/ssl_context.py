@@ -10,24 +10,23 @@ from ssl_server.tests.common import *
 def enable_ssl(
     self,
     my_own_ca_key_passphrase,
-    server_key_passpharase,
+    server_key_passphrase,
     restart=True,
     restart_before=True,
     node=None,
     timeout=100,
 ):
     """Check enabling basic SSL server configuration."""
-    uid = getuid()
-    cluster = self.context.cluster
     if node is None:
         node = self.context.node
 
-    my_own_ca_key = cluster.temp_file(f"my_own_ca_{uid}.key")
-    my_own_ca_crt = cluster.temp_file(f"my_own_ca_{uid}.crt")
-    server_key = cluster.temp_file(f"server_{uid}.key")
-    server_csr = cluster.temp_file(f"server_{uid}.csr")
-    server_crt = cluster.temp_file(f"server_{uid}.crt")
-    dh_params = cluster.temp_file(f"dh_params_{uid}.pem")
+    my_own_ca_key = "my_own_ca.key"
+    my_own_ca_crt = "my_own_ca.crt"
+    server_key = "server.key"
+    server_csr = "server.csr"
+    server_crt = "server.crt"
+    dh_params = "dh_params.pem"
+
     node_server_crt = "/etc/clickhouse-server/" + os.path.basename(server_crt)
     node_server_key = "/etc/clickhouse-server/" + os.path.basename(server_key)
     node_dh_params = "/etc/clickhouse-server/" + os.path.basename(dh_params)
@@ -37,12 +36,13 @@ def enable_ssl(
             node.restart_clickhouse()
 
     with Given("I create my own CA key"):
-        create_rsa_private_key(
+        my_own_ca_key = create_rsa_private_key(
             outfile=my_own_ca_key, passphrase=my_own_ca_key_passphrase
         )
+        debug(f"{my_own_ca_key}")
 
     with And("I create my own CA certificate"):
-        create_ca_certificate(
+        my_own_ca_crt = create_ca_certificate(
             outfile=my_own_ca_crt,
             key=my_own_ca_key,
             passphrase=my_own_ca_key_passphrase,
@@ -50,21 +50,23 @@ def enable_ssl(
         )
 
     with And("I generate DH parameters"):
-        create_dh_params(outfile=dh_params)
+        dh_params = create_dh_params(outfile=dh_params)
 
     with And("I generate server key"):
-        create_rsa_private_key(outfile=server_key, passphrase=server_key_passpharase)
+        server_key = create_rsa_private_key(
+            outfile=server_key, passphrase=server_key_passphrase
+        )
 
     with And("I generate server certificate signing request"):
-        create_certificate_signing_request(
+        server_csr = create_certificate_signing_request(
             outfile=server_csr,
             common_name="clickhouse1",
             key=server_key,
-            passphrase=server_key_passpharase,
+            passphrase=server_key_passphrase,
         )
 
     with And("I sign server certificate with my own CA"):
-        sign_certificate(
+        server_crt = sign_certificate(
             outfile=server_crt,
             csr=server_csr,
             ca_certificate=my_own_ca_crt,
@@ -97,11 +99,12 @@ def enable_ssl(
             "cacheSessions": "true",
             "disableProtocols": "sslv2,sslv3",
             "preferServerCiphers": "true",
-            "privateKeyPassphraseHandler": {
-                "name": "KeyFileHandler",
-                "options": [{"password": server_key_passpharase}],
-            },
         }
+        if server_key_passphrase:
+            entries["privateKeyPassphraseHandler"] = {
+                "name": "KeyFileHandler",
+                "options": [{"password": server_key_passphrase}],
+            }
         add_ssl_server_configuration_file(entries=entries)
 
     with And("I add SSL ports configuration file"):
@@ -121,7 +124,7 @@ def enable_ssl_no_server_key_passphrase(self, node=None):
     """
     enable_ssl(
         my_own_ca_key_passphrase="hello",
-        server_key_passpharase="",
+        server_key_passphrase="",
         restart=True,
         node=node,
     )
@@ -135,7 +138,7 @@ def enable_ssl_no_server_key_passphrase_dynamically(self, node=None):
     """
     enable_ssl(
         my_own_ca_key_passphrase="hello",
-        server_key_passpharase="",
+        server_key_passphrase="",
         restart=False,
         node=node,
     )
@@ -148,7 +151,7 @@ def enable_ssl_with_server_key_passphrase(self, node=None):
     """
     enable_ssl(
         my_own_ca_key_passphrase="hello",
-        server_key_passpharase="hello",
+        server_key_passphrase="hello",
         restart=True,
         node=node,
     )
@@ -162,7 +165,7 @@ def enable_ssl_with_server_key_passphrase_dynamically(self, node=None):
     """
     enable_ssl(
         my_own_ca_key_passphrase="hello",
-        server_key_passpharase="hello",
+        server_key_passphrase="hello",
         restart=True,
         node=node,
     )

@@ -8,17 +8,43 @@ append_path(sys.path, "..")
 
 from helpers.cluster import Cluster
 from helpers.argparser import argparser
+from helpers.common import check_clickhouse_version
+
 from ssl_server.requirements import SRS017_ClickHouse_Security_SSL_Server
 
-xfails = {}
+xfails = {
+    "ssl context/enable ssl with server key passphrase": [
+        (Fail, "https://github.com/ClickHouse/ClickHouse/issues/35950")
+    ],
+    "ssl context/enable ssl no server key passphrase dynamically": [
+        (Fail, "https://github.com/ClickHouse/ClickHouse/issues/35950")
+    ],
+    "ssl context/enable ssl with server key passphrase dynamically": [
+        (Fail, "https://github.com/ClickHouse/ClickHouse/issues/35950")
+    ],
+}
 
 xflags = {}
+
+ffails = {
+    "ssl context/enable ssl no server key passphrase dynamically": (
+        Skip,
+        "supported on >=22.3",
+        check_clickhouse_version("<22.3"),
+    ),
+    "ssl context/enable ssl with server key passphrase dynamically": (
+        Skip,
+        "supported on >=22.3",
+        check_clickhouse_version("<22.3"),
+    ),
+}
 
 
 @TestModule
 @ArgumentParser(argparser)
 @XFails(xfails)
 @XFlags(xflags)
+@FFails(ffails)
 @Name("ssl server")
 @Specifications(SRS017_ClickHouse_Security_SSL_Server)
 def regression(self, local, clickhouse_binary_path, clickhouse_version, stress=None):

@@ -1,6 +1,7 @@
 import os
 from testflows.core import *
 from testflows.asserts import error
+from testflows.stash import stashed
 from helpers.common import *
 
 
@@ -165,11 +166,9 @@ def add_secure_ports_configuration_file(
 
 
 @TestStep(Given)
-def create_rsa_private_key(
-    self, outfile, passphrase, algorithm="aes256", length=2048, node=None
-):
+def create_rsa_private_key(self, outfile, passphrase, algorithm="aes256", length=2048):
     """Generate RSA private key."""
-    bash = self.context.cluster.bash(node=node)
+    bash = self.context.cluster.bash(node=None)
 
     if algorithm:
         algorithm = f"-{algorithm} "
@@ -179,23 +178,24 @@ def create_rsa_private_key(
     if not passphrase:
         algorithm = ""
 
-    try:
-        with bash(
-            f"openssl genrsa {algorithm}-out {outfile} {length}",
-            name="openssl",
-            asynchronous=True,
-        ) as cmd:
-            choice = cmd.app.expect(f"(Enter pass phrase for.*?:)|({bash.prompt})")
-            if choice.group(2) is None:
-                cmd.app.send(passphrase)
-                cmd.app.expect("Verifying - Enter pass phrase for .*?:")
-                cmd.app.send(passphrase)
-
-        yield outfile
-
-    finally:
-        with Finally("I remove private key file"):
+    with stashed.filepath(
+        outfile, id=stashed.hash(algorithm, length, passphrase)
+    ) as stash:
+        try:
+            with bash(
+                f"openssl genrsa {algorithm}-out {outfile} {length}",
+                name="openssl",
+                asynchronous=True,
+            ) as cmd:
+                choice = cmd.app.expect(f"(Enter pass phrase for.*?:)|({bash.prompt})")
+                if choice.group(2) is None:
+                    cmd.app.send(passphrase)
+                    cmd.app.expect("Verifying - Enter pass phrase for .*?:")
+                    cmd.app.send(passphrase)
+            stash(outfile)
+        finally:
             bash(f'rm -rf "{outfile}"')
+    yield stash.value
 
 
 @TestStep(Given)
@@ -215,41 +215,56 @@ def create_ca_certificate(
     organization_name="",
     organization_unit_name="",
     email_address="",
-    node=None,
 ):
     """Generate CA certificate."""
-    bash = self.context.cluster.bash(node=node)
+    bash = self.context.cluster.bash(node=None)
 
-    try:
-        with bash(
-            f"openssl req -new -{type} -days {days} -key {key} "
-            f"-{hash} -extensions {extensions} -out {outfile}",
-            name="openssl",
-            asynchronous=True,
-        ) as cmd:
-            if passphrase:
-                cmd.app.expect("Enter pass phrase for.*?:")
-                cmd.app.send(passphrase)
-            cmd.app.expect("Country Name.*?:")
-            cmd.app.send(country_name)
-            cmd.app.expect("State or Province Name.*?:")
-            cmd.app.send(state_or_province)
-            cmd.app.expect("Locality Name.*?:")
-            cmd.app.send(locality_name)
-            cmd.app.expect("Organization Name.*?:")
-            cmd.app.send(organization_name)
-            cmd.app.expect("Organizational Unit Name.*?:")
-            cmd.app.send(organization_unit_name)
-            cmd.app.expect("Common Name.*?:")
-            cmd.app.send(common_name)
-            cmd.app.expect("Email Address.*?:")
-            cmd.app.send(email_address)
-
-        yield outfile
-
-    finally:
-        with Finally("I remove CA certificate file"):
+    with stashed.filepath(
+        outfile,
+        id=stashed.hash(
+            key,
+            passphrase,
+            common_name,
+            type,
+            days,
+            hash,
+            extensions,
+            country_name,
+            state_or_province,
+            locality_name,
+            organization_name,
+            organization_unit_name,
+            email_address,
+        ),
+    ) as stash:
+        try:
+            with bash(
+                f"openssl req -new -{type} -days {days} -key {key} "
+                f"-{hash} -extensions {extensions} -out {outfile}",
+                name="openssl",
+                asynchronous=True,
+            ) as cmd:
+                if passphrase:
+                    cmd.app.expect("Enter pass phrase for.*?:")
+                    cmd.app.send(passphrase)
+                cmd.app.expect("Country Name.*?:")
+                cmd.app.send(country_name)
+                cmd.app.expect("State or Province Name.*?:")
+                cmd.app.send(state_or_province)
+                cmd.app.expect("Locality Name.*?:")
+                cmd.app.send(locality_name)
+                cmd.app.expect("Organization Name.*?:")
+                cmd.app.send(organization_name)
+                cmd.app.expect("Organizational Unit Name.*?:")
+                cmd.app.send(organization_unit_name)
+                cmd.app.expect("Common Name.*?:")
+                cmd.app.send(common_name)
+                cmd.app.expect("Email Address.*?:")
+                cmd.app.send(email_address)
+            stash(outfile)
+        finally:
             bash(f'rm -rf "{outfile}"')
+    yield stash.value
 
 
 @TestStep(Given)
@@ -268,44 +283,60 @@ def create_certificate_signing_request(
     email_address="",
     challenge_password="",
     company_name="",
-    node=None,
 ):
     """Generate certificate signing request."""
-    bash = self.context.cluster.bash(node=node)
+    bash = self.context.cluster.bash(node=None)
 
-    try:
-        with bash(
-            f"openssl req -{hash} -new -key {key} -out {outfile}",
-            name="openssl",
-            asynchronous=True,
-        ) as cmd:
-            choice = cmd.app.expect("(Enter pass phrase for.*?:)|(Country Name.*?:)")
-            if choice.group(1):
-                cmd.app.send(passphrase)
-                cmd.app.expect("Country Name.*?:")
-            cmd.app.send(country_name)
-            cmd.app.expect("State or Province Name.*?:")
-            cmd.app.send(state_or_province)
-            cmd.app.expect("Locality Name.*?:")
-            cmd.app.send(locality_name)
-            cmd.app.expect("Organization Name.*?:")
-            cmd.app.send(organization_name)
-            cmd.app.expect("Organizational Unit Name.*?:")
-            cmd.app.send(organization_unit_name)
-            cmd.app.expect("Common Name.*?:")
-            cmd.app.send(common_name)
-            cmd.app.expect("Email Address.*?:")
-            cmd.app.send(email_address)
-            cmd.app.expect("A challenge password.*?:")
-            cmd.app.send(challenge_password)
-            cmd.app.expect("An optional company name.*?:")
-            cmd.app.send(company_name)
-
-        yield outfile
-
-    finally:
-        with Finally("I remove certificate signing request file"):
+    with stashed.filepath(
+        outfile,
+        id=stashed.hash(
+            key,
+            passphrase,
+            common_name,
+            hash,
+            country_name,
+            state_or_province,
+            locality_name,
+            organization_name,
+            organization_unit_name,
+            email_address,
+            challenge_password,
+            company_name,
+        ),
+    ) as stash:
+        try:
+            with bash(
+                f"openssl req -{hash} -new -key {key} -out {outfile}",
+                name="openssl",
+                asynchronous=True,
+            ) as cmd:
+                choice = cmd.app.expect(
+                    "(Enter pass phrase for.*?:)|(Country Name.*?:)"
+                )
+                if choice.group(1):
+                    cmd.app.send(passphrase)
+                    cmd.app.expect("Country Name.*?:")
+                cmd.app.send(country_name)
+                cmd.app.expect("State or Province Name.*?:")
+                cmd.app.send(state_or_province)
+                cmd.app.expect("Locality Name.*?:")
+                cmd.app.send(locality_name)
+                cmd.app.expect("Organization Name.*?:")
+                cmd.app.send(organization_name)
+                cmd.app.expect("Organizational Unit Name.*?:")
+                cmd.app.send(organization_unit_name)
+                cmd.app.expect("Common Name.*?:")
+                cmd.app.send(common_name)
+                cmd.app.expect("Email Address.*?:")
+                cmd.app.send(email_address)
+                cmd.app.expect("A challenge password.*?:")
+                cmd.app.send(challenge_password)
+                cmd.app.expect("An optional company name.*?:")
+                cmd.app.send(company_name)
+            stash(outfile)
+        finally:
             bash(f'rm -rf "{outfile}"')
+    yield stash.value
 
 
 @TestStep(Given)
@@ -319,45 +350,46 @@ def sign_certificate(
     type="x509",
     hash="sha256",
     days="365",
-    node=None,
 ):
     """Sign certificate using CA certificate."""
-    bash = self.context.cluster.bash(node=node)
+    bash = self.context.cluster.bash(node=None)
 
-    try:
-        with bash(
-            f"openssl {type} -{hash} -req -in {csr} -CA {ca_certificate} "
-            f"-CAkey {ca_key} -CAcreateserial -out {outfile} -days {days}",
-            name="openssl",
-            asynchronous=True,
-        ) as cmd:
-            if ca_passphrase:
-                cmd.app.expect("Enter pass phrase for.*?:")
-                cmd.app.send(ca_passphrase)
-
-        yield outfile
-
-    finally:
-        with Finally("I remove certificate file"):
+    with stashed.filepath(
+        outfile,
+        id=stashed.hash(csr, ca_certificate, ca_key, ca_passphrase, type, hash, days),
+    ) as stash:
+        try:
+            with bash(
+                f"openssl {type} -{hash} -req -in {csr} -CA {ca_certificate} "
+                f"-CAkey {ca_key} -CAcreateserial -out {outfile} -days {days}",
+                name="openssl",
+                asynchronous=True,
+            ) as cmd:
+                if ca_passphrase:
+                    cmd.app.expect("Enter pass phrase for.*?:")
+                    cmd.app.send(ca_passphrase)
+            stash(outfile)
+        finally:
             bash(f'rm -rf "{outfile}"')
+    yield stash.value
 
 
 @TestStep(Given)
-def create_dh_params(self, outfile, length=256, node=None):
+def create_dh_params(self, outfile, length=256):
     """Generate Diffie-Hellman parameters file for the server."""
-    bash = self.context.cluster.bash(node=node)
+    bash = self.context.cluster.bash(node=None)
 
-    try:
-        cmd = bash(f"openssl dhparam -out {outfile} {length}")
+    with stashed.filepath(outfile, id=stashed.hash(length)) as stash:
+        try:
+            cmd = bash(f"openssl dhparam -out {outfile} {length}")
 
-        with Then("checking exitcode 0"):
-            assert cmd.exitcode == 0, error()
+            with Then("checking exitcode 0"):
+                assert cmd.exitcode == 0, error()
 
-        yield outfile
-
-    finally:
-        with Finally("I remove dhparams file"):
+            stash(outfile)
+        finally:
             bash(f'rm -rf "{outfile}"')
+    yield stash.value
 
 
 @TestStep(Then)
@@ -390,14 +422,26 @@ def add_trusted_ca_certificate(
     if path is None:
         path = os.path.join(directory, os.path.basename(certificate))
 
-    with By("copying certificate to node", description=f"{node}:{path}"):
-        copy(dest_node=node, src_path=certificate, dest_path=path, bash=bash, eof=eof)
+    if not path.endswith(".crt"):
+        path += ".crt"
 
-    with And("updating system certificates"):
-        cmd = node.command("update-ca-certificates")
+    try:
+        with By("copying certificate to node", description=f"{node}:{path}"):
+            copy(
+                dest_node=node, src_path=certificate, dest_path=path, bash=bash, eof=eof
+            )
 
-    with Then("checking certificate was added"):
-        assert "Adding " in cmd.output, error()
+        with And("updating system certificates"):
+            cmd = node.command("update-ca-certificates")
 
-    with And("exitcode is 0"):
-        assert cmd.exitcode == 0, error()
+        with Then("checking certificate was added"):
+            assert "Adding " in cmd.output or "Replacing " in cmd.output, error()
+
+        with And("exitcode is 0"):
+            assert cmd.exitcode == 0, error()
+
+        yield path
+    finally:
+        with Finally("I remove CA certificate from being trusted by the system"):
+            node.command(f"rm -rf {path}")
+            node.command("update-ca-certificates -f", exitcode=0)
