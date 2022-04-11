@@ -1,5 +1,5 @@
 ---
-sidebar_position: 31
+sidebar_position: 2
 sidebar_label: Syntax
 ---
 

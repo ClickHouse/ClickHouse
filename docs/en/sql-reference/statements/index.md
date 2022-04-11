@@ -1,5 +1,5 @@
 ---
-sidebar_position: 31
+sidebar_position: 1
 sidebar_label: Statements
 ---
 
