@@ -81,7 +81,7 @@ std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
     });
 
     if (!is_newly_inserted)
-        return makeFailedResult(ErrorCodes::LOGICAL_ERROR, "Tried enqueuing read request for %lu that is already submitted", request_id);
+        return makeFailedResult(ErrorCodes::LOGICAL_ERROR, "Tried enqueuing read request for {} that is already submitted", request_id);
 
     EnqueuedRequest & enqueued = kv->second;
     trySubmitRequest(request_id, enqueued, false);
@@ -147,7 +147,7 @@ void IOUringReader::monitorRing()
         int ret = io_uring_wait_cqe(&ring, &cqe);
 
         if (ret < 0)
-            throwFromErrno(fmt::format("Failed waiting for io_uring CQEs: ", ret), ErrorCodes::IO_URING_WAIT_ERROR);
+            throwFromErrno(fmt::format("Failed waiting for io_uring CQEs: {}", ret), ErrorCodes::IO_URING_WAIT_ERROR);
 
         // user_data zero means a noop event sent from the destructor meant to interrupt the thread
         if (cancelled.load(std::memory_order_relaxed) || cqe->user_data == 0)
@@ -160,7 +160,7 @@ void IOUringReader::monitorRing()
         const auto it = enqueued_requests.find(request_id);
         if (it == enqueued_requests.end())
             throwFromErrno(
-                fmt::format("Got a completion event for a request %lu that was not submitted", request_id),
+                fmt::format("Got a completion event for a request {} that was not submitted", request_id),
                 ErrorCodes::LOGICAL_ERROR);
 
         auto & enqueued = it->second;
