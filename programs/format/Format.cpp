@@ -54,6 +54,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         ("multiquery,n", "allow multiple queries in the same file")
         ("obfuscate", "obfuscate instead of formatting")
         ("backslash", "add a backslash at the end of each line of the formatted query")
+        ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
         ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
     ;
 
@@ -83,6 +84,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool multiple = options.count("multiquery");
         bool obfuscate = options.count("obfuscate");
         bool backslash = options.count("backslash");
+        bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
 
         if (quiet && (hilite || oneline || obfuscate))
         {
@@ -154,7 +156,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             const char * pos = query.data();
             const char * end = pos + query.size();
 
-            ParserQuery parser(end);
+            ParserQuery parser(end, allow_settings_after_format_in_insert);
             do
             {
                 ASTPtr res = parseQueryAndMovePosition(

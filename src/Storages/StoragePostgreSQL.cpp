@@ -76,26 +76,26 @@ StoragePostgreSQL::StoragePostgreSQL(
 
 Pipe StoragePostgreSQL::read(
     const Names & column_names_,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info_,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,
     unsigned)
 {
-    metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names_);
 
     /// Connection is already made to the needed database, so it should not be present in the query;
     /// remote_table_schema is empty if it is not specified, will access only table_name.
     String query = transformQueryForExternalDatabase(
-        query_info_, metadata_snapshot->getColumns().getOrdinary(),
+        query_info_, storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
     for (const String & column_name : column_names_)
     {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
+        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         WhichDataType which(column_data.type);
         if (which.isEnum())
             column_data.type = std::make_shared<DataTypeString>();

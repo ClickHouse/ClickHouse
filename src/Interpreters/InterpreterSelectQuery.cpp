@@ -143,7 +143,7 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, metadata_snapshot));
+    auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot));
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
 
@@ -333,10 +333,28 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_id = storage->getStorageID();
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
+
+        storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr, context);
     }
 
     if (has_input || !joined_tables.resolveTables())
         joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
+
+
+    if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+    {
+        if (storage)
+            checkStorageSupportsTransactionsIfNeeded(storage, context);
+        for (const auto & table : joined_tables.tablesWithColumns())
+        {
+            if (table.table.table.empty())
+                continue;
+            auto maybe_storage = DatabaseCatalog::instance().tryGetTable({table.table.database, table.table.table}, context);
+            if (!maybe_storage)
+                continue;
+            checkStorageSupportsTransactionsIfNeeded(storage, context);
+        }
+    }
 
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
@@ -362,6 +380,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             table_lock.reset();
             table_id = StorageID::createEmpty();
             metadata_snapshot = nullptr;
+            storage_snapshot = nullptr;
         }
     }
 
@@ -400,7 +419,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
-            TreeRewriterResult(source_header.getNamesAndTypesList(), storage, metadata_snapshot),
+            TreeRewriterResult(source_header.getNamesAndTypesList(), storage, storage_snapshot),
             options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
@@ -521,7 +540,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 }
             }
 
-            source_header = metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID());
+            source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
         }
 
         /// Calculate structure of the result.
@@ -587,6 +606,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         analysis_result.required_columns = required_columns;
     }
 
+    if (query_info.projection)
+        storage_snapshot->addProjection(query_info.projection->desc);
+
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
@@ -647,10 +669,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         query_analyzer->makeSetsForIndex(query.where());
         query_analyzer->makeSetsForIndex(query.prewhere());
         query_info.sets = query_analyzer->getPreparedSets();
-    }
 
-    if (storage && !options.only_analyze)
-        from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info);
+        from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
+    }
 
     /// Do I need to perform the first part of the pipeline?
     /// Running on remote servers during distributed processing or if query is not distributed.
@@ -1257,10 +1278,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             }
 
             preliminary_sort();
-
-            // If there is no global subqueries, we can run subqueries only when receive them on server.
-            if (!query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
-                executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
         }
 
         if (expressions.second_stage || from_aggregation_stage)
@@ -1443,7 +1460,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         }
     }
 
-    if (!subqueries_for_sets.empty() && (expressions.hasHaving() || query_analyzer->hasGlobalSubqueries()))
+    if (!subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
 }
 
@@ -1744,7 +1761,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         }
 
         auto syntax_result
-            = TreeRewriter(context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, metadata_snapshot);
+            = TreeRewriter(context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, storage_snapshot);
         alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, context).getActionsDAG(true);
 
         /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
@@ -1810,7 +1827,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         const auto & func = desc.function;
         std::optional<UInt64> num_rows{};
 
-        if (!query.prewhere() && !query.where())
+        if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
         {
             num_rows = storage->totalRows(settings);
         }
@@ -1907,7 +1924,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset
         && limit_length + limit_offset < max_block_size)
     {
-        max_block_size = std::max(UInt64(1), limit_length + limit_offset);
+        max_block_size = std::max(UInt64{1}, limit_length + limit_offset);
         max_threads_execute_query = max_streams = 1;
     }
 
@@ -2020,7 +2037,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             quota = context->getQuota();
 
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
-        storage->read(query_plan, required_columns, metadata_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
+        storage->read(query_plan, required_columns, storage_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
 
         if (context->hasQueryContext() && !options.is_internal)
         {
@@ -2037,11 +2054,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
         {
-            auto header = query_info.projection
-                ? query_info.projection->desc->metadata->getSampleBlockForColumns(
-                    query_info.projection->required_columns, storage->getVirtuals(), storage->getStorageID())
-                : metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID());
-
+            auto header = storage_snapshot->getSampleBlockForColumns(required_columns);
             addEmptySourceToQueryPlan(query_plan, header, query_info, context);
         }
 
@@ -2105,6 +2118,12 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     const Settings & settings = context->getSettingsRef();
 
+    const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
+        query_ptr,
+        settings.collect_hash_table_stats_during_aggregation,
+        settings.max_entries_for_hash_table_stats,
+        settings.max_size_to_preallocate_for_aggregation);
+
     Aggregator::Params params(
         header_before_aggregation,
         keys,
@@ -2122,7 +2141,9 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         settings.max_threads,
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
-        settings.min_count_to_compile_aggregate_expression);
+        settings.min_count_to_compile_aggregate_expression,
+        Block{},
+        stats_collecting_params);
 
     SortDescription group_by_sort_description;
 
@@ -2263,10 +2284,6 @@ static bool windowDescriptionComparator(const WindowDescription * _left, const W
         if (left[i].column_name < right[i].column_name)
             return true;
         else if (left[i].column_name > right[i].column_name)
-            return false;
-        else if (left[i].column_number < right[i].column_number)
-            return true;
-        else if (left[i].column_number > right[i].column_number)
             return false;
         else if (left[i].direction < right[i].direction)
             return true;
@@ -2597,11 +2614,11 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, SubqueriesForSets & subqueries_for_sets)
 {
-    const auto & input_order_info = query_info.input_order_info
-        ? query_info.input_order_info
-        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
-    if (input_order_info)
-        executeMergeSorted(query_plan, input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
+    // const auto & input_order_info = query_info.input_order_info
+    //     ? query_info.input_order_info
+    //     : (query_info.projection ? query_info.projection->input_order_info : nullptr);
+    // if (input_order_info)
+    //     executeMergeSorted(query_plan, input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
 
     const Settings & settings = context->getSettingsRef();
 

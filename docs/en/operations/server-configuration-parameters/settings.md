@@ -1467,6 +1467,18 @@ The update is performed asynchronously, in a separate system thread.
 
 -   [background_schedule_pool_size](../../operations/settings/settings.md#background_schedule_pool_size)
 
+
+## dns_max_consecutive_failures {#server-settings-dns-max-consecutive-failures}
+
+The number of consecutive failures accepted when updating a DNS cache entry before it is dropped.
+Use `0` to disable cache dropping (entries will only be cleaned by `SYSTEM DROP DNS CACHE`)
+
+**Default value**: 5.
+
+**See also**
+
+-   [`SYSTEM DROP DNS CACHE`](../../sql-reference/statements/system.md#query_language-system-drop-dns-cache)
+
 ## distributed_ddl {#server-settings-distributed_ddl}
 
 Manage executing [distributed ddl queries](../../sql-reference/distributed-ddl.md)  (CREATE, DROP, ALTER, RENAME) on cluster.
@@ -1615,4 +1627,15 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
+
+## global_memory_usage_overcommit_max_wait_microseconds {#global_memory_usage_overcommit_max_wait_microseconds}
+
+Sets maximum waiting time for global overcommit tracker.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `0`.
+
 
