@@ -26,6 +26,7 @@ enum FormatVersion : UInt8
     FORMAT_WITH_DEDUPLICATE = 4,
     FORMAT_WITH_UUID = 5,
     FORMAT_WITH_DEDUPLICATE_BY_COLUMNS = 6,
+    FORMAT_WITH_LOG_ENTRY_ID = 7,
 
     FORMAT_LAST
 };
@@ -43,15 +44,27 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     if (new_part_uuid != UUIDHelpers::Nil)
         format_version = std::max<UInt8>(format_version, FORMAT_WITH_UUID);
 
+    if (!log_entry_id.empty())
+        format_version = std::max<UInt8>(format_version, FORMAT_WITH_LOG_ENTRY_ID);
+
     out << "format version: " << format_version << "\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
 
+    if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
+        out << "log_entry_id: " << escape << log_entry_id << '\n';
+
     switch (type)
     {
         case GET_PART:
             out << "get\n" << new_part_name;
+            break;
+
+        case CLONE_PART_FROM_SHARD:
+            out << "clone_part_from_shard\n"
+                << new_part_name << "\n"
+                << "source_shard: " << source_shard;
             break;
 
         case ATTACH_PART:
@@ -142,6 +155,10 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << metadata_str;
             break;
 
+        case SYNC_PINNED_PART_UUIDS:
+            out << "sync_pinned_part_uuids\n";
+            break;
+
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", static_cast<int>(type));
     }
@@ -181,6 +198,9 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     {
         in >> "block_id: " >> escape >> block_id >> "\n";
     }
+
+    if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
+        in >> "log_entry_id: " >> escape >> log_entry_id >> "\n";
 
     in >> type_str >> "\n";
 
@@ -306,6 +326,16 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         metadata_str.resize(metadata_size);
         in.readStrict(&metadata_str[0], metadata_size);
     }
+    else if (type_str == "sync_pinned_part_uuids")
+    {
+        type = SYNC_PINNED_PART_UUIDS;
+    }
+    else if (type_str == "clone_part_from_shard")
+    {
+        type = CLONE_PART_FROM_SHARD;
+        in >> new_part_name;
+        in >> "\nsource_shard: " >> source_shard;
+    }
 
     if (!trailing_newline_found)
         in >> "\n";
@@ -393,6 +423,34 @@ ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String
     return res;
 }
 
+std::optional<String> ReplicatedMergeTreeLogEntryData::getDropRange(MergeTreeDataFormatVersion format_version) const
+{
+    if (type == DROP_RANGE)
+        return new_part_name;
+
+    if (type == REPLACE_RANGE)
+    {
+        auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
+        if (!ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range_info))
+        {
+            /// It's REPLACE, not MOVE or ATTACH, so drop range is real
+            return replace_range_entry->drop_range_part_name;
+        }
+    }
+
+    return {};
+}
+
+bool ReplicatedMergeTreeLogEntryData::isDropPart(MergeTreeDataFormatVersion format_version) const
+{
+    if (type == DROP_RANGE)
+    {
+        auto drop_range_info = MergeTreePartInfo::fromPartName(new_part_name, format_version);
+        return !drop_range_info.isFakeDropRangePart();
+    }
+    return false;
+}
+
 Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormatVersion format_version) const
 {
     /// Doesn't produce any part
@@ -401,23 +459,47 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
 
     /// DROP_RANGE does not add a real part, but we must disable merges in that range
     if (type == DROP_RANGE)
-        return {new_part_name};
+    {
+        auto drop_range_part_info = MergeTreePartInfo::fromPartName(new_part_name, format_version);
 
-    /// CLEAR_COLUMN and CLEAR_INDEX are deprecated since 20.3
-    if (type == CLEAR_COLUMN || type == CLEAR_INDEX)
-        return {};
+        /// It's DROP PART and we don't want to add it into virtual parts
+        /// because it can lead to intersecting parts on stale replicas and this
+        /// problem is fundamental. So we have very weak guarantees for DROP
+        /// PART. If any concurrent merge will be assigned then DROP PART will
+        /// delete nothing and part will be successfully merged into bigger part.
+        ///
+        /// dropPart used in the following cases:
+        /// 1) Remove empty parts after TTL.
+        /// 2) Remove parts after move between shards.
+        /// 3) User queries: ALTER TABLE DROP PART 'part_name'.
+        ///
+        /// In the first case merge of empty part is even better than DROP. In
+        /// the second case part UUIDs used to forbid merges for moding parts so
+        /// there is no problem with concurrent merges. The third case is quite
+        /// rare and we give very weak guarantee: there will be no active part
+        /// with this name, but possibly it was merged to some other part.
+        if (!drop_range_part_info.isFakeDropRangePart())
+            return {};
+
+        return {new_part_name};
+    }
 
     if (type == REPLACE_RANGE)
     {
         Strings res = replace_range_entry->new_part_names;
         auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
-        if (!ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range_info))
-        {
-            /// It's REPLACE, not MOVE or ATTACH, so drop range is real
-            res.emplace_back(replace_range_entry->drop_range_part_name);
-        }
+        if (auto drop_range = getDropRange(format_version))
+            res.emplace_back(*drop_range);
         return res;
     }
+
+    /// Doesn't produce any part.
+    if (type == SYNC_PINNED_PART_UUIDS)
+        return {};
+
+    /// Doesn't produce any part by itself.
+    if (type == CLONE_PART_FROM_SHARD)
+        return {};
 
     return {new_part_name};
 }

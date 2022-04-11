@@ -76,14 +76,14 @@ ClickHouse不会自动从表中删除数据。更多详情请看 [introduction](
 -   `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — [clickhouse-client](../../interfaces/cli.md) 或其他TCP客户端的Patch component。
 -   `http_method` (UInt8) — 发起查询的HTTP方法. 可能值:
     -   0 — TCP接口的查询.
-    -   1 — `GET` 
+    -   1 — `GET`
     -   2 — `POST`
 -   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` The UserAgent header passed in the HTTP request。
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — 在[quotas](../../operations/quotas.md) 配置里设置的“quota key” （见 `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
--   `thread_numbers` ([Array(UInt32)](../../sql-reference/data-types/array.md)) — 参与查询的线程数.
--   `ProfileEvents.Names` ([Array（String)](../../sql-reference/data-types/array.md)) — 衡量不同指标的计数器。 可以在[system.events](../../operations/system-tables/events.md#system_tables-events)中找到它们的描述。
--   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — `ProfileEvents.Names` 列中列出的指标的值。
+-   `ProfileEvents` ([Map(String, UInt64))](../../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [系统。活动](../../operations/system-tables/events.md#system_tables-events)
+-   `Settings` ([Map(String, String)](../../sql-reference/data-types/array.md)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` 参数为1。
+-   `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — 参与查询的线程数.
 -   `Settings.Names` ([Array（String)](../../sql-reference/data-types/array.md)) — 客户端运行查询时更改的设置的名称。 要启用对设置的日志记录更改，请将log_query_settings参数设置为1。
 -   `Settings.Values` ([Array（String)](../../sql-reference/data-types/array.md)) — `Settings.Names` 列中列出的设置的值。
 **示例**
@@ -133,10 +133,8 @@ http_user_agent:
 quota_key:
 revision:             54434
 thread_ids:           []
-ProfileEvents.Names:  []
-ProfileEvents.Values: []
-Settings.Names:       ['use_uncompressed_cache','load_balancing','log_queries','max_memory_usage']
-Settings.Values:      ['0','random','1','10000000000']
+ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
+Settings:             {'background_pool_size':'32','load_balancing':'random','allow_suspicious_low_cardinality_types':'1','distributed_aggregation_memory_efficient':'1','skip_unavailable_shards':'1','log_queries':'1','max_bytes_before_external_group_by':'20000000000','max_bytes_before_external_sort':'20000000000','allow_introspection_functions':'1'}
 ```
 
 **另请参阅**

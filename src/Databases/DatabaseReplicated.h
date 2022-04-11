@@ -4,8 +4,7 @@
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <DataStreams/BlockIO.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context.h>
 
 
@@ -47,8 +46,12 @@ public:
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context);
 
-    void stopReplication();
+    bool hasReplicationThread() const override { return true; }
 
+    void stopReplication() override;
+
+    String getShardName() const { return shard_name; }
+    String getReplicaName() const { return replica_name; }
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
@@ -57,7 +60,12 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    void loadStoredObjects(ContextPtr context, bool has_force_restore_data_flag, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+
+    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
+
+    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+
     void shutdown() override;
 
     friend struct DatabaseReplicatedTask;
@@ -66,6 +74,16 @@ private:
     void tryConnectToZooKeeperAndInitDatabase(bool force_attach);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
+
+    struct
+    {
+        String cluster_username{"default"};
+        String cluster_password;
+        String cluster_secret;
+        bool cluster_secure_connection{false};
+    } cluster_auth_info;
+
+    void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
 
@@ -78,7 +96,7 @@ private:
     ClusterPtr getClusterImpl() const;
     void setCluster(ClusterPtr && new_cluster);
 
-    void createEmptyLogEntry(Coordination::Requests & ops, const ZooKeeperPtr & current_zookeeper);
+    void createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper);
 
     String zookeeper_path;
     String shard_name;
@@ -90,6 +108,7 @@ private:
 
     std::atomic_bool is_readonly = true;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
+    UInt32 max_log_ptr_at_creation = 0;
 
     mutable ClusterPtr cluster;
 };

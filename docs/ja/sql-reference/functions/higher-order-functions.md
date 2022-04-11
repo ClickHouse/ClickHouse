@@ -261,4 +261,4 @@ SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 
 詳細については、 `arrayReverseSort` 方法は、参照してください [配列を操作するための関数](array-functions.md#array_functions-reverse-sort) セクション
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/higher_order_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/higher_order_functions/) <!--hide-->

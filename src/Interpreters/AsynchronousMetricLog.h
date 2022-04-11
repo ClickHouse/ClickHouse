@@ -3,6 +3,8 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 
 #include <vector>
 #include <atomic>
@@ -12,8 +14,8 @@
 namespace DB
 {
 
-typedef double AsynchronousMetricValue;
-typedef std::unordered_map<std::string, AsynchronousMetricValue> AsynchronousMetricValues;
+using AsynchronousMetricValue = double;
+using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
 /** AsynchronousMetricLog is a log of metric values measured at regular time interval.
   */
@@ -27,7 +29,8 @@ struct AsynchronousMetricLogElement
     double value;
 
     static std::string name() { return "AsynchronousMetricLog"; }
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
 

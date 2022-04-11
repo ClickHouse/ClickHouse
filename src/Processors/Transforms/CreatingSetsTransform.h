@@ -1,10 +1,11 @@
 #pragma once
 
-#include <DataStreams/SizeLimits.h>
-#include <DataStreams/IBlockStream_fwd.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Common/Stopwatch.h>
 
 #include <Poco/Logger.h>
@@ -15,6 +16,8 @@ namespace DB
 class QueryStatus;
 struct Progress;
 using ProgressCallback = std::function<void(const Progress & progress)>;
+
+class PushingPipelineExecutor;
 
 /// This processor creates set during execution.
 /// Don't return any data. Sets are created when Finish status is returned.
@@ -30,6 +33,8 @@ public:
         SizeLimits network_transfer_limits_,
         ContextPtr context_);
 
+    ~CreatingSetsTransform() override;
+
     String getName() const override { return "CreatingSetsTransform"; }
 
     void work() override;
@@ -39,7 +44,8 @@ public:
 private:
     SubqueryForSet subquery;
 
-    BlockOutputStreamPtr table_out;
+    QueryPipeline table_out;
+    std::unique_ptr<PushingPipelineExecutor> executor;
     UInt64 read_rows = 0;
     Stopwatch watch;
 

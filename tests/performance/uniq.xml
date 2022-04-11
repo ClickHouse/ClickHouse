@@ -1,11 +1,9 @@
 <test>
-
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
+        <table_exists>hits_10m_single</table_exists>
         <ram_size>30000000000</ram_size>
     </preconditions>
-
-
 
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
@@ -36,7 +34,7 @@
                <value>SearchPhrase</value>
                <value>ClientIP</value>
            </values>
-       </substitution>
+        </substitution>
         <substitution>
            <name>func</name>
            <values>
@@ -61,4 +59,5 @@
     </substitutions>
 
     <query>SELECT {key} AS k, {func}(UserID) FROM hits_100m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT {key} AS k, uniqTheta(UserID) FROM hits_10m_single GROUP BY k FORMAT Null</query>
 </test>

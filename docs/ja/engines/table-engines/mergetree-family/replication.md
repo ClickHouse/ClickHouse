@@ -14,7 +14,7 @@ toc_title: "\u30C7\u30FC\u30BF\u8907\u88FD"
 -   レプリケートリプレースマージツリー
 -   複製された集合マージツリー
 -   レプリケートコラプシングマージツリー
--   ReplicatedVersionedCollapsingMergetree
+-   ReplicatedVersionedCollapsingMergeTree
 -   レプリケートグラフィティマージツリー
 
 複製の作品のレベルを個別のテーブルではなく、全体のサーバーです。 サーバーでの店舗も複製、非複製のテーブルでも同時に行います。
@@ -215,4 +215,4 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 ZooKeeperのデータが紛失または破損している場合は、上記のように再生されていないテーブルに移動することでデータを保存できます。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/replication/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->

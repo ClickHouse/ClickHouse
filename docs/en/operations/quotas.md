@@ -72,7 +72,7 @@ The resource consumption calculated for each interval is output to the server lo
 </statbox>
 ```
 
-For the ‘statbox’ quota, restrictions are set for every hour and for every 24 hours (86,400 seconds). The time interval is counted, starting from an implementation-defined fixed moment in time. In other words, the 24-hour interval doesn’t necessarily begin at midnight.
+For the ‘statbox’ quota, restrictions are set for every hour and for every 24 hours (86,400 seconds). The time interval is counted, starting from an implementation-defined fixed moment in time. In other words, the 24-hour interval does not necessarily begin at midnight.
 
 When the interval ends, all collected values are cleared. For the next hour, the quota calculation starts over.
 
@@ -101,7 +101,7 @@ Quotas can use the “quota key” feature to report on resources for multiple k
 <web_global>
     <!-- keyed – The quota_key "key" is passed in the query parameter,
             and the quota is tracked separately for each key value.
-        For example, you can pass a Yandex.Metrica username as the key,
+        For example, you can pass a username of your service as the key,
             so the quota will be counted separately for each username.
         Using keys makes sense only if quota_key is transmitted by the program, not by a user.
 
@@ -117,4 +117,4 @@ For distributed query processing, the accumulated amounts are stored on the requ
 
 When the server is restarted, quotas are reset.
 
-[Original article](https://clickhouse.tech/docs/en/operations/quotas/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/quotas/) <!--hide-->

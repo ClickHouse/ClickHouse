@@ -8,7 +8,7 @@
 #include <vector>
 
 #include <hdfs/hdfs.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <mutex>
 
 #include <Interpreters/Context.h>
@@ -67,7 +67,7 @@ public:
     hdfsBuilder * get() { return hdfs_builder; }
 
 private:
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool isUser = false);
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool isUser = false);
 
     String getKinitCmd();
 
@@ -97,6 +97,14 @@ using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsD
 /// TODO Allow to tune from query Settings.
 HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder);
+
+
+String getNameNodeUrl(const String & hdfs_url);
+String getNameNodeCluster(const String & hdfs_url);
+
+/// Check that url satisfy structure 'hdfs://<host_name>:<port>/<path>'
+/// and throw exception if it doesn't;
+void checkHDFSURL(const String & url);
 
 }
 #endif

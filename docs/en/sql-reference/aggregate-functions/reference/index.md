@@ -35,6 +35,7 @@ ClickHouse-specific aggregate functions:
 -   [groupArrayInsertAt](../../../sql-reference/aggregate-functions/reference/grouparrayinsertat.md)
 -   [groupArrayMovingAvg](../../../sql-reference/aggregate-functions/reference/grouparraymovingavg.md)
 -   [groupArrayMovingSum](../../../sql-reference/aggregate-functions/reference/grouparraymovingsum.md)
+-   [groupArraySorted](../../../sql-reference/aggregate-functions/reference/grouparraysorted.md)
 -   [groupBitAnd](../../../sql-reference/aggregate-functions/reference/groupbitand.md)
 -   [groupBitOr](../../../sql-reference/aggregate-functions/reference/groupbitor.md)
 -   [groupBitXor](../../../sql-reference/aggregate-functions/reference/groupbitxor.md)
@@ -66,9 +67,11 @@ ClickHouse-specific aggregate functions:
 -   [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md)
 -   [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md)
 -   [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md)
+-   [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16)
+-   [quantileBFloat16Weighted](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16weighted)
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->

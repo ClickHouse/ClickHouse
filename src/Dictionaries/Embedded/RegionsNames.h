@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 #include <Poco/Exception.h>
-#include <common/StringRef.h>
-#include <common/types.h>
+#include <base/StringRef.h>
+#include <base/types.h>
 #include "GeodataProviders/INamesProvider.h"
 
 
@@ -40,7 +40,7 @@ class RegionsNames
 public:
     enum class Language : size_t
     {
-        #define M(NAME, FALLBACK, NUM) NAME = NUM,
+        #define M(NAME, FALLBACK, NUM) NAME = (NUM),
         FOR_EACH_LANGUAGE(M)
     #undef M
     };
@@ -78,7 +78,7 @@ private:
 
     static std::string dumpSupportedLanguagesNames();
 public:
-    RegionsNames(IRegionsNamesDataProviderPtr data_provider);
+    explicit RegionsNames(IRegionsNamesDataProviderPtr data_provider);
 
     StringRef getRegionName(RegionID region_id, Language language) const
     {
@@ -104,7 +104,7 @@ public:
         #define M(NAME, FALLBACK, NUM) \
             if (0 == language.compare(#NAME)) \
                 return Language::NAME;
-        FOR_EACH_LANGUAGE(M)
+        FOR_EACH_LANGUAGE(M) /// NOLINT
         #undef M
         throw Poco::Exception("Unsupported language for region name. Supported languages are: " + dumpSupportedLanguagesNames() + ".");
     }

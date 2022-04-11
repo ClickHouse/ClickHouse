@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <grpc_port>9100</grpc_port>
     <grpc replace="replace">
         <enable_ssl>true</enable_ssl>
@@ -24,4 +24,4 @@
         <!-- Enable if you want very detailed logs -->
         <verbose_logs>false</verbose_logs>
     </grpc>
-</yandex>
+</clickhouse>

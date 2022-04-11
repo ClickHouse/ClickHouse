@@ -1,7 +1,6 @@
 #include <DataTypes/Serializations/SerializationString.h>
 
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -9,8 +8,6 @@
 #include <Core/Field.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -245,7 +242,7 @@ static inline void read(IColumn & column, Reader && reader)
 
 void SerializationString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(column, [&](ColumnString::Chars & data) { readStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars & data) { readStringUntilEOFInto(data, istr); });
 }
 
 

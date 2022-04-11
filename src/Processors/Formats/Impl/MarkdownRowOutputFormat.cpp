@@ -55,9 +55,9 @@ void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerializ
     serialization.serializeTextEscaped(column, row_num, out, format_settings);
 }
 
-void registerOutputFormatProcessorMarkdown(FormatFactory & factory)
+void registerOutputFormatMarkdown(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("Markdown", [](
+    factory.registerOutputFormat("Markdown", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -65,6 +65,9 @@ void registerOutputFormatProcessorMarkdown(FormatFactory & factory)
     {
         return std::make_shared<MarkdownRowOutputFormat>(buf, sample, params, settings);
     });
+
+    factory.markOutputFormatSupportsParallelFormatting("Markdown");
+    factory.registerFileExtension("md", "Markdown");
 }
 
 }

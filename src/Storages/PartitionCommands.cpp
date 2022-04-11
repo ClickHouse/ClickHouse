@@ -2,11 +2,10 @@
 #include <Storages/IStorage.h>
 #include <Storages/DataDestinationType.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Chunk.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 
@@ -17,7 +16,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
 
 std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * command_ast)
 {
@@ -65,8 +63,11 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
                 res.to_database = command_ast->to_database;
                 res.to_table = command_ast->to_table;
                 break;
-            default:
+            case DataDestinationType::SHARD:
+                res.move_destination_type = PartitionCommand::MoveDestinationType::SHARD;
                 break;
+            case DataDestinationType::DELETE:
+                throw Exception("ALTER with this destination type is not handled. This is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
         if (res.move_destination_type != PartitionCommand::MoveDestinationType::TABLE)
             res.move_destination_name = command_ast->move_destination_name;

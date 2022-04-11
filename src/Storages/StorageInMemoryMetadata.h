@@ -28,7 +28,8 @@ struct StorageInMemoryMetadata
     ConstraintsDescription constraints;
     /// Table projections. Currently supported for MergeTree only.
     ProjectionsDescription projections;
-    mutable const ProjectionDescription * selected_projection{};
+    /// Table minmax_count projection. Currently supported for MergeTree only.
+    std::optional<ProjectionDescription> minmax_count_projection;
     /// PARTITION BY expression. Currently supported for MergeTree only.
     KeyDescription partition_key;
     /// PRIMARY KEY expression. If absent, than equal to order_by_ast.
@@ -42,7 +43,7 @@ struct StorageInMemoryMetadata
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
     TTLTableDescription table_ttl;
-    /// SETTINGS expression. Supported for MergeTree, Buffer and Kafka.
+    /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
     /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
@@ -53,6 +54,9 @@ struct StorageInMemoryMetadata
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
+
+    StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default;
+    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default;
 
     /// NOTE: Thread unsafe part. You should modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
@@ -108,6 +112,7 @@ struct StorageInMemoryMetadata
     const ConstraintsDescription & getConstraints() const;
 
     const ProjectionsDescription & getProjections() const;
+
     /// Has at least one projection
     bool hasProjections() const;
 
@@ -144,10 +149,13 @@ struct StorageInMemoryMetadata
 
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const;
 
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
+
+    /// Block with ordinary + ephemeral.
+    Block getSampleBlockInsertable() const;
 
     /// Block with ordinary columns.
     Block getSampleBlockNonMaterialized() const;
@@ -157,13 +165,6 @@ struct StorageInMemoryMetadata
     /// Storage metadata.
     Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
 
-
-    /// Block with ordinary + materialized + aliases + virtuals. Virtuals have
-    /// to be explicitly specified, because they are part of Storage type, not
-    /// Storage metadata. StorageID required only for more clear exception
-    /// message.
-    Block getSampleBlockForColumns(
-        const Names & column_names, const NamesAndTypesList & virtuals = {}, const StorageID & storage_id = StorageID::createEmpty()) const;
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
@@ -226,10 +227,6 @@ struct StorageInMemoryMetadata
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
 
-    /// Verify that all the requested names are in the table and are set correctly:
-    /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
-
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;
 
@@ -244,5 +241,7 @@ struct StorageInMemoryMetadata
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MultiVersionStorageMetadataPtr = MultiVersion<StorageInMemoryMetadata>;
+
+String listOfColumns(const NamesAndTypesList & available_columns);
 
 }

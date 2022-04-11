@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 SELECT 'distributed_group_by_no_merge=1';
 SELECT count(), uniq(dummy) FROM remote('127.0.0.{2,3}', system.one) SETTINGS distributed_group_by_no_merge=1;
 SELECT count(), uniq(dummy) FROM remote('127.0.0.{2,3,4,5}', system.one) SETTINGS distributed_group_by_no_merge=1;
@@ -38,5 +40,8 @@ SELECT n FROM remote('127.0.0.{2,3}', currentDatabase(), data_00184) GROUP BY nu
 
 SELECT 'ORDER BY w/ ALIAS';
 SELECT n FROM remote('127.0.0.{2,3}', currentDatabase(), data_00184) ORDER BY number AS n LIMIT 1 SETTINGS distributed_group_by_no_merge=2;
+
+SELECT 'func(aggregate function) GROUP BY';
+SELECT assumeNotNull(argMax(dummy, 1)) FROM remote('127.1', system.one) SETTINGS distributed_group_by_no_merge=2;
 
 drop table data_00184;

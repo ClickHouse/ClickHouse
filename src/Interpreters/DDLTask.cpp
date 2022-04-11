@@ -1,4 +1,5 @@
 #include <Interpreters/DDLTask.h>
+#include <base/sort.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 #include <IO/WriteHelpers.h>
@@ -6,13 +7,14 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
+
 
 namespace DB
 {
@@ -22,6 +24,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
+    extern const int LOGICAL_ERROR;
 }
 
 HostID HostID::fromString(const String & host_port_str)
@@ -139,13 +142,14 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 {
     const char * begin = entry.query.data();
     const char * end = begin + entry.query.size();
+    const auto & settings = context->getSettingsRef();
 
-    ParserQuery parser_query(end);
+    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, context->getSettingsRef().max_parser_depth);
+    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
 }
 
-ContextPtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
+ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
 {
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
@@ -200,7 +204,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
 
     if (!cluster)
         throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                        "DDL task {} contains current host {} in cluster {}, but there are no such cluster here.",
+                        "DDL task {} contains current host {} in cluster {}, but there is no such cluster here.",
                         entry_name, host_id.readableString(), cluster_name);
 
     /// Try to find host from task host list in cluster
@@ -256,13 +260,17 @@ bool DDLTask::tryFindHostInCluster()
                          * */
                         is_circular_replicated = true;
                         auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
-                        if (!query_with_table || query_with_table->database.empty())
+
+                        /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
+                        if (query_with_table)
                         {
-                            throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                            "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
+                            if (!query_with_table->database)
+                                throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
+                                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
+
+                            if (default_database == query_with_table->getDatabase())
+                                return true;
                         }
-                        if (default_database == query_with_table->database)
-                            return true;
                     }
                 }
                 found_exact_match = true;
@@ -323,7 +331,7 @@ String DDLTask::getShardID() const
     Strings replica_names;
     for (const Cluster::Address & address : shard_addresses)
         replica_names.emplace_back(address.readableString());
-    std::sort(replica_names.begin(), replica_names.end());
+    ::sort(replica_names.begin(), replica_names.end());
 
     String res;
     for (auto it = replica_names.begin(); it != replica_names.end(); ++it)
@@ -350,18 +358,19 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
     if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
     {
         /// Update database name with actual name of local database
-        assert(ddl_query->database.empty());
-        ddl_query->database = database->getDatabaseName();
+        assert(!ddl_query->database);
+        ddl_query->setDatabase(database->getDatabaseName());
     }
 }
 
-ContextPtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
+ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    query_context->getClientInfo().is_replicated_database_internal = true;
     query_context->setCurrentDatabase(database->getDatabaseName());
 
-    auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query);
+    auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);
     query_context->initZooKeeperMetadataTransaction(txn);
 
     if (is_initial_query)
@@ -382,12 +391,7 @@ ContextPtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, con
 
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 {
-    /// Sequential counter in ZooKeeper is Int32.
-    assert(log_entry_number < std::numeric_limits<Int32>::max());
-    constexpr size_t seq_node_digits = 10;
-    String number = toString(log_entry_number);
-    String name = "query-" + String(seq_node_digits - number.size(), '0') + number;
-    return name;
+    return zkutil::getSequentialNodeName("query-", log_entry_number);
 }
 
 UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
@@ -401,7 +405,8 @@ UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
 
 void ZooKeeperMetadataTransaction::commit()
 {
-    assert(state == CREATED);
+    if (state != CREATED)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state ({}), it's a bug", state);
     state = FAILED;
     current_zookeeper->multi(ops);
     state = COMMITTED;

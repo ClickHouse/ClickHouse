@@ -2,10 +2,13 @@
 #include <AggregateFunctions/AggregateFunctionSumCount.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include "registerAggregateFunctions.h"
+
 
 namespace DB
 {
+
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -19,7 +22,8 @@ bool allowType(const DataTypePtr& type) noexcept
     return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal();
 }
 
-AggregateFunctionPtr createAggregateFunctionSumCount(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr
+createAggregateFunctionSumCount(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);

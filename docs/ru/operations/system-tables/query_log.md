@@ -24,6 +24,10 @@ ClickHouse не удаляет данные из таблица автомати
 2.  Если во время обработки запроса возникла ошибка, создаются два события с типами `QueryStart` и `ExceptionWhileProcessing`.
 3.  Если ошибка произошла ещё до запуска запроса, создается одно событие с типом `ExceptionBeforeStart`.
 
+Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_log`, вы можете использовать настройку [log_queries_probability](../../operations/settings/settings.md#log-queries-probability).
+
+Чтобы регистрировать отформатированные запросы в столбце `formatted_query`, вы можете использовать настройку [log_formatted_queries](../../operations/settings/settings.md#settings-log-formatted-queries).
+
 Столбцы:
 
 -   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — тип события, произошедшего при выполнении запроса. Значения:
@@ -46,11 +50,14 @@ ClickHouse не удаляет данные из таблица автомати
 -   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — потребление RAM запросом.
 -   `current_database` ([String](../../sql-reference/data-types/string.md)) — имя текущей базы данных.
 -   `query` ([String](../../sql-reference/data-types/string.md)) — текст запроса.
+-   `formatted_query` ([String](../../sql-reference/data-types/string.md)) — текст отформатированного запроса.
 -   `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — идентичная хэш-сумма без значений литералов для аналогичных запросов.
 -   `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — тип запроса.
 -   `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена баз данных, присутствующих в запросе.
 -   `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена таблиц, присутствующих в запросе.
+-   `views` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена представлений (материализованные или live), которые представленны в запросе.
 -   `columns` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена столбцов, присутствующих в запросе.
+-   `projections` ([String](../../sql-reference/data-types/string.md)) — имена проекций, использованных при выполнении запроса.
 -   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — код исключения.
 -   `exception` ([String](../../sql-reference/data-types/string.md)) — сообщение исключения, если запрос завершился по исключению.
 -   `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [stack trace](https://en.wikipedia.org/wiki/Stack_trace). Пустая строка, если запрос успешно завершен.
@@ -65,6 +72,8 @@ ClickHouse не удаляет данные из таблица автомати
 -   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID родительского запроса.
 -   `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого пришел родительский запрос.
 -   `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт, с которого клиент сделал родительский запрос.
+-   `initial_query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время начала обработки запроса (для распределенных запросов).
+-   `initial_query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время начала обработки запроса с точностью до микросекунд (для распределенных запросов).
 -   `interface` ([UInt8](../../sql-reference/data-types/int-uint.md)) — интерфейс, с которого ушёл запрос. Возможные значения:
     -   1 — TCP.
     -   2 — HTTP.
@@ -84,12 +93,10 @@ ClickHouse не удаляет данные из таблица автомати
 -   `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — HTTP заголовок `X-Forwarded-For`.
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — `ключ квоты` из настроек [квот](quotas.md) (см. `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(#system_tables-events
+-   `Settings` ([Map(String, String)](../../sql-reference/data-types/array.md)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
 -   `log_comment` ([String](../../sql-reference/data-types/string.md)) — комментарий к записи в логе. Представляет собой произвольную строку, длина которой должна быть не больше, чем [max_query_size](../../operations/settings/settings.md#settings-max_query_size). Если нет комментария, то пустая строка.
 -   `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — идентификаторы потоков, участвующих в обработке запросов.
--   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(#system_tables-events
--   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
--   `Settings.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
--   `Settings.Values` ([Array(String)](../../sql-reference/data-types/array.md)) — значения настроек, которые перечислены в столбце `Settings.Names`.
 -   `used_aggregate_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `агрегатных функций`, использованных при выполнении запроса.
 -   `used_aggregate_function_combinators` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `комбинаторов агрегатных функций`, использованных при выполнении запроса.
 -   `used_database_engines` ([Array(String)](../../sql-reference/data-types/array.md)) — канонические имена `движков баз данных`, использованных при выполнении запроса.
@@ -103,78 +110,79 @@ ClickHouse не удаляет данные из таблица автомати
 **Пример**
 
 ``` sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' AND (query LIKE '%toDate(\'2000-12-05\')%') ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
 ```
 
 ``` text
 Row 1:
 ──────
-type:                                QueryFinish
-event_date:                          2021-03-18
-event_time:                          2021-03-18 20:54:18
-event_time_microseconds:             2021-03-18 20:54:18.676686
-query_start_time:                    2021-03-18 20:54:18
-query_start_time_microseconds:       2021-03-18 20:54:18.673934
-query_duration_ms:                   2
-read_rows:                           100
-read_bytes:                          800
-written_rows:                        0
-written_bytes:                       0
-result_rows:                         2
-result_bytes:                        4858
-memory_usage:                        0
-current_database:                    default
-query:                               SELECT uniqArray([1, 1, 2]), SUBSTRING('Hello, world', 7, 5), flatten([[[BIT_AND(123)]], [[mod(3, 2)], [CAST('1' AS INTEGER)]]]), week(toDate('2000-12-05')), CAST(arrayJoin([NULL, NULL]) AS Nullable(TEXT)), avgOrDefaultIf(number, number % 2), sumOrNull(number), toTypeName(sumOrNull(number)), countIf(toDate('2000-12-05') + number as d, toDayOfYear(d) % 2) FROM numbers(100)
-normalized_query_hash:               17858008518552525706
-query_kind:                          Select
-databases:                           ['_table_function']
-tables:                              ['_table_function.numbers']
-columns:                             ['_table_function.numbers.number']
-exception_code:                      0
+type:                                  QueryFinish
+event_date:                            2021-11-03
+event_time:                            2021-11-03 16:13:54
+event_time_microseconds:               2021-11-03 16:13:54.953024
+query_start_time:                      2021-11-03 16:13:54
+query_start_time_microseconds:         2021-11-03 16:13:54.952325
+query_duration_ms:                     0
+read_rows:                             69
+read_bytes:                            6187
+written_rows:                          0
+written_bytes:                         0
+result_rows:                           69
+result_bytes:                          48256
+memory_usage:                          0
+current_database:                      default
+query:                                 DESCRIBE TABLE system.query_log
+formatted_query:
+normalized_query_hash:                 8274064835331539124
+query_kind:
+databases:                             []
+tables:                                []
+columns:                               []
+projections:                           []
+views:                                 []
+exception_code:                        0
 exception:
 stack_trace:
-is_initial_query:                    1
-user:                                default
-query_id:                            58f3d392-0fa0-4663-ae1d-29917a1a9c9c
-address:                             ::ffff:127.0.0.1
-port:                                37486
-initial_user:                        default
-initial_query_id:                    58f3d392-0fa0-4663-ae1d-29917a1a9c9c
-initial_address:                     ::ffff:127.0.0.1
-initial_port:                        37486
-interface:                           1
-os_user:                             sevirov
-client_hostname:                     clickhouse.ru-central1.internal
-client_name:                         ClickHouse
-client_revision:                     54447
-client_version_major:                21
-client_version_minor:                4
-client_version_patch:                1
-http_method:                         0
+is_initial_query:                      1
+user:                                  default
+query_id:                              7c28bbbb-753b-4eba-98b1-efcbe2b9bdf6
+address:                               ::ffff:127.0.0.1
+port:                                  40452
+initial_user:                          default
+initial_query_id:                      7c28bbbb-753b-4eba-98b1-efcbe2b9bdf6
+initial_address:                       ::ffff:127.0.0.1
+initial_port:                          40452
+initial_query_start_time:              2021-11-03 16:13:54
+initial_query_start_time_microseconds: 2021-11-03 16:13:54.952325
+interface:                             1
+os_user:                               sevirov
+client_hostname:                       clickhouse.ru-central1.internal
+client_name:                           ClickHouse
+client_revision:                       54449
+client_version_major:                  21
+client_version_minor:                  10
+client_version_patch:                  1
+http_method:                           0
 http_user_agent:
 http_referer:
 forwarded_for:
 quota_key:
-revision:                            54449
+revision:                              54456
 log_comment:
-thread_ids:                          [587,11939]
-ProfileEvents.Names:                 ['Query','SelectQuery','ReadCompressedBytes','CompressedReadBufferBlocks','CompressedReadBufferBytes','IOBufferAllocs','IOBufferAllocBytes','ArenaAllocChunks','ArenaAllocBytes','FunctionExecute','TableFunctionExecute','NetworkSendElapsedMicroseconds','SelectedRows','SelectedBytes','ContextLock','RWLockAcquiredReadLocks','RealTimeMicroseconds','UserTimeMicroseconds','SystemTimeMicroseconds','SoftPageFaults','OSCPUVirtualTimeMicroseconds','OSWriteBytes']
-ProfileEvents.Values:                [1,1,36,1,10,2,1048680,1,4096,36,1,110,100,800,77,1,3137,1476,1101,8,2577,8192]
-Settings.Names:                      ['load_balancing','max_memory_usage']
-Settings.Values:                     ['random','10000000000']
-used_aggregate_functions:            ['groupBitAnd','avg','sum','count','uniq']
-used_aggregate_function_combinators: ['OrDefault','If','OrNull','Array']
-used_database_engines:               []
-used_data_type_families:             ['String','Array','Int32','Nullable']
-used_dictionaries:                   []
-used_formats:                        []
-used_functions:                      ['toWeek','CAST','arrayFlatten','toTypeName','toDayOfYear','addDays','array','toDate','modulo','substring','plus']
-used_storages:                       []
-used_table_functions:                ['numbers']
+thread_ids:                            [30776,31174]
+ProfileEvents:                         {'Query':1,'NetworkSendElapsedMicroseconds':59,'NetworkSendBytes':2643,'SelectedRows':69,'SelectedBytes':6187,'ContextLock':9,'RWLockAcquiredReadLocks':1,'RealTimeMicroseconds':817,'UserTimeMicroseconds':427,'SystemTimeMicroseconds':212,'OSCPUVirtualTimeMicroseconds':639,'OSReadChars':894,'OSWriteChars':319}
+Settings:                              {'load_balancing':'random','max_memory_usage':'10000000000'}
+used_aggregate_functions:              []
+used_aggregate_function_combinators:   []
+used_database_engines:                 []
+used_data_type_families:               []
+used_dictionaries:                     []
+used_formats:                          []
+used_functions:                        []
+used_storages:                         []
+used_table_functions:                  []
 ```
 
-**Смотрите также**
+**См. также**
 
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/query_log) <!--hide-->

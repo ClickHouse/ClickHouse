@@ -4,8 +4,14 @@
 namespace DB
 {
 
-ReadBufferFromFileDecorator::ReadBufferFromFileDecorator(std::unique_ptr<ReadBufferFromFileBase> impl_)
-    : impl(std::move(impl_))
+ReadBufferFromFileDecorator::ReadBufferFromFileDecorator(std::unique_ptr<SeekableReadBuffer> impl_)
+    : ReadBufferFromFileDecorator(std::move(impl_), "")
+{
+}
+
+
+ReadBufferFromFileDecorator::ReadBufferFromFileDecorator(std::unique_ptr<SeekableReadBuffer> impl_, const String & file_name_)
+    : impl(std::move(impl_)), file_name(file_name_)
 {
     swap(*impl);
 }
@@ -13,7 +19,11 @@ ReadBufferFromFileDecorator::ReadBufferFromFileDecorator(std::unique_ptr<ReadBuf
 
 std::string ReadBufferFromFileDecorator::getFileName() const
 {
-    return impl->getFileName();
+    if (!file_name.empty())
+        return file_name;
+    if (ReadBufferFromFileBase * buffer = dynamic_cast<ReadBufferFromFileBase *>(impl.get()))
+        return buffer->getFileName();
+    return std::string();
 }
 
 

@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <max_execution_time>10</max_execution_time>
@@ -17,4 +17,4 @@
             </constraints>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

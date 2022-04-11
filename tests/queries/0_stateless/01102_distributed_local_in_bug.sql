@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 DROP TABLE IF EXISTS hits;
 DROP TABLE IF EXISTS visits;
 DROP TABLE IF EXISTS hits_layer;

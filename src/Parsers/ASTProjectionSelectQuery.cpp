@@ -1,3 +1,4 @@
+#include <IO/Operators.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -37,20 +38,12 @@ ASTPtr ASTProjectionSelectQuery::clone() const
         */
     CLONE(Expression::WITH);
     CLONE(Expression::SELECT);
-    CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::ORDER_BY);
 
 #undef CLONE
 
     return res;
-}
-
-
-void ASTProjectionSelectQuery::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(distinct);
-    IAST::updateTreeHashImpl(hash_state);
 }
 
 
@@ -67,15 +60,9 @@ void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState 
         s.ostr << s.nl_or_ws;
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (distinct ? "DISTINCT " : "") << (s.hilite ? hilite_none : "");
+    s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (s.hilite ? hilite_none : "");
 
     s.one_line ? select()->formatImpl(s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-
-    if (where())
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "WHERE " << (s.hilite ? hilite_none : "");
-        where()->formatImpl(s, state, frame);
-    }
 
     if (groupBy())
     {
@@ -85,8 +72,18 @@ void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState 
 
     if (orderBy())
     {
+        /// Let's convert the ASTFunction into ASTExpressionList, which generates consistent format
+        /// between GROUP BY and ORDER BY projection definition.
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
-        orderBy()->formatImpl(s, state, frame);
+        ASTPtr order_by;
+        if (auto * func = orderBy()->as<ASTFunction>())
+            order_by = func->arguments;
+        else
+        {
+            order_by = std::make_shared<ASTExpressionList>();
+            order_by->children.push_back(orderBy());
+        }
+        s.one_line ? order_by->formatImpl(s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 }
 
@@ -129,13 +126,9 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
         select_query->setExpression(ASTSelectQuery::Expression::WITH, with()->clone());
     if (select())
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select()->clone());
-    if (where())
-        select_query->setExpression(ASTSelectQuery::Expression::WHERE, where()->clone());
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
     // Get rid of orderBy. It's used for projection definition only
-    if (orderBy())
-        select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, orderBy()->clone());
     return node;
 }
 

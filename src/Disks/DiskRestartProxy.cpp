@@ -20,6 +20,29 @@ public:
     RestartAwareReadBuffer(const DiskRestartProxy & disk, std::unique_ptr<ReadBufferFromFileBase> impl_)
         : ReadBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
 
+    void prefetch() override
+    {
+        swap(*impl);
+        impl->prefetch();
+        swap(*impl);
+    }
+
+    void setReadUntilPosition(size_t position) override
+    {
+        swap(*impl);
+        impl->setReadUntilPosition(position);
+        swap(*impl);
+    }
+
+    void setReadUntilEnd() override
+    {
+        swap(*impl);
+        impl->setReadUntilEnd();
+        swap(*impl);
+    }
+
+    String getInfoForLog() override { return impl->getInfoForLog(); }
+
 private:
     ReadLock lock;
 };
@@ -35,7 +58,7 @@ public:
     {
         try
         {
-            RestartAwareWriteBuffer::finalize();
+            finalize();
         }
         catch (...)
         {
@@ -43,12 +66,9 @@ public:
         }
     }
 
-    void finalize() override
+    void finalizeImpl() override
     {
-        if (finalized)
-            return;
-
-        WriteBufferFromFileDecorator::finalize();
+        WriteBufferFromFileDecorator::finalizeImpl();
 
         lock.unlock();
     }
@@ -187,18 +207,17 @@ void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskRestartProxy::readFile(
-    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache)
-    const
+    const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
     ReadLock lock (mutex);
-    auto impl = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+    auto impl = DiskDecorator::readFile(path, settings, read_hint, file_size);
     return std::make_unique<RestartAwareReadBuffer>(*this, std::move(impl));
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskRestartProxy::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskRestartProxy::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
 {
     ReadLock lock (mutex);
-    auto impl = DiskDecorator::writeFile(path, buf_size, mode);
+    auto impl = DiskDecorator::writeFile(path, buf_size, mode, settings);
     return std::make_unique<RestartAwareWriteBuffer>(*this, std::move(impl));
 }
 
@@ -230,6 +249,12 @@ void DiskRestartProxy::removeSharedFile(const String & path, bool keep_s3)
 {
     ReadLock lock (mutex);
     DiskDecorator::removeSharedFile(path, keep_s3);
+}
+
+void DiskRestartProxy::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+{
+    ReadLock lock (mutex);
+    DiskDecorator::removeSharedFiles(files, keep_in_remote_fs);
 }
 
 void DiskRestartProxy::removeSharedRecursive(const String & path, bool keep_s3)
@@ -278,6 +303,24 @@ bool DiskRestartProxy::checkUniqueId(const String & id) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::checkUniqueId(id);
+}
+
+String DiskRestartProxy::getCacheBasePath() const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getCacheBasePath();
+}
+
+std::vector<String> DiskRestartProxy::getRemotePaths(const String & path) const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getRemotePaths(path);
+}
+
+void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getRemotePathsRecursive(path, paths_map);
 }
 
 void DiskRestartProxy::restart()

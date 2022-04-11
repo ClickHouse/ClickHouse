@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include "domain.h"
 #include "tldLookup.h"
 
@@ -49,11 +49,11 @@ struct ExtractFirstSignificantSubdomain
         res_data = tmp;
         res_size = domain_length;
 
-        auto begin = tmp;
-        auto end = begin + domain_length;
+        const auto * begin = tmp;
+        const auto * end = begin + domain_length;
         const char * last_3_periods[3]{};
 
-        auto pos = find_first_symbols<'.'>(begin, end);
+        const auto * pos = find_first_symbols<'.'>(begin, end);
         while (pos < end)
         {
             last_3_periods[2] = last_3_periods[1];
@@ -74,7 +74,7 @@ struct ExtractFirstSignificantSubdomain
         if (!last_3_periods[2])
             last_3_periods[2] = begin - 1;
 
-        auto end_of_level_domain = find_first_symbols<'/'>(last_3_periods[0], end);
+        const auto * end_of_level_domain = find_first_symbols<'/'>(last_3_periods[0], end);
         if (!end_of_level_domain)
         {
             end_of_level_domain = end;
@@ -117,12 +117,12 @@ struct ExtractFirstSignificantSubdomain
         res_data = tmp;
         res_size = domain_length;
 
-        auto begin = tmp;
-        auto end = begin + domain_length;
+        const auto * begin = tmp;
+        const auto * end = begin + domain_length;
         const char * last_2_periods[2]{};
         const char * prev = begin - 1;
 
-        auto pos = find_first_symbols<'.'>(begin, end);
+        const auto * pos = find_first_symbols<'.'>(begin, end);
         while (pos < end)
         {
             if (lookup(pos + 1, end - pos - 1))

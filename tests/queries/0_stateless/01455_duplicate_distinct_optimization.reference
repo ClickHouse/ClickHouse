@@ -1,13 +1,13 @@
 SELECT DISTINCT number
 FROM numbers(1)
 SELECT number
-FROM 
+FROM
 (
     SELECT DISTINCT number
     FROM numbers(1)
 )
 SELECT DISTINCT number * 2
-FROM 
+FROM
 (
     SELECT DISTINCT
         number * 2,
@@ -15,7 +15,7 @@ FROM
     FROM numbers(1)
 )
 SELECT number
-FROM 
+FROM
 (
     SELECT DISTINCT number * 2 AS number
     FROM numbers(1)
@@ -23,7 +23,7 @@ FROM
 SELECT
     b,
     a
-FROM 
+FROM
 (
     SELECT DISTINCT
         number % 2 AS a,
@@ -31,7 +31,7 @@ FROM
     FROM numbers(100)
 )
 SELECT DISTINCT a
-FROM 
+FROM
 (
     SELECT DISTINCT
         number % 2 AS a,
@@ -39,10 +39,10 @@ FROM
     FROM numbers(100)
 )
 SELECT a
-FROM 
+FROM
 (
     SELECT DISTINCT a
-    FROM 
+    FROM
     (
         SELECT DISTINCT
             number % 2 AS a,
@@ -51,12 +51,12 @@ FROM
     )
 )
 SELECT DISTINCT a
-FROM 
+FROM
 (
     SELECT
         a,
         b
-    FROM 
+    FROM
     (
         SELECT DISTINCT
             number % 2 AS a,
@@ -67,12 +67,12 @@ FROM
 SELECT
     a,
     b
-FROM 
+FROM
 (
     SELECT
         b,
         a
-    FROM 
+    FROM
     (
         SELECT DISTINCT
             number AS a,
@@ -83,13 +83,13 @@ FROM
 SELECT
     a,
     b
-FROM 
+FROM
 (
     SELECT
         b,
         a,
         a + b
-    FROM 
+    FROM
     (
         SELECT DISTINCT
             number % 2 AS a,
@@ -98,10 +98,10 @@ FROM
     )
 )
 SELECT DISTINCT a
-FROM 
+FROM
 (
     SELECT a
-    FROM 
+    FROM
     (
         SELECT DISTINCT
             number % 2 AS a,
@@ -110,21 +110,21 @@ FROM
     )
 )
 SELECT DISTINCT number
-FROM 
+FROM
 (
     SELECT DISTINCT number
     FROM numbers(1)
 ) AS t1
 CROSS JOIN numbers(2) AS t2
 SELECT number
-FROM 
+FROM
 (
     SELECT DISTINCT number
     FROM numbers(1) AS t1
     CROSS JOIN numbers(2) AS t2
 )
 SELECT DISTINCT number
-FROM 
+FROM
 (
     SELECT DISTINCT number
     FROM numbers(1)

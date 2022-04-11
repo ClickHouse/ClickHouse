@@ -1,4 +1,3 @@
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTDropQuery.h>
 
 #include <Parsers/CommonParsers.h>
@@ -20,7 +19,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ParserKeyword s_database("DATABASE");
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
-    ParserIdentifier name_p;
+    ParserIdentifier name_p(true);
     ParserKeyword s_permanently("PERMANENTLY");
     ParserKeyword s_no_delay("NO DELAY");
     ParserKeyword s_sync("SYNC");
@@ -96,9 +95,14 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->is_view = is_view;
     query->no_delay = no_delay;
     query->permanently = permanently;
+    query->database = database;
+    query->table = table;
 
-    tryGetIdentifierNameInto(database, query->database);
-    tryGetIdentifierNameInto(table, query->table);
+    if (database)
+        query->children.push_back(database);
+
+    if (table)
+        query->children.push_back(table);
 
     query->cluster = cluster_str;
 

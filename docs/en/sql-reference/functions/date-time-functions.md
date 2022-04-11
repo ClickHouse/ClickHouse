@@ -26,18 +26,19 @@ SELECT
 ## timeZone {#timezone}
 
 Returns the timezone of the server.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 timeZone()
 ```
 
-Alias: `timezone`. 
+Alias: `timezone`.
 
 **Returned value**
 
--   Timezone. 
+-   Timezone.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -45,7 +46,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 Converts time or date and time to the specified time zone. The time zone is an attribute of the `Date` and `DateTime` data types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 toTimezone(value, timezone)
@@ -53,14 +54,14 @@ toTimezone(value, timezone)
 
 Alias: `toTimezone`.
 
-**Arguments** 
+**Arguments**
 
 -   `value` — Time or date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — Timezone for the returned value. [String](../../sql-reference/data-types/string.md).
+-   `timezone` — Timezone for the returned value. [String](../../sql-reference/data-types/string.md). This argument is a constant, because `toTimezone` changes the timezone of a column (timezone is an attribute of `DateTime*` types).
 
 **Returned value**
 
--   Date and time. 
+-   Date and time.
 
 Type: [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -80,6 +81,7 @@ SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
     toInt32(time_samoa) AS int32samoa
 FORMAT Vertical;
 ```
+
 Result:
 
 ```text
@@ -102,21 +104,21 @@ int32samoa: 1546300800
 
 Returns the timezone name of [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md) data types.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 timeZoneOf(value)
 ```
 
-Alias: `timezoneOf`. 
+Alias: `timezoneOf`.
 
 **Arguments**
 
--   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
--   Timezone name. 
+-   Timezone name.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -149,11 +151,11 @@ Alias: `timezoneOffset`.
 
 **Arguments**
 
--   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
--   Offset from UTC in seconds. 
+-   Offset from UTC in seconds.
 
 Type: [Int32](../../sql-reference/data-types/int-uint.md).
 
@@ -265,7 +267,7 @@ Result:
 ```
 
 !!! attention "Attention"
-    The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of normal range (years 1970 - 2105) will give incorrect result.
+    The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1925 - 2283) will give an incorrect result.
 
 ## toStartOfYear {#tostartofyear}
 
@@ -321,7 +323,7 @@ Truncates sub-seconds.
 **Syntax**
 
 ``` sql
-toStartOfSecond(value[, timezone])
+toStartOfSecond(value, [timezone])
 ```
 
 **Arguments**
@@ -356,13 +358,13 @@ Query with timezone:
 
 ``` sql
 WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
-SELECT toStartOfSecond(dt64, 'Europe/Moscow');
+SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 ```
 
 Result:
 
 ``` text
-┌─toStartOfSecond(dt64, 'Europe/Moscow')─┐
+┌─toStartOfSecond(dt64, 'Asia/Istanbul')─┐
 │                2020-01-01 13:20:30.000 │
 └────────────────────────────────────────┘
 ```
@@ -390,6 +392,13 @@ This is a generalization of other functions named `toStartOf*`. For example,
 `toStartOfInterval(t, INTERVAL 1 month)` returns the same as `toStartOfMonth(t)`,
 `toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,
 `toStartOfInterval(t, INTERVAL 15 minute)` returns the same as `toStartOfFifteenMinutes(t)` etc.
+
+## toLastDayOfMonth {#toLastDayOfMonth}
+
+Rounds up a date or date with time to the last day of the month.
+Returns the date.
+
+Alias: `LAST_DAY`.
 
 ## toTime {#totime}
 
@@ -460,7 +469,7 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 
 -   Otherwise, it is the last week of the previous year, and the next week is week 1.
 
-For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It doesn’t matter how many days in the new year the week contained, even if it contained only one day.
+For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It does not matter how many days in the new year the week contained, even if it contained only one day.
 
 ``` sql
 toWeek(date, [, mode][, Timezone])
@@ -558,13 +567,13 @@ Result:
 Query with the specified timezone:
 
 ```sql
-SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
+SELECT now(), date_trunc('hour', now(), 'Asia/Istanbul');
 ```
 
 Result:
 
 ```text
-┌───────────────now()─┬─date_trunc('hour', now(), 'Europe/Moscow')─┐
+┌───────────────now()─┬─date_trunc('hour', now(), 'Asia/Istanbul')─┐
 │ 2020-09-28 10:46:26 │                        2020-09-28 13:00:00 │
 └─────────────────────┴────────────────────────────────────────────┘
 ```
@@ -599,7 +608,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
     - `quarter`
     - `year`
 
--   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).  
+-   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
 -   `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
@@ -704,7 +713,7 @@ Aliases: `dateSub`, `DATE_SUB`.
     - `quarter`
     - `year`
 
--   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).    
+-   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).
 -   `date` — The date or date with time from which `value` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
@@ -805,7 +814,7 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
     - `quarter`
     - `year`
 
--   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).   
+-   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).
 -   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
@@ -869,13 +878,13 @@ Result:
 Query with the specified timezone:
 
 ``` sql
-SELECT now('Europe/Moscow');
+SELECT now('Asia/Istanbul');
 ```
 
 Result:
 
 ``` text
-┌─now('Europe/Moscow')─┐
+┌─now('Asia/Istanbul')─┐
 │  2020-10-17 10:42:23 │
 └──────────────────────┘
 ```
@@ -893,7 +902,6 @@ The same as ‘today() - 1’.
 ## timeSlot {#timeslot}
 
 Rounds the time to the half hour.
-This function is specific to Yandex.Metrica, since half an hour is the minimum amount of time for breaking a session into two sessions if a tracking tag shows a single user’s consecutive pageviews that differ in time by strictly more than this amount. This means that tuples (the tag ID, user ID, and time slot) can be used to search for pageviews that are included in the corresponding session.
 
 ## toYYYYMM {#toyyyymm}
 
@@ -963,7 +971,7 @@ formatDateTime(Time, Format\[, Timezone\])
 
 **Returned value(s)**
 
-Returnes time and date values according to the determined format.
+Returns time and date values according to the determined format.
 
 **Replacement fields**
 Using replacement fields, you can define a pattern for the resulting string. “Example” column shows formatting result for `2018-01-02 22:33:44`.
@@ -1010,6 +1018,45 @@ Result:
 ┌─formatDateTime(toDate('2010-01-04'), '%g')─┐
 │ 10                                         │
 └────────────────────────────────────────────┘
+```
+
+## dateName {#dataname}
+
+Returns specified part of date.
+
+**Syntax**
+
+``` sql
+dateName(date_part, date)
+```
+
+**Arguments**
+
+-   `date_part` — Date part. Possible values: 'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'. [String](../../sql-reference/data-types/string.md).
+-   `date` — Date. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — Timezone. Optional. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   The specified part of date.
+
+Type: [String](../../sql-reference/data-types/string.md#string)
+
+**Example**
+
+Query:
+
+```sql
+WITH toDateTime('2021-04-14 11:22:33') AS date_value
+SELECT dateName('year', date_value), dateName('month', date_value), dateName('day', date_value);
+```
+
+Result:
+
+```text
+┌─dateName('year', date_value)─┬─dateName('month', date_value)─┬─dateName('day', date_value)─┐
+│ 2021                         │ April                         │ 14                          │
+└──────────────────────────────┴───────────────────────────────┴─────────────────────────────
 ```
 
 ## FROM\_UNIXTIME {#fromunixfime}

@@ -1,0 +1,19 @@
+-- { echo }
+{% for host in ['127.1', '127.2'] -%}
+{% for args, comment in [
+    ("'system.one'",    host + ' db.name literal'),
+    ("'system', 'one'", host + ' db,name literal'),
+    ("system.one",      host + ' db.name identifier'),
+    ("system, one",     host + ' db,name identifier'),
+] -%}
+select * from remote('{{host}}', {{args}}) settings log_queries=1, log_comment='{{comment}}' format Null;
+system flush logs;
+select count() from system.query_log where
+    type = 'QueryFinish' and
+    not is_initial_query and
+    startsWith(query, 'DESC') and
+    initial_query_id = (
+        select distinct query_id from system.query_log where log_comment = '{{comment}}' and current_database = currentDatabase()
+    );
+{% endfor -%}
+{% endfor -%}

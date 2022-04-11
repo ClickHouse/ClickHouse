@@ -6,8 +6,13 @@
     {% include "templates/common_css.html" %}
 </head>
 <body dir="{{ direction or 'ltr' }}" {{ extra_body_attrs }}>
-{% block content %}{% endblock %}
-{% include "templates/footer.html" %}
-{% include "templates/common_js.html" %}
+    {% block banner %}
+    {% endblock %}
+    {% block nav %}{% endblock %}
+    <div class="page">
+        {% block content %}{% endblock %}
+        {% include "templates/footer.html" %}
+        {% include "templates/common_js.html" %}
+    </div>
 </body>
 </html>

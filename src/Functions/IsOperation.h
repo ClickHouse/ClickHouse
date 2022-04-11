@@ -3,7 +3,7 @@
 namespace DB
 {
 
-/// These classes should be present in DB namespace (cannot place them into nemelesspace)
+/// These classes should be present in DB namespace (cannot place them into namelesspace)
 template <typename> struct AbsImpl;
 template <typename> struct NegateImpl;
 template <typename, typename> struct PlusImpl;
@@ -19,6 +19,7 @@ template <typename, typename> struct EqualsOp;
 template <typename, typename> struct NotEqualsOp;
 template <typename, typename> struct LessOrEqualsOp;
 template <typename, typename> struct GreaterOrEqualsOp;
+template <typename, typename> struct BitHammingDistanceImpl;
 
 template <typename>
 struct SignImpl;
@@ -55,12 +56,11 @@ struct IsOperation
     static constexpr bool least = IsSameOperation<Op, LeastBaseImpl>::value;
     static constexpr bool greatest = IsSameOperation<Op, GreatestBaseImpl>::value;
 
+    static constexpr bool bit_hamming_distance = IsSameOperation<Op, BitHammingDistanceImpl>::value;
+
     static constexpr bool division = div_floating || div_int || div_int_or_zero;
 
-    static constexpr bool allow_decimal =
-        plus || minus || multiply ||
-        div_floating || div_int || div_int_or_zero ||
-        least || greatest;
+    static constexpr bool allow_decimal = plus || minus || multiply || division || least || greatest;
 };
 
 }

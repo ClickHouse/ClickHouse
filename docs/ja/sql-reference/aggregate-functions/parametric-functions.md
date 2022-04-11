@@ -113,7 +113,7 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 -   `.*` — Matches any number of events. You don't need conditional arguments to match this element of the pattern.
 
--   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` お互いから1800秒以上発生するイベントと一致します。 これらのイベントの間に任意の数のイベントを配置できます。 を使用することができます `>=`, `>`, `<`, `<=` 演算子。
+-   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` お互いから1800秒以上発生するイベントと一致します。 これらのイベントの間に任意の数のイベントを配置できます。 を使用することができます `>=`, `>`, `<`, `<=`, `==` 演算子。
 
 **例**
 
@@ -492,7 +492,7 @@ Problem: Generate a report that shows only keywords that produced at least 5 uni
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
 
 ## sumMapFiltered(keys_to_keep)(キー,値) {#summapfilteredkeys-to-keepkeys-values}
 

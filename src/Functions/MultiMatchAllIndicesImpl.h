@@ -1,14 +1,13 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include "Regexps.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#    include <Common/config.h>
-#endif
+#include "config_functions.h"
+#include <Common/config.h>
 
 #if USE_HYPERSCAN
 #    include <hs.h>
@@ -29,7 +28,7 @@ namespace ErrorCodes
 }
 
 
-template <typename Type, bool MultiSearchDistance>
+template <typename Name, typename Type, bool MultiSearchDistance>
 struct MultiMatchAllIndicesImpl
 {
     using ResultType = Type;
@@ -37,6 +36,8 @@ struct MultiMatchAllIndicesImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = true;
+    static constexpr auto name = Name::name;
+
     static auto getReturnType()
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());

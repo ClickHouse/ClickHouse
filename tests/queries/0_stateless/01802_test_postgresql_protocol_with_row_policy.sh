@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-parallel, no-fasttest
+# Tag no-parallel: Creates database and users
+# Tag no-fasttest: Requires postgresql-client
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -41,3 +44,5 @@ SELECT 'after row policy with plaintext_password';
 
 psql "postgresql://postgresql_user:qwerty@localhost:${CLICKHOUSE_PORT_POSTGRESQL}/db01802" -c "SELECT * FROM postgresql;"
 
+$CLICKHOUSE_CLIENT -q "DROP TABLE db01802.postgresql"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE db01802"

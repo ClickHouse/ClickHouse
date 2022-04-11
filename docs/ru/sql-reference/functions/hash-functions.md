@@ -40,6 +40,10 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 └────────────────────┴────────┘
 ```
 
+## MD4 {#hash_functions-md4}
+
+Вычисляет MD4 от строки и возвращает полученный набор байт в виде FixedString(16).
+
 ## MD5 {#hash_functions-md5}
 
 Вычисляет MD5 от строки и возвращает полученный набор байт в виде FixedString(16).
@@ -85,9 +89,39 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ## sipHash128 {#hash_functions-siphash128}
 
-Вычисляет SipHash от строки.
-Принимает аргумент типа String. Возвращает FixedString(16).
-Отличается от sipHash64 тем, что финальный xor-folding состояния делается только до 128 бит.
+Генерирует 128-битное хеш-значение [SipHash](https://131002.net/siphash/). Отличается от [sipHash64](#hash_functions-siphash64) тем, что финальный xor-folding состояния делается до 128 бит.
+
+**Синтаксис**
+
+``` sql
+sipHash128(par1,...)
+```
+
+**Аргументы**
+
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+
+**Возвращаемое значение**
+
+128-битное хеш-значение `SipHash`.
+
+Тип: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT hex(sipHash128('foo', '\x01', 3));
+```
+
+Результат:
+
+``` text
+┌─hex(sipHash128('foo', '', 3))────┐
+│ 9DE516A64A414D4B1B609415E4523F24 │
+└──────────────────────────────────┘
+```
 
 ## cityHash64 {#cityhash64}
 
@@ -137,16 +171,49 @@ SELECT groupBitXor(cityHash64(*)) FROM table
 Вычисляет 64-битный хэш-код от целого числа любого типа.
 Работает быстрее, чем intHash32. Качество среднее.
 
-## SHA1 {#sha1}
+## SHA1, SHA224, SHA256, SHA512 {#sha}
 
-## SHA224 {#sha224}
+Вычисляет SHA-1, SHA-224, SHA-256, SHA-512 хеш строки и возвращает полученный набор байт в виде [FixedString](../data-types/fixedstring.md).
 
-## SHA256 {#sha256}
+**Синтаксис**
 
-Вычисляет SHA-1, SHA-224, SHA-256 от строки и возвращает полученный набор байт в виде FixedString(20), FixedString(28), FixedString(32).
-Функция работает достаточно медленно (SHA-1 - примерно 5 миллионов коротких строк в секунду на одном процессорном ядре, SHA-224 и SHA-256 - примерно 2.2 миллионов).
-Рекомендуется использовать эти функции лишь в тех случаях, когда вам нужна конкретная хэш-функция и вы не можете её выбрать.
-Даже в этих случаях, рекомендуется применять функцию оффлайн - заранее вычисляя значения при вставке в таблицу, вместо того, чтобы применять её при SELECT-ах.
+``` sql
+SHA1('s')
+...
+SHA512('s')
+```
+
+Функция работает достаточно медленно (SHA-1 — примерно 5 миллионов коротких строк в секунду на одном процессорном ядре, SHA-224 и SHA-256 — примерно 2.2 миллионов).
+Рекомендуется использовать эти функции лишь в тех случаях, когда вам нужна конкретная хеш-функция и вы не можете её выбрать.
+Даже в этих случаях рекомендуется применять функцию офлайн — заранее вычисляя значения при вставке в таблицу, вместо того чтобы применять её при выполнении `SELECT`.
+
+**Параметры**
+
+-   `s` — входная строка для вычисления хеша SHA. [String](../data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Хеш SHA в виде шестнадцатеричной некодированной строки FixedString. SHA-1 хеш как FixedString(20), SHA-224 как FixedString(28), SHA-256 — FixedString(32), SHA-512 — FixedString(64).
+
+Тип: [FixedString](../data-types/fixedstring.md).
+
+**Пример**
+
+Используйте функцию [hex](../functions/encoding-functions.md#hex) для представления результата в виде строки с шестнадцатеричной кодировкой.
+
+Запрос:
+
+``` sql
+SELECT hex(SHA1('abc'));
+```
+
+Результат:
+
+``` text
+┌─hex(SHA1('abc'))─────────────────────────┐
+│ A9993E364706816ABA3E25717850C26C9CD0D89D │
+└──────────────────────────────────────────┘
+```
 
 ## URLHash(url\[, N\]) {#urlhashurl-n}
 
@@ -422,30 +489,38 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ## murmurHash3_128 {#murmurhash3-128}
 
-Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
+Генерирует 128-битное хеш-значение [MurmurHash3](https://github.com/aappleby/smhasher).
+
+**Синтаксис**
 
 ``` sql
-murmurHash3_128( expr )
+murmurHash3_128(expr)
 ```
 
 **Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/hash-functions.md).
+-   `expr` — список [выражений](../../sql-reference/syntax.md#syntax-expressions). [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
-Хэш-значение типа [FixedString(16)](../../sql-reference/functions/hash-functions.md).
+128-битное значение хеш-значение `MurmurHash3`.
+
+Тип: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
 **Пример**
 
+Запрос:
+
 ``` sql
-SELECT hex(murmurHash3_128('example_string')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
+SELECT hex(murmurHash3_128('foo', 'foo', 'foo'));
 ```
 
+Результат:
+
 ``` text
-┌─MurmurHash3──────────────────────┬─type───┐
-│ 368A1A311CB7342253354B548E7E7E71 │ String │
-└──────────────────────────────────┴────────┘
+┌─hex(murmurHash3_128('foo', 'foo', 'foo'))─┐
+│ F8F7AD9B6CD4CF117A71E277E2EC2931          │
+└───────────────────────────────────────────┘
 ```
 
 ## xxHash32, xxHash64 {#hash-functions-xxhash32-xxhash64}

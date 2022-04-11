@@ -28,7 +28,6 @@ public:
     class Reader;
     class Locus;
 
-public:
     CompactArray() = default;
 
     UInt8 ALWAYS_INLINE operator[](BucketIndex bucket_index) const
@@ -55,28 +54,6 @@ public:
         return locus;
     }
 
-    /// Used only in arcadia/metrika
-    void readText(ReadBuffer & in)
-    {
-        for (size_t i = 0; i < BITSET_SIZE; ++i)
-        {
-            if (i != 0)
-                assertChar(',', in);
-            readIntText(bitset[i], in);
-        }
-    }
-
-    /// Used only in arcadia/metrika
-    void writeText(WriteBuffer & out) const
-    {
-        for (size_t i = 0; i < BITSET_SIZE; ++i)
-        {
-            if (i != 0)
-                writeCString(",", out);
-            writeIntText(bitset[i], out);
-        }
-    }
-
 private:
     /// number of bytes in bitset
     static constexpr size_t BITSET_SIZE = (static_cast<size_t>(bucket_count) * content_width + 7) / 8;
@@ -89,7 +66,7 @@ template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
 class CompactArray<BucketIndex, content_width, bucket_count>::Reader final
 {
 public:
-    Reader(ReadBuffer & in_)
+    explicit Reader(ReadBuffer & in_)
         : in(in_)
     {
     }
@@ -182,7 +159,7 @@ class CompactArray<BucketIndex, content_width, bucket_count>::Locus final
     friend class CompactArray::Reader;
 
 public:
-    ALWAYS_INLINE operator UInt8() const
+    ALWAYS_INLINE operator UInt8() const /// NOLINT
     {
         if (content_l == content_r)
             return read(*content_l);
@@ -216,7 +193,7 @@ public:
 private:
     Locus() = default;
 
-    Locus(BucketIndex bucket_index)
+    explicit Locus(BucketIndex bucket_index)
     {
         init(bucket_index);
     }
@@ -237,6 +214,9 @@ private:
 
         /// offset in bits to the next to the rightmost bit at that byte; or zero if the rightmost bit is the rightmost bit in that byte.
         offset_r = (l + content_width) % 8;
+
+        content_l = nullptr;
+        content_r = nullptr;
     }
 
     UInt8 ALWAYS_INLINE read(UInt8 value_l) const
@@ -252,7 +232,6 @@ private:
             | ((value_r & ((1 << offset_r) - 1)) << (8 - offset_l));
     }
 
-private:
     size_t index_l;
     size_t offset_l;
     size_t index_r;

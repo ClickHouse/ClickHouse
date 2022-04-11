@@ -1,0 +1,5 @@
+<yandex>
+    <logger>
+        <stream_compress>true</stream_compress>
+    </logger>
+</yandex>

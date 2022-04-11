@@ -1,17 +1,16 @@
 #pragma once
 
 #include <memory>
-
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
-class Context;
 class AsynchronousMetrics;
 class IDatabase;
 
-void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper);
-void attachSystemTablesLocal(IDatabase & system_database);
-void attachSystemTablesAsync(IDatabase & system_database, AsynchronousMetrics & async_metrics);
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper);
+void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database);
+void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics);
 
 }

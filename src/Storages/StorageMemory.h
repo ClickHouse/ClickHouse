@@ -4,11 +4,10 @@
 #include <optional>
 #include <mutex>
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/IBlockOutputStream.h>
 
 #include <Common/MultiVersion.h>
 
@@ -20,19 +19,29 @@ namespace DB
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public ext::shared_ptr_helper<StorageMemory>, public IStorage
+class StorageMemory final : public shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class MemoryBlockOutputStream;
-friend struct ext::shared_ptr_helper<StorageMemory>;
+friend class MemorySink;
+friend class MemoryRestoreTask;
+friend struct shared_ptr_helper<StorageMemory>;
 
 public:
     String getName() const override { return "Memory"; }
 
     size_t getSize() const { return data.get()->size(); }
 
+    /// Snapshot for StorageMemory contains current set of blocks
+    /// at the moment of the start of query.
+    struct SnapshotData : public StorageSnapshot::Data
+    {
+        std::shared_ptr<const Blocks> blocks;
+    };
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -41,13 +50,14 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
 
     bool hasEvenlyDistributedRead() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void drop() override;
 
@@ -55,6 +65,10 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
+
+    bool hasDataToBackup() const override { return true; }
+    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;

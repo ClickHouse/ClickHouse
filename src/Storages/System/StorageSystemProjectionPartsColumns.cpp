@@ -73,7 +73,7 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
 }
 
 void StorageSystemProjectionPartsColumns::processNextStorage(
-    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo
@@ -146,7 +146,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(parent_part->getTypeName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part_state == State::Committed);
+                columns[res_index++]->insert(part_state == State::Active);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->getMarksCount());
             if (columns_mask[src_index++])
@@ -237,7 +237,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
                     columns[res_index++]->insertDefault();
             }
 
-            ColumnSize column_size = part->getColumnSize(column.name, *column.type);
+            ColumnSize column_size = part->getColumnSize(column.name);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.data_compressed + column_size.marks);
             if (columns_mask[src_index++])

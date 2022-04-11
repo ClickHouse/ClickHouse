@@ -8,10 +8,11 @@
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ArenaUtils.h>
 #include <Common/HashTable/LRUHashMap.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
-#include <Dictionaries/DictionaryHelpers.h>
+
 
 namespace DB
 {
@@ -41,8 +42,7 @@ class CacheDictionaryStorage final : public ICacheDictionaryStorage
     static constexpr size_t max_collision_length = 10;
 
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionaryStorage");
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     explicit CacheDictionaryStorage(
         const DictionaryStructure & dictionary_structure,
@@ -55,26 +55,26 @@ public:
         cells.resize_fill(cells_size);
         size_overlap_mask = cells_size - 1;
 
-        setup(dictionary_structure);
+        createAttributes(dictionary_structure);
     }
 
     bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
 
     String getName() const override
     {
-        if (dictionary_key_type == DictionaryKeyType::simple)
+        if (dictionary_key_type == DictionaryKeyType::Simple)
             return "Cache";
         else
             return "ComplexKeyCache";
     }
 
-    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::simple; }
+    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
         const DictionaryStorageFetchRequest & fetch_request) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for complex key storage");
@@ -82,7 +82,7 @@ public:
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             insertColumnsForKeysImpl(keys, columns);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
@@ -90,7 +90,7 @@ public:
 
     void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             insertDefaultKeysImpl(keys);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
@@ -98,19 +98,19 @@ public:
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return getCachedKeysImpl();
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
     }
 
-    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::complex; }
+    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
         const DictionaryStorageFetchRequest & column_fetch_requests) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, column_fetch_requests);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
@@ -118,7 +118,7 @@ public:
 
     void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertColumnsForKeysImpl(keys, columns);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for simple key storage");
@@ -126,7 +126,7 @@ public:
 
     void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertDefaultKeysImpl(keys);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
@@ -134,7 +134,7 @@ public:
 
     PaddedPODArray<StringRef> getCachedComplexKeys() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return getCachedKeysImpl();
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedComplexKeys is not supported for simple key storage");
@@ -226,23 +226,17 @@ private:
             auto & attribute = attributes[attribute_index];
             const auto & default_value_provider = fetch_request.defaultValueProviderAtIndex(attribute_index);
 
-            size_t fetched_keys_size = fetched_keys.size();
             auto & fetched_column = *result.fetched_columns[attribute_index];
-            fetched_column.reserve(fetched_keys_size);
+            fetched_column.reserve(fetched_columns_index);
 
-            if (unlikely(attribute.is_complex_type))
+            if (unlikely(attribute.is_nullable))
             {
-                auto & container = std::get<std::vector<Field>>(attribute.attribute_container);
-
-                for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
-                {
-                    auto fetched_key = fetched_keys[fetched_key_index];
-
-                    if (unlikely(fetched_key.is_default))
-                        fetched_column.insert(default_value_provider.getDefaultValue(fetched_key_index));
-                    else
-                        fetched_column.insert(container[fetched_key.element_index]);
-                }
+                getItemsForFetchedKeys<Field>(
+                    attribute,
+                    fetched_columns_index,
+                    fetched_keys,
+                    [&](Field & value) { fetched_column.insert(value); },
+                    default_value_provider);
             }
             else
             {
@@ -250,46 +244,40 @@ private:
                 {
                     using Type = std::decay_t<decltype(dictionary_attribute_type)>;
                     using AttributeType = typename Type::AttributeType;
+                    using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+                    using ColumnType = typename ColumnProvider::ColumnType;
                     using ValueType = DictionaryValueType<AttributeType>;
-                    using ColumnType =
-                        std::conditional_t<std::is_same_v<AttributeType, String>, ColumnString,
-                            std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<ValueType>,
-                                ColumnVector<AttributeType>>>;
 
-                    auto & container = std::get<PaddedPODArray<ValueType>>(attribute.attribute_container);
                     ColumnType & column_typed = static_cast<ColumnType &>(fetched_column);
 
-                    if constexpr (std::is_same_v<ColumnType, ColumnString>)
+                    if constexpr (std::is_same_v<ValueType, Array>)
                     {
-                        for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
-                        {
-                            auto fetched_key = fetched_keys[fetched_key_index];
-
-                            if (unlikely(fetched_key.is_default))
-                                column_typed.insert(default_value_provider.getDefaultValue(fetched_key_index));
-                            else
-                            {
-                                auto item = container[fetched_key.element_index];
-                                column_typed.insertData(item.data, item.size);
-                            }
-                        }
+                        getItemsForFetchedKeys<ValueType>(
+                            attribute,
+                            fetched_columns_index,
+                            fetched_keys,
+                            [&](Array & value) { fetched_column.insert(value); },
+                            default_value_provider);
+                    }
+                    else if constexpr (std::is_same_v<ValueType, StringRef>)
+                    {
+                        getItemsForFetchedKeys<ValueType>(
+                            attribute,
+                            fetched_columns_index,
+                            fetched_keys,
+                            [&](StringRef value) { fetched_column.insertData(value.data, value.size); },
+                            default_value_provider);
                     }
                     else
                     {
                         auto & data = column_typed.getData();
 
-                        for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
-                        {
-                            auto fetched_key = fetched_keys[fetched_key_index];
-
-                            if (unlikely(fetched_key.is_default))
-                                column_typed.insert(default_value_provider.getDefaultValue(fetched_key_index));
-                            else
-                            {
-                                auto item = container[fetched_key.element_index];
-                                data.push_back(item);
-                            }
-                        }
+                        getItemsForFetchedKeys<ValueType>(
+                            attribute,
+                            fetched_columns_index,
+                            fetched_keys,
+                            [&](auto value) { data.push_back(value); },
+                            default_value_provider);
                     }
                 };
 
@@ -321,7 +309,7 @@ private:
             if (was_inserted)
             {
                 if constexpr (std::is_same_v<KeyType, StringRef>)
-                    cell.key = copyStringInArena(key);
+                    cell.key = copyStringInArena(arena, key);
                 else
                     cell.key = key;
 
@@ -339,16 +327,19 @@ private:
                         column->get(key_index, column_value);
 
                         if constexpr (std::is_same_v<ElementType, Field>)
+                        {
                             container.back() = column_value;
+                        }
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
                             const String & string_value = column_value.get<String>();
-                            StringRef string_value_ref = StringRef {string_value.data(), string_value.size()};
-                            StringRef inserted_value = copyStringInArena(string_value_ref);
+                            StringRef inserted_value = copyStringInArena(arena, string_value);
                             container.back() = inserted_value;
                         }
                         else
+                        {
                             container.back() = column_value.get<NearestFieldType<ElementType>>();
+                        }
                     });
                 }
 
@@ -362,7 +353,7 @@ private:
                     {
                         char * data = const_cast<char *>(cell.key.data);
                         arena.free(data, cell.key.size);
-                        cell.key = copyStringInArena(key);
+                        cell.key = copyStringInArena(arena, key);
                     }
                     else
                         cell.key = key;
@@ -382,12 +373,13 @@ private:
                         column->get(key_index, column_value);
 
                         if constexpr (std::is_same_v<ElementType, Field>)
+                        {
                             container[index_to_use] = column_value;
+                        }
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
                             const String & string_value = column_value.get<String>();
-                            StringRef string_ref_value = StringRef {string_value.data(), string_value.size()};
-                            StringRef inserted_value = copyStringInArena(string_ref_value);
+                            StringRef inserted_value = copyStringInArena(arena, string_value);
 
                             if (!cell_was_default)
                             {
@@ -398,7 +390,9 @@ private:
                             container[index_to_use] = inserted_value;
                         }
                         else
+                        {
                             container[index_to_use] = column_value.get<NearestFieldType<ElementType>>();
+                        }
                     });
                 }
             }
@@ -428,7 +422,7 @@ private:
             if (was_inserted)
             {
                 if constexpr (std::is_same_v<KeyType, StringRef>)
-                    cell.key = copyStringInArena(key);
+                    cell.key = copyStringInArena(arena, key);
                 else
                     cell.key = key;
 
@@ -468,7 +462,7 @@ private:
                     {
                         char * data = const_cast<char *>(cell.key.data);
                         arena.free(data, cell.key.size);
-                        cell.key = copyStringInArena(key);
+                        cell.key = copyStringInArena(arena, key);
                     }
                     else
                         cell.key = key;
@@ -504,9 +498,9 @@ private:
         auto & attribute = attributes[attribute_index];
         auto & attribute_type = attribute.type;
 
-        if (unlikely(attribute.is_complex_type))
+        if (unlikely(attribute.is_nullable))
         {
-            auto & container = std::get<std::vector<Field>>(attribute.attribute_container);
+            auto & container = std::get<ContainerType<Field>>(attribute.attribute_container);
             std::forward<GetContainerFunc>(func)(container);
         }
         else
@@ -517,7 +511,7 @@ private:
                 using AttributeType = typename Type::AttributeType;
                 using ValueType = DictionaryValueType<AttributeType>;
 
-                auto & container = std::get<PaddedPODArray<ValueType>>(attribute.attribute_container);
+                auto & container = std::get<ContainerType<ValueType>>(attribute.attribute_container);
                 std::forward<GetContainerFunc>(func)(container);
             };
 
@@ -531,17 +525,83 @@ private:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->template getAttributeContainer(attribute_index, std::forward<GetContainerFunc>(func));
     }
 
-    StringRef copyStringInArena(StringRef value_to_copy)
-    {
-        size_t value_to_copy_size = value_to_copy.size;
-        char * place_for_key = arena.alloc(value_to_copy_size);
-        memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(value_to_copy.data), value_to_copy_size);
-        StringRef updated_value{place_for_key, value_to_copy_size};
+    template<typename ValueType>
+    using ContainerType = std::conditional_t<
+        std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array>,
+        std::vector<ValueType>,
+        PaddedPODArray<ValueType>>;
 
-        return updated_value;
+    struct Attribute
+    {
+        AttributeUnderlyingType type;
+        bool is_nullable;
+
+        std::variant<
+            ContainerType<UInt8>,
+            ContainerType<UInt16>,
+            ContainerType<UInt32>,
+            ContainerType<UInt64>,
+            ContainerType<UInt128>,
+            ContainerType<UInt256>,
+            ContainerType<Int8>,
+            ContainerType<Int16>,
+            ContainerType<Int32>,
+            ContainerType<Int64>,
+            ContainerType<Int128>,
+            ContainerType<Int256>,
+            ContainerType<Decimal32>,
+            ContainerType<Decimal64>,
+            ContainerType<Decimal128>,
+            ContainerType<Decimal256>,
+            ContainerType<DateTime64>,
+            ContainerType<Float32>,
+            ContainerType<Float64>,
+            ContainerType<UUID>,
+            ContainerType<StringRef>,
+            ContainerType<Array>,
+            ContainerType<Field>> attribute_container;
+    };
+
+    template <typename ValueType, typename ValueSetter>
+    void getItemsForFetchedKeys(
+        Attribute & attribute,
+        size_t fetched_keys_size,
+        PaddedPODArray<FetchedKey> & fetched_keys,
+        ValueSetter && value_setter,
+        const DefaultValueProvider & default_value_provider)
+    {
+        auto & container = std::get<ContainerType<ValueType>>(attribute.attribute_container);
+
+        for (size_t fetched_key_index = 0; fetched_key_index < fetched_keys_size; ++fetched_key_index)
+        {
+            auto fetched_key = fetched_keys[fetched_key_index];
+
+            if (unlikely(fetched_key.is_default))
+            {
+                auto default_value = default_value_provider.getDefaultValue(fetched_key_index);
+
+                if constexpr (std::is_same_v<ValueType, Field>)
+                {
+                    value_setter(default_value);
+                }
+                else if constexpr (std::is_same_v<ValueType, StringRef>)
+                {
+                    auto & value = default_value.get<String>();
+                    value_setter(value);
+                }
+                else
+                {
+                    value_setter(default_value.get<ValueType>());
+                }
+            }
+            else
+            {
+                value_setter(container[fetched_key.element_index]);
+            }
+        }
     }
 
-    void setup(const DictionaryStructure & dictionary_structure)
+    void createAttributes(const DictionaryStructure & dictionary_structure)
     {
         /// For each dictionary attribute create storage attribute
         /// For simple attributes create PODArray, for complex vector of Fields
@@ -561,12 +621,12 @@ private:
                 attributes.emplace_back();
                 auto & last_attribute = attributes.back();
                 last_attribute.type = attribute_type;
-                last_attribute.is_complex_type = dictionary_attribute.is_nullable || dictionary_attribute.is_array;
+                last_attribute.is_nullable = dictionary_attribute.is_nullable;
 
                 if (dictionary_attribute.is_nullable)
-                    last_attribute.attribute_container = std::vector<Field>();
+                    last_attribute.attribute_container = ContainerType<Field>();
                 else
-                    last_attribute.attribute_container = PaddedPODArray<ValueType>();
+                    last_attribute.attribute_container = ContainerType<ValueType>();
             };
 
             callOnDictionaryAttributeType(attribute_type, type_call);
@@ -581,35 +641,6 @@ private:
         size_t element_index;
         bool is_default;
         time_t deadline;
-    };
-
-    struct Attribute
-    {
-        AttributeUnderlyingType type;
-        bool is_complex_type;
-
-        std::variant<
-            PaddedPODArray<UInt8>,
-            PaddedPODArray<UInt16>,
-            PaddedPODArray<UInt32>,
-            PaddedPODArray<UInt64>,
-            PaddedPODArray<UInt128>,
-            PaddedPODArray<UInt256>,
-            PaddedPODArray<Int8>,
-            PaddedPODArray<Int16>,
-            PaddedPODArray<Int32>,
-            PaddedPODArray<Int64>,
-            PaddedPODArray<Int128>,
-            PaddedPODArray<Int256>,
-            PaddedPODArray<Decimal32>,
-            PaddedPODArray<Decimal64>,
-            PaddedPODArray<Decimal128>,
-            PaddedPODArray<Decimal256>,
-            PaddedPODArray<Float32>,
-            PaddedPODArray<Float64>,
-            PaddedPODArray<UUID>,
-            PaddedPODArray<StringRef>,
-            std::vector<Field>> attribute_container;
     };
 
     CacheDictionaryStorageConfiguration configuration;

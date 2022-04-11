@@ -4,7 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Core/SortCursor.h>
 #include <Common/StackTrace.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 

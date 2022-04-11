@@ -19,6 +19,8 @@ DateTime64(precision, [timezone])
 
 内部的には、データを ‘ticks’ エポック開始（1970-01-01 00:00:00UTC）以来、Int64として。 目盛りの解像度は、精度パラメータによって決定されます。 さらに、 `DateTime64` 型は、列全体で同じタイムゾーンを格納することができます。 `DateTime64` 型の値はテキスト形式で表示され、文字列として指定された値がどのように解析されるか (‘2020-01-01 05:00:01.000’). タイムゾーンは、テーブルの行(またはresultset)には格納されませんが、列メタデータに格納されます。 詳細はを参照。 [DateTime](datetime.md).
 
+サポートされる値の範囲: \[1925-01-01 00:00:00, 2283-11-11 23:59:59.99999999\] (注）最大値の精度は、8).
+
 ## 例 {#examples}
 
 **1.** テーブルの作成 `DateTime64`-列を入力し、そこにデータを挿入する:
@@ -26,7 +28,7 @@ DateTime64(precision, [timezone])
 ``` sql
 CREATE TABLE dt
 (
-    `timestamp` DateTime64(3, 'Europe/Moscow'),
+    `timestamp` DateTime64(3, 'Asia/Istanbul'),
     `event_id` UInt8
 )
 ENGINE = TinyLog
@@ -47,13 +49,13 @@ SELECT * FROM dt
 └─────────────────────────┴──────────┘
 ```
 
--   Datetimeを整数として挿入する場合、適切にスケーリングされたUnixタイムスタンプ(UTC)として扱われます。 `1546300800000` （精度3で）を表します `'2019-01-01 00:00:00'` UTC しかし、 `timestamp` 列は `Europe/Moscow` (UTC+3)タイムゾーンが指定されている場合、文字列として出力すると、値は次のように表示されます `'2019-01-01 03:00:00'`
--   文字列値をdatetimeとして挿入すると、列タイムゾーンにあるものとして扱われます。 `'2019-01-01 00:00:00'` であるとして扱われます `Europe/Moscow` タイムゾーンとして保存 `1546290000000`.
+-   Datetimeを整数として挿入する場合、適切にスケーリングされたUnixタイムスタンプ(UTC)として扱われます。 `1546300800000` （精度3で）を表します `'2019-01-01 00:00:00'` UTC しかし、 `timestamp` 列は `Asia/Istanbul` (UTC+3)タイムゾーンが指定されている場合、文字列として出力すると、値は次のように表示されます `'2019-01-01 03:00:00'`
+-   文字列値をdatetimeとして挿入すると、列タイムゾーンにあるものとして扱われます。 `'2019-01-01 00:00:00'` であるとして扱われます `Asia/Istanbul` タイムゾーンとして保存 `1546290000000`.
 
 **2.** フィルタリング `DateTime64` 値
 
 ``` sql
-SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow')
+SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul')
 ```
 
 ``` text
@@ -67,12 +69,12 @@ SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europ
 **3.** Aのタイムゾーンの取得 `DateTime64`-タイプ値:
 
 ``` sql
-SELECT toDateTime64(now(), 3, 'Europe/Moscow') AS column, toTypeName(column) AS x
+SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x
 ```
 
 ``` text
 ┌──────────────────column─┬─x──────────────────────────────┐
-│ 2019-10-16 04:12:04.000 │ DateTime64(3, 'Europe/Moscow') │
+│ 2019-10-16 04:12:04.000 │ DateTime64(3, 'Asia/Istanbul') │
 └─────────────────────────┴────────────────────────────────┘
 ```
 
@@ -81,7 +83,7 @@ SELECT toDateTime64(now(), 3, 'Europe/Moscow') AS column, toTypeName(column) AS 
 ``` sql
 SELECT
 toDateTime64(timestamp, 3, 'Europe/London') as lon_time,
-toDateTime64(timestamp, 3, 'Europe/Moscow') as mos_time
+toDateTime64(timestamp, 3, 'Asia/Istanbul') as mos_time
 FROM dt
 ```
 

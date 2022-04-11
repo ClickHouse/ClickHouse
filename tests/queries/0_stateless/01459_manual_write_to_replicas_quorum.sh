@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: replica, no-replicated-database, no-parallel
+# Tag no-replicated-database: Fails due to additional replicas or shards
 
 set -e
 

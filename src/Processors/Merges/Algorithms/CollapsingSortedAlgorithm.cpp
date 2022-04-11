@@ -1,12 +1,13 @@
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+
 
 /// Maximum number of messages about incorrect data in the log.
 #define MAX_ERROR_MESSAGES 10
@@ -20,7 +21,7 @@ namespace ErrorCodes
 }
 
 CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
-    const Block & header,
+    const Block & header_,
     size_t num_inputs,
     SortDescription description_,
     const String & sign_column,
@@ -29,9 +30,9 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     Poco::Logger * log_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : IMergingAlgorithmWithSharedChunks(num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
-    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
-    , sign_column_number(header.getPositionByName(sign_column))
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
+    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
+    , sign_column_number(header_.getPositionByName(sign_column))
     , only_positive_sign(only_positive_sign_)
     , log(log_)
 {

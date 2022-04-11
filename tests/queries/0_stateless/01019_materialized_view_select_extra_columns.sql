@@ -28,7 +28,7 @@ FROM mv_extra_columns_src;
 INSERT INTO mv_extra_columns_src VALUES (0, 0), (1, 1), (2, 2);
 
 SELECT * FROM mv_extra_columns_dst ORDER by v;
-SELECT * FROM mv_extra_columns_view; -- { serverError 16 }
+SELECT * FROM mv_extra_columns_view; -- { serverError 10 }
 
 DROP TABLE mv_extra_columns_view;
 DROP TABLE mv_extra_columns_src;

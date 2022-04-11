@@ -28,7 +28,7 @@ ClickHouseは、辞書のエラーに対して例外を生成します。 エラ
 設定は次のようになります:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         ...
         <layout>
@@ -38,7 +38,7 @@ ClickHouseは、辞書のエラーに対して例外を生成します。 エラ
         </layout>
         ...
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 対応する [DDL-クエリ](../../statements/create.md#create-dictionary-query):
@@ -208,7 +208,7 @@ dictGetT('dict_name', 'attr_name', id, date)
 設定例:
 
 ``` xml
-<yandex>
+<clickhouse>
         <dictionary>
 
                 ...
@@ -237,7 +237,7 @@ dictGetT('dict_name', 'attr_name', id, date)
                 </structure>
 
         </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 または
@@ -399,4 +399,4 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 データは `trie`. それはRAMに完全に収まる必要があります。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

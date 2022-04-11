@@ -1,7 +1,7 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <opentelemetry_start_trace_probability>0.1</opentelemetry_start_trace_probability>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

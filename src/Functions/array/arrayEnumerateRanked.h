@@ -96,6 +96,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -251,7 +252,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
     ColumnPtr result_nested_array = std::move(res_nested);
     for (ssize_t depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
-        result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
+        result_nested_array = ColumnArray::create(result_nested_array, offsetsptr_by_depth[depth]);
 
     return result_nested_array;
 }

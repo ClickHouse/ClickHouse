@@ -11,7 +11,7 @@ SELECT toDateTime64(toFloat32(bitShiftLeft(toUInt64(1),33)), 2, 'Europe/Moscow')
 SELECT toDateTime64(toFloat64(bitShiftLeft(toUInt64(1),33)), 2, 'Europe/Moscow') FORMAT Null;
 
 -- These are outsize of extended range and hence clamped
-SELECT toDateTime64(-1 * bitShiftLeft(toUInt64(1), 35), 2);
-SELECT CAST(-1 * bitShiftLeft(toUInt64(1), 35) AS DateTime64);
-SELECT CAST(bitShiftLeft(toUInt64(1), 35) AS DateTime64);
-SELECT toDateTime64(bitShiftLeft(toUInt64(1), 35), 2);
+SELECT toDateTime64(-1 * bitShiftLeft(toUInt64(1), 35), 2, 'Europe/Moscow');
+SELECT CAST(-1 * bitShiftLeft(toUInt64(1), 35) AS DateTime64(3, 'Europe/Moscow'));
+SELECT CAST(bitShiftLeft(toUInt64(1), 35) AS DateTime64(3, 'Europe/Moscow'));
+SELECT toDateTime64(bitShiftLeft(toUInt64(1), 35), 2, 'Europe/Moscow');
