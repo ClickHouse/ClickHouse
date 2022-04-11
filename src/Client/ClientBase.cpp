@@ -240,6 +240,14 @@ void interruptSignalHandler(int signum)
 }
 
 
+/// To cancel the query on local format error.
+class LocalFormatError : public DB::Exception
+{
+public:
+    using Exception::Exception;
+};
+
+
 ClientBase::~ClientBase() = default;
 ClientBase::ClientBase() = default;
 
@@ -268,7 +276,7 @@ void ClientBase::setupSignalHandler()
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
-    ParserQuery parser(end);
+    ParserQuery parser(end, global_context->getSettings().allow_settings_after_format_in_insert);
     ASTPtr res;
 
     const auto & settings = global_context->getSettingsRef();
@@ -442,6 +450,7 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 
 
 void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
+try
 {
     if (!output_format)
     {
@@ -529,6 +538,10 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 
         output_format->setAutoFlush();
     }
+}
+catch (...)
+{
+    throw LocalFormatError(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
 }
 
 
@@ -721,6 +734,9 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
         = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
 
     bool break_on_timeout = connection->getConnectionType() != IServerConnection::Type::LOCAL;
+
+    std::exception_ptr local_format_error;
+
     while (true)
     {
         Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
@@ -769,9 +785,20 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
                 break;
         }
 
-        if (!receiveAndProcessPacket(parsed_query, cancelled))
-            break;
+        try
+        {
+            if (!receiveAndProcessPacket(parsed_query, cancelled))
+                break;
+        }
+        catch (const LocalFormatError &)
+        {
+            local_format_error = std::current_exception();
+            connection->sendCancel();
+        }
     }
+
+    if (local_format_error)
+        std::rethrow_exception(local_format_error);
 
     if (cancelled && is_interactive)
         std::cout << "Query was cancelled." << std::endl;
@@ -1102,7 +1129,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             sendDataFromPipe(
                 storage->read(
                         sample.getNames(),
-                        storage->getStorageSnapshot(metadata),
+                        storage->getStorageSnapshot(metadata, global_context),
                         query_info,
                         global_context,
                         {},
@@ -1296,6 +1323,13 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             writeChar('\n', std_out);
             std_out.next();
         }
+    }
+
+    if (const auto * set_query = parsed_query->as<ASTSetQuery>())
+    {
+        const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
+        if (logs_level_field)
+            updateLoggerLevel(logs_level_field->safeGet<String>());
     }
 
     processed_rows = 0;

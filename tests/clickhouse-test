@@ -204,6 +204,17 @@ def get_processlist(args):
     else:
         return clickhouse_execute_json(args, 'SHOW PROCESSLIST')
 
+def get_transactions_list(args):
+    try:
+        if args.replicated_database:
+            return clickhouse_execute_json(args, """
+            SELECT materialize((hostName(), tcpPort())) as host, *
+            FROM clusterAllReplicas('test_cluster_database_replicated', system.transactions)
+            """)
+        else:
+            return clickhouse_execute_json(args, 'select * from system.transactions')
+    except Exception as e:
+        return f"Cannot get list of transactions: {e}"
 
 def get_processlist_after_test(args):
     log_comment = args.testcase_basename
@@ -371,7 +382,7 @@ class SettingsRandomizer:
         "group_by_two_level_threshold_bytes": lambda: 1 if random.random() < 0.1 else 2 ** 60 if random.random() < 0.11 else 50000000,
         "distributed_aggregation_memory_efficient": lambda: random.randint(0, 1),
         "fsync_metadata": lambda: random.randint(0, 1),
-        "priority": lambda: int(abs(random.gauss(0, 2))),
+        "priority": lambda: min(3, int(abs(random.gauss(0, 2)))),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
         "input_format_parallel_parsing": lambda: random.randint(0, 1),
         "min_chunk_bytes_for_parallel_parsing": lambda: max(1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))),
@@ -535,7 +546,9 @@ class TestCase:
 
                 server_version = str(clickhouse_execute(args, "SELECT version()").decode())
                 # If server version is less or equal from the version specified in tag, we should skip this test.
-                if list(map(int, server_version.split('.'))) <= list(map(int, version_from_tag.split('.'))):
+                version_from_tag_split = list(map(int, version_from_tag.split('.')))
+                server_version_split = list(map(int, server_version.split('.')))
+                if server_version_split[:len(version_from_tag_split)] <= version_from_tag_split:
                     return True
 
         return False
@@ -1393,6 +1406,7 @@ def main(args):
         if processlist:
             print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(json.dumps(processlist, indent=4))
+            print(get_transactions_list(args))
 
             print_stacktraces()
             exit_code.value = 1

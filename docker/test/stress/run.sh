@@ -106,17 +106,6 @@ function stop()
 
 function start()
 {
-    # Rename existing log file - it will be more convenient to read separate files for separate server runs.
-    if [ -f '/var/log/clickhouse-server/clickhouse-server.log' ]
-    then
-        log_file_counter=1
-        while [ -f "/var/log/clickhouse-server/clickhouse-server.log.${log_file_counter}" ]
-        do
-            log_file_counter=$((log_file_counter + 1))
-        done
-        mv '/var/log/clickhouse-server/clickhouse-server.log' "/var/log/clickhouse-server/clickhouse-server.log.${log_file_counter}"
-    fi
-
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
@@ -190,6 +179,8 @@ clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordin
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
 stop
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
+
 start
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
@@ -205,6 +196,8 @@ clickhouse-client --query "SHOW TABLES FROM test"
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
 stop
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
+
 start
 
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
@@ -263,10 +256,12 @@ mkdir previous_release_package_folder
 clickhouse-client --query="SELECT version()" | ./download_previous_release && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
+stop
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
+
 if [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
 then
     echo -e "Successfully downloaded previous release packets\tOK" >> /test_output/test_results.tsv
-    stop
 
     # Uninstall current packages
     dpkg --remove clickhouse-client
@@ -289,7 +284,7 @@ then
     install_packages package_folder
 
     mkdir tmp_stress_output
-    
+
     ./stress --backward-compatibility-check --output-folder tmp_stress_output --global-time-limit=1200 \
         && echo -e 'Backward compatibility check: Test script exit code\tOK' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: Test script failed\tFAIL' >> /test_output/test_results.tsv
@@ -297,8 +292,9 @@ then
 
     clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
 
-    stop    
-    
+    stop
+    mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
+
     # Start new server
     configure
     start 500
@@ -310,8 +306,9 @@ then
 
     # Let the server run for a while before checking log.
     sleep 60
-    
+
     stop
+    mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.clean.log
 
     # Error messages (we should ignore some errors)
     echo "Check for Error messages in server log:"
@@ -332,8 +329,8 @@ then
                -e "Code: 1000, e.code() = 111, Connection refused" \
                -e "UNFINISHED" \
                -e "Renaming unexpected part" \
-        /var/log/clickhouse-server/clickhouse-server.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
-        && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
+        /var/log/clickhouse-server/clickhouse-server.backward.*.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
+        && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tOK' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
     # Remove file bc_check_error_messages.txt if it's empty
@@ -348,13 +345,13 @@ then
     rm -f /test_output/tmp
 
     # OOM
-    zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
-        && echo -e 'Backward compatibility check: OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
+    zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /dev/null \
+        && echo -e 'Backward compatibility check: OOM killer (or signal 9) in clickhouse-server.log\tOK' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
     # Logical errors
     echo "Check for Logical errors in server log:"
-    zgrep -Fa -A20 "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.log > /test_output/bc_check_logical_errors.txt \
+    zgrep -Fa -A20 "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_logical_errors.txt \
         && echo -e 'Backward compatibility check: Logical error thrown (see clickhouse-server.log or bc_check_logical_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No logical errors\tOK' >> /test_output/test_results.tsv
 
@@ -362,19 +359,18 @@ then
     [ -s /test_output/bc_check_logical_errors.txt ] || rm /test_output/bc_check_logical_errors.txt
 
     # Crash
-    zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
+    zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /dev/null \
         && echo -e 'Backward compatibility check: Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: Not crashed\tOK' >> /test_output/test_results.tsv
 
     # It also checks for crash without stacktrace (printed by watchdog)
     echo "Check for Fatal message in server log:"
-    zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log > /test_output/bc_check_fatal_messages.txt \
-        && echo -e 'Backward compatibility check: Fatal message in clickhouse-server.log (see bc_check_fatal_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
+    zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_fatal_messages.txt \
+        && echo -e 'Backward compatibility check: Fatal message in clickhouse-server.log (see bc_check_fatal_messages.txt)\tOK' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
     # Remove file bc_check_fatal_messages.txt if it's empty
     [ -s /test_output/bc_check_fatal_messages.txt ] || rm /test_output/bc_check_fatal_messages.txt
-
 else
     echo -e "Backward compatibility check: Failed to download previous release packets\tFAIL" >> /test_output/test_results.tsv
 fi
