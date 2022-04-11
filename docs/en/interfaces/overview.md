@@ -1,6 +1,6 @@
 ---
-sidebar_label: Interfaces
-sidebar_position: 34
+sidebar_label: Overview
+sidebar_position: 1
 keywords: [clickhouse, network, interfaces, http, tcp, grpc, command-line, client, jdbc, odbc, driver]
 description: ClickHouse provides three network interfaces
 ---
