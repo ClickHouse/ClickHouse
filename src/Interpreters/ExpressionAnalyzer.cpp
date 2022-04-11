@@ -1349,7 +1349,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
             {
                 if (auto * ident = fn->as<ASTIdentifier>())
                 {
-                    /// exclude columns already in select expression - they are already in required list
+                    /// exclude columns from select expression - they are already available
                     if (select.count(ident->getColumnName()) == 0)
                         step.addRequiredOutput(ident->getColumnName());
                     return;
