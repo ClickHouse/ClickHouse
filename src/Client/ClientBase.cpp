@@ -1413,6 +1413,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         progress_indication.clearProgressOutput();
         logs_out_stream->writeProfileEvents(profile_events.last_block);
         logs_out_stream->flush();
+
+        profile_events.last_block = {};
     }
 
     if (is_interactive)
