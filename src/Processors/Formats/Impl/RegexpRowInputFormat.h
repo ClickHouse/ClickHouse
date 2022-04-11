@@ -76,7 +76,7 @@ private:
 class RegexpSchemaReader : public IRowSchemaReader
 {
 public:
-    RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, ContextPtr context_);
+    RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
 
 private:
     DataTypes readRowAndGetDataTypes() override;
@@ -85,7 +85,6 @@ private:
     const FormatSettings format_settings;
     RegexpFieldExtractor field_extractor;
     PeekableReadBuffer buf;
-    ContextPtr context;
 };
 
 }

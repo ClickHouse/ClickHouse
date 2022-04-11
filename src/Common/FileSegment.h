@@ -97,6 +97,15 @@ public:
 
     void write(const char * from, size_t size, size_t offset_);
 
+    /**
+     * writeInMemory and finalizeWrite are used together to write a single file with delay.
+     * Both can be called only once, one after another. Used for writing cache via threadpool
+     * on wrote operations. TODO: this solution is temporary, until adding a separate cache layer.
+     */
+    void writeInMemory(const char * from, size_t size);
+
+    size_t finalizeWrite();
+
     RemoteFileReaderPtr getRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
@@ -117,13 +126,23 @@ public:
 
     size_t getDownloadOffset() const;
 
+    size_t getDownloadedSize() const;
+
     void completeBatchAndResetDownloader();
 
     void complete(State state);
 
     String getInfoForLog() const;
 
+    size_t getHitsCount() const { return hits_count; }
+
+    size_t getRefCount() const { return ref_count; }
+
+    void incrementHitsCount() { ++hits_count; }
+
     void assertCorrectness() const;
+
+    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
 
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
@@ -133,6 +152,9 @@ private:
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
 
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
+    void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
+
+    void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
 
     bool lastFileSegmentHolder() const;
 
@@ -144,9 +166,9 @@ private:
 
     void completeImpl(
         std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock, bool allow_non_strict_checking = false);
+        std::lock_guard<std::mutex> & segment_lock);
 
-    static String getCallerIdImpl(bool allow_non_strict_checking = false);
+    static String getCallerIdImpl();
 
     void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
 
@@ -180,6 +202,8 @@ private:
     bool detached = false;
 
     std::atomic<bool> is_downloaded{false};
+    std::atomic<size_t> hits_count = 0; /// cache hits.
+    std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 };
 
 struct FileSegmentsHolder : private boost::noncopyable
