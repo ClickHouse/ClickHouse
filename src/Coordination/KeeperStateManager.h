@@ -140,6 +140,7 @@ private:
     nuraft::ptr<KeeperLogStore> log_store;
     nuraft::ptr<nuraft::srv_state> server_state;
 
+public:
     /// Parse configuration from xml config.
     KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const;
 };

@@ -14,6 +14,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <string>
 #include <filesystem>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <boost/algorithm/string.hpp>
 
@@ -113,23 +114,6 @@ void KeeperServer::loadLatestConfig()
     auto latest_snapshot_config = state_machine->getClusterConfig();
     auto latest_log_store_config = state_manager->getLatestConfigFromLogStore();
 
-    if (recover)
-    {
-        auto local_cluster_config = state_manager->getLocalConfig();
-        latest_log_store_config = std::make_shared<nuraft::cluster_config>(0, latest_log_store_config ? latest_log_store_config->get_log_idx() : 0);
-        latest_log_store_config->get_servers() = local_cluster_config->get_servers();
-        latest_log_store_config->set_log_idx(state_manager->getLogStore()->next_slot());
-
-        for (auto & server : latest_log_store_config->get_servers())
-        {
-            LOG_INFO(log, "Having server {} with log idx {}", server->get_id(), latest_log_store_config->get_log_idx());
-        }
-
-
-        state_manager->save_config(*latest_log_store_config);
-        return;
-    }
-
     if (latest_snapshot_config && latest_log_store_config)
     {
         if (latest_snapshot_config->get_log_idx() > latest_log_store_config->get_log_idx())
@@ -159,7 +143,7 @@ void KeeperServer::loadLatestConfig()
     }
 }
 
-void KeeperServer::startup(bool enable_ipv6)
+void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
     state_machine->init();
 
@@ -200,6 +184,24 @@ void KeeperServer::startup(bool enable_ipv6)
     }
 
     launchRaftServer(enable_ipv6, params, asio_opts);
+
+    if (recover)
+    {
+        auto configuration = state_manager->parseServersConfiguration(config, false);
+        auto local_cluster_config = configuration.cluster_config;
+        auto latest_log_store_config = std::make_shared<nuraft::cluster_config>(0, local_cluster_config ? local_cluster_config->get_log_idx() : 0);
+        latest_log_store_config->get_servers() = local_cluster_config->get_servers();
+        latest_log_store_config->set_log_idx(state_manager->getLogStore()->next_slot());
+
+        for (auto & server : latest_log_store_config->get_servers())
+        {
+            LOG_INFO(log, "Having server {} with log idx {}", server->get_id(), latest_log_store_config->get_log_idx());
+        }
+
+
+        state_manager->save_config(*latest_log_store_config);
+        return;
+    }
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
@@ -242,6 +244,7 @@ void KeeperServer::launchRaftServer(
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
     asio_listener->listen(raft_instance);
+
 }
 
 void KeeperServer::shutdownRaftServer()
