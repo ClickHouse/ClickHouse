@@ -119,40 +119,47 @@ bool supportsAtomicRename()
 #define RENAME_NOREPLACE RENAME_EXCL
 #define RENAME_EXCHANGE RENAME_SWAP
 
+namespace DB
+{
 
 static bool renameat2(const std::string & old_path, const std::string & new_path, int flags)
 {
-    auto fun = dlsym(RTLD_DEFAULT, "renamex_np");
-    if (fun == NULL)
+    using function_type = int (*)(const char * from, const char * to, unsigned int flags);
+    static function_type fun = reinterpret_cast<function_type>(dlsym(RTLD_DEFAULT, "renamex_np"));
+    if (fun == nullptr)
         return false;
 
     if (old_path.empty() || new_path.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot rename {} to {}: path is empty", old_path, new_path);
 
-    /// int olddirfd (ignored for absolute oldpath), const char *oldpath,
-    /// int newdirfd (ignored for absolute newpath), const char *newpath,
-    /// unsigned int flags
-    if (0 == (*fun)(old_path.c_str(), AT_FDCWD, new_path.c_str(), flags))
+    if (0 == (*fun)(old_path.c_str(), new_path.c_str(), flags))
         return true;
     int errnum = errno;
 
-    if ((errnum == ENOTSUP) || (errnum == EINVAL)
+    if (errnum == ENOTSUP || errnum == EINVAL)
         return false;
     if (errnum == EEXIST)
         throwFromErrno(fmt::format("Cannot rename {} to {} because the second path already exists", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
     if (errnum == ENOENT)
         throwFromErrno(fmt::format("Paths cannot be exchanged because {} or {} does not exist", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
-    throwFromErrnoWithPath(fmt::format("Cannot rename {} to {}: {}", old_path, new_path, stderror(errnum)), new_path, ErrorCodes::SYSTEM_ERROR);
+    throwFromErrnoWithPath(
+        fmt::format("Cannot rename {} to {}: {}", old_path, new_path, strerror(errnum)), new_path, ErrorCodes::SYSTEM_ERROR);
 }
-
 
 
 static bool supportsAtomicRenameImpl()
 {
     auto fun = dlsym(RTLD_DEFAULT, "renamex_np");
-    return fun != NULL;
+    return fun != nullptr;
 }
 
+bool supportsAtomicRename()
+{
+    static bool supports = supportsAtomicRenameImpl();
+    return supports;
+}
+
+}
 
 #else
 
