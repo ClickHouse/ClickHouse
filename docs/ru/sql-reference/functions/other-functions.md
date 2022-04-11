@@ -1927,7 +1927,7 @@ SELECT randomStringUTF8(13)
 
 ## getSetting {#getSetting}
 
-Возвращает текущее значение [пользовательской настройки](../../operations/settings/index.md#custom_settings).
+Возвращает текущее значение [пользовательской настройки](../../operations/settings/overview.md#custom_settings).
 
 **Синтаксис**
 
@@ -1958,7 +1958,7 @@ SELECT getSetting('custom_a');
 
 **См. также**
 
--   [Пользовательские настройки](../../operations/settings/index.md#custom_settings)
+-   [Пользовательские настройки](../../operations/settings/overview.md#custom_settings)
 
 ## isDecimalOverflow {#is-decimal-overflow}
 
