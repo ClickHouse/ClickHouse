@@ -7,6 +7,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
 #include <base/logger_useful.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -59,7 +60,7 @@ public:
         SnapshotsQueue & snapshots_queue_);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
-    void startup(bool enable_ipv6 = true);
+    void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
 
     /// Put local read request and execute in state machine directly and response into
     /// responses queue
