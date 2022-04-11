@@ -44,7 +44,8 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode) override;
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
@@ -71,6 +72,9 @@ public:
     void shutdown() override;
     void startup() override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
+    String getCacheBasePath() const override { return delegate->getCacheBasePath(); }
+    std::vector<String> getRemotePaths(const String & path) const override { return delegate->getRemotePaths(path); }
+    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
     DiskPtr getMetadataDiskIfExistsOrSelf() override { return delegate->getMetadataDiskIfExistsOrSelf(); }
 
