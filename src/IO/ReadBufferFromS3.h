@@ -33,8 +33,11 @@ private:
     String key;
     UInt64 max_single_read_retries;
 
-    off_t offset = 0;
-    off_t read_until_position = 0;
+    /// These variables are atomic because they can be used for `logging only`
+    /// (where it is not important to get consistent result)
+    /// from separate thread other than the one which uses the buffer for s3 reading.
+    std::atomic<off_t> offset = 0;
+    std::atomic<off_t> read_until_position = 0;
 
     Aws::S3::Model::GetObjectResult read_result;
     std::unique_ptr<ReadBuffer> impl;

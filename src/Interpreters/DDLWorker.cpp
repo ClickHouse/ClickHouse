@@ -632,8 +632,6 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         task.was_executed = true;
     }
 
-    updateMaxDDLEntryID(task.entry_name);
-
     /// Step 3: Create node in finished/ status dir and write execution status.
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
     /// NOTE: If ZooKeeper connection is lost here, we will try again to write query status.
@@ -650,6 +648,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     active_node->setAlreadyRemoved();
 
     task.completely_processed = true;
+    updateMaxDDLEntryID(task.entry_name);
 }
 
 
@@ -876,7 +875,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
 
             /// We recursively delete all nodes except node_path/finished to prevent staled hosts from
             /// creating node_path/active node (see createStatusDirs(...))
-            zookeeper->tryRemoveChildrenRecursive(node_path, "finished");
+            zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, "finished");
 
             /// And then we remove node_path and node_path/finished in a single transaction
             Coordination::Requests ops;

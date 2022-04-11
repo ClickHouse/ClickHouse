@@ -22,7 +22,7 @@ for case_insensitive in "true" "false"; do
                                     original_width Nullable(UInt32),
                                     original_height Nullable(UInt32)) engine=Memory"
 
-    cat $CUR_DIR/data_parquet_bad_column/metadata_0.parquet | $CLICKHOUSE_CLIENT -q "insert into test_02241 format Parquet SETTINGS input_format_parquet_case_insensitive_column_matching=$case_insensitive"
+    cat $CUR_DIR/data_parquet_bad_column/metadata_0.parquet | $CLICKHOUSE_CLIENT -q "insert into test_02241 SETTINGS input_format_parquet_case_insensitive_column_matching=$case_insensitive format Parquet"
 
     $CLICKHOUSE_CLIENT -q "select count() from test_02241"
     $CLICKHOUSE_CLIENT -q "drop table test_02241"
