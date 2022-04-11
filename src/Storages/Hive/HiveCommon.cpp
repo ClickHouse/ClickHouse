@@ -204,7 +204,7 @@ bool HiveMetastoreClient::HiveTableMetadata::shouldUpdate(const std::vector<Apac
 {
     const auto & old_partiton_infos = partition_infos;
     if (old_partiton_infos.size() != partitions.size())
-        return false;
+        return true;
 
     for (const auto & partition : partitions)
     {
