@@ -6,3 +6,5 @@ print everything
 OK
 print each 100 ms
 OK
+check that ProfileEvents is new for each query
+OK
