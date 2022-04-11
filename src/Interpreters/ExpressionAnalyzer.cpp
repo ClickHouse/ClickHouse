@@ -1341,12 +1341,15 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
         for (const auto & child : select_query->select()->children)
             select.insert(child->getAliasOrColumnName());
 
+        /// collect columns required for interpolate expressions -
+        /// interpolate expression can use any available column
         auto find_columns = [&step, &select](IAST * function)
         {
             auto f_impl = [&step, &select](IAST * fn, auto fi)
             {
                 if (auto * ident = fn->as<ASTIdentifier>())
                 {
+                    /// exclude columns already in select expression - they are already in required list
                     if (select.count(ident->getColumnName()) == 0)
                         step.addRequiredOutput(ident->getColumnName());
                     return;
