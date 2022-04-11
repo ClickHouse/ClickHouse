@@ -2,6 +2,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -66,9 +67,32 @@ static void checkTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, c
     result.emplace_back(name, type);
 }
 
-IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_, bool allow_bools_as_numbers_)
-    : ISchemaReader(in_), max_rows_to_read(max_rows_to_read_), default_type(default_type_), allow_bools_as_numbers(allow_bools_as_numbers_)
+IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, bool allow_bools_as_numbers_)
+    : ISchemaReader(in_), max_rows_to_read(format_settings.max_rows_to_read_for_schema_inference), allow_bools_as_numbers(allow_bools_as_numbers_)
 {
+    if (!format_settings.column_names_for_schema_inference.empty())
+    {
+        /// column_names_for_schema_inference is a string in format 'column1,column2,column3,...'
+        boost::split(column_names, format_settings.column_names_for_schema_inference, boost::is_any_of(","));
+        for (auto & column_name : column_names)
+        {
+            std::string col_name_trimmed = boost::trim_copy(column_name);
+            if (!col_name_trimmed.empty())
+                column_name = col_name_trimmed;
+        }
+    }
+}
+
+IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_, bool allow_bools_as_numbers_)
+    : IRowSchemaReader(in_, format_settings, allow_bools_as_numbers_)
+{
+    default_type = default_type_;
+}
+
+IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, const DataTypes & default_types_, bool allow_bools_as_numbers_)
+    : IRowSchemaReader(in_, format_settings, allow_bools_as_numbers_)
+{
+    default_types = default_types_;
 }
 
 NamesAndTypesList IRowSchemaReader::readSchema()
@@ -90,7 +114,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             if (!new_data_types[i])
                 continue;
 
-            chooseResultType(data_types[i], new_data_types[i], allow_bools_as_numbers, default_type, std::to_string(i + 1), row);
+            chooseResultType(data_types[i], new_data_types[i], allow_bools_as_numbers, getDefaultType(i), std::to_string(i + 1), row);
         }
     }
 
@@ -115,10 +139,19 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     for (size_t i = 0; i != data_types.size(); ++i)
     {
         /// Check that we could determine the type of this column.
-        checkTypeAndAppend(result, data_types[i], column_names[i], default_type, max_rows_to_read);
+        checkTypeAndAppend(result, data_types[i], column_names[i], getDefaultType(i), max_rows_to_read);
     }
 
     return result;
+}
+
+DataTypePtr IRowSchemaReader::getDefaultType(size_t column) const
+{
+    if (default_type)
+        return default_type;
+    if (column < default_types.size() && default_types[column])
+        return default_types[column];
+    return nullptr;
 }
 
 IRowWithNamesSchemaReader::IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_, bool allow_bools_as_numbers_)
