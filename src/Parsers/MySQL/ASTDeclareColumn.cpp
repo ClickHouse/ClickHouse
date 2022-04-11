@@ -1,12 +1,12 @@
 #include <Parsers/MySQL/ASTDeclareColumn.h>
 
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ParserDataType.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/MySQL/ASTDeclareConstraint.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/MySQL/ASTDeclareReference.h>
-#include <Parsers/MySQL/ASTDeclareConstraint.h>
+#include <Parsers/ParserDataType.h>
 
 namespace DB
 {

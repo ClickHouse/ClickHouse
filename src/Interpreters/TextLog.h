@@ -1,5 +1,9 @@
 #pragma once
+
 #include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
+#include <Poco/Message.h>
 
 namespace DB
 {
@@ -25,7 +29,8 @@ struct TextLogElement
     UInt64 source_line{};
 
     static std::string name() { return "TextLog"; }
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
 

@@ -5,7 +5,7 @@ toc_title: Caches
 
 # Cache Types {#cache-types}
 
-When performing queries, ClichHouse uses different caches.
+When performing queries, ClickHouse uses different caches.
 
 Main cache types:
 
@@ -26,4 +26,4 @@ Indirectly used:
 
 To drop cache, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md) statements.
 
-[Original article](https://clickhouse.tech/docs/en/operations/caches/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/caches/) <!--hide-->

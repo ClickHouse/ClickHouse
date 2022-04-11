@@ -18,7 +18,7 @@ const String & getPartitionIdForPart(const ITTLMergeSelector::Part & part_info)
 
 IMergeSelector::PartsRange ITTLMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const size_t max_total_size_to_merge)
+    size_t max_total_size_to_merge)
 {
     using Iterator = IMergeSelector::PartsRange::const_iterator;
     Iterator best_begin;
@@ -110,6 +110,10 @@ bool TTLDeleteMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & 
     /// Dropping whole part is an exception to `shall_participate_in_merges` logic.
     if (only_drop_parts)
         return false;
+
+    /// All TTL satisfied
+    if (!part.ttl_infos->hasAnyNonFinishedTTLs())
+        return true;
 
     return !part.shall_participate_in_merges;
 }

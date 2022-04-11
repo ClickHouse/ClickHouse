@@ -28,34 +28,49 @@ ZstdInflatingReadBuffer::~ZstdInflatingReadBuffer()
 
 bool ZstdInflatingReadBuffer::nextImpl()
 {
-    if (eof)
-        return false;
-
-    if (input.pos >= input.size)
+    do
     {
-        in->nextIfAtEnd();
-        input.src = reinterpret_cast<unsigned char *>(in->position());
-        input.pos = 0;
-        input.size = in->buffer().end() - in->position();
-    }
+        // If it is known that end of file was reached, return false
+        if (eof_flag)
+            return false;
 
-    output.dst = reinterpret_cast<unsigned char *>(internal_buffer.begin());
-    output.size = internal_buffer.size();
-    output.pos = 0;
+        /// If end was reached, get next part
+        if (input.pos >= input.size)
+        {
+            in->nextIfAtEnd();
+            input.src = reinterpret_cast<unsigned char *>(in->position());
+            input.pos = 0;
+            input.size = in->buffer().end() - in->position();
+        }
 
-    size_t ret = ZSTD_decompressStream(dctx, &output, &input);
-    if (ZSTD_isError(ret))
-        throw Exception(
-            ErrorCodes::ZSTD_DECODER_FAILED, "Zstd stream decoding failed: error code: {}; zstd version: {}", ret, ZSTD_VERSION_STRING);
+        /// fill output
+        output.dst = reinterpret_cast<unsigned char *>(internal_buffer.begin());
+        output.size = internal_buffer.size();
+        output.pos = 0;
 
-    in->position() = in->buffer().begin() + input.pos;
-    working_buffer.resize(output.pos);
+        /// Decompress data and check errors.
+        size_t ret = ZSTD_decompressStream(dctx, &output, &input);
+        if (ZSTD_isError(ret))
+            throw Exception(
+                ErrorCodes::ZSTD_DECODER_FAILED, "Zstd stream encoding failed: error '{}'; zstd version: {}", ZSTD_getErrorName(ret), ZSTD_VERSION_STRING);
 
-    if (in->eof())
-    {
-        eof = true;
-        return !working_buffer.empty();
-    }
+        /// Check that something has changed after decompress (input or output position)
+        assert(in->eof() || output.pos > 0 || in->position() < in->buffer().begin() + input.pos);
+
+        /// move position to the end of read data
+        in->position() = in->buffer().begin() + input.pos;
+        working_buffer.resize(output.pos);
+
+        /// If end of file is reached, fill eof variable and return true if there is some data in buffer, otherwise return false
+        if (in->eof())
+        {
+            eof_flag = true;
+            return !working_buffer.empty();
+        }
+        /// It is possible, that input buffer is not at eof yet, but nothing was decompressed in current iteration.
+        /// But there are cases, when such behaviour is not allowed - i.e. if input buffer is not eof, then
+        /// it has to be guaranteed that working_buffer is not empty. So if it is empty, continue.
+    } while (output.pos == 0);
 
     return true;
 }

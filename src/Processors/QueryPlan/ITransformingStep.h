@@ -48,14 +48,17 @@ public:
 
     ITransformingStep(DataStream input_stream, Block output_header, Traits traits, bool collect_processors_ = true);
 
-    QueryPipelinePtr updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings) override;
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
-    virtual void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) = 0;
+    virtual void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     const TransformTraits & getTransformTraits() const { return transform_traits; }
     const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }
 
     void describePipeline(FormatSettings & settings) const override;
+
+    /// Append extra processors for this step.
+    void appendExtraProcessors(const Processors & extra_processors);
 
 protected:
     /// Clear distinct_columns if res_header doesn't contain all of them.

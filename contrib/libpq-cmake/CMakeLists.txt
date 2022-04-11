@@ -1,3 +1,7 @@
+if (NOT ENABLE_LIBPQXX)
+    return()
+endif()
+
 set(LIBPQ_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpq")
 
 set(SRCS
@@ -8,7 +12,7 @@ set(SRCS
         "${LIBPQ_SOURCE_DIR}/fe-lobj.c"
         "${LIBPQ_SOURCE_DIR}/fe-misc.c"
         "${LIBPQ_SOURCE_DIR}/fe-print.c"
-        "${LIBPQ_SOURCE_DIR}/fe-protocol2.c"
+        "${LIBPQ_SOURCE_DIR}/fe-trace.c"
         "${LIBPQ_SOURCE_DIR}/fe-protocol3.c"
         "${LIBPQ_SOURCE_DIR}/fe-secure.c"
         "${LIBPQ_SOURCE_DIR}/fe-secure-common.c"
@@ -18,8 +22,12 @@ set(SRCS
         "${LIBPQ_SOURCE_DIR}/pqexpbuffer.c"
 
         "${LIBPQ_SOURCE_DIR}/common/scram-common.c"
-        "${LIBPQ_SOURCE_DIR}/common/sha2_openssl.c"
+        "${LIBPQ_SOURCE_DIR}/common/sha2.c"
+        "${LIBPQ_SOURCE_DIR}/common/sha1.c"
         "${LIBPQ_SOURCE_DIR}/common/md5.c"
+        "${LIBPQ_SOURCE_DIR}/common/md5_common.c"
+        "${LIBPQ_SOURCE_DIR}/common/hmac_openssl.c"
+        "${LIBPQ_SOURCE_DIR}/common/cryptohash.c"
         "${LIBPQ_SOURCE_DIR}/common/saslprep.c"
         "${LIBPQ_SOURCE_DIR}/common/unicode_norm.c"
         "${LIBPQ_SOURCE_DIR}/common/ip.c"
@@ -49,10 +57,12 @@ set(SRCS
         "${LIBPQ_SOURCE_DIR}/port/explicit_bzero.c"
         )
 
-add_library(libpq ${SRCS})
+add_library(_libpq ${SRCS})
 
-target_include_directories (libpq PUBLIC ${LIBPQ_SOURCE_DIR})
-target_include_directories (libpq PUBLIC "${LIBPQ_SOURCE_DIR}/include")
-target_include_directories (libpq PRIVATE "${LIBPQ_SOURCE_DIR}/configs")
+target_include_directories (_libpq SYSTEM PUBLIC ${LIBPQ_SOURCE_DIR})
+target_include_directories (_libpq SYSTEM PUBLIC "${LIBPQ_SOURCE_DIR}/include")
+target_include_directories (_libpq SYSTEM PRIVATE "${LIBPQ_SOURCE_DIR}/configs")
 
-target_link_libraries (libpq PRIVATE ssl)
+target_link_libraries (_libpq PRIVATE OpenSSL::SSL)
+
+add_library(ch_contrib::libpq ALIAS _libpq)

@@ -3,7 +3,7 @@
 #include <city.h>
 #include <type_traits>
 
-#include <ext/bit_cast.h>
+#include <base/bit_cast.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -28,6 +28,7 @@
 
 namespace DB
 {
+struct Settings;
 
 /// uniq
 
@@ -149,7 +150,7 @@ template <typename T> struct AggregateFunctionUniqTraits
     {
         if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
         {
-            return ext::bit_cast<UInt64>(x);
+            return bit_cast<UInt64>(x);
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
@@ -241,12 +242,12 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).set.read(buf);
     }
@@ -298,12 +299,12 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).set.read(buf);
     }

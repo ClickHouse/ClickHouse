@@ -1,39 +1,15 @@
 #pragma once
 
-#include <Interpreters/BloomFilter.h>
+#include <memory>
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
-
-#include <memory>
+#include <Interpreters/BloomFilter.h>
+#include <Interpreters/ITokenExtractor.h>
 
 
 namespace DB
 {
-
-/// Interface for string parsers.
-struct ITokenExtractor
-{
-    virtual ~ITokenExtractor() = default;
-
-    /// Fast inplace implementation for regular use.
-    /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
-    /// Returns false if parsing is finished, otherwise returns true.
-    virtual bool nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const = 0;
-
-    /// Optimized version that can assume at least 15 padding bytes after data + len (as our Columns provide).
-    virtual bool nextInColumn(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const
-    {
-        return nextInField(data, len, pos, token_start, token_len);
-    }
-
-    /// Special implementation for creating bloom filter for LIKE function.
-    /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
-    virtual bool nextLike(const String & str, size_t * pos, String & out) const = 0;
-
-    virtual bool supportLike() const = 0;
-};
-
-using TokenExtractorPtr = const ITokenExtractor *;
 
 struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
 {
@@ -45,7 +21,7 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleFullText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr) override;
+    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return !has_elems; }
 
@@ -112,6 +88,7 @@ private:
             /// Atoms of a Boolean expression.
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
+            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
@@ -125,7 +102,7 @@ private:
             ALWAYS_TRUE,
         };
 
-        RPNElement(
+        RPNElement( /// NOLINT
                 Function function_ = FUNCTION_UNKNOWN, size_t key_column_ = 0, std::unique_ptr<BloomFilter> && const_bloom_filter_ = nullptr)
                 : function(function_), key_column(key_column_), bloom_filter(std::move(const_bloom_filter_)) {}
 
@@ -145,9 +122,16 @@ private:
 
     using RPN = std::vector<RPNElement>;
 
-    bool atomFromAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
+    bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
 
-    bool getKey(const ASTPtr & node, size_t & key_column_num);
+    bool traverseASTEquals(
+        const String & function_name,
+        const ASTPtr & key_ast,
+        const DataTypePtr & value_type,
+        const Field & value_field,
+        RPNElement & out);
+
+    bool getKey(const std::string & key_column_name, size_t & key_column_num);
     bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
@@ -161,35 +145,6 @@ private:
     /// Sets from syntax analyzer.
     PreparedSets prepared_sets;
 };
-
-
-/// Parser extracting all ngrams from string.
-struct NgramTokenExtractor final : public ITokenExtractor
-{
-    NgramTokenExtractor(size_t n_) : n(n_) {}
-
-    static String getName() { return "ngrambf_v1"; }
-
-    bool nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
-    bool nextLike(const String & str, size_t * pos, String & token) const override;
-
-    bool supportLike() const override { return true; }
-
-    size_t n;
-};
-
-/// Parser extracting tokens (sequences of numbers and ascii letters).
-struct SplitTokenExtractor final : public ITokenExtractor
-{
-    static String getName() { return "tokenbf_v1"; }
-
-    bool nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
-    bool nextInColumn(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
-    bool nextLike(const String & str, size_t * pos, String & token) const override;
-
-    bool supportLike() const override { return true; }
-};
-
 
 class MergeTreeIndexFullText final : public IMergeTreeIndex
 {

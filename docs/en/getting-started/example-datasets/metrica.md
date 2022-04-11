@@ -1,20 +1,20 @@
 ---
 toc_priority: 15
-toc_title: Yandex.Metrica Data
+toc_title: Web Analytics Data
 ---
 
-# Anonymized Yandex.Metrica Data {#anonymized-yandex-metrica-data}
+# Anonymized Web Analytics Data {#anonymized-web-analytics-data}
 
-Dataset consists of two tables containing anonymized data about hits (`hits_v1`) and visits (`visits_v1`) of Yandex.Metrica. You can read more about Yandex.Metrica in [ClickHouse history](../../introduction/history.md) section.
+Dataset consists of two tables containing anonymized web analytics data with hits (`hits_v1`) and visits (`visits_v1`).
 
-The dataset consists of two tables, either of them can be downloaded as a compressed `tsv.xz` file or as prepared partitions. In addition to that, an extended version of the `hits` table containing 100 million rows is available as TSV at https://datasets.clickhouse.tech/hits/tsv/hits_100m_obfuscated_v1.tsv.xz and as prepared partitions at https://datasets.clickhouse.tech/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
+The dataset consists of two tables, either of them can be downloaded as a compressed `tsv.xz` file or as prepared partitions. In addition to that, an extended version of the `hits` table containing 100 million rows is available as TSV at https://datasets.clickhouse.com/hits/tsv/hits_100m_obfuscated_v1.tsv.xz and as prepared partitions at https://datasets.clickhouse.com/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
 
 ## Obtaining Tables from Prepared Partitions {#obtaining-tables-from-prepared-partitions}
 
 Download and import hits table:
 
 ``` bash
-curl -O https://datasets.clickhouse.tech/hits/partitions/hits_v1.tar
+curl -O https://datasets.clickhouse.com/hits/partitions/hits_v1.tar
 tar xvf hits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 # check permissions on unpacked data, fix if required
 sudo service clickhouse-server restart
@@ -24,7 +24,7 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 Download and import visits:
 
 ``` bash
-curl -O https://datasets.clickhouse.tech/visits/partitions/visits_v1.tar
+curl -O https://datasets.clickhouse.com/visits/partitions/visits_v1.tar
 tar xvf visits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 # check permissions on unpacked data, fix if required
 sudo service clickhouse-server restart
@@ -36,13 +36,17 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 Download and import hits from compressed TSV file:
 
 ``` bash
-curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
 # Validate the checksum
 md5sum hits_v1.tsv
 # Checksum should be equal to: f3631b6295bf06989c1437491f7592cb
 # now create table
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS datasets"
+# for hits_v1
 clickhouse-client --query "CREATE TABLE datasets.hits_v1 ( WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192"
+# for hits_100m_obfuscated
+clickhouse-client --query="CREATE TABLE  hits_100m_obfuscated (WatchID UInt64, JavaEnable UInt8, Title String, GoodEvent Int16, EventTime DateTime, EventDate Date, CounterID UInt32, ClientIP UInt32, RegionID UInt32, UserID UInt64, CounterClass Int8, OS UInt8, UserAgent UInt8, URL String, Referer String, Refresh UInt8, RefererCategoryID UInt16, RefererRegionID UInt32, URLCategoryID UInt16, URLRegionID UInt32, ResolutionWidth UInt16, ResolutionHeight UInt16, ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8, FlashMinor2 String, NetMajor UInt8, NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2), CookieEnable UInt8, JavascriptEnable UInt8, IsMobile UInt8, MobilePhone UInt8, MobilePhoneModel String, Params String, IPNetworkID UInt32, TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String, AdvEngineID UInt8, IsArtifical UInt8, WindowClientWidth UInt16, WindowClientHeight UInt16, ClientTimeZone Int16, ClientEventTime DateTime, SilverlightVersion1 UInt8, SilverlightVersion2 UInt8, SilverlightVersion3 UInt32, SilverlightVersion4 UInt16, PageCharset String, CodeVersion UInt32, IsLink UInt8, IsDownload UInt8, IsNotBounce UInt8, FUniqID UInt64, OriginalURL String, HID UInt32, IsOldCounter UInt8, IsEvent UInt8, IsParameter UInt8, DontCountHits UInt8, WithHash UInt8, HitColor FixedString(1), LocalEventTime DateTime, Age UInt8, Sex UInt8, Income UInt8, Interests UInt16, Robotness UInt8, RemoteIP UInt32, WindowName Int32, OpenerName Int32, HistoryLength Int16, BrowserLanguage FixedString(2), BrowserCountry FixedString(2), SocialNetwork String, SocialAction String, HTTPError UInt16, SendTiming UInt32, DNSTiming UInt32, ConnectTiming UInt32, ResponseStartTiming UInt32, ResponseEndTiming UInt32, FetchTiming UInt32, SocialSourceNetworkID UInt8, SocialSourcePage String, ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3), ParamCurrencyID UInt16, OpenstatServiceName String, OpenstatCampaignID String, OpenstatAdID String, OpenstatSourceID String, UTMSource String, UTMMedium String, UTMCampaign String, UTMContent String, UTMTerm String, FromTag String, HasGCLID UInt8, RefererHash UInt64, URLHash UInt64, CLID UInt32) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER  BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192"
+
 # import data
 cat hits_v1.tsv | clickhouse-client --query "INSERT INTO datasets.hits_v1 FORMAT TSV" --max_insert_block_size=100000
 # optionally you can optimize table
@@ -53,7 +57,7 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 Download and import visits from compressed tsv-file:
 
 ``` bash
-curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 # Validate the checksum
 md5sum visits_v1.tsv
 # Checksum should be equal to: 6dafe1a0f24e59e3fc2d0fed85601de6
@@ -69,6 +73,6 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 ## Example Queries {#example-queries}
 
-[ClickHouse tutorial](../../getting-started/tutorial.md) is based on Yandex.Metrica dataset and the recommended way to get started with this dataset is to just go through tutorial.
+[The ClickHouse tutorial](../../getting-started/tutorial.md) is based on this web analytics dataset, and the recommended way to get started with this dataset is to go through the tutorial.
 
 Additional examples of queries to these tables can be found among [stateful tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) of ClickHouse (they are named `test.hits` and `test.visits` there).

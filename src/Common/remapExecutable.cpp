@@ -1,3 +1,5 @@
+#include "remapExecutable.h"
+
 #if defined(__linux__) && defined(__amd64__) && defined(__SSE2__) && !defined(SANITIZER) && defined(NDEBUG) && !defined(SPLIT_SHARED_LIBRARIES)
 
 #include <sys/mman.h>
@@ -10,8 +12,6 @@
 #include <Common/getMappedArea.h>
 #include <Common/Exception.h>
 #include <fmt/format.h>
-
-#include "remapExecutable.h"
 
 
 namespace DB
@@ -26,6 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
+/// NOLINTNEXTLINE(cert-dcl50-cpp)
 __attribute__((__noinline__)) int64_t our_syscall(...)
 {
     __asm__ __volatile__ (R"(
@@ -135,10 +136,11 @@ __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
 }
 
 
-void remapExecutable()
+size_t remapExecutable()
 {
     auto [begin, size] = getMappedArea(reinterpret_cast<void *>(remapExecutable));
     remapToHugeStep1(begin, size);
+    return size;
 }
 
 }
@@ -148,7 +150,7 @@ void remapExecutable()
 namespace DB
 {
 
-void remapExecutable() {}
+size_t remapExecutable() { return 0; }
 
 }
 

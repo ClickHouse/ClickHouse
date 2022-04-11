@@ -1,5 +1,5 @@
 SELECT UserID, arrayEnumerateUniq(groupArray(SearchPhrase)) AS arr
-FROM 
+FROM
 (
     SELECT UserID, SearchPhrase
     FROM test.hits

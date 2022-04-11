@@ -63,7 +63,7 @@ merge selecting algorithm is applied and the relevant metrics are calculated to 
 their sizes, at what time intervals they are inserted;
 
 There is a research thesis dedicated to optimization of merge algorithm:
-https://presentations.clickhouse.tech/hse_2019/merge_algorithm.pptx
+https://presentations.clickhouse.com/hse_2019/merge_algorithm.pptx
 
 This work made attempt to variate the coefficients in SimpleMergeSelector and to solve the optimization task:
 maybe some change in coefficients will give a clear win on all metrics. Surprisingly enough, it has found
@@ -88,7 +88,7 @@ class SimpleMergeSelector final : public IMergeSelector
 public:
     struct Settings
     {
-        /// Zero means unlimited.
+        /// Zero means unlimited. Can be overridden by the same merge tree setting.
         size_t max_parts_to_merge_at_once = 100;
 
         /** Minimum ratio of size of one part to all parts in set of parts to merge (for usual cases).
@@ -152,7 +152,7 @@ public:
 
     PartsRange select(
         const PartsRanges & parts_ranges,
-        const size_t max_total_size_to_merge) override;
+        size_t max_total_size_to_merge) override;
 
 private:
     const Settings settings;

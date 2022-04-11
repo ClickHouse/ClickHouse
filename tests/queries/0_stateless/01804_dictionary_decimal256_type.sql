@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET allow_experimental_bigint_types = 1;
 
 DROP TABLE IF EXISTS dictionary_decimal_source_table;
@@ -54,22 +56,6 @@ SELECT 'Cache dictionary';
 SELECT dictGet('cache_dictionary', 'decimal_value', toUInt64(1));
 
 DROP DICTIONARY cache_dictionary;
-
-DROP DICTIONARY IF EXISTS ssd_cache_dictionary;
-CREATE DICTIONARY ssd_cache_dictionary
-(
-    id UInt64,
-    decimal_value Decimal256(5)
-)
-PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'dictionary_decimal_source_table'))
-LIFETIME(MIN 1 MAX 1000)
-LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/0d'));
-
-SELECT 'SSDCache dictionary';
-SELECT dictGet('ssd_cache_dictionary', 'decimal_value', toUInt64(1));
-
-DROP DICTIONARY ssd_cache_dictionary;
 
 DROP DICTIONARY IF EXISTS direct_dictionary;
 CREATE DICTIONARY direct_dictionary

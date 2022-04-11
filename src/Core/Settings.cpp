@@ -2,6 +2,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
 #include <string.h>
 #include <boost/program_options/options_description.hpp>
@@ -56,54 +57,60 @@ void Settings::loadSettingsFromConfig(const String & path, const Poco::Util::Abs
     }
 }
 
-void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_values_, bool changed_only)
+void Settings::dumpToMapColumn(IColumn * column, bool changed_only)
 {
     /// Convert ptr and make simple check
-    auto * column_names = (column_names_) ? &typeid_cast<ColumnArray &>(*column_names_) : nullptr;
-    auto * column_values = (column_values_) ? &typeid_cast<ColumnArray &>(*column_values_) : nullptr;
+    auto * column_map = column ? &typeid_cast<ColumnMap &>(*column) : nullptr;
+    if (!column_map)
+        return;
 
-    size_t count = 0;
+    auto & offsets = column_map->getNestedColumn().getOffsets();
+    auto & tuple_column = column_map->getNestedData();
+    auto & key_column = tuple_column.getColumn(0);
+    auto & value_column = tuple_column.getColumn(1);
 
+    size_t size = 0;
     for (const auto & setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
     {
-        if (column_names)
-        {
-            auto name = setting.getName();
-            column_names->getData().insertData(name.data(), name.size());
-        }
-        if (column_values)
-            column_values->getData().insert(setting.getValueString());
-        ++count;
+        auto name = setting.getName();
+        key_column.insertData(name.data(), name.size());
+        value_column.insert(setting.getValueString());
+        size++;
     }
 
-    if (column_names)
-    {
-        auto & offsets = column_names->getOffsets();
-        offsets.push_back(offsets.back() + count);
-    }
-
-    /// Nested columns case
-    bool the_same_offsets = column_names && column_values && column_names->getOffsetsPtr() == column_values->getOffsetsPtr();
-
-    if (column_values && !the_same_offsets)
-    {
-        auto & offsets = column_values->getOffsets();
-        offsets.push_back(offsets.back() + count);
-    }
+    offsets.push_back(offsets.back() + size);
 }
 
 void Settings::addProgramOptions(boost::program_options::options_description & options)
 {
     for (const auto & field : all())
     {
-        const std::string_view name = field.getName();
-        auto on_program_option
-            = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
-        options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-            name.data(),
-            boost::program_options::value<std::string>()->composing()->notifier(on_program_option),
-            field.getDescription())));
+        addProgramOption(options, field);
     }
+}
+
+void Settings::addProgramOptionsAsMultitokens(boost::program_options::options_description & options)
+{
+    for (const auto & field : all())
+    {
+        addProgramOptionAsMultitoken(options, field);
+    }
+}
+
+void Settings::addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field)
+{
+    const std::string_view name = field.getName();
+    auto on_program_option = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
+    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+        name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
+}
+
+void Settings::addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field)
+{
+    const std::string_view name = field.getName();
+    auto on_program_option = boost::function1<void, const Strings &>([this, name](const Strings & values) { set(name, values.back()); });
+    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+        name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));
 }
 
 void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
@@ -126,6 +133,16 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
                 ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         }
     }
+}
+
+std::vector<String> Settings::getAllRegisteredNames() const
+{
+    std::vector<String> all_settings;
+    for (const auto & setting_field : all())
+    {
+        all_settings.push_back(setting_field.getName());
+    }
+    return all_settings;
 }
 
 IMPLEMENT_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)

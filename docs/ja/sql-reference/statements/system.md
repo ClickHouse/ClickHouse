@@ -110,4 +110,4 @@ MergeTreeファミリ内のテーブルのバックグラウンドマージを�
 SYSTEM START MERGES [[db.]merge_tree_family_table_name]
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/system/) <!--hide-->

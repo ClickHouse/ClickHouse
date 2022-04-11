@@ -30,16 +30,11 @@ Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
-## Huge Pages {#huge-pages}
-
-Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
-
-``` bash
-$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
-```
-
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
+
+!!! warning "Attention"
+    If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. The recommended amount of RAM is 32 GB or more. You can use ClickHouse in a system with a small amount of RAM, even with 2 GB of RAM, but it requires additional tuning and can ingest at a low rate.
 
 ## Storage Subsystem {#storage-subsystem}
 
@@ -52,7 +47,7 @@ But for storing archives with rare queries, shelves will work.
 ## RAID {#raid}
 
 When using HDD, you can combine their RAID-10, RAID-5, RAID-6 or RAID-50.
-For Linux, software RAID is better (with `mdadm`). We don’t recommend using LVM.
+For Linux, software RAID is better (with `mdadm`). We do not recommend using LVM.
 When creating RAID-10, select the `far` layout.
 If your budget allows, choose RAID-10.
 
@@ -65,7 +60,7 @@ $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
 
-A block size of 1024 KB is sufficient for all RAID configurations.
+A block size of 64 KB is sufficient for most RAID configurations. The average clickhouse-server write size is approximately 1 MB (1024 KB), and thus the recommended stripe size is also 1 MB. The block size can be optimized if needed when set to 1 MB divided by the number of non-parity disks in the RAID array, such that each write is parallelized across all available non-parity disks.
 Never set the block size too small or too large.
 
 You can use RAID-0 on SSD.
@@ -74,11 +69,16 @@ Regardless of RAID use, always use replication for data security.
 Enable NCQ with a long queue. For HDD, choose the CFQ scheduler, and for SSD, choose noop. Don’t reduce the ‘readahead’ setting.
 For HDD, enable the write cache.
 
+Make sure that [fstrim](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
+
 ## File System {#file-system}
 
-Ext4 is the most reliable option. Set the mount options `noatime, nobarrier`.
-XFS is also suitable, but it hasn’t been as thoroughly tested with ClickHouse.
-Most other file systems should also work fine. File systems with delayed allocation work better.
+Ext4 is the most reliable option. Set the mount options `noatime`.
+XFS should be avoided. It works mostly fine but there are some reports about lower performance.
+Most other file systems should also work fine.
+
+Do not use compressed filesystems, because ClickHouse does compression on its own and better.
+It's not recommended to use encrypted filesystems, because you can use builtin encryption in ClickHouse, which is better.
 
 ## Linux Kernel {#linux-kernel}
 
@@ -90,6 +90,15 @@ If you are using IPv6, increase the size of the route cache.
 The Linux kernel prior to 3.2 had a multitude of problems with IPv6 implementation.
 
 Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be much worse for patching replicas with tens of terabytes of data, or for processing distributed queries with a large amount of intermediate data.
+
+## Huge Pages {#huge-pages}
+
+If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
+On newer Linux kernels transparent huge pages are alright.
+
+``` bash
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+```
 
 ## Hypervisor configuration
 
@@ -120,13 +129,17 @@ If you want to divide an existing ZooKeeper cluster into two, the correct way is
 
 Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
 
+You can have ZooKeeper observers in an ensemble but ClickHouse servers should not interact with observers.
+
+Do not change `minSessionTimeout` setting, large values may affect ClickHouse restart stability.
+
 With the default settings, ZooKeeper is a time bomb:
 
 > The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
 
 This bomb must be defused.
 
-The ZooKeeper (3.5.1) configuration below is used in the Yandex.Metrica production environment as of May 20, 2017:
+The ZooKeeper (3.5.1) configuration below is used in a large production environment:
 
 zoo.cfg:
 
@@ -258,4 +271,8 @@ script
 end script
 ```
 
-{## [Original article](https://clickhouse.tech/docs/en/operations/tips/) ##}
+## Antivirus software {#antivirus-software}
+
+If you use antivirus software configure it to skip folders with Clickhouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
+
+{## [Original article](https://clickhouse.com/docs/en/operations/tips/) ##}

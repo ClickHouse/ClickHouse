@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
@@ -28,7 +30,7 @@ SELECT
     name,
     comment
 FROM system.tables
-WHERE name IN ('t1', 't2', 't3') order by name;
+WHERE name IN ('t1', 't2', 't3') AND database = currentDatabase() order by name;
 
 SHOW CREATE TABLE t1;
 

@@ -1,5 +1,5 @@
 SELECT number
-FROM 
+FROM
 (
     SELECT zero AS number
     FROM remote('127.0.0.2', system.zeros)

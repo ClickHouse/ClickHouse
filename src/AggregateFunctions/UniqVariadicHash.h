@@ -5,10 +5,12 @@
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/IDataType.h>
 
 
 namespace DB
 {
+struct Settings;
 
 /** Hashes a set of arguments to the aggregate function
   *  to calculate the number of unique values

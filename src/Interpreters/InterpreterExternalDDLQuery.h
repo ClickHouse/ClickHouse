@@ -6,10 +6,10 @@
 namespace DB
 {
 
-class InterpreterExternalDDLQuery : public IInterpreter, WithContext
+class InterpreterExternalDDLQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterExternalDDLQuery(const ASTPtr & query_, ContextPtr context_);
+    InterpreterExternalDDLQuery(const ASTPtr & query_, ContextMutablePtr context_);
 
     BlockIO execute() override;
 

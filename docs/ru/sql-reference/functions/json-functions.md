@@ -18,37 +18,37 @@ toc_title: JSON
 
 Проверяет наличие поля с именем `name`.
 
-Алиас: `simpleJSONHas`.
+Синоним: `simpleJSONHas`.
 
 ## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
 
 Пытается выделить число типа UInt64 из значения поля с именем `name`. Если поле строковое, пытается выделить число из начала строки. Если такого поля нет, или если оно есть, но содержит не число, то возвращает 0.
 
-Алиас: `simpleJSONExtractUInt`.
+Синоним: `simpleJSONExtractUInt`.
 
 ## visitParamExtractInt(params, name) {#visitparamextractintparams-name}
 
 Аналогично для Int64.
 
-Алиас: `simpleJSONExtractInt`.
+Синоним: `simpleJSONExtractInt`.
 
 ## visitParamExtractFloat(params, name) {#visitparamextractfloatparams-name}
 
 Аналогично для Float64.
 
-Алиас: `simpleJSONExtractFloat`.
+Синоним: `simpleJSONExtractFloat`.
 
 ## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
 
 Пытается выделить значение true/false. Результат — UInt8.
 
-Алиас: `simpleJSONExtractBool`.
+Синоним: `simpleJSONExtractBool`.
 
 ## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
 
 Возвращает значение поля, включая разделители.
 
-Алиас: `simpleJSONExtractRaw`.
+Синоним: `simpleJSONExtractRaw`.
 
 Примеры:
 
@@ -61,7 +61,7 @@ visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
 
 Разбирает строку в двойных кавычках. У значения убирается экранирование. Если убрать экранированные символы не удалось, то возвращается пустая строка.
 
-Алиас: `simpleJSONExtractString`.
+Синоним: `simpleJSONExtractString`.
 
 Примеры:
 
@@ -216,6 +216,44 @@ SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
+## JSONExtractKeys {#jsonextractkeysjson-indices-or-keys}
+
+Парсит строку JSON и извлекает ключи.
+
+**Синтаксис**
+
+``` sql
+JSONExtractKeys(json[, a, b, c...])
+```
+
+**Аргументы**
+
+-   `json` — [строка](../data-types/string.md), содержащая валидный JSON.
+-   `a, b, c...` — индексы или ключи, разделенные запятыми, которые указывают путь к внутреннему полю во вложенном объекте JSON. Каждый аргумент может быть либо [строкой](../data-types/string.md) для получения поля по ключу, либо [целым числом](../data-types/int-uint.md) для получения N-го поля (индексирование начинается с 1, отрицательные числа используются для отсчета с конца). Если параметр не задан, весь JSON разбирается как объект верхнего уровня. Необязательный параметр.
+
+**Возвращаемые значения**
+
+Массив с ключами JSON.
+
+Тип: [Array](../data-types/array.md)([String](../data-types/string.md)). 
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}');
+```
+
+Результат:
+
+```
+text
+┌─JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}')─┐
+│ ['a','b']                                                  │
+└────────────────────────────────────────────────────────────┘
+```
+
 ## JSONExtractRaw(json\[, indices_or_keys\]…) {#jsonextractrawjson-indices-or-keys}
 
 Возвращает часть JSON в виде строки, содержащей неразобранную подстроку.
@@ -306,3 +344,121 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello"
 │ [('d','"hello"'),('f','"world"')]                                                                     │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## JSON_EXISTS(json, path) {#json-exists}
+
+Если значение существует в документе JSON, то возвращается 1.
+
+Если значение не существует, то возвращается 0.
+
+Пример:
+
+``` sql
+SELECT JSON_EXISTS('{"hello":1}', '$.hello');
+SELECT JSON_EXISTS('{"hello":{"world":1}}', '$.hello.world');
+SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
+SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
+```
+
+!!! note "Примечание"
+    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_EXISTS(path, json)
+
+## JSON_QUERY(json, path) {#json-query}
+
+Парсит JSON и извлекает значение как JSON массив или JSON объект.
+
+Если значение не существует, то возвращается пустая строка.
+
+Пример:
+
+``` sql
+SELECT JSON_QUERY('{"hello":"world"}', '$.hello');
+SELECT JSON_QUERY('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
+SELECT JSON_QUERY('{"hello":2}', '$.hello');
+SELECT toTypeName(JSON_QUERY('{"hello":2}', '$.hello'));
+```
+
+Результат:
+
+``` text
+["world"]
+[0, 1, 4, 0, -1, -4]
+[2]
+String
+```
+!!! note "Примечание"
+    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_QUERY(path, json)
+
+## JSON_VALUE(json, path) {#json-value}
+
+Парсит JSON и извлекает значение как JSON скаляр.
+
+Если значение не существует, то возвращается пустая строка.
+
+Пример:
+
+``` sql
+SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
+SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
+SELECT JSON_VALUE('{"hello":2}', '$.hello');
+SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
+```
+
+Результат:
+
+``` text
+"world"
+0
+2
+String
+```
+
+!!! note "Примечание"
+    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_VALUE(path, json)
+
+## toJSONString {#tojsonstring}
+
+Сериализует значение в JSON представление. Поддерживаются различные типы данных и вложенные структуры.
+По умолчанию 64-битные [целые числа](../../sql-reference/data-types/int-uint.md) и более (например, `UInt64` или `Int128`) заключаются в кавычки. Настройка [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) управляет этим поведением.
+Специальные значения `NaN` и `inf` заменяются на `null`. Чтобы они отображались, включите настройку [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals).
+Когда сериализуется значение [Enum](../../sql-reference/data-types/enum.md), то функция выводит его имя.
+
+**Синтаксис**
+
+``` sql
+toJSONString(value)
+```
+
+**Аргументы**
+
+-   `value` — значение, которое необходимо сериализовать. Может быть любого типа.
+
+**Возвращаемое значение**
+
+-   JSON представление значения.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Первый пример показывает сериализацию [Map](../../sql-reference/data-types/map.md).
+Во втором примере есть специальные значения, обернутые в [Tuple](../../sql-reference/data-types/tuple.md).
+
+Запрос:
+
+``` sql
+SELECT toJSONString(map('key1', 1, 'key2', 2));
+SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_format_json_quote_denormals = 1;
+```
+
+Результат:
+
+``` text
+{"key1":1,"key2":2}
+[1.25,null,"nan","inf","-inf",[]]
+```
+
+**Смотрите также**
+
+-   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
+-   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)

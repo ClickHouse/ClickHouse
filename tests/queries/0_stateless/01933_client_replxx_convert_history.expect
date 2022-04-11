@@ -1,0 +1,35 @@
+#!/usr/bin/expect -f
+# Tags: no-parallel
+# Tag no-parallel: Uses non unique history file
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
+}
+set basedir [file dirname $argv0]
+
+exec bash -c "echo select 1 > $argv0.txt"
+exec bash -c "echo select 1 >> $argv0.txt"
+exec bash -c "echo select 1 >> $argv0.txt"
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --history_file=$argv0.txt"
+expect "The history file ($argv0.txt) is in old format. 3 lines, 1 unique lines."
+expect ":) "
+send -- "\4"
+expect eof
+
+spawn bash -c "wc -l $argv0.txt"
+# The following lines are expected:
+#
+#     ### YYYY-MM-DD HH:MM:SS.SSS
+#     select 1
+#
+expect "2"
+expect eof
+
+exec bash -c "rm $argv0.txt"

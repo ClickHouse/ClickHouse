@@ -4,7 +4,8 @@
 #include <algorithm>
 #include <climits>
 #include <AggregateFunctions/ReservoirSampler.h>
-#include <common/types.h>
+#include <base/types.h>
+#include <base/sort.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -16,6 +17,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -30,6 +33,8 @@ namespace ErrorCodes
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
@@ -55,13 +60,14 @@ template <typename T,
     ReservoirSamplerDeterministicOnEmpty OnEmpty = ReservoirSamplerDeterministicOnEmpty::THROW>
 class ReservoirSamplerDeterministic
 {
-    bool good(const UInt32 hash)
+private:
+    bool good(UInt32 hash) const
     {
-        return !(hash & skip_mask);
+        return (hash & skip_mask) == 0;
     }
 
 public:
-    ReservoirSamplerDeterministic(const size_t max_sample_size_ = detail::DEFAULT_MAX_SAMPLE_SIZE)
+    explicit ReservoirSamplerDeterministic(const size_t max_sample_size_ = detail::DEFAULT_MAX_SAMPLE_SIZE)
         : max_sample_size{max_sample_size_}
     {
     }
@@ -73,15 +79,12 @@ public:
         total_values = 0;
     }
 
-    void insert(const T & v, const UInt64 determinator)
+    void insert(const T & v, UInt64 determinator)
     {
         if (isNaN(v))
             return;
 
-        const UInt32 hash = intHash64(determinator);
-        if (!good(hash))
-            return;
-
+        UInt32 hash = intHash64(determinator);
         insertImpl(v, hash);
         sorted = false;
         ++total_values;
@@ -100,7 +103,7 @@ public:
         sortIfNeeded();
 
         double index = level * (samples.size() - 1);
-        size_t int_index = static_cast<size_t>(index + 0.5);
+        size_t int_index = static_cast<size_t>(index + 0.5); /// NOLINT
         int_index = std::max(0LU, std::min(samples.size() - 1, int_index));
         return samples[int_index].first;
     }
@@ -140,8 +143,7 @@ public:
             setSkipDegree(b.skip_degree);
 
         for (const auto & sample : b.samples)
-            if (good(sample.second))
-                insertImpl(sample.first, sample.second);
+            insertImpl(sample.first, sample.second);
 
         total_values += b.total_values;
     }
@@ -216,9 +218,18 @@ private:
 
     void insertImpl(const T & v, const UInt32 hash)
     {
+        if (!good(hash))
+            return;
+
         /// Make a room for plus one element.
         while (samples.size() >= max_sample_size)
+        {
             setSkipDegree(skip_degree + 1);
+
+            /// Still good?
+            if (!good(hash))
+                return;
+        }
 
         samples.emplace_back(v, hash);
     }
@@ -248,7 +259,9 @@ private:
     {
         if (sorted)
             return;
-        std::sort(samples.begin(), samples.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+        /// In order to provide deterministic result we must sort by value and hash
+        ::sort(samples.begin(), samples.end(), [](const auto & lhs, const auto & rhs) { return lhs < rhs; });
         sorted = true;
     }
 

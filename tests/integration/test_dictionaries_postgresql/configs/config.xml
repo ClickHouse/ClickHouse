@@ -1,4 +1,4 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <dictionaries_config>/etc/clickhouse-server/config.d/postgres_dict.xml</dictionaries_config>
-</yandex>
+</clickhouse>

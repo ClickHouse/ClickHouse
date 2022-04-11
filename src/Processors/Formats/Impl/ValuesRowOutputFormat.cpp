@@ -41,9 +41,9 @@ void ValuesRowOutputFormat::writeRowBetweenDelimiter()
 }
 
 
-void registerOutputFormatProcessorValues(FormatFactory & factory)
+void registerOutputFormatValues(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("Values", [](
+    factory.registerOutputFormat("Values", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -51,6 +51,8 @@ void registerOutputFormatProcessorValues(FormatFactory & factory)
     {
         return std::make_shared<ValuesRowOutputFormat>(buf, sample, params, settings);
     });
+
+    factory.markOutputFormatSupportsParallelFormatting("Values");
 }
 
 }

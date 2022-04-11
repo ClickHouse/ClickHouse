@@ -1,72 +1,246 @@
-<div class="bg-light py-5 my-5">
-    <div class="container text-center">
-        <h2 id="success-stories" class="display-4">Success stories</h2>
-        <div class="row">
-            <div class="col-lg-4 py-3">
-                <a href="https://blog.cloudflare.com/http-analytics-for-6m-requests-per-second-using-clickhouse/" class="text-reset text-decoration-none" rel="external nofollow noreferrer" target="_blank">
-                    <div class="card py-3 dots-lb">
-                        <div class="card-body">
-                            <h4 class="card-title">HTTP and DNS analytics</h4>
-                            <p class="card-text text-muted">by Cloudflare</p>
+<div class="section bg-white pt-10 pt-lg-15">
+    <div class="container">
+
+        <h2 class="display-2 mb-5 mb-md-8 mb-lg-10 text-center text-lg-left">
+            ClickHouse Users
+        </h2>
+        
+        <div class="case-study-cards">
+            <div>
+
+                <div class="card case-study-card is-large open-right">
+                    <div class="case-study-card-wrap">
+
+                        <div class="card-body case-study-card-body case-study-card-body">
+
+                            <img class="d-block mb-3" src="/images/logos/logo-yandex.png" height="53" width="220" title="Yandex" style="aspect-ratio: 220 / 53;height: auto;object-fit:contain;object-position:left center;max-width: 140px;">
+
+                            <div class="row flex-lg-nowrap mx-n2" equalize-heights="case-study-card-row">
+                                <div class="px-2 d-none d-lg-flex flex-column" style="width: 104px;">
+                                    
+                                    <div class="case-study-card-toggle mt-auto"></div>
+                                    
+                                </div>
+                                <div class="col-lg-auto pb-5 pb-lg-0 px-2">
+
+                                    <p class="mb-3 text-dark">{{ _('ClickHouse was born and in production inside Yandex over a decade ago and now stores 10’s of trillions of rows of data serving a query throughput of 2TB per second for Yandex Metrica. It has also become the de facto standard inside Yandex for advertising systems, monitoring and observability data, business intelligence, recommendations platforms, OLAP, and even cars telemetry.') }}</p>
+                                    
+                                    <a class="trailing-link" href="/docs/en/introduction/history/">{{ _('Read the Case Study') }}</a>
+                                    
+                                </div>
+                                <div class="col-lg-3 px-2">
+
+                                    <ul>
+                                        <li class="font-weight-bold">Stores 10’s of trillions of rows of data</li>
+                                        <li class="font-weight-bold">Query throughput of 2TB per second</li>
+                                        <li class="font-weight-bold">Became de facto standard inside Yandex</li>
+                                    </ul>
+                                    
+                                </div>
+                            </div>
+
                         </div>
+
                     </div>
-                </a>
+                </div>
+                
             </div>
-            <div class="col-lg-4 py-3">
-                <a href="docs/en/introduction/history/" class="text-reset text-decoration-none">
-                    <div class="card py-3 dots-cc">
-                        <div class="card-body">
-                            <h4 class="card-title">Yandex Metrica</h4>
-                            <p class="card-text text-muted">The original usecase</p>
+            <div>
+
+                <div class="card case-study-card is-large open-left">
+                    <div class="case-study-card-wrap">
+                            
+                        <div class="card-body case-study-card-body">
+
+                            <img class="d-block mb-3" src="/images/logos/logo-uber.png" height="40" width="114" title="Uber" style="aspect-ratio: 114 / 40;height: auto;object-fit:contain;object-position:left center;">
+
+                            <div class="row flex-lg-nowrap mx-n2" equalize-heights="case-study-card-row">
+                                <div class="px-2 d-none d-lg-flex flex-column" style="width: 104px;">
+                                    
+                                    <div class="case-study-card-toggle mt-auto"></div>
+                                    
+                                </div>
+                                <div class="col-lg-auto pb-5 pb-lg-0 px-2">
+
+                                    <p class="mb-3 text-dark">{{ _('Uber moved its logging platform to ClickHouse increasing developer productivity and overall reliability of the platform while seeing 3x data compression, 10x performance increase, and ½ the reduction in hardware cost.') }}</p>
+        
+                                    <a class="trailing-link" href="https://eng.uber.com/logging/" rel="external nofollow noreferrer">{{ _('Read the Case Study') }}</a>
+                                    
+                                </div>
+                                <div class="col-lg-3 px-2">
+
+                                    <ul>
+                                        <li class="font-weight-bold">3x data compression</li>
+                                        <li class="font-weight-bold">10x performance increase</li>
+                                        <li class="font-weight-bold">½ the reduction in hardware cost</li>
+                                    </ul>
+                                    
+                                </div>
+                            </div>
+
                         </div>
+
                     </div>
-                </a>
+                </div>
+                
             </div>
-            <div class="col-lg-4 py-3">
-                <a href="https://www.slideshare.net/glebus/using-clickhouse-for-experimentation-104247173" class="text-reset text-decoration-none" rel="external nofollow noreferrer" target="_blank">
-                    <div class="card py-3 dots-rb">
-                        <div class="card-body">
-                            <h4 class="card-title">Experimentation</h4>
-                            <p class="card-text text-muted">at Spotify</p>
+            <div>
+
+                <div class="card case-study-card is-large open-right">
+                    <div class="case-study-card-wrap">
+                            
+                        <div class="card-body case-study-card-body">
+
+                            <img class="d-block mb-3" src="/images/logos/logo-ebay.png" height="40" width="100" title="eBay" style="aspect-ratio: 100 / 40;height: auto;object-fit:contain;object-position:left center;">
+
+                            <div class="row flex-lg-nowrap mx-n2" equalize-heights="case-study-card-row">
+                                <div class="px-2 d-none d-lg-flex flex-column" style="width: 104px;">
+
+                                    <div class="case-study-card-toggle mt-auto"></div>
+                                    
+                                </div>
+                                <div class="col-lg-auto pb-5 pb-lg-0 px-2">
+
+                                    <p class="mb-3 text-dark">{{ _('eBay adopted ClickHouse for their real time OLAP events (Logs + Metrics) infrastructure. The simplified architecture with ClickHouse allowed them to reduce their DevOps activity and troubleshooting, reduced the overall infrastructure by 90%%, and they saw a stronger integration with Grafana and ClickHouse for visualization and alerting.') }}</p>
+        
+                                    <a class="trailing-link" href="https://tech.ebayinc.com/engineering/ou-online-analytical-processing/" rel="external nofollow noreferrer">{{ _('Read the Case Study') }}</a>
+                                    
+                                </div>
+                                <div class="col-lg-3 px-2">
+
+                                    <ul>
+                                        <li class="font-weight-bold">Reduced DevOps activity and troubleshooting</li>
+                                        <li class="font-weight-bold">10 times less hardware</li>
+                                        <li class="font-weight-bold">Stronger integration with Grafana</li>
+                                    </ul>
+                                    
+                                </div>
+                            </div>
+
                         </div>
+
                     </div>
-                </a>
+                </div>
+                
+            </div>
+            <div>
+
+                <div class="card case-study-card is-large open-left">
+                    <div class="case-study-card-wrap">
+                            
+                        <div class="card-body case-study-card-body">
+
+                            <img class="d-block mb-3" src="/images/logos/logo-cloudflare.svg" height="40" width="246" title="Cloudflare" style="aspect-ratio: 246 / 40;height: auto;object-fit:contain;object-position:left center;">
+
+                            <div class="row flex-lg-nowrap mx-n2" equalize-heights="case-study-card-row">
+                                <div class="px-2 d-none d-lg-flex flex-column" style="width: 104px;">
+                            
+                                    <div class="case-study-card-toggle mt-auto"></div>
+                                    
+                                </div>
+                                <div class="col-lg-auto pb-5 pb-lg-0 px-2">
+
+                                    <p class="mb-3 text-dark">{{ _('Cloudflare was having challenges scaling their CitusDB-based system which had a high TCO and maintenance costs due to the complex architecture. By moving their HTTP analytics data to ClickHouse they were able to scale to 8M requests per second, deleted 10’s of thousands of lines of code, reduced their MTTR, and saw a 7x improvement on customer queries per second they could serve.') }}</p>
+        
+                                    <a class="trailing-link" href="https://blog.cloudflare.com/http-analytics-for-6m-requests-per-second-using-clickhouse/" rel="external nofollow noreferrer">{{ _('Read the Case Study') }}</a>
+                                    
+                                </div>
+                                <div class="col-lg-3 px-2">
+
+                                    <ul>
+                                        <li class="font-weight-bold">Scaled to 8M requests per second</li>
+                                        <li class="font-weight-bold">Reduced their MTTR</li>
+                                        <li class="font-weight-bold">7x improvement on query throughput</li>
+                                    </ul>
+                                    
+                                </div>
+                            </div>
+
+                        </div>
+                    
+                    </div>
+                </div>
+                
+            </div>
+            <div>
+
+                <div class="card case-study-card is-large open-right">
+                    <div class="case-study-card-wrap">
+
+                        <div class="card-body case-study-card-body">
+
+                            <img class="d-block mb-3" src="/images/logos/logo-spotify.png" height="40" width="134" title="Spotify" style="aspect-ratio: 134 / 40;height: auto;object-fit:contain;object-position:left center;">
+
+                            <div class="row flex-lg-nowrap mx-n2" equalize-heights="case-study-card-row">
+                                <div class="px-2 d-none d-lg-flex flex-column" style="width: 104px;">
+                                    
+                                    <div class="case-study-card-toggle mt-auto"></div>
+                                    
+                                </div>
+                                <div class="col-lg-auto pb-5 pb-lg-0 px-2">
+
+                                    <p class="mb-3 text-dark">{{ _('Spotify\'s A/B Experimentation platform is serving thousands of sub-second queries per second on petabyte-scale datasets with Clickhouse. They reduced the amount of low-variance work by an order of magnitude and enabled feature teams to self-serve insights by introducing a unified SQL interface for Data Platform and tools for automatic decision making for Experimentation.') }}</p>
+        
+                                    <a class="trailing-link" href="https://www.slideshare.net/glebus/using-clickhouse-for-experimentation-104247173" rel="external nofollow noreferrer">{{ _('Read the Case Study') }}</a>
+                                    
+                                </div>
+                                <div class="col-lg-3 px-2">
+
+                                    <ul>
+                                        <li class="font-weight-bold">Reduced the amount of low-variance work</li>
+                                        <li class="font-weight-bold">Enabled feature teams to self-serve insights</li>
+                                        <li class="font-weight-bold">Tools for automatic decision making</li>
+                                    </ul>
+                                    
+                                </div>
+                            </div>
+
+                        </div>
+
+                    </div>
+                </div>
+                
+            </div>
+            <div>
+
+                <div class="card case-study-card is-large open-left">
+                    <div class="case-study-card-wrap">
+
+                        <div class="card-body case-study-card-body">
+
+                            <img class="d-block mb-3" src="/images/logos/logo-deutsche-bank.png" height="40" width="204" title="Deutsche Bank" style="aspect-ratio: 204 / 40;height: auto;object-fit:contain;object-position:left center;">
+
+                            <div class="row flex-lg-nowrap mx-n2" equalize-heights="case-study-card-row">
+                                <div class="px-2 d-none d-lg-flex flex-column" style="width: 104px;">
+                            
+                                    <div class="case-study-card-toggle mt-auto"></div>
+                                    
+                                </div>
+                                <div class="col-lg-auto pb-5 pb-lg-0 px-2">
+
+                                    <p class="mb-3 text-dark">{{ _('ClickHouse helps serve the Client Analytics platform for reporting, deep data analysis as well as advanced data science to provide Deutsche Bank’s front office a clear view on their client\'s activity and profitability.') }}</p>
+        
+                                    <a class="trailing-link" href="https://bigdatadays.ru/wp-content/uploads/2019/10/D2-H3-3_Yakunin-Goihburg.pdf" rel="external nofollow noreferrer">{{ _('Read the Case Study') }}</a>
+                                    
+                                </div>
+                                <div class="col-lg-3 px-2">
+
+                                    <ul>
+                                        <li class="font-weight-bold">Platform for reporting and deep data analysis</li>
+                                        <li class="font-weight-bold">Advanced data science</li>
+                                        <li class="font-weight-bold">Provide clear view of client's activity and profitability</li>
+                                    </ul>
+                                    
+                                </div>
+                            </div>
+
+                        </div>
+
+                    </div>
+                </div>
+                
             </div>
         </div>
-        <div class="row">
-            <div class="col-lg-4 py-3">
-                <a href="https://translate.yandex.com/translate?url=http%3A%2F%2Fwww.jianshu.com%2Fp%2F4c86a2478cca&amp;lang=zh-en" class="text-reset text-decoration-none" rel="external nofollow noreferrer" target="_blank">
-                    <div class="card py-3 dots-rb">
-                        <div class="card-body">
-                            <h4 class="card-title">OLAP contest victory</h4>
-                            <p class="card-text text-muted">by Analysys</p>
-                        </div>
-                    </div>
-                </a>
-            </div>
-            <div class="col-lg-4 py-3">
-                <a href="https://translate.yandex.com/translate?url=http%3A%2F%2Fsouslecapot.net%2F2018%2F11%2F21%2Fpatrick-chatain-vp-engineering-chez-contentsquare-penser-davantage-amelioration-continue-que-revolution-constante%2F&lang=fr-en" class="text-reset text-decoration-none" rel="external nofollow noreferrer" target="_blank">
-                    <div class="card py-3 dots-rhb">
-                        <div class="card-body">
-                            <h4 class="card-title">Digital experience analytics</h4>
-                            <p class="card-text text-muted">by ContentSquare</p>
-                        </div>
-                    </div>
-                </a>
-            </div>
-            <div class="col-lg-4 py-3">
-                <a href="https://translate.yandex.com/translate?url=https%3A%2F%2Ftech.geniee.co.jp%2Fentry%2F2017%2F07%2F20%2F160100" class="text-reset text-decoration-none" rel="external nofollow noreferrer" target="_blank">
-                    <div class="card py-3 dots-lb">
-                        <div class="card-body">
-                            <h4 class="card-title">Speeding up Report API</h4>
-                            <p class="card-text text-muted">at Geniee</p>
-                        </div>
-                    </div>
-                </a>
-            </div>
-        </div>
-        <div class="row">
-            <a href="docs/en/introduction/adopters/" class="btn btn-lg btn-outline-orange mx-auto mt-3" role="button">Show more</a>
-        </div>
+        
     </div>
 </div>

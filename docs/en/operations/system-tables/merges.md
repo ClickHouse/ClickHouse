@@ -22,4 +22,4 @@ Columns:
 -   `merge_type` — The type of current merge. Empty if it's an mutation.
 -   `merge_algorithm` — The algorithm used in current merge. Empty if it's an mutation.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/merges) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/merges) <!--hide-->

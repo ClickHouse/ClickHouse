@@ -1,7 +1,7 @@
 #include <iostream>
 #include <iomanip>
 
-#include <common/types.h>
+#include <base/types.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -81,8 +81,8 @@ int main(int argc, char ** argv)
                 << "Written " << n << " numbers (" << wb.count() / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
                 << n / watch.elapsedSeconds() << " num/s., "
                 << wb.count() / watch.elapsedSeconds() / 1000000 << " MB/s., "
-                << watch.elapsed() / n << " ns/num., "
-                << tsc / n << " ticks/num., "
+                << watch.elapsed() / n << " ns/num., "  // NOLINT
+                << tsc / n << " ticks/num., "  // NOLINT
                 << watch.elapsed() / wb.count() << " ns/byte., "
                 << tsc / wb.count() << " ticks/byte."
                 << std::endl;

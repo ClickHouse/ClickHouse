@@ -7,9 +7,7 @@
 
 #include <variant>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 
 namespace DB
@@ -29,7 +27,6 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
 
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
@@ -57,6 +54,10 @@ public:
         Arguments arguments;
         size_t result_position;
 
+        /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
+        /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
+        bool is_lazy_executed;
+
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
     };
@@ -69,7 +70,6 @@ public:
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
 
 private:
-
     ActionsDAGPtr actions_dag;
     Actions actions;
     size_t num_columns = 0;
@@ -104,6 +104,7 @@ public:
     void execute(Block & block, bool dry_run = false) const;
 
     bool hasArrayJoin() const;
+    void assertDeterministic() const;
 
     /// Obtain a sample block that contains the names and types of result columns.
     const Block & getSampleBlock() const { return sample_block; }
@@ -122,7 +123,7 @@ public:
 private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
-    void linearizeActions();
+    void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 };
 
 
@@ -254,7 +255,7 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ActionsDAGPtr getLastActions(bool allow_empty = false)
+    ActionsDAGPtr getLastActions(bool allow_empty = false)  // -V1071
     {
         if (steps.empty())
         {

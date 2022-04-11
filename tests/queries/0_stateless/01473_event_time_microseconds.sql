@@ -1,3 +1,5 @@
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-cpu-aarch64
+
 -- This file contains tests for the event_time_microseconds field for various tables.
 -- Note: Only event_time_microseconds for asynchronous_metric_log table is tested via
 -- an integration test as those metrics take 60s by default to be updated.

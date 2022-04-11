@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel, no-fasttest
 
 set -e
 
@@ -49,8 +50,12 @@ echo '=' compression
 cat "$DATA_DIR"/simple.null.avro | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format CSV -S 'a Int64' -q 'select count() from table'
 cat "$DATA_DIR"/simple.deflate.avro | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format CSV -S 'a Int64' -q 'select count() from table'
 
-#snappy is optional
-#cat $DATA_DIR/simple.snappy.avro | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format CSV -S 'a Int64' -q 'select count() from table'
+# snappy is optional
+if [ "$( ${CLICKHOUSE_LOCAL} -q "SELECT value FROM system.build_options where name = 'USE_SNAPPY' LIMIT 1")" == "1" ]; then
+cat $DATA_DIR/simple.snappy.avro | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format CSV -S 'a Int64' -q 'select count() from table'
+else
+echo 1000
+fi
 
 echo '=' other
 #no data
@@ -89,3 +94,29 @@ ${CLICKHOUSE_LOCAL} -q "select toInt64(number) as a from numbers(1000)  format A
 
 # type supported via conversion
 ${CLICKHOUSE_LOCAL}  -q "select toInt16(123) as a format Avro" | wc -c | tr -d ' '
+
+echo '=' string column pattern
+${CLICKHOUSE_LOCAL} -q "select 'русская строка' as a  format Avro SETTINGS output_format_avro_string_column_pattern = 'a'" | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format CSV -S "a String" -q 'select * from table'
+
+# it is expected that invalid UTF-8 can be created
+${CLICKHOUSE_LOCAL} -q "select '\x61\xF0\x80\x80\x80b' as a  format Avro" > /dev/null && echo Ok
+
+A_NEEDLE="'\"name\":\"a\",\"type\":\"string\"'"
+AAA_NEEDLE="'\"name\":\"aaa\",\"type\":\"string\"'"
+B_NEEDLE="'\"name\":\"b\",\"type\":\"string\"'"
+PATTERNQUERY="select 'русская строка' as a, 'русская строка' as aaa, 'русская строка' as b format Avro SETTINGS output_format_avro_string_column_pattern ="
+
+PATTERNPATTERN="'a'"
+${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | tr -d '\n' | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $AAA_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"
+
+PATTERNPATTERN="'^a$'"
+${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | tr -d '\n' | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $AAA_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"
+
+PATTERNPATTERN="'aaa'"
+${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | tr -d '\n' | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $AAA_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"
+
+PATTERNPATTERN="'a|b'"
+${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | tr -d '\n' | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $AAA_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"
+
+PATTERNPATTERN="'.*'"
+${CLICKHOUSE_LOCAL} -q "$PATTERNQUERY $PATTERNPATTERN" | tr -d '\n' | ${CLICKHOUSE_LOCAL} --structure "avro_raw String" --input-format LineAsString  -q "select countSubstrings(avro_raw, $A_NEEDLE), countSubstrings(avro_raw, $AAA_NEEDLE), countSubstrings(avro_raw, $B_NEEDLE) from table"

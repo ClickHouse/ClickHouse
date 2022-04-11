@@ -10,6 +10,13 @@
   * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
   */
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 
 struct NoInitTag
 {
@@ -261,6 +268,13 @@ public:
             new (&it->getMapped()) typename Cell::Mapped();
 
         return it->getMapped();
+    }
+
+    const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
+    {
+        if (auto it = this->find(x); it != this->end())
+            return it->getMapped();
+        throw DB::Exception("Cannot find element in HashMap::at method", DB::ErrorCodes::LOGICAL_ERROR);
     }
 };
 

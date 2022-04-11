@@ -41,6 +41,8 @@ public:
 
     bool isSuitableForConstantFolding() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     String getName() const override
     {
         return name;
@@ -55,10 +57,6 @@ public:
         return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &) const override
-    {
-        return DataTypeUInt8().createColumnConst(1, 1u);
-    }
 };
 
 

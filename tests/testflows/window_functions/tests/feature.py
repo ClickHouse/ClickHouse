@@ -6,10 +6,25 @@ from window_functions.requirements import *
 
 @TestOutline(Feature)
 @Name("tests")
-@Examples("distributed", [
-    (False, Name("non distributed"),Requirements(RQ_SRS_019_ClickHouse_WindowFunctions_NonDistributedTables("1.0"))),
-    (True, Name("distributed"), Requirements(RQ_SRS_019_ClickHouse_WindowFunctions_DistributedTables("1.0")))
-])
+@Examples(
+    "distributed",
+    [
+        (
+            False,
+            Name("non distributed"),
+            Requirements(
+                RQ_SRS_019_ClickHouse_WindowFunctions_NonDistributedTables("1.0")
+            ),
+        ),
+        (
+            True,
+            Name("distributed"),
+            Requirements(
+                RQ_SRS_019_ClickHouse_WindowFunctions_DistributedTables("1.0")
+            ),
+        ),
+    ],
+)
 def feature(self, distributed, node="clickhouse1"):
     """Check window functions behavior using non-distributed or
     distributed tables.
@@ -17,10 +32,7 @@ def feature(self, distributed, node="clickhouse1"):
     self.context.distributed = distributed
     self.context.node = self.context.cluster.node(node)
 
-    with Given("I allow experimental window functions"):
-        allow_experimental_window_functions()
-
-    with And("employee salary table"):
+    with Given("employee salary table"):
         empsalary_table(distributed=distributed)
 
     with And("tenk1 table"):

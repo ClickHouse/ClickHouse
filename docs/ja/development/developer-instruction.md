@@ -41,7 +41,7 @@ Ubuntuでこれを行うには、コマンドラインターミナルで実行�
 
 コマンドラインターミナルで実行:
 
-    git clone --recursive git@github.com:your_github_username/ClickHouse.git
+    git clone git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 注:、代理して下さい *your_github_username* 適切なもので！
@@ -83,7 +83,7 @@ ClickHouseリポジトリは以下を使用します `submodules`. That is what 
 
 Gitでサブモジュールを操作するのは苦痛です。 次のコマンドは管理に役立ちます:
 
-    # ! each command accepts --recursive
+    # ! each command accepts
     # Update remote URLs for submodules. Barely rare case
     git submodule sync
     # Add new submodules
@@ -96,16 +96,16 @@ Gitでサブモジュールを操作するのは苦痛です。 次のコマン�
 次のコマンドは、すべてのサブモジュールを初期状態にリセットするのに役立ちます（！ﾂづﾂつｷﾂ。 -内部の変更は削除されます):
 
     # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync --recursive
+    git submodule sync
     # Update the registered submodules with initialize not yet initialized
-    git submodule update --init --recursive
+    git submodule update --init
     # Reset all changes done after HEAD
     git submodule foreach git reset --hard
     # Clean files from .gitignore
     git submodule foreach git clean -xfd
     # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync --recursive
-    git submodule foreach git submodule update --init --recursive
+    git submodule foreach git submodule sync
+    git submodule foreach git submodule update --init
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -236,11 +236,11 @@ KDevelopとQTCreatorは、ClickHouseを開発するためのIDEの他の優れ�
 
 # コードの作成 {#writing-code}
 
-の説明ClickHouse建築で、できるだけ早く送ってくださhttps://clickhouse.tech/docs/en/開発/アーキテクチャ/
+の説明ClickHouse建築で、できるだけ早く送ってくださhttps://clickhouse.com/docs/en/開発/アーキテクチャ/
 
-コードのスタイルガイド:https://clickhouse.tech/docs/en/開発/スタイル/
+コードのスタイルガイド:https://clickhouse.com/docs/en/開発/スタイル/
 
-筆記試験：https://clickhouse.tech/docs/en/development/tests/
+筆記試験：https://clickhouse.com/docs/en/development/tests/
 
 タスクのリスト：https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
@@ -250,8 +250,8 @@ KDevelopとQTCreatorは、ClickHouseを開発するためのIDEの他の優れ�
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz
@@ -273,7 +273,7 @@ GitHubのUIでforkリポジトリに移動します。 ブランチで開発し�
 
 プル要求は、作業がまだ完了していない場合でも作成できます。 この場合、単語を入れてください “WIP” （進行中の作業）タイトルの先頭に、それは後で変更することができます。 これは、変更の協調的なレビューと議論、および利用可能なすべてのテストの実行に役立ちます。 変更の簡単な説明を提供することが重要です。
 
-Yandexの従業員がタグであなたのPRにラベルを付けるとすぐにテストが開始されます “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
+ClickHouseの従業員がタグであなたのPRにラベルを付けるとすぐにテストが開始されます “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 
 システムは、プル要求用にClickHouseバイナリビルドを個別に準備します。 これらのビルドを取得するには “Details” 次のリンク “ClickHouse build check” 小切手のリストのエントリ。 そこには、ビルドへの直接リンクがあります。ClickHouseのdebパッケージは、本番サーバーにも展開できます（恐れがない場合）。
 

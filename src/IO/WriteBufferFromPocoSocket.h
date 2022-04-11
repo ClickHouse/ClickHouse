@@ -13,7 +13,14 @@ namespace DB
   */
 class WriteBufferFromPocoSocket : public BufferWithOwnMemory<WriteBuffer>
 {
+public:
+    explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+
+    ~WriteBufferFromPocoSocket() override;
+
 protected:
+    void nextImpl() override;
+
     Poco::Net::Socket & socket;
 
     /** For error messages. It is necessary to receive this address in advance, because,
@@ -21,14 +28,6 @@ protected:
       *  (getpeername will return an error).
       */
     Poco::Net::SocketAddress peer_address;
-
-
-    void nextImpl() override;
-
-public:
-    WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
-
-    ~WriteBufferFromPocoSocket() override;
 };
 
 }

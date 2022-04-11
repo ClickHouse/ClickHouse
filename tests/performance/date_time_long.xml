@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.3">
+<test>
     <substitutions>
        <substitution>
            <name>datetime_transform</name>
@@ -83,7 +83,7 @@
             <name>time_zone</name>
             <values>
                <value>UTC</value>
-               <value>Europe/Moscow</value>
+               <value>Asia/Istanbul</value>
                <value>Asia/Kolkata</value>
             </values>
         </substitution>

@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS test_01190;
 CREATE DATABASE test_01190 ENGINE=Ordinary;     -- Full ATTACH requires UUID with Atomic
 USE test_01190;

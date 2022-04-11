@@ -20,7 +20,7 @@ Subquery is another `SELECT` query that may be specified in parenthesis inside `
 
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
 
-It is applicable when selecting data from tables that use the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)-engine family (except `GraphiteMergeTree`). Also supported for:
+It is applicable when selecting data from tables that use the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)-engine family. Also supported for:
 
 -   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) versions of `MergeTree` engines.
 -   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) engines that operate over other engines, provided they were created over `MergeTree`-engine tables.
@@ -29,7 +29,7 @@ Now `SELECT` queries with `FINAL` are executed in parallel and slightly faster. 
 
 ### Drawbacks {#drawbacks}
 
-Queries that use `FINAL` are executed slightly slower than similar queries that don’t, because:
+Queries that use `FINAL` are executed slightly slower than similar queries that do not, because:
 
 -   Data is merged during query execution.
 -   Queries with `FINAL` read primary key columns in addition to the columns specified in the query.

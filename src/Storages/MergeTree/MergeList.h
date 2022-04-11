@@ -7,7 +7,9 @@
 #include <Common/MemoryTracker.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/BackgroundProcessList.h>
+#include <Interpreters/StorageID.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <list>
@@ -51,16 +53,42 @@ struct MergeInfo
 };
 
 struct FutureMergedMutatedPart;
+using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
+
+struct MergeListElement;
+using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
+
+struct Settings;
+
+
+/**
+ * Since merge is executed with multiple threads, this class
+ * switches the parent MemoryTracker to account all the memory used.
+ */
+class MemoryTrackerThreadSwitcher : boost::noncopyable
+{
+public:
+    explicit MemoryTrackerThreadSwitcher(MergeListEntry & merge_list_entry_);
+    ~MemoryTrackerThreadSwitcher();
+private:
+    MergeListEntry & merge_list_entry;
+    MemoryTracker * background_thread_memory_tracker;
+    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
+    UInt64 prev_untracked_memory_limit;
+    UInt64 prev_untracked_memory;
+    String prev_query_id;
+};
+
+using MemoryTrackerThreadSwitcherPtr = std::unique_ptr<MemoryTrackerThreadSwitcher>;
 
 struct MergeListElement : boost::noncopyable
 {
-    const std::string database;
-    const std::string table;
+    const StorageID table_id;
     std::string partition_id;
 
     const std::string result_part_name;
     const std::string result_part_path;
-    Int64 result_data_version{};
+    MergeTreePartInfo result_part_info;
     bool is_mutation{};
 
     UInt64 num_parts{};
@@ -86,22 +114,31 @@ struct MergeListElement : boost::noncopyable
     std::atomic<UInt64> columns_written{};
 
     MemoryTracker memory_tracker{VariableContext::Process};
-    MemoryTracker * background_thread_memory_tracker;
-    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
+    /// Used to adjust ThreadStatus::untracked_memory_limit
+    UInt64 max_untracked_memory;
+    /// Used to avoid losing any allocation context
+    UInt64 untracked_memory = 0;
+    /// Used for identifying mutations/merges in trace_log
+    std::string query_id;
 
     UInt64 thread_id;
     MergeType merge_type;
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
+    MergeListElement(
+        const StorageID & table_id_,
+        FutureMergedMutatedPartPtr future_part,
+        const Settings & settings);
 
     MergeInfo getInfo() const;
 
-    ~MergeListElement();
-};
+    MergeListElement * ptr() { return this; }
 
-using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
+    ~MergeListElement();
+
+    MergeListElement & ref() { return *this; }
+};
 
 /** Maintains a list of currently running merges.
   * For implementation of system.merges table.
@@ -122,14 +159,27 @@ public:
             --merges_with_ttl_counter;
     }
 
-    void cancelPartMutations(const String & partition_id, Int64 mutation_version)
+    void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
     {
         std::lock_guard lock{mutex};
         for (auto & merge_element : entries)
         {
             if ((partition_id.empty() || merge_element.partition_id == partition_id)
+                && merge_element.table_id == table_id
                 && merge_element.source_data_version < mutation_version
-                && merge_element.result_data_version >= mutation_version)
+                && merge_element.result_part_info.getDataVersion() >= mutation_version)
+                merge_element.is_cancelled = true;
+        }
+    }
+
+    void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
+    {
+        std::lock_guard lock{mutex};
+        for (auto & merge_element : entries)
+        {
+            if (merge_element.table_id == table_id
+                && merge_element.partition_id == partition_id
+                && merge_element.result_part_info.min_block < delimiting_block_number)
                 merge_element.is_cancelled = true;
         }
     }

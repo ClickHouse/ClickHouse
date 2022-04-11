@@ -1,10 +1,10 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <DataStreams/NativeBlockInputStream.h>
+#include <Formats/NativeReader.h>
 #include <Processors/ISource.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <DataStreams/materializeBlock.h>
+#include <Core/ProtocolDefines.h>
 
 namespace ProfileEvents
 {
@@ -55,9 +55,8 @@ namespace
     public:
         SourceFromNativeStream(const Block & header, const std::string & path)
                 : ISource(header), file_in(path), compressed_in(file_in),
-                  block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+                  block_in(std::make_unique<NativeReader>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
         {
-            block_in->readPrefix();
         }
 
         String getName() const override { return "SourceFromNativeStream"; }
@@ -70,7 +69,6 @@ namespace
             auto block = block_in->read();
             if (!block)
             {
-                block_in->readSuffix();
                 block_in.reset();
                 return {};
             }
@@ -81,7 +79,7 @@ namespace
     private:
         ReadBufferFromFile file_in;
         CompressedReadBuffer compressed_in;
-        BlockInputStreamPtr block_in;
+        std::unique_ptr<NativeReader> block_in;
     };
 }
 
@@ -331,7 +329,7 @@ private:
         if (num_threads > first->aggregates_pools.size())
         {
             Arenas & first_pool = first->aggregates_pools;
-            for (size_t j = first_pool.size(); j < num_threads; j++)
+            for (size_t j = first_pool.size(); j < num_threads; ++j)
                 first_pool.emplace_back(std::make_shared<Arena>());
         }
 
@@ -395,9 +393,14 @@ AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformPar
 }
 
 AggregatingTransform::AggregatingTransform(
-    Block header, AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_,
-    size_t current_variant, size_t max_threads_, size_t temporary_data_merge_threads_)
-    : IProcessor({std::move(header)}, {params_->getHeader()}), params(std::move(params_))
+    Block header,
+    AggregatingTransformParamsPtr params_,
+    ManyAggregatedDataPtr many_data_,
+    size_t current_variant,
+    size_t max_threads_,
+    size_t temporary_data_merge_threads_)
+    : IProcessor({std::move(header)}, {params_->getHeader()})
+    , params(std::move(params_))
     , key_columns(params->params.keys_size)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
@@ -525,7 +528,7 @@ void AggregatingTransform::consume(Chunk chunk)
     {
         auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
         block = materializeBlock(block);
-        if (!params->aggregator.mergeBlock(block, variants, no_more_keys))
+        if (!params->aggregator.mergeOnBlock(block, variants, no_more_keys))
             is_consume_finished = true;
     }
     else
@@ -547,7 +550,7 @@ void AggregatingTransform::initGenerate()
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
     {
         if (params->only_merge)
-            params->aggregator.mergeBlock(getInputs().front().getHeader(), variants, no_more_keys);
+            params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys);
         else
             params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
     }

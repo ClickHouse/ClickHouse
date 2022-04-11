@@ -2,7 +2,7 @@
 
 This table contains a single row with a single `dummy` UInt8 column containing the value 0.
 
-This table is used if a `SELECT` query doesn’t specify the `FROM` clause.
+This table is used if a `SELECT` query does not specify the `FROM` clause.
 
 This is similar to the `DUAL` table found in other DBMSs.
 
@@ -17,7 +17,7 @@ This is similar to the `DUAL` table found in other DBMSs.
 │     0 │
 └───────┘
 
-1 rows in set. Elapsed: 0.001 sec. 
+1 rows in set. Elapsed: 0.001 sec.
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/one) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/one) <!--hide-->

@@ -1,16 +1,19 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/FieldVisitors.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/FieldVisitors.h>
 
 #include <algorithm>
 
@@ -481,9 +484,13 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
             ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
 
     bool has_nullable_arguments = false;
+    bool has_bool_arguments = false;
     for (size_t i = 0; i < arguments.size(); ++i)
     {
         const auto & arg_type = arguments[i];
+
+        if (isBool(arg_type))
+            has_bool_arguments = true;
 
         if (!has_nullable_arguments)
         {
@@ -501,16 +508,115 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    auto result_type = std::make_shared<DataTypeUInt8>();
+    auto result_type = has_bool_arguments ? DataTypeFactory::instance().get("Bool") : std::make_shared<DataTypeUInt8>();
     return has_nullable_arguments
             ? makeNullable(result_type)
             : result_type;
 }
 
+template <bool inverted>
+static void applyTernaryLogicImpl(const IColumn::Filter & mask, IColumn::Filter & null_bytemap)
+{
+    for (size_t i = 0; i != mask.size(); ++i)
+    {
+        UInt8 value = mask[i];
+        if constexpr (inverted)
+            value = !value;
+
+        if (null_bytemap[i] && value)
+            null_bytemap[i] = 0;
+    }
+}
+
+template <typename Name>
+static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & null_bytemap)
+{
+    if (Name::name == NameAnd::name)
+        applyTernaryLogicImpl<true>(mask, null_bytemap);
+    else if (Name::name == NameOr::name)
+        applyTernaryLogicImpl<false>(mask, null_bytemap);
+}
+
+template <typename Impl, typename Name>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+{
+    if (Name::name != NameAnd::name && Name::name != NameOr::name)
+        throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    /// Let's denote x_i' = maskedExecute(x_i, mask).
+    /// 1) AND(x_0, x_1, x_2, ..., x_n)
+    /// We will support mask_i = x_0 & x_1 & ... & x_i.
+    /// Base:
+    /// mask_0 is 1 everywhere, x_0' = x_0.
+    /// Iteration:
+    /// mask_i = extractMask(mask_{i - 1}, x_{i - 1}')
+    /// x_i' = maskedExecute(x_i, mask)
+    /// Also we will treat NULL as 1 if x_i' is Nullable
+    /// to support ternary logic.
+    /// The result is mask_n.
+    ///
+    /// 1) OR(x_0, x_1, x_2, ..., x_n)
+    /// We will support mask_i = !x_0 & !x_1 & ... & !x_i.
+    /// mask_0 is 1 everywhere, x_0' = x_0.
+    /// mask = extractMask(mask, !x_{i - 1}')
+    /// x_i' = maskedExecute(x_i, mask)
+    /// Also we will treat NULL as 0 if x_i' is Nullable
+    /// to support ternary logic.
+    /// The result is !mask_n.
+
+    bool inverted = Name::name != NameAnd::name;
+    UInt8 null_value = UInt8(Name::name == NameAnd::name);
+    IColumn::Filter mask(arguments[0].column->size(), 1);
+
+    /// If result is nullable, we need to create null bytemap of the resulting column.
+    /// We will fill it while extracting mask from arguments.
+    std::unique_ptr<IColumn::Filter> nulls;
+    if (result_type->isNullable())
+        nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
+
+    MaskInfo mask_info;
+    for (size_t i = 1; i <= arguments.size(); ++i)
+    {
+        if (inverted)
+            mask_info = extractInvertedMask(mask, arguments[i - 1].column, nulls.get(), null_value);
+        else
+            mask_info = extractMask(mask, arguments[i - 1].column, nulls.get(), null_value);
+
+        /// If mask doesn't have ones, we don't need to execute the rest arguments,
+        /// because the result won't change.
+        if (!mask_info.has_ones || i == arguments.size())
+            break;
+
+        maskedExecute(arguments[i], mask, mask_info);
+    }
+    /// For OR function we need to inverse mask to get the resulting column.
+    if (inverted)
+        inverseMask(mask, mask_info);
+
+    if (nulls)
+        applyTernaryLogic<Name>(mask, *nulls);
+
+    MutableColumnPtr res = ColumnUInt8::create();
+    typeid_cast<ColumnUInt8 *>(res.get())->getData() = std::move(mask);
+
+    if (!nulls)
+        return res;
+
+    MutableColumnPtr bytemap = ColumnUInt8::create();
+    typeid_cast<ColumnUInt8 *>(bytemap.get())->getData() = std::move(*nulls);
+    return ColumnNullable::create(std::move(res), std::move(bytemap));
+}
+
 template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    ColumnsWithTypeAndName arguments = args;
+
+    /// Special implementation for short-circuit arguments.
+    if (checkShortCircuitArguments(arguments) != -1)
+        return executeShortCircuit(arguments, result_type);
+
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
         args_in.push_back(arg_index.column.get());
@@ -521,6 +627,70 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
 }
 
+template <typename Impl, typename Name>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+{
+    /** Try to perform optimization for saturable functions (AndFunction, OrFunction) in case some arguments are
+      * constants.
+      * If function is not saturable (XorFunction) we cannot perform such optimization.
+      * If function is AndFunction and in arguments there is constant false, result is false.
+      * If function is OrFunction and in arguments there is constant true, result is true.
+      */
+    if constexpr (!Impl::isSaturable())
+        return nullptr;
+
+    bool has_true_constant = false;
+    bool has_false_constant = false;
+
+    for (const auto & argument : arguments)
+    {
+        ColumnPtr column = argument.column;
+
+        if (!column || !isColumnConst(*column))
+            continue;
+
+        DataTypePtr non_nullable_type = removeNullable(argument.type);
+        TypeIndex data_type_index = non_nullable_type->getTypeId();
+
+        if (!isNativeNumber(data_type_index))
+            continue;
+
+        const ColumnConst * const_column = static_cast<const ColumnConst *>(column.get());
+
+        Field constant_field_value = const_column->getField();
+        if (constant_field_value.isNull())
+            continue;
+
+        auto field_type = constant_field_value.getType();
+
+        bool constant_value_bool = false;
+
+        if (field_type == Field::Types::Float64)
+            constant_value_bool = static_cast<bool>(constant_field_value.get<Float64>());
+        else if (field_type == Field::Types::Int64)
+            constant_value_bool = static_cast<bool>(constant_field_value.get<Int64>());
+        else if (field_type == Field::Types::UInt64)
+            constant_value_bool = static_cast<bool>(constant_field_value.get<UInt64>());
+
+        has_true_constant = has_true_constant || constant_value_bool;
+        has_false_constant = has_false_constant || !constant_value_bool;
+    }
+
+    ColumnPtr result_column;
+
+    if constexpr (std::is_same_v<Impl, AndImpl>)
+    {
+        if (has_false_constant)
+            result_column = result_type->createColumnConst(0, static_cast<UInt8>(false));
+    }
+    else if constexpr (std::is_same_v<Impl, OrImpl>)
+    {
+        if (has_true_constant)
+            result_column = result_type->createColumnConst(0, static_cast<UInt8>(true));
+    }
+
+    return result_column;
+}
 
 template <typename A, typename Op>
 struct UnaryOperationImpl
@@ -546,7 +716,7 @@ DataTypePtr FunctionUnaryLogical<Impl, Name>::getReturnTypeImpl(const DataTypes 
             + ") of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<DataTypeUInt8>();
+    return isBool(arguments[0]) ? DataTypeFactory::instance().get("Bool") : std::make_shared<DataTypeUInt8>();
 }
 
 template <template <typename> class Impl, typename T>

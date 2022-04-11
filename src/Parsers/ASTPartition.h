@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 
 namespace DB
@@ -12,10 +12,10 @@ class ASTPartition : public IAST
 {
 public:
     ASTPtr value;
-    String fields_str; /// The extent of comma-separated partition expression fields without parentheses.
     size_t fields_count = 0;
 
     String id;
+    bool all = false;
 
     String getID(char) const override;
     ASTPtr clone() const override;

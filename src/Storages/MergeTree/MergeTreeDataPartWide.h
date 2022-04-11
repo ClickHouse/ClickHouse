@@ -50,6 +50,8 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
+    bool isStoredOnRemoteDisk() const override;
+
     bool supportsVerticalMerge() const override { return true; }
 
     String getFileNameForColumn(const NameAndTypePair & column) const override;
@@ -67,6 +69,7 @@ private:
     ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const;
 
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+
 };
 
 }

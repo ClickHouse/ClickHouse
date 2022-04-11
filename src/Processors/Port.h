@@ -214,7 +214,7 @@ protected:
 public:
     using Data = State::Data;
 
-    Port(Block header_) : header(std::move(header_)) {}
+    Port(Block header_) : header(std::move(header_)) {} /// NOLINT
     Port(Block header_, IProcessor * processor_) : header(std::move(header_)), processor(processor_) {}
 
     void setUpdateInfo(UpdateInfo * info) { update_info = info; }
@@ -303,12 +303,12 @@ public:
 
     Chunk ALWAYS_INLINE pull(bool set_not_needed = false)
     {
-        auto data_ = pullData(set_not_needed);
+        auto pull_data = pullData(set_not_needed);
 
-        if (data_.exception)
-            std::rethrow_exception(data_.exception);
+        if (pull_data.exception)
+            std::rethrow_exception(pull_data.exception);
 
-        return std::move(data_.chunk);
+        return std::move(pull_data.chunk);
     }
 
     bool ALWAYS_INLINE isFinished() const
@@ -394,9 +394,9 @@ public:
         pushData({.chunk = std::move(chunk), .exception = {}});
     }
 
-    void ALWAYS_INLINE push(std::exception_ptr exception)
+    void ALWAYS_INLINE pushException(std::exception_ptr exception)
     {
-        pushData({.chunk = {}, .exception = std::move(exception)});
+        pushData({.chunk = {}, .exception = exception});
     }
 
     void ALWAYS_INLINE pushData(Data data_)

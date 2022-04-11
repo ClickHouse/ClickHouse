@@ -1,9 +1,8 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -12,9 +11,9 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage, WithContext
+class StorageMaterializedView final : public shared_ptr_helper<StorageMaterializedView>, public IStorage, WithMutableContext
 {
-    friend struct ext::shared_ptr_helper<StorageMaterializedView>;
+    friend struct shared_ptr_helper<StorageMaterializedView>;
 public:
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
@@ -27,6 +26,7 @@ public:
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
+    bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
         auto target_table = getTargetTable();
@@ -34,10 +34,10 @@ public:
         return target_table->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void drop() override;
-    void dropInnerTable(bool no_delay, ContextPtr context);
+    void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -50,7 +50,7 @@ public:
         const Names & deduplicate_by_columns,
         ContextPtr context) override;
 
-    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
@@ -67,16 +67,19 @@ public:
     void shutdown() override;
 
     QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
+
+    /// Get the virtual column of the target table;
+    NamesAndTypesList getVirtuals() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -86,7 +89,7 @@ public:
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -94,6 +97,10 @@ public:
         unsigned num_streams) override;
 
     Strings getDataPaths() const override;
+
+    bool hasDataToBackup() const override { return hasInnerTable(); }
+    BackupEntries backupData(ContextPtr context_, const ASTs & partitions_) override;
+    RestoreTaskPtr restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_) override;
 
 private:
     /// Will be initialized in constructor
@@ -109,7 +116,8 @@ protected:
         ContextPtr local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        bool attach_);
+        bool attach_,
+        const String & comment);
 };
 
 }

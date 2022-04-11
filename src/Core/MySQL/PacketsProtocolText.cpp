@@ -15,7 +15,7 @@ namespace ProtocolText
 ResultSetRow::ResultSetRow(const Serializations & serializations, const Columns & columns_, int row_num_)
     : columns(columns_), row_num(row_num_)
 {
-    for (size_t i = 0; i < columns.size(); i++)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
         if (columns[i]->isNullAt(row_num))
         {
@@ -39,7 +39,7 @@ size_t ResultSetRow::getPayloadSize() const
 
 void ResultSetRow::writePayloadImpl(WriteBuffer & buffer) const
 {
-    for (size_t i = 0; i < columns.size(); i++)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
         if (columns[i]->isNullAt(row_num))
             buffer.write(serialized[i].data(), 1);

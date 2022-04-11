@@ -15,13 +15,7 @@ toc_title: OnTime
 データのダウンロード:
 
 ``` bash
-for s in `seq 1987 2018`
-do
-for m in `seq 1 12`
-do
-wget https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_${s}_${m}.zip
-done
-done
+wget --no-check-certificate --continue https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_{1987..2021}_{1..12}.zip
 ```
 
 （https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh より)
@@ -40,7 +34,7 @@ CREATE TABLE `ontime`
     `Reporting_Airline`               String,
     `DOT_ID_Reporting_Airline`        Int32,
     `IATA_CODE_Reporting_Airline`     String,
-    `Tail_Number`                     Int32,
+    `Tail_Number`                     String,
     `Flight_Number_Reporting_Airline` String,
     `OriginAirportID`                 Int32,
     `OriginAirportSeqID`              Int32,
@@ -155,7 +149,7 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 ## パーティション済みデータのダウンロード {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
+$ curl -O https://datasets.clickhouse.com/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
@@ -408,4 +402,4 @@ LIMIT 10;
 -   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
 -   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/example_datasets/ontime/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/example_datasets/ontime/) <!--hide-->

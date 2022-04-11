@@ -1,3 +1,7 @@
+-- Tags: no-s3-storage
+
+SET use_uncompressed_cache = 0;
+
 SELECT '====array====';
 DROP TABLE IF EXISTS t_arr;
 CREATE TABLE t_arr (a Array(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
@@ -7,7 +11,7 @@ SYSTEM DROP MARK CACHE;
 SELECT a.size0 FROM t_arr;
 
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
+SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT a.size0 FROM %t_arr%'))
     AND current_database = currentDatabase();
@@ -24,7 +28,7 @@ SYSTEM DROP MARK CACHE;
 SELECT t.u FROM t_tup;
 
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
+SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT t._ FROM %t_tup%'))
     AND current_database = currentDatabase();
@@ -38,7 +42,7 @@ SYSTEM DROP MARK CACHE;
 SELECT n.null FROM t_nul;
 
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
+SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t_nul%'))
     AND current_database = currentDatabase();
@@ -57,7 +61,7 @@ SYSTEM DROP MARK CACHE;
 SELECT m.values FROM t_map;
 
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
+SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT m.% FROM %t_map%'))
     AND current_database = currentDatabase();

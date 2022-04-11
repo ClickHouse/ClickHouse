@@ -3,12 +3,13 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
+
+class ASTFunction;
+class ASTIdentifier;
 
 
 struct ExpressionInfoMatcher

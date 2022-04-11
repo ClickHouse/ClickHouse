@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadStatus.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <memory>
 #include <string>
@@ -46,6 +46,9 @@ public:
                                             LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
 
+    static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
+    static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
+
     static void setFatalErrorCallback(std::function<void()> callback);
 
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
@@ -87,6 +90,7 @@ public:
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope
     {
+        explicit QueryScope(ContextMutablePtr query_context);
         explicit QueryScope(ContextPtr query_context);
         ~QueryScope();
 

@@ -57,8 +57,6 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     /// These synonyms are added for compatibility.
 
     factory.registerAlias("TINYINT", "Int8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BOOL", "Int8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BOOLEAN", "Int8", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INT1", "Int8", DataTypeFactory::CaseInsensitive);    /// MySQL
     factory.registerAlias("BYTE", "Int8", DataTypeFactory::CaseInsensitive);    /// MS Access
     factory.registerAlias("SMALLINT", "Int16", DataTypeFactory::CaseInsensitive);
@@ -88,6 +86,10 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("INT UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INTEGER UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BIGINT UNSIGNED", "UInt64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BIT", "UInt64", DataTypeFactory::CaseInsensitive);  /// MySQL
+    factory.registerAlias("SET", "UInt64", DataTypeFactory::CaseInsensitive);  /// MySQL
+    factory.registerAlias("YEAR", "UInt16", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TIME", "Int64", DataTypeFactory::CaseInsensitive);
 }
 
 }

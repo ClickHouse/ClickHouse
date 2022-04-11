@@ -2,9 +2,8 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Poco/Event.h>
 
@@ -42,11 +41,11 @@ namespace DB
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer final : public ext::shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
+class StorageBuffer final : public shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
 {
-friend struct ext::shared_ptr_helper<StorageBuffer>;
+friend struct shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
-friend class BufferBlockOutputStream;
+friend class BufferSink;
 
 public:
     struct Thresholds
@@ -59,11 +58,11 @@ public:
     std::string getName() const override { return "Buffer"; }
 
     QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -73,7 +72,7 @@ public:
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -84,7 +83,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
@@ -108,7 +107,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
-    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -154,11 +153,8 @@ private:
 
     Poco::Logger * log;
 
-    void flushAllBuffers(bool check_thresholds = true, bool reset_blocks_structure = false);
-    /// Reset the buffer. If check_thresholds is set - resets only if thresholds
-    /// are exceeded. If reset_block_structure is set - clears inner block
-    /// structure inside buffer (useful in OPTIMIZE and ALTER).
-    void flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false, bool reset_block_structure = false);
+    void flushAllBuffers(bool check_thresholds = true);
+    bool flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false);
     bool checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 

@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Access/AccessRightsElement.h>
+#include <Core/NamesAndAliases.h>
+#include <Core/SettingsEnums.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -15,6 +16,7 @@ namespace DB
 class ASTCreateQuery;
 class ASTExpressionList;
 class ASTConstraintDeclaration;
+class ASTStorage;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 
@@ -22,17 +24,17 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 /** Allows to create new table or database,
   *  or create an object for existing table or database.
   */
-class InterpreterCreateQuery : public IInterpreter, WithContext
+class InterpreterCreateQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextPtr context_);
+    InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
 
     BlockIO execute() override;
 
     /// List of columns and their types in AST.
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
+    static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
-
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
     static ASTPtr formatProjections(const ProjectionsDescription & projections);
@@ -50,6 +52,11 @@ public:
     void setForceAttach(bool force_attach_)
     {
         force_attach = force_attach_;
+    }
+
+    void setLoadDatabaseWithoutTables(bool load_database_without_tables_)
+    {
+        load_database_without_tables = load_database_without_tables_;
     }
 
     /// Obtain information about columns, their types, default values and column comments,
@@ -74,8 +81,10 @@ private:
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
-    TableProperties setProperties(ASTCreateQuery & create) const;
+    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
+    static String getTableEngineName(DefaultTableEngine default_table_engine);
+    static void setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
@@ -87,6 +96,10 @@ private:
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 
+    /// Update create query with columns description from storage if query doesn't have it.
+    /// It's used to prevent automatic schema inference while table creation on each server startup.
+    void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
+
     ASTPtr query_ptr;
 
     /// Skip safety threshold when loading tables.
@@ -94,6 +107,7 @@ private:
     /// Is this an internal query - not from the user.
     bool internal = false;
     bool force_attach = false;
+    bool load_database_without_tables = false;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

@@ -70,6 +70,7 @@ private:
 
     using Conditions = std::list<Condition>;
 
+    bool tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const;
     void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const;
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
@@ -77,8 +78,6 @@ private:
 
     /// Transform Conditions list to WHERE or PREWHERE expression.
     static ASTPtr reconstruct(const Conditions & conditions);
-
-    void optimizeConjunction(ASTSelectQuery & select, ASTFunction * const fun) const;
 
     void optimizeArbitrary(ASTSelectQuery & select) const;
 

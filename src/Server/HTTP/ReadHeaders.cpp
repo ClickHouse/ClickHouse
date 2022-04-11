@@ -68,9 +68,6 @@ void readHeaders(
         if (in.eof())
             throw Poco::Net::MessageException("Field is invalid");
 
-        if (value.empty())
-            throw Poco::Net::MessageException("Field value is empty");
-
         if (ch == '\n')
             throw Poco::Net::MessageException("No CRLF found");
 

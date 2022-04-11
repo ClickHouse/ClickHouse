@@ -1,7 +1,7 @@
 #pragma once
 
-#include <common/arithmeticOverflow.h>
-#include <common/extended_types.h>
+#include <base/arithmeticOverflow.h>
+#include <base/extended_types.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>
@@ -24,11 +24,10 @@ namespace ErrorCodes
 /// Operation between two decimals leads to Decimal(P, S), where
 ///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
-template <typename T>
+template <is_decimal T>
 class DataTypeDecimal final : public DataTypeDecimalBase<T>
 {
     using Base = DataTypeDecimalBase<T>;
-    static_assert(IsDecimalNumber<T>);
 
 public:
     using typename Base::FieldType;
@@ -39,7 +38,7 @@ public:
 
     const char * getFamilyName() const override { return family_name; }
     std::string doGetName() const override;
-    TypeIndex getTypeId() const override { return TypeId<T>; }
+    TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
     bool canBePromoted() const override { return true; }
     DataTypePtr promoteNumericType() const override;
 
@@ -47,6 +46,11 @@ public:
     T parseFromString(const String & str) const;
     SerializationPtr doGetDefaultSerialization() const override;
 };
+
+using DataTypeDecimal32 = DataTypeDecimal<Decimal32>;
+using DataTypeDecimal64 = DataTypeDecimal<Decimal64>;
+using DataTypeDecimal128 = DataTypeDecimal<Decimal128>;
+using DataTypeDecimal256 = DataTypeDecimal<Decimal256>;
 
 template <typename T>
 inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
@@ -56,26 +60,26 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
 
 inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value = std::numeric_limits<UInt32>::max())
 {
-    if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal32>(data_type))
         return decimal_type->getScale();
-    if (auto * decimal_type = checkDecimal<Decimal64>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal64>(data_type))
         return decimal_type->getScale();
-    if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal128>(data_type))
         return decimal_type->getScale();
-    if (auto * decimal_type = checkDecimal<Decimal256>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal256>(data_type))
         return decimal_type->getScale();
     return default_value;
 }
 
 inline UInt32 getDecimalPrecision(const IDataType & data_type)
 {
-    if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal32>(data_type))
         return decimal_type->getPrecision();
-    if (auto * decimal_type = checkDecimal<Decimal64>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal64>(data_type))
         return decimal_type->getPrecision();
-    if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal128>(data_type))
         return decimal_type->getPrecision();
-    if (auto * decimal_type = checkDecimal<Decimal256>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal256>(data_type))
         return decimal_type->getPrecision();
     return 0;
 }

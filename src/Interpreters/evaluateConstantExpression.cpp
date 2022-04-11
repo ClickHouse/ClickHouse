@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
@@ -18,6 +19,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <unordered_map>
 
 namespace DB
 {
@@ -31,6 +33,9 @@ namespace ErrorCodes
 
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context)
 {
+    if (ASTLiteral * literal = node->as<ASTLiteral>())
+        return std::make_pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
+
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
@@ -49,17 +54,20 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     expr_for_constant_folding->execute(block_with_constants);
 
     if (!block_with_constants || block_with_constants.rows() == 0)
-        throw Exception("Logical error: empty block after evaluation of constant expression for IN, VALUES or LIMIT", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Logical error: empty block after evaluation of constant expression for IN, VALUES or LIMIT or aggregate function parameter",
+                        ErrorCodes::LOGICAL_ERROR);
 
     if (!block_with_constants.has(name))
-        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression (result column not found): " + name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Element of set in IN, VALUES or LIMIT or aggregate function parameter is not a constant expression (result column not found): {}", name);
 
     const ColumnWithTypeAndName & result = block_with_constants.getByName(name);
     const IColumn & result_column = *result.column;
 
     /// Expressions like rand() or now() are not constant
     if (!isColumnConst(result_column))
-        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression (result column is not const): " + name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Element of set in IN, VALUES or LIMIT or aggregate function parameter is not a constant expression (result column is not const): {}", name);
 
     return std::make_pair(result_column[0], result.type);
 }
@@ -99,6 +107,7 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr
     }
     return res;
 }
+
 
 namespace
 {
@@ -192,7 +201,7 @@ namespace
 
             Disjunction result;
 
-            auto add_dnf = [&](const auto &dnf)
+            auto add_dnf = [&](const auto & dnf)
             {
                 if (dnf.size() > limit)
                 {
@@ -224,24 +233,28 @@ namespace
                     }
                 }
             }
-            else if (const auto * tuple_literal = right->as<ASTLiteral>();
-                tuple_literal && tuple_literal->value.getType() == Field::Types::Tuple)
+            else if (const auto * tuple_literal = right->as<ASTLiteral>(); tuple_literal)
             {
-                const auto & tuple = tuple_literal->value.get<const Tuple &>();
-                for (const auto & child : tuple)
+                if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto dnf = analyzeEquals(identifier, child, expr);
-
-                    if (dnf.empty())
+                    const auto & tuple = tuple_literal->value.get<const Tuple &>();
+                    for (const auto & child : tuple)
                     {
-                        return {};
-                    }
+                        const auto dnf = analyzeEquals(identifier, child, expr);
 
-                    if (!add_dnf(dnf))
-                    {
-                        return {};
+                        if (dnf.empty())
+                        {
+                            return {};
+                        }
+
+                        if (!add_dnf(dnf))
+                        {
+                            return {};
+                        }
                     }
                 }
+                else
+                    return analyzeEquals(identifier, tuple_literal, expr);
             }
             else
             {
@@ -313,6 +326,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
 
     if (const auto * fn = node->as<ASTFunction>())
     {
+        std::unordered_map<std::string, bool> always_false_map;
         const auto dnf = analyzeFunction(fn, target_expr, limit);
 
         if (dnf.empty() || !limit)
@@ -343,7 +357,41 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
 
         for (const auto & conjunct : dnf)
         {
-            Block block(conjunct);
+            Block block;
+
+            for (const auto & elem : conjunct)
+            {
+                if (!block.has(elem.name))
+                {
+                    block.insert(elem);
+                }
+                else
+                {
+                    /// Conjunction of condition on column equality to distinct values can never be satisfied.
+
+                    const ColumnWithTypeAndName & prev = block.getByName(elem.name);
+
+                    if (isColumnConst(*prev.column) && isColumnConst(*elem.column))
+                    {
+                        Field prev_value = assert_cast<const ColumnConst &>(*prev.column).getField();
+                        Field curr_value = assert_cast<const ColumnConst &>(*elem.column).getField();
+
+                        if (!always_false_map.count(elem.name))
+                        {
+                            always_false_map[elem.name] = prev_value != curr_value;
+                        }
+                        else
+                        {
+                            auto & always_false = always_false_map[elem.name];
+                            /// If at least one of conjunct is not always false, we should preserve this.
+                            if (always_false)
+                            {
+                                always_false = prev_value != curr_value;
+                            }
+                        }
+                    }
+                }
+            }
 
             // Block should contain all required columns from `target_expr`
             if (!has_required_columns(block))
@@ -368,6 +416,11 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
                 return {};
             }
         }
+
+        bool any_always_false = std::any_of(always_false_map.begin(), always_false_map.end(), [](const auto & v) { return v.second; });
+        if (any_always_false)
+            return Blocks{};
+
     }
     else if (const auto * literal = node->as<ASTLiteral>())
     {

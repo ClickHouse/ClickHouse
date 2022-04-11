@@ -42,6 +42,7 @@ not compatible
 = compression
 1000
 1000
+1000
 = other
 0
 1000
@@ -58,3 +59,11 @@ not found
 0
 1000
 147
+= string column pattern
+"русская строка"
+Ok
+1	1	0
+1	0	0
+0	1	0
+1	1	1
+1	1	1

@@ -46,6 +46,8 @@ public:
 
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return false; }
@@ -76,7 +78,7 @@ public:
 
         // check that default value column has supertype with first argument
         if (number_of_arguments == 3)
-            return getLeastSupertype({arguments[0], arguments[2]});
+            return getLeastSupertype(DataTypes{arguments[0], arguments[2]});
 
         return arguments[0];
     }

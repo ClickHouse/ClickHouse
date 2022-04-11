@@ -8,7 +8,6 @@
 #include <Common/assert_cast.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <Core/Field.h>
 
 namespace DB
@@ -21,16 +20,19 @@ void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_nu
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     T x;
 
-    if constexpr (is_integer_v<T> && is_arithmetic_v<T>)
+    if constexpr (is_integer<T> && is_arithmetic_v<T>)
         readIntTextUnsafe(x, istr);
     else
         readText(x, istr);
 
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
+
+    if (whole && !istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Number");
 }
 
 template <typename T>
@@ -41,7 +43,7 @@ void SerializationNumber<T>::serializeTextJSON(const IColumn & column, size_t ro
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     bool has_quote = false;
     if (!istr.eof() && *istr.position() == '"')        /// We understand the number both in quotes and without.
@@ -65,7 +67,7 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
         static constexpr bool is_uint8 = std::is_same_v<T, UInt8>;
         static constexpr bool is_int8 = std::is_same_v<T, Int8>;
 
-        if (is_uint8 || is_int8)
+        if (settings.json.read_bools_as_numbers || is_uint8 || is_int8)
         {
             // extra conditions to parse true/false strings into 1/0
             if (istr.eof())
@@ -92,7 +94,7 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
 {
     FieldType x;
     readCSV(x, istr);

@@ -7,13 +7,8 @@
 
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block.h>
-#include <ext/range.h>
-#include <ext/size.h>
 
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -31,13 +26,13 @@ public:
         size_t initial_array_size;
         size_t max_array_size;
         bool require_nonempty;
+        DictionaryLifetime dict_lifetime;
     };
 
     FlatDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
         Configuration configuration_,
         BlockPtr update_field_loaded_block_ = nullptr);
 
@@ -63,12 +58,12 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, update_field_loaded_block);
+        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
-    const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
+    const DictionaryLifetime & getLifetime() const override { return configuration.dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
@@ -77,7 +72,7 @@ public:
         return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Simple; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -102,41 +97,19 @@ public:
         const DataTypePtr & key_type,
         size_t level) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
     template <typename Value>
-    using ContainerType = PaddedPODArray<Value>;
+    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
 
     using NullableSet = HashSet<UInt64, DefaultHash<UInt64>>;
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::optional<NullableSet> nullable_set;
+        std::optional<NullableSet> is_nullable_set;
 
-        std::variant<
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            UInt128,
-            UInt256,
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            Int128,
-            Int256,
-            Decimal32,
-            Decimal64,
-            Decimal128,
-            Decimal256,
-            Float32,
-            Float64,
-            UUID,
-            StringRef>
-            null_values;
         std::variant<
             ContainerType<UInt8>,
             ContainerType<UInt16>,
@@ -154,13 +127,13 @@ private:
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
+            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
-            ContainerType<StringRef>>
+            ContainerType<StringRef>,
+            ContainerType<Array>>
             container;
-
-        std::unique_ptr<Arena> string_arena;
     };
 
     void createAttributes();
@@ -170,9 +143,9 @@ private:
 
     void calculateBytesAllocated();
 
-    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
+    Attribute createAttribute(const DictionaryAttribute & attribute);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & keys,
@@ -182,14 +155,10 @@ private:
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);
 
-    template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, UInt64 key, const T & value);
-
     void setAttributeValue(Attribute & attribute, UInt64 key, const Field & value);
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
-    const DictionaryLifetime dict_lifetime;
     const Configuration configuration;
 
     std::vector<Attribute> attributes;
@@ -202,6 +171,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
+    Arena string_arena;
 };
 
 }

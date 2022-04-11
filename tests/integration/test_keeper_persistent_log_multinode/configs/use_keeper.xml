@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <zookeeper>
         <node index="1">
             <host>node1</host>
@@ -13,4 +13,4 @@
             <port>9181</port>
         </node>
     </zookeeper>
-</yandex>
+</clickhouse>

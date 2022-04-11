@@ -50,7 +50,7 @@ After database reattachement the table is still absent (it was detached permamen
 And we can not detach it permanently
 But we can attach it back
 And detach permanently again to check how database drop will behave
-DROP database - Directory not empty error, but database deteched
+DROP database - Directory not empty error, but database detached
 DROP database - now success
 -----------------------
 database lazy tests

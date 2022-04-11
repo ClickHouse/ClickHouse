@@ -1,4 +1,4 @@
-CREATE DATABASE memory_01069\nENGINE = Memory()
+CREATE DATABASE memory_01069\nENGINE = Memory
 1
 2
 3

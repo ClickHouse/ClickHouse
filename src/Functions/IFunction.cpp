@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
@@ -16,9 +17,7 @@
 #include <cstdlib>
 #include <memory>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -61,13 +60,14 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
         {
             /// Single LowCardinality column is supported now.
             if (indexes)
-                throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single dictionary argument for function.");
 
             const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
 
             if (!low_cardinality_type)
-                throw Exception("Incompatible type for low cardinality column: " + column.type->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Incompatible type for low cardinality column: {}",
+                    column.type->getName());
 
             if (can_be_executed_on_default_arguments)
             {
@@ -121,7 +121,10 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
     /// Check that these arguments are really constant.
     for (auto arg_num : arguments_to_remain_constants)
         if (arg_num < args.size() && !isColumnConst(*args[arg_num].column))
-            throw Exception("Argument at index " + toString(arg_num) + " for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Argument at index {} for function {} must be constant",
+                toString(arg_num),
+                getName());
 
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(args))
         return nullptr;
@@ -150,8 +153,9 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
       *  not in "arguments_to_remain_constants" set. Otherwise we get infinite recursion.
       */
     if (!have_converted_columns)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: the function requires more arguments",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: the function requires more arguments",
+            getName());
 
     ColumnPtr result_column = executeWithoutLowCardinalityColumns(temporary_columns, result_type, 1, dry_run);
 
@@ -176,7 +180,13 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     {
         // Default implementation for nulls returns null result for null arguments,
         // so the result type must be nullable.
-        assert(result_type->isNullable());
+        if (!result_type->isNullable())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Function {} with Null argument and default implementation for Nulls "
+                "is expected to return Nullable result, got {}",
+                getName(),
+                result_type->getName());
 
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
     }
@@ -214,10 +224,15 @@ ColumnPtr IExecutableFunction::executeWithoutLowCardinalityColumns(
     return res;
 }
 
-ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+static void convertSparseColumnsToFull(ColumnsWithTypeAndName & args)
+{
+    for (auto & column : args)
+        column.column = recursiveRemoveSparse(column.column);
+}
+
+ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     ColumnPtr result;
-
     if (useDefaultImplementationForLowCardinalityColumns())
     {
         ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
@@ -258,6 +273,73 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
     return result;
 }
 
+ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+{
+    if (useDefaultImplementationForSparseColumns())
+    {
+        size_t num_sparse_columns = 0;
+        size_t num_full_columns = 0;
+        size_t sparse_column_position = 0;
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            const auto * column_sparse = checkAndGetColumn<ColumnSparse>(arguments[i].column.get());
+            /// In rare case, when sparse column doesn't have default values,
+            /// it's more convenient to convert it to full before execution of function.
+            if (column_sparse && column_sparse->getNumberOfDefaults())
+            {
+                sparse_column_position = i;
+                ++num_sparse_columns;
+            }
+            else if (!isColumnConst(*arguments[i].column))
+            {
+                ++num_full_columns;
+            }
+        }
+
+        auto columns_without_sparse = arguments;
+        if (num_sparse_columns == 1 && num_full_columns == 0)
+        {
+            auto & arg_with_sparse = columns_without_sparse[sparse_column_position];
+            ColumnPtr sparse_offsets;
+            {
+                /// New scope to avoid possible mistakes on dangling reference.
+                const auto & column_sparse = assert_cast<const ColumnSparse &>(*arg_with_sparse.column);
+                sparse_offsets = column_sparse.getOffsetsPtr();
+                arg_with_sparse.column = column_sparse.getValuesPtr();
+            }
+
+            size_t values_size = arg_with_sparse.column->size();
+            for (size_t i = 0; i < columns_without_sparse.size(); ++i)
+            {
+                if (i == sparse_column_position)
+                    continue;
+
+                columns_without_sparse[i].column = columns_without_sparse[i].column->cloneResized(values_size);
+            }
+
+            auto res = executeWithoutSparseColumns(columns_without_sparse, result_type, values_size, dry_run);
+
+            if (isColumnConst(*res))
+                return res->cloneResized(input_rows_count);
+
+            /// If default of sparse column is changed after execution of function, convert to full column.
+            if (!result_type->supportsSparseSerialization() || !res->isDefaultAt(0))
+            {
+                const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
+                return res->createWithOffsets(offsets_data, (*res)[0], input_rows_count, /*shift=*/ 1);
+            }
+
+            return ColumnSparse::create(res, sparse_offsets, input_rows_count);
+        }
+
+        convertSparseColumnsToFull(columns_without_sparse);
+        return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
+    }
+
+    return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
+}
+
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
 {
     if (isVariadic())
@@ -266,9 +348,11 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
     size_t expected_number_of_arguments = getNumberOfArguments();
 
     if (number_of_arguments != expected_number_of_arguments)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                        + toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: passed {}, should be {}",
+            getName(),
+            toString(number_of_arguments),
+            toString(expected_number_of_arguments));
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
@@ -299,11 +383,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
                 ++num_full_ordinary_columns;
         }
 
-        for (auto & arg : args_without_low_cardinality)
-        {
-            arg.column = recursiveRemoveLowCardinality(arg.column);
-            arg.type = recursiveRemoveLowCardinality(arg.type);
-        }
+        convertLowCardinalityColumnsToFull(args_without_low_cardinality);
 
         auto type_without_low_cardinality = getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
 
@@ -372,6 +452,7 @@ static std::optional<DataTypes> removeNullables(const DataTypes & types)
 
 bool IFunction::isCompilable(const DataTypes & arguments) const
 {
+
     if (useDefaultImplementationForNulls())
         if (auto denulled = removeNullables(arguments))
             return isCompilableImpl(*denulled);

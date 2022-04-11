@@ -7,7 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "validateODBCConnectionString.h"
 #include "ODBCConnectionFactory.h"
 #include <sql.h>
@@ -18,9 +18,10 @@ namespace DB
 {
 namespace
 {
-    bool isSchemaAllowed(nanodbc::connection & connection)
+    bool isSchemaAllowed(nanodbc::ConnectionHolderPtr connection_holder)
     {
-        uint32_t result = connection.get_info<uint32_t>(SQL_SCHEMA_USAGE);
+        uint32_t result = execute<uint32_t>(connection_holder,
+                    [&](nanodbc::connection & connection) { return connection.get_info<uint32_t>(SQL_SCHEMA_USAGE); });
         return result != 0;
     }
 }
@@ -28,7 +29,7 @@ namespace
 
 void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    HTMLForm params(request, request.getStream());
+    HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
@@ -36,7 +37,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             *response.send() << message << std::endl;
-        LOG_WARNING(log, message);
+        LOG_WARNING(log, fmt::runtime(message));
     };
 
     if (!params.has("connection_string"))
@@ -53,7 +54,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
-        bool result = isSchemaAllowed(connection->get());
+        bool result = isSchemaAllowed(std::move(connection));
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try

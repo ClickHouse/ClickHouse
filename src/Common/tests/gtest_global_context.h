@@ -5,7 +5,7 @@
 struct ContextHolder
 {
     DB::SharedContextHolder shared_context;
-    DB::ContextPtr context;
+    DB::ContextMutablePtr context;
 
     ContextHolder()
         : shared_context(DB::Context::createShared())
@@ -16,10 +16,17 @@ struct ContextHolder
     }
 
     ContextHolder(ContextHolder &&) = default;
+
+    void destroy()
+    {
+        context->shutdown();
+        context.reset();
+        shared_context.reset();
+    }
 };
 
-inline const ContextHolder & getContext()
-{
-    static ContextHolder holder;
-    return holder;
-}
+const ContextHolder & getContext();
+
+ContextHolder & getMutableContext();
+
+void destroyContext();

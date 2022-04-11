@@ -1,3 +1,5 @@
+-- Tags: global
+
 DROP TABLE IF EXISTS local_table;
 DROP TABLE IF EXISTS dist_table;
 

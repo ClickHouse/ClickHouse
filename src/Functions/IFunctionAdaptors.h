@@ -29,6 +29,7 @@ protected:
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
+    bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
 
@@ -66,9 +67,10 @@ public:
     }
 
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments_) const override
+
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments_, const DataTypePtr & result_type_) const override
     {
-        return function->getResultIfAlwaysReturnsConstantAndHasArguments(arguments_);
+        return function->getConstantResultForNonConstArguments(arguments_, result_type_);
     }
 
     bool isStateful() const override { return function->isStateful(); }
@@ -78,6 +80,10 @@ public:
     bool isDeterministic() const override { return function->isDeterministic(); }
 
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
+
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
@@ -119,6 +125,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return function->useDefaultImplementationForLowCardinalityColumns(); }
+    bool useDefaultImplementationForSparseColumns() const override { return function->useDefaultImplementationForSparseColumns(); }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
