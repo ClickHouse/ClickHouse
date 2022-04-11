@@ -46,7 +46,15 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
 
 void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
 {
-    file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size));
+
+    if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    {
+        file_segments_holder.emplace(cache->get(cache_key, offset, size));
+    }
+    else
+    {
+        file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size));
+    }
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -326,6 +334,10 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getImplementationBuffer(File
 #endif
 
             size_t seek_offset = file_offset_of_buffer_end - range.left;
+
+            if (file_offset_of_buffer_end < range.left)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} > {}", file_offset_of_buffer_end, range.left);
+
             read_buffer_for_file_segment->seek(seek_offset, SEEK_SET);
 
             break;
@@ -577,6 +589,8 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
+    assertCorrectness();
+
     if (!initialized)
         initialize(file_offset_of_buffer_end, getTotalSizeToRead());
 
@@ -597,8 +611,8 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
         {
             try
             {
-                bool file_segment_already_completed = !file_segment->isDownloader();
-                if (!file_segment_already_completed)
+                bool need_complete_file_segment = file_segment->isDownloader();
+                if (need_complete_file_segment)
                     file_segment->completeBatchAndResetDownloader();
             }
             catch (...)
@@ -818,6 +832,12 @@ std::optional<size_t> CachedReadBufferFromRemoteFS::getLastNonDownloadedOffset()
     }
 
     return std::nullopt;
+}
+
+void CachedReadBufferFromRemoteFS::assertCorrectness() const
+{
+    if (IFileCache::isReadOnly() && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed");
 }
 
 String CachedReadBufferFromRemoteFS::getInfoForLog()
