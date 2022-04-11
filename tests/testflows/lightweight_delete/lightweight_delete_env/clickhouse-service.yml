@@ -1,0 +1,35 @@
+version: '2.3'
+
+services:
+  clickhouse:
+    image: registry.gitlab.com/altinity-public/container-images/test/clickhouse-integration-test-ontime:v1.0
+    init: true
+    expose:
+      - "9000"
+      - "9009"
+      - "8123"
+    environment:
+      - S3_AMAZON_URI=$S3_AMAZON_URI
+      - S3_AMAZON_KEY_ID=$S3_AMAZON_KEY_ID
+      - S3_AMAZON_ACCESS_KEY=$S3_AMAZON_ACCESS_KEY
+    volumes:
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/config.d/logs.xml:/etc/clickhouse-server/config.d/logs.xml"
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/config.d/remote.xml:/etc/clickhouse-server/config.d/remote.xml"
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/config.d/ssl.xml:/etc/clickhouse-server/config.d/ssl.xml"
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/config.d/storage.xml:/etc/clickhouse-server/config.d/storage.xml"
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/config.d/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml"
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/config.xml:/etc/clickhouse-server/config.xml"
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/users.xml:/etc/clickhouse-server/users.xml"
+      - "${CLICKHOUSE_TESTS_SERVER_BIN_PATH:-/usr/bin/clickhouse}:/usr/bin/clickhouse"
+      - "${CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH:-/usr/bin/clickhouse-odbc-bridge}:/usr/bin/clickhouse-odbc-bridge"
+    entrypoint: bash -c "tail -f /dev/null"
+    healthcheck:
+      test: echo 1
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - label:disable
