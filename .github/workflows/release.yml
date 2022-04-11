@@ -52,8 +52,8 @@ jobs:
     - name: Check docker clickhouse/clickhouse-server building
       run: |
         cd "$GITHUB_WORKSPACE/tests/ci"
-        python3 docker_server.py --release-type auto
-        python3 docker_server.py --release-type auto --no-ubuntu \
+        python3 docker_server.py --release-type auto --version "${{ github.ref }}"
+        python3 docker_server.py --release-type auto --version "${{ github.ref }}" --no-ubuntu \
           --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
     - name: Cleanup
       if: always()

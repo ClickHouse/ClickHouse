@@ -54,6 +54,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/ObjectUtils.h>
+#include <DataTypes/hasNullable.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
@@ -479,6 +480,21 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             else if (make_columns_nullable)
             {
                 column_type = makeNullable(column_type);
+            }
+            else if (!hasNullable(column_type) &&
+                     col_decl.default_specifier == "DEFAULT" &&
+                     col_decl.default_expression &&
+                     col_decl.default_expression->as<ASTLiteral>() &&
+                     col_decl.default_expression->as<ASTLiteral>()->value.isNull())
+            {
+                if (column_type->lowCardinality())
+                {
+                    const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
+                    assert(low_cardinality_type);
+                    column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
+                }
+                else
+                    column_type = makeNullable(column_type);
             }
 
             column_names_and_types.emplace_back(col_decl.name, column_type);
