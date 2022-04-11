@@ -538,14 +538,14 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     MergeTreeRangeReader * prev_reader_,
     const PrewhereExprInfo * prewhere_info_,
     bool last_reader_in_chain_,
-    bool add_part_offset_)
+    const Names & non_const_virtual_column_names_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part->index_granularity))
     , prev_reader(prev_reader_)
     , prewhere_info(prewhere_info_)
     , last_reader_in_chain(last_reader_in_chain_)
     , is_initialized(true)
-    , add_part_offset(add_part_offset_)
+    , non_const_virtual_column_names(non_const_virtual_column_names_)
 {
     if (prev_reader)
         sample_block = prev_reader->getSampleBlock();
@@ -553,10 +553,13 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     for (const auto & name_and_type : merge_tree_reader->getColumns())
         sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
 
-    if(add_part_offset && !sample_block.has("_part_offset"))
+    for (const auto & column_name : non_const_virtual_column_names)
     {
-        ColumnPtr column(ColumnUInt64::create());
-        sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeUInt64>(), "_part_offset"));
+        if (sample_block.has(column_name))
+            continue;
+
+        if (column_name == "_part_offset")
+            sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
     }
 
     if (prewhere_info)
@@ -748,11 +751,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
         if (read_result.num_rows)
         {
-            Columns physical_columns;
-            if (add_part_offset)
-                physical_columns.assign(read_result.columns.begin(), read_result.columns.begin() + read_result.columns.size() - 1);
-            else
-                physical_columns.assign(read_result.columns.begin(), read_result.columns.end());
+            /// Physical columns go first and then some virtual columns follow
+            const size_t physical_columns_count = read_result.columns.size() - non_const_virtual_column_names.size();
+            Columns physical_columns(read_result.columns.begin(), read_result.columns.begin() + physical_columns_count);
 
             bool should_evaluate_missing_defaults;
             merge_tree_reader->fillMissingColumns(physical_columns, should_evaluate_missing_defaults,
@@ -794,12 +795,15 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
 
     size_t current_task_last_mark = getLastMark(ranges);
 
-    UInt64 leading_part_offset = 0;
-    UInt64 leading_last_part_offset = 0;
+    /// The stream could be unfinished by the previous read request because of max_rows limit.
+    /// In this case it will have some rows from the previously started range. We need to save their begin and
+    /// end offsets to properly fill _part_offset column.
+    UInt64 leading_begin_part_offset = 0;
+    UInt64 leading_end_part_offset = 0;
     if (!stream.isFinished())
     {
-        leading_part_offset = stream.currentPartOffset();
-        leading_last_part_offset = stream.lastPartOffset();
+        leading_begin_part_offset = stream.currentPartOffset();
+        leading_end_part_offset = stream.lastPartOffset();
     }
 
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
@@ -838,13 +842,16 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// Last granule may be incomplete.
     result.adjustLastGranule();
 
-    if(add_part_offset)
-        patchPartOffsetColumn(result, leading_part_offset, leading_last_part_offset);
+    for (const auto & column_name : non_const_virtual_column_names)
+    {
+        if (column_name == "_part_offset")
+            fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+    }
 
     return result;
 }
 
-void MergeTreeRangeReader::patchPartOffsetColumn(ReadResult & result, UInt64 leading_part_offset, UInt64 leading_last_part_offset)
+void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
 {
     size_t num_rows = result.numReadRows();
 
@@ -854,11 +861,8 @@ void MergeTreeRangeReader::patchPartOffsetColumn(ReadResult & result, UInt64 lea
     UInt64 * pos = vec.data();
     UInt64 * end = &vec[num_rows];
 
-    if(leading_last_part_offset)
-    {
-        while (pos < end && leading_part_offset < leading_last_part_offset)
-            *pos++ = leading_part_offset++;
-    }
+    while (pos < end && leading_begin_part_offset < leading_end_part_offset)
+        *pos++ = leading_begin_part_offset++;
 
     const auto start_ranges = result.startedRanges();
 
@@ -990,7 +994,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     const auto & header = merge_tree_reader->getColumns();
     size_t num_columns = header.size();
 
-    if (result.columns.size() != (add_part_offset ? num_columns + 1 : num_columns))
+    if (result.columns.size() != (num_columns + non_const_virtual_column_names.size()))
         throw Exception("Invalid number of columns passed to MergeTreeRangeReader. "
                         "Expected " + toString(num_columns) + ", "
                         "got " + toString(result.columns.size()), ErrorCodes::LOGICAL_ERROR);
@@ -1016,9 +1020,13 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         for (auto name_and_type = header.begin(); pos < num_columns; ++pos, ++name_and_type)
             block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
 
-        if (add_part_offset)
+        for (const auto & column_name : non_const_virtual_column_names)
         {
-            block.insert({result.columns[pos], std::make_shared<DataTypeUInt64>(), "_part_offset"});
+            if (column_name == "_part_offset")
+                block.insert({result.columns[pos], std::make_shared<DataTypeUInt64>(), column_name});
+            else
+                throw Exception("Unexpected non-const virtual column: " + column_name, ErrorCodes::LOGICAL_ERROR);
+            ++pos;
         }
 
         if (prewhere_info->alias_actions)
