@@ -150,7 +150,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
-Список префиксов для [пользовательских настроек](../../operations/settings/index.md#custom_settings). Префиксы должны перечисляться через запятую.
+Список префиксов для [пользовательских настроек](../../operations/settings/#custom_settings). Префиксы должны перечисляться через запятую.
 
 **Пример**
 
@@ -160,7 +160,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 **См. также**
 
--   [Пользовательские настройки](../../operations/settings/index.md#custom_settings)
+-   [Пользовательские настройки](../../operations/settings#custom_settings)
 
 ## core_dump {#server_configuration_parameters-core_dump}
 

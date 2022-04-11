@@ -9,5 +9,5 @@ sidebar_label: "Коммерческие услуги"
 
 Категории услуг:
 
--   [Облачные услуги](../commercial/cloud.md)
--   [Поддержка](../commercial/support.md)
+-   [Облачные услуги](https://clickhouse.com/cloud/)
+-   [Поддержка](https://clickhouse.com/support/program/)
