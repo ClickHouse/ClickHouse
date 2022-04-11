@@ -51,7 +51,6 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE roundtrip_google_wrappers_02266 AS goog
 $CLICKHOUSE_CLIENT --query "INSERT INTO roundtrip_google_wrappers_02266 FORMAT Protobuf SETTINGS format_schema='$SCHEMADIR/02266_protobuf_format_google_wrappers:Message'" < "$BINARY_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM roundtrip_google_wrappers_02266"
 
-# TODO: it outputs the null string as if it was empty, to investigate
 $CLICKHOUSE_CLIENT --query "SELECT * FROM roundtrip_google_wrappers_02266 FORMAT Protobuf SETTINGS format_schema = '$SCHEMADIR/02266_protobuf_format_google_wrappers:Message'" > "$BINARY_FILE_PATH"
 echo
 echo "Proto output of the table:"
