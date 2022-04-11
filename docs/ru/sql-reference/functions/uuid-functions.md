@@ -35,6 +35,90 @@ SELECT * FROM t_uuid
 └──────────────────────────────────────┘
 ```
 
+## empty {#empty}
+
+Проверяет, является ли входной UUID пустым.
+
+**Синтаксис**
+
+```sql
+empty(UUID)
+```
+
+UUID считается пустым, если он содержит все нули (нулевой UUID).
+
+Функция также поддерживает работу с типами [Array](array-functions.md#function-empty) и [String](string-functions.md#empty).
+
+**Параметры**
+
+-   `x` — UUID на входе функции. [UUID](../data-types/uuid.md).
+
+**Возвращаемое значение**
+
+-   Возвращает `1` для пустого UUID или `0` — для непустого UUID.
+
+Тип: [UInt8](../data-types/int-uint.md).
+
+**Пример**
+
+Для генерации UUID-значений предназначена функция [generateUUIDv4](#uuid-function-generate).
+
+Запрос:
+
+```sql
+SELECT empty(generateUUIDv4());
+```
+
+Ответ:
+
+```text
+┌─empty(generateUUIDv4())─┐
+│                       0 │
+└─────────────────────────┘
+```
+
+## notEmpty {#notempty}
+
+Проверяет, является ли входной UUID непустым.
+
+**Синтаксис**
+
+```sql
+notEmpty(UUID)
+```
+
+UUID считается пустым, если он содержит все нули (нулевой UUID).
+
+Функция также поддерживает работу с типами [Array](array-functions.md#function-notempty) и [String](string-functions.md#function-notempty).
+
+**Параметры**
+
+-   `x` — UUID на входе функции. [UUID](../data-types/uuid.md).
+
+**Возвращаемое значение**
+
+-   Возвращает `1` для непустого UUID или `0` — для пустого UUID.
+
+Тип: [UInt8](../data-types/int-uint.md).
+
+**Пример**
+
+Для генерации UUID-значений предназначена функция [generateUUIDv4](#uuid-function-generate).
+
+Запрос:
+
+```sql
+SELECT notEmpty(generateUUIDv4());
+```
+
+Результат:
+
+```text
+┌─notEmpty(generateUUIDv4())─┐
+│                          1 │
+└────────────────────────────┘
+```
+
 ## toUUID (x) {#touuid-x}
 
 Преобразует значение типа String в тип UUID.

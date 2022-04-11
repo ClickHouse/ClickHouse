@@ -58,6 +58,7 @@ SRCS(
     MergeTree/MergeTreeDataSelectExecutor.cpp
     MergeTree/MergeTreeDataWriter.cpp
     MergeTree/MergeTreeDeduplicationLog.cpp
+    MergeTree/MergeTreeInOrderSelectProcessor.cpp
     MergeTree/MergeTreeIndexAggregatorBloomFilter.cpp
     MergeTree/MergeTreeIndexBloomFilter.cpp
     MergeTree/MergeTreeIndexConditionBloomFilter.cpp
@@ -134,12 +135,13 @@ SRCS(
     StorageJoin.cpp
     StorageLog.cpp
     StorageLogSettings.cpp
-    StorageMaterializeMySQL.cpp
+    StorageMaterializedMySQL.cpp
     StorageMaterializedView.cpp
     StorageMemory.cpp
     StorageMerge.cpp
     StorageMergeTree.cpp
     StorageMongoDB.cpp
+    StorageMongoDBSocketFactory.cpp
     StorageMySQL.cpp
     StorageNull.cpp
     StorageReplicatedMergeTree.cpp

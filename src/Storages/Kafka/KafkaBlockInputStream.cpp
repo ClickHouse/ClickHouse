@@ -252,7 +252,11 @@ Block KafkaBlockInputStream::readImpl()
         }
         else
         {
-            LOG_WARNING(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", buffer->currentTopic(), buffer->currentPartition(), buffer->currentOffset());
+            // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
+            // TODO: it seems like in case of put_error_to_stream=true we may need to process those differently
+            // currently we just skip them with note in logs.
+            buffer->storeLastReadMessageOffset();
+            LOG_DEBUG(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", buffer->currentTopic(), buffer->currentPartition(), buffer->currentOffset());
         }
 
         if (!buffer->hasMorePolledMessages()

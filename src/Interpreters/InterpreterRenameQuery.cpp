@@ -72,16 +72,31 @@ BlockIO InterpreterRenameQuery::execute()
 
 BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards)
 {
+    assert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
+    assert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
 
     for (const auto & elem : descriptions)
     {
-        if (!rename.exchange)
+        bool exchange_tables;
+        if (rename.exchange)
+        {
+            exchange_tables = true;
+        }
+        else if (rename.rename_if_cannot_exchange)
+        {
+            exchange_tables = database_catalog.isTableExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
+            renamed_instead_of_exchange = !exchange_tables;
+        }
+        else
+        {
+            exchange_tables = false;
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
+        }
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
         if (typeid_cast<DatabaseReplicated *>(database.get())
-            && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+            && !getContext()->getClientInfo().is_replicated_database_internal)
         {
             if (1 < descriptions.size())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database {} is Replicated, "
@@ -100,7 +115,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 elem.from_table_name,
                 *database_catalog.getDatabase(elem.to_database_name),
                 elem.to_table_name,
-                rename.exchange,
+                exchange_tables,
                 rename.dictionary);
         }
     }

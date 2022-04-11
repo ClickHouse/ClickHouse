@@ -21,7 +21,7 @@ toc_title: "\u5176\u4ED6"
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-启动服务器时会自动触发此查询。 
+启动服务器时会自动触发此查询。
 
 服务器将表的元数据作为文件存储 `ATTACH` 查询，它只是在启动时运行。有些表例外，如系统表，它们是在服务器上显式指定的。
 

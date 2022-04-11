@@ -60,7 +60,7 @@ public:
 
     void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
 
-    std::unordered_set<int64_t> getDeadSessions();
+    std::vector<int64_t> getDeadSessions();
 
     void shutdownStorage();
 
@@ -81,8 +81,12 @@ private:
     /// Mutex for snapshots
     std::mutex snapshots_lock;
 
-    /// Lock for storage
-    std::mutex storage_lock;
+    /// Lock for storage and responses_queue. It's important to process requests
+    /// and push them to the responses queue while holding this lock. Otherwise
+    /// we can get strange cases when, for example client send read request with
+    /// watch and after that receive watch response and only receive response
+    /// for request.
+    std::mutex storage_and_responses_lock;
 
     /// Last committed Raft log number.
     std::atomic<uint64_t> last_committed_idx;

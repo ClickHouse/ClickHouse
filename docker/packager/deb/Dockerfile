@@ -1,7 +1,9 @@
-# docker build -t yandex/clickhouse-deb-builder .
+# docker build -t clickhouse/deb-builder .
 FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \

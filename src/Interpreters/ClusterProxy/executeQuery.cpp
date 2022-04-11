@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/SelectQueryInfo.h>
+#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -165,12 +166,14 @@ void executeQuery(
 
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,
-            new_context, plans, remote_shards);
+            new_context, plans, remote_shards, shards);
     }
 
     if (!remote_shards.empty())
     {
-        const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+        Scalars scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+        scalars.emplace(
+            "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
 
         auto plan = std::make_unique<QueryPlan>();
@@ -182,9 +185,10 @@ void executeQuery(
             table_func_ptr,
             new_context,
             throttler,
-            scalars,
+            std::move(scalars),
             std::move(external_tables),
-            log);
+            log,
+            shards);
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));

@@ -11,7 +11,9 @@
 #    include <DataTypes/convertMySQLDataType.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <Formats/MySQLBlockInputStream.h>
+#    include <Formats/MySQLSource.h>
+#    include <Processors/Executors/PullingPipelineExecutor.h>
+#    include <Processors/QueryPipeline.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -281,9 +283,13 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
 
     std::map<String, UInt64> tables_with_modification_time;
     StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
-    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
+    auto result = std::make_unique<MySQLSource>(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
+    QueryPipeline pipeline;
+    pipeline.init(Pipe(std::move(result)));
 
-    while (Block block = result.read())
+    Block block;
+    PullingPipelineExecutor executor(pipeline);
+    while (executor.pull(block))
     {
         size_t rows = block.rows();
         for (size_t index = 0; index < rows; ++index)

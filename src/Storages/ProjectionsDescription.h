@@ -85,6 +85,8 @@ struct ProjectionDescription
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context);
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
+
+    Block calculate(const Block & block, ContextPtr context) const;
 };
 
 /// All projections in storage

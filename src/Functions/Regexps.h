@@ -113,12 +113,34 @@ namespace MultiRegexps
         ScratchPtr scratch;
     };
 
+    class RegexpsConstructor
+    {
+    public:
+        RegexpsConstructor() = default;
+
+        void setConstructor(std::function<Regexps()> constructor_) { constructor = std::move(constructor_); }
+
+        Regexps * operator()()
+        {
+            std::unique_lock lock(mutex);
+            if (regexp)
+                return &*regexp;
+            regexp = constructor();
+            return &*regexp;
+        }
+
+    private:
+        std::function<Regexps()> constructor;
+        std::optional<Regexps> regexp;
+        std::mutex mutex;
+    };
+
     struct Pool
     {
         /// Mutex for finding in map.
         std::mutex mutex;
         /// Patterns + possible edit_distance to database and scratch.
-        std::map<std::pair<std::vector<String>, std::optional<UInt32>>, Regexps> storage;
+        std::map<std::pair<std::vector<String>, std::optional<UInt32>>, RegexpsConstructor> storage;
     };
 
     template <bool save_indices, bool CompileForEditDistance>
@@ -250,15 +272,19 @@ namespace MultiRegexps
 
         /// If not found, compile and let other threads wait.
         if (known_regexps.storage.end() == it)
+        {
             it = known_regexps.storage
-                     .emplace(
-                         std::pair{str_patterns, edit_distance},
-                         constructRegexps<save_indices, CompileForEditDistance>(str_patterns, edit_distance))
+                     .emplace(std::piecewise_construct, std::make_tuple(std::move(str_patterns), edit_distance), std::make_tuple())
                      .first;
-        /// If found, unlock and return the database.
-        lock.unlock();
+            it->second.setConstructor([&str_patterns = it->first.first, edit_distance]()
+            {
+                return constructRegexps<save_indices, CompileForEditDistance>(str_patterns, edit_distance);
+            });
+        }
 
-        return &it->second;
+        /// Unlock before possible construction.
+        lock.unlock();
+        return it->second();
     }
 }
 

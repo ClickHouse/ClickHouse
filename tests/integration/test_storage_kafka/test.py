@@ -2,7 +2,6 @@ import json
 import os.path as p
 import random
 import socket
-import subprocess
 import threading
 import time
 import logging
@@ -36,6 +35,7 @@ from kafka.admin import NewTopic
 
 from . import kafka_pb2
 from . import social_pb2
+from . import message_with_repeated_pb2
 
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
@@ -181,32 +181,6 @@ def avro_confluent_message(schema_registry_client, value):
     })
     return serializer.encode_record_with_schema('test_subject', schema, value)
 
-# Since everything is async and shaky when receiving messages from Kafka,
-# we may want to try and check results multiple times in a loop.
-def kafka_check_result(result, check=False, ref_file='test_kafka_json.reference'):
-    fpath = p.join(p.dirname(__file__), ref_file)
-    with open(fpath) as reference:
-        if check:
-            assert TSV(result) == TSV(reference)
-        else:
-            return TSV(result) == TSV(reference)
-
-def describe_consumer_group(kafka_cluster, name):
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
-    consumer_groups = admin_client.describe_consumer_groups([name])
-    res = []
-    for member in consumer_groups[0].members:
-        member_info = {}
-        member_info['member_id'] = member.member_id
-        member_info['client_id'] = member.client_id
-        member_info['client_host'] = member.client_host
-        member_topics_assignment = []
-        for (topic, partitions) in member.member_assignment.assignment:
-            member_topics_assignment.append({'topic': topic, 'partitions': partitions})
-        member_info['assignment'] = member_topics_assignment
-        res.append(member_info)
-    return res
-
 # Fixtures
 
 @pytest.fixture(scope="module")
@@ -262,7 +236,7 @@ kafka_topic_old	old
 
     kafka_check_result(result, True)
 
-    members = describe_consumer_group('old')
+    members = describe_consumer_group(kafka_cluster, 'old')
     assert members[0]['client_id'] == 'ClickHouse-instance-test-kafka'
     # text_desc = kafka_cluster.exec_in_container(kafka_cluster.get_container_id('kafka1'),"kafka-consumer-groups --bootstrap-server localhost:9092 --describe --members --group old --verbose"))
 
@@ -302,13 +276,18 @@ def test_kafka_settings_new_syntax(kafka_cluster):
 
     kafka_check_result(result, True)
 
-    members = describe_consumer_group('new')
+    members = describe_consumer_group(kafka_cluster, 'new')
     assert members[0]['client_id'] == 'instance test 1234'
 
 
 def test_kafka_json_as_string(kafka_cluster):
     kafka_produce(kafka_cluster, 'kafka_json_as_string', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }',
                                            '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
+
+    # 'tombstone' record (null value) = marker of deleted record
+    producer = KafkaProducer(bootstrap_servers="localhost:{}".format(cluster.kafka_port), value_serializer=producer_serializer, key_serializer=producer_serializer)
+    producer.send(topic='kafka_json_as_string', key='xxx')
+    producer.flush()
 
     instance.query('''
         CREATE TABLE test.kafka (field String)
@@ -734,82 +713,6 @@ def kafka_setup_teardown():
 
 
 # Tests
-
-def test_kafka_settings_old_syntax(kafka_cluster):
-    assert TSV(instance.query("SELECT * FROM system.macros WHERE macro like 'kafka%' ORDER BY macro",
-                              ignore_error=True)) == TSV('''kafka_broker	kafka1
-kafka_client_id	instance
-kafka_format_json_each_row	JSONEachRow
-kafka_group_name_new	new
-kafka_group_name_old	old
-kafka_topic_new	new
-kafka_topic_old	old
-''')
-
-    instance.query('''
-        CREATE TABLE test.kafka (key UInt64, value UInt64)
-            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n');
-        ''')
-
-    # Don't insert malformed messages since old settings syntax
-    # doesn't support skipping of broken messages.
-    messages = []
-    for i in range(50):
-        messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce(kafka_cluster, 'old', messages)
-
-    result = ''
-    while True:
-        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
-        if kafka_check_result(result):
-            break
-
-    kafka_check_result(result, True)
-
-    members = describe_consumer_group(kafka_cluster, 'old')
-    assert members[0]['client_id'] == 'ClickHouse-instance-test-kafka'
-    # text_desc = kafka_cluster.exec_in_container(kafka_cluster.get_container_id('kafka1'),"kafka-consumer-groups --bootstrap-server localhost:{} --describe --members --group old --verbose".format(cluster.kafka_port)))
-
-
-def test_kafka_settings_new_syntax(kafka_cluster):
-    instance.query('''
-        CREATE TABLE test.kafka (key UInt64, value UInt64)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = '{kafka_broker}:19092',
-                     kafka_topic_list = '{kafka_topic_new}',
-                     kafka_group_name = '{kafka_group_name_new}',
-                     kafka_format = '{kafka_format_json_each_row}',
-                     kafka_row_delimiter = '\\n',
-                     kafka_client_id = '{kafka_client_id} test 1234',
-                     kafka_skip_broken_messages = 1;
-        ''')
-
-    messages = []
-    for i in range(25):
-        messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce(kafka_cluster, 'new', messages)
-
-    # Insert couple of malformed messages.
-    kafka_produce(kafka_cluster, 'new', ['}{very_broken_message,'])
-    kafka_produce(kafka_cluster, 'new', ['}another{very_broken_message,'])
-
-    messages = []
-    for i in range(25, 50):
-        messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce(kafka_cluster, 'new', messages)
-
-    result = ''
-    while True:
-        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
-        if kafka_check_result(result):
-            break
-
-    kafka_check_result(result, True)
-
-    members = describe_consumer_group(kafka_cluster, 'new')
-    assert members[0]['client_id'] == 'instance test 1234'
-
-
 def test_kafka_issue11308(kafka_cluster):
     # Check that matview does respect Kafka SETTINGS
     kafka_produce(kafka_cluster, 'issue11308', ['{"t": 123, "e": {"x": "woof"} }', '{"t": 123, "e": {"x": "woof"} }',
@@ -1585,17 +1488,20 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
         messages.append(json.dumps({'key': i, 'value': i}))
     kafka_produce(kafka_cluster, 'virt2', messages, 0)
 
-    while True:
-        result = instance.query('SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view')
-        if kafka_check_result(result, False, 'test_kafka_virtual2.reference'):
-            break
+    sql = 'SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view ORDER BY kafka_key'
+    result = instance.query(sql)
+    iterations = 0
+    while not kafka_check_result(result, False, 'test_kafka_virtual2.reference') and iterations < 10:
+        time.sleep(3)
+        iterations += 1
+        result = instance.query(sql)
+
+    kafka_check_result(result, True, 'test_kafka_virtual2.reference')
 
     instance.query('''
         DROP TABLE test.consumer;
         DROP TABLE test.view;
     ''')
-
-    kafka_check_result(result, True, 'test_kafka_virtual2.reference')
 
 
 def test_kafka_insert(kafka_cluster):
@@ -2222,7 +2128,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
     # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
     # while materialized view is working to inject zookeeper failure
     pm.drop_instance_zk_connections(instance)
-    instance.wait_for_log_line("Error.*(session has been expired|Connection loss).*while write prefix to view")
+    instance.wait_for_log_line("Error.*(session has been expired|Connection loss).*while writing suffix to view")
     pm.heal_all()
     instance.wait_for_log_line("Committed offset 22")
 
@@ -2853,7 +2759,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 "(0,'BAD','AM',0.5,1)",
             ],
-            'expected':r'''{"raw_message":"(0,'BAD','AM',0.5,1)","error":"Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero\/NULL instead of throwing exception.: while executing 'FUNCTION CAST(assumeNotNull(_dummy_0) :: 2, 'UInt16' :: 1) -> CAST(assumeNotNull(_dummy_0), 'UInt16') UInt16 : 4'"}''',
+            'expected':r'''{"raw_message":"(0,'BAD','AM',0.5,1)","error":"Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero\/NULL instead of throwing exception.: while executing 'FUNCTION _CAST(assumeNotNull(_dummy_0) :: 2, 'UInt16' :: 1) -> _CAST(assumeNotNull(_dummy_0), 'UInt16') UInt16 : 4'"}''',
             'supports_empty_value': True,
             'printable':True,
         },
@@ -3133,6 +3039,124 @@ def test_kafka_consumer_failover(kafka_cluster):
     producer.send(topic='kafka_consumer_failover', value=json.dumps({'key':8,'value': 8}), partition=1)
     producer.flush()
     prev_count = wait_for_new_data('test.destination', prev_count)
+
+
+# https://github.com/ClickHouse/ClickHouse/issues/26643
+def test_issue26643(kafka_cluster):
+
+    # for backporting:
+    # admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    producer = KafkaProducer(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port), value_serializer=producer_serializer)
+
+    topic_list = []
+    topic_list.append(NewTopic(name="test_issue26643", num_partitions=4, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    msg = message_with_repeated_pb2.Message(
+        tnow=1629000000,
+        server='server1',
+        clien='host1',
+        sPort=443,
+        cPort=50000,
+        r=[
+            message_with_repeated_pb2.dd(name='1', type=444, ttl=123123, data=b'adsfasd'),
+            message_with_repeated_pb2.dd(name='2')
+        ],
+        method='GET'
+    )
+
+    data = b''
+    serialized_msg = msg.SerializeToString()
+    data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    msg = message_with_repeated_pb2.Message(
+        tnow=1629000002
+    )
+
+    serialized_msg = msg.SerializeToString()
+    data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    producer.send(topic="test_issue26643", value=data)
+
+    data = _VarintBytes(len(serialized_msg)) + serialized_msg
+    producer.send(topic="test_issue26643", value=data)
+    producer.flush()
+
+    instance.query('''
+        CREATE TABLE IF NOT EXISTS test.test_queue
+        (
+            `tnow` UInt32,
+            `server` String,
+            `client` String,
+            `sPort` UInt16,
+            `cPort` UInt16,
+            `r.name` Array(String),
+            `r.class` Array(UInt16),
+            `r.type` Array(UInt16),
+            `r.ttl` Array(UInt32),
+            `r.data` Array(String),
+            `method` String
+        )
+        ENGINE = Kafka
+        SETTINGS
+            kafka_broker_list = 'kafka1:19092',
+            kafka_topic_list = 'test_issue26643',
+            kafka_group_name = 'test_issue26643_group',
+            kafka_format = 'Protobuf',
+            kafka_schema = 'message_with_repeated.proto:Message',
+            kafka_num_consumers = 4,
+            kafka_skip_broken_messages = 10000;
+
+        SET allow_suspicious_low_cardinality_types=1; 
+
+        CREATE TABLE test.log
+        (
+            `tnow` DateTime CODEC(DoubleDelta, LZ4),
+            `server` LowCardinality(String),
+            `client` LowCardinality(String),
+            `sPort` LowCardinality(UInt16),
+            `cPort` UInt16 CODEC(T64, LZ4),
+            `r.name` Array(String),
+            `r.class` Array(LowCardinality(UInt16)),
+            `r.type` Array(LowCardinality(UInt16)),
+            `r.ttl` Array(LowCardinality(UInt32)),
+            `r.data` Array(String),
+            `method` LowCardinality(String)
+        )
+        ENGINE = MergeTree
+        PARTITION BY toYYYYMMDD(tnow)
+        ORDER BY (tnow, server)
+        TTL toDate(tnow) + toIntervalMonth(1000)
+        SETTINGS index_granularity = 16384, merge_with_ttl_timeout = 7200;
+
+        CREATE MATERIALIZED VIEW test.test_consumer TO test.log AS
+        SELECT
+            toDateTime(a.tnow) AS tnow,
+            a.server AS server,
+            a.client AS client,
+            a.sPort AS sPort,
+            a.cPort AS cPort,
+            a.`r.name` AS `r.name`,
+            a.`r.class` AS `r.class`,
+            a.`r.type` AS `r.type`,
+            a.`r.ttl` AS `r.ttl`,
+            a.`r.data` AS `r.data`,
+            a.method AS method
+        FROM test.test_queue AS a;
+        ''')
+
+    instance.wait_for_log_line("Committed offset")
+    result = instance.query('SELECT * FROM test.log')
+
+    expected = '''\
+2021-08-15 07:00:00	server1		443	50000	['1','2']	[0,0]	[444,0]	[123123,0]	['adsfasd','']	GET
+2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]	
+2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]
+'''
+    assert TSV(result) == TSV(expected)
+
+    # kafka_cluster.open_bash_shell('instance')
 
 
 if __name__ == '__main__':

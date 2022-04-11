@@ -17,6 +17,8 @@
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
+#include <memory>
+
 namespace CurrentMetrics
 {
     extern const Metric MySQLConnection;
@@ -61,7 +63,7 @@ protected:
     uint8_t sequence_id = 0;
 
     MySQLProtocol::PacketEndpointPtr packet_endpoint;
-    ContextMutablePtr connection_context;
+    std::unique_ptr<Session> session;
 
     using ReplacementFn = std::function<String(const String & query)>;
     using Replacements = std::unordered_map<std::string, ReplacementFn>;

@@ -1,5 +1,7 @@
-# docker build -t yandex/clickhouse-integration-tests-runner .
+# docker build -t clickhouse/integration-tests-runner .
 FROM ubuntu:20.04
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -72,13 +74,14 @@ RUN python3 -m pip install \
     minio \
     protobuf \
     psycopg2-binary==2.8.6 \
-    pymongo \
+    pymongo==3.11.0 \
     pytest \
     pytest-timeout \
     pytest-xdist \
     pytest-repeat \
+    pytz \
     redis \
-    tzlocal \
+    tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
     pyhdfs

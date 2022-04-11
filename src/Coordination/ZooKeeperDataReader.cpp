@@ -339,6 +339,9 @@ Coordination::ZooKeeperRequestPtr deserializeCheckVersionTxn(ReadBuffer & in)
     Coordination::read(result->path, in);
     Coordination::read(result->version, in);
     result->restored_from_zookeeper_log = true;
+    /// It stores version + 1 (which should be, not for request)
+    result->version -= 1;
+
     return result;
 }
 

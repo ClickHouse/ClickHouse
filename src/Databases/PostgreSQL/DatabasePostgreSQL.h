@@ -32,7 +32,8 @@ public:
         const String & metadata_path_,
         const ASTStorage * database_engine_define,
         const String & dbname_,
-        const String & postgres_dbname,
+        const String & postgres_dbname_,
+        const String & postgres_schema_,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_);
 
@@ -69,13 +70,18 @@ protected:
 private:
     String metadata_path;
     ASTPtr database_engine_define;
-    String dbname;
+    String postgres_dbname;
+    String postgres_schema;
     postgres::PoolWithFailoverPtr pool;
     const bool cache_tables;
 
     mutable Tables cached_tables;
     std::unordered_set<std::string> detached_or_dropped;
     BackgroundSchedulePool::TaskHolder cleaner_task;
+
+    String getTableNameForLogs(const String & table_name) const;
+
+    String formatTableName(const String & table_name) const;
 
     bool checkPostgresTable(const String & table_name) const;
 

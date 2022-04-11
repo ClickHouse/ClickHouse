@@ -46,7 +46,15 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     primary_key = formattedAST(metadata_snapshot->getPrimaryKey().expression_list_ast);
     if (metadata_snapshot->isPrimaryKeyDefined())
-        sorting_key = formattedAST(metadata_snapshot->getSortingKey().expression_list_ast);
+    {
+        /// We don't use preparsed AST `sorting_key.expression_list_ast` because
+        /// it contain version column for VersionedCollapsingMergeTree, which
+        /// is not stored in ZooKeeper for compatibility reasons. So the best
+        /// compatible way is just to convert definition_ast to list and
+        /// serialize it. In all other places key.expression_list_ast should be
+        /// used.
+        sorting_key = formattedAST(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
+    }
 
     data_format_version = data.format_version;
 

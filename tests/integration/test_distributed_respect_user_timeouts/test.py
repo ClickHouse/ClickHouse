@@ -57,7 +57,7 @@ TIMEOUT_DIFF_UPPER_BOUND = {
     },
     'ready_to_wait': {
         'distributed': 3,
-        'remote': 1.5,
+        'remote': 2.0,
     },
 }
 

@@ -3,6 +3,7 @@
 #include <Client/HedgedConnections.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context.h>
 
 namespace ProfileEvents
 {
@@ -21,13 +22,14 @@ namespace ErrorCodes
 
 HedgedConnections::HedgedConnections(
     const ConnectionPoolWithFailoverPtr & pool_,
-    const Settings & settings_,
+    ContextPtr context_,
     const ConnectionTimeouts & timeouts_,
     const ThrottlerPtr & throttler_,
     PoolMode pool_mode,
     std::shared_ptr<QualifiedTableName> table_to_check_)
-    : hedged_connections_factory(pool_, &settings_, timeouts_, table_to_check_)
-    , settings(settings_)
+    : hedged_connections_factory(pool_, &context_->getSettingsRef(), timeouts_, table_to_check_)
+    , context(std::move(context_))
+    , settings(context->getSettingsRef())
     , drain_timeout(settings.drain_timeout)
     , allow_changing_replica_until_first_data_packet(settings.allow_changing_replica_until_first_data_packet)
     , throttler(throttler_)

@@ -9,6 +9,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 #include <common/map.h>
 
 
@@ -19,6 +20,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_FORMAT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -45,6 +47,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -70,6 +73,11 @@ public:
                 writeChar('\0', buffer);
             offsets[row] = buffer.count();
         });
+
+        /// This function make sense only for row output formats.
+        if (!dynamic_cast<IRowOutputFormat *>(out.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot turn rows into a {} format strings. {} function supports only row output formats", format_name, getName());
+
         out->write(arg_columns);
         return col_str;
     }

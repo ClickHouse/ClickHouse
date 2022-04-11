@@ -1,6 +1,7 @@
 #include <Interpreters/castColumn.h>
 
 #include <Functions/FunctionsConversion.h>
+#include <Functions/CastOverloadResolver.h>
 
 namespace DB
 {
@@ -21,7 +22,7 @@ static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr
         }
     };
 
-    FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<cast_type>::createImpl(false);
+    FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<cast_type>::createImpl();
 
     auto func_cast = func_builder_cast->build(arguments);
 

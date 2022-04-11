@@ -395,9 +395,14 @@ AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformPar
 }
 
 AggregatingTransform::AggregatingTransform(
-    Block header, AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_,
-    size_t current_variant, size_t max_threads_, size_t temporary_data_merge_threads_)
-    : IProcessor({std::move(header)}, {params_->getHeader()}), params(std::move(params_))
+    Block header,
+    AggregatingTransformParamsPtr params_,
+    ManyAggregatedDataPtr many_data_,
+    size_t current_variant,
+    size_t max_threads_,
+    size_t temporary_data_merge_threads_)
+    : IProcessor({std::move(header)}, {params_->getHeader()})
+    , params(std::move(params_))
     , key_columns(params->params.keys_size)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
@@ -525,7 +530,7 @@ void AggregatingTransform::consume(Chunk chunk)
     {
         auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
         block = materializeBlock(block);
-        if (!params->aggregator.mergeBlock(block, variants, no_more_keys))
+        if (!params->aggregator.mergeOnBlock(block, variants, no_more_keys))
             is_consume_finished = true;
     }
     else
@@ -547,7 +552,7 @@ void AggregatingTransform::initGenerate()
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
     {
         if (params->only_merge)
-            params->aggregator.mergeBlock(getInputs().front().getHeader(), variants, no_more_keys);
+            params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys);
         else
             params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
     }

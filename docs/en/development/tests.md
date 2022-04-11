@@ -70,7 +70,13 @@ Note that integration of ClickHouse with third-party drivers is not tested. Also
 
 Unit tests are useful when you want to test not the ClickHouse as a whole, but a single isolated library or class. You can enable or disable build of tests with `ENABLE_TESTS` CMake option. Unit tests (and other test programs) are located in `tests` subdirectories across the code. To run unit tests, type `ninja test`. Some tests use `gtest`, but some are just programs that return non-zero exit code on test failure.
 
-It’s not necessarily to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+It’s not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+
+You can run individual gtest checks by calling the executable directly, for example:
+
+```bash
+$ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
+```
 
 ## Performance Tests {#performance-tests}
 

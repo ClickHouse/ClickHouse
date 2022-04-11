@@ -14,7 +14,7 @@ toc_title: FROM
 
 子查询是另一个 `SELECT` 可以指定在 `FROM` 后的括号内的查询。
 
-`FROM` 子句可以包含多个数据源，用逗号分隔，这相当于在他们身上执行 [CROSS JOIN](../../../sql-reference/statements/select/join.md) 
+`FROM` 子句可以包含多个数据源，用逗号分隔，这相当于在他们身上执行 [CROSS JOIN](../../../sql-reference/statements/select/join.md)
 
 ## FINAL 修饰符 {#select-from-final}
 

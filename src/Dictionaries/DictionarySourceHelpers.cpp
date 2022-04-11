@@ -1,7 +1,7 @@
 #include "DictionarySourceHelpers.h"
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include "DictionaryStructure.h"
@@ -16,14 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-}
-
-void formatBlock(BlockOutputStreamPtr & out, const Block & block)
-{
-    out->writePrefix();
-    out->write(block);
-    out->writeSuffix();
-    out->flush();
 }
 
 /// For simple key
@@ -93,62 +85,44 @@ ContextMutablePtr copyContextAndApplySettings(
     return local_context;
 }
 
-
-BlockInputStreamWithAdditionalColumns::BlockInputStreamWithAdditionalColumns(
-    Block block_to_add_, std::unique_ptr<IBlockInputStream> && stream_)
-    : block_to_add(std::move(block_to_add_))
-    , stream(std::move(stream_))
+static Block transformHeader(Block header, Block block_to_add)
 {
-}
-
-Block BlockInputStreamWithAdditionalColumns::getHeader() const
-{
-    auto header = stream->getHeader();
-
-    if (header)
-    {
-        for (Int64 i = static_cast<Int64>(block_to_add.columns() - 1); i >= 0; --i)
-            header.insert(0, block_to_add.getByPosition(i).cloneEmpty());
-    }
+    for (Int64 i = static_cast<Int64>(block_to_add.columns() - 1); i >= 0; --i)
+        header.insert(0, block_to_add.getByPosition(i).cloneEmpty());
 
     return header;
 }
 
-Block BlockInputStreamWithAdditionalColumns::readImpl()
+TransformWithAdditionalColumns::TransformWithAdditionalColumns(
+    Block block_to_add_, const Block & header)
+    : ISimpleTransform(header, transformHeader(header, block_to_add_), true)
+    , block_to_add(std::move(block_to_add_))
 {
-    auto block = stream->read();
+}
 
-    if (block)
+void TransformWithAdditionalColumns::transform(Chunk & chunk)
+{
+    if (chunk)
     {
-        auto block_rows = block.rows();
+        auto num_rows = chunk.getNumRows();
+        auto columns = chunk.detachColumns();
 
-        auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, block_rows);
+        auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, num_rows);
 
-        if (cut_block.rows() != block_rows)
+        if (cut_block.rows() != num_rows)
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
                 "Number of rows in block to add after cut must equal to number of rows in block from inner stream");
 
         for (Int64 i = static_cast<Int64>(cut_block.columns() - 1); i >= 0; --i)
-            block.insert(0, cut_block.getByPosition(i));
+            columns.insert(columns.begin(), cut_block.getByPosition(i).column);
 
-        current_range_index += block_rows;
+        current_range_index += num_rows;
+        chunk.setColumns(std::move(columns), num_rows);
     }
-
-    return block;
 }
 
-void BlockInputStreamWithAdditionalColumns::readPrefix()
+String TransformWithAdditionalColumns::getName() const
 {
-    stream->readPrefix();
-}
-
-void BlockInputStreamWithAdditionalColumns::readSuffix()
-{
-    stream->readSuffix();
-}
-
-String BlockInputStreamWithAdditionalColumns::getName() const
-{
-    return "BlockInputStreamWithAdditionalColumns";
+    return "TransformWithAdditionalColumns";
 }
 }

@@ -193,6 +193,7 @@ private:
     /// UTC offset at the beginning of the first supported year.
     Time offset_at_start_of_lut;
     bool offset_is_whole_number_of_hours_during_epoch;
+    bool offset_is_whole_number_of_minutes_during_epoch;
 
     /// Time zone name.
     std::string time_zone;
@@ -251,18 +252,23 @@ private:
     }
 
     template <typename T, typename Divisor>
-    static inline T roundDown(T x, Divisor divisor)
+    inline T roundDown(T x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<T> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
-        if (likely(x >= 0))
-            return x / divisor * divisor;
+        if (likely(offset_is_whole_number_of_hours_during_epoch))
+        {
+            if (likely(x >= 0))
+                return x / divisor * divisor;
 
-        /// Integer division for negative numbers rounds them towards zero (up).
-        /// We will shift the number so it will be rounded towards -inf (down).
+            /// Integer division for negative numbers rounds them towards zero (up).
+            /// We will shift the number so it will be rounded towards -inf (down).
+            return (x + 1 - divisor) / divisor * divisor;
+        }
 
-        return (x + 1 - divisor) / divisor * divisor;
+        Time date = find(x).date;
+        return date + (x - date) / divisor * divisor;
     }
 
 public:
@@ -459,10 +465,21 @@ public:
 
     inline unsigned toSecond(Time t) const
     {
-        auto res = t % 60;
-        if (likely(res >= 0))
-            return res;
-        return res + 60;
+        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        {
+            Time res = t % 60;
+            if (likely(res >= 0))
+                return res;
+            return res + 60;
+        }
+
+        LUTIndex index = findIndex(t);
+        Time time = t - lut[index].date;
+
+        if (time >= lut[index].time_at_offset_change())
+            time += lut[index].amount_of_offset_change();
+
+        return time % 60;
     }
 
     inline unsigned toMinute(Time t) const
@@ -483,29 +500,11 @@ public:
     }
 
     /// NOTE: Assuming timezone offset is a multiple of 15 minutes.
-    inline Time toStartOfMinute(Time t) const { return roundDown(t, 60); }
-    inline Time toStartOfFiveMinute(Time t) const { return roundDown(t, 300); }
-    inline Time toStartOfFifteenMinutes(Time t) const { return roundDown(t, 900); }
-
-    inline Time toStartOfTenMinutes(Time t) const
-    {
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return t / 600 * 600;
-
-        /// More complex logic is for Nepal - it has offset 05:45. Australia/Eucla is also unfortunate.
-        Time date = find(t).date;
-        return date + (t - date) / 600 * 600;
-    }
-
-    /// NOTE: Assuming timezone transitions are multiple of hours. Lord Howe Island in Australia is a notable exception.
-    inline Time toStartOfHour(Time t) const
-    {
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return t / 3600 * 3600;
-
-        Time date = find(t).date;
-        return date + (t - date) / 3600 * 3600;
-    }
+    inline Time toStartOfMinute(Time t) const { return toStartOfMinuteInterval(t, 1); }
+    inline Time toStartOfFiveMinute(Time t) const { return toStartOfMinuteInterval(t, 5); }
+    inline Time toStartOfFifteenMinutes(Time t) const { return toStartOfMinuteInterval(t, 15); }
+    inline Time toStartOfTenMinutes(Time t) const { return toStartOfMinuteInterval(t, 10); }
+    inline Time toStartOfHour(Time t) const { return roundDown(t, 3600); }
 
     /** Number of calendar day since the beginning of UNIX epoch (1970-01-01 is zero)
       * We use just two bytes for it. It covers the range up to 2105 and slightly more.
@@ -903,25 +902,24 @@ public:
 
     inline Time toStartOfMinuteInterval(Time t, UInt64 minutes) const
     {
-        if (minutes == 1)
-            return toStartOfMinute(t);
+        UInt64 divisor = 60 * minutes;
+        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        {
+            if (likely(t >= 0))
+                return t / divisor * divisor;
+            return (t + 1 - divisor) / divisor * divisor;
+        }
 
-        /** In contrast to "toStartOfHourInterval" function above,
-          * the minute intervals are not aligned to the midnight.
-          * You will get unexpected results if for example, you round down to 60 minute interval
-          * and there was a time shift to 30 minutes.
-          *
-          * But this is not specified in docs and can be changed in future.
-          */
-
-        UInt64 seconds = 60 * minutes;
-        return roundDown(t, seconds);
+        Time date = find(t).date;
+        return date + (t - date) / divisor * divisor;
     }
 
     inline Time toStartOfSecondInterval(Time t, UInt64 seconds) const
     {
         if (seconds == 1)
             return t;
+        if (seconds % 60 == 0)
+            return toStartOfMinuteInterval(t, seconds / 60);
 
         return roundDown(t, seconds);
     }
@@ -955,7 +953,7 @@ public:
     inline Time makeDateTime(Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
     {
         size_t index = makeLUTIndex(year, month, day_of_month);
-        UInt32 time_offset = hour * 3600 + minute * 60 + second;
+        Time time_offset = hour * 3600 + minute * 60 + second;
 
         if (time_offset >= lut[index].time_at_offset_change())
             time_offset -= lut[index].amount_of_offset_change();

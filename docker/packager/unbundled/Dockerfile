@@ -1,9 +1,11 @@
-# docker build -t yandex/clickhouse-unbundled-builder .
-FROM yandex/clickhouse-deb-builder
+# docker build -t clickhouse/unbundled-builder .
+FROM clickhouse/deb-builder
 
 RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && wget -nv -O /tmp/arrow-keyring.deb "https://apache.jfrog.io/artifactory/arrow/ubuntu/apache-arrow-apt-source-latest-${CODENAME}.deb" \
     && dpkg -i /tmp/arrow-keyring.deb
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 # Libraries from OS are only needed to test the "unbundled" build (that is not used in production).
 RUN apt-get update \
@@ -23,6 +25,7 @@ RUN apt-get update \
         libboost-regex-dev \
         libboost-context-dev \
         libboost-coroutine-dev \
+        libboost-graph-dev \
         zlib1g-dev \
         liblz4-dev \
         libdouble-conversion-dev \

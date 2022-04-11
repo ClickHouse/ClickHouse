@@ -22,7 +22,7 @@ SELECT [DISTINCT] expr_list
 [WHERE expr]
 [GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] 
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [UNION ALL ...]

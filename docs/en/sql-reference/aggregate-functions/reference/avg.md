@@ -47,7 +47,7 @@ Query:
 CREATE table test (t UInt8) ENGINE = Memory;
 ```
 
-Get the arithmetic mean: 
+Get the arithmetic mean:
 
 Query:
 

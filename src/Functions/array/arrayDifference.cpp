@@ -20,7 +20,6 @@ namespace ErrorCodes
   */
 struct ArrayDifferenceImpl
 {
-    static bool useDefaultImplementationForConstants() { return true; }
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -129,6 +128,7 @@ struct ArrayDifferenceImpl
     {
         ColumnPtr res;
 
+        mapped = mapped->convertToFullColumnIfConst();
         if (executeType< UInt8 ,  Int16>(mapped, array, res) ||
             executeType< UInt16,  Int32>(mapped, array, res) ||
             executeType< UInt32,  Int64>(mapped, array, res) ||

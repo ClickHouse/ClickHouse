@@ -89,6 +89,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
 
 PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfiguration)
     : per_request_configuration(clientConfiguration.perRequestConfiguration)
+    , error_report(clientConfiguration.error_report)
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(clientConfiguration.connectTimeoutMs * 1000), /// connection timeout.
           Poco::Timespan(clientConfiguration.requestTimeoutMs * 1000), /// send timeout.
@@ -296,6 +297,8 @@ void PocoHTTPClient::makeRequestInternal(
             else if (status_code >= 300)
             {
                 ProfileEvents::increment(select_metric(S3MetricType::Errors));
+                if (status_code >= 500 && error_report)
+                    error_report(request_configuration);
             }
 
             response->SetResponseBody(response_body_stream, session);

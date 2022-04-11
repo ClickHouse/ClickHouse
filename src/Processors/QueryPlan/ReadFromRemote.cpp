@@ -67,13 +67,16 @@ static std::unique_ptr<QueryPlan> createLocalPlan(
     const ASTPtr & query_ast,
     const Block & header,
     ContextPtr context,
-    QueryProcessingStage::Enum processed_stage)
+    QueryProcessingStage::Enum processed_stage,
+    UInt32 shard_num,
+    UInt32 shard_count)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
 
-    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage));
+    InterpreterSelectQuery interpreter(
+        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
     interpreter.buildQueryPlan(*query_plan);
 
     addConvertingActions(*query_plan, header);
@@ -92,7 +95,8 @@ ReadFromRemote::ReadFromRemote(
     ThrottlerPtr throttler_,
     Scalars scalars_,
     Tables external_tables_,
-    Poco::Logger * log_)
+    Poco::Logger * log_,
+    UInt32 shard_count_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , shards(std::move(shards_))
     , stage(stage_)
@@ -103,6 +107,7 @@ ReadFromRemote::ReadFromRemote(
     , scalars(std::move(scalars_))
     , external_tables(std::move(external_tables_))
     , log(log_)
+    , shard_count(shard_count_)
 {
 }
 
@@ -119,12 +124,12 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
     }
 
     auto lazily_create_stream = [
-            pool = shard.pool, shard_num = shard.shard_num, query = shard.query, header = shard.header,
+            pool = shard.pool, shard_num = shard.shard_num, shard_count = shard_count, query = shard.query, header = shard.header,
             context = context, throttler = throttler,
             main_table = main_table, table_func_ptr = table_func_ptr,
             scalars = scalars, external_tables = external_tables,
             stage = stage, local_delay = shard.local_delay,
-            add_agg_info, add_totals, add_extremes, async_read]()
+            add_agg_info, add_totals, add_extremes, async_read]() mutable
         -> Pipe
     {
         auto current_settings = context->getSettingsRef();
@@ -157,7 +162,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
 
         if (try_results.empty() || local_delay < max_remote_delay)
         {
-            auto plan = createLocalPlan(query, header, context, stage);
+            auto plan = createLocalPlan(query, header, context, stage, shard_num, shard_count);
             return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(context),
                 BuildQueryPipelineSettings::fromContext(context))));
@@ -171,6 +176,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
 
             String query_string = formattedAST(query);
 
+            scalars["_shard_num"]
+                = Block{{DataTypeUInt32().createColumnConst(1, shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 pool, std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage);
 
@@ -197,6 +204,8 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
 
     String query_string = formattedAST(shard.query);
 
+    scalars["_shard_num"]
+        = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         shard.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage);
     remote_query_executor->setLogger(log);

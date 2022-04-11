@@ -43,7 +43,7 @@ public:
         const String & bucket_,
         const String & key_,
         UInt64 max_single_read_retries_,
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+        size_t buffer_size_);
 
     bool nextImpl() override;
 

@@ -19,7 +19,7 @@ histogram(number_of_bins)(values)
 
 **参数**
 
-`number_of_bins` — 直方图bin个数，这个函数会自动计算bin的数量，而且会尽量使用指定值，如果无法做到，那就使用更小的bin个数。 
+`number_of_bins` — 直方图bin个数，这个函数会自动计算bin的数量，而且会尽量使用指定值，如果无法做到，那就使用更小的bin个数。
 
 `values` — [表达式](../syntax.md#syntax-expressions) 输入值。
 

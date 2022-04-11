@@ -52,7 +52,7 @@ private:
 public:
     static CompiledExpressionCacheFactory & instance();
 
-    void init(size_t cache_size);
+    void init(size_t cache_size_in_bytes, size_t cache_size_in_elements);
     CompiledExpressionCache * tryGetCache();
 };
 

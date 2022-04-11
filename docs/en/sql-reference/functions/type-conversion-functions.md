@@ -373,7 +373,7 @@ This function accepts a number or date or date with time, and returns a FixedStr
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-Accepts 16 bytes string and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+Accepts 16 bytes string and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored.
 
 **Syntax**
 
@@ -439,8 +439,8 @@ reinterpret(x, type)
 
 **Arguments**
 
--   `x` — Any type. 
--   `type` — Destination type. [String](../../sql-reference/data-types/string.md). 
+-   `x` — Any type.
+-   `type` — Destination type. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -478,8 +478,8 @@ x::t
 
 **Arguments**
 
--   `x` — A value to convert. May be of any type. 
--   `T` — The name of the target data type. [String](../../sql-reference/data-types/string.md).  
+-   `x` — A value to convert. May be of any type.
+-   `T` — The name of the target data type. [String](../../sql-reference/data-types/string.md).
 -   `t` — The target data type.
 
 **Returned value**
@@ -529,7 +529,7 @@ Result:
 
 Conversion to FixedString(N) only works for arguments of type [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
-Type conversion to [Nullable](../../sql-reference/data-types/nullable.md) and back is supported. 
+Type conversion to [Nullable](../../sql-reference/data-types/nullable.md) and back is supported.
 
 **Example**
 
@@ -569,7 +569,7 @@ Result:
 
 ## accurateCast(x, T) {#type_conversion_function-accurate-cast}
 
-Converts `x` to the `T` data type. 
+Converts `x` to the `T` data type.
 
 The difference from [cast(x, T)](#type_conversion_function-cast) is that `accurateCast` does not allow overflow of numeric types during cast if type value `x` does not fit the bounds of type `T`. For example, `accurateCast(-1, 'UInt8')` throws an exception.
 
@@ -1170,7 +1170,7 @@ Result:
 
 ## toUnixTimestamp64Nano {#tounixtimestamp64nano}
 
-Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision. 
+Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision.
 
 !!! info "Note"
     The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
@@ -1206,7 +1206,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-Query: 
+Query:
 
 ``` sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64

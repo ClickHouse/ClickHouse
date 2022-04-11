@@ -22,6 +22,8 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -51,6 +53,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -124,10 +127,14 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int INCORRECT_QUERY;
 }
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
+    if (metadata.sampling_key.column_names.empty())
+        throw Exception("There are no columns in sampling expression", ErrorCodes::INCORRECT_QUERY);
+
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
@@ -750,16 +757,20 @@ DataTypePtr MergeTreeData::getPartitionValueType() const
 }
 
 
-Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const
+Block MergeTreeData::getSampleBlockWithVirtualColumns() const
 {
     DataTypePtr partition_value_type = getPartitionValueType();
-    bool has_partition_value = typeid_cast<const DataTypeTuple *>(partition_value_type.get());
-    Block block{
+    return {
         ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
         ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
         ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid"),
         ColumnWithTypeAndName(partition_value_type->createColumn(), partition_value_type, "_partition_value")};
+}
 
+
+Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const
+{
+    auto block = getSampleBlockWithVirtualColumns();
     MutableColumns columns = block.mutateColumns();
 
     auto & part_column = columns[0];
@@ -767,6 +778,7 @@ Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPar
     auto & part_uuid_column = columns[2];
     auto & partition_value_column = columns[3];
 
+    bool has_partition_value = typeid_cast<const ColumnTuple *>(partition_value_column.get());
     for (const auto & part_or_projection : parts)
     {
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
@@ -2395,7 +2407,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         /// It's a DROP PART and it's already executed by fetching some covering part
         bool is_drop_part = !drop_range.isFakeDropRangePart() && drop_range.min_block;
 
-        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block))
+        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block || part->info.getMutationVersion() != drop_range.getMutationVersion()))
         {
             /// Why we check only min and max blocks here without checking merge
             /// level? It's a tricky situation which can happen on a stale
@@ -2412,9 +2424,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             /// So here we just check that all_1_3_1 covers blocks from drop
             /// all_2_2_2.
             ///
-            /// NOTE: this helps only to avoid logical error during drop part.
-            /// We still get intersecting "parts" in queue.
-            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block;
+            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block && part->info.getMutationVersion() >= drop_range.getMutationVersion();
             if (is_covered_by_min_max_block)
             {
                 LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
@@ -3133,7 +3143,6 @@ Pipe MergeTreeData::alterPartition(
 
                     case PartitionCommand::MoveDestinationType::TABLE:
                     {
-                        checkPartitionCanBeDropped(command.partition);
                         String dest_database = query_context->resolveDatabase(command.to_database);
                         auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
                         movePartitionToTable(dest_storage, command.partition, query_context);
@@ -3155,7 +3164,8 @@ Pipe MergeTreeData::alterPartition(
 
             case PartitionCommand::REPLACE_PARTITION:
             {
-                checkPartitionCanBeDropped(command.partition);
+                if (command.replace)
+                    checkPartitionCanBeDropped(command.partition);
                 String from_database = query_context->resolveDatabase(command.from_database);
                 auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
@@ -3214,7 +3224,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     const auto & partition_ast = ast->as<ASTPartition &>();
 
     if (!partition_ast.value)
+    {
+        MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
         return partition_ast.id;
+    }
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -3223,10 +3236,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
-            if (partition_id.size() != 6 || !std::all_of(partition_id.begin(), partition_id.end(), isNumericASCII))
-                throw Exception(
-                    "Invalid partition format: " + partition_id + ". Partition should consist of 6 digits: YYYYMM",
-                    ErrorCodes::INVALID_PARTITION_VALUE);
+            MergeTreePartInfo::validatePartitionID(partition_id, format_version);
             return partition_id;
         }
     }
@@ -3234,39 +3244,54 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     /// Re-parse partition key fields using the information about expected field types.
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    size_t fields_count = metadata_snapshot->getPartitionKey().sample_block.columns();
+    const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
+    size_t fields_count = key_sample_block.columns();
     if (partition_ast.fields_count != fields_count)
-        throw Exception(
-            "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
-            ", must be: " + toString(fields_count),
-            ErrorCodes::INVALID_PARTITION_VALUE);
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                        "Wrong number of fields in the partition expression: {}, must be: {}",
+                        partition_ast.fields_count, fields_count);
 
-    const FormatSettings format_settings;
     Row partition_row(fields_count);
-
-    if (fields_count)
+    if (fields_count == 0)
     {
-        ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data(), partition_ast.fields_str.size());
-        ReadBufferFromMemory right_paren_buf(")", 1);
-        ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
+        /// Function tuple(...) requires at least one argument, so empty key is a special case
+        assert(!partition_ast.fields_count);
+        assert(typeid_cast<ASTFunction *>(partition_ast.value.get()));
+        assert(partition_ast.value->as<ASTFunction>()->name == "tuple");
+        assert(partition_ast.value->as<ASTFunction>()->arguments);
+        bool empty_tuple = partition_ast.value->as<ASTFunction>()->arguments->children.empty();
+        if (!empty_tuple)
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+    }
+    else if (fields_count == 1)
+    {
+        ASTPtr partition_value_ast = partition_ast.value;
+        if (auto * tuple = partition_value_ast->as<ASTFunction>())
+        {
+            assert(tuple->name == "tuple");
+            assert(tuple->arguments);
+            assert(tuple->arguments->children.size() == 1);
+            partition_value_ast = tuple->arguments->children[0];
+        }
+        /// Simple partition key, need to evaluate and cast
+        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type);
+    }
+    else
+    {
+        /// Complex key, need to evaluate, untuple and cast
+        Field partition_key_value = evaluateConstantExpression(partition_ast.value, local_context).first;
+        if (partition_key_value.getType() != Field::Types::Tuple)
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                            "Expected tuple for complex partition key, got {}", partition_key_value.getTypeName());
 
-        auto input_format = FormatFactory::instance().getInput(
-            "Values",
-            buf,
-            metadata_snapshot->getPartitionKey().sample_block,
-            local_context,
-            local_context->getSettingsRef().max_block_size);
-        auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
-
-        auto block = input_stream->read();
-        if (!block || !block.rows())
-            throw Exception(
-                "Could not parse partition value: `" + partition_ast.fields_str + "`",
-                ErrorCodes::INVALID_PARTITION_VALUE);
+        const Tuple & tuple = partition_key_value.get<Tuple>();
+        if (tuple.size() != fields_count)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Wrong number of fields in the partition expression: {}, must be: {}", tuple.size(), fields_count);
 
         for (size_t i = 0; i < fields_count; ++i)
-            block.getByPosition(i).column->get(0, partition_row[i]);
+            partition_row[i] = convertFieldToTypeOrThrow(tuple[i], *key_sample_block.getByPosition(i).type);
     }
 
     MergeTreePartition partition(std::move(partition_row));
@@ -3278,11 +3303,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
             WriteBufferFromOwnString buf;
-            writeCString("Parsed partition value: ", buf);
-            partition.serializeText(*this, buf, format_settings);
-            writeCString(" doesn't match partition value for an existing part with the same partition ID: ", buf);
-            writeString(existing_part_in_partition->name, buf);
-            throw Exception(buf.str(), ErrorCodes::INVALID_PARTITION_VALUE);
+            partition.serializeText(*this, buf, FormatSettings{});
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
+                            "doesn't match partition value for an existing part with the same partition ID: {}",
+                            buf.str(), existing_part_in_partition->name);
         }
     }
 
@@ -3305,7 +3329,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(
             {
                 for (const auto & part : range)
                 {
-                    for (const auto & [p_name, projection_part] : part->getProjectionParts())
+                    for (const auto & [_, projection_part] : part->getProjectionParts())
                         res.push_back(projection_part);
                 }
             }
@@ -3929,7 +3953,7 @@ static void selectBestProjection(
     if (projection_parts.empty())
         return;
 
-    auto sum_marks = reader.estimateNumMarksToRead(
+    auto projection_result_ptr = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
         metadata_snapshot,
@@ -3939,6 +3963,10 @@ static void selectBestProjection(
         settings.max_threads,
         max_added_blocks);
 
+    if (projection_result_ptr->error())
+        return;
+
+    auto sum_marks = projection_result_ptr->marks();
     if (normal_parts.empty())
     {
         // All parts are projection parts which allows us to use in_order_optimization.
@@ -3947,7 +3975,7 @@ static void selectBestProjection(
     }
     else
     {
-        sum_marks += reader.estimateNumMarksToRead(
+        auto normal_result_ptr = reader.estimateNumMarksToRead(
             normal_parts,
             required_columns,
             metadata_snapshot,
@@ -3956,7 +3984,14 @@ static void selectBestProjection(
             query_context,
             settings.max_threads,
             max_added_blocks);
+
+        if (normal_result_ptr->error())
+            return;
+
+        sum_marks += normal_result_ptr->marks();
+        candidate.merge_tree_normal_select_result_ptr = normal_result_ptr;
     }
+    candidate.merge_tree_projection_select_result_ptr = projection_result_ptr;
 
     // We choose the projection with least sum_marks to read.
     if (sum_marks < min_sum_marks)
@@ -3978,6 +4013,10 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
     // Currently projections don't support final yet.
     if (auto * select = query_ptr->as<ASTSelectQuery>(); select && select->final())
+        return false;
+
+    // Currently projections don't support sampling yet.
+    if (settings.parallel_replicas_count > 1)
         return false;
 
     InterpreterSelectQuery select(
@@ -4023,13 +4062,13 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             candidate.remove_where_filter = analysis_result.remove_where_filter;
             candidate.before_where = analysis_result.before_where->clone();
 
-            required_columns = candidate.before_where->foldActionsByProjection(
+            auto new_required_columns = candidate.before_where->foldActionsByProjection(
                 required_columns,
                 projection.sample_block_for_keys,
                 candidate.where_column_name);
-
-            if (required_columns.empty())
+            if (new_required_columns.empty() && !required_columns.empty())
                 return false;
+            required_columns = std::move(new_required_columns);
             candidate.before_where->addAggregatesViaProjection(aggregates);
         }
 
@@ -4043,33 +4082,35 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             for (const auto & column : prewhere_actions->getResultColumns())
                 required_columns.erase(column.name);
 
-            // Prewhere_action should not add missing keys.
-            prewhere_required_columns = prewhere_actions->foldActionsByProjection(
-                prewhere_required_columns, projection.sample_block_for_keys, candidate.prewhere_info->prewhere_column_name, false);
-
-            if (prewhere_required_columns.empty())
-                return false;
-            candidate.prewhere_info->prewhere_actions = prewhere_actions;
+            {
+                // Prewhere_action should not add missing keys.
+                auto new_prewhere_required_columns = prewhere_actions->foldActionsByProjection(
+                        prewhere_required_columns, projection.sample_block_for_keys, candidate.prewhere_info->prewhere_column_name, false);
+                if (new_prewhere_required_columns.empty() && !prewhere_required_columns.empty())
+                    return false;
+                prewhere_required_columns = std::move(new_prewhere_required_columns);
+                candidate.prewhere_info->prewhere_actions = prewhere_actions;
+            }
 
             if (candidate.prewhere_info->row_level_filter)
             {
                 auto row_level_filter_actions = candidate.prewhere_info->row_level_filter->clone();
-                prewhere_required_columns = row_level_filter_actions->foldActionsByProjection(
+                auto new_prewhere_required_columns = row_level_filter_actions->foldActionsByProjection(
                     prewhere_required_columns, projection.sample_block_for_keys, candidate.prewhere_info->row_level_column_name, false);
-
-                if (prewhere_required_columns.empty())
+                if (new_prewhere_required_columns.empty() && !prewhere_required_columns.empty())
                     return false;
+                prewhere_required_columns = std::move(new_prewhere_required_columns);
                 candidate.prewhere_info->row_level_filter = row_level_filter_actions;
             }
 
             if (candidate.prewhere_info->alias_actions)
             {
                 auto alias_actions = candidate.prewhere_info->alias_actions->clone();
-                prewhere_required_columns
+                auto new_prewhere_required_columns
                     = alias_actions->foldActionsByProjection(prewhere_required_columns, projection.sample_block_for_keys, {}, false);
-
-                if (prewhere_required_columns.empty())
+                if (new_prewhere_required_columns.empty() && !prewhere_required_columns.empty())
                     return false;
+                prewhere_required_columns = std::move(new_prewhere_required_columns);
                 candidate.prewhere_info->alias_actions = alias_actions;
             }
             required_columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
@@ -4088,10 +4129,19 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         return match;
     };
 
-    for (const auto & projection : metadata_snapshot->projections)
+    auto virtual_block = getSampleBlockWithVirtualColumns();
+    auto add_projection_candidate = [&](const ProjectionDescription & projection)
     {
         ProjectionCandidate candidate{};
         candidate.desc = &projection;
+
+        auto sample_block = projection.sample_block;
+        auto sample_block_for_keys = projection.sample_block_for_keys;
+        for (const auto & column : virtual_block)
+        {
+            sample_block.insertUnique(column);
+            sample_block_for_keys.insertUnique(column);
+        }
 
         if (projection.type == ProjectionDescription::Type::Aggregate && analysis_result.need_aggregate && can_use_aggregate_projection)
         {
@@ -4100,7 +4150,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             // Let's first check if all aggregates are provided by current projection
             for (const auto & aggregate : select.getQueryAnalyzer()->aggregates())
             {
-                const auto * column = projection.sample_block.findByName(aggregate.column_name);
+                const auto * column = sample_block.findByName(aggregate.column_name);
                 if (column)
                 {
                     aggregates.insert(*column);
@@ -4113,24 +4163,25 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             }
 
             if (!match)
-                continue;
+                return;
 
             // Check if all aggregation keys can be either provided by some action, or by current
             // projection directly. Reshape the `before_aggregation` action DAG so that it only
-            // needs to provide aggregation keys, and certain children DAG might be substituted by
-            // some keys in projection.
+            // needs to provide aggregation keys, and the DAG of certain child might be substituted
+            // by some keys in projection.
             candidate.before_aggregation = analysis_result.before_aggregation->clone();
-            auto required_columns = candidate.before_aggregation->foldActionsByProjection(keys, projection.sample_block_for_keys);
+            auto required_columns = candidate.before_aggregation->foldActionsByProjection(keys, sample_block_for_keys);
 
-            if (required_columns.empty() && !keys.empty())
-                continue;
+            // TODO Let's find out the exact required_columns for keys.
+            if (required_columns.empty() && (!keys.empty() && !candidate.before_aggregation->getRequiredColumns().empty()))
+                return;
 
             if (analysis_result.optimize_aggregation_in_order)
             {
                 for (const auto & key : keys)
                 {
                     auto actions_dag = analysis_result.before_aggregation->clone();
-                    actions_dag->foldActionsByProjection({key}, projection.sample_block_for_keys);
+                    actions_dag->foldActionsByProjection({key}, sample_block_for_keys);
                     candidate.group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, actions_settings));
                 }
             }
@@ -4139,7 +4190,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             candidate.before_aggregation->reorderAggregationKeysForProjection(key_name_pos_map);
             candidate.before_aggregation->addAggregatesViaProjection(aggregates);
 
-            if (rewrite_before_where(candidate, projection, required_columns, projection.sample_block_for_keys, aggregates))
+            if (rewrite_before_where(candidate, projection, required_columns, sample_block_for_keys, aggregates))
             {
                 candidate.required_columns = {required_columns.begin(), required_columns.end()};
                 for (const auto & aggregate : aggregates)
@@ -4156,13 +4207,16 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             for (const auto & column : actions->getRequiredColumns())
                 required_columns.insert(column.name);
 
-            if (rewrite_before_where(candidate, projection, required_columns, projection.sample_block, {}))
+            if (rewrite_before_where(candidate, projection, required_columns, sample_block, {}))
             {
                 candidate.required_columns = {required_columns.begin(), required_columns.end()};
                 candidates.push_back(std::move(candidate));
             }
         }
-    }
+    };
+
+    for (const auto & projection : metadata_snapshot->projections)
+        add_projection_candidate(projection);
 
     // Let's select the best projection to execute the query.
     if (!candidates.empty())
@@ -4176,10 +4230,25 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
         auto parts = getDataPartsVector();
         MergeTreeDataSelectExecutor reader(*this);
+        query_info.merge_tree_select_result_ptr = reader.estimateNumMarksToRead(
+            parts,
+            analysis_result.required_columns,
+            metadata_snapshot,
+            metadata_snapshot,
+            query_info,
+            query_context,
+            settings.max_threads,
+            max_added_blocks);
+
+        size_t min_sum_marks = std::numeric_limits<size_t>::max();
+        if (!query_info.merge_tree_select_result_ptr->error())
+        {
+            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
+            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
+            min_sum_marks = query_info.merge_tree_select_result_ptr->marks() + 1;
+        }
 
         ProjectionCandidate * selected_candidate = nullptr;
-        size_t min_sum_marks = std::numeric_limits<size_t>::max();
-        bool has_ordinary_projection = false;
         /// Favor aggregate projections
         for (auto & candidate : candidates)
         {
@@ -4198,49 +4267,38 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     selected_candidate,
                     min_sum_marks);
             }
-            else
-                has_ordinary_projection = true;
         }
 
-        /// Select the best normal projection if no aggregate projection is available
-        if (!selected_candidate && has_ordinary_projection)
+        /// Select the best normal projection.
+        for (auto & candidate : candidates)
         {
-            min_sum_marks = reader.estimateNumMarksToRead(
-                parts,
-                analysis_result.required_columns,
-                metadata_snapshot,
-                metadata_snapshot,
-                query_info,
-                query_context,
-                settings.max_threads,
-                max_added_blocks);
-
-            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
-            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
-            min_sum_marks += 1;
-
-            for (auto & candidate : candidates)
+            if (candidate.desc->type == ProjectionDescription::Type::Normal)
             {
-                if (candidate.desc->type == ProjectionDescription::Type::Normal)
-                {
-                    selectBestProjection(
-                        reader,
-                        metadata_snapshot,
-                        query_info,
-                        analysis_result.required_columns,
-                        candidate,
-                        query_context,
-                        max_added_blocks,
-                        settings,
-                        parts,
-                        selected_candidate,
-                        min_sum_marks);
-                }
+                selectBestProjection(
+                    reader,
+                    metadata_snapshot,
+                    query_info,
+                    analysis_result.required_columns,
+                    candidate,
+                    query_context,
+                    max_added_blocks,
+                    settings,
+                    parts,
+                    selected_candidate,
+                    min_sum_marks);
             }
         }
 
         if (!selected_candidate)
             return false;
+        else if (min_sum_marks == 0)
+        {
+            /// If selected_projection indicated an empty result set. Remember it in query_info but
+            /// don't use projection to run the query, because projection pipeline with empty result
+            /// set will not work correctly with empty_result_for_aggregation_by_empty_set.
+            query_info.merge_tree_empty_result = true;
+            return false;
+        }
 
         if (selected_candidate->desc->type == ProjectionDescription::Type::Aggregate)
         {
@@ -4249,7 +4307,6 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         }
 
         query_info.projection = std::move(*selected_candidate);
-
         return true;
     }
     return false;
@@ -4925,26 +4982,33 @@ void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
     total_active_size_parts.store(parts, std::memory_order_release);
 }
 
-void MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const
+bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const
 {
     std::lock_guard lock(query_id_set_mutex);
+    return insertQueryIdOrThrowNoLock(query_id, max_queries, lock);
+}
+
+bool MergeTreeData::insertQueryIdOrThrowNoLock(const String & query_id, size_t max_queries, const std::lock_guard<std::mutex> &) const
+{
     if (query_id_set.find(query_id) != query_id_set.end())
-        return;
+        return false;
     if (query_id_set.size() >= max_queries)
         throw Exception(
             ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for table {}. Maximum is: {}", log_name, max_queries);
     query_id_set.insert(query_id);
+    return true;
 }
 
 void MergeTreeData::removeQueryId(const String & query_id) const
 {
     std::lock_guard lock(query_id_set_mutex);
+    removeQueryIdNoLock(query_id, lock);
+}
+
+void MergeTreeData::removeQueryIdNoLock(const String & query_id, const std::lock_guard<std::mutex> &) const
+{
     if (query_id_set.find(query_id) == query_id_set.end())
-    {
-        /// Do not throw exception, because this method is used in destructor.
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
-        assert(false);
-    }
     else
         query_id_set.erase(query_id);
 }

@@ -13,3 +13,6 @@ ClickHouse® is an open-source column-oriented database management system that a
 * [Code Browser](https://clickhouse.tech/codebrowser/html_report/ClickHouse/index.html) with syntax highlight and navigation.
 * [Contacts](https://clickhouse.tech/#contacts) can help to get your questions answered if there are any.
 * You can also [fill this form](https://clickhouse.tech/#meet) to meet Yandex ClickHouse team in person.
+
+## Upcoming Events
+* [SF Bay Area ClickHouse August Community Meetup (online)](https://www.meetup.com/San-Francisco-Bay-Area-ClickHouse-Meetup/events/279109379/) on 25 August 2021.

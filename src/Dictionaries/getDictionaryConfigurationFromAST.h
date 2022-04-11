@@ -6,6 +6,7 @@
 
 namespace DB
 {
+
 using DictionaryConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 /// Convert dictionary AST to Poco::AbstractConfiguration
@@ -13,4 +14,5 @@ using DictionaryConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfigurati
 /// Can throw exception if query is ill-formed
 DictionaryConfigurationPtr
 getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_ = "");
+
 }

@@ -37,6 +37,7 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
@@ -106,6 +107,8 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
+        for (const auto & argument : arguments)
+            argument_types.push_back(argument.type);
 
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2 && isNumber(arguments[0].type) && isNumber(arguments[1].type))

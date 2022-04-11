@@ -5,9 +5,9 @@ toc_title: Map(key, value)
 
 # Map(key, value) {#data_type-map}
 
-`Map(key, value)` data type stores `key:value` pairs. 
+`Map(key, value)` data type stores `key:value` pairs.
 
-**Parameters** 
+**Parameters**
 
 -   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), or [FixedString](../../sql-reference/data-types/fixedstring.md).
 -   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [Array](../../sql-reference/data-types/array.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), or [FixedString](../../sql-reference/data-types/fixedstring.md).
@@ -23,7 +23,7 @@ CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory;
 INSERT INTO table_map VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
 ```
 
-Select all `key2` values: 
+Select all `key2` values:
 
 ```sql
 SELECT a['key2'] FROM table_map;
@@ -38,7 +38,7 @@ Result:
 └─────────────────────────┘
 ```
 
-If there's no such `key` in the `Map()` column, the query returns zeros for numerical values, empty strings or empty arrays. 
+If there's no such `key` in the `Map()` column, the query returns zeros for numerical values, empty strings or empty arrays.
 
 ```sql
 INSERT INTO table_map VALUES ({'key3':100}), ({});

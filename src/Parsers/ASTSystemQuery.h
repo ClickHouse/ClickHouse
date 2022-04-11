@@ -86,6 +86,8 @@ public:
         return removeOnCluster<ASTSystemQuery>(clone(), new_database);
     }
 
+    const char * getQueryKindString() const override { return "System"; }
+
 protected:
 
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

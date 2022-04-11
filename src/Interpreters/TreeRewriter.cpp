@@ -401,8 +401,12 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
             ASTFunction * func = elem->as<ASTFunction>();
 
             /// Never remove untuple. It's result column may be in required columns.
-            /// It is not easy to analyze untuple here, because types were not calculated yes.
+            /// It is not easy to analyze untuple here, because types were not calculated yet.
             if (func && func->name == "untuple")
+                new_elements.push_back(elem);
+
+            /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
+            if (func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name) && !select_query->groupBy())
                 new_elements.push_back(elem);
         }
     }
@@ -607,6 +611,27 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
     }
 
     return data.window_functions;
+}
+
+class MarkTupleLiteralsAsLegacyData
+{
+public:
+    using TypeToVisit = ASTLiteral;
+
+    static void visit(ASTLiteral & literal, ASTPtr &)
+    {
+        if (literal.value.getType() == Field::Types::Tuple)
+            literal.use_legacy_column_name_of_tuple = true;
+    }
+};
+
+using MarkTupleLiteralsAsLegacyMatcher = OneTypeMatcher<MarkTupleLiteralsAsLegacyData>;
+using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyMatcher, true>;
+
+void markTupleLiteralsAsLegacy(ASTPtr & query)
+{
+    MarkTupleLiteralsAsLegacyVisitor::Data data;
+    MarkTupleLiteralsAsLegacyVisitor(data).visit(query);
 }
 
 }
@@ -927,6 +952,9 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, select_options.only_analyze);
 
+    if (settings.legacy_column_name_of_tuple_literal)
+        markTupleLiteralsAsLegacy(query);
+
     TreeOptimizer::apply(query, result, tables_with_columns, getContext());
 
     /// array_join_alias_to_name, array_join_result_to_source.
@@ -952,7 +980,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
-    if (settings.optimize_respect_aliases && result.metadata_snapshot)
+    bool is_initiator = getContext()->getClientInfo().distributed_depth == 0;
+    if (settings.optimize_respect_aliases && result.metadata_snapshot && is_initiator)
     {
         /// If query is changed, we need to redo some work to correct name resolution.
         if (replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext()))
@@ -980,7 +1009,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     ConstStoragePtr storage,
     const StorageMetadataPtr & metadata_snapshot,
     bool allow_aggregations,
-    bool allow_self_aliases) const
+    bool allow_self_aliases,
+    bool execute_scalar_subqueries) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
@@ -992,7 +1022,10 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, getContext(), 0, result.scalars, false);
+    executeScalarSubqueries(query, getContext(), 0, result.scalars, !execute_scalar_subqueries);
+
+    if (settings.legacy_column_name_of_tuple_literal)
+        markTupleLiteralsAsLegacy(query);
 
     TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 

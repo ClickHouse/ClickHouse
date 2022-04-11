@@ -19,7 +19,6 @@ namespace ErrorCodes
   */
 struct ArrayCumSumNonNegativeImpl
 {
-    static bool useDefaultImplementationForConstants() { return true; }
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -100,6 +99,7 @@ struct ArrayCumSumNonNegativeImpl
     {
         ColumnPtr res;
 
+        mapped = mapped->convertToFullColumnIfConst();
         if (executeType< UInt8 , UInt64>(mapped, array, res) ||
             executeType< UInt16, UInt64>(mapped, array, res) ||
             executeType< UInt32, UInt64>(mapped, array, res) ||

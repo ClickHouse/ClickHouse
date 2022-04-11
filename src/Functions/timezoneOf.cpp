@@ -32,6 +32,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         DataTypePtr type_no_nullable = removeNullable(types[0]);

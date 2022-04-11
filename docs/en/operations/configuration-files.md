@@ -18,6 +18,18 @@ Some settings specified in the main configuration file can be overridden in othe
 -   If `replace` is specified, it replaces the entire element with the specified one.
 -   If `remove` is specified, it deletes the element.
 
+You can also declare attributes as coming from environment variables by using `from_env="VARIABLE_NAME"`:
+
+```xml
+<yandex>
+    <macros>
+        <replica from_env="REPLICA" />
+        <layer from_env="LAYER" />
+        <shard from_env="SHARD" />
+    </macros>
+</yandex>
+```
+
 ## Substitution {#substitution}
 
 The config can also define “substitutions”. If an element has the `incl` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include_from](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-include_from) element in the server config. The substitution values are specified in `/yandex/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify the `optional="true"` attribute (for example, settings for [macros](../operations/server-configuration-parameters/settings.md)).

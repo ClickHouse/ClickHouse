@@ -48,17 +48,17 @@ public:
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
     ExecutablePoolDictionarySource & operator=(const ExecutablePoolDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll() override;
+    Pipe loadAll() override;
 
     /** The logic of this method is flawed, absolutely incorrect and ignorant.
       * It may lead to skipping some values due to clock sync or timezone changes.
       * The intended usage of "update_field" is totally different.
       */
-    BlockInputStreamPtr loadUpdatedAll() override;
+    Pipe loadUpdatedAll() override;
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -70,7 +70,7 @@ public:
 
     std::string toString() const override;
 
-    BlockInputStreamPtr getStreamForBlock(const Block & block);
+    Pipe getStreamForBlock(const Block & block);
 
 private:
     Poco::Logger * log;

@@ -37,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -341,6 +342,10 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     auto syntax_result = TreeRewriter(context).analyze(expression, literals.getNamesAndTypesList());
     result_column_name = expression->getColumnName();
     actions_on_literals = ExpressionAnalyzer(expression, syntax_result, context).getActions(false);
+    if (actions_on_literals->hasArrayJoin())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Array joins are not allowed in constant expressions for IN, VALUES, LIMIT and similar sections.");
+
 }
 
 size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
@@ -639,7 +644,7 @@ void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const I
         expr = makeASTFunction("assumeNotNull", std::move(expr));
     }
 
-    expr = makeASTFunction("CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
+    expr = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
 
     if (null_as_default)
     {

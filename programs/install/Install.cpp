@@ -676,12 +676,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 #if defined(__linux__)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
         std::string command = fmt::format("command -v setcap >/dev/null"
-            " && echo > {0} && chmod a+x {0} && {0} && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0} && {0} && rm {0}"
-            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {1}"
+            " && command -v capsh >/dev/null"
+            " && capsh --has-p=cap_net_admin,cap_ipc_lock,cap_sys_nice+ep >/dev/null 2>&1"
+            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0}"
             " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
                 " This is optional. Taskstats accounting will be disabled."
                 " To enable taskstats accounting you may add the required capability later manually.\"",
-            "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
+            fs::canonical(main_bin_path).string());
         executeScript(command);
 #endif
 

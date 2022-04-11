@@ -122,6 +122,9 @@ struct AccessRightsElement
 class AccessRightsElements : public std::vector<AccessRightsElement>
 {
 public:
+    using Base = std::vector<AccessRightsElement>;
+    using Base::Base;
+
     bool empty() const { return std::all_of(begin(), end(), [](const AccessRightsElement & e) { return e.empty(); }); }
 
     bool sameDatabaseAndTable() const

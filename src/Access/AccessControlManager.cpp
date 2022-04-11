@@ -1,6 +1,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
+#include <Access/ReplicatedAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/LDAPAccessStorage.h>
@@ -225,6 +226,22 @@ void AccessControlManager::startPeriodicReloadingUsersConfigs()
     }
 }
 
+void AccessControlManager::addReplicatedStorage(
+    const String & storage_name_,
+    const String & zookeeper_path_,
+    const zkutil::GetZooKeeper & get_zookeeper_function_)
+{
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto replicated_storage = typeid_cast<std::shared_ptr<ReplicatedAccessStorage>>(storage))
+            return;
+    }
+    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_);
+    addStorage(new_storage);
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
+    new_storage->startup();
+}
 
 void AccessControlManager::addDiskStorage(const String & directory_, bool readonly_)
 {
@@ -321,6 +338,11 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
         else if (type == LDAPAccessStorage::STORAGE_TYPE)
         {
             addLDAPStorage(name, config, prefix);
+        }
+        else if (type == ReplicatedAccessStorage::STORAGE_TYPE)
+        {
+            String zookeeper_path = config.getString(prefix + ".zookeeper_path");
+            addReplicatedStorage(name, zookeeper_path, get_zookeeper_function);
         }
         else
             throw Exception("Unknown storage type '" + type + "' at " + prefix + " in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);

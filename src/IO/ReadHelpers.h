@@ -333,12 +333,24 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 
                     if (buf.count() - initial_pos + 1 >= std::numeric_limits<T>::max_digits10)
                     {
-                        T signed_res = res;
-                        if (common::mulOverflow<T>(signed_res, 10, signed_res)
-                            || common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
-                            return ReturnType(false);
+                        if (negative)
+                        {
+                            T signed_res = -res;
+                            if (common::mulOverflow<T>(signed_res, 10, signed_res) ||
+                                common::subOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
+                                return ReturnType(false);
 
-                        res = signed_res;
+                            res = -static_cast<UnsignedT>(signed_res);
+                        }
+                        else
+                        {
+                            T signed_res = res;
+                            if (common::mulOverflow<T>(signed_res, 10, signed_res) ||
+                                common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
+                                return ReturnType(false);
+
+                            res = signed_res;
+                        }
                         break;
                     }
                 }
@@ -368,7 +380,7 @@ end:
         {
             if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
             {
-                if (common::mulOverflow<T>(x, -1, x))
+                if (common::mulOverflow<UnsignedT, Int8, T>(res, -1, x))
                     return ReturnType(false);
             }
             else
@@ -403,7 +415,6 @@ bool tryReadIntText(T & x, ReadBuffer & buf)  // -V1071
   * Differs in following:
   * - for numbers starting with zero, parsed only zero;
   * - symbol '+' before number is not supported;
-  * - symbols :;<=>? are parsed as some numbers.
   */
 template <typename T, bool throw_on_error = true>
 void readIntTextUnsafe(T & x, ReadBuffer & buf)
@@ -437,15 +448,12 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        /// This check is suddenly faster than
-        ///  unsigned char c = *buf.position() - '0';
-        ///  if (c < 10)
-        /// for unknown reason on Xeon E5645.
+        unsigned char value = *buf.position() - '0';
 
-        if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
+        if (value < 10)
         {
             res *= 10;
-            res += *buf.position() & 0x0F;
+            res += value;
             ++buf.position();
         }
         else

@@ -28,7 +28,6 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , join_use_nulls(settings.join_use_nulls)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
     , join_algorithm(settings.join_algorithm)
-    , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
@@ -231,20 +230,7 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 
 void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability) const
 {
-    ColumnsWithTypeAndName columns;
-    for (auto & pair : names_and_types)
-        columns.emplace_back(nullptr, std::move(pair.type), std::move(pair.name));
-    names_and_types.clear();
-
-    addJoinedColumnsAndCorrectTypes(columns, correct_nullability);
-
-    for (auto & col : columns)
-        names_and_types.emplace_back(std::move(col.name), std::move(col.type));
-}
-
-void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns, bool correct_nullability) const
-{
-    for (auto & col : columns)
+    for (auto & col : names_and_types)
     {
         if (hasUsing())
         {
@@ -252,17 +238,12 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns
                 col.type = it->second;
         }
         if (correct_nullability && leftBecomeNullable(col.type))
-        {
-            /// No need to nullify constants
-            bool is_column_const = col.column && isColumnConst(*col.column);
-            if (!is_column_const)
-                col.type = JoinCommon::convertTypeToNullable(col.type);
-        }
+            col.type = JoinCommon::convertTypeToNullable(col.type);
     }
 
     /// Types in columns_added_by_join already converted and set nullable if needed
     for (const auto & col : columns_added_by_join)
-        columns.emplace_back(nullptr, col.type, col.name);
+        names_and_types.emplace_back(col.name, col.type);
 }
 
 bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const

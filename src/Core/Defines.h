@@ -71,6 +71,7 @@
 
 /// Minimum revision supporting SettingsBinaryFormat::STRINGS.
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
+#define DBMS_MIN_REVISION_WITH_SCALARS 54429
 
 /// Minimum revision supporting OpenTelemetry
 #define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442

@@ -58,6 +58,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
     bool isVariadic() const override { return true; }

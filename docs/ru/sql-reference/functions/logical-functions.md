@@ -21,7 +21,7 @@ and(val1, val2...)
 
 **Аргументы**
 
--   `val1, val2, ...` — список из как минимум двух значений. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) или [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val1, val2, ...` — список из как минимум двух значений. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) или [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Возвращаемое значение**
 
@@ -73,7 +73,7 @@ and(val1, val2...)
 
 **Аргументы**
 
--   `val1, val2, ...` — список из как минимум двух значений. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) или [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val1, val2, ...` — список из как минимум двух значений. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) или [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
@@ -125,7 +125,7 @@ not(val);
 
 **Аргументы**
 
--   `val` — значение. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) или [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val` — значение. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) или [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Возвращаемое значение**
 
@@ -163,7 +163,7 @@ xor(val1, val2...)
 
 **Аргументы**
 
--   `val1, val2, ...` — список из как минимум двух значений. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) или [Nullable](../../sql-reference/data-types/nullable.md). 
+-   `val1, val2, ...` — список из как минимум двух значений. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) или [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 

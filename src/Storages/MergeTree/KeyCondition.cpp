@@ -10,6 +10,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
@@ -271,27 +272,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             out.range = !right_bound.empty()
                 ? Range(prefix, true, right_bound, false)
                 : Range::createLeftBounded(prefix, true);
-
-            return true;
-        }
-    },
-    {
-        "notLike",
-        [] (RPNElement & out, const Field & value)
-        {
-            if (value.getType() != Field::Types::String)
-                return false;
-
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>());
-            if (prefix.empty())
-                return false;
-
-            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
-
-            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-            out.range = !right_bound.empty()
-                        ? Range(prefix, true, right_bound, false)
-                        : Range::createLeftBounded(prefix, true);
 
             return true;
         }
@@ -1055,6 +1035,8 @@ public:
 
     bool hasInformationAboutMonotonicity() const override { return func->hasInformationAboutMonotonicity(); }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override { return func->isSuitableForShortCircuitArgumentsExecution(arguments); }
+
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return func->getMonotonicityForRange(type, left, right);
@@ -1339,39 +1321,54 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 }
             }
 
+            key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
+            DataTypePtr key_expr_type_not_null;
+            bool key_expr_type_is_nullable = false;
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(key_expr_type.get()))
+            {
+                key_expr_type_is_nullable = true;
+                key_expr_type_not_null = nullable_type->getNestedType();
+            }
+            else
+                key_expr_type_not_null = key_expr_type;
+
             bool cast_not_needed = is_set_const /// Set args are already casted inside Set::createFromAST
-                || ((isNativeNumber(key_expr_type) || isDateTime(key_expr_type))
+                || ((isNativeNumber(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
                     && (isNativeNumber(const_type) || isDateTime(const_type))); /// Numbers and DateTime are accurately compared without cast.
 
-            if (!cast_not_needed && !key_expr_type->equals(*const_type))
+            if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
             {
                 if (const_value.getType() == Field::Types::String)
                 {
-                    const_value = convertFieldToType(const_value, *key_expr_type);
+                    const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                     if (const_value.isNull())
                         return false;
                     // No need to set is_constant_transformed because we're doing exact conversion
                 }
                 else
                 {
-                    DataTypePtr common_type = getLeastSupertype({key_expr_type, const_type});
+                    DataTypePtr common_type = getLeastSupertype({key_expr_type_not_null, const_type});
                     if (!const_type->equals(*common_type))
                     {
                         castValueToType(common_type, const_value, const_type, node);
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
-                        if (!key_expr_type->equals(*common_type))
+                        if (!key_expr_type_not_null->equals(*common_type))
                             is_constant_transformed = true;
                     }
-                    if (!key_expr_type->equals(*common_type))
+                    if (!key_expr_type_not_null->equals(*common_type))
                     {
+                        auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
+                            ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
+                            : common_type;
                         ColumnsWithTypeAndName arguments{
-                            {nullptr, key_expr_type, ""}, {DataTypeString().createColumnConst(1, common_type->getName()), common_type, ""}};
-                        FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false);
+                            {nullptr, key_expr_type, ""},
+                            {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type_maybe_nullable, ""}};
+                        FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
                         auto func_cast = func_builder_cast->build(arguments);
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-                        if (!func_cast || (!single_point && !func_cast->hasInformationAboutMonotonicity()))
+                        if (!single_point && !func_cast->hasInformationAboutMonotonicity())
                             return false;
                         chain.push_back(func_cast);
                     }

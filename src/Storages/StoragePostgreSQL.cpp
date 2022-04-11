@@ -1,7 +1,7 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <DataStreams/PostgreSQLBlockInputStream.h>
+#include <DataStreams/PostgreSQLSource.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -47,12 +47,10 @@ StoragePostgreSQL::StoragePostgreSQL(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    ContextPtr context_,
     const String & remote_table_schema_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
-    , global_context(context_)
     , pool(std::move(pool_))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -90,8 +88,7 @@ Pipe StoragePostgreSQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<PostgreSQLBlockInputStream<>>(pool->get(), query, sample_block, max_block_size_)));
+    return Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size_));
 }
 
 
@@ -348,7 +345,6 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
-            args.getContext(),
             remote_table_schema);
     },
     {

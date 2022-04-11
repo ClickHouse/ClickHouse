@@ -100,6 +100,8 @@ struct MergeListElement : boost::noncopyable
     MergeInfo getInfo() const;
 
     ~MergeListElement();
+
+    MergeListElement & ref() { return *this; }
 };
 
 using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;

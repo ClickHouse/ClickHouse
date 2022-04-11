@@ -24,8 +24,8 @@
 #endif
 
 #if USE_MYSQL
-#    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
-#    include <Storages/StorageMaterializeMySQL.h>
+#    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
+#    include <Storages/StorageMaterializedMySQL.h>
 #endif
 
 #if USE_LIBPQXX
@@ -146,7 +146,6 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 
 void DatabaseCatalog::loadDatabases()
 {
-    loadMarkedAsDroppedTables();
     auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
     (*drop_task)->activate();
@@ -246,11 +245,11 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #endif
 
 #if USE_MYSQL
-        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
-        if (db_and_table.first->getEngineName() == "MaterializeMySQL")
+        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
+        if (db_and_table.first->getEngineName() == "MaterializedMySQL")
         {
-            if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
-                db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+            if (!MaterializedMySQLSyncThread::isMySQLSyncThread())
+                db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
         }
 #endif
         return db_and_table;
@@ -327,7 +326,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 }
 
 
-DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool drop, bool check_empty)
+DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const String & database_name, bool drop, bool check_empty)
 {
     if (database_name == TEMPORARY_DATABASE)
         throw Exception("Cannot detach database with temporary tables.", ErrorCodes::DATABASE_ACCESS_DENIED);
@@ -363,12 +362,14 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
     if (drop)
     {
         /// Delete the database.
-        db->drop(getContext());
+        db->drop(local_context);
 
         /// Old ClickHouse versions did not store database.sql files
+        /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
+        fs::path database_metadata_dir = fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(database_name);
+        fs::remove(database_metadata_dir);
         fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
-        if (fs::exists(database_metadata_file))
-            fs::remove(database_metadata_file);
+        fs::remove(database_metadata_file);
     }
 
     return db;

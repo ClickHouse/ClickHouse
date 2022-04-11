@@ -130,6 +130,7 @@ public:
 
     void initializeAndLoadTemporaryDatabase();
     void loadDatabases();
+    void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table);
@@ -144,7 +145,7 @@ public:
     DatabasePtr getSystemDatabase() const;
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
-    DatabasePtr detachDatabase(const String & database_name, bool drop = false, bool check_empty = true);
+    DatabasePtr detachDatabase(ContextPtr local_context, const String & database_name, bool drop = false, bool check_empty = true);
     void updateDatabaseName(const String & old_name, const String & new_name);
 
     /// database_name must be not empty
@@ -240,7 +241,6 @@ private:
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
-    void loadMarkedAsDroppedTables();
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 

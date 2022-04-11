@@ -3,45 +3,52 @@ toc_priority: 30
 toc_title: MaterializedPostgreSQL
 ---
 
-# MaterializedPostgreSQL {#materialize-postgresql}
+# [experimental] MaterializedPostgreSQL {#materialize-postgresql}
+
+Creates ClickHouse database with an initial data dump of PostgreSQL database tables and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL database tables in the remote PostgreSQL database.
+
+ClickHouse server works as PostgreSQL replica. It reads WAL and performs DML queries. DDL is not replicated, but can be handled (described below).
 
 ## Creating a Database {#creating-a-database}
 
 ``` sql
-CREATE DATABASE test_database
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
-
-SELECT * FROM test_database.postgres_table;
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
 ```
 
+**Engine Parameters**
+
+-   `host:port` — PostgreSQL server endpoint.
+-   `database` — PostgreSQL database name.
+-   `user` — PostgreSQL user.
+-   `password` — User password.
 
 ## Settings {#settings}
 
-1. `materialized_postgresql_max_block_size` - Number of rows collected before flushing data into table. Default: `65536`.
+-   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
 
-2. `materialized_postgresql_tables_list` - List of tables for MaterializedPostgreSQL database engine. Default: `whole database`.
+-   [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list)
 
-3. `materialized_postgresql_allow_automatic_update` - Allow to reload table in the background, when schema changes are detected. Default: `0` (`false`).
+-   [materialized_postgresql_allow_automatic_update](../../operations/settings/settings.md#materialized-postgresql-allow-automatic-update)
 
 ``` sql
-CREATE DATABASE test_database
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_max_block_size = 65536,
          materialized_postgresql_tables_list = 'table1,table2,table3';
 
-SELECT * FROM test_database.table1;
+SELECT * FROM database1.table1;
 ```
-
 
 ## Requirements {#requirements}
 
-- Setting `wal_level`to `logical` and `max_replication_slots` to at least `2` in the postgresql config file.
+1. The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.
 
-- Each replicated table must have one of the following **replica identity**:
+2. Each replicated table must have one of the following [replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY):
 
-1. **default** (primary key)
+-   primary key (by default)
 
-2. **index**
+-   index
 
 ``` bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
@@ -49,9 +56,8 @@ postgres# CREATE unique INDEX postgres_table_index on postgres_table(a, c, e);
 postgres# ALTER TABLE postgres_table REPLICA IDENTITY USING INDEX postgres_table_index;
 ```
 
-
-Primary key is always checked first. If it is absent, then index, defined as replica identity index, is checked.
-If index is used as replica identity, there has to be only one such index in a table.
+The primary key is always checked first. If it is absent, then the index, defined as replica identity index, is checked.
+If the index is used as a replica identity, there has to be only one such index in a table.
 You can check what type is used for a specific table with the following command:
 
 ``` bash
@@ -65,7 +71,14 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
+!!! warning "Warning"
+    Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
+	
+## Example of Use {#example-of-use}
 
-## Warning {#warning}
+``` sql
+CREATE DATABASE postgresql_db
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
 
-1. **TOAST** values convertion is not supported. Default value for the data type will be used.
+SELECT * FROM postgresql_db.postgres_table;
+```

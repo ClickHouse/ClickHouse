@@ -5,6 +5,8 @@
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/IInputFormat.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
@@ -30,8 +32,9 @@ FileDictionarySource::FileDictionarySource(
     , sample_block{sample_block_}
     , context(context_)
 {
-    if (created_from_ddl && !pathStartsWith(filepath, context->getUserFilesPath()))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, context->getUserFilesPath());
+    auto user_files_path = context->getUserFilesPath();
+    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, user_files_path))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
 }
 
 
@@ -45,14 +48,15 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 }
 
 
-BlockInputStreamPtr FileDictionarySource::loadAll()
+Pipe FileDictionarySource::loadAll()
 {
     LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
-    auto stream = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
+    auto source = FormatFactory::instance().getInput(format, *in_ptr, sample_block, context, max_block_size);
+    source->addBuffer(std::move(in_ptr));
     last_modification = getLastModification();
 
-    return std::make_shared<OwningBlockInputStream<ReadBuffer>>(stream, std::move(in_ptr));
+    return Pipe(std::move(source));
 }
 
 

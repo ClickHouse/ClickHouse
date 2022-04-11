@@ -373,7 +373,9 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
             except_list,
             is_draining ? drain_timeout : receive_timeout);
 
-        if (n == 0)
+        /// We treat any error as timeout for simplicity.
+        /// And we also check if read_list is still empty just in case.
+        if (n <= 0 || read_list.empty())
         {
             auto err_msg = fmt::format("Timeout exceeded while reading from {}", dumpAddressesUnlocked());
             for (ReplicaState & state : replica_states)
@@ -389,9 +391,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         }
     }
 
-    /// TODO Absolutely wrong code: read_list could be empty; motivation of rand is unclear.
-    /// This code path is disabled by default.
-
+    /// TODO Motivation of rand is unclear.
     auto & socket = read_list[thread_local_rng() % read_list.size()];
     if (fd_to_replica_state_idx.empty())
     {

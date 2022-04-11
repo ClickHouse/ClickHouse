@@ -39,7 +39,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
     INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
-    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
+    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2,
+    ...
+    PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
+    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
@@ -76,7 +79,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
 -   `SAMPLE BY` — An expression for sampling. Optional.
 
-    If a sampling expression is used, the primary key must contain it. The result of sampling expression must be unsigned integer. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+    If a sampling expression is used, the primary key must contain it. The result of a sampling expression must be an unsigned integer. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 -   `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.
 
@@ -384,6 +387,24 @@ Functions with a constant argument that is less than ngram size can’t be used 
     -   `NOT s = 1`
     -   `s != 1`
     -   `NOT startsWith(s, 'test')`
+
+### Projections {#projections}
+Projections are like materialized views but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
+
+#### Query {#projection-query}
+A projection query is what defines a projection. It has the following grammar:
+
+`SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]`
+
+It implicitly selects data from the parent table.
+
+#### Storage {#projection-storage}
+Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous MergeTree table's part. The table is induced by the definition query of the projection. If there is a GROUP BY clause, the underlying storage engine becomes AggregatedMergeTree, and all aggregate functions are converted to AggregateFunction. If there is an ORDER BY clause, the MergeTree table will use it as its primary key expression. During the merge process, the projection part will be merged via its storage's merge routine. The checksum of the parent table's part will combine the projection's part. Other maintenance jobs are similar to skip indices.
+
+#### Query Analysis {#projection-query-analysis}
+1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
+2. Select the best feasible match, which contains the least granules to read.
+3. The query pipeline which uses projections will be different from the one that uses the original parts. If the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
 
 ## Concurrent Data Access {#concurrent-data-access}
 
@@ -823,44 +844,3 @@ S3 disk can be configured as `main` or `cold` storage:
 ```
 
 In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule.
-
-## Using HDFS for Data Storage {#table_engine-mergetree-hdfs}
-
-[HDFS](https://hadoop.apache.org/docs/r1.2.1/hdfs_design.html) is a distributed file system for remote data storage.
-
-`MergeTree` family table engines can store data to HDFS using a disk with type `HDFS`.
-
-Configuration markup:
-``` xml
-<yandex>
-    <storage_configuration>
-        <disks>
-            <hdfs>
-                <type>hdfs</type>
-                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
-            </hdfs>
-        </disks>
-        <policies>
-            <hdfs>
-                <volumes>
-                    <main>
-                        <disk>hdfs</disk>
-                    </main>
-                </volumes>
-            </hdfs>
-        </policies>
-    </storage_configuration>
-
-    <merge_tree>
-        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
-    </merge_tree>
-</yandex>
-```
-
-Required parameters:
-
--   `endpoint` — HDFS endpoint URL in `path` format. Endpoint URL should contain a root path to store data.
-
-Optional parameters:
-
--   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.

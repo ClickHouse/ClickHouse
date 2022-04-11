@@ -102,7 +102,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             if (main_table)
                 table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
-            return std::make_shared<HedgedConnections>(pool, current_settings, timeouts, throttler, pool_mode, table_to_check);
+            return std::make_shared<HedgedConnections>(pool, context, timeouts, throttler, pool_mode, table_to_check);
         }
 #endif
 

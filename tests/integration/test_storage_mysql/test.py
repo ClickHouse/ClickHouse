@@ -319,6 +319,36 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
     conn.close()
 
 
+# Regression for (k, v) IN ((k, v))
+def test_mysql_in(started_cluster):
+    table_name = 'test_mysql_in'
+    node1.query(f'DROP TABLE IF EXISTS {table_name}')
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    node1.query('''
+        CREATE TABLE {}
+        (
+            id UInt32,
+            name String,
+            age UInt32,
+            money UInt32
+        )
+        ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse')
+        '''.format(table_name, table_name)
+    )
+
+    node1.query("INSERT INTO {} (id, name) SELECT number, concat('name_', toString(number)) from numbers(10) ".format(table_name))
+    node1.query("SELECT * FROM {} WHERE (id) IN (1)".format(table_name))
+    node1.query("SELECT * FROM {} WHERE (id) IN (1, 2)".format(table_name))
+    node1.query("SELECT * FROM {} WHERE (id, name) IN ((1, 'name_1'))".format(table_name))
+    node1.query("SELECT * FROM {} WHERE (id, name) IN ((1, 'name_1'),(1, 'name_1'))".format(table_name))
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
         for name, instance in list(cluster.instances.items()):

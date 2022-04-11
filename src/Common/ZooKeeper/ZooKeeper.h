@@ -25,6 +25,10 @@ namespace CurrentMetrics
     extern const Metric EphemeralNode;
 }
 
+namespace DB
+{
+    class ZooKeeperLog;
+}
 
 namespace zkutil
 {
@@ -52,13 +56,15 @@ public:
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper");
+              const std::string & implementation_ = "zookeeper",
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper");
+              const std::string & implementation_ = "zookeeper",
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /** Config of the form:
         <zookeeper>
@@ -82,7 +88,7 @@ public:
             <identity>user:password</identity>
         </zookeeper>
     */
-    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
@@ -269,6 +275,8 @@ public:
 
     void finalize();
 
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
 private:
     friend class EphemeralNodeHolder;
 
@@ -298,6 +306,7 @@ private:
     std::mutex mutex;
 
     Poco::Logger * log = nullptr;
+    std::shared_ptr<DB::ZooKeeperLog> zk_log;
 };
 
 

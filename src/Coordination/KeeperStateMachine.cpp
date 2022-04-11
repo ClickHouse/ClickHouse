@@ -101,31 +101,26 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     {
         const Coordination::ZooKeeperSessionIDRequest & session_id_request = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
         int64_t session_id;
-        {
-            std::lock_guard lock(storage_lock);
-            session_id = storage->getSessionID(session_id_request.session_timeout_ms);
-        }
-        LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
-
         std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
         response->internal_id = session_id_request.internal_id;
-        response->session_id = session_id;
         response->server_id = session_id_request.server_id;
-
         KeeperStorage::ResponseForSession response_for_session;
         response_for_session.session_id = -1;
         response_for_session.response = response;
-        responses_queue.push(response_for_session);
+        {
+            std::lock_guard lock(storage_and_responses_lock);
+            session_id = storage->getSessionID(session_id_request.session_timeout_ms);
+            LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
+            response->session_id = session_id;
+            responses_queue.push(response_for_session);
+        }
     }
     else
     {
-        KeeperStorage::ResponsesForSessions responses_for_sessions;
-        {
-            std::lock_guard lock(storage_lock);
-            responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
-            for (auto & response_for_session : responses_for_sessions)
-                responses_queue.push(response_for_session);
-        }
+        std::lock_guard lock(storage_and_responses_lock);
+        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
+        for (auto & response_for_session : responses_for_sessions)
+            responses_queue.push(response_for_session);
     }
 
     last_committed_idx = log_idx;
@@ -144,8 +139,8 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
         latest_snapshot_ptr = latest_snapshot_buf;
     }
 
-    {
-        std::lock_guard lock(storage_lock);
+    { /// deserialize and apply snapshot to storage
+        std::lock_guard lock(storage_and_responses_lock);
         std::tie(latest_snapshot_meta, storage) = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_ptr);
     }
     last_committed_idx = s.get_last_log_idx();
@@ -168,8 +163,8 @@ void KeeperStateMachine::create_snapshot(
     nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
     auto snapshot_meta_copy = nuraft::snapshot::deserialize(*snp_buf);
     CreateSnapshotTask snapshot_task;
-    {
-        std::lock_guard lock(storage_lock);
+    { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
+        std::lock_guard lock(storage_and_responses_lock);
         snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot>(storage.get(), snapshot_meta_copy);
     }
 
@@ -191,7 +186,8 @@ void KeeperStateMachine::create_snapshot(
 
             {
                 /// Must do it with lock (clearing elements from list)
-                std::lock_guard lock(storage_lock);
+                std::lock_guard lock(storage_and_responses_lock);
+                /// Turn off "snapshot mode" and clear outdate part of storage state
                 storage->clearGarbageAfterSnapshot();
                 /// Destroy snapshot with lock
                 snapshot.reset();
@@ -226,7 +222,7 @@ void KeeperStateMachine::save_logical_snp_obj(
     nuraft::ptr<nuraft::snapshot> cloned_meta;
     if (obj_id == 0)
     {
-        std::lock_guard lock(storage_lock);
+        std::lock_guard lock(storage_and_responses_lock);
         KeeperStorageSnapshot snapshot(storage.get(), s.get_last_log_idx());
         cloned_buffer = snapshot_manager.serializeSnapshotToBuffer(snapshot);
     }
@@ -286,24 +282,22 @@ int KeeperStateMachine::read_logical_snp_obj(
 
 void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSession & request_for_session)
 {
-    KeeperStorage::ResponsesForSessions responses;
-    {
-        std::lock_guard lock(storage_lock);
-        responses = storage->processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
-    }
+    /// Pure local request, just process it with storage
+    std::lock_guard lock(storage_and_responses_lock);
+    auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
     for (const auto & response : responses)
         responses_queue.push(response);
 }
 
-std::unordered_set<int64_t> KeeperStateMachine::getDeadSessions()
+std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 {
-    std::lock_guard lock(storage_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getDeadSessions();
 }
 
 void KeeperStateMachine::shutdownStorage()
 {
-    std::lock_guard lock(storage_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     storage->finalize();
 }
 

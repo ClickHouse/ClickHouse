@@ -4,7 +4,7 @@ Contains information about columns in all the tables.
 
 You can use this table to get information similar to the [DESCRIBE TABLE](../../sql-reference/statements/misc.md#misc-describe-table) query, but for multiple tables at once.
 
-Columns from [temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in the `system.columns` only in those session where they have been created. They are shown with the empty `database` field. 
+Columns from [temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in the `system.columns` only in those session where they have been created. They are shown with the empty `database` field.
 
 Columns:
 
@@ -38,17 +38,17 @@ database:                system
 table:                   aggregate_function_combinators
 name:                    name
 type:                    String
-default_kind:            
-default_expression:      
+default_kind:
+default_expression:
 data_compressed_bytes:   0
 data_uncompressed_bytes: 0
 marks_bytes:             0
-comment:                 
+comment:
 is_in_partition_key:     0
 is_in_sorting_key:       0
 is_in_primary_key:       0
 is_in_sampling_key:      0
-compression_codec:       
+compression_codec:
 
 Row 2:
 ──────
@@ -56,17 +56,17 @@ database:                system
 table:                   aggregate_function_combinators
 name:                    is_internal
 type:                    UInt8
-default_kind:            
-default_expression:      
+default_kind:
+default_expression:
 data_compressed_bytes:   0
 data_uncompressed_bytes: 0
 marks_bytes:             0
-comment:                 
+comment:
 is_in_partition_key:     0
 is_in_sorting_key:       0
 is_in_primary_key:       0
 is_in_sampling_key:      0
-compression_codec:       
+compression_codec:
 ```
 
 The `system.columns` table contains the following columns (the column type is shown in brackets):

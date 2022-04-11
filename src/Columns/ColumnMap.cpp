@@ -149,6 +149,11 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
     return ColumnMap::create(filtered);
 }
 
+void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
+{
+    nested->expand(mask, inverted);
+}
+
 ColumnPtr ColumnMap::permute(const Permutation & perm, size_t limit) const
 {
     auto permuted = nested->permute(perm, limit);
@@ -258,7 +263,7 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
 
 void ColumnMap::forEachSubcolumn(ColumnCallback callback)
 {
-    nested->forEachSubcolumn(callback);
+    callback(nested);
 }
 
 bool ColumnMap::structureEquals(const IColumn & rhs) const

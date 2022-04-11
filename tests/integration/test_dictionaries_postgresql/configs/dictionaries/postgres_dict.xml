@@ -19,10 +19,10 @@
       <structure>
          <id>
             <name>id</name>
-            <type>UInt32</type>
+            <!--<type>UInt32</type>-->
          </id>
          <attribute>
-            <name>id</name>
+            <name>key</name>
             <type>UInt32</type>
             <null_value></null_value>
          </attribute>
@@ -65,10 +65,10 @@
       <structure>
          <id>
             <name>id</name>
-            <type>UInt32</type>
+            <!--<type>UInt32</type>-->
          </id>
          <attribute>
-            <name>id</name>
+            <name>key</name>
             <type>UInt32</type>
             <null_value></null_value>
          </attribute>

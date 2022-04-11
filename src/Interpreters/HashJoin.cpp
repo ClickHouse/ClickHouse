@@ -666,7 +666,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     size_t total_bytes = 0;
 
     {
-        if (storage_join_lock.mutex())
+        if (storage_join_lock)
             throw DB::Exception("addJoinedBlock called when HashJoin locked to prevent updates",
                                 ErrorCodes::LOGICAL_ERROR);
 
@@ -1516,12 +1516,16 @@ private:
         if (!rows_added)
             return {};
 
-        correctLowcardAndNullability(columns_right);
-
         Block res = result_sample_block.cloneEmpty();
         addLeftColumns(res, rows_added);
         addRightColumns(res, columns_right);
         copySameKeys(res);
+        correctLowcardAndNullability(res);
+
+#ifndef NDEBUG
+        assertBlocksHaveEqualStructure(res, result_sample_block, getName());
+#endif
+
         return res;
     }
 

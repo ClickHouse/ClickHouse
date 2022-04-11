@@ -26,8 +26,8 @@ CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 # accessible from clickhouse server.
 #####################################################################################
 
-# IP-address of this host accessible from outside world.
-HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip()
+# IP-address of this host accessible from the outside world. Get the first one
+HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip().split()[0]
 HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST)
 
 # IP address and port of the HTTP server started from this script.

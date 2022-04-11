@@ -89,7 +89,7 @@ find $ROOT_PATH/tests/queries -iname '*fail*' |
 # Queries to system.query_log/system.query_thread_log should have current_database = currentDatabase() condition
 # NOTE: it is not that accuate, but at least something.
 tests_with_query_log=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' |
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         grep -vP $EXCLUDE_DIRS |
         xargs grep --with-filename -e system.query_log -e system.query_thread_log | cut -d: -f1 | sort -u
 ) )
@@ -99,13 +99,24 @@ for test_case in "${tests_with_query_log[@]}"; do
     } || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
 
-# Queries to system.tables/system.parts/system.detached_parts/system.parts_columns/system.columns should have database = currentDatabase() condition
+# Queries to:
+tables_with_database_column=(
+    system.tables
+    system.parts
+    system.detached_parts
+    system.parts_columns
+    system.columns
+    system.projection_parts
+    system.mutations
+)
+# should have database = currentDatabase() condition
+#
 # NOTE: it is not that accuate, but at least something.
 tests_with_database_column=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' |
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         grep -vP $EXCLUDE_DIRS |
         grep -v -x -e $ROOT_PATH/tests/queries/query_test.py |
-        xargs grep --with-filename -e system.tables -e system.parts -e system.detached_parts -e system.parts_columns -e system.columns | cut -d: -f1 | sort -u
+        xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_database_column[@]}"; do
     grep -qE database.*currentDatabase "$test_case" || {
@@ -114,32 +125,28 @@ for test_case in "${tests_with_database_column[@]}"; do
         # explicit database
         grep -qE "database[ ]*=[ ]*'" "$test_case"
     } || {
-        echo "Queries to system.tables/system.parts/system.detached_parts/system.parts_columns/system.columns does not have database = currentDatabase()/\$CLICKHOUSE_DATABASE condition in $test_case"
+        echo "Queries to ${tables_with_database_column[*]} does not have database = currentDatabase()/\$CLICKHOUSE_DATABASE condition in $test_case"
     }
 done
 
 # Queries with ReplicatedMergeTree
 # NOTE: it is not that accuate, but at least something.
 tests_with_replicated_merge_tree=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' |
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         grep -vP $EXCLUDE_DIRS |
         xargs grep --with-filename -e ReplicatedMergeTree | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_replicated_merge_tree[@]}"; do
     case "$test_case" in
+        *.gen.*)
+            ;;
         *.sh)
             test_case_zk_prefix="\$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
-            grep -q -e "ReplicatedMergeTree.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
+            grep -q -e "ReplicatedMergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
-        *.sql)
-            # NOTE: *.sql is not supported because it is not possible right now, because:
-            # - ReplicatedMergeTree supports only ASTLiteral for zookeeper path
-            #   (and adding support of other nodes, with evaluating them are not that easy, due to zk_prefix is "optional")
-            # - Hence concat(currentDatabase(), 'foo')
-            # - Also params cannot be used, because the are wrapped with CAST()
-            #
-            # But hopefully they will not be a problem
-            # (since they do not do any "stressing" and overlap probability should be lower).
+        *.sql|*.sql.j2)
+            test_case_zk_prefix="\({database}\|currentDatabase()\)"
+            grep -q -e "ReplicatedMergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
         *.py)
             # Right now there is not such tests anyway
@@ -186,7 +193,7 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' |
     while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
 
 # Check for executable bit on non-executable files
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.j2' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
 
 # Check for BOM
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' | grep -P '.' && echo "Files should not have UTF-8 BOM"

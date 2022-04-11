@@ -8,7 +8,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/Exception.h>
-#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -40,6 +39,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int NO_ACTIVE_REPLICAS;
 }
 
 static constexpr const char * DROPPED_MARK = "DROPPED";
@@ -137,7 +137,9 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         Coordination::Stat stat;
         hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
         if (hosts.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No hosts found");
+            throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No replicas of database {} found. "
+                            "It's possible if the first replica is not fully created yet "
+                            "or if the last replica was just dropped or due to logical error", database_name);
         Int32 cversion = stat.cversion;
         std::sort(hosts.begin(), hosts.end());
 
@@ -296,10 +298,30 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
     auto host_id = getHostID(getContext(), db_uuid);
 
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
-    current_zookeeper->multi(ops);
+    for (int attempts = 10; attempts > 0; --attempts)
+    {
+        Coordination::Stat stat;
+        String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat);
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
+        /// In addition to creating the replica nodes, we record the max_log_ptr at the instant where
+        /// we declared ourself as an existing replica. We'll need this during recoverLostReplica to
+        /// notify other nodes that issued new queries while this node was recovering.
+        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version));
+        Coordination::Responses responses;
+        const auto code = current_zookeeper->tryMulti(ops, responses);
+        if (code == Coordination::Error::ZOK)
+        {
+            max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_str);
+            break;
+        }
+        else if (code == Coordination::Error::ZNODEEXISTS || attempts == 1)
+        {
+            /// If its our last attempt, or if the replica already exists, fail immediately.
+            zkutil::KeeperMultiException::check(code, ops, responses);
+        }
+    }
     createEmptyLogEntry(current_zookeeper);
 }
 
@@ -514,6 +536,19 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         }
     }
 
+    auto make_query_context = [this, current_zookeeper]()
+    {
+        auto query_context = Context::createCopy(getContext());
+        query_context->makeQueryContext();
+        query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        query_context->getClientInfo().is_replicated_database_internal = true;
+        query_context->setCurrentDatabase(database_name);
+        query_context->setCurrentQueryId("");
+        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
+        query_context->initZooKeeperMetadataTransaction(txn);
+        return query_context;
+    };
+
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
     if (total_tables * db_settings.max_broken_tables_ratio < tables_to_detach.size())
@@ -548,7 +583,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_dictionaries += table->isDictionary();
 
             table->flushAndShutdown();
-            DatabaseAtomic::dropTable(getContext(), table_name, true);
+            DatabaseAtomic::dropTable(make_query_context(), table_name, true);
         }
         else
         {
@@ -558,7 +593,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             assert(db_name < to_db_name);
             DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_db_name, to_name);
             auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_db_name);
-            DatabaseAtomic::renameTable(getContext(), table_name, *to_db_ptr, to_name, false, false);
+            DatabaseAtomic::renameTable(make_query_context(), table_name, *to_db_ptr, to_name, false, false);
             ++moved_tables;
         }
     }
@@ -577,7 +612,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// TODO Maybe we should do it in two steps: rename all tables to temporary names and then rename them to actual names?
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to));
         DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to));
-        DatabaseAtomic::renameTable(getContext(), from, *this, to, false, false);
+        DatabaseAtomic::renameTable(make_query_context(), from, *this, to, false, false);
     }
 
     for (const auto & id : dropped_tables)
@@ -592,17 +627,26 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         }
 
         auto query_ast = parseQueryFromMetadataInZooKeeper(name_and_meta.first, name_and_meta.second);
-
-        auto query_context = Context::createCopy(getContext());
-        query_context->makeQueryContext();
-        query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        query_context->setCurrentDatabase(database_name);
-        query_context->setCurrentQueryId(""); // generate random query_id
-
         LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
-        InterpreterCreateQuery(query_ast, query_context).execute();
+        auto create_query_context = make_query_context();
+        InterpreterCreateQuery(query_ast, create_query_context).execute();
     }
 
+    if (max_log_ptr_at_creation != 0)
+    {
+        /// If the replica is new and some of the queries applied during recovery
+        /// where issued after the replica was created, then other nodes might be
+        /// waiting for this node to notify them that the query was applied.
+        for (UInt32 ptr = max_log_ptr_at_creation; ptr <= max_log_ptr; ++ptr)
+        {
+            auto entry_name = DDLTaskBase::getLogEntryName(ptr);
+            auto path = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();
+            auto status = ExecutionStatus(0).serializeText();
+            auto res = current_zookeeper->tryCreate(path, status, zkutil::CreateMode::Persistent);
+            if (res == Coordination::Error::ZOK)
+                LOG_INFO(log, "Marked recovered {} as finished", entry_name);
+        }
+    }
     current_zookeeper->set(replica_path + "/log_ptr", toString(max_log_ptr));
 }
 

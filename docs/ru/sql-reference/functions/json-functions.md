@@ -327,7 +327,7 @@ toJSONString(value)
 
 **Возвращаемое значение**
 
--   JSON представление значения. 
+-   JSON представление значения.
 
 Тип: [String](../../sql-reference/data-types/string.md).
 

@@ -6,6 +6,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/StorageMergeTree.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -503,10 +504,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
 
-                auto updated_column = makeASTFunction("CAST",
+                auto updated_column = makeASTFunction("_CAST",
                     makeASTFunction("if",
                         condition,
-                        makeASTFunction("CAST",
+                        makeASTFunction("_CAST",
                             update_expr->clone(),
                             type_literal),
                         std::make_shared<ASTIdentifier>(column)),
@@ -732,8 +733,12 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        auto syntax_result = TreeRewriter(context).analyze(all_asts, all_columns, storage, metadata_snapshot);
-        if (context->hasQueryContext())
+        /// Executing scalar subquery on that stage can lead to deadlock
+        /// e.g. ALTER referencing the same table in scalar subquery
+        bool execute_scalar_subqueries = !dry_run;
+        auto syntax_result = TreeRewriter(context).analyze(
+            all_asts, all_columns, storage, metadata_snapshot, false, true, execute_scalar_subqueries);
+        if (execute_scalar_subqueries && context->hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
 
@@ -920,9 +925,10 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     return result_stream;
 }
 
-const Block & MutationsInterpreter::getUpdatedHeader() const
+Block MutationsInterpreter::getUpdatedHeader() const
 {
-    return *updated_header;
+    // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
+    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const

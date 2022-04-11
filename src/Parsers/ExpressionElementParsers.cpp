@@ -103,25 +103,33 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     const auto & expr_list = contents_node->as<ASTExpressionList &>();
 
-    /// empty expression in parentheses is not allowed
+    /// Empty expression in parentheses is not allowed.
     if (expr_list.children.empty())
     {
         expected.add(pos, "non-empty parenthesized list of expressions");
         return false;
     }
 
+    /// Special case for one-element tuple.
     if (expr_list.children.size() == 1 && is_elem)
     {
-        node = expr_list.children.front();
+        auto * ast_literal = expr_list.children.front()->as<ASTLiteral>();
+        /// But only if its argument is not tuple,
+        /// since otherwise it will do incorrect transformation:
+        ///
+        ///     (foo,bar) IN (('foo','bar')) -> (foo,bar) IN ('foo','bar')
+        if (!(ast_literal && ast_literal->value.getType() == Field::Types::Tuple))
+        {
+            node = expr_list.children.front();
+            return true;
+        }
     }
-    else
-    {
-        auto function_node = std::make_shared<ASTFunction>();
-        function_node->name = "tuple";
-        function_node->arguments = contents_node;
-        function_node->children.push_back(contents_node);
-        node = function_node;
-    }
+
+    auto function_node = std::make_shared<ASTFunction>();
+    function_node->name = "tuple";
+    function_node->arguments = contents_node;
+    function_node->children.push_back(contents_node);
+    node = function_node;
 
     return true;
 }
@@ -850,15 +858,24 @@ static bool isOneOf(TokenType token)
     return ((token == tokens) || ...);
 }
 
-
 bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Parse numbers (including decimals), strings and arrays of them.
+    /// Parse numbers (including decimals), strings, arrays and tuples of them.
 
     const char * data_begin = pos->begin;
     const char * data_end = pos->end;
     bool is_string_literal = pos->type == TokenType::StringLiteral;
-    if (pos->type == TokenType::Number || is_string_literal)
+
+    if (pos->type == TokenType::Minus)
+    {
+        ++pos;
+        if (pos->type != TokenType::Number)
+            return false;
+
+        data_end = pos->end;
+        ++pos;
+    }
+    else if (pos->type == TokenType::Number || is_string_literal)
     {
         ++pos;
     }
@@ -876,7 +893,7 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (pos->type == TokenType::ClosingSquareBracket)
             {
-                if (isOneOf<TokenType::Comma, TokenType::OpeningRoundBracket>(last_token))
+                if (isOneOf<TokenType::Comma, TokenType::OpeningRoundBracket, TokenType::Minus>(last_token))
                     return false;
                 if (stack.empty() || stack.back() != TokenType::OpeningSquareBracket)
                     return false;
@@ -884,7 +901,7 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (pos->type == TokenType::ClosingRoundBracket)
             {
-                if (isOneOf<TokenType::Comma, TokenType::OpeningSquareBracket>(last_token))
+                if (isOneOf<TokenType::Comma, TokenType::OpeningSquareBracket, TokenType::Minus>(last_token))
                     return false;
                 if (stack.empty() || stack.back() != TokenType::OpeningRoundBracket)
                     return false;
@@ -892,10 +909,15 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (pos->type == TokenType::Comma)
             {
-                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
+                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma, TokenType::Minus>(last_token))
                     return false;
             }
-            else if (isOneOf<TokenType::Number, TokenType::StringLiteral>(pos->type))
+            else if (pos->type == TokenType::Number)
+            {
+                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma, TokenType::Minus>(last_token))
+                    return false;
+            }
+            else if (isOneOf<TokenType::StringLiteral, TokenType::Minus>(pos->type))
             {
                 if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
                     return false;
@@ -915,6 +937,8 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!stack.empty())
             return false;
     }
+    else
+        return false;
 
     ASTPtr type_ast;
     if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
@@ -1713,6 +1737,8 @@ const char * ParserAlias::restricted_keywords[] =
     "WHERE",
     "WINDOW",
     "WITH",
+    "INTERSECT",
+    "EXCEPT",
     nullptr
 };
 

@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-keeper-jepsen-test .
-FROM yandex/clickhouse-test-base
+# docker build -t clickhouse/keeper-jepsen-test .
+FROM clickhouse/test-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CLOJURE_VERSION=1.10.3.814

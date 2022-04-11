@@ -20,6 +20,8 @@
             <node>
                 <host>n2</host>
                 <port>9000</port>
+                <!-- This is required only to -> replace it -> to force cluster reload -> to recreate connections -->
+                <priority>1</priority>
             </node>
         </secure>
     </remote_servers>
