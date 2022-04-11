@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from collections import namedtuple
+from typing import Any, Dict
 import json
 import time
 
@@ -20,6 +21,8 @@ NEED_RERUN_OR_CANCELL_WORKFLOWS = {
 API_URL = "https://api.github.com/repos/ClickHouse/ClickHouse"
 
 MAX_RETRY = 5
+
+DEBUG_INFO = {}  # type: Dict[str, Any]
 
 
 def get_installation_id(jwt_token):
@@ -110,6 +113,10 @@ def get_workflows_description_for_pull_request(pull_request_event):
 
     workflow_descriptions = []
     for workflow in workflows_data:
+        DEBUG_INFO["workflow"] = workflow
+        # Some time workflow["head_repository"]["full_name"] is None
+        if workflow["head_repository"] is None:
+            continue
         # unfortunately we cannot filter workflows from forks in request to API
         # so doing it manually
         if (
@@ -162,7 +169,8 @@ def exec_workflow_url(urls_to_cancel, token):
 
 def main(event):
     token = get_token_from_aws()
-    event_data = json.loads(event["body"])
+    DEBUG_INFO["event_body"] = event["body"]
+    event_data = event["body"]
 
     print("Got event for PR", event_data["number"])
     action = event_data["action"]
@@ -210,4 +218,9 @@ def main(event):
 
 
 def handler(event, _):
-    main(event)
+    try:
+        main(event)
+    except Exception:
+        for name, value in DEBUG_INFO.items():
+            print(f"Value of {name}: ", value)
+        raise

@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
 
@@ -40,6 +41,7 @@ class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
+class MergeTreeTransaction;
 
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
@@ -327,6 +329,8 @@ public:
 
     CompressionCodecPtr default_codec;
 
+    mutable VersionMetadata version;
+
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -414,6 +418,8 @@ public:
     /// (number of rows, number of rows with default values, etc).
     static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
+    static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
+
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
     /// for zero copy replication. Sadly it's very complex.
@@ -435,11 +441,37 @@ public:
     /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
 
+    /// Ensures that creation_tid was correctly set after part creation.
+    void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
+
+    /// [Re]writes file with transactional metadata on disk
+    void storeVersionMetadata() const;
+
+    /// Appends the corresponding CSN to file on disk (without fsync)
+    void appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const;
+
+    /// Appends removal TID to file on disk (with fsync)
+    void appendRemovalTIDToVersionMetadata(bool clear = false) const;
+
+    /// Loads transactional metadata from disk
+    void loadVersionMetadata() const;
+
+    /// Returns true if part was created or removed by a transaction
+    bool wasInvolvedInTransaction() const;
+
+    /// Moar hardening: this method is supposed to be used for debug assertions
+    bool assertHasValidVersionMetadata() const;
+
+    /// Return hardlink count for part.
+    /// Required for keep data on remote FS when part has shadow copies.
+    UInt32 getNumberOfRefereneces() const;
+
     /// Get checksums of metadata file in part directory
     IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
 
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;
+
 
 protected:
 
@@ -551,6 +583,9 @@ private:
     CompressionCodecPtr detectDefaultCompressionCodec() const;
 
     mutable State state{State::Temporary};
+
+    /// This ugly flag is needed for debug assertions only
+    mutable bool part_is_probably_removed_from_disk = false;
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;
