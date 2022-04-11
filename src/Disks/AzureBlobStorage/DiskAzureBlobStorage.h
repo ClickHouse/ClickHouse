@@ -67,9 +67,7 @@ public:
 
     bool checkUniqueId(const String & id) const override;
 
-    void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) override;
-
-    RemoteFSPathKeeperPtr createFSPathKeeper() const override;
+    void removeFromRemoteFS(const std::vector<String> & paths) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &) override;
 
