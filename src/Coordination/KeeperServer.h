@@ -1,12 +1,10 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx>
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
-#include <base/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
@@ -17,6 +15,33 @@ using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buff
 class KeeperServer
 {
 private:
+
+    struct KeeperRaftServer : public nuraft::raft_server
+    {
+        bool isClusterHealthy()
+        {
+            if (timer_from_init)
+            {
+                size_t expiry = get_current_params().heart_beat_interval_ *
+                                 raft_server::raft_limits_.response_limit_;
+
+                if (timer_from_init->elapsedMilliseconds() < expiry)
+                    return false;
+            }
+
+            const size_t voting_members = get_num_voting_members();
+            const auto not_responding_peers = get_not_responding_peers();
+            const auto quorum_size = voting_members / 2 + 1;
+            const auto max_not_responding_peers = voting_members - quorum_size;
+
+            return not_responding_peers <= max_not_responding_peers;
+        }
+
+        using nuraft::raft_server::raft_server;
+
+        std::optional<Stopwatch> timer_from_init = std::make_optional<Stopwatch>();
+    };
+
     const int server_id;
 
     CoordinationSettingsPtr coordination_settings;
@@ -25,7 +50,7 @@ private:
 
     nuraft::ptr<KeeperStateManager> state_manager;
 
-    nuraft::ptr<nuraft::raft_server> raft_instance;
+    nuraft::ptr<KeeperRaftServer> raft_instance;
     nuraft::ptr<nuraft::asio_service> asio_service;
     nuraft::ptr<nuraft::rpc_listener> asio_listener;
 
@@ -50,7 +75,8 @@ private:
     void shutdownRaftServer();
 
     void loadLatestConfig();
-    bool recover = false;
+
+    std::atomic_bool recover = false;
 
 public:
     KeeperServer(
@@ -65,6 +91,11 @@ public:
     /// Put local read request and execute in state machine directly and response into
     /// responses queue
     void putLocalReadRequest(const KeeperStorage::RequestForSession & request);
+
+    bool inRecover() const
+    {
+        return recover;
+    }
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
     /// responses_queue.
