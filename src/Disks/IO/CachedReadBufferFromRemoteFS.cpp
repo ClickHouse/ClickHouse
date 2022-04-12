@@ -585,29 +585,35 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 
     SCOPE_EXIT({
         /// Save state of current file segment before it is completed.
-        nextimpl_step_log_info = getInfoForLog();
-
-        if (current_file_segment_it == file_segments_holder->file_segments.end())
-            return;
-
-        auto & file_segment = *current_file_segment_it;
-
-        bool download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-        if (download_current_segment)
+        try
         {
-            try
-            {
-                bool file_segment_already_completed = !file_segment->isDownloader();
-                if (!file_segment_already_completed)
-                    file_segment->completeBatchAndResetDownloader();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
+            nextimpl_step_log_info = getInfoForLog();
 
-        assert(!file_segment->isDownloader());
+            if (current_file_segment_it == file_segments_holder->file_segments.end())
+                return;
+
+            auto & file_segment = *current_file_segment_it;
+
+            bool download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
+            if (download_current_segment)
+            {
+                try
+                {
+                    bool file_segment_already_completed = !file_segment->isDownloader();
+                    if (!file_segment_already_completed)
+                        file_segment->completeBatchAndResetDownloader();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+            }
+            assert(!file_segment->isDownloader());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("while exiting from nextImpl()");
+        }
     });
 
     bytes_to_predownload = 0;
@@ -735,8 +741,15 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 
     swap(*implementation_buffer);
 
-    if (download_current_segment)
-        file_segment->completeBatchAndResetDownloader();
+    try
+    {
+        if (download_current_segment)
+            file_segment->completeBatchAndResetDownloader();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("which finilizing current batch. Info: " + file_segment->getInfoForLog());
+    }
 
     assert(!file_segment->isDownloader());
 
