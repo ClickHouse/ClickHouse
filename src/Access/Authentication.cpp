@@ -31,7 +31,7 @@ namespace
         return (Util::encodeDoubleSHA1(password) == password_double_sha1);
     }
 
-    bool checkPasswordSHA256(const std::string_view & password, const Digest & password_sha256, String & salt)
+    bool checkPasswordSHA256(const std::string_view & password, const Digest & password_sha256, const String & salt)
     {
         return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
     }
