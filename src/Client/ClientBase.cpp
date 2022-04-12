@@ -1864,8 +1864,9 @@ void ClientBase::runInteractive()
         {
             if (input.ends_with("\\G"))
                 input.resize(input.size() - 2);
-            if (input.ends_with("\\G;"))
+            else if (input.ends_with("\\G;"))
                 input.resize(input.size() - 3);
+
             has_vertical_output_suffix = true;
         }
 
