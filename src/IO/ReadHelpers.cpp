@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_DATE;
     extern const int INCORRECT_DATA;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -135,6 +136,12 @@ void assertEOF(ReadBuffer & buf)
 {
     if (!buf.eof())
         throwAtAssertionFailed("eof", buf);
+}
+
+void assertNotEOF(ReadBuffer & buf)
+{
+    if (buf.eof())
+        throw Exception("Attempt to read after EOF", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
 
@@ -1366,6 +1373,7 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
     /// - Tuples: (...)
     /// - Maps: {...}
     /// - NULL
+    /// - Bool: true/false
     /// - Number: integer, float, decimal.
 
     if (*buf.position() == '\'')
@@ -1393,6 +1401,16 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
             assertStringCaseInsensitive("an", buf);
             s.append("NaN");
         }
+    }
+    else if (checkCharCaseInsensitive('t', buf))
+    {
+        assertStringCaseInsensitive("rue", buf);
+        s.append("true");
+    }
+    else if (checkCharCaseInsensitive('f', buf))
+    {
+        assertStringCaseInsensitive("alse", buf);
+        s.append("false");
     }
     else
     {
