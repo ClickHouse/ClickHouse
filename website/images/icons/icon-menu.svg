@@ -1,10 +1,1 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg width="24px" height="21px" viewBox="0 0 24 21" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-    <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
-        <g id="Group" fill="#495057">
-            <rect id="Rectangle" x="0" y="0" width="24" height="3"></rect>
-            <rect id="Rectangle" x="0" y="9" width="24" height="3"></rect>
-            <rect id="Rectangle" x="0" y="18" width="24" height="3"></rect>
-        </g>
-    </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="21" version="1.1" viewBox="0 0 24 21"><g id="Page-1" fill="none" fill-rule="evenodd" stroke="none" stroke-width="1"><g id="Group" fill="#495057"><rect id="Rectangle" width="24" height="3" x="0" y="0"/><rect id="Rectangle" width="24" height="3" x="0" y="9"/><rect id="Rectangle" width="24" height="3" x="0" y="18"/></g></g></svg>

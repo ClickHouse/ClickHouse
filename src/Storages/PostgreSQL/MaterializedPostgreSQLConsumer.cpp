@@ -98,8 +98,24 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
 }
 
 
+void MaterializedPostgreSQLConsumer::assertCorrectInsertion(StorageData::Buffer & buffer, size_t column_idx)
+{
+    if (column_idx >= buffer.description.sample_block.columns()
+        || column_idx >= buffer.description.types.size()
+        || column_idx >= buffer.columns.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Attempt to insert into buffer at position: {}, but block columns size is {}, types size: {}, columns size: {}, buffer structure: {}",
+            column_idx,
+            buffer.description.sample_block.columns(), buffer.description.types.size(), buffer.columns.size(),
+            buffer.description.sample_block.dumpStructure());
+}
+
+
 void MaterializedPostgreSQLConsumer::insertValue(StorageData::Buffer & buffer, const std::string & value, size_t column_idx)
 {
+    assertCorrectInsertion(buffer, column_idx);
+
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     bool is_nullable = buffer.description.types[column_idx].second;
 
@@ -134,6 +150,8 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData::Buffer & buffer, c
 
 void MaterializedPostgreSQLConsumer::insertDefaultValue(StorageData::Buffer & buffer, size_t column_idx)
 {
+    assertCorrectInsertion(buffer, column_idx);
+
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     insertDefaultPostgreSQLValue(*buffer.columns[column_idx], *sample.column);
 }
@@ -515,13 +533,14 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
 void MaterializedPostgreSQLConsumer::syncTables()
 {
-    try
+    for (const auto & table_name : tables_to_sync)
     {
-        for (const auto & table_name : tables_to_sync)
-        {
-            auto & storage_data = storages.find(table_name)->second;
-            Block result_rows = storage_data.buffer.description.sample_block.cloneWithColumns(std::move(storage_data.buffer.columns));
+        auto & storage_data = storages.find(table_name)->second;
+        Block result_rows = storage_data.buffer.description.sample_block.cloneWithColumns(std::move(storage_data.buffer.columns));
+        storage_data.buffer.columns = storage_data.buffer.description.sample_block.cloneEmptyColumns();
 
+        try
+        {
             if (result_rows.rows())
             {
                 auto storage = storage_data.storage;
@@ -543,13 +562,18 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
                 CompletedPipelineExecutor executor(io.pipeline);
                 executor.execute();
-
-                storage_data.buffer.columns = storage_data.buffer.description.sample_block.cloneEmptyColumns();
             }
         }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
-        LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
+    LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
 
+    try
+    {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
         current_lsn = advanceLSN(tx);
         tables_to_sync.clear();
@@ -645,6 +669,10 @@ void MaterializedPostgreSQLConsumer::addNested(
     assert(!storages.contains(postgres_table_name));
     storages.emplace(postgres_table_name, nested_storage_info);
 
+    auto it = deleted_tables.find(postgres_table_name);
+    if (it != deleted_tables.end())
+        deleted_tables.erase(it);
+
     /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
     /// changes to this table.
     waiting_list[postgres_table_name] = table_start_lsn;
@@ -663,7 +691,9 @@ void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, Sto
 
 void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_name)
 {
-    storages.erase(postgres_table_name);
+    auto it = storages.find(postgres_table_name);
+    if (it != storages.end())
+        storages.erase(it);
     deleted_tables.insert(postgres_table_name);
 }
 
@@ -727,6 +757,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
             {
                 if (e.code() == ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
                     continue;
+
                 throw;
             }
         }

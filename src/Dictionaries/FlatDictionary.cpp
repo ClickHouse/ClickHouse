@@ -32,13 +32,11 @@ FlatDictionary::FlatDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
     Configuration configuration_,
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
-    , dict_lifetime(dict_lifetime_)
     , configuration(configuration_)
     , loaded_keys(configuration.initial_array_size, false)
     , update_field_loaded_block(std::move(update_field_loaded_block_))
@@ -147,7 +145,7 @@ ColumnPtr FlatDictionary::getColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (attribute.is_nullable_set)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
 
     return result;
 }
@@ -572,7 +570,7 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
             keys.push_back(key_index);
 
     auto keys_column = getColumnFromPODArray(std::move(keys));
-    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(keys_column, std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
     auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
@@ -604,18 +602,19 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         static constexpr size_t default_max_array_size = 500000;
 
         String dictionary_layout_prefix = config_prefix + ".layout" + ".flat";
+        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
         FlatDictionary::Configuration configuration
         {
             .initial_array_size = config.getUInt64(dictionary_layout_prefix + ".initial_array_size", default_initial_array_size),
             .max_array_size = config.getUInt64(dictionary_layout_prefix + ".max_array_size", default_max_array_size),
-            .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false)
+            .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false),
+            .dict_lifetime = dict_lifetime
         };
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
-        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
-        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, std::move(configuration));
+        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), std::move(configuration));
     };
 
     factory.registerLayout("flat", create_layout, false);

@@ -16,6 +16,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -442,9 +443,9 @@ namespace
                 pattern_list_args->children = {
                     std::make_shared<ASTLiteral>("^["),
                     to_remove,
-                    std::make_shared<ASTLiteral>("]*|["),
+                    std::make_shared<ASTLiteral>("]+|["),
                     to_remove,
-                    std::make_shared<ASTLiteral>("]*$")
+                    std::make_shared<ASTLiteral>("]+$")
                 };
                 func_name = "replaceRegexpAll";
             }
@@ -455,7 +456,7 @@ namespace
                     pattern_list_args->children = {
                         std::make_shared<ASTLiteral>("^["),
                         to_remove,
-                        std::make_shared<ASTLiteral>("]*")
+                        std::make_shared<ASTLiteral>("]+")
                     };
                 }
                 else
@@ -464,7 +465,7 @@ namespace
                     pattern_list_args->children = {
                         std::make_shared<ASTLiteral>("["),
                         to_remove,
-                        std::make_shared<ASTLiteral>("]*$")
+                        std::make_shared<ASTLiteral>("]+$")
                     };
                 }
                 func_name = "replaceRegexpOne";
@@ -505,32 +506,34 @@ namespace
 
     bool parseExtract(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
-        ASTPtr expr;
-
+        IParser::Pos begin = pos;
         IntervalKind interval_kind;
-        if (!parseIntervalKind(pos, expected, interval_kind))
-        {
-            ASTPtr expr_list;
-            if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
-                return false;
 
-            auto res = std::make_shared<ASTFunction>();
-            res->name = "extract";
-            res->arguments = expr_list;
-            res->children.push_back(res->arguments);
-            node = std::move(res);
-            return true;
+        if (parseIntervalKind(pos, expected, interval_kind))
+        {
+            ASTPtr expr;
+
+            ParserKeyword s_from("FROM");
+            ParserExpression elem_parser;
+
+            if (s_from.ignore(pos, expected) && elem_parser.parse(pos, expr, expected))
+            {
+                node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
+                return true;
+            }
         }
 
-        ParserKeyword s_from("FROM");
-        if (!s_from.ignore(pos, expected))
+        pos = begin;
+
+        ASTPtr expr_list;
+        if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
             return false;
 
-        ParserExpression elem_parser;
-        if (!elem_parser.parse(pos, expr, expected))
-            return false;
-
-        node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
+        auto res = std::make_shared<ASTFunction>();
+        res->name = "extract";
+        res->arguments = expr_list;
+        res->children.push_back(res->arguments);
+        node = std::move(res);
         return true;
     }
 
@@ -2314,6 +2317,35 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     return true;
 }
 
+bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword as("AS");
+    ParserExpression element_p;
+    ParserIdentifier ident_p;
+
+    ASTPtr ident;
+    if (!ident_p.parse(pos, ident, expected))
+        return false;
+
+    ASTPtr expr;
+    if (as.ignore(pos, expected))
+    {
+        if (!element_p.parse(pos, expr, expected))
+            return false;
+    }
+    else
+        expr = ident;
+
+    auto elem = std::make_shared<ASTInterpolateElement>();
+    elem->column = ident->getColumnName();
+    elem->expr = expr;
+    elem->children.push_back(expr);
+
+    node = elem;
+
+    return true;
+}
+
 bool ParserFunctionWithKeyValueArguments::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
@@ -2360,6 +2392,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_to_disk("TO DISK");
     ParserKeyword s_to_volume("TO VOLUME");
+    ParserKeyword s_if_exists("IF EXISTS");
     ParserKeyword s_delete("DELETE");
     ParserKeyword s_where("WHERE");
     ParserKeyword s_group_by("GROUP BY");
@@ -2414,9 +2447,13 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr group_by_key;
     ASTPtr recompression_codec;
     ASTPtr group_by_assignments;
+    bool if_exists = false;
 
     if (mode == TTLMode::MOVE)
     {
+        if (s_if_exists.ignore(pos))
+            if_exists = true;
+
         ASTPtr ast_space_name;
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
@@ -2448,7 +2485,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    auto ttl_element = std::make_shared<ASTTTLElement>(mode, destination_type, destination_name);
+    auto ttl_element = std::make_shared<ASTTTLElement>(mode, destination_type, destination_name, if_exists);
     ttl_element->setTTL(std::move(ttl_expr));
     if (where_expr)
         ttl_element->setWhere(std::move(where_expr));

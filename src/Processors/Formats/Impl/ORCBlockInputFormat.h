@@ -38,14 +38,13 @@ protected:
     }
 
 private:
+    void prepareReader();
 
     // TODO: check that this class implements every part of its parent
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
 
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
-
-    std::vector<String> column_names;
 
     // indices of columns to read from ORC file
     std::vector<int> include_indices;
@@ -54,8 +53,10 @@ private:
     BlockMissingValues block_missing_values;
 
     const FormatSettings format_settings;
+    const std::unordered_set<int> & skip_stripes;
 
-    void prepareReader();
+    int stripe_total = 0;
+    int stripe_current = 0;
 
     std::atomic<int> is_stopped{0};
 };

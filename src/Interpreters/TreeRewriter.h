@@ -19,11 +19,13 @@ struct SelectQueryOptions;
 using Scalars = std::map<String, Block>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;
 
 struct TreeRewriterResult
 {
     ConstStoragePtr storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     std::shared_ptr<TableJoin> analyzed_join;
     const ASTTablesInSelectQueryElement * ast_join = nullptr;
 
@@ -80,7 +82,7 @@ struct TreeRewriterResult
     explicit TreeRewriterResult(
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage_ = {},
-        const StorageMetadataPtr & metadata_snapshot_ = {},
+        const StorageSnapshotPtr & storage_snapshot_ = {},
         bool add_special = true);
 
     void collectSourceColumns(bool add_special);
@@ -112,7 +114,7 @@ public:
         ASTPtr & query,
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage = {},
-        const StorageMetadataPtr & metadata_snapshot = {},
+        const StorageSnapshotPtr & storage_snapshot = {},
         bool allow_aggregations = false,
         bool allow_self_aliases = true,
         bool execute_scalar_subqueries = true) const;

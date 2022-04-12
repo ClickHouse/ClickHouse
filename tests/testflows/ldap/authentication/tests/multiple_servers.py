@@ -2,13 +2,14 @@ from testflows.core import *
 from testflows.asserts import error
 
 from ldap.authentication.tests.common import login
-from ldap.authentication.requirements import RQ_SRS_007_LDAP_Authentication_MultipleServers
+from ldap.authentication.requirements import (
+    RQ_SRS_007_LDAP_Authentication_MultipleServers,
+)
+
 
 @TestScenario
 @Name("multiple servers")
-@Requirements(
-    RQ_SRS_007_LDAP_Authentication_MultipleServers("1.0")
-)
+@Requirements(RQ_SRS_007_LDAP_Authentication_MultipleServers("1.0"))
 def scenario(self, node="clickhouse1"):
     """Check that multiple LDAP servers can be used to
     authenticate users.
@@ -21,7 +22,7 @@ def scenario(self, node="clickhouse1"):
             "port": "389",
             "enable_tls": "no",
             "auth_dn_prefix": "cn=",
-            "auth_dn_suffix": ",ou=users,dc=company,dc=com"
+            "auth_dn_suffix": ",ou=users,dc=company,dc=com",
         },
         "openldap2": {
             "host": "openldap2",
@@ -33,9 +34,21 @@ def scenario(self, node="clickhouse1"):
         },
     }
     users = [
-        {"server": "openldap1", "username": "user1", "password": "user1", "login": True},
-        {"server": "openldap2", "username": "user2", "password": "user2", "login": True}
+        {
+            "server": "openldap1",
+            "username": "user1",
+            "password": "user1",
+            "login": True,
+        },
+        {
+            "server": "openldap2",
+            "username": "user2",
+            "password": "user2",
+            "login": True,
+        },
     ]
 
-    with When("I add multiple LDAP servers and users that use different servers and try to login"):
+    with When(
+        "I add multiple LDAP servers and users that use different servers and try to login"
+    ):
         login(servers, *users)

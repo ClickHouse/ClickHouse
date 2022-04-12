@@ -31,6 +31,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -52,6 +53,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/ObjectUtils.h>
+#include <DataTypes/hasNullable.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
@@ -94,6 +97,7 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
+    extern const int UNKNOWN_STORAGE;
 }
 
 namespace fs = std::filesystem;
@@ -477,6 +481,21 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             {
                 column_type = makeNullable(column_type);
             }
+            else if (!hasNullable(column_type) &&
+                     col_decl.default_specifier == "DEFAULT" &&
+                     col_decl.default_expression &&
+                     col_decl.default_expression->as<ASTLiteral>() &&
+                     col_decl.default_expression->as<ASTLiteral>()->value.isNull())
+            {
+                if (column_type->lowCardinality())
+                {
+                    const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
+                    assert(low_cardinality_type);
+                    column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
+                }
+                else
+                    column_type = makeNullable(column_type);
+            }
 
             column_names_and_types.emplace_back(col_decl.name, column_type);
         }
@@ -505,7 +524,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
                 default_expr_list->children.emplace_back(
                     setAlias(
-                        col_decl.default_expression->clone(),
+                        col_decl.default_specifier == "EPHEMERAL" ? /// can be ASTLiteral::value NULL
+                            std::make_shared<ASTLiteral>(data_type_ptr->getDefault()) :
+                            col_decl.default_expression->clone(),
                         tmp_column_name));
             }
             else
@@ -533,7 +554,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.default_expression)
         {
-            ASTPtr default_expr = col_decl.default_expression->clone();
+            ASTPtr default_expr =
+                col_decl.default_specifier == "EPHEMERAL" && col_decl.default_expression->as<ASTLiteral>()->value.isNull() ?
+                    std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(col_decl.type)->getDefault()) :
+                    col_decl.default_expression->clone();
+
             if (col_decl.type)
                 column.type = name_type_it->type;
             else
@@ -642,6 +667,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             properties.indices = as_storage_metadata->getSecondaryIndices();
             properties.projections = as_storage_metadata->getProjections().clone();
         }
+        else
+        {
+            /// Only MergeTree support TTL
+            properties.columns.resetColumnTTLs();
+        }
 
         properties.constraints = as_storage_metadata->getConstraints();
     }
@@ -726,8 +756,23 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             {
                 String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
                                  + type + "' because experimental geo types are not allowed. "
-                                 + "Set setting allow_experimental_geo_types = 1 in order to allow it.";
+                                 + "Set setting allow_experimental_geo_types = 1 in order to allow it";
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+    }
+
+    if (!create.attach && !settings.allow_experimental_object_type)
+    {
+        for (const auto & [name, type] : properties.columns.getAllPhysical())
+        {
+            if (isObject(type))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create table with column '{}' which type is '{}' "
+                    "because experimental Object type is not allowed. "
+                    "Set setting allow_experimental_object_type = 1 in order to allow it",
+                    name, type->getName());
             }
         }
     }
@@ -1057,7 +1102,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     QualifiedTableName qualified_name{database_name, create.getTable()};
     TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
     if (!loading_dependencies.empty())
-        DatabaseCatalog::instance().addLoadingDependencies(std::move(qualified_name), std::move(loading_dependencies));
+        DatabaseCatalog::instance().addLoadingDependencies(qualified_name, std::move(loading_dependencies));
 
     return fillTableIfNeeded(create);
 }
@@ -1106,6 +1151,20 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 throw Exception(storage_already_exists_error_code,
                     "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
         }
+        else if (!create.attach)
+        {
+            /// Checking that table may exists in detached/detached permanently state
+            try
+            {
+                database->checkMetadataFilenameAvailability(create.getTable());
+            }
+            catch (const Exception &)
+            {
+                if (create.if_not_exists)
+                    return false;
+                throw;
+            }
+        }
 
 
         data_path = database->getTableDataPath(create);
@@ -1143,11 +1202,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// old instance of the storage. For example, AsynchronousMetrics may cause ATTACH to fail,
         /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
         /// and old storage instance still exists it will throw exception.
-        bool throw_if_table_in_use = getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously;
-        if (throw_if_table_in_use)
-            database->checkDetachedTableNotInUse(create.uuid);
-        else
+        if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
             database->waitDetachedTableNotInUse(create.uuid);
+        else
+            database->checkDetachedTableNotInUse(create.uuid);
     }
 
     StoragePtr res;
@@ -1171,6 +1229,17 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             properties.columns,
             properties.constraints,
             false);
+
+        /// If schema wes inferred while storage creation, add columns description to create query.
+        addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
+    }
+
+    if (!create.attach && getContext()->getSettingsRef().database_replicated_allow_only_replicated_engine)
+    {
+        bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
+        if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
+            throw Exception(ErrorCodes::UNKNOWN_STORAGE,
+                            "Only table with Replicated engine or tables which does not store data on disk are allowed in Replicated database");
     }
 
     if (from_path && !res->storesDataOnDisk())
@@ -1197,6 +1266,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Also note that "startup" method is exception-safe. If exception is thrown from "startup",
     /// we can safely destroy the object without a call to "shutdown", because there is guarantee
     /// that no background threads/similar resources remain after exception from "startup".
+
+    if (!res->supportsDynamicSubcolumns() && hasObjectColumns(res->getInMemoryMetadataPtr()->getColumns()))
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Object, "
+            "because storage {} doesn't support dynamic subcolumns",
+            res->getName());
+    }
 
     res->startup();
     return true;
@@ -1467,6 +1544,28 @@ void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
         String database = backQuoteIfNeed(as_database_saved.empty() ? getContext()->getCurrentDatabase() : as_database_saved);
         elem.query_databases.insert(database);
         elem.query_tables.insert(database + "." + backQuoteIfNeed(as_table_saved));
+    }
+}
+
+void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage)
+{
+    if (create.is_dictionary || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
+        return;
+
+    auto ast_storage = std::make_shared<ASTStorage>();
+    auto query_from_storage = DB::getCreateQueryFromStorage(storage, ast_storage, false,
+                                                            getContext()->getSettingsRef().max_parser_depth, true);
+    auto & create_query_from_storage = query_from_storage->as<ASTCreateQuery &>();
+
+    if (!create.columns_list)
+    {
+        ASTPtr columns_list = std::make_shared<ASTColumns>(*create_query_from_storage.columns_list);
+        create.set(create.columns_list, columns_list);
+    }
+    else
+    {
+        ASTPtr columns = std::make_shared<ASTExpressionList>(*create_query_from_storage.columns_list->columns);
+        create.columns_list->set(create.columns_list->columns, columns);
     }
 }
 

@@ -9,7 +9,9 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -22,7 +24,9 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/setThreadName.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/WriteHelpers.h>
@@ -39,6 +43,57 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+    class StorageWithComment : public IAST
+    {
+    public:
+        ASTPtr storage;
+        ASTPtr comment;
+
+        String getID(char) const override { return "Storage with comment definition"; }
+
+        ASTPtr clone() const override
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
+        }
+
+        void formatImpl(const FormatSettings &, FormatState &, FormatStateStacked) const override
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
+        }
+    };
+
+    class ParserStorageWithComment : public IParserBase
+    {
+    protected:
+        const char * getName() const override { return "storage definition with comment"; }
+        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+        {
+            ParserStorage storage_p;
+            ASTPtr storage;
+
+            if (!storage_p.parse(pos, storage, expected))
+                return false;
+
+            ParserKeyword s_comment("COMMENT");
+            ParserStringLiteral string_literal_parser;
+            ASTPtr comment;
+
+            if (s_comment.ignore(pos, expected))
+                string_literal_parser.parse(pos, comment, expected);
+
+            auto storage_with_comment = std::make_shared<StorageWithComment>();
+            storage_with_comment->storage = std::move(storage);
+            storage_with_comment->comment = std::move(comment);
+
+            node = storage_with_comment;
+            return true;
+        }
+    };
 }
 
 namespace
@@ -100,8 +155,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
             engine += " TTL " + ttl;
         engine += " ORDER BY (event_date, event_time)";
     }
+
     // Validate engine definition grammatically to prevent some configuration errors
-    ParserStorage storage_parser;
+    ParserStorageWithComment storage_parser;
     parseQuery(storage_parser, engine.data(), engine.data() + engine.size(),
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
@@ -112,9 +168,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 }
 
 
-/// returns CREATE TABLE query, but with removed:
-/// - UUID
-/// - SETTINGS (for MergeTree)
+/// returns CREATE TABLE query, but with removed UUID
 /// That way it can be used to compare with the SystemLog::getCreateTableQuery()
 ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 {
@@ -123,11 +177,6 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
     auto & old_create_query_ast = old_ast->as<ASTCreateQuery &>();
     /// Reset UUID
     old_create_query_ast.uuid = UUIDHelpers::Nil;
-    /// Existing table has default settings (i.e. `index_granularity = 8192`), reset them.
-    if (ASTStorage * storage = old_create_query_ast.storage)
-    {
-        storage->reset(storage->settings);
-    }
     return old_ast;
 }
 
@@ -154,6 +203,9 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     query_views_log = createSystemLog<QueryViewsLog>(global_context, "system", "query_views_log", config, "query_views_log");
     zookeeper_log = createSystemLog<ZooKeeperLog>(global_context, "system", "zookeeper_log", config, "zookeeper_log");
     session_log = createSystemLog<SessionLog>(global_context, "system", "session_log", config, "session_log");
+    transactions_info_log = createSystemLog<TransactionsInfoLog>(
+        global_context, "system", "transactions_info_log", config, "transactions_info_log");
+    processors_profile_log = createSystemLog<ProcessorsProfileLog>(global_context, "system", "processors_profile_log", config, "processors_profile_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -179,6 +231,10 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(zookeeper_log.get());
     if (session_log)
         logs.emplace_back(session_log.get());
+    if (transactions_info_log)
+        logs.emplace_back(transactions_info_log.get());
+    if (processors_profile_log)
+        logs.emplace_back(processors_profile_log.get());
 
     try
     {
@@ -455,7 +511,6 @@ void SystemLog<LogElement>::prepareTable()
     is_prepared = true;
 }
 
-
 template <typename LogElement>
 ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 {
@@ -470,14 +525,30 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
     create->set(create->columns_list, new_columns_list);
 
-    ParserStorage storage_parser;
-    ASTPtr storage_ast = parseQuery(
+    ParserStorageWithComment storage_parser;
+
+    ASTPtr storage_with_comment_ast = parseQuery(
         storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    create->set(create->storage, storage_ast);
+
+    StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
+
+    create->set(create->storage, storage_with_comment.storage);
+    create->set(create->comment, storage_with_comment.comment);
+
+    /// Write additional (default) settings for MergeTree engine to make it make it possible to compare ASTs
+    /// and recreate tables on settings changes.
+    const auto & engine = create->storage->engine->as<ASTFunction &>();
+    if (endsWith(engine.name, "MergeTree"))
+    {
+        auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
+        storage_settings->loadFromQuery(*create->storage);
+    }
+
 
     return create;
 }
+
 
 #define INSTANTIATE_SYSTEM_LOG(ELEMENT) template class SystemLog<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG)

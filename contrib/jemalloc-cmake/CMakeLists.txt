@@ -53,43 +53,75 @@ set (SRCS
     "${LIBRARY_DIR}/src/background_thread.c"
     "${LIBRARY_DIR}/src/base.c"
     "${LIBRARY_DIR}/src/bin.c"
+    "${LIBRARY_DIR}/src/bin_info.c"
     "${LIBRARY_DIR}/src/bitmap.c"
+    "${LIBRARY_DIR}/src/buf_writer.c"
+    "${LIBRARY_DIR}/src/cache_bin.c"
     "${LIBRARY_DIR}/src/ckh.c"
+    "${LIBRARY_DIR}/src/counter.c"
     "${LIBRARY_DIR}/src/ctl.c"
+    "${LIBRARY_DIR}/src/decay.c"
     "${LIBRARY_DIR}/src/div.c"
+    "${LIBRARY_DIR}/src/ecache.c"
+    "${LIBRARY_DIR}/src/edata.c"
+    "${LIBRARY_DIR}/src/edata_cache.c"
+    "${LIBRARY_DIR}/src/ehooks.c"
+    "${LIBRARY_DIR}/src/emap.c"
+    "${LIBRARY_DIR}/src/eset.c"
+    "${LIBRARY_DIR}/src/exp_grow.c"
     "${LIBRARY_DIR}/src/extent.c"
     "${LIBRARY_DIR}/src/extent_dss.c"
     "${LIBRARY_DIR}/src/extent_mmap.c"
-    "${LIBRARY_DIR}/src/hash.c"
+    "${LIBRARY_DIR}/src/fxp.c"
     "${LIBRARY_DIR}/src/hook.c"
+    "${LIBRARY_DIR}/src/hpa.c"
+    "${LIBRARY_DIR}/src/hpa_hooks.c"
+    "${LIBRARY_DIR}/src/hpdata.c"
+    "${LIBRARY_DIR}/src/inspect.c"
     "${LIBRARY_DIR}/src/jemalloc.c"
     "${LIBRARY_DIR}/src/large.c"
     "${LIBRARY_DIR}/src/log.c"
     "${LIBRARY_DIR}/src/malloc_io.c"
     "${LIBRARY_DIR}/src/mutex.c"
-    "${LIBRARY_DIR}/src/mutex_pool.c"
     "${LIBRARY_DIR}/src/nstime.c"
+    "${LIBRARY_DIR}/src/pa.c"
+    "${LIBRARY_DIR}/src/pac.c"
+    "${LIBRARY_DIR}/src/pa_extra.c"
     "${LIBRARY_DIR}/src/pages.c"
-    "${LIBRARY_DIR}/src/prng.c"
+    "${LIBRARY_DIR}/src/pai.c"
+    "${LIBRARY_DIR}/src/peak_event.c"
     "${LIBRARY_DIR}/src/prof.c"
+    "${LIBRARY_DIR}/src/prof_data.c"
+    "${LIBRARY_DIR}/src/prof_log.c"
+    "${LIBRARY_DIR}/src/prof_recent.c"
+    "${LIBRARY_DIR}/src/prof_stats.c"
+    "${LIBRARY_DIR}/src/prof_sys.c"
+    "${LIBRARY_DIR}/src/psset.c"
     "${LIBRARY_DIR}/src/rtree.c"
+    "${LIBRARY_DIR}/src/safety_check.c"
+    "${LIBRARY_DIR}/src/san_bump.c"
+    "${LIBRARY_DIR}/src/san.c"
     "${LIBRARY_DIR}/src/sc.c"
+    "${LIBRARY_DIR}/src/sec.c"
     "${LIBRARY_DIR}/src/stats.c"
     "${LIBRARY_DIR}/src/sz.c"
     "${LIBRARY_DIR}/src/tcache.c"
     "${LIBRARY_DIR}/src/test_hooks.c"
+    "${LIBRARY_DIR}/src/thread_event.c"
     "${LIBRARY_DIR}/src/ticker.c"
     "${LIBRARY_DIR}/src/tsd.c"
     "${LIBRARY_DIR}/src/witness.c"
-    "${LIBRARY_DIR}/src/safety_check.c"
 )
 if (OS_DARWIN)
     list(APPEND SRCS "${LIBRARY_DIR}/src/zone.c")
 endif ()
 
 add_library(_jemalloc ${SRCS})
+# First include jemalloc-cmake files, to override anything that jemalloc has.
+# (for example if you were trying to build jemalloc inside contrib/jemalloc you
+# will have some files that may be out of date)
+target_include_directories(_jemalloc PUBLIC include)
 target_include_directories(_jemalloc PRIVATE "${LIBRARY_DIR}/include")
-target_include_directories(_jemalloc SYSTEM PUBLIC include)
 
 set (JEMALLOC_INCLUDE_PREFIX)
 # OS_

@@ -44,7 +44,8 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode) override;
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
@@ -71,18 +72,13 @@ public:
     void shutdown() override;
     void startup() override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
+    String getCacheBasePath() const override { return delegate->getCacheBasePath(); }
+    std::vector<String> getRemotePaths(const String & path) const override { return delegate->getRemotePaths(path); }
+    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
-    std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> size) const override { return delegate->readMetaFile(path, settings, size); }
+    DiskPtr getMetadataDiskIfExistsOrSelf() override { return delegate->getMetadataDiskIfExistsOrSelf(); }
 
-    std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
-        const String & path,
-        size_t buf_size,
-        WriteMode mode) override { return delegate->writeMetaFile(path, buf_size, mode); }
-
-    void removeMetaFileIfExists(const String & path) override { delegate->removeMetaFileIfExists(path); }
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override { return delegate->getSerializedMetadata(file_paths); }
 
     UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
 

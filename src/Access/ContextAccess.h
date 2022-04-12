@@ -158,7 +158,7 @@ public:
 
 private:
     friend class AccessControl;
-    ContextAccess() {}
+    ContextAccess() {} /// NOLINT
     ContextAccess(const AccessControl & access_control_, const Params & params_);
 
     void initialize();
