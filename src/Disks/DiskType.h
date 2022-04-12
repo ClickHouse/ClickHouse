@@ -14,6 +14,7 @@ enum class DiskType
     Encrypted,
     WebServer,
     AzureBlobStorage,
+    Cache,
 };
 
 inline String toString(DiskType disk_type)
@@ -34,6 +35,8 @@ inline String toString(DiskType disk_type)
             return "web";
         case DiskType::AzureBlobStorage:
             return "azure_blob_storage";
+        case DiskType::Cache:
+            return "cache";
     }
     __builtin_unreachable();
 }

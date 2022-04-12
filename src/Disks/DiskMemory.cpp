@@ -344,7 +344,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & pa
     return std::make_unique<WriteIndirectBuffer>(this, path, mode, buf_size);
 }
 
-void DiskMemory::removeFile(const String & path)
+bool DiskMemory::removeFile(const String & path)
 {
     std::lock_guard lock(mutex);
 
@@ -356,6 +356,8 @@ void DiskMemory::removeFile(const String & path)
         throw Exception("Path '" + path + "' is a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
     else
         files.erase(file_it);
+
+    return true;
 }
 
 void DiskMemory::removeDirectory(const String & path)
@@ -378,18 +380,20 @@ void DiskMemory::removeDirectory(const String & path)
     }
 }
 
-void DiskMemory::removeFileIfExists(const String & path)
+bool DiskMemory::removeFileIfExists(const String & path)
 {
     std::lock_guard lock(mutex);
 
     auto file_it = files.find(path);
     if (file_it == files.end())
-        return;
+        return false;
 
     if (file_it->second.type == FileType::Directory)
         throw Exception("Path '" + path + "' is a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
     else
         files.erase(file_it);
+
+    return true;
 }
 
 void DiskMemory::removeRecursive(const String & path)

@@ -7,10 +7,10 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Disks/DiskRestartProxy.h>
-#include <Disks/DiskCacheWrapper.h>
 #include <Disks/RemoteDisksCommon.h>
 #include <Disks/AzureBlobStorage/DiskAzureBlobStorage.h>
 #include <Disks/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <IO/WriteBufferFromFile.h>
 
 
 namespace DB
@@ -102,12 +102,6 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
         }
 
         azure_blob_storage_disk->startup();
-
-        if (config.getBool(config_prefix + ".cache_enabled", true))
-        {
-            String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
-            azure_blob_storage_disk = wrapWithCache(azure_blob_storage_disk, "azure-blob-storage-cache", cache_path, metadata_path);
-        }
 
         return std::make_shared<DiskRestartProxy>(azure_blob_storage_disk);
     };

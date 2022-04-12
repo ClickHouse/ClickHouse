@@ -95,16 +95,7 @@ public:
 
     bool reserve(size_t size);
 
-    void write(const char * from, size_t size, size_t offset_);
-
-    /**
-     * writeInMemory and finalizeWrite are used together to write a single file with delay.
-     * Both can be called only once, one after another. Used for writing cache via threadpool
-     * on wrote operations. TODO: this solution is temporary, until adding a separate cache layer.
-     */
-    void writeInMemory(const char * from, size_t size);
-
-    size_t finalizeWrite();
+    void write(const char * from, size_t size, size_t offset_, bool finalize = false);
 
     RemoteFileReaderPtr getRemoteFileReader();
 

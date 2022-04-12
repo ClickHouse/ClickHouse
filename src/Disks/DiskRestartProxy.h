@@ -49,11 +49,12 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override;
-    void removeFile(const String & path) override;
-    void removeFileIfExists(const String & path) override;
+    bool removeFile(const String & path) override;
+    bool removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
-    void removeSharedFile(const String & path, bool keep_s3) override;
+    bool removeSharedFile(const String & path, bool keep_s3) override;
+    bool removeSharedFileIfExists(const String & path, bool keep_s3) override;
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs) override;
     void removeSharedRecursive(const String & path, bool keep_s3) override;
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
@@ -63,7 +64,7 @@ public:
     void truncateFile(const String & path, size_t size) override;
     String getUniqueId(const String & path) const override;
     bool checkUniqueId(const String & id) const override;
-    String getCacheBasePath() const override;
+    const String & getCacheBasePath() const override;
     std::vector<String> getRemotePaths(const String & path) const override;
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 

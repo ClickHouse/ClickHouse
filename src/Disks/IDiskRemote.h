@@ -3,7 +3,6 @@
 #include <Common/config.h>
 
 #include <atomic>
-#include <Common/FileCache_fwd.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/Executor.h>
 #include <utility>
@@ -54,7 +53,6 @@ public:
         const String & name_,
         const String & remote_fs_root_path_,
         DiskPtr metadata_disk_,
-        FileCachePtr cache_,
         const String & log_name_,
         size_t thread_pool_size);
 
@@ -64,8 +62,6 @@ public:
     const String & getName() const final override { return name; }
 
     const String & getPath() const final override { return metadata_disk->getPath(); }
-
-    String getCacheBasePath() const final override;
 
     std::vector<String> getRemotePaths(const String & local_path) const final override;
 
@@ -77,11 +73,11 @@ public:
     /// metadata read and write, but not for create new metadata.
     Metadata readMetadata(const String & path) const;
     Metadata readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const;
-    Metadata readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
-    Metadata readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, MetadataUpdater updater);
 
-    Metadata createAndStoreMetadata(const String & path, bool sync);
-    Metadata createUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
+    void createAndStoreMetadata(const String & path, bool sync);
+    void createUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
+    void readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
+    void readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, IDiskRemote::MetadataUpdater updater);
 
     UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
 
@@ -103,15 +99,15 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void removeFile(const String & path) override { removeSharedFile(path, false); }
+    bool removeFile(const String & path) override { return removeSharedFile(path, false); }
 
-    void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
+    bool removeFileIfExists(const String & path) override { return removeSharedFileIfExists(path, false); }
 
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
 
-    void removeSharedFile(const String & path, bool delete_metadata_only) override;
+    bool removeSharedFile(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
+    bool removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
     void removeSharedFiles(const RemoveBatchRequest & files, bool delete_metadata_only) override;
 
@@ -166,8 +162,6 @@ protected:
     const String remote_fs_root_path;
 
     DiskPtr metadata_disk;
-
-    FileCachePtr cache;
 
 private:
     void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
@@ -235,11 +229,11 @@ struct IDiskRemote::Metadata : RemoteMetadata
     void addObject(const String & path, size_t size);
 
     static Metadata readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_);
-    static Metadata readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    static bool readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
 
-    static Metadata createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
-    static Metadata createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
-    static Metadata createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite);
+    static void createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
+    static bool createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    static void createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite);
 
     /// Serialize metadata to string (very same with saveToBuffer)
     std::string serializeToString();

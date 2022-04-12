@@ -7,6 +7,7 @@
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
+#include <IO/WriteBufferFromFile.h>
 #include <Common/getRandomASCIIString.h>
 
 
@@ -38,7 +39,7 @@ DiskAzureBlobStorage::DiskAzureBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_) :
-    IDiskRemote(name_, "", metadata_disk_, nullptr, "DiskAzureBlobStorage", settings_->thread_pool_size),
+    IDiskRemote(name_, "", metadata_disk_, "DiskAzureBlobStorage", settings_->thread_pool_size),
     blob_container_client(blob_container_client_),
     current_settings(std::move(settings_)),
     settings_getter(settings_getter_) {}

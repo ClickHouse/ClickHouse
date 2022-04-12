@@ -126,14 +126,14 @@ DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode, c
     return delegate->writeFile(path, buf_size, mode, settings);
 }
 
-void DiskDecorator::removeFile(const String & path)
+bool DiskDecorator::removeFile(const String & path)
 {
-    delegate->removeFile(path);
+    return delegate->removeFile(path);
 }
 
-void DiskDecorator::removeFileIfExists(const String & path)
+bool DiskDecorator::removeFileIfExists(const String & path)
 {
-    delegate->removeFileIfExists(path);
+    return delegate->removeFileIfExists(path);
 }
 
 void DiskDecorator::removeDirectory(const String & path)
@@ -146,9 +146,14 @@ void DiskDecorator::removeRecursive(const String & path)
     delegate->removeRecursive(path);
 }
 
-void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
+bool DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
 {
-    delegate->removeSharedFile(path, keep_s3);
+    return delegate->removeSharedFile(path, keep_s3);
+}
+
+bool DiskDecorator::removeSharedFileIfExists(const String & path, bool keep_s3)
+{
+    return delegate->removeSharedFile(path, keep_s3);
 }
 
 void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)

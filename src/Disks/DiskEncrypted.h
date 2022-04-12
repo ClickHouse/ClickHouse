@@ -129,16 +129,16 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
-    void removeFile(const String & path) override
+    bool removeFile(const String & path) override
     {
         auto wrapped_path = wrappedPath(path);
-        delegate->removeFile(wrapped_path);
+        return delegate->removeFile(wrapped_path);
     }
 
-    void removeFileIfExists(const String & path) override
+    bool removeFileIfExists(const String & path) override
     {
         auto wrapped_path = wrappedPath(path);
-        delegate->removeFileIfExists(wrapped_path);
+        return delegate->removeFileIfExists(wrapped_path);
     }
 
     void removeDirectory(const String & path) override
@@ -153,10 +153,10 @@ public:
         delegate->removeRecursive(wrapped_path);
     }
 
-    void removeSharedFile(const String & path, bool flag) override
+    bool removeSharedFile(const String & path, bool flag) override
     {
         auto wrapped_path = wrappedPath(path);
-        delegate->removeSharedFile(wrapped_path, flag);
+        return delegate->removeSharedFile(wrapped_path, flag);
     }
 
     void removeSharedRecursive(const String & path, bool flag) override
@@ -165,10 +165,10 @@ public:
         delegate->removeSharedRecursive(wrapped_path, flag);
     }
 
-    void removeSharedFileIfExists(const String & path, bool flag) override
+    bool removeSharedFileIfExists(const String & path, bool flag) override
     {
         auto wrapped_path = wrappedPath(path);
-        delegate->removeSharedFileIfExists(wrapped_path, flag);
+        return delegate->removeSharedFileIfExists(wrapped_path, flag);
     }
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override
