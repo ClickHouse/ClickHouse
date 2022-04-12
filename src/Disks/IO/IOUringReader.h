@@ -3,6 +3,7 @@
 
 #include <Common/ThreadPool.h>
 #include <IO/AsynchronousReader.h>
+#include <deque>
 #include <unordered_map>
 #include <liburing.h>
 
@@ -23,6 +24,7 @@ private:
 
     std::mutex mutex;
     struct io_uring ring;
+    uint32_t cq_entries;
 
     std::atomic<bool> cancelled{false};
     ThreadFromGlobalPool ring_completion_monitor;
@@ -31,12 +33,20 @@ private:
     {
         std::promise<IAsynchronousReader::Result> promise;
         Request request;
+        bool resubmitting; // resubmits can happen due to short reads or when io_uring returns -EAGAIN
         size_t bytes_read; // keep track of bytes already read in case short reads happen
     };
 
-    std::unordered_map<UInt64, EnqueuedRequest> enqueued_requests;
+    std::deque<EnqueuedRequest> pending_requests;
+    std::unordered_map<UInt64, EnqueuedRequest> in_flight_requests;
 
-    bool trySubmitRequest(UInt64 request_id, EnqueuedRequest & enqueued, bool resubmitting);
+    bool submitToRing(EnqueuedRequest & enqueued);
+
+    using EnqueuedIterator = std::unordered_map<UInt64, EnqueuedRequest>::iterator;
+
+    void failRequest(const EnqueuedIterator & requestIt, int code, const std::string & message);
+    void finalizeRequest(const EnqueuedIterator & requestIt);
+
     void monitorRing();
 
     template <typename T, typename... Args> inline void failPromise(
@@ -54,7 +64,7 @@ private:
     }
 
 public:
-    IOUringReader(size_t queue_size_);
+    IOUringReader(uint32_t entries_);
 
     inline bool isSupported() { return is_supported; }
     std::future<Result> submit(Request request) override;

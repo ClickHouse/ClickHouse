@@ -80,7 +80,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
 #if defined(OS_LINUX)
-            static std::shared_ptr<IOUringReader> reader = std::make_shared<IOUringReader>(4096);
+            static std::shared_ptr<IOUringReader> reader = std::make_shared<IOUringReader>(512);
             if (!reader->isSupported())
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
 
