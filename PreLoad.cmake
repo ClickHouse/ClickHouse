@@ -30,7 +30,7 @@ if (OS MATCHES "Linux"
     AND ($ENV{CC} MATCHES ".*clang.*" OR CMAKE_C_COMPILER MATCHES ".*clang.*"))
 
     if (ARCH MATCHES "amd64|x86_64")
-        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-x86_64-musl.cmake" CACHE INTERNAL "" FORCE)
+        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-x86_64.cmake" CACHE INTERNAL "" FORCE)
     elseif (ARCH MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)")
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-aarch64.cmake" CACHE INTERNAL "" FORCE)
     elseif (ARCH MATCHES "^(ppc64le.*|PPC64LE.*)")
