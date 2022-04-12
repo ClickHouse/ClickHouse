@@ -32,6 +32,7 @@ ProtobufRowOutputFormat::ProtobufRowOutputFormat(
           *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No),
           with_length_delimiter_,
           /* with_envelope = */ false,
+          /* google_wrappers_special_treatment = */ true,
           *writer))
     , allow_multiple_rows(with_length_delimiter_ || settings_.protobuf.allow_multiple_rows_without_delimiter)
 {
