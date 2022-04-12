@@ -28,7 +28,8 @@ server_opts=(
     "--tcp_port=0"
     "--shutdown_wait_unfinished=0"
 )
-CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY "${server_opts[@]}" >clickhouse-server.log 2>clickhouse-server.stderr &
+mkdir 01594_clickhouse
+(cd 01594_clickhouse; CLICKHOUSE_WATCHDOG_ENABLE=0 exec $CLICKHOUSE_SERVER_BINARY "${server_opts[@]}") >clickhouse-server.log 2>clickhouse-server.stderr &
 server_pid=$!
 
 trap cleanup EXIT
