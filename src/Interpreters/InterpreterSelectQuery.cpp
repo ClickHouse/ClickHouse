@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -100,6 +101,7 @@ namespace ErrorCodes
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -329,11 +331,27 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 
-        storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr);
+        storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr, context);
     }
 
     if (has_input || !joined_tables.resolveTables())
         joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
+
+
+    if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+    {
+        if (storage)
+            checkStorageSupportsTransactionsIfNeeded(storage, context);
+        for (const auto & table : joined_tables.tablesWithColumns())
+        {
+            if (table.table.table.empty())
+                continue;
+            auto maybe_storage = DatabaseCatalog::instance().tryGetTable({table.table.database, table.table.table}, context);
+            if (!maybe_storage)
+                continue;
+            checkStorageSupportsTransactionsIfNeeded(storage, context);
+        }
+    }
 
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
@@ -764,6 +782,7 @@ static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPt
 static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, ContextPtr context)
 {
     FillColumnDescription descr;
+
     if (order_by_elem.fill_from)
         descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
     if (order_by_elem.fill_to)
@@ -819,7 +838,6 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
         std::shared_ptr<Collator> collator;
         if (order_by_elem.collation)
             collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
-
         if (order_by_elem.with_fill)
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
@@ -830,6 +848,77 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
     }
 
     return order_descr;
+}
+
+static InterpolateDescriptionPtr getInterpolateDescription(
+    const ASTSelectQuery & query, const Block & source_block, const Block & result_block, const Aliases & aliases, ContextPtr context)
+{
+    InterpolateDescriptionPtr interpolate_descr;
+    if (query.interpolate())
+    {
+        NamesAndTypesList source_columns;
+        ColumnsWithTypeAndName result_columns;
+        ASTPtr exprs = std::make_shared<ASTExpressionList>();
+
+        if (query.interpolate()->children.empty())
+        {
+            std::unordered_map<String, DataTypePtr> column_names;
+            for (const auto & column : result_block.getColumnsWithTypeAndName())
+                column_names[column.name] = column.type;
+            for (const auto & elem : query.orderBy()->children)
+                if (elem->as<ASTOrderByElement>()->with_fill)
+                    column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+            for (const auto & [name, type] : column_names)
+            {
+                source_columns.emplace_back(name, type);
+                result_columns.emplace_back(type, name);
+                exprs->children.emplace_back(std::make_shared<ASTIdentifier>(name));
+            }
+        }
+        else
+        {
+            NameSet col_set;
+            for (const auto & elem : query.interpolate()->children)
+            {
+                const auto & interpolate = elem->as<ASTInterpolateElement &>();
+
+                if (const ColumnWithTypeAndName *result_block_column = result_block.findByName(interpolate.column))
+                {
+                    if (!col_set.insert(result_block_column->name).second)
+                        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "Duplicate INTERPOLATE column '{}'", interpolate.column);
+
+                    result_columns.emplace_back(result_block_column->type, result_block_column->name);
+                }
+                else
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Missing column '{}' as an INTERPOLATE expression target", interpolate.column);
+
+                exprs->children.emplace_back(interpolate.expr->clone());
+            }
+
+            col_set.clear();
+            for (const auto & column : source_block)
+            {
+                source_columns.emplace_back(column.name, column.type);
+                col_set.insert(column.name);
+            }
+            for (const auto & column : result_block)
+                if (col_set.count(column.name) == 0)
+                    source_columns.emplace_back(column.name, column.type);
+        }
+
+        auto syntax_result = TreeRewriter(context).analyze(exprs, source_columns);
+        ExpressionAnalyzer analyzer(exprs, syntax_result, context);
+        ActionsDAGPtr actions = analyzer.getActionsDAG(true);
+        ActionsDAGPtr conv_dag = ActionsDAG::makeConvertingActions(actions->getResultColumns(),
+            result_columns, ActionsDAG::MatchColumnsMode::Position, true);
+        ActionsDAGPtr merge_dag = ActionsDAG::merge(std::move(*actions->clone()), std::move(*conv_dag));
+
+        interpolate_descr = std::make_shared<InterpolateDescription>(merge_dag, aliases);
+    }
+
+    return interpolate_descr;
 }
 
 static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
@@ -1791,7 +1880,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         const auto & func = desc.function;
         std::optional<UInt64> num_rows{};
 
-        if (!query.prewhere() && !query.where())
+        if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
         {
             num_rows = storage->totalRows(settings);
         }
@@ -2082,6 +2171,12 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     const Settings & settings = context->getSettingsRef();
 
+    const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
+        query_ptr,
+        settings.collect_hash_table_stats_during_aggregation,
+        settings.max_entries_for_hash_table_stats,
+        settings.max_size_to_preallocate_for_aggregation);
+
     Aggregator::Params params(
         header_before_aggregation,
         keys,
@@ -2099,7 +2194,9 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         settings.max_threads,
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
-        settings.min_count_to_compile_aggregate_expression);
+        settings.min_count_to_compile_aggregate_expression,
+        Block{},
+        stats_collecting_params);
 
     SortDescription group_by_sort_description;
 
@@ -2240,10 +2337,6 @@ static bool windowDescriptionComparator(const WindowDescription * _left, const W
         if (left[i].column_name < right[i].column_name)
             return true;
         else if (left[i].column_name > right[i].column_name)
-            return false;
-        else if (left[i].column_number < right[i].column_number)
-            return true;
-        else if (left[i].column_number > right[i].column_number)
             return false;
         else if (left[i].direction < right[i].direction)
             return true;
@@ -2495,7 +2588,9 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
         if (fill_descr.empty())
             return;
 
-        auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr));
+        InterpolateDescriptionPtr interpolate_descr =
+            getInterpolateDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
+        auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr), interpolate_descr);
         query_plan.addStep(std::move(filling_step));
     }
 }

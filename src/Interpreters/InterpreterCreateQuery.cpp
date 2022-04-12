@@ -8,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
-#include <Common/renameat2.h>
+#include <Common/atomicRename.h>
 #include <Common/hex.h>
 
 #include <Core/Defines.h>
@@ -54,6 +54,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/ObjectUtils.h>
+#include <DataTypes/hasNullable.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
@@ -480,6 +481,21 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             {
                 column_type = makeNullable(column_type);
             }
+            else if (!hasNullable(column_type) &&
+                     col_decl.default_specifier == "DEFAULT" &&
+                     col_decl.default_expression &&
+                     col_decl.default_expression->as<ASTLiteral>() &&
+                     col_decl.default_expression->as<ASTLiteral>()->value.isNull())
+            {
+                if (column_type->lowCardinality())
+                {
+                    const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
+                    assert(low_cardinality_type);
+                    column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
+                }
+                else
+                    column_type = makeNullable(column_type);
+            }
 
             column_names_and_types.emplace_back(col_decl.name, column_type);
         }
@@ -508,7 +524,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
                 default_expr_list->children.emplace_back(
                     setAlias(
-                        col_decl.default_expression->clone(),
+                        col_decl.default_specifier == "EPHEMERAL" ? /// can be ASTLiteral::value NULL
+                            std::make_shared<ASTLiteral>(data_type_ptr->getDefault()) :
+                            col_decl.default_expression->clone(),
                         tmp_column_name));
             }
             else
@@ -536,7 +554,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.default_expression)
         {
-            ASTPtr default_expr = col_decl.default_expression->clone();
+            ASTPtr default_expr =
+                col_decl.default_specifier == "EPHEMERAL" && col_decl.default_expression->as<ASTLiteral>()->value.isNull() ?
+                    std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(col_decl.type)->getDefault()) :
+                    col_decl.default_expression->clone();
+
             if (col_decl.type)
                 column.type = name_type_it->type;
             else

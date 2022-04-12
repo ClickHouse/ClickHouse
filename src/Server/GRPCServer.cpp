@@ -868,7 +868,7 @@ namespace
         query_text = std::move(*(query_info.mutable_query()));
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
-        ParserQuery parser(end);
+        ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
         ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
 
         /// Choose input format.
