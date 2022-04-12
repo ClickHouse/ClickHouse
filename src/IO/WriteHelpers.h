@@ -1163,3 +1163,19 @@ struct PcgSerializer
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 
 }
+
+template<>
+struct fmt::formatter<DB::UUID>
+{
+    template<typename ParseContext>
+    constexpr auto parse(ParseContext & context)
+    {
+        return context.begin();
+    }
+
+    template<typename FormatContext>
+    auto format(const DB::UUID & uuid, FormatContext & context)
+    {
+        return fmt::format_to(context.out(), "{}", toString(uuid));
+    }
+};

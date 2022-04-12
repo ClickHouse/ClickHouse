@@ -6,7 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
-#include <Common/renameat2.h>
+#include <Common/atomicRename.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <fstream>
@@ -345,7 +345,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
@@ -624,7 +624,7 @@ bool DiskLocal::setup()
         pcg32_fast rng(randomSeed());
         UInt32 magic_number = rng();
         {
-            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
             writeIntBinary(magic_number, *buf);
         }
         disk_checker_magic_number = magic_number;
