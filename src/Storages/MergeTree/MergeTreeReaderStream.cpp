@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 MergeTreeReaderStream::MergeTreeReaderStream(
-        DiskPtr disk_,
+        DataPartStoragePtr data_part_storage_,
         const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings,
@@ -23,7 +23,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         UncompressedCache * uncompressed_cache, size_t file_size_,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
-    : disk(std::move(disk_))
+    : data_part_storage(std::move(data_part_storage_))
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
     , marks_count(marks_count_)
@@ -31,7 +31,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , mark_cache(mark_cache_)
     , save_marks_in_cache(settings.save_marks_in_cache)
     , index_granularity_info(index_granularity_info_)
-    , marks_loader(disk, mark_cache, index_granularity_info->getMarksFilePath(path_prefix),
+    , marks_loader(data_part_storage, mark_cache, index_granularity_info->getMarksFilePath(path_prefix),
         marks_count, *index_granularity_info, save_marks_in_cache)
 {
     /// Compute the size of the buffer.
@@ -68,13 +68,13 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            fullPath(disk, path_prefix + data_file_extension),
+            std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
             [this, estimated_sum_mark_range_bytes, read_settings]()
             {
-                return disk->readFile(
+                return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes);
+                    estimated_sum_mark_range_bytes, std::nullopt);
             },
             uncompressed_cache);
 
@@ -91,10 +91,11 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            disk->readFile(
+            data_part_storage->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                estimated_sum_mark_range_bytes));
+                estimated_sum_mark_range_bytes,
+                std::nullopt));
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

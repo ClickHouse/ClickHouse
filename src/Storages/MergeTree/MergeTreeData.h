@@ -409,6 +409,7 @@ public:
         SelectQueryInfo & info) const override;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
+    ReservationPtr reserveSpace(UInt64 expected_size, const DataPartStorageBuilderPtr & data_part_storage_builder) const;
 
     static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right);
 

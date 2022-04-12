@@ -98,7 +98,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
-    const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & out_checksums) const
+    const MergeTreeData & data, const DataPartStorageBuilderPtr & data_part_storage_builder, Checksums & out_checksums) const
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -106,19 +106,20 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
     auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
 
-    return store(minmax_column_names, minmax_column_types, disk_, part_path, out_checksums);
+    return store(minmax_column_names, minmax_column_types, data_part_storage_builder, out_checksums);
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
     const Names & column_names,
     const DataTypes & data_types,
-    const DiskPtr & disk_,
-    const String & part_path,
+    const DataPartStorageBuilderPtr & data_part_storage_builder,
     Checksums & out_checksums) const
 {
     if (!initialized)
-        throw Exception("Attempt to store uninitialized MinMax index for part " + part_path + ". This is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Attempt to store uninitialized MinMax index for part {}. This is a bug.",
+            data_part_storage_builder->getFullPath());
 
     WrittenFiles written_files;
 
@@ -127,7 +128,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         String file_name = "minmax_" + escapeForFileName(column_names[i]) + ".idx";
         auto serialization = data_types.at(i)->getDefaultSerialization();
 
-        auto out = disk_->writeFile(fs::path(part_path) / file_name);
+        auto out = data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE);
         HashingWriteBuffer out_hashing(*out);
         serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
         serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
@@ -1248,7 +1249,7 @@ try
     String from = data_part_storage->getFullRelativePath();
     String to = fs::path(storage.relative_data_path) / new_relative_path / "";
 
-    data_part_storage->rename(to, storage.log, remove_new_dir_if_exists, storage.getSettings()->fsync_part_directory);
+    data_part_storage->rename(new_relative_path, storage.log, remove_new_dir_if_exists, storage.getSettings()->fsync_part_directory);
     metadata_manager->move(from, to);
 
     storage.lockSharedData(*this);

@@ -55,6 +55,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
+    DataPartStorageBuilderPtr data_part_storage_builder,
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -63,7 +64,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
-        shared_from_this(), columns_list, metadata_snapshot, indices_to_recalc,
+        shared_from_this(), data_part_storage_builder, columns_list, metadata_snapshot, indices_to_recalc,
         index_granularity_info.marks_file_extension,
         default_codec_, writer_settings, computed_index_granularity);
 }
@@ -144,7 +145,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
 {
-    return volume->getDisk()->isRemote();
+    return data_part_storage->isStoredOnRemoteDisk();
 }
 
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
