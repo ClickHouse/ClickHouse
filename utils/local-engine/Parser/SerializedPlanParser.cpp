@@ -228,6 +228,7 @@ DB::QueryPlanPtr local_engine::SerializedPlanParser::parseOp(const substrait::Re
             DB::QueryPlanPtr query_plan = parseOp(filter.input());
             std::string filter_name;
             auto actions_dag = parseFunction(query_plan->getCurrentDataStream(), filter.condition(), filter_name, nullptr, true);
+//            actions_dag->removeUnusedActions(query_plan->getCurrentDataStream().header.getNames());
             auto filter_step = std::make_unique<DB::FilterStep>(query_plan->getCurrentDataStream(), actions_dag, filter_name, true);
             query_plan->addStep(std::move(filter_step));
             return query_plan;
@@ -434,7 +435,7 @@ DB::ActionsDAGPtr local_engine::SerializedPlanParser::parseFunction(
         if (arg.has_scalar_function())
         {
             std::string arg_name;
-            parseFunction(input, arg, arg_name, actions_dag, true);
+            parseFunction(input, arg, arg_name, actions_dag, false);
             args.emplace_back(&actions_dag->getNodes().back());
         }
         else
