@@ -104,16 +104,8 @@ public:
     /// Read all log entries in log store from the begging and return latest config (with largest log_index)
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
-    ClusterConfigPtr getLocalConfig() const
-    {
-        std::lock_guard lock{configuration_wrapper_mutex};
-        return configuration_wrapper.cluster_config;
-    }
-
     /// Get configuration diff between proposed XML and current state in RAFT
     ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const;
-
-    void applyConfigsToLogEntry();
 
 private:
     /// Wrapper struct for Keeper cluster config. We parse this

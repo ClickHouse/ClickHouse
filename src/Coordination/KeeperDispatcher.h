@@ -114,6 +114,11 @@ public:
         return server && server->checkInit();
     }
 
+    bool isServerActive() const
+    {
+        return checkInit() && hasLeader() && !server->inRecover();
+    }
+
     /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -145,6 +150,11 @@ public:
     bool hasLeader() const
     {
         return server->isLeaderAlive();
+    }
+
+    bool inRecover() const
+    {
+        return server->inRecover();
     }
 
     bool isObserver() const

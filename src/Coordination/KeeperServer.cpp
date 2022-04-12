@@ -17,6 +17,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <boost/algorithm/string.hpp>
+#include <libnuraft/raft_server.hxx>
 
 namespace DB
 {
@@ -149,6 +150,8 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
 
+    loadLatestConfig();
+
     nuraft::raft_params params;
     params.heart_beat_interval_ = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
     params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
@@ -165,13 +168,6 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
-    if (recover)
-    {
-        LOG_INFO(log, "Custom quorum size");
-        params.with_custom_commit_quorum_size(1);
-        params.with_custom_election_quorum_size(1);
-    }
-
     nuraft::asio_service::options asio_opts{};
     if (state_manager->isSecure())
     {
@@ -183,25 +179,24 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 #endif
     }
 
-    launchRaftServer(enable_ipv6, params, asio_opts);
-
     if (recover)
     {
+        LOG_WARNING(log, "This instance was started in recovery mode. Until the quorum is restored, no requests should be sent to any "
+                "of the cluster instances. This instance will start accepting requests only when the recovery is finished.");
+        params.with_custom_commit_quorum_size(1);
+        params.with_custom_election_quorum_size(1);
+
+        auto latest_config = state_manager->load_config();
         auto configuration = state_manager->parseServersConfiguration(config, false);
         auto local_cluster_config = configuration.cluster_config;
-        auto latest_log_store_config = std::make_shared<nuraft::cluster_config>(0, local_cluster_config ? local_cluster_config->get_log_idx() : 0);
-        latest_log_store_config->get_servers() = local_cluster_config->get_servers();
-        latest_log_store_config->set_log_idx(state_manager->getLogStore()->next_slot());
+        auto new_config = std::make_shared<nuraft::cluster_config>(0, latest_config ? latest_config->get_log_idx() : 0);
+        new_config->get_servers() = local_cluster_config->get_servers();
+        new_config->set_log_idx(state_manager->getLogStore()->next_slot());
 
-        for (auto & server : latest_log_store_config->get_servers())
-        {
-            LOG_INFO(log, "Having server {} with log idx {}", server->get_id(), latest_log_store_config->get_log_idx());
-        }
-
-
-        state_manager->save_config(*latest_log_store_config);
-        return;
+        state_manager->save_config(*new_config);
     }
+
+    launchRaftServer(enable_ipv6, params, asio_opts);
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
@@ -221,7 +216,7 @@ void KeeperServer::launchRaftServer(
         return callbackFunc(type, param);
     };
 
-    nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level);
+    nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", DB::LogsLevel::information);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);
     asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
 
@@ -239,12 +234,12 @@ void KeeperServer::launchRaftServer(
         casted_state_manager, casted_state_machine,
         asio_listener, logger, rpc_cli_factory, scheduler, params);
 
-    loadLatestConfig();
-    raft_instance = nuraft::cs_new<nuraft::raft_server>(ctx, init_options);
+    raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
 
-    raft_instance->start_server(init_options.skip_initial_election_timeout_);
-    asio_listener->listen(raft_instance);
+    raft_instance->start_server(state_manager->shouldStartAsFollower());
 
+    auto raft_server_ptr = std::static_pointer_cast<nuraft::raft_server>(raft_instance);
+    asio_listener->listen(raft_server_ptr);
 }
 
 void KeeperServer::shutdownRaftServer()
@@ -369,6 +364,18 @@ uint64_t KeeperServer::getSyncedFollowerCount() const
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
+    if (type == nuraft::cb_func::HeartBeat && recover && raft_instance->isClusterHealthy())
+    {
+        auto new_params = raft_instance->get_current_params();
+        new_params.custom_commit_quorum_size_ = 0;
+        new_params.custom_election_quorum_size_ = 0;
+        raft_instance->update_params(new_params);
+
+        LOG_INFO(log, "Recovery is done");
+        recover = false;
+        return nuraft::cb_func::ReturnCode::Ok;
+    }
+
     if (initialized_flag)
         return nuraft::cb_func::ReturnCode::Ok;
 
@@ -448,6 +455,12 @@ ConfigUpdateActions KeeperServer::getConfigurationDiff(const Poco::Util::Abstrac
 
 void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
 {
+    if (recover)
+    {
+        LOG_INFO(log, "Config update ignored because we are in recovery mode");
+        return;
+    }
+
     size_t sleep_ms = 500;
     if (task.action_type == ConfigUpdateActionType::AddServer)
     {
