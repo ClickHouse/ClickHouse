@@ -1,5 +1,5 @@
 ---
-toc_priority: 68
+toc_priority: 69
 toc_title: C++ Guide
 ---
 
@@ -195,7 +195,7 @@ std::cerr << static_cast<int>(c) << std::endl;
 
 The same is true for small methods in any classes or structs.
 
-For templated classes and structs, don’t separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
+For templated classes and structs, do not separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
 
 **31.** You can wrap lines at 140 characters, instead of 80.
 
@@ -322,7 +322,7 @@ std::string getName() const override { return "Memory"; }
 class StorageMemory : public IStorage
 ```
 
-**4.** `using` are named the same way as classes, or with `_t` on the end.
+**4.** `using` are named the same way as classes.
 
 **5.** Names of template type arguments: in simple cases, use `T`; `T`, `U`; `T1`, `T2`.
 
@@ -404,9 +404,9 @@ enum class CompressionMethod
 };
 ```
 
-**15.** All names must be in English. Transliteration of Russian words is not allowed.
+**15.** All names must be in English. Transliteration of Hebrew words is not allowed.
 
-    not Stroka
+    not T_PAAMAYIM_NEKUDOTAYIM
 
 **16.** Abbreviations are acceptable if they are well known (when you can easily find the meaning of the abbreviation in Wikipedia or in a search engine).
 
@@ -442,7 +442,7 @@ Use `RAII` and see above.
 
 **3.** Error handling.
 
-Use exceptions. In most cases, you only need to throw an exception, and don’t need to catch it (because of `RAII`).
+Use exceptions. In most cases, you only need to throw an exception, and do not need to catch it (because of `RAII`).
 
 In offline data processing applications, it’s often acceptable to not catch exceptions.
 
@@ -490,7 +490,7 @@ if (0 != close(fd))
     throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 ```
 
-`Do not use assert`.
+You can use assert to check invariants in code.
 
 **4.** Exception types.
 
@@ -571,7 +571,7 @@ Don’t use these types for numbers: `signed/unsigned long`, `long long`, `short
 
 **13.** Passing arguments.
 
-Pass complex values by reference (including `std::string`).
+Pass complex values by value if they are going to be moved and use std::move; pass by reference if you want to update value in a loop.
 
 If a function captures ownership of an object created in the heap, make the argument type `shared_ptr` or `unique_ptr`.
 
@@ -581,7 +581,7 @@ In most cases, just use `return`. Do not write `return std::move(res)`.
 
 If the function allocates an object on heap and returns it, use `shared_ptr` or `unique_ptr`.
 
-In rare cases you might need to return the value via an argument. In this case, the argument should be a reference.
+In rare cases (updating a value in a loop) you might need to return the value via an argument. In this case, the argument should be a reference.
 
 ``` cpp
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
@@ -599,7 +599,7 @@ public:
 
 There is no need to use a separate `namespace` for application code.
 
-Small libraries don’t need this, either.
+Small libraries do not need this, either.
 
 For medium to large libraries, put everything in a `namespace`.
 
@@ -628,7 +628,7 @@ If the class is not intended for polymorphic use, you do not need to make functi
 
 **18.** Encodings.
 
-Use UTF-8 everywhere. Use `std::string`and`char *`. Do not use `std::wstring`and`wchar_t`.
+Use UTF-8 everywhere. Use `std::string` and `char *`. Do not use `std::wstring` and `wchar_t`.
 
 **19.** Logging.
 
@@ -701,7 +701,7 @@ But other things being equal, cross-platform or portable code is preferred.
 
 **2.** Language: C++20 (see the list of available [C++20 features](https://en.cppreference.com/w/cpp/compiler_support#C.2B.2B20_features)).
 
-**3.** Compiler: `gcc`. At this time (August 2020), the code is compiled using version 9.3. (It can also be compiled using `clang 8`.)
+**3.** Compiler: `clang`. At this time (April 2021), the code is compiled using clang version 11. (It can also be compiled using `gcc` version 10, but it's untested and not suitable for production usage).
 
 The standard library is used (`libc++`).
 
@@ -711,7 +711,7 @@ The standard library is used (`libc++`).
 
 The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 
-**6.** Use `-Wall -Wextra -Werror` compilation flags.
+**6.** Use `-Wall -Wextra -Werror` compilation flags. Also `-Weverything` is used with few exceptions.
 
 **7.** Use static linking with all libraries except those that are difficult to connect to statically (see the output of the `ldd` command).
 
@@ -749,17 +749,9 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
-**2.** If necessary, you can use any well-known libraries available in the OS package.
+**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](contrib.md#adding-third-party-libraries) for details.
 
-If there is a good solution already available, then use it, even if it means you have to install another library.
-
-(But be prepared to remove bad libraries from code.)
-
-**3.** You can install a library that isn’t in the packages, if the packages don’t have what you need or have an outdated version or the wrong type of compilation.
-
-**4.** If the library is small and doesn’t have its own complex build system, put the source files in the `contrib` folder.
-
-**5.** Preference is always given to libraries that are already in use.
+**3.** Preference is always given to libraries that are already in use.
 
 ## General Recommendations {#general-recommendations-1}
 
@@ -836,4 +828,4 @@ function(
       size_t limit)
 ```
 
-[Original article](https://clickhouse.tech/docs/en/development/style/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/development/style/) <!--hide-->

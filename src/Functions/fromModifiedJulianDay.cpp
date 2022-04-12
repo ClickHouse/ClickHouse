@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GregorianDate.h>
 #include <IO/WriteBufferFromVector.h>
@@ -23,7 +23,7 @@ namespace DB
     }
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class ExecutableFunctionFromModifiedJulianDay : public IExecutableFunctionImpl
+    class ExecutableFunctionFromModifiedJulianDay : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -31,7 +31,7 @@ namespace DB
             return Name::name;
         }
 
-        ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             using ColVecType = typename FromDataType::ColumnType;
             const ColVecType * col_from = checkAndGetColumn<ColVecType>(arguments[0].column.get());
@@ -95,7 +95,7 @@ namespace DB
     };
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class FunctionBaseFromModifiedJulianDay : public IFunctionBaseImpl
+    class FunctionBaseFromModifiedJulianDay : public IFunctionBase
     {
     public:
         explicit FunctionBaseFromModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -117,12 +117,17 @@ namespace DB
             return return_type;
         }
 
-        ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+        ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
         {
             return std::make_unique<ExecutableFunctionFromModifiedJulianDay<Name, FromDataType, nullOnErrors>>();
         }
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
+        {
+            return true;
+        }
+
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
         {
             return true;
         }
@@ -134,10 +139,7 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            return Monotonicity(
-                true,  // is_monotonic
-                true,  // is_positive
-                true); // is_always_monotonic
+            return { .is_monotonic = true, .is_always_monotonic = true };
         }
 
     private:
@@ -146,12 +148,12 @@ namespace DB
     };
 
     template <typename Name, bool nullOnErrors>
-    class FromModifiedJulianDayOverloadResolver : public IFunctionOverloadResolverImpl
+    class FromModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;
 
-        static FunctionOverloadResolverImplPtr create(const Context &)
+        static FunctionOverloadResolverPtr create(ContextPtr)
         {
             return std::make_unique<FromModifiedJulianDayOverloadResolver<Name, nullOnErrors>>();
         }
@@ -161,11 +163,12 @@ namespace DB
             return Name::name;
         }
 
-        FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+        FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
             const DataTypePtr & from_type = removeNullable(arguments[0].type);
             DataTypes argument_types = { from_type };
-            FunctionBaseImplPtr base;
+
+            FunctionBasePtr base;
             auto call = [&](const auto & types) -> bool
             {
                 using Types = std::decay_t<decltype(types)>;
@@ -193,7 +196,7 @@ namespace DB
                     "The argument of function " + getName() + " must be integral", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        DataTypePtr getReturnType(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (!isInteger(arguments[0]))
             {

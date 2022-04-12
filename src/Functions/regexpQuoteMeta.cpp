@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -21,7 +21,7 @@ class FunctionRegexpQuoteMeta : public IFunction
 public:
     static constexpr auto name = "regexpQuoteMeta";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionRegexpQuoteMeta>();
     }
@@ -40,6 +40,8 @@ public:
     {
         return true;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

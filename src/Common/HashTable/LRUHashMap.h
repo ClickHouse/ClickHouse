@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 #include <boost/intrusive/trivial_value_traits.hpp>
 #include <boost/intrusive/list.hpp>
@@ -71,10 +71,10 @@ struct LRUHashMapCellNodeTraits
     using node_ptr = LRUHashMapCell<Key, Value, Hash, save_hash_in_cell> *;
     using const_node_ptr = const LRUHashMapCell<Key, Value, Hash, save_hash_in_cell> *;
 
-    static node * get_next(const node * ptr) { return ptr->next; }
-    static void set_next(node * __restrict ptr, node * __restrict next) { ptr->next = next; }
-    static node * get_previous(const node * ptr) { return ptr->prev; }
-    static void set_previous(node * __restrict ptr, node * __restrict prev) { ptr->prev = prev; }
+    static node * get_next(const node * ptr) { return ptr->next; } /// NOLINT
+    static void set_next(node * __restrict ptr, node * __restrict next) { ptr->next = next; } /// NOLINT
+    static node * get_previous(const node * ptr) { return ptr->prev; } /// NOLINT
+    static void set_previous(node * __restrict ptr, node * __restrict prev) { ptr->prev = prev; } /// NOLINT
 };
 
 template <typename TKey, typename TValue, typename Disposer, typename Hash, bool save_hash_in_cells>
@@ -220,6 +220,12 @@ public:
         return find(key) != nullptr;
     }
 
+    Value & ALWAYS_INLINE operator[](const Key & key)
+    {
+        auto [it, _] = emplace(key);
+        return it->getMapped();
+    }
+
     bool ALWAYS_INLINE erase(const Key & key)
     {
         auto key_hash = Base::hash(key);
@@ -271,13 +277,13 @@ private:
 };
 
 template <typename Key, typename Mapped>
-struct DefaultCellDisposer
+struct DefaultLRUHashMapCellDisposer
 {
     void operator()(const Key &, const Mapped &) const {}
 };
 
-template <typename Key, typename Value, typename Disposer = DefaultCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
+template <typename Key, typename Value, typename Disposer = DefaultLRUHashMapCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
 using LRUHashMap = LRUHashMapImpl<Key, Value, Disposer, Hash, false>;
 
-template <typename Key, typename Value, typename Disposer = DefaultCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
+template <typename Key, typename Value, typename Disposer = DefaultLRUHashMapCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
 using LRUHashMapWithSavedHash = LRUHashMapImpl<Key, Value, Disposer, Hash, true>;

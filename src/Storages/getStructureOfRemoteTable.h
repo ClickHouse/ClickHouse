@@ -8,6 +8,7 @@
 
 namespace DB
 {
+
 class Context;
 struct StorageID;
 
@@ -16,7 +17,17 @@ struct StorageID;
 ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const StorageID & table_id,
-    const Context & context,
+    ContextPtr context,
     const ASTPtr & table_func_ptr = nullptr);
+
+
+using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
+
+/// Returns descriptions of columns of type Object for each shard.
+ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
+    const Cluster & cluster,
+    const StorageID & remote_table_id,
+    const ColumnsDescription & storage_columns,
+    ContextPtr context);
 
 }

@@ -1,5 +1,5 @@
 #include <type_traits>
-#include <ext/bit_cast.h>
+#include <base/bit_cast.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 
@@ -14,48 +14,36 @@ namespace
 {
 
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
-roundDownToPowerOfTwo(T x)
+requires std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32))
+inline T roundDownToPowerOfTwo(T x)
 {
     return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
 }
 
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(UInt64)), T>
-roundDownToPowerOfTwo(T x)
+requires std::is_integral_v<T> && (sizeof(T) == sizeof(UInt64))
+inline T roundDownToPowerOfTwo(T x)
 {
     return x <= 0 ? 0 : (T(1) << (63 - __builtin_clzll(x)));
 }
 
 template <typename T>
-inline std::enable_if_t<std::is_same_v<T, Int128>, T>
-roundDownToPowerOfTwo(T x)
+requires std::is_same_v<T, Float32>
+inline T roundDownToPowerOfTwo(T x)
 {
-    if (x <= 0)
-        return 0;
-
-    if (Int64 x64 = Int64(x >> 64))
-        return Int128(roundDownToPowerOfTwo(x64)) << 64;
-    return roundDownToPowerOfTwo(Int64(x));
+    return bit_cast<T>(bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
 }
 
 template <typename T>
-inline std::enable_if_t<std::is_same_v<T, Float32>, T>
-roundDownToPowerOfTwo(T x)
+requires std::is_same_v<T, Float64>
+inline T roundDownToPowerOfTwo(T x)
 {
-    return ext::bit_cast<T>(ext::bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
+    return bit_cast<T>(bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
 }
 
 template <typename T>
-inline std::enable_if_t<std::is_same_v<T, Float64>, T>
-roundDownToPowerOfTwo(T x)
-{
-    return ext::bit_cast<T>(ext::bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
-}
-
-template <typename T>
-inline std::enable_if_t<is_big_int_v<T>, T>
-roundDownToPowerOfTwo(T)
+requires is_big_int_v<T>
+inline T roundDownToPowerOfTwo(T)
 {
     throw Exception("roundToExp2() for big integers is not implemented", ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -76,6 +64,7 @@ struct RoundToExp2Impl
 {
     using ResultType = T;
     static constexpr const bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     static inline T apply(T x)
     {

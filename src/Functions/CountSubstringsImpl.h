@@ -19,11 +19,12 @@ namespace ErrorCodes
 /// NOTE: Intersecting substrings in haystack accounted only once, i.e.:
 ///
 ///     countSubstrings('aaaa', 'aa') == 2
-template <typename Impl>
+template <typename Name, typename Impl>
 struct CountSubstringsImpl
 {
     static constexpr bool use_default_implementation_for_constants = false;
     static constexpr bool supports_start_pos = true;
+    static constexpr auto name = Name::name;
 
     using ResultType = UInt64;
 
@@ -82,7 +83,7 @@ struct CountSubstringsImpl
     {
         res = 0;
 
-        if (needle.size() == 0)
+        if (needle.empty())
             return;
 
         auto start = std::max(start_pos, UInt64(1));
@@ -225,7 +226,7 @@ struct CountSubstringsImpl
     template <typename... Args>
     static void vectorFixedConstant(Args &&...)
     {
-        throw Exception("Functions 'position' don't support FixedString haystack argument", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
     }
 };
 

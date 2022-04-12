@@ -33,7 +33,7 @@ struct CRCImpl
         static CRCBase<ReturnType> base(polynomial);
 
         T crc = 0;
-        for (size_t i = 0; i < size; i++)
+        for (size_t i = 0; i < size; ++i)
             crc = base.tab[(crc ^ buf[i]) & 0xff] ^ (crc >> 8);
         return crc;
     }
@@ -108,6 +108,11 @@ struct CRCFunctionWrapper
     [[noreturn]] static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<ReturnType> & /*res*/)
     {
         throw Exception("Cannot apply function " + std::string(Impl::name) + " to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    [[noreturn]] static void uuid(const ColumnUUID::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    {
+        throw Exception("Cannot apply function " + std::string(Impl::name) + " to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 private:

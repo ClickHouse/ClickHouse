@@ -1,9 +1,9 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <thread>
@@ -24,7 +24,7 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeCleanupThread
 {
 public:
-    ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
+    explicit ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
     void start() { task->activateAndSchedule(); }
 
@@ -58,8 +58,8 @@ private:
     /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica.
     void clearOldMutations();
 
-    using NodeCTimeCache = std::map<String, Int64>;
-    NodeCTimeCache cached_block_stats;
+    using NodeCTimeAndVersionCache = std::map<String, std::pair<Int64, Int32>>;
+    NodeCTimeAndVersionCache cached_block_stats;
 
     struct NodeWithStat;
     /// Returns list of blocks (with their stat) sorted by ctime in descending order.

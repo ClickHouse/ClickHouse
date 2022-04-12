@@ -5,7 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -18,8 +18,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
+    : WithContext(context_), query_ptr(query_ptr_)
 {
 }
 
@@ -29,12 +29,12 @@ BlockIO InterpreterRenameQuery::execute()
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
 
     if (!rename.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
 
-    context.checkAccess(getRequiredAccess());
+    getContext()->checkAccess(getRequiredAccess());
 
-    String path = context.getPath();
-    String current_database = context.getCurrentDatabase();
+    String path = getContext()->getPath();
+    String current_database = getContext()->getCurrentDatabase();
 
     /** In case of error while renaming, it is possible that only part of tables was renamed
       *  or we will be in inconsistent state. (It is worth to be fixed.)
@@ -72,35 +72,68 @@ BlockIO InterpreterRenameQuery::execute()
 
 BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards)
 {
+    assert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
+    assert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
 
     for (const auto & elem : descriptions)
     {
-        if (!rename.exchange)
-            database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);
+        if (elem.if_exists)
+        {
+            assert(!rename.exchange);
+            if (!database_catalog.isTableExist(StorageID(elem.from_database_name, elem.from_table_name), getContext()))
+                continue;
+        }
+
+        bool exchange_tables;
+        if (rename.exchange)
+        {
+            exchange_tables = true;
+        }
+        else if (rename.rename_if_cannot_exchange)
+        {
+            exchange_tables = database_catalog.isTableExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
+            renamed_instead_of_exchange = !exchange_tables;
+        }
+        else
+        {
+            exchange_tables = false;
+            database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
+        }
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
-        if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+        if (typeid_cast<DatabaseReplicated *>(database.get()) && !getContext()->getClientInfo().is_replicated_database_internal)
         {
             if (1 < descriptions.size())
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database {} is Replicated, "
-                                "it does not support renaming of multiple tables in single query.", elem.from_database_name);
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Database {} is Replicated, "
+                    "it does not support renaming of multiple tables in single query.",
+                    elem.from_database_name);
 
             UniqueTableName from(elem.from_database_name, elem.from_table_name);
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
+            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
         }
         else
         {
+            TableNamesSet dependencies;
+            if (!exchange_tables)
+                dependencies = database_catalog.tryRemoveLoadingDependencies(StorageID(elem.from_database_name, elem.from_table_name),
+                                                                             getContext()->getSettingsRef().check_table_dependencies);
+
             database->renameTable(
-                context,
+                getContext(),
                 elem.from_table_name,
                 *database_catalog.getDatabase(elem.to_database_name),
                 elem.to_table_name,
-                rename.exchange,
+                exchange_tables,
                 rename.dictionary);
+
+            if (!dependencies.empty())
+                DatabaseCatalog::instance().addLoadingDependencies(QualifiedTableName{elem.to_database_name, elem.to_table_name}, std::move(dependencies));
         }
     }
 
@@ -117,9 +150,14 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     const auto & new_name = descriptions.back().to_database_name;
     auto & catalog = DatabaseCatalog::instance();
 
-    auto db = catalog.getDatabase(old_name);
-    catalog.assertDatabaseDoesntExist(new_name);
-    db->renameDatabase(new_name);
+    auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name) : catalog.getDatabase(old_name);
+
+    if (db)
+    {
+        catalog.assertDatabaseDoesntExist(new_name);
+        db->renameDatabase(getContext(), new_name);
+    }
+
     return {};
 }
 
@@ -140,19 +178,19 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess() const
     return required_access;
 }
 
-void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const
+void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const
 {
     elem.query_kind = "Rename";
     const auto & rename = ast->as<const ASTRenameQuery &>();
     for (const auto & element : rename.elements)
     {
         {
-            String database = backQuoteIfNeed(element.from.database.empty() ? context.getCurrentDatabase() : element.from.database);
+            String database = backQuoteIfNeed(element.from.database.empty() ? getContext()->getCurrentDatabase() : element.from.database);
             elem.query_databases.insert(database);
             elem.query_tables.insert(database + "." + backQuoteIfNeed(element.from.table));
         }
         {
-            String database = backQuoteIfNeed(element.to.database.empty() ? context.getCurrentDatabase() : element.to.database);
+            String database = backQuoteIfNeed(element.to.database.empty() ? getContext()->getCurrentDatabase() : element.to.database);
             elem.query_databases.insert(database);
             elem.query_tables.insert(database + "." + backQuoteIfNeed(element.to.table));
         }

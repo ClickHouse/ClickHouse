@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/PODArray.h>
 
 #include <algorithm>
@@ -90,23 +90,38 @@ private:
     }
 };
 
-template <size_t MaxNumHints, class Self>
+namespace detail
+{
+void appendHintsMessageImpl(String & message, const std::vector<String> & hints);
+}
+
+template <size_t MaxNumHints, typename Self>
 class IHints
 {
 public:
-
     virtual std::vector<String> getAllRegisteredNames() const = 0;
 
     std::vector<String> getHints(const String & name) const
     {
-        static const auto registered_names = getAllRegisteredNames();
-        return prompter.getHints(name, registered_names);
+        return prompter.getHints(name, getAllRegisteredNames());
     }
+
+    void appendHintsMessage(String & message, const String & name) const
+    {
+        auto hints = getHints(name);
+        detail::appendHintsMessageImpl(message, hints);
+    }
+
+    IHints() = default;
+
+    IHints(const IHints &) = default;
+    IHints(IHints &&) noexcept = default;
+    IHints & operator=(const IHints &) = default;
+    IHints & operator=(IHints &&) noexcept = default;
 
     virtual ~IHints() = default;
 
 private:
     NamePrompter<MaxNumHints> prompter;
 };
-
 }

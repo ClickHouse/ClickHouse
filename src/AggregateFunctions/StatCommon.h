@@ -1,15 +1,25 @@
 #pragma once
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <Common/ArenaAllocator.h>
-
 #include <numeric>
 #include <algorithm>
 #include <utility>
 
+#include <base/sort.h>
+
+#include <Common/ArenaAllocator.h>
+
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+
+
 namespace DB
 {
+struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 template <typename F>
 static Float64 integrateSimpson(Float64 a, Float64 b, F && func)
@@ -35,7 +45,7 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
     /// Save initial positions, than sort indices according to the values.
     std::vector<size_t> indexes(size);
     std::iota(indexes.begin(), indexes.end(), 0);
-    std::sort(indexes.begin(), indexes.end(),
+    ::sort(indexes.begin(), indexes.end(),
                 [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
 
     size_t left = 0;
@@ -48,6 +58,11 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
             ++right;
         auto adjusted = (left + right + 1.) / 2.;
         auto count_equal = right - left;
+
+        /// Scipy implementation throws exception in this case too.
+        if (count_equal == size)
+            throw Exception("All numbers in both samples are identical", ErrorCodes::BAD_ARGUMENTS);
+
         tie_numenator += std::pow(count_equal, 3) - count_equal;
         for (size_t iter = left; iter < right; ++iter)
             out[indexes[iter]] = adjusted;

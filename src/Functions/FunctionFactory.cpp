@@ -26,8 +26,8 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
     return FunctionFactory::instance().getCanonicalNameIfAny(name);
 }
 
-void FunctionFactory::registerFunction(const
-    std::string & name,
+void FunctionFactory::registerFunction(
+    const std::string & name,
     Value creator,
     CaseSensitiveness case_sensitiveness)
 {
@@ -50,9 +50,9 @@ void FunctionFactory::registerFunction(const
 }
 
 
-FunctionOverloadResolverImplPtr FunctionFactory::getImpl(
+FunctionOverloadResolverPtr FunctionFactory::getImpl(
     const std::string & name,
-    const Context & context) const
+    ContextPtr context) const
 {
     auto res = tryGetImpl(name, context);
     if (!res)
@@ -82,17 +82,26 @@ std::vector<std::string> FunctionFactory::getAllNames() const
 
 FunctionOverloadResolverPtr FunctionFactory::get(
     const std::string & name,
-    const Context & context) const
+    ContextPtr context) const
 {
-    return std::make_shared<FunctionOverloadResolverAdaptor>(getImpl(name, context));
+    return getImpl(name, context);
 }
 
-FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
+bool FunctionFactory::has(const std::string & name) const
+{
+    String canonical_name = getAliasToOrName(name);
+    if (functions.contains(canonical_name))
+        return true;
+    canonical_name = Poco::toLower(canonical_name);
+    return case_insensitive_functions.contains(canonical_name);
+}
+
+FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
-    const Context & context) const
+    ContextPtr context) const
 {
     String name = getAliasToOrName(name_param);
-    FunctionOverloadResolverImplPtr res;
+    FunctionOverloadResolverPtr res;
 
     auto it = functions.find(name);
     if (functions.end() != it)
@@ -110,7 +119,7 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
 
     if (CurrentThread::isInitialized())
     {
-        const auto * query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef().log_queries)
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
     }
@@ -119,12 +128,11 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
 }
 
 FunctionOverloadResolverPtr FunctionFactory::tryGet(
-        const std::string & name,
-        const Context & context) const
+    const std::string & name,
+    ContextPtr context) const
 {
     auto impl = tryGetImpl(name, context);
-    return impl ? std::make_shared<FunctionOverloadResolverAdaptor>(std::move(impl))
-                : nullptr;
+    return impl ? std::move(impl) : nullptr;
 }
 
 FunctionFactory & FunctionFactory::instance()

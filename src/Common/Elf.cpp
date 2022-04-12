@@ -2,7 +2,7 @@
 
 #include <Common/Elf.h>
 #include <Common/Exception.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 #include <string.h>
 
@@ -119,6 +119,24 @@ std::optional<Elf::Section> Elf::findSectionByName(const char * name) const
 
 String Elf::getBuildID() const
 {
+    /// Section headers are the first choice for a debuginfo file
+    if (String build_id; iterateSections([&build_id](const Section & section, size_t)
+    {
+        if (section.header.sh_type == SHT_NOTE)
+        {
+            build_id = Elf::getBuildID(section.begin(), section.size());
+            if (!build_id.empty())
+            {
+                return true;
+            }
+        }
+        return false;
+    }))
+    {
+        return build_id;
+    }
+
+    /// fallback to PHDR
     for (size_t idx = 0; idx < header->e_phnum; ++idx)
     {
         const ElfPhdr & phdr = program_headers[idx];
@@ -126,10 +144,16 @@ String Elf::getBuildID() const
         if (phdr.p_type == PT_NOTE)
             return getBuildID(mapped + phdr.p_offset, phdr.p_filesz);
     }
+
     return {};
 }
 
-
+#if defined(OS_SUNOS)
+String Elf::getBuildID(const char * nhdr_pos, size_t size)
+{
+    return {};
+}
+#else
 String Elf::getBuildID(const char * nhdr_pos, size_t size)
 {
     const char * nhdr_end = nhdr_pos + size;
@@ -149,6 +173,7 @@ String Elf::getBuildID(const char * nhdr_pos, size_t size)
 
     return {};
 }
+#endif // OS_SUNOS
 
 
 String Elf::getBinaryHash() const

@@ -1,9 +1,10 @@
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include "FunctionArrayMapped.h"
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+
+#include "FunctionArrayMapped.h"
 
 
 namespace DB
@@ -13,13 +14,16 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 /** arrayDifference() - returns an array with the difference between all pairs of neighboring elements.
   */
 struct ArrayDifferenceImpl
 {
-    static bool useDefaultImplementationForConstants() { return true; }
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -57,13 +61,32 @@ struct ArrayDifferenceImpl
         {
             if (pos == begin)
             {
-                dst[pos] = 0;
+                dst[pos] = {};
                 prev = src[pos];
             }
             else
             {
                 Element curr = src[pos];
-                dst[pos] = curr - prev;
+
+                if constexpr (is_decimal<Element>)
+                {
+                    using ResultNativeType = typename Result::NativeType;
+
+                    ResultNativeType result_value;
+                    bool overflow = common::subOverflow(
+                        static_cast<ResultNativeType>(curr.value),
+                        static_cast<ResultNativeType>(prev.value),
+                        result_value);
+                    if (overflow)
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+
+                    dst[pos] = Result(result_value);
+                }
+                else
+                {
+                    dst[pos] = curr - prev;
+                }
+
                 prev = curr;
             }
         }
@@ -73,8 +96,8 @@ struct ArrayDifferenceImpl
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
-        using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
+        using ColVecType = ColumnVectorOrDecimal<Element>;
+        using ColVecResult = ColumnVectorOrDecimal<Result>;
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
@@ -85,8 +108,8 @@ struct ArrayDifferenceImpl
         const typename ColVecType::Container & data = column->getData();
 
         typename ColVecResult::MutablePtr res_nested;
-        if constexpr (IsDecimalNumber<Element>)
-            res_nested = ColVecResult::create(0, data.getScale());
+        if constexpr (is_decimal<Element>)
+            res_nested = ColVecResult::create(0, column->getScale());
         else
             res_nested = ColVecResult::create();
 
@@ -109,6 +132,7 @@ struct ArrayDifferenceImpl
     {
         ColumnPtr res;
 
+        mapped = mapped->convertToFullColumnIfConst();
         if (executeType< UInt8 ,  Int16>(mapped, array, res) ||
             executeType< UInt16,  Int32>(mapped, array, res) ||
             executeType< UInt32,  Int64>(mapped, array, res) ||

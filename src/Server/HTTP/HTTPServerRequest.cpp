@@ -13,20 +13,29 @@
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 
+#if USE_SSL
+#include <Poco/Net/SecureStreamSocketImpl.h>
+#include <Poco/Net/SSLException.h>
+#include <Poco/Net/X509Certificate.h>
+#endif
+
 namespace DB
 {
-
-HTTPServerRequest::HTTPServerRequest(const Context & context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
+HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
+    : max_uri_size(context->getSettingsRef().http_max_uri_size)
+    , max_fields_number(context->getSettingsRef().http_max_fields)
+    , max_field_name_size(context->getSettingsRef().http_max_field_name_size)
+    , max_field_value_size(context->getSettingsRef().http_max_field_value_size)
 {
     response.attachRequest(this);
 
     /// Now that we know socket is still connected, obtain addresses
     client_address = session.clientAddress();
     server_address = session.serverAddress();
+    secure = session.socket().secure();
 
-    auto receive_timeout = context.getSettingsRef().http_receive_timeout;
-    auto send_timeout = context.getSettingsRef().http_send_timeout;
-    auto max_query_size = context.getSettingsRef().max_query_size;
+    auto receive_timeout = context->getSettingsRef().http_receive_timeout;
+    auto send_timeout = context->getSettingsRef().http_send_timeout;
 
     session.socket().setReceiveTimeout(receive_timeout);
     session.socket().setSendTimeout(send_timeout);
@@ -37,7 +46,7 @@ HTTPServerRequest::HTTPServerRequest(const Context & context, HTTPServerResponse
     readRequest(*in);  /// Try parse according to RFC7230
 
     if (getChunkedTransferEncoding())
-        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), max_query_size);
+        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in));
     else if (hasContentLength())
         stream = std::make_unique<LimitReadBuffer>(std::move(in), getContentLength(), false);
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
@@ -66,6 +75,31 @@ bool HTTPServerRequest::checkPeerConnected() const
     return true;
 }
 
+#if USE_SSL
+bool HTTPServerRequest::havePeerCertificate() const
+{
+    if (!secure)
+        return false;
+
+    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+    if (!secure_socket)
+        return false;
+
+    return secure_socket->havePeerCertificate();
+}
+
+Poco::Net::X509Certificate HTTPServerRequest::peerCertificate() const
+{
+    if (secure)
+    {
+        const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+        if (secure_socket)
+            return secure_socket->peerCertificate();
+    }
+    throw Poco::Net::SSLException("No certificate available");
+}
+#endif
+
 void HTTPServerRequest::readRequest(ReadBuffer & in)
 {
     char ch;
@@ -93,10 +127,10 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
 
     skipWhitespaceIfAny(in);
 
-    while (in.read(ch) && !Poco::Ascii::isSpace(ch) && uri.size() <= MAX_URI_LENGTH)
+    while (in.read(ch) && !Poco::Ascii::isSpace(ch) && uri.size() <= max_uri_size)
         uri += ch;
 
-    if (uri.size() > MAX_URI_LENGTH)
+    if (uri.size() > max_uri_size)
         throw Poco::Net::MessageException("HTTP request URI invalid or too long");
 
     skipWhitespaceIfAny(in);
@@ -111,7 +145,7 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
 
     skipToNextLineOrEOF(in);
 
-    readHeaders(*this, in);
+    readHeaders(*this, in, max_fields_number, max_field_name_size, max_field_value_size);
 
     skipToNextLineOrEOF(in);
 

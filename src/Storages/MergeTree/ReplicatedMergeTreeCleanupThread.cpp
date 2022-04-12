@@ -2,10 +2,12 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <Interpreters/Context.h>
+#include <Common/ZooKeeper/KeeperException.h>
 
 #include <random>
-#include <pcg_random.hpp>
 #include <unordered_set>
+
+#include <base/sort.h>
 
 
 namespace DB
@@ -24,7 +26,7 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeCleanupThread)")
     , log(&Poco::Logger::get(log_name))
 {
-    task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeCleanupThread::run()
@@ -62,7 +64,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
         storage.clearOldWriteAheadLogs();
-        storage.clearOldTemporaryDirectories();
+        storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -110,7 +112,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     if (entries.empty())
         return;
 
-    std::sort(entries.begin(), entries.end());
+    ::sort(entries.begin(), entries.end());
 
     String min_saved_record_log_str = entries[
         entries.size() > storage_settings->max_replicated_logs_to_keep
@@ -291,7 +293,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
 
     std::vector<zkutil::ZooKeeper::FutureMulti> futures;
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
-        futures.emplace_back(zookeeper->tryAsyncMulti(requests[i]));
+        futures.emplace_back(zookeeper->asyncTryMultiNoThrow(requests[i]));
 
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
     {
@@ -307,8 +309,9 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
 {
     String node;
     Int64 ctime = 0;
+    Int32 version = 0;
 
-    NodeWithStat(String node_, Int64 ctime_) : node(std::move(node_)), ctime(ctime_) {}
+    NodeWithStat(String node_, Int64 ctime_, Int32 version_) : node(std::move(node_)), ctime(ctime_), version(version_) {}
 
     static bool greaterByTime(const NodeWithStat & lhs, const NodeWithStat & rhs)
     {
@@ -334,7 +337,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         current_time - static_cast<Int64>(1000 * storage_settings->replicated_deduplication_window_seconds));
 
     /// Virtual node, all nodes that are "greater" than this one will be deleted
-    NodeWithStat block_threshold{{}, time_threshold};
+    NodeWithStat block_threshold{{}, time_threshold, 0};
 
     size_t current_deduplication_window = std::min<size_t>(timed_blocks.size(), storage_settings->replicated_deduplication_window);
     auto first_outdated_block_fixed_threshold = timed_blocks.begin() + current_deduplication_window;
@@ -342,11 +345,20 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
+    auto num_nodes_to_delete = timed_blocks.end() - first_outdated_block;
+    if (!num_nodes_to_delete)
+        return;
+
+    auto last_outdated_block = timed_blocks.end() - 1;
+    LOG_TRACE(log, "Will clear {} old blocks from {} (ctime {}) to {} (ctime {})", num_nodes_to_delete,
+              first_outdated_block->node, first_outdated_block->ctime,
+              last_outdated_block->node, last_outdated_block->ctime);
+
     zkutil::AsyncResponses<Coordination::RemoveResponse> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
         String path = storage.zookeeper_path + "/blocks/" + it->node;
-        try_remove_futures.emplace_back(path, zookeeper->asyncTryRemove(path));
+        try_remove_futures.emplace_back(path, zookeeper->asyncTryRemove(path, it->version));
     }
 
     for (auto & pair : try_remove_futures)
@@ -359,7 +371,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
             zookeeper->removeRecursive(path);
             cached_block_stats.erase(first_outdated_block->node);
         }
-        else if (rc == Coordination::Error::ZOK || rc == Coordination::Error::ZNONODE)
+        else if (rc == Coordination::Error::ZOK || rc == Coordination::Error::ZNONODE || rc == Coordination::Error::ZBADVERSION)
         {
             /// No node is Ok. Another replica is removing nodes concurrently.
             /// Successfully removed blocks have to be removed from cache
@@ -372,9 +384,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         first_outdated_block++;
     }
 
-    auto num_nodes_to_delete = timed_blocks.end() - first_outdated_block;
-    if (num_nodes_to_delete)
-        LOG_TRACE(log, "Cleared {} old blocks from ZooKeeper", num_nodes_to_delete);
+    LOG_TRACE(log, "Cleared {} old blocks from ZooKeeper", num_nodes_to_delete);
 }
 
 
@@ -419,7 +429,8 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         else
         {
             /// Cached block
-            timed_blocks.emplace_back(block, it->second);
+            const auto & ctime_and_version = it->second;
+            timed_blocks.emplace_back(block, ctime_and_version.first, ctime_and_version.second);
         }
     }
 
@@ -429,12 +440,12 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         auto status = elem.second.get();
         if (status.error != Coordination::Error::ZNONODE)
         {
-            cached_block_stats.emplace(elem.first, status.stat.ctime);
-            timed_blocks.emplace_back(elem.first, status.stat.ctime);
+            cached_block_stats.emplace(elem.first, std::make_pair(status.stat.ctime, status.stat.version));
+            timed_blocks.emplace_back(elem.first, status.stat.ctime, status.stat.version);
         }
     }
 
-    std::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
+    ::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
 }
 
 
@@ -467,7 +478,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
     }
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/mutations");
-    std::sort(entries.begin(), entries.end());
+    ::sort(entries.begin(), entries.end());
 
     /// Do not remove entries that are greater than `min_pointer` (they are not done yet).
     entries.erase(std::upper_bound(entries.begin(), entries.end(), padIndex(min_pointer)), entries.end());

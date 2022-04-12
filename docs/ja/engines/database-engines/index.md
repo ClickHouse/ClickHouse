@@ -18,4 +18,4 @@ toc_title: "\u306F\u3058\u3081\u306B"
 
 -   [怠け者](lazy.md)
 
-[元の記事](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/database_engines/) <!--hide-->

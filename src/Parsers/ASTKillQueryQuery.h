@@ -13,6 +13,8 @@ public:
     {
         Query,      /// KILL QUERY
         Mutation,   /// KILL MUTATION
+        PartMoveToShard, /// KILL PART_MOVE_TO_SHARD
+        Transaction,     /// KILL TRANSACTION
     };
 
     Type type = Type::Query;

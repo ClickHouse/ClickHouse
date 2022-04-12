@@ -1,7 +1,6 @@
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/find_symbols.h>
-
+#include <base/find_symbols.h>
 
 namespace DB
 {
@@ -275,10 +274,23 @@ Token Lexer::nextTokenImpl()
                         else
                             ++pos;
                     }
-                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, end);
+                    pos = end;
+                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
                 }
             }
             return Token(TokenType::Slash, token_begin, pos);
+        }
+        case '#':   /// start of single line comment, MySQL style
+        {           /// PostgreSQL has some operators using '#' character.
+                    /// For less ambiguity, we will recognize a comment only if # is followed by whitespace.
+                    /// or #! as a special case for "shebang".
+                    /// #hello - not a comment
+                    /// # hello - a comment
+                    /// #!/usr/bin/clickhouse-local --queries-file - a comment
+            ++pos;
+            if (pos < end && (*pos == ' ' || *pos == '!'))
+                return comment_until_end_of_line();
+            return Token(TokenType::Error, token_begin, pos);
         }
         case '%':
             return Token(TokenType::Percent, token_begin, ++pos);
@@ -315,7 +327,12 @@ Token Lexer::nextTokenImpl()
         case '?':
             return Token(TokenType::QuestionMark, token_begin, ++pos);
         case ':':
-            return Token(TokenType::Colon, token_begin, ++pos);
+        {
+            ++pos;
+            if (pos < end && *pos == ':')
+                return Token(TokenType::DoubleColon, token_begin, ++pos);
+            return Token(TokenType::Colon, token_begin, pos);
+        }
         case '|':
         {
             ++pos;
@@ -330,8 +347,43 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::DoubleAt, token_begin, ++pos);
             return Token(TokenType::At, token_begin, pos);
         }
+        case '\\':
+        {
+            ++pos;
+            if (pos < end && *pos == 'G')
+                return Token(TokenType::VerticalDelimiter, token_begin, ++pos);
+            return Token(TokenType::Error, token_begin, pos);
+        }
 
         default:
+            if (*pos == '$')
+            {
+                /// Try to capture dollar sign as start of here doc
+
+                std::string_view token_stream(pos, end - pos);
+                auto heredoc_name_end_position = token_stream.find('$', 1);
+                if (heredoc_name_end_position != std::string::npos)
+                {
+                    size_t heredoc_size = heredoc_name_end_position + 1;
+                    std::string_view heredoc = {token_stream.data(), heredoc_size};
+
+                    size_t heredoc_end_position = token_stream.find(heredoc, heredoc_size);
+                    if (heredoc_end_position != std::string::npos)
+                    {
+
+                        pos += heredoc_end_position;
+                        pos += heredoc_size;
+
+                        return Token(TokenType::HereDoc, token_begin, pos);
+                    }
+                }
+
+                if (((pos + 1 < end && !isWordCharASCII(pos[1])) || pos + 1 == end))
+                {
+                    /// Capture standalone dollar sign
+                    return Token(TokenType::DollarSign, token_begin, ++pos);
+                }
+            }
             if (isWordCharASCII(*pos) || *pos == '$')
             {
                 ++pos;

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 
 
 namespace DB
@@ -30,6 +32,7 @@ struct PartLogElement
     String table_name;
     String part_name;
     String partition_id;
+    String disk_name;
     String path_on_disk;
 
     /// Size of the part
@@ -49,10 +52,10 @@ struct PartLogElement
     UInt16 error = 0;
     String exception;
 
-
     static std::string name() { return "PartLog"; }
 
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
 
@@ -69,9 +72,9 @@ class PartLog : public SystemLog<PartLogElement>
 
 public:
     /// Add a record about creation of new part.
-    static bool addNewPart(Context & context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
+    static bool addNewPart(ContextPtr context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
                            const ExecutionStatus & execution_status = {});
-    static bool addNewParts(Context & context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
+    static bool addNewParts(ContextPtr context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
                             const ExecutionStatus & execution_status = {});
 };
 

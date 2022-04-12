@@ -1,5 +1,5 @@
 ---
-toc_priority: 5
+toc_priority: 8
 toc_title: Kafka
 ---
 
@@ -191,5 +191,5 @@ ClickHouse может поддерживать учетные данные Kerbe
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
--   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
 

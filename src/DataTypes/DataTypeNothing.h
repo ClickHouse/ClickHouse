@@ -20,10 +20,6 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    /// These methods read and write zero bytes just to allow to figure out size of column.
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
-
     bool equals(const IDataType & rhs) const override;
 
     bool isParametric() const override { return false; }
@@ -31,6 +27,8 @@ public:
     bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return 0; }
     bool canBeInsideNullable() const override { return true; }
+
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 }

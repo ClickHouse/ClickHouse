@@ -7,9 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ActionBlocker.h>
-#include <common/types.h>
-
-#include <Poco/Net/HTMLForm.h>
+#include <base/types.h>
 
 #include <atomic>
 #include <map>

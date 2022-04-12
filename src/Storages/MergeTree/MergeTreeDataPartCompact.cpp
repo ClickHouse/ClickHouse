@@ -2,7 +2,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
-#include <Poco/File.h>
 
 
 namespace DB
@@ -21,8 +20,9 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
        MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT)
+        const std::optional<String> & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT, parent_part_)
 {
 }
 
@@ -31,8 +31,9 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT)
+        const std::optional<String> & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT, parent_part_)
 {
 }
 
@@ -106,7 +107,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
 
     size_t marks_file_size = volume->getDisk()->getFileSize(marks_file_path);
 
-    auto buffer = volume->getDisk()->readFile(marks_file_path, marks_file_size);
+    auto buffer = volume->getDisk()->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size);
     while (!buffer->eof())
     {
         /// Skip offsets for columns
@@ -124,7 +125,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
 {
-    if (!getColumnPosition(column.name))
+    if (!getColumnPosition(column.getNameInStorage()))
         return false;
 
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
@@ -179,6 +180,11 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
         }
     }
+}
+
+bool MergeTreeDataPartCompact::isStoredOnRemoteDisk() const
+{
+    return volume->getDisk()->isRemote();
 }
 
 MergeTreeDataPartCompact::~MergeTreeDataPartCompact()

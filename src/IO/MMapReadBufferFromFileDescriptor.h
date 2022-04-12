@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/MMappedFileDescriptor.h>
 
 
 namespace DB
@@ -17,9 +18,10 @@ public:
     off_t seek(off_t off, int whence) override;
 
 protected:
-    MMapReadBufferFromFileDescriptor() {}
-    void init(int fd_, size_t offset, size_t length_);
-    void init(int fd_, size_t offset);
+    MMapReadBufferFromFileDescriptor() = default;
+    void init();
+
+    MMappedFileDescriptor mapped;
 
 public:
     MMapReadBufferFromFileDescriptor(int fd_, size_t offset_, size_t length_);
@@ -27,18 +29,12 @@ public:
     /// Map till end of file.
     MMapReadBufferFromFileDescriptor(int fd_, size_t offset_);
 
-    ~MMapReadBufferFromFileDescriptor() override;
-
     /// unmap memory before call to destructor
     void finish();
 
     off_t getPosition() override;
     std::string getFileName() const override;
     int getFD() const;
-
-private:
-    size_t length = 0;
-    int fd = -1;
 };
 
 }

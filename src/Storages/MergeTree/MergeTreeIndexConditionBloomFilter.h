@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class MergeTreeIndexConditionBloomFilter : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionBloomFilter final : public IMergeTreeIndexCondition, WithContext
 {
 public:
     struct RPNElement
@@ -24,6 +24,8 @@ public:
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
+            FUNCTION_HAS_ANY,
+            FUNCTION_HAS_ALL,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_UNKNOWN, /// Can take any value.
@@ -36,13 +38,13 @@ public:
             ALWAYS_TRUE,
         };
 
-        RPNElement(Function function_ = FUNCTION_UNKNOWN) : function(function_) {}
+        RPNElement(Function function_ = FUNCTION_UNKNOWN) : function(function_) {} /// NOLINT
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const SelectQueryInfo & info_, const Context & context_, const Block & header_, size_t hash_functions_);
+    MergeTreeIndexConditionBloomFilter(const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -56,7 +58,6 @@ public:
 
 private:
     const Block & header;
-    const Context & context;
     const SelectQueryInfo & query_info;
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
@@ -69,13 +70,27 @@ private:
 
     bool traverseFunction(const ASTPtr & node, Block & block_with_constants, RPNElement & out, const ASTPtr & parent);
 
-    bool traverseASTIn(const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out);
+    bool traverseASTIn(
+        const String & function_name,
+        const ASTPtr & key_ast,
+        const SetPtr & prepared_set,
+        RPNElement & out);
 
     bool traverseASTIn(
-        const String & function_name, const ASTPtr & key_ast, const DataTypePtr & type, const ColumnPtr & column, RPNElement & out);
+        const String & function_name,
+        const ASTPtr & key_ast,
+        const SetPtr & prepared_set,
+        const DataTypePtr & type,
+        const ColumnPtr & column,
+        RPNElement & out);
 
     bool traverseASTEquals(
-        const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out, const ASTPtr & parent);
+        const String & function_name,
+        const ASTPtr & key_ast,
+        const DataTypePtr & value_type,
+        const Field & value_field,
+        RPNElement & out,
+        const ASTPtr & parent);
 };
 
 }

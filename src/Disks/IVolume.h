@@ -16,8 +16,6 @@ enum class VolumeType
     UNKNOWN
 };
 
-String volumeTypeToString(VolumeType t);
-
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 using Volumes = std::vector<VolumePtr>;
@@ -62,6 +60,7 @@ public:
 
     DiskPtr getDisk() const { return getDisk(0); }
     virtual DiskPtr getDisk(size_t i) const { return disks[i]; }
+    Disks & getDisks() { return disks; }
     const Disks & getDisks() const { return disks; }
 
     /// Returns effective value of whether merges are allowed on this volume (true) or not (false).

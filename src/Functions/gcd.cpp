@@ -2,6 +2,8 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/GCDLCMImpl.h>
 
+#include <boost/integer/common_factor.hpp>
+
 
 namespace DB
 {
@@ -19,7 +21,7 @@ struct GCDImpl : public GCDLCMImpl<A, B, GCDImpl<A, B>, NameGCD>
     static ResultType applyImpl(A a, B b)
     {
         using Int = typename NumberTraits::ToInteger<ResultType>::Type;
-        return std::gcd(Int(a), Int(b));
+        return boost::integer::gcd(Int(a), Int(b));
     }
 };
 

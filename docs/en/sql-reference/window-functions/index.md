@@ -3,12 +3,7 @@ toc_priority: 62
 toc_title: Window Functions
 ---
 
-# [experimental] Window Functions
-
-!!! warning "Warning"
-This is an experimental feature that is currently in development and is not ready
-for general use. It will change in unpredictable backwards-incompatible ways in
-the future releases. Set `allow_experimental_window_functions = 1` to enable it.
+# Window Functions
 
 ClickHouse supports the standard grammar for defining windows and window functions. The following features are currently supported:
 
@@ -23,7 +18,9 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `GROUPS` frame | not supported |
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`) | all aggregate functions are supported |
 | `rank()`, `dense_rank()`, `row_number()` | supported |
-| `lag/lead(value, offset)` | not supported, replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`| 
+| `lag/lead(value, offset)` | Not supported. Workarounds: |
+|  | 1) replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`|
+|  | 2) use `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following` |
 
 ## References
 

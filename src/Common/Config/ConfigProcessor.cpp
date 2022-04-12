@@ -1,4 +1,6 @@
+#include <Common/config.h>
 #include "ConfigProcessor.h"
+#include "YAMLParser.h"
 
 #include <sys/utsname.h>
 #include <cerrno>
@@ -7,6 +9,7 @@
 #include <algorithm>
 #include <functional>
 #include <filesystem>
+#include <boost/algorithm/string.hpp>
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
@@ -15,14 +18,13 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <common/getResource.h>
-#include <common/errnoToString.h>
+#include <Common/getResource.h>
+#include <base/errnoToString.h>
+#include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
-
 #define PREPROCESSED_SUFFIX "-preprocessed"
-
 
 namespace fs = std::filesystem;
 
@@ -34,33 +36,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_LOAD_CONFIG;
 }
 
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
 
-/// Extracts from a string the first encountered number consisting of at least two digits.
-static std::string numberFromHost(const std::string & s)
-{
-    for (size_t i = 0; i < s.size(); ++i)
-    {
-        std::string res;
-        size_t j = i;
-        while (j < s.size() && isNumericASCII(s[j]))
-            res += s[j++];
-        if (res.size() >= 2)
-        {
-            while (res[0] == '0')
-                res.erase(res.begin());
-            return res;
-        }
-    }
-    return "";
-}
 
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
-    return endsWith(Poco::Path(path).getBaseName(), PREPROCESSED_SUFFIX);
+    return endsWith(fs::path(path).stem(), PREPROCESSED_SUFFIX);
 }
 
 
@@ -121,7 +106,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
         std::string value = node->nodeValue();
         attrs_kv.push_back(std::make_pair(name, value));
     }
-    std::sort(attrs_kv.begin(), attrs_kv.end());
+    ::sort(attrs_kv.begin(), attrs_kv.end());
 
     ElementIdentifier res;
     res.push_back(element->nodeName());
@@ -152,6 +137,35 @@ static Node * getRootNode(Document * document)
 static bool allWhitespace(const std::string & s)
 {
     return s.find_first_not_of(" \t\n\r") == std::string::npos;
+}
+
+static void deleteAttributesRecursive(Node * root)
+{
+    const NodeListPtr children = root->childNodes();
+    std::vector<Node *> children_to_delete;
+
+    for (size_t i = 0, size = children->length(); i < size; ++i)
+    {
+        Node * child = children->item(i);
+
+        if (child->nodeType() == Node::ELEMENT_NODE)
+        {
+            Element & child_element = dynamic_cast<Element &>(*child);
+
+            if (child_element.hasAttribute("replace"))
+                child_element.removeAttribute("replace");
+
+            if (child_element.hasAttribute("remove"))
+                children_to_delete.push_back(child);
+            else
+                deleteAttributesRecursive(child);
+        }
+    }
+
+    for (auto * child : children_to_delete)
+    {
+        root->removeChild(child);
+    }
 }
 
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
@@ -215,6 +229,10 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         }
         if (!merged && !remove)
         {
+            /// Since we didn't find a pair to this node in default config, we will paste it as is.
+            /// But it may have some child nodes which have attributes like "replace" or "remove".
+            /// They are useless in preprocessed configuration.
+            deleteAttributesRecursive(with_node);
             NodePtr new_node = config->importNode(with_node, true);
             config_root->appendChild(new_node);
         }
@@ -226,23 +244,21 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
     Node * config_root = getRootNode(config.get());
     Node * with_root = getRootNode(with.get());
 
-    if (config_root->nodeName() != with_root->nodeName())
-        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file. It must be <" + config_root->nodeName() + ">");
+    std::string config_root_node_name = config_root->nodeName();
+    std::string merged_root_node_name = with_root->nodeName();
+
+    /// For compatibility, we treat 'yandex' and 'clickhouse' equivalent.
+    /// See https://clickhouse.com/blog/en/2021/clickhouse-inc/
+
+    if (config_root_node_name != merged_root_node_name
+        && !((config_root_node_name == "yandex" || config_root_node_name == "clickhouse")
+            && (merged_root_node_name == "yandex" || merged_root_node_name == "clickhouse")))
+    {
+        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file."
+            " It must be <" + config_root->nodeName() + ">");
+    }
 
     mergeRecursive(config, config_root, with_root);
-}
-
-static std::string layerFromHost()
-{
-    utsname buf;
-    if (uname(&buf))
-        throw Poco::Exception(std::string("uname failed: ") + errnoToString(errno));
-
-    std::string layer = numberFromHost(buf.nodename);
-    if (layer.empty())
-        throw Poco::Exception(std::string("no layer in host name: ") + buf.nodename);
-
-    return layer;
 }
 
 void ConfigProcessor::doIncludesRecursive(
@@ -275,18 +291,6 @@ void ConfigProcessor::doIncludesRecursive(
     if (node->nodeType() != Node::ELEMENT_NODE)
         return;
 
-    /// Substitute <layer> for the number extracted from the hostname only if there is an
-    /// empty <layer> tag without attributes in the original file.
-    if (node->nodeName() == "layer"
-        && !node->hasAttributes()
-        && !node->hasChildNodes()
-        && node->nodeValue().empty())
-    {
-        NodePtr new_node = config->createTextNode(layerFromHost());
-        node->appendChild(new_node);
-        return;
-    }
-
     std::map<std::string, const Node *> attr_nodes;
     NamedNodeMapPtr attributes = node->attributes();
     size_t substs_count = 0;
@@ -294,11 +298,19 @@ void ConfigProcessor::doIncludesRecursive(
     {
         const auto * subst = attributes->getNamedItem(attr_name);
         attr_nodes[attr_name] = subst;
-        substs_count += static_cast<size_t>(subst == nullptr);
+        substs_count += static_cast<size_t>(subst != nullptr);
     }
 
-    if (substs_count < SUBSTITUTION_ATTRS.size() - 1) /// only one substitution is allowed
-        throw Poco::Exception("several substitutions attributes set for element <" + node->nodeName() + ">");
+    if (substs_count > 1) /// only one substitution is allowed
+        throw Poco::Exception("More than one substitution attribute is set for element <" + node->nodeName() + ">");
+
+    if (node->nodeName() == "include")
+    {
+        if (node->hasChildNodes())
+            throw Poco::Exception("<include> element must have no children");
+        if (substs_count == 0)
+            throw Poco::Exception("No substitution attributes set for element <include>, must have exactly one");
+    }
 
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
@@ -316,37 +328,57 @@ void ConfigProcessor::doIncludesRecursive(
             else if (throw_on_bad_incl)
                 throw Poco::Exception(error_msg + name);
             else
+            {
+                if (node->nodeName() == "include")
+                    node->parentNode()->removeChild(node);
+
                 LOG_WARNING(log, "{}{}", error_msg, name);
+            }
         }
         else
         {
-            Element & element = dynamic_cast<Element &>(*node);
-
-            for (const auto & attr_name : SUBSTITUTION_ATTRS)
-                element.removeAttribute(attr_name);
-
-            if (replace)
+            /// Replace the whole node not just contents.
+            if (node->nodeName() == "include")
             {
-                while (Node * child = node->firstChild())
-                    node->removeChild(child);
+                const NodeListPtr children = node_to_include->childNodes();
+                for (size_t i = 0, size = children->length(); i < size; ++i)
+                {
+                    NodePtr new_node = config->importNode(children->item(i), true);
+                    node->parentNode()->insertBefore(new_node, node);
+                }
 
-                element.removeAttribute("replace");
+                node->parentNode()->removeChild(node);
             }
-
-            const NodeListPtr children = node_to_include->childNodes();
-            for (size_t i = 0, size = children->length(); i < size; ++i)
+            else
             {
-                NodePtr new_node = config->importNode(children->item(i), true);
-                node->appendChild(new_node);
-            }
+                Element & element = dynamic_cast<Element &>(*node);
 
-            const NamedNodeMapPtr from_attrs = node_to_include->attributes();
-            for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
-            {
-                element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
-            }
+                for (const auto & attr_name : SUBSTITUTION_ATTRS)
+                    element.removeAttribute(attr_name);
 
-            included_something = true;
+                if (replace)
+                {
+                    while (Node * child = node->firstChild())
+                        node->removeChild(child);
+
+                    element.removeAttribute("replace");
+                }
+
+                const NodeListPtr children = node_to_include->childNodes();
+                for (size_t i = 0, size = children->length(); i < size; ++i)
+                {
+                    NodePtr new_node = config->importNode(children->item(i), true);
+                    node->appendChild(new_node);
+                }
+
+                const NamedNodeMapPtr from_attrs = node_to_include->attributes();
+                for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
+                {
+                    element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
+                }
+
+                included_something = true;
+            }
         }
     };
 
@@ -354,7 +386,7 @@ void ConfigProcessor::doIncludesRecursive(
     {
         auto get_incl_node = [&](const std::string & name)
         {
-            return include_from ? include_from->getNodeByPath("yandex/" + name) : nullptr;
+            return include_from ? getRootNode(include_from.get())->getNodeByPath(name) : nullptr;
         };
 
         process_include(attr_nodes["incl"], get_incl_node, "Include not found: ");
@@ -414,36 +446,38 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 {
     Files files;
 
-    Poco::Path merge_dir_path(config_path);
+    fs::path merge_dir_path(config_path);
     std::set<std::string> merge_dirs;
 
     /// Add path_to_config/config_name.d dir
-    merge_dir_path.setExtension("d");
-    merge_dirs.insert(merge_dir_path.toString());
+    merge_dir_path.replace_extension("d");
+    merge_dirs.insert(merge_dir_path);
     /// Add path_to_config/conf.d dir
-    merge_dir_path.setBaseName("conf");
-    merge_dirs.insert(merge_dir_path.toString());
+    merge_dir_path.replace_filename("conf.d");
+    merge_dirs.insert(merge_dir_path);
 
     for (const std::string & merge_dir_name : merge_dirs)
     {
-        Poco::File merge_dir(merge_dir_name);
-        if (!merge_dir.exists() || !merge_dir.isDirectory())
+        if (!fs::exists(merge_dir_name) || !fs::is_directory(merge_dir_name))
             continue;
 
-        for (Poco::DirectoryIterator it(merge_dir_name); it != Poco::DirectoryIterator(); ++it)
+        for (fs::directory_iterator it(merge_dir_name); it != fs::directory_iterator(); ++it)
         {
-            Poco::File & file = *it;
-            Poco::Path path(file.path());
-            std::string extension = path.getExtension();
-            std::string base_name = path.getBaseName();
+            fs::path path(it->path());
+            std::string extension = path.extension();
+            std::string base_name = path.stem();
+
+            boost::algorithm::to_lower(extension);
 
             // Skip non-config and temporary files
-            if (file.isFile() && (extension == "xml" || extension == "conf") && !startsWith(base_name, "."))
-                files.push_back(file.path());
+            if (fs::is_regular_file(path)
+                    && (extension == ".xml" || extension == ".conf" || extension == ".yaml" || extension == ".yml")
+                    && !startsWith(base_name, "."))
+                files.push_back(it->path());
         }
     }
 
-    std::sort(files.begin(), files.end());
+    ::sort(files.begin(), files.end());
 
     return files;
 }
@@ -453,19 +487,45 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
-    XMLDocumentPtr config;
     LOG_DEBUG(log, "Processing configuration file '{}'.", path);
+
+    XMLDocumentPtr config;
 
     if (fs::exists(path))
     {
-        config = dom_parser.parse(path);
+        fs::path p(path);
+
+        std::string extension = p.extension();
+        boost::algorithm::to_lower(extension);
+
+        if (extension == ".yaml" || extension == ".yml")
+        {
+            config = YAMLParser::parse(path);
+        }
+        else if (extension == ".xml" || extension == ".conf" || extension.empty())
+        {
+            config = dom_parser.parse(path);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", path);
+        }
     }
     else
     {
-        /// When we can use config embedded in binary.
+        /// These embedded files added during build with some cmake magic.
+        /// Look at the end of programs/sever/CMakeLists.txt.
+        std::string embedded_name;
         if (path == "config.xml")
+            embedded_name = "embedded.xml";
+
+        if (path == "keeper_config.xml")
+            embedded_name = "keeper_embedded.xml";
+
+        /// When we can use config embedded in binary.
+        if (!embedded_name.empty())
         {
-            auto resource = getResource("embedded.xml");
+            auto resource = getResource(embedded_name);
             if (resource.empty())
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
             LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
@@ -484,8 +544,23 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         {
             LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
-            XMLDocumentPtr with = dom_parser.parse(merge_file);
+            XMLDocumentPtr with;
+
+            fs::path p(merge_file);
+            std::string extension = p.extension();
+            boost::algorithm::to_lower(extension);
+
+            if (extension == ".yaml" || extension == ".yml")
+            {
+                with = YAMLParser::parse(merge_file);
+            }
+            else
+            {
+                with = dom_parser.parse(merge_file);
+            }
+
             merge(config, with);
+
             contributing_files.push_back(merge_file);
         }
         catch (Exception & e)
@@ -502,7 +577,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     std::unordered_set<std::string> contributing_zk_paths;
     try
     {
-        Node * node = config->getNodeByPath("yandex/include_from");
+        Node * node = getRootNode(config.get())->getNodeByPath("include_from");
+
         XMLDocumentPtr include_from;
         std::string include_from_path;
         if (node)
@@ -514,7 +590,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         else
         {
             std::string default_path = "/etc/metrika.xml";
-            if (Poco::File(default_path).exists())
+            if (fs::exists(default_path))
                 include_from_path = default_path;
         }
         if (!include_from_path.empty())
@@ -617,20 +693,24 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         {
             fs::path preprocessed_configs_path("preprocessed_configs/");
             auto new_path = loaded_config.config_path;
-            if (new_path.substr(0, main_config_path.size()) == main_config_path)
-                new_path.replace(0, main_config_path.size(), "");
+            if (new_path.starts_with(main_config_path))
+                new_path.erase(0, main_config_path.size());
             std::replace(new_path.begin(), new_path.end(), '/', '_');
+
+            /// If we have config file in YAML format, the preprocessed config will inherit .yaml extension
+            /// but will contain config in XML format, so some tools like clickhouse extract-from-config won't work
+            new_path = fs::path(new_path).replace_extension(".xml").string();
 
             if (preprocessed_dir.empty())
             {
                 if (!loaded_config.configuration->has("path"))
                 {
                     // Will use current directory
-                    auto parent_path = Poco::Path(loaded_config.config_path).makeParent();
-                    preprocessed_dir = parent_path.toString();
-                    Poco::Path poco_new_path(new_path);
-                    poco_new_path.setBaseName(poco_new_path.getBaseName() + PREPROCESSED_SUFFIX);
-                    new_path = poco_new_path.toString();
+                    fs::path parent_path = fs::path(loaded_config.config_path).parent_path();
+                    preprocessed_dir = parent_path.string();
+                    fs::path fs_new_path(new_path);
+                    fs_new_path.replace_filename(fs_new_path.stem().string() + PREPROCESSED_SUFFIX + fs_new_path.extension().string());
+                    new_path = fs_new_path.string();
                 }
                 else
                 {
@@ -645,9 +725,9 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             }
 
             preprocessed_path = (fs::path(preprocessed_dir) / fs::path(new_path)).string();
-            auto preprocessed_path_parent = Poco::Path(preprocessed_path).makeParent();
-            if (!preprocessed_path_parent.toString().empty())
-                Poco::File(preprocessed_path_parent).createDirectories();
+            auto preprocessed_path_parent = fs::path(preprocessed_path).parent_path();
+            if (!preprocessed_path_parent.empty())
+                fs::create_directories(preprocessed_path_parent);
         }
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
         LOG_DEBUG(log, "Saved preprocessed configuration to '{}'.", preprocessed_path);
@@ -661,6 +741,8 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
 void ConfigProcessor::setConfigPath(const std::string & config_path)
 {
     main_config_path = config_path;
+    if (!main_config_path.ends_with('/'))
+        main_config_path += '/';
 }
 
 }

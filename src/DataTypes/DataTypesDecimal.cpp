@@ -1,15 +1,13 @@
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/Serializations/SerializationDecimal.h>
 
-#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/IAST.h>
 
 #include <type_traits>
 
@@ -24,14 +22,14 @@ namespace ErrorCodes
 }
 
 
-template <typename T>
+template <is_decimal T>
 std::string DataTypeDecimal<T>::doGetName() const
 {
     return fmt::format("Decimal({}, {})", this->precision, this->scale);
 }
 
 
-template <typename T>
+template <is_decimal T>
 bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 {
     if (auto * ptype = typeid_cast<const DataTypeDecimal<T> *>(&rhs))
@@ -39,63 +37,14 @@ bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
     return false;
 }
 
-template <typename T>
+template <is_decimal T>
 DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
     using PromotedType = DataTypeDecimal<Decimal128>;
     return std::make_shared<PromotedType>(PromotedType::maxPrecision(), this->scale);
 }
 
-template <typename T>
-void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    writeText(value, this->scale, ostr);
-}
-
-template <typename T>
-bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
-{
-    UInt32 unread_scale = scale;
-    if (!tryReadDecimalText(istr, x, precision, unread_scale))
-        return false;
-
-    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
-        return false;
-
-    return true;
-}
-
-template <typename T>
-void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
-{
-    UInt32 unread_scale = scale;
-    if (csv)
-        readCSVDecimalText(istr, x, precision, unread_scale);
-    else
-        readDecimalText(istr, x, precision, unread_scale);
-
-    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
-        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-}
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    T x;
-    readText(x, istr);
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    T x;
-    readText(x, istr, true);
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-template <typename T>
+template <is_decimal T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
 {
     ReadBufferFromMemory buf(str.data(), str.size());
@@ -107,6 +56,12 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
     return x;
+}
+
+template <is_decimal T>
+SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationDecimal<T>>(this->precision, this->scale);
 }
 
 

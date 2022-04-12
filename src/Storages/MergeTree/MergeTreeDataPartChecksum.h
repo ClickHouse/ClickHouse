@@ -2,7 +2,7 @@
 #include <map>
 #include <optional>
 #include <city.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -26,7 +26,7 @@ struct MergeTreeDataPartChecksum
     UInt64 uncompressed_size {};
     uint128 uncompressed_hash {};
 
-    MergeTreeDataPartChecksum() {}
+    MergeTreeDataPartChecksum() = default;
     MergeTreeDataPartChecksum(UInt64 file_size_, uint128 file_hash_) : file_size(file_size_), file_hash(file_hash_) {}
     MergeTreeDataPartChecksum(UInt64 file_size_, uint128 file_hash_, UInt64 uncompressed_size_, uint128 uncompressed_hash_)
         : file_size(file_size_), file_hash(file_hash_), is_compressed(true),
@@ -51,6 +51,8 @@ struct MergeTreeDataPartChecksums
     void addFile(const String & file_name, UInt64 file_size, Checksum::uint128 file_hash);
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
+
+    bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
 
     bool empty() const
     {
@@ -82,6 +84,8 @@ struct MergeTreeDataPartChecksums
 
     /// SipHash of all all files hashes represented as hex string
     String getTotalChecksumHex() const;
+
+    Checksum::uint128 getTotalChecksumUInt128() const;
 
     String getSerializedString() const;
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);

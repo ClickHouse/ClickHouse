@@ -1,4 +1,5 @@
 #include <Server/HTTP/HTTPServerConnection.h>
+#include <Server/TCPServer.h>
 
 #include <Poco/Net/NetException.h>
 
@@ -6,11 +7,12 @@ namespace DB
 {
 
 HTTPServerConnection::HTTPServerConnection(
-    const Context & context_,
+    ContextPtr context_,
+    TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params_,
     HTTPRequestHandlerFactoryPtr factory_)
-    : TCPServerConnection(socket), context(context_), params(params_), factory(factory_), stopped(false)
+    : TCPServerConnection(socket), context(Context::createCopy(context_)), tcp_server(tcp_server_), params(params_), factory(factory_), stopped(false)
 {
     poco_check_ptr(factory);
 }
@@ -20,17 +22,27 @@ void HTTPServerConnection::run()
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
-    while (!stopped && session.hasMoreRequests())
+    while (!stopped && tcp_server.isOpen() && session.hasMoreRequests())
     {
         try
         {
             std::unique_lock<std::mutex> lock(mutex);
-            if (!stopped)
+            if (!stopped && tcp_server.isOpen())
             {
                 HTTPServerResponse response(session);
                 HTTPServerRequest request(context, response, session);
 
                 Poco::Timestamp now;
+
+                if (request.isSecure())
+                {
+                    size_t hsts_max_age = context->getSettingsRef().hsts_max_age.value;
+
+                    if (hsts_max_age > 0)
+                        response.add("Strict-Transport-Security", "max-age=" + std::to_string(hsts_max_age));
+
+                }
+
                 response.setDate(now);
                 response.setVersion(request.getVersion());
                 response.setKeepAlive(params->getKeepAlive() && request.getKeepAlive() && session.canKeepAlive());
@@ -38,6 +50,11 @@ void HTTPServerConnection::run()
                     response.set("Server", server);
                 try
                 {
+                    if (!tcp_server.isOpen())
+                    {
+                        sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+                        break;
+                    }
                     std::unique_ptr<HTTPRequestHandler> handler(factory->createRequestHandler(request));
 
                     if (handler)
@@ -67,15 +84,15 @@ void HTTPServerConnection::run()
                 }
             }
         }
-        catch (Poco::Net::NoMessageException &)
+        catch (const Poco::Net::NoMessageException &)
         {
             break;
         }
-        catch (Poco::Net::MessageException &)
+        catch (const Poco::Net::MessageException &)
         {
             sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         }
-        catch (Poco::Exception &)
+        catch (const Poco::Exception &)
         {
             if (session.networkException())
             {
@@ -96,33 +113,6 @@ void HTTPServerConnection::sendErrorResponse(Poco::Net::HTTPServerSession & sess
     response.setKeepAlive(false);
     response.send();
     session.setKeepAlive(false);
-}
-
-void HTTPServerConnection::onServerStopped(const bool & abortCurrent)
-{
-    stopped = true;
-    if (abortCurrent)
-    {
-        try
-        {
-            socket().shutdown();
-        }
-        catch (...)
-        {
-        }
-    }
-    else
-    {
-        std::unique_lock<std::mutex> lock(mutex);
-
-        try
-        {
-            socket().shutdown();
-        }
-        catch (...)
-        {
-        }
-    }
 }
 
 }

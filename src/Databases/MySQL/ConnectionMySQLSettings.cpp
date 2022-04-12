@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-IMPLEMENT_SETTINGS_TRAITS(ConnectionMySQLSettingsTraits, LIST_OF_CONNECTION_MYSQL_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(ConnectionMySQLSettingsTraits, LIST_OF_MYSQL_DATABASE_SETTINGS)
 
 void ConnectionMySQLSettings::loadFromQuery(ASTStorage & storage_def)
 {
@@ -50,12 +50,12 @@ void ConnectionMySQLSettings::loadFromQuery(ASTStorage & storage_def)
 #undef ADD_IF_ABSENT
 }
 
-void ConnectionMySQLSettings::loadFromQueryContext(const Context & context)
+void ConnectionMySQLSettings::loadFromQueryContext(ContextPtr context)
 {
-    if (!context.hasQueryContext())
+    if (!context->hasQueryContext())
         return;
 
-    const Settings & settings = context.getQueryContext().getSettingsRef();
+    const Settings & settings = context->getQueryContext()->getSettingsRef();
 
     if (settings.mysql_datatypes_support_level.value != mysql_datatypes_support_level.value)
         set("mysql_datatypes_support_level", settings.mysql_datatypes_support_level.toString());

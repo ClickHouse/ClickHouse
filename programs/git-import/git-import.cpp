@@ -18,7 +18,7 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ShellCommand.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 #include <IO/copyData.h>
 #include <IO/ReadHelpers.h>
@@ -774,7 +774,7 @@ UInt128 diffHash(const CommitDiff & file_changes)
     }
 
     UInt128 hash_of_diff;
-    hasher.get128(hash_of_diff.low, hash_of_diff.high);
+    hasher.get128(hash_of_diff.items[0], hash_of_diff.items[1]);
 
     return hash_of_diff;
 }

@@ -15,16 +15,16 @@ RawBLOBRowOutputFormat::RawBLOBRowOutputFormat(
 }
 
 
-void RawBLOBRowOutputFormat::writeField(const IColumn & column, const IDataType &, size_t row_num)
+void RawBLOBRowOutputFormat::writeField(const IColumn & column, const ISerialization &, size_t row_num)
 {
     StringRef value = column.getDataAt(row_num);
     out.write(value.data, value.size);
 }
 
 
-void registerOutputFormatProcessorRawBLOB(FormatFactory & factory)
+void registerOutputFormatRawBLOB(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("RawBLOB", [](
+    factory.registerOutputFormat("RawBLOB", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

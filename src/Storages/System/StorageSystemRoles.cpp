@@ -3,9 +3,9 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Role.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 
 
@@ -23,15 +23,15 @@ NamesAndTypesList StorageSystemRoles::getNamesAndTypes()
 }
 
 
-void StorageSystemRoles::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemRoles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_ROLES);
-    const auto & access_control = context.getAccessControlManager();
+    context->checkAccess(AccessType::SHOW_ROLES);
+    const auto & access_control = context->getAccessControl();
     std::vector<UUID> ids = access_control.findAll<Role>();
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
+    auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
 
     auto add_row = [&](const String & name,
@@ -39,7 +39,7 @@ void StorageSystemRoles::fillData(MutableColumns & res_columns, const Context & 
                        const String & storage_name)
     {
         column_name.insertData(name.data(), name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
     };
 

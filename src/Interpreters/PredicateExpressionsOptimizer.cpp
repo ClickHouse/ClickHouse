@@ -1,13 +1,14 @@
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 
-#include <Parsers/IAST.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExtractExpressionInfoVisitor.h>
+#include <Interpreters/PredicateRewriteVisitor.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/getTableExpressions.h>
-#include <Interpreters/PredicateRewriteVisitor.h>
-#include <Interpreters/ExtractExpressionInfoVisitor.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -19,11 +20,11 @@ namespace ErrorCodes
 }
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
-    const Context & context_, const TablesWithColumns & tables_with_columns_, const Settings & settings)
-    : enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression)
+    ContextPtr context_, const TablesWithColumns & tables_with_columns_, const Settings & settings)
+    : WithContext(context_)
+    , enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression)
     , enable_optimize_predicate_expression_to_final_subquery(settings.enable_optimize_predicate_expression_to_final_subquery)
     , allow_push_predicate_when_subquery_contains_with(settings.allow_push_predicate_when_subquery_contains_with)
-    , context(context_)
     , tables_with_columns(tables_with_columns_)
 {
 }
@@ -39,7 +40,7 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     if (!select_query.tables() || select_query.tables()->children.empty())
         return false;
 
-    if ((!select_query.where() && !select_query.prewhere()) || select_query.arrayJoinExpressionList())
+    if ((!select_query.where() && !select_query.prewhere()) || select_query.arrayJoinExpressionList().first)
         return false;
 
     const auto & tables_predicates = extractTablesPredicates(select_query.where(), select_query.prewhere());
@@ -87,7 +88,7 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
 
     for (const auto & predicate_expression : splitConjunctionPredicate({where, prewhere}))
     {
-        ExpressionInfoVisitor::Data expression_info{.context = context, .tables = tables_with_columns};
+        ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables_with_columns};
         ExpressionInfoVisitor(expression_info).visit(predicate_expression);
 
         if (expression_info.is_stateful_function
@@ -146,7 +147,7 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
                 break;  /// Skip left and right table optimization
 
             is_rewrite_tables |= tryRewritePredicatesToTable(tables_element[table_pos], tables_predicates[table_pos],
-                tables_with_columns[table_pos].columns.getNames());
+                tables_with_columns[table_pos]);
 
             if (table_element->table_join && isRight(table_element->table_join->as<ASTTableJoin>()->kind))
                 break;  /// Skip left table optimization
@@ -156,13 +157,13 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
     return is_rewrite_tables;
 }
 
-bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, Names && table_columns) const
+bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, const TableWithColumnNamesAndTypes & table_columns) const
 {
     if (!table_predicates.empty())
     {
         auto optimize_final = enable_optimize_predicate_expression_to_final_subquery;
         auto optimize_with = allow_push_predicate_when_subquery_contains_with;
-        PredicateRewriteVisitor::Data data(context, table_predicates, std::move(table_columns), optimize_final, optimize_with);
+        PredicateRewriteVisitor::Data data(getContext(), table_predicates, table_columns, optimize_final, optimize_with);
 
         PredicateRewriteVisitor(data).visit(table_element);
         return data.is_rewrite;
@@ -187,7 +188,8 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
 
     for (const auto & moving_predicate: splitConjunctionPredicate({select_query.having()}))
     {
-        ExpressionInfoVisitor::Data expression_info{.context = context, .tables = {}};
+        TablesWithColumns tables;
+        ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables};
         ExpressionInfoVisitor(expression_info).visit(moving_predicate);
 
         /// TODO: If there is no group by, where, and prewhere expression, we can push down the stateful function

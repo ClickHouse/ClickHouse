@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
@@ -90,12 +90,13 @@ template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
 {
 public:
-    static FunctionPtr create(const Context & /* context */) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(ContextPtr /* context */) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -142,7 +143,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
         key_columns[j]->updateHashWithValue(indices[j], hash);
     }
 
-    hash.get128(key.low, key.high);
+    hash.get128(key);
 
     return key;
 }
@@ -251,7 +252,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
     ColumnPtr result_nested_array = std::move(res_nested);
     for (ssize_t depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
-        result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
+        result_nested_array = ColumnArray::create(result_nested_array, offsetsptr_by_depth[depth]);
 
     return result_nested_array;
 }

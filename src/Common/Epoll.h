@@ -9,7 +9,7 @@
 namespace DB
 {
 
-using AsyncCallback = std::function<void(int, const Poco::Timespan &, const std::string &)>;
+using AsyncCallback = std::function<void(int, Poco::Timespan, const std::string &)>;
 
 class Epoll
 {
@@ -19,8 +19,8 @@ public:
     Epoll(const Epoll &) = delete;
     Epoll & operator=(const Epoll &) = delete;
 
-    Epoll & operator=(Epoll && other);
-    Epoll(Epoll && other);
+    Epoll & operator=(Epoll && other) noexcept;
+    Epoll(Epoll && other) noexcept;
 
     /// Add new file descriptor to epoll. If ptr set to nullptr, epoll_event.data.fd = fd,
     /// otherwise epoll_event.data.ptr = ptr.

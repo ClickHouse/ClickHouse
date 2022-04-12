@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -31,13 +31,15 @@ class FunctionArrayUniq : public IFunction
 public:
     static constexpr auto name = "arrayUniq";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayUniq>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayUniq>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

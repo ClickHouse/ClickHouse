@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -9,15 +9,15 @@ namespace DB
 class ReadFromPreparedSource : public ISourceStep
 {
 public:
-    explicit ReadFromPreparedSource(Pipe pipe_, std::shared_ptr<Context> context_ = nullptr);
+    explicit ReadFromPreparedSource(Pipe pipe_, ContextPtr context_ = nullptr);
 
     String getName() const override { return "ReadFromPreparedSource"; }
 
-    void initializePipeline(QueryPipeline & pipeline) override;
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     Pipe pipe;
-    std::shared_ptr<Context> context;
+    ContextPtr context;
 };
 
 class ReadFromStorageStep : public ReadFromPreparedSource

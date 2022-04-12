@@ -14,6 +14,7 @@
 
 namespace DB
 {
+struct Settings;
 
 /** Calculates Shannon Entropy, using HashMap and computing empirical distribution function.
   * Entropy is measured in bits (base-2 logarithm is used).
@@ -90,7 +91,7 @@ private:
     size_t num_args;
 
 public:
-    AggregateFunctionEntropy(const DataTypes & argument_types_)
+    explicit AggregateFunctionEntropy(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>(argument_types_, {})
         , num_args(argument_types_.size())
     {
@@ -102,6 +103,8 @@ public:
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -122,12 +125,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

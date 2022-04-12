@@ -1,12 +1,14 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Set.h>
 
 
@@ -52,7 +54,7 @@ public:
     /// It is needed to perform type analysis without creation of set.
     static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionIn>();
     }
@@ -67,6 +69,12 @@ public:
         return 2;
     }
 
+    /// Do not use default implementation for LowCardinality.
+    /// For now, Set may be const or non const column, depending on how it was created.
+    /// But we will return UInt8 for any case.
+    /// TODO: we could use special implementation later.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt8>();
@@ -79,6 +87,8 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {
@@ -94,7 +104,7 @@ public:
             throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        DB::Block columns_of_key_columns;
+        ColumnsWithTypeAndName columns_of_key_columns;
 
         /// First argument may be a tuple or a single column.
         const ColumnWithTypeAndName & left_arg = arguments[0];
@@ -111,18 +121,41 @@ public:
 
         auto set = column_set->getData();
         auto set_types = set->getDataTypes();
-        if (tuple && (set_types.size() != 1 || !set_types[0]->equals(*type_tuple)))
+
+        if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())
         {
             const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = type_tuple->getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
-                columns_of_key_columns.insert({ tuple_columns[i], tuple_types[i], "" });
+                columns_of_key_columns.emplace_back(tuple_columns[i], tuple_types[i], "_" + toString(i));
         }
         else
-            columns_of_key_columns.insert(left_arg);
+            columns_of_key_columns.emplace_back(left_arg);
 
-        return set->execute(columns_of_key_columns, negative);
+        /// Replace single LowCardinality column to it's dictionary if possible.
+        ColumnPtr lc_indexes = nullptr;
+        if (columns_of_key_columns.size() == 1)
+        {
+            auto & arg = columns_of_key_columns.at(0);
+            const auto * col = arg.column.get();
+            if (const auto * const_col = typeid_cast<const ColumnConst *>(col))
+                col = &const_col->getDataColumn();
+
+            if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(col))
+            {
+                lc_indexes = lc->getIndexesPtr();
+                arg.column = lc->getDictionary().getNestedColumn();
+                arg.type = removeLowCardinality(arg.type);
+            }
+        }
+
+        auto res = set->execute(columns_of_key_columns, negative);
+
+        if (lc_indexes)
+            return res->index(*lc_indexes, 0);
+
+        return res;
     }
 };
 

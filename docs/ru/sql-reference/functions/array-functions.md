@@ -7,21 +7,97 @@ toc_title: "Массивы"
 
 ## empty {#function-empty}
 
-Возвращает 1 для пустого массива, и 0 для непустого массива.
-Тип результата - UInt8.
-Функция также работает для строк.
+Проверяет, является ли входной массив пустым.
+
+**Синтаксис**
+
+``` sql
+empty([x])
+```
+
+Массив считается пустым, если он не содержит ни одного элемента.
+
+!!! note "Примечание"
+    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
+
+Функция также поддерживает работу с типами [String](string-functions.md#empty) и [UUID](uuid-functions.md#empty).
+
+**Параметры**
+
+-   `[x]` — массив на входе функции. [Array](../data-types/array.md).
+
+**Возвращаемое значение**
+
+-   Возвращает `1` для пустого массива или `0` — для непустого массива.
+
+Тип: [UInt8](../data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT empty([]);
+```
+
+Ответ:
+
+```text
+┌─empty(array())─┐
+│              1 │
+└────────────────┘
+```
 
 ## notEmpty {#function-notempty}
 
-Возвращает 0 для пустого массива, и 1 для непустого массива.
-Тип результата - UInt8.
-Функция также работает для строк.
+Проверяет, является ли входной массив непустым.
+
+**Синтаксис**
+
+``` sql
+notEmpty([x])
+```
+
+Массив считается непустым, если он содержит хотя бы один элемент.
+
+!!! note "Примечание"
+    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
+
+Функция также поддерживает работу с типами [String](string-functions.md#notempty) и [UUID](uuid-functions.md#notempty).
+
+**Параметры**
+
+-   `[x]` — массив на входе функции. [Array](../data-types/array.md).
+
+**Возвращаемое значение**
+
+-   Возвращает `1` для непустого массива или `0` — для пустого массива.
+
+Тип: [UInt8](../data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT notEmpty([1,2]);
+```
+
+Результат:
+
+```text
+┌─notEmpty([1, 2])─┐
+│                1 │
+└──────────────────┘
+```
 
 ## length {#array_functions-length}
 
 Возвращает количество элементов в массиве.
 Тип результата - UInt64.
 Функция также работает для строк.
+
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT length(arr) FROM table` преобразуется к запросу `SELECT arr.size0 FROM TABLE`.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
@@ -39,10 +115,46 @@ toc_title: "Массивы"
 
 Принимает пустой массив и возвращает массив из одного элемента, равного значению по умолчанию.
 
-## range(N) {#rangen}
 
-Возвращает массив чисел от 0 до N-1.
-На всякий случай, если на блок данных, создаются массивы суммарной длины больше 100 000 000 элементов, то кидается исключение.
+## range(end), range(\[start, \] end \[, step\]) {#range}
+
+Возвращает массив чисел от `start` до `end - 1` с шагом `step`.
+
+**Синтаксис**
+
+``` sql
+range([start, ] end [, step])
+```
+
+**Аргументы**
+
+-   `start` — начало диапазона. Обязательно, когда указан `step`. По умолчанию равно `0`. Тип: [UInt](../data-types/int-uint.md)
+-   `end` — конец диапазона. Обязательный аргумент. Должен быть больше, чем `start`. Тип: [UInt](../data-types/int-uint.md)
+-   `step` — шаг обхода. Необязательный аргумент. По умолчанию равен `1`. Тип: [UInt](../data-types/int-uint.md)
+
+**Возвращаемые значения**
+
+-   массив `UInt` чисел от `start` до `end - 1` с шагом `step`
+
+**Особенности реализации**
+
+-   Не поддерживаются отрицательные значения аргументов: `start`, `end`, `step` имеют тип `UInt`.
+
+-   Если в результате запроса создаются массивы суммарной длиной больше, чем количество элементов, указанное настройкой [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block), то генерируется исключение.
+
+**Примеры**
+
+Запрос:
+``` sql
+SELECT range(5), range(1, 5), range(1, 5, 2);
+```
+Ответ:
+```txt
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
+└─────────────┴─────────────┴────────────────┘
+```
+
 
 ## array(x1, …), оператор \[x1, …\] {#arrayx1-operator-x1}
 
@@ -704,7 +816,7 @@ arrayDifference(array)
 
 **Аргументы**
 
--   `array` – [массив](https://clickhouse.tech/docs/ru/data_types/array/).
+-   `array` – [массив](https://clickhouse.com/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
@@ -754,7 +866,7 @@ arrayDistinct(array)
 
 **Аргументы**
 
--   `array` – [массив](https://clickhouse.tech/docs/ru/data_types/array/).
+-   `array` – [массив](https://clickhouse.com/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
@@ -794,7 +906,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 
 ## arrayIntersect(arr) {#array-functions-arrayintersect}
 
-Принимает несколько массивов, возвращает массив с элементами, присутствующими во всех исходных массивах. Элементы на выходе следуют в порядке следования в первом массиве.
+Принимает несколько массивов, возвращает массив с элементами, присутствующими во всех исходных массивах.
 
 Пример:
 
@@ -1111,6 +1223,78 @@ SELECT
 
 Функция `arrayFilter` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
+## arrayFill(func, arr1, …) {#array-fill}
+
+Перебирает `arr1` от первого элемента к последнему и заменяет `arr1[i]` на `arr1[i - 1]`, если `func` вернула 0. Первый элемент `arr1` остаётся неизменным.
+
+Примеры:
+
+``` sql
+SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, null, null]) AS res
+```
+
+``` text
+┌─res──────────────────────────────┐
+│ [1,1,3,11,12,12,12,5,6,14,14,14] │
+└──────────────────────────────────┘
+```
+
+Функция `arrayFill` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
+
+## arrayReverseFill(func, arr1, …) {#array-reverse-fill}
+
+Перебирает `arr1` от последнего элемента к первому и заменяет `arr1[i]` на `arr1[i + 1]`, если `func` вернула 0. Последний элемент `arr1` остаётся неизменным.
+
+Примеры:
+
+``` sql
+SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, null, null]) AS res
+```
+
+``` text
+┌─res────────────────────────────────┐
+│ [1,3,3,11,12,5,5,5,6,14,NULL,NULL] │
+└────────────────────────────────────┘
+```
+
+Функция `arrayReverseFill` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
+
+## arraySplit(func, arr1, …) {#array-split}
+
+Разделяет массив `arr1` на несколько. Если `func` возвращает не 0, то массив разделяется, а элемент помещается в левую часть. Массив не разбивается по первому элементу.
+
+Примеры:
+
+``` sql
+SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
+```
+
+``` text
+┌─res─────────────┐
+│ [[1,2,3],[4,5]] │
+└─────────────────┘
+```
+
+Функция `arraySplit` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
+
+## arrayReverseSplit(func, arr1, …) {#array-reverse-split}
+
+Разделяет массив `arr1` на несколько. Если `func` возвращает не 0, то массив разделяется, а элемент помещается в правую часть. Массив не разбивается по последнему элементу.
+
+Примеры:
+
+``` sql
+SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
+```
+
+``` text
+┌─res───────────────┐
+│ [[1],[2,3,4],[5]] │
+└───────────────────┘
+```
+
+Функция `arrayReverseSplit` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
+
 ## arrayExists(\[func,\] arr1, …) {#arrayexistsfunc-arr1}
 
 Возвращает 1, если существует хотя бы один элемент массива `arr`, для которого функция func возвращает не 0. Иначе возвращает 0.
@@ -1137,7 +1321,7 @@ SELECT
 
 ## arrayMin {#array-min}
 
-Возвращает значение минимального элемента в исходном массиве. 
+Возвращает значение минимального элемента в исходном массиве.
 
 Если передана функция `func`, возвращается минимум из элементов массива, преобразованных этой функцией.
 
@@ -1192,7 +1376,7 @@ SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res;
 
 ## arrayMax {#array-max}
 
-Возвращает значение максимального элемента в исходном массиве. 
+Возвращает значение максимального элемента в исходном массиве.
 
 Если передана функция `func`, возвращается максимум из элементов массива, преобразованных этой функцией.
 
@@ -1247,7 +1431,7 @@ SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res;
 
 ## arraySum {#array-sum}
 
-Возвращает сумму элементов в исходном массиве. 
+Возвращает сумму элементов в исходном массиве.
 
 Если передана функция `func`, возвращается сумма элементов массива, преобразованных этой функцией.
 
@@ -1262,7 +1446,7 @@ arraySum([func,] arr)
 **Аргументы**
 
 -   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
--   `arr` — массив. [Array](../../sql-reference/data-types/array.md).   
+-   `arr` — массив. [Array](../../sql-reference/data-types/array.md).
 
 **Возвращаемое значение**
 
@@ -1302,7 +1486,7 @@ SELECT arraySum(x -> x*x, [2, 3]) AS res;
 
 ## arrayAvg {#array-avg}
 
-Возвращает среднее значение элементов в исходном массиве. 
+Возвращает среднее значение элементов в исходном массиве.
 
 Если передана функция `func`, возвращается среднее значение элементов массива, преобразованных этой функцией.
 
@@ -1317,7 +1501,7 @@ arrayAvg([func,] arr)
 **Аргументы**
 
 -   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
--   `arr` — массив. [Array](../../sql-reference/data-types/array.md).   
+-   `arr` — массив. [Array](../../sql-reference/data-types/array.md).
 
 **Возвращаемое значение**
 
@@ -1355,7 +1539,7 @@ SELECT arrayAvg(x -> (x * x), [2, 4]) AS res;
 └─────┘
 ```
 
-**Синтаксис** 
+**Синтаксис**
 
 ``` sql
 arraySum(arr)
@@ -1367,7 +1551,7 @@ arraySum(arr)
 
 Тип: [Int](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
 
-**Аргументы** 
+**Аргументы**
 
 -   `arr` — [массив](../../sql-reference/data-types/array.md).
 
@@ -1456,3 +1640,52 @@ SELECT arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 └────────────────────────────────────────---──┘
 ```
 
+## arrayProduct {#arrayproduct}
+
+Возвращает произведение элементов [массива](../../sql-reference/data-types/array.md).
+
+**Синтаксис**
+
+``` sql
+arrayProduct(arr)
+```
+
+**Аргументы**
+
+-   `arr` — [массив](../../sql-reference/data-types/array.md) числовых значений.
+
+**Возвращаемое значение**
+
+-   Произведение элементов массива.
+
+Тип: [Float64](../../sql-reference/data-types/float.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT arrayProduct([1,2,3,4,5,6]) as res;
+```
+
+Результат:
+
+``` text
+┌─res───┐
+│ 720   │
+└───────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as res, toTypeName(res);
+```
+
+Возвращаемое значение всегда имеет тип [Float64](../../sql-reference/data-types/float.md). Результат:
+
+``` text
+┌─res─┬─toTypeName(arrayProduct(array(toDecimal64(1, 8), toDecimal64(2, 8), toDecimal64(3, 8))))─┐
+│ 6   │ Float64                                                                                  │
+└─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
+```

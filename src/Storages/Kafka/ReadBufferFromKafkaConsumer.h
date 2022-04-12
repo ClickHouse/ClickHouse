@@ -1,10 +1,16 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>
+#include <Common/CurrentMetrics.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric KafkaConsumers;
+}
 
 namespace Poco
 {
@@ -63,9 +69,11 @@ public:
     auto currentPartition() const { return current[-1].get_partition(); }
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
+    String currentPayload() const { return current[-1].get_payload(); }
 
 private:
     using Messages = std::vector<cppkafka::Message>;
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
 
     enum StalledStatus
     {
@@ -96,7 +104,7 @@ private:
     Messages::const_iterator current;
 
     // order is important, need to be destructed before consumer
-    cppkafka::TopicPartitionList assignment;
+    std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
 
     void drain();

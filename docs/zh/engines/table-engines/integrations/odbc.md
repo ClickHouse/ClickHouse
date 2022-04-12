@@ -1,17 +1,15 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: ODBC
 ---
 
 # ODBC {#table-engine-odbc}
 
-允许ClickHouse通过以下方式连接到外部数据库 [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+允许 ClickHouse 通过 [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity) 方式连接到外部数据库.
 
-为了安全地实现ODBC连接，ClickHouse使用单独的程序 `clickhouse-odbc-bridge`. 如果直接从ODBC驱动程序加载 `clickhouse-server`，驱动程序问题可能会导致ClickHouse服务器崩溃。 ClickHouse自动启动 `clickhouse-odbc-bridge` 当它是必需的。 ODBC桥程序是从相同的软件包作为安装 `clickhouse-server`.
+为了安全地实现 ODBC 连接，ClickHouse 使用了一个独立程序 `clickhouse-odbc-bridge`. 如果ODBC驱动程序是直接从 `clickhouse-server`中加载的，那么驱动问题可能会导致ClickHouse服务崩溃。 当有需要时，ClickHouse会自动启动 `clickhouse-odbc-bridge`。 ODBC桥梁程序与`clickhouse-server`来自相同的安装包.
 
-该引擎支持 [可为空](../../../sql-reference/data-types/nullable.md) 数据类型。
+该引擎支持 [Nullable](../../../sql-reference/data-types/nullable.md) 数据类型。
 
 ## 创建表 {#creating-a-table}
 
@@ -25,28 +23,29 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE = ODBC(connection_settings, external_database, external_table)
 ```
 
-请参阅的详细说明 [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) 查询。
+详情请见 [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) 查询。
 
 表结构可以与源表结构不同:
 
 -   列名应与源表中的列名相同，但您可以按任何顺序使用其中的一些列。
--   列类型可能与源表中的列类型不同。 ClickHouse尝试 [投](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) ClickHouse数据类型的值。
+-   列类型可能与源表中的列类型不同。 ClickHouse尝试将数值[映射](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 到ClickHouse的数据类型。
+-   设置 `external_table_functions_use_nulls` 来定义如何处理 Nullable 列. 默认值是 true, 当设置为 false 时 - 表函数将不会使用 nullable 列，而是插入默认值来代替 null. 这同样适用于数组数据类型中的 null 值.
 
-**发动机参数**
+**引擎参数**
 
--   `connection_settings` — Name of the section with connection settings in the `odbc.ini` 文件
--   `external_database` — Name of a database in an external DBMS.
--   `external_table` — Name of a table in the `external_database`.
+-   `connection_settings` — 在 `odbc.ini` 配置文件中，连接配置的名称.
+-   `external_database` — 在外部 DBMS 中的数据库名.
+-   `external_table` — `external_database`中的表名.
 
 ## 用法示例 {#usage-example}
 
-**通过ODBC从本地MySQL安装中检索数据**
+**通过ODBC从本地安装的MySQL中检索数据**
 
-此示例检查Ubuntu Linux18.04和MySQL服务器5.7。
+本示例已经在 Ubuntu Linux 18.04 和 MySQL server 5.7 上测试通过。
 
-确保安装了unixODBC和MySQL连接器。
+请确保已经安装了 unixODBC 和 MySQL Connector。
 
-默认情况下（如果从软件包安装），ClickHouse以用户身份启动 `clickhouse`. 因此，您需要在MySQL服务器中创建和配置此用户。
+默认情况下（如果从软件包安装），ClickHouse以用户`clickhouse`的身份启动. 因此，您需要在MySQL服务器中创建并配置此用户。
 
 ``` bash
 $ sudo mysql
@@ -57,7 +56,7 @@ mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
 ```
 
-然后配置连接 `/etc/odbc.ini`.
+然后在`/etc/odbc.ini`中配置连接.
 
 ``` bash
 $ cat /etc/odbc.ini
@@ -70,11 +69,11 @@ USERNAME = clickhouse
 PASSWORD = clickhouse
 ```
 
-您可以使用 `isql` unixodbc安装中的实用程序。
+您可以从安装的 unixodbc 中使用 `isql` 实用程序来检查连接情况。
 
 ``` bash
 $ isql -v mysqlconn
-+-------------------------+
++---------------------------------------+
 | Connected!                            |
 |                                       |
 ...
@@ -95,11 +94,11 @@ mysql> insert into test (`int_id`, `float`) VALUES (1,2);
 Query OK, 1 row affected (0,00 sec)
 
 mysql> select * from test;
-+------+----------+-----+----------+
++--------+--------------+-------+----------------+
 | int_id | int_nullable | float | float_nullable |
-+------+----------+-----+----------+
++--------+--------------+-------+----------------+
 |      1 |         NULL |     2 |           NULL |
-+------+----------+-----+----------+
++--------+--------------+-------+----------------+
 1 row in set (0,00 sec)
 ```
 
@@ -126,7 +125,7 @@ SELECT * FROM odbc_t
 
 ## 另请参阅 {#see-also}
 
--   [ODBC外部字典](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
--   [ODBC表函数](../../../sql-reference/table-functions/odbc.md)
+-   [ODBC 外部字典](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [ODBC 表函数](../../../sql-reference/table-functions/odbc.md)
 
-[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/odbc/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/table_engines/odbc/) <!--hide-->

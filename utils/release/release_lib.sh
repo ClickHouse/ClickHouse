@@ -91,9 +91,12 @@ function gen_revision_author {
 
             git_describe=`git describe`
             git_hash=`git rev-parse HEAD`
+            VERSION_DATE=`git show -s --format=%cs $git_hash`
+
             sed -i -e "s/SET(VERSION_REVISION [^) ]*/SET(VERSION_REVISION $VERSION_REVISION/g;" \
                 -e "s/SET(VERSION_DESCRIBE [^) ]*/SET(VERSION_DESCRIBE $git_describe/g;" \
                 -e "s/SET(VERSION_GITHASH [^) ]*/SET(VERSION_GITHASH $git_hash/g;" \
+                -e "s/SET(VERSION_DATE [^) ]*/SET(VERSION_DATE $VERSION_DATE/g;" \
                 -e "s/SET(VERSION_MAJOR [^) ]*/SET(VERSION_MAJOR $VERSION_MAJOR/g;" \
                 -e "s/SET(VERSION_MINOR [^) ]*/SET(VERSION_MINOR $VERSION_MINOR/g;" \
                 -e "s/SET(VERSION_PATCH [^) ]*/SET(VERSION_PATCH $VERSION_PATCH/g;" \
@@ -165,7 +168,7 @@ function gen_changelog {
         -e "s/[@]VERSION_STRING[@]/$VERSION_STRING/g" \
         -e "s/[@]DATE[@]/$CHDATE/g" \
         -e "s/[@]AUTHOR[@]/$AUTHOR/g" \
-        -e "s/[@]EMAIL[@]/$(whoami)@yandex-team.ru/g" \
+        -e "s/[@]EMAIL[@]/$(whoami)@clickhouse.com/g" \
         < $CHLOG.in > $CHLOG
 }
 
@@ -240,16 +243,6 @@ function make_rpm {
     cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
     rpm_pack
 
-    PACKAGE=clickhouse-test
-    ARCH=all
-    TARGET=noarch
-    deb_unpack
-    mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
-    echo "Requires: python3" >> ${PACKAGE}-$VERSION_FULL-2.spec
-    #echo "Requires: python3-termcolor" >> ${PACKAGE}-$VERSION-2.spec
-    cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
-    rpm_pack
-
     PACKAGE=clickhouse-common-static
     ARCH=amd64
     TARGET=x86_64
@@ -268,7 +261,7 @@ function make_tgz {
     VERSION_FULL="${VERSION_STRING}"
     PACKAGE_DIR=${PACKAGE_DIR=../}
 
-    for PACKAGE in clickhouse-server clickhouse-client clickhouse-test clickhouse-common-static clickhouse-common-static-dbg; do
+    for PACKAGE in clickhouse-server clickhouse-client clickhouse-common-static clickhouse-common-static-dbg; do
         alien --verbose --scripts --generate --to-tgz ${PACKAGE_DIR}${PACKAGE}_${VERSION_FULL}_*.deb
         PKGDIR="./${PACKAGE}-${VERSION_FULL}"
         if [ ! -d "$PKGDIR/install" ]; then

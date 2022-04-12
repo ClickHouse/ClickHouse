@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
@@ -15,10 +15,10 @@ class Context;
   *  which allows to get information about the current MergeTree settings.
   */
 template <bool replicated>
-class SystemMergeTreeSettings final : public ext::shared_ptr_helper<SystemMergeTreeSettings<replicated>>,
+class SystemMergeTreeSettings final : public shared_ptr_helper<SystemMergeTreeSettings<replicated>>,
                                       public IStorageSystemOneBlock<SystemMergeTreeSettings<replicated>>
 {
-    friend struct ext::shared_ptr_helper<SystemMergeTreeSettings<replicated>>;
+    friend struct shared_ptr_helper<SystemMergeTreeSettings<replicated>>;
 
 public:
     std::string getName() const override { return replicated ? "SystemReplicatedMergeTreeSettings" : "SystemMergeTreeSettings"; }
@@ -28,7 +28,7 @@ public:
 protected:
     using IStorageSystemOneBlock<SystemMergeTreeSettings<replicated>>::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

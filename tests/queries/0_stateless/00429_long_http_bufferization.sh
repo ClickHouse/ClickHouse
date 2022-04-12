@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long, no-parallel
 
 set -e
 
@@ -18,7 +19,7 @@ function ch_url() {
 
 # Check correct exceptions handling
 
-exception_pattern="displayText() = DB::Exception:[[:print:]]*"
+exception_pattern="DB::Exception:[[:print:]]*"
 
 function check_only_exception() {
     local res

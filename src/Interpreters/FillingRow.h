@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/SortDescription.h>
+#include <Core/InterpolateDescription.h>
 #include <Columns/IColumn.h>
 
 
@@ -17,28 +18,29 @@ bool equals(const Field & lhs, const Field & rhs);
 class FillingRow
 {
 public:
-    FillingRow(const SortDescription & sort_description);
+    explicit FillingRow(const SortDescription & sort_description);
 
     /// Generates next row according to fill 'from', 'to' and 'step' values.
     bool next(const FillingRow & to_row);
 
     void initFromDefaults(size_t from_pos = 0);
 
-    Field & operator[](size_t ind) { return row[ind]; }
-    const Field & operator[](size_t ind) const { return row[ind]; }
+    Field & operator[](size_t index) { return row[index]; }
+    const Field & operator[](size_t index) const { return row[index]; }
     size_t size() const { return row.size(); }
     bool operator<(const FillingRow & other) const;
     bool operator==(const FillingRow & other) const;
 
-    int getDirection(size_t ind) const { return description[ind].direction; }
-    FillColumnDescription & getFillDescription(size_t ind) { return description[ind].fill_description; }
+    int getDirection(size_t index) const { return sort_description[index].direction; }
+    FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
 
 private:
-    std::vector<Field> row;
-    SortDescription description;
+    Row row;
+    SortDescription sort_description;
 };
 
-void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & other_columns, const FillingRow & filling_row);
+void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns,
+    const FillingRow & filling_row, const Block & interpolate_block);
 void copyRowFromColumns(MutableColumns & dest, const Columns & source, size_t row_num);
 
 }

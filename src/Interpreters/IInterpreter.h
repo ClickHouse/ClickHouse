@@ -1,13 +1,14 @@
 #pragma once
 
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages//IStorage_fwd.h>
 
 namespace DB
 {
 
 struct QueryLogElement;
-class Context;
 
 /** Interpreters interface for different queries.
   */
@@ -27,11 +28,18 @@ public:
     void extendQueryLogElem(
         QueryLogElement & elem,
         const ASTPtr & ast,
-        const Context & context,
+        ContextPtr context,
         const String & query_database,
         const String & query_table) const;
 
-    virtual void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, const Context &) const {}
+    virtual void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, ContextPtr) const {}
+
+    /// Returns true if transactions maybe supported for this type of query.
+    /// If Interpreter returns true, than it is responsible to check that specific query with specific Storage is supported.
+    virtual bool supportsTransactions() const { return false; }
+
+    /// Helper function for some Interpreters.
+    static void checkStorageSupportsTransactionsIfNeeded(const StoragePtr & storage, ContextPtr context);
 
     virtual ~IInterpreter() = default;
 };

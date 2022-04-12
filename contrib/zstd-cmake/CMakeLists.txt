@@ -39,111 +39,116 @@ function(GetLibraryVersion _content _outputVar1 _outputVar2 _outputVar3)
 endfunction()
 
 # Define library directory, where sources and header files are located
-SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/zstd/lib)
-INCLUDE_DIRECTORIES(BEFORE ${LIBRARY_DIR} ${LIBRARY_DIR}/common)
+SET(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/zstd/lib")
+INCLUDE_DIRECTORIES(BEFORE ${LIBRARY_DIR} "${LIBRARY_DIR}/common")
 
 # Read file content
-FILE(READ ${LIBRARY_DIR}/zstd.h HEADER_CONTENT)
+FILE(READ "${LIBRARY_DIR}/zstd.h" HEADER_CONTENT)
 
 # Parse version
 GetLibraryVersion("${HEADER_CONTENT}" LIBVER_MAJOR LIBVER_MINOR LIBVER_RELEASE)
 MESSAGE(STATUS "ZSTD VERSION ${LIBVER_MAJOR}.${LIBVER_MINOR}.${LIBVER_RELEASE}")
 
 # cd contrib/zstd/lib
-# find . -name '*.c' | grep -vP 'deprecated|legacy' | sort | sed 's/^\./        ${LIBRARY_DIR}/'
+# find . -name '*.c' | grep -vP 'deprecated|legacy' | sort | sed 's/^\./        "${LIBRARY_DIR}/"'
 SET(Sources
-        ${LIBRARY_DIR}/common/debug.c
-        ${LIBRARY_DIR}/common/entropy_common.c
-        ${LIBRARY_DIR}/common/error_private.c
-        ${LIBRARY_DIR}/common/fse_decompress.c
-        ${LIBRARY_DIR}/common/pool.c
-        ${LIBRARY_DIR}/common/threading.c
-        ${LIBRARY_DIR}/common/xxhash.c
-        ${LIBRARY_DIR}/common/zstd_common.c
-        ${LIBRARY_DIR}/compress/fse_compress.c
-        ${LIBRARY_DIR}/compress/hist.c
-        ${LIBRARY_DIR}/compress/huf_compress.c
-        ${LIBRARY_DIR}/compress/zstd_compress.c
-        ${LIBRARY_DIR}/compress/zstd_compress_literals.c
-        ${LIBRARY_DIR}/compress/zstd_compress_sequences.c
-        ${LIBRARY_DIR}/compress/zstd_double_fast.c
-        ${LIBRARY_DIR}/compress/zstd_fast.c
-        ${LIBRARY_DIR}/compress/zstd_lazy.c
-        ${LIBRARY_DIR}/compress/zstd_ldm.c
-        ${LIBRARY_DIR}/compress/zstdmt_compress.c
-        ${LIBRARY_DIR}/compress/zstd_opt.c
-        ${LIBRARY_DIR}/decompress/huf_decompress.c
-        ${LIBRARY_DIR}/decompress/zstd_ddict.c
-        ${LIBRARY_DIR}/decompress/zstd_decompress_block.c
-        ${LIBRARY_DIR}/decompress/zstd_decompress.c
-        ${LIBRARY_DIR}/dictBuilder/cover.c
-        ${LIBRARY_DIR}/dictBuilder/divsufsort.c
-        ${LIBRARY_DIR}/dictBuilder/fastcover.c
-        ${LIBRARY_DIR}/dictBuilder/zdict.c)
+        "${LIBRARY_DIR}/common/debug.c"
+        "${LIBRARY_DIR}/common/entropy_common.c"
+        "${LIBRARY_DIR}/common/error_private.c"
+        "${LIBRARY_DIR}/common/fse_decompress.c"
+        "${LIBRARY_DIR}/common/pool.c"
+        "${LIBRARY_DIR}/common/threading.c"
+        "${LIBRARY_DIR}/common/xxhash.c"
+        "${LIBRARY_DIR}/common/zstd_common.c"
+        "${LIBRARY_DIR}/compress/fse_compress.c"
+        "${LIBRARY_DIR}/compress/hist.c"
+        "${LIBRARY_DIR}/compress/huf_compress.c"
+        "${LIBRARY_DIR}/compress/zstd_compress.c"
+        "${LIBRARY_DIR}/compress/zstd_compress_literals.c"
+        "${LIBRARY_DIR}/compress/zstd_compress_sequences.c"
+        "${LIBRARY_DIR}/compress/zstd_compress_superblock.c"
+        "${LIBRARY_DIR}/compress/zstd_double_fast.c"
+        "${LIBRARY_DIR}/compress/zstd_fast.c"
+        "${LIBRARY_DIR}/compress/zstd_lazy.c"
+        "${LIBRARY_DIR}/compress/zstd_ldm.c"
+        "${LIBRARY_DIR}/compress/zstdmt_compress.c"
+        "${LIBRARY_DIR}/compress/zstd_opt.c"
+        "${LIBRARY_DIR}/decompress/huf_decompress.c"
+        "${LIBRARY_DIR}/decompress/zstd_ddict.c"
+        "${LIBRARY_DIR}/decompress/zstd_decompress_block.c"
+        "${LIBRARY_DIR}/decompress/zstd_decompress.c"
+        "${LIBRARY_DIR}/dictBuilder/cover.c"
+        "${LIBRARY_DIR}/dictBuilder/divsufsort.c"
+        "${LIBRARY_DIR}/dictBuilder/fastcover.c"
+        "${LIBRARY_DIR}/dictBuilder/zdict.c")
 
 # cd contrib/zstd/lib
-# find . -name '*.h' | grep -vP 'deprecated|legacy' | sort | sed 's/^\./        ${LIBRARY_DIR}/'
+# find . -name '*.h' | grep -vP 'deprecated|legacy' | sort | sed 's/^\./        "${LIBRARY_DIR}/"'
 SET(Headers
-        ${LIBRARY_DIR}/common/bitstream.h
-        ${LIBRARY_DIR}/common/compiler.h
-        ${LIBRARY_DIR}/common/cpu.h
-        ${LIBRARY_DIR}/common/debug.h
-        ${LIBRARY_DIR}/common/error_private.h
-        ${LIBRARY_DIR}/common/fse.h
-        ${LIBRARY_DIR}/common/huf.h
-        ${LIBRARY_DIR}/common/mem.h
-        ${LIBRARY_DIR}/common/pool.h
-        ${LIBRARY_DIR}/common/threading.h
-        ${LIBRARY_DIR}/common/xxhash.h
-        ${LIBRARY_DIR}/common/zstd_errors.h
-        ${LIBRARY_DIR}/common/zstd_internal.h
-        ${LIBRARY_DIR}/compress/hist.h
-        ${LIBRARY_DIR}/compress/zstd_compress_internal.h
-        ${LIBRARY_DIR}/compress/zstd_compress_literals.h
-        ${LIBRARY_DIR}/compress/zstd_compress_sequences.h
-        ${LIBRARY_DIR}/compress/zstd_cwksp.h
-        ${LIBRARY_DIR}/compress/zstd_double_fast.h
-        ${LIBRARY_DIR}/compress/zstd_fast.h
-        ${LIBRARY_DIR}/compress/zstd_lazy.h
-        ${LIBRARY_DIR}/compress/zstd_ldm.h
-        ${LIBRARY_DIR}/compress/zstdmt_compress.h
-        ${LIBRARY_DIR}/compress/zstd_opt.h
-        ${LIBRARY_DIR}/decompress/zstd_ddict.h
-        ${LIBRARY_DIR}/decompress/zstd_decompress_block.h
-        ${LIBRARY_DIR}/decompress/zstd_decompress_internal.h
-        ${LIBRARY_DIR}/dictBuilder/cover.h
-        ${LIBRARY_DIR}/dictBuilder/divsufsort.h
-        ${LIBRARY_DIR}/dictBuilder/zdict.h
-        ${LIBRARY_DIR}/zstd.h)
+        "${LIBRARY_DIR}/common/bitstream.h"
+        "${LIBRARY_DIR}/common/compiler.h"
+        "${LIBRARY_DIR}/common/cpu.h"
+        "${LIBRARY_DIR}/common/debug.h"
+        "${LIBRARY_DIR}/common/error_private.h"
+        "${LIBRARY_DIR}/common/fse.h"
+        "${LIBRARY_DIR}/common/huf.h"
+        "${LIBRARY_DIR}/common/mem.h"
+        "${LIBRARY_DIR}/common/pool.h"
+        "${LIBRARY_DIR}/common/threading.h"
+        "${LIBRARY_DIR}/common/xxhash.h"
+        "${LIBRARY_DIR}/common/zstd_deps.h"
+        "${LIBRARY_DIR}/common/zstd_internal.h"
+        "${LIBRARY_DIR}/common/zstd_trace.h"
+        "${LIBRARY_DIR}/compress/hist.h"
+        "${LIBRARY_DIR}/compress/zstd_compress_internal.h"
+        "${LIBRARY_DIR}/compress/zstd_compress_literals.h"
+        "${LIBRARY_DIR}/compress/zstd_compress_sequences.h"
+        "${LIBRARY_DIR}/compress/zstd_compress_superblock.h"
+        "${LIBRARY_DIR}/compress/zstd_cwksp.h"
+        "${LIBRARY_DIR}/compress/zstd_double_fast.h"
+        "${LIBRARY_DIR}/compress/zstd_fast.h"
+        "${LIBRARY_DIR}/compress/zstd_lazy.h"
+        "${LIBRARY_DIR}/compress/zstd_ldm_geartab.h"
+        "${LIBRARY_DIR}/compress/zstd_ldm.h"
+        "${LIBRARY_DIR}/compress/zstdmt_compress.h"
+        "${LIBRARY_DIR}/compress/zstd_opt.h"
+        "${LIBRARY_DIR}/decompress/zstd_ddict.h"
+        "${LIBRARY_DIR}/decompress/zstd_decompress_block.h"
+        "${LIBRARY_DIR}/decompress/zstd_decompress_internal.h"
+        "${LIBRARY_DIR}/dictBuilder/cover.h"
+        "${LIBRARY_DIR}/dictBuilder/divsufsort.h"
+        "${LIBRARY_DIR}/zdict.h"
+        "${LIBRARY_DIR}/zstd_errors.h"
+        "${LIBRARY_DIR}/zstd.h")
 
 SET(ZSTD_LEGACY_SUPPORT true)
 
 IF (ZSTD_LEGACY_SUPPORT)
-    SET(LIBRARY_LEGACY_DIR ${LIBRARY_DIR}/legacy)
+    SET(LIBRARY_LEGACY_DIR "${LIBRARY_DIR}/legacy")
     INCLUDE_DIRECTORIES(BEFORE ${LIBRARY_LEGACY_DIR})
     ADD_DEFINITIONS(-D ZSTD_LEGACY_SUPPORT=1)
 
     SET(Sources ${Sources}
-            ${LIBRARY_LEGACY_DIR}/zstd_v01.c
-            ${LIBRARY_LEGACY_DIR}/zstd_v02.c
-            ${LIBRARY_LEGACY_DIR}/zstd_v03.c
-            ${LIBRARY_LEGACY_DIR}/zstd_v04.c
-            ${LIBRARY_LEGACY_DIR}/zstd_v05.c
-            ${LIBRARY_LEGACY_DIR}/zstd_v06.c
-            ${LIBRARY_LEGACY_DIR}/zstd_v07.c)
+            "${LIBRARY_LEGACY_DIR}/zstd_v01.c"
+            "${LIBRARY_LEGACY_DIR}/zstd_v02.c"
+            "${LIBRARY_LEGACY_DIR}/zstd_v03.c"
+            "${LIBRARY_LEGACY_DIR}/zstd_v04.c"
+            "${LIBRARY_LEGACY_DIR}/zstd_v05.c"
+            "${LIBRARY_LEGACY_DIR}/zstd_v06.c"
+            "${LIBRARY_LEGACY_DIR}/zstd_v07.c")
 
     SET(Headers ${Headers}
-            ${LIBRARY_LEGACY_DIR}/zstd_legacy.h
-            ${LIBRARY_LEGACY_DIR}/zstd_v01.h
-            ${LIBRARY_LEGACY_DIR}/zstd_v02.h
-            ${LIBRARY_LEGACY_DIR}/zstd_v03.h
-            ${LIBRARY_LEGACY_DIR}/zstd_v04.h
-            ${LIBRARY_LEGACY_DIR}/zstd_v05.h
-            ${LIBRARY_LEGACY_DIR}/zstd_v06.h
-            ${LIBRARY_LEGACY_DIR}/zstd_v07.h)
+            "${LIBRARY_LEGACY_DIR}/zstd_legacy.h"
+            "${LIBRARY_LEGACY_DIR}/zstd_v01.h"
+            "${LIBRARY_LEGACY_DIR}/zstd_v02.h"
+            "${LIBRARY_LEGACY_DIR}/zstd_v03.h"
+            "${LIBRARY_LEGACY_DIR}/zstd_v04.h"
+            "${LIBRARY_LEGACY_DIR}/zstd_v05.h"
+            "${LIBRARY_LEGACY_DIR}/zstd_v06.h"
+            "${LIBRARY_LEGACY_DIR}/zstd_v07.h")
 ENDIF (ZSTD_LEGACY_SUPPORT)
 
-ADD_LIBRARY(zstd ${Sources} ${Headers})
-
-target_include_directories (zstd PUBLIC ${LIBRARY_DIR})
-target_compile_options(zstd PRIVATE -fno-sanitize=undefined)
+add_library(_zstd ${Sources} ${Headers})
+add_library(ch_contrib::zstd ALIAS _zstd)
+target_include_directories(_zstd BEFORE PUBLIC ${LIBRARY_DIR})
+target_compile_options(_zstd PRIVATE -fno-sanitize=undefined)

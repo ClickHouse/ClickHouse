@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-
+#include <Common/config.h>
 #include <Poco/Logger.h>
 
 #if USE_ODBC
@@ -11,11 +11,13 @@
 namespace DB
 {
 
-class IdentifierQuoteHandler : public HTTPRequestHandler
+class IdentifierQuoteHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    IdentifierQuoteHandler(size_t keep_alive_timeout_, Context &)
-        : log(&Poco::Logger::get("IdentifierQuoteHandler")), keep_alive_timeout(keep_alive_timeout_)
+    IdentifierQuoteHandler(size_t keep_alive_timeout_, ContextPtr context_)
+        : WithContext(context_)
+        , log(&Poco::Logger::get("IdentifierQuoteHandler"))
+        , keep_alive_timeout(keep_alive_timeout_)
     {
     }
 

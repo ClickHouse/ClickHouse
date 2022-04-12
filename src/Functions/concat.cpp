@@ -7,10 +7,10 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <ext/map.h>
-#include <ext/range.h>
+#include <base/map.h>
+#include <base/range.h>
 
 #include "formatString.h"
 
@@ -33,8 +33,8 @@ class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    explicit ConcatImpl(const Context & context_) : context(context_) {}
-    static FunctionPtr create(const Context & context) { return std::make_shared<ConcatImpl>(context); }
+    explicit ConcatImpl(ContextPtr context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatImpl>(context); }
 
     String getName() const override { return name; }
 
@@ -44,29 +44,29 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at least 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
+                getName(),
+                arguments.size());
 
-        if (arguments.size() > FormatImpl::argument_threshold)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at most " + std::to_string(FormatImpl::argument_threshold),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        for (const auto arg_idx : ext::range(0, arguments.size()))
+        for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
-                throw Exception{"Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function "
-                                    + getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument {} of function {}",
+                    arg->getName(),
+                    arg_idx + 1,
+                    getName());
         }
 
         return std::make_shared<DataTypeString>();
@@ -85,7 +85,7 @@ public:
     }
 
 private:
-    const Context & context;
+    ContextWeakPtr context;
 
     ColumnPtr executeBinary(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
@@ -123,7 +123,7 @@ private:
         std::vector<const ColumnString::Chars *> data(num_arguments);
         std::vector<const ColumnString::Offsets *> offsets(num_arguments);
         std::vector<size_t> fixed_string_sizes(num_arguments);
-        std::vector<String> constant_strings(num_arguments);
+        std::vector<std::optional<String>> constant_strings(num_arguments);
         bool has_column_string = false;
         bool has_column_fixed_string = false;
         for (size_t i = 0; i < num_arguments; ++i)
@@ -187,30 +187,30 @@ using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true
 
 
 /// Also works with arrays.
-class ConcatOverloadResolver : public IFunctionOverloadResolverImpl
+class ConcatOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<ConcatOverloadResolver>(context); }
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
 
-    explicit ConcatOverloadResolver(const Context & context_) : context(context_) {}
+    explicit ConcatOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
         {
-            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayConcat", context)).buildImpl(arguments);
+            return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
         }
         else
-            return std::make_unique<DefaultFunction>(
-                FunctionConcat::create(context), ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(
+                FunctionConcat::create(context), collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
     }
 
-    DataTypePtr getReturnType(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(
@@ -223,7 +223,7 @@ public:
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 
 }

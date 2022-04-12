@@ -15,7 +15,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void TableFunctionView::parseArguments(const ASTPtr & ast_function, const Context & /*context*/)
+
+const ASTSelectWithUnionQuery & TableFunctionView::getSelectQuery() const
+{
+    return *create.select;
+}
+
+void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (function)
@@ -29,7 +35,7 @@ void TableFunctionView::parseArguments(const ASTPtr & ast_function, const Contex
     throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
 }
 
-ColumnsDescription TableFunctionView::getActualTableStructure(const Context & context) const
+ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context) const
 {
     assert(create.select);
     assert(create.children.size() == 1);
@@ -39,10 +45,10 @@ ColumnsDescription TableFunctionView::getActualTableStructure(const Context & co
 }
 
 StoragePtr TableFunctionView::executeImpl(
-    const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns);
+    auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns, "");
     res->startup();
     return res;
 }

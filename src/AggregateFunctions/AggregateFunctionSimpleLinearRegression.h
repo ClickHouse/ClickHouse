@@ -13,6 +13,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -124,26 +125,17 @@ public:
         this->data(place).add(x, y);
     }
 
-    void merge(
-        AggregateDataPtr place,
-        ConstAggregateDataPtr rhs, Arena *
-    ) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(
-        ConstAggregateDataPtr place,
-        WriteBuffer & buf
-    ) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(
-        AggregateDataPtr place,
-        ReadBuffer & buf, Arena *
-    ) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }
@@ -167,6 +159,8 @@ public:
             std::move(names)
         );
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void insertResultInto(
         AggregateDataPtr place,

@@ -1,4 +1,4 @@
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 
@@ -51,6 +51,20 @@ void RabbitMQHandler::iterateLoop()
     std::unique_lock lock(startup_mutex, std::defer_lock);
     if (lock.try_lock())
         uv_run(loop, UV_RUN_NOWAIT);
+}
+
+/// Do not need synchronization as in iterateLoop(), because this method is used only for
+/// initial RabbitMQ setup - at this point there is no background loop thread.
+void RabbitMQHandler::startBlockingLoop()
+{
+    LOG_DEBUG(log, "Started blocking loop.");
+    uv_run(loop, UV_RUN_DEFAULT);
+}
+
+void RabbitMQHandler::stopLoop()
+{
+    LOG_DEBUG(log, "Implicit loop stop.");
+    uv_stop(loop);
 }
 
 }

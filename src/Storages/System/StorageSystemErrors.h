@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -14,9 +14,9 @@ class Context;
  * Implements the `errors` system table, which shows the error code and the number of times it happens
  * (i.e. Exception with this code had been thrown).
  */
-class StorageSystemErrors final : public ext::shared_ptr_helper<StorageSystemErrors>, public IStorageSystemOneBlock<StorageSystemErrors>
+class StorageSystemErrors final : public shared_ptr_helper<StorageSystemErrors>, public IStorageSystemOneBlock<StorageSystemErrors>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemErrors>;
+    friend struct shared_ptr_helper<StorageSystemErrors>;
 public:
     std::string getName() const override { return "SystemErrors"; }
 
@@ -25,7 +25,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const override;
 };
 
 }

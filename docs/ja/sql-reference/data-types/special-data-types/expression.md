@@ -9,4 +9,4 @@ toc_title: "\u5F0F"
 
 式は、高次関数のラムダを表すために使用されます。
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/special_data_types/expression/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/special_data_types/expression/) <!--hide-->

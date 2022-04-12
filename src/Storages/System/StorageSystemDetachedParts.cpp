@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -31,9 +31,9 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
 
 Pipe StorageSystemDetachedParts::read(
     const Names & /* column_names */,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
@@ -41,7 +41,7 @@ Pipe StorageSystemDetachedParts::read(
     StoragesInfoStream stream(query_info, context);
 
     /// Create the result.
-    Block block = metadata_snapshot->getSampleBlock();
+    Block block = storage_snapshot->metadata->getSampleBlock();
     MutableColumns new_columns = block.cloneEmptyColumns();
 
     while (StoragesInfo info = stream.next())
@@ -54,7 +54,7 @@ Pipe StorageSystemDetachedParts::read(
             new_columns[i++]->insert(info.table);
             new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
             new_columns[i++]->insert(p.dir_name);
-            new_columns[i++]->insert(p.disk);
+            new_columns[i++]->insert(p.disk->getName());
             new_columns[i++]->insert(p.valid_name ? p.prefix : Field());
             new_columns[i++]->insert(p.valid_name ? p.min_block : Field());
             new_columns[i++]->insert(p.valid_name ? p.max_block : Field());

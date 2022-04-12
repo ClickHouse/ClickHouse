@@ -18,8 +18,8 @@ namespace ErrorCodes
 }
 
 
-InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
+    : WithMutableContext(context_), query_ptr(query_ptr_)
 {
 }
 
@@ -102,7 +102,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.from.empty())
         throw Exception("The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`", ErrorCodes::SYNTAX_ERROR);
 
-    String database = context.resolveDatabase(query.from);
+    String database = getContext()->resolveDatabase(query.from);
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
@@ -142,7 +142,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
 BlockIO InterpreterShowTablesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), context, true);
+    return executeQuery(getRewrittenQuery(), getContext(), true);
 }
 
 

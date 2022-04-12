@@ -7,16 +7,12 @@
 namespace DB
 {
 
-class Context;
-
-
 /** Check that table exists. Return single row with single column "result" of type UInt8 and value 0 or 1.
   */
-class InterpreterExistsQuery : public IInterpreter
+class InterpreterExistsQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterExistsQuery(const ASTPtr & query_ptr_, const Context & context_)
-        : query_ptr(query_ptr_), context(context_) {}
+    InterpreterExistsQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) { }
 
     BlockIO execute() override;
 
@@ -24,9 +20,8 @@ public:
 
 private:
     ASTPtr query_ptr;
-    const Context & context;
 
-    BlockInputStreamPtr executeImpl();
+    QueryPipeline executeImpl();
 };
 
 

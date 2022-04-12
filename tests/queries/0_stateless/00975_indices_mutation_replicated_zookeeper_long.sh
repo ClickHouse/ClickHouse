@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long, replica
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,6 +22,7 @@ CREATE TABLE indices_mutaions1
 PARTITION BY i32
 ORDER BY u64
 SETTINGS index_granularity = 2;
+
 CREATE TABLE indices_mutaions2
 (
     u64 UInt64,

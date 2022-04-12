@@ -2,46 +2,42 @@
 
 #include <Storages/IStorage.h>
 
-#include <Poco/File.h>
-#include <Poco/Path.h>
-
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB
 {
 
-class StorageFileBlockInputStream;
-class StorageFileBlockOutputStream;
-
-class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile final : public shared_ptr_helper<StorageFile>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageFile>;
+friend struct shared_ptr_helper<StorageFile>;
+friend class PartitionedStorageFileSink;
+
 public:
     std::string getName() const override { return "File"; }
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(
+    SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const Context & context) override;
+        ContextPtr context) override;
 
     void truncate(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /* metadata_snapshot */,
-        const Context & /* context */,
+        ContextPtr /* context */,
         TableExclusiveLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
@@ -49,7 +45,7 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
-    struct CommonArguments
+    struct CommonArguments : public WithContext
     {
         StorageID table_id;
         std::string format_name;
@@ -57,16 +53,33 @@ public:
         std::string compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
-        const Context & context;
+        const String & comment;
     };
 
     NamesAndTypesList getVirtuals() const override;
 
-    static Strings getPathsList(const String & table_path, const String & user_files_path, const Context & context);
+    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
+
+    /// Check if the format is column-oriented.
+    /// Is is useful because column oriented formats could effectively skip unknown columns
+    /// So we can create a header of only required columns in read method and ask
+    /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
+    bool isColumnOriented() const override;
+
+    bool supportsPartitionBy() const override { return true; }
+
+    ColumnsDescription getTableStructureFromFileDescriptor(ContextPtr context);
+
+    static ColumnsDescription getTableStructureFromFile(
+        const String & format,
+        const std::vector<String> & paths,
+        const String & compression_method,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context);
 
 protected:
     friend class StorageFileSource;
-    friend class StorageFileBlockOutputStream;
+    friend class StorageFileSink;
 
     /// From file descriptor
     StorageFile(int table_fd_, CommonArguments args);
@@ -79,6 +92,8 @@ protected:
 
 private:
     explicit StorageFile(CommonArguments args);
+
+    void setStorageMetadata(CommonArguments args);
 
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
@@ -93,14 +108,25 @@ private:
     std::string base_path;
     std::vector<std::string> paths;
 
-    bool is_db_table = true;                     /// Table is stored in real database, not user's file
-    bool use_table_fd = false;                    /// Use table_fd instead of path
-    std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
-    off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
+    bool is_db_table = true;        /// Table is stored in real database, not user's file
+    bool use_table_fd = false;      /// Use table_fd instead of path
 
     mutable std::shared_timed_mutex rwlock;
 
     Poco::Logger * log = &Poco::Logger::get("StorageFile");
+
+    /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
+    size_t total_bytes_to_read = 0;
+
+    String path_for_partitioned_write;
+
+    bool is_path_with_globs = false;
+
+    /// These buffers are needed for schema inference when data source
+    /// is file descriptor. See getTableStructureFromFileDescriptor.
+    std::unique_ptr<ReadBuffer> read_buffer_from_fd;
+    std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
+    std::atomic<bool> has_peekable_read_buffer_from_fd = false;
 };
 
 }

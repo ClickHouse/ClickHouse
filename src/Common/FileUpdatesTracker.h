@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Poco/File.h>
 #include <Poco/Timestamp.h>
-
 #include <string>
+#include <filesystem>
+#include <Common/filesystemHelpers.h>
 
 
 class FileUpdatesTracker
@@ -13,7 +13,7 @@ private:
     Poco::Timestamp known_time;
 
 public:
-    FileUpdatesTracker(const std::string & path_)
+    explicit FileUpdatesTracker(const std::string & path_)
         : path(path_)
         , known_time(0)
     {}
@@ -31,6 +31,6 @@ public:
 private:
     Poco::Timestamp getLastModificationTime() const
     {
-        return Poco::File(path).getLastModified();
+        return FS::getModificationTimestamp(path);
     }
 };

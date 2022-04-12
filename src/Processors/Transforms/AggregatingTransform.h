@@ -12,7 +12,7 @@ class AggregatedArenasChunkInfo : public ChunkInfo
 {
 public:
     Arenas arenas;
-    AggregatedArenasChunkInfo(Arenas arenas_)
+    explicit AggregatedArenasChunkInfo(Arenas arenas_)
         : arenas(std::move(arenas_))
     {}
 };
@@ -24,17 +24,41 @@ public:
     Int32 bucket_num = -1;
 };
 
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+using AggregatorList = std::list<Aggregator>;
+using AggregatorListPtr = std::shared_ptr<AggregatorList>;
+
+using AggregatorList = std::list<Aggregator>;
+using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
 struct AggregatingTransformParams
 {
     Aggregator::Params params;
-    Aggregator aggregator;
+
+    /// Each params holds a list of aggregators which are used in query. It's needed because we need
+    /// to use a pointer of aggregator to proper destroy complex aggregation states on exception
+    /// (See comments in AggregatedDataVariants). However, this pointer might not be valid because
+    /// we can have two different aggregators at the same time due to mixed pipeline of aggregate
+    /// projections, and one of them might gets destroyed before used.
+    AggregatorListPtr aggregator_list_ptr;
+    Aggregator & aggregator;
     bool final;
+    bool only_merge = false;
 
     AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
-        : params(params_), aggregator(params), final(final_) {}
+        : params(params_)
+        , aggregator_list_ptr(std::make_shared<AggregatorList>())
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
+        , final(final_)
+    {
+    }
+
+    AggregatingTransformParams(const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+        : params(params_)
+        , aggregator_list_ptr(aggregator_list_ptr_)
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
+        , final(final_)
+    {
+    }
 
     Block getHeader() const { return aggregator.getHeader(final); }
 
@@ -81,9 +105,13 @@ public:
     AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
 
     /// For Parallel aggregating.
-    AggregatingTransform(Block header, AggregatingTransformParamsPtr params_,
-                         ManyAggregatedDataPtr many_data, size_t current_variant,
-                         size_t max_threads, size_t temporary_data_merge_threads);
+    AggregatingTransform(
+        Block header,
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataPtr many_data,
+        size_t current_variant,
+        size_t max_threads,
+        size_t temporary_data_merge_threads);
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }

@@ -5,9 +5,16 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <Common/config.h>
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -28,8 +35,8 @@ private:
     size_t num_arguments;
 
 public:
-    AggregateFunctionIf(AggregateFunctionPtr nested, const DataTypes & types)
-        : IAggregateFunctionHelper<AggregateFunctionIf>(types, nested->getParameters())
+    AggregateFunctionIf(AggregateFunctionPtr nested, const DataTypes & types, const Array & params_)
+        : IAggregateFunctionHelper<AggregateFunctionIf>(types, params_)
         , nested_func(nested), num_arguments(types.size())
     {
         if (num_arguments == 0)
@@ -47,6 +54,16 @@ public:
     DataTypePtr getReturnType() const override
     {
         return nested_func->getReturnType();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
     }
 
     void create(AggregateDataPtr __restrict place) const override
@@ -113,14 +130,24 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void mergeBatch(
+        size_t batch_size,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const AggregateDataPtr * rhs,
+        Arena * arena) const override
     {
-        nested_func->serialize(place, buf);
+        nested_func->mergeBatch(batch_size, places, place_offset, rhs, arena);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        nested_func->deserialize(place, buf, arena);
+        nested_func->serialize(place, buf, version);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    {
+        nested_func->deserialize(place, buf, version, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
@@ -143,6 +170,76 @@ public:
         const Array & params, const AggregateFunctionProperties & properties) const override;
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        return nested_func->isCompilable();
+    }
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        nested_func->compileCreate(builder, aggregate_data_ptr);
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        const auto & predicate_type = arguments_types[argument_values.size() - 1];
+        auto * predicate_value = argument_values[argument_values.size() - 1];
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_true = llvm::BasicBlock::Create(head->getContext(), "if_true", head->getParent());
+        auto * if_false = llvm::BasicBlock::Create(head->getContext(), "if_false", head->getParent());
+
+        auto * is_predicate_true = nativeBoolCast(b, predicate_type, predicate_value);
+
+        b.CreateCondBr(is_predicate_true, if_true, if_false);
+
+        b.SetInsertPoint(if_true);
+
+        size_t arguments_size_without_predicate = arguments_types.size() - 1;
+
+        DataTypes argument_types_without_predicate;
+        std::vector<llvm::Value *> argument_values_without_predicate;
+
+        argument_types_without_predicate.resize(arguments_size_without_predicate);
+        argument_values_without_predicate.resize(arguments_size_without_predicate);
+
+        for (size_t i = 0; i < arguments_size_without_predicate; ++i)
+        {
+            argument_types_without_predicate[i] = arguments_types[i];
+            argument_values_without_predicate[i] = argument_values[i];
+        }
+
+        nested_func->compileAdd(builder, aggregate_data_ptr, argument_types_without_predicate, argument_values_without_predicate);
+
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_false);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        nested_func->compileMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        return nested_func->compileGetResult(builder, aggregate_data_ptr);
+    }
+
+#endif
+
+
 };
 
 }

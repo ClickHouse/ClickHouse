@@ -13,28 +13,20 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
-struct ComparePair final
-{
-    template <typename T1, typename T2>
-    bool operator()(const std::pair<T1, T2> & lhs, const std::pair<T1, T2> & rhs) const
-    {
-        return lhs.first == rhs.first ? lhs.second < rhs.second : lhs.first < rhs.first;
-    }
-};
+static constexpr size_t max_events = 32;
 
-static constexpr auto max_events = 32;
 template <typename T>
 struct AggregateFunctionWindowFunnelData
 {
     using TimestampEvent = std::pair<T, UInt8>;
     using TimestampEvents = PODArrayWithStackMemory<TimestampEvent, 64>;
-    using Comparator = ComparePair;
 
     bool sorted = true;
     TimestampEvents events_list;
@@ -46,7 +38,7 @@ struct AggregateFunctionWindowFunnelData
 
     void add(T timestamp, UInt8 event)
     {
-        // Since most events should have already been sorted by timestamp.
+        /// Since most events should have already been sorted by timestamp.
         if (sorted && events_list.size() > 0)
         {
             if (events_list.back().first == timestamp)
@@ -68,7 +60,7 @@ struct AggregateFunctionWindowFunnelData
 
         /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
-            std::stable_sort(std::begin(events_list), std::end(events_list), Comparator{});
+            std::stable_sort(std::begin(events_list), std::end(events_list));
         else
         {
             const auto begin = std::begin(events_list);
@@ -76,12 +68,12 @@ struct AggregateFunctionWindowFunnelData
             const auto end = std::end(events_list);
 
             if (!sorted)
-                std::stable_sort(begin, middle, Comparator{});
+                std::stable_sort(begin, middle);
 
             if (!other.sorted)
-                std::stable_sort(middle, end, Comparator{});
+                std::stable_sort(middle, end);
 
-            std::inplace_merge(begin, middle, end, Comparator{});
+            std::inplace_merge(begin, middle, end);
         }
 
         sorted = true;
@@ -91,7 +83,7 @@ struct AggregateFunctionWindowFunnelData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(events_list), std::end(events_list), Comparator{});
+            std::stable_sort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -145,14 +137,20 @@ class AggregateFunctionWindowFunnel final
 private:
     UInt64 window;
     UInt8 events_size;
-    UInt8 strict;   // When the 'strict' is set, it applies conditions only for the not repeating values.
-    UInt8 strict_order; // When the 'strict_order' is set, it doesn't allow interventions of other events.
-                        // In the case of 'A->B->D->C', it stops finding 'A->B->C' at the 'D' and the max event level is 2.
+    /// When the 'strict_deduplication' is set, it applies conditions only for the not repeating values.
+    bool strict_deduplication;
 
-    // Loop through the entire events_list, update the event timestamp value
-    // The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
-    // If found, returns the max event level, else return 0.
-    // The Algorithm complexity is O(n).
+    /// When the 'strict_order' is set, it doesn't allow interventions of other events.
+    /// In the case of 'A->B->D->C', it stops finding 'A->B->C' at the 'D' and the max event level is 2.
+    bool strict_order;
+
+    /// Applies conditions only to events with strictly increasing timestamps
+    bool strict_increase;
+
+    /// Loop through the entire events_list, update the event timestamp value
+    /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
+    /// If found, returns the max event level, else return 0.
+    /// The algorithm works in O(n) time, but the overall function works in O(n * log(n)) due to sorting.
     UInt8 getEventLevel(Data & data) const
     {
         if (data.size() == 0)
@@ -162,16 +160,13 @@ private:
 
         data.sort();
 
-        /// events_timestamp stores the timestamp that latest i-th level event happen within time window after previous level event.
-        /// timestamp defaults to -1, which unsigned timestamp value never meet
-        /// there may be some bugs when UInt64 type timstamp overflows Int64, but it works on most cases.
-        std::vector<Int64> events_timestamp(events_size, -1);
+        /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
+        std::vector<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
         bool first_event = false;
-        for (const auto & pair : data.events_list)
+        for (size_t i = 0; i < data.events_list.size(); ++i)
         {
-            const T & timestamp = pair.first;
-            const auto & event_idx = pair.second - 1;
-
+            const T & timestamp = data.events_list[i].first;
+            const auto & event_idx = data.events_list[i].second - 1;
             if (strict_order && event_idx == -1)
             {
                 if (first_event)
@@ -181,31 +176,39 @@ private:
             }
             else if (event_idx == 0)
             {
-                events_timestamp[0] = timestamp;
+                events_timestamp[0] = std::make_pair(timestamp, timestamp);
                 first_event = true;
             }
-            else if (strict && events_timestamp[event_idx] >= 0)
+            else if (strict_deduplication && events_timestamp[event_idx].has_value())
             {
-                return event_idx + 1;
+                return data.events_list[i - 1].second;
             }
-            else if (strict_order && first_event && events_timestamp[event_idx - 1] == -1)
+            else if (strict_order && first_event && !events_timestamp[event_idx - 1].has_value())
             {
                 for (size_t event = 0; event < events_timestamp.size(); ++event)
                 {
-                    if (events_timestamp[event] == -1)
+                    if (!events_timestamp[event].has_value())
                         return event;
                 }
             }
-            else if (events_timestamp[event_idx - 1] >= 0 && timestamp <= events_timestamp[event_idx - 1] + window)
+            else if (events_timestamp[event_idx - 1].has_value())
             {
-                events_timestamp[event_idx] = events_timestamp[event_idx - 1];
-                if (event_idx + 1 == events_size)
-                    return events_size;
+                auto first_timestamp = events_timestamp[event_idx - 1]->first;
+                bool time_matched = timestamp <= first_timestamp + window;
+                if (strict_increase)
+                    time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
+                if (time_matched)
+                {
+                    events_timestamp[event_idx] = std::make_pair(first_timestamp, timestamp);
+                    if (event_idx + 1 == events_size)
+                        return events_size;
+                }
             }
         }
+
         for (size_t event = events_timestamp.size(); event > 0; --event)
         {
-            if (events_timestamp[event - 1] >= 0)
+            if (events_timestamp[event - 1].has_value())
                 return event;
         }
         return 0;
@@ -223,15 +226,20 @@ public:
         events_size = arguments.size() - 1;
         window = params.at(0).safeGet<UInt64>();
 
-        strict = 0;
-        strict_order = 0;
+        strict_deduplication = false;
+        strict_order = false;
+        strict_increase = false;
         for (size_t i = 1; i < params.size(); ++i)
         {
             String option = params.at(i).safeGet<String>();
-            if (option.compare("strict") == 0)
-                strict = 1;
-            else if (option.compare("strict_order") == 0)
-                strict_order = 1;
+            if (option == "strict_deduplication")
+                strict_deduplication = true;
+            else if (option == "strict_order")
+                strict_order = true;
+            else if (option == "strict_increase")
+                strict_increase = true;
+            else if (option == "strict")
+                throw Exception{"strict is replaced with strict_deduplication in Aggregate function " + getName(), ErrorCodes::BAD_ARGUMENTS};
             else
                 throw Exception{"Aggregate function " + getName() + " doesn't support a parameter: " + option, ErrorCodes::BAD_ARGUMENTS};
         }
@@ -241,6 +249,8 @@ public:
     {
         return std::make_shared<DataTypeUInt8>();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
@@ -253,7 +263,7 @@ public:
     {
         bool has_event = false;
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
-        // reverse iteration and stable sorting are needed for events that are qualified by more than one condition.
+        /// reverse iteration and stable sorting are needed for events that are qualified by more than one condition.
         for (auto i = events_size; i > 0; --i)
         {
             auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
@@ -273,12 +283,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

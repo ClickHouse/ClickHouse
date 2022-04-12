@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,9 +12,9 @@ class Context;
 
 /** Implements `zookeeper` system table, which allows you to view the data in ZooKeeper for debugging purposes.
   */
-class StorageSystemZooKeeper final : public ext::shared_ptr_helper<StorageSystemZooKeeper>, public IStorageSystemOneBlock<StorageSystemZooKeeper>
+class StorageSystemZooKeeper final : public shared_ptr_helper<StorageSystemZooKeeper>, public IStorageSystemOneBlock<StorageSystemZooKeeper>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemZooKeeper>;
+    friend struct shared_ptr_helper<StorageSystemZooKeeper>;
 public:
     std::string getName() const override { return "SystemZooKeeper"; }
 
@@ -23,7 +23,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

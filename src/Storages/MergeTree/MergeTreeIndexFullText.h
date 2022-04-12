@@ -1,33 +1,17 @@
 #pragma once
 
-#include <Interpreters/BloomFilter.h>
+#include <memory>
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
-
-#include <memory>
+#include <Interpreters/BloomFilter.h>
+#include <Interpreters/ITokenExtractor.h>
 
 
 namespace DB
 {
 
-/// Interface for string parsers.
-struct ITokenExtractor
-{
-    virtual ~ITokenExtractor() = default;
-    /// Fast inplace implementation for regular use.
-    /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
-    /// Returns false if parsing is finished, otherwise returns true.
-    virtual bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const = 0;
-    /// Special implementation for creating bloom filter for LIKE function.
-    /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
-    virtual bool nextLike(const String & str, size_t * pos, String & out) const = 0;
-
-    virtual bool supportLike() const = 0;
-};
-
-using TokenExtractorPtr = const ITokenExtractor *;
-
-struct MergeTreeIndexGranuleFullText : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
 {
     explicit MergeTreeIndexGranuleFullText(
         const String & index_name_,
@@ -37,7 +21,7 @@ struct MergeTreeIndexGranuleFullText : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleFullText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr) override;
+    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return !has_elems; }
 
@@ -50,7 +34,7 @@ struct MergeTreeIndexGranuleFullText : public IMergeTreeIndexGranule
 
 using MergeTreeIndexGranuleFullTextPtr = std::shared_ptr<MergeTreeIndexGranuleFullText>;
 
-struct MergeTreeIndexAggregatorFullText : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorFullText final : IMergeTreeIndexAggregator
 {
     explicit MergeTreeIndexAggregatorFullText(
         const Names & index_columns_,
@@ -74,12 +58,12 @@ struct MergeTreeIndexAggregatorFullText : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeConditionFullText : public IMergeTreeIndexCondition
+class MergeTreeConditionFullText final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeConditionFullText(
             const SelectQueryInfo & query_info,
-            const Context & context,
+            ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
             TokenExtractorPtr token_extactor_);
@@ -104,6 +88,7 @@ private:
             /// Atoms of a Boolean expression.
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
+            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
@@ -117,7 +102,7 @@ private:
             ALWAYS_TRUE,
         };
 
-        RPNElement(
+        RPNElement( /// NOLINT
                 Function function_ = FUNCTION_UNKNOWN, size_t key_column_ = 0, std::unique_ptr<BloomFilter> && const_bloom_filter_ = nullptr)
                 : function(function_), key_column(key_column_), bloom_filter(std::move(const_bloom_filter_)) {}
 
@@ -137,9 +122,16 @@ private:
 
     using RPN = std::vector<RPNElement>;
 
-    bool atomFromAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
+    bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
 
-    bool getKey(const ASTPtr & node, size_t & key_column_num);
+    bool traverseASTEquals(
+        const String & function_name,
+        const ASTPtr & key_ast,
+        const DataTypePtr & value_type,
+        const Field & value_field,
+        RPNElement & out);
+
+    bool getKey(const std::string & key_column_name, size_t & key_column_num);
     bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
@@ -154,35 +146,7 @@ private:
     PreparedSets prepared_sets;
 };
 
-
-/// Parser extracting all ngrams from string.
-struct NgramTokenExtractor : public ITokenExtractor
-{
-    NgramTokenExtractor(size_t n_) : n(n_) {}
-
-    static String getName() { return "ngrambf_v1"; }
-
-    bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
-    bool nextLike(const String & str, size_t * pos, String & token) const override;
-
-    bool supportLike() const override { return true; }
-
-    size_t n;
-};
-
-/// Parser extracting tokens (sequences of numbers and ascii letters).
-struct SplitTokenExtractor : public ITokenExtractor
-{
-    static String getName() { return "tokenbf_v1"; }
-
-    bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
-    bool nextLike(const String & str, size_t * pos, String & token) const override;
-
-    bool supportLike() const override { return true; }
-};
-
-
-class MergeTreeIndexFullText : public IMergeTreeIndex
+class MergeTreeIndexFullText final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexFullText(
@@ -199,7 +163,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query, const Context & context) const override;
+            const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 

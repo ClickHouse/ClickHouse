@@ -6,7 +6,6 @@
 namespace DB
 {
 
-class Context;
 class InterpreterSelectQuery;
 class QueryPlan;
 
@@ -19,7 +18,7 @@ public:
 
     InterpreterSelectWithUnionQuery(
         const ASTPtr & query_ptr_,
-        const Context & context_,
+        ContextPtr context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {});
 
@@ -35,10 +34,12 @@ public:
 
     static Block getSampleBlock(
         const ASTPtr & query_ptr_,
-        const Context & context_,
+        ContextPtr context_,
         bool is_subquery = false);
 
     virtual void ignoreWithTotals() override;
+
+    bool supportsTransactions() const override { return true; }
 
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
@@ -49,7 +50,6 @@ private:
 
     std::unique_ptr<IInterpreterUnionOrSelectQuery>
     buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names);
-
 };
 
 }

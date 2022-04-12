@@ -16,13 +16,17 @@ public:
         const Block & header,
         size_t num_inputs,
         AggregatingTransformParamsPtr params,
-        SortDescription description)
+        SortDescription description,
+        size_t max_block_size,
+        size_t max_block_bytes)
         : IMergingTransform(
-            num_inputs, header, header, true,
+            num_inputs, header, {}, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0,
             header,
             num_inputs,
             params,
-            std::move(description))
+            std::move(description),
+            max_block_size,
+            max_block_bytes)
     {
     }
 

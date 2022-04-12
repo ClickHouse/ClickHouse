@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 # https://github.com/ClickHouse/ClickHouse/issues/7438
 
@@ -24,15 +25,15 @@ SELECT * FROM enum_mapping_protobuf_00825;
 EOF
 
 BINARY_FILE_PATH=$(mktemp "$CURDIR/00825_protobuf_format_enum_mapping.XXXXXX.binary")
-$CLICKHOUSE_CLIENT --query "SELECT * FROM enum_mapping_protobuf_00825 FORMAT Protobuf SETTINGS format_schema = '$SCHEMADIR/00825_protobuf_format_enum_mapping:Message'" > "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM enum_mapping_protobuf_00825 FORMAT Protobuf SETTINGS format_schema = '$SCHEMADIR/00825_protobuf_format_enum_mapping:EnumMessage'" > "$BINARY_FILE_PATH"
 
 # Check the output in the protobuf format
 echo
-$CURDIR/helpers/protobuf_length_delimited_encoder.py --decode_and_check --format_schema "$SCHEMADIR/00825_protobuf_format_enum_mapping:Message" --input "$BINARY_FILE_PATH"
+$CURDIR/helpers/protobuf_length_delimited_encoder.py --decode_and_check --format_schema "$SCHEMADIR/00825_protobuf_format_enum_mapping:EnumMessage" --input "$BINARY_FILE_PATH"
 
 # Check the input in the protobuf format (now the table contains the same data twice).
 echo
-$CLICKHOUSE_CLIENT --query "INSERT INTO enum_mapping_protobuf_00825 FORMAT Protobuf SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_enum_mapping:Message'" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "INSERT INTO enum_mapping_protobuf_00825 SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_enum_mapping:EnumMessage' FORMAT Protobuf" < "$BINARY_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM enum_mapping_protobuf_00825"
 
 rm "$BINARY_FILE_PATH"

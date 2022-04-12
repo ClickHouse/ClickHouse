@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/NullWriteBuffer.h>
@@ -15,7 +15,7 @@ class FunctionBlockSerializedSize : public IFunction
 public:
     static constexpr auto name = "blockSerializedSize";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBlockSerializedSize>();
     }
@@ -24,6 +24,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -44,18 +45,20 @@ public:
     {
         ColumnPtr full_column = elem.column->convertToFullColumnIfConst();
 
-        IDataType::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkSettings settings;
         NullWriteBuffer out;
 
-        settings.getter = [&out](IDataType::SubstreamPath) -> WriteBuffer * { return &out; };
+        settings.getter = [&out](ISerialization::SubstreamPath) -> WriteBuffer * { return &out; };
 
-        IDataType::SerializeBinaryBulkStatePtr state;
+        ISerialization::SerializeBinaryBulkStatePtr state;
 
-        elem.type->serializeBinaryBulkStatePrefix(settings, state);
-        elem.type->serializeBinaryBulkWithMultipleStreams(*full_column,
+        auto serialization = elem.type->getDefaultSerialization();
+
+        serialization->serializeBinaryBulkStatePrefix(settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*full_column,
             0 /** offset */, 0 /** limit */,
             settings, state);
-        elem.type->serializeBinaryBulkStateSuffix(settings, state);
+        serialization->serializeBinaryBulkStateSuffix(settings, state);
 
         return out.count();
     }

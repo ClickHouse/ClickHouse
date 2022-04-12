@@ -25,9 +25,9 @@ NamesAndTypesList StorageSystemModels::getNamesAndTypes()
     };
 }
 
-void StorageSystemModels::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemModels::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    const auto & external_models_loader = context.getExternalModelsLoader();
+    const auto & external_models_loader = context->getExternalModelsLoader();
     auto load_results = external_models_loader.getLoadResults();
 
     for (const auto & load_result : load_results)
@@ -38,7 +38,7 @@ void StorageSystemModels::fillData(MutableColumns & res_columns, const Context &
 
         if (load_result.object)
         {
-            const auto model_ptr = std::static_pointer_cast<const IModel>(load_result.object);
+            const auto model_ptr = std::static_pointer_cast<const IMLModel>(load_result.object);
             res_columns[3]->insert(model_ptr->getTypeName());
         }
         else

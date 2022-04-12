@@ -1,5 +1,5 @@
 #include <Access/ContextAccess.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/EnabledRoles.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/EnabledQuota.h>
@@ -7,13 +7,14 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
+#include <Access/SettingsProfilesInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Logger.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <assert.h>
@@ -118,8 +119,10 @@ namespace
         AccessRights res = access;
         res.modifyFlags(modifier);
 
-        /// Anyone has access to the "system" database.
+        /// Anyone has access to the "system" and "information_schema" database.
         res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
+        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
+        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         return res;
     }
 
@@ -139,19 +142,27 @@ namespace
 }
 
 
-ContextAccess::ContextAccess(const AccessControlManager & manager_, const Params & params_)
-    : manager(&manager_)
+ContextAccess::ContextAccess(const AccessControl & access_control_, const Params & params_)
+    : access_control(&access_control_)
     , params(params_)
 {
-    subscription_for_user_change = manager->subscribeForChanges(
-        *params.user_id, [this](const UUID &, const AccessEntityPtr & entity)
-    {
-        UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
-        std::lock_guard lock{mutex};
-        setUser(changed_user);
-    });
+}
 
-    setUser(manager->read<User>(*params.user_id));
+
+void ContextAccess::initialize()
+{
+     std::lock_guard lock{mutex};
+     subscription_for_user_change = access_control->subscribeForChanges(
+         *params.user_id, [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
+     {
+         auto ptr = weak_ptr.lock();
+         if (!ptr)
+             return;
+         UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
+         std::lock_guard lock2{ptr->mutex};
+         ptr->setUser(changed_user);
+     });
+     setUser(access_control->read<User>(*params.user_id));
 }
 
 
@@ -161,11 +172,10 @@ void ContextAccess::setUser(const UserPtr & user_) const
     if (!user)
     {
         /// User has been dropped.
-        auto nothing_granted = std::make_shared<AccessRights>();
-        access = nothing_granted;
-        access_with_implicit = nothing_granted;
         subscription_for_user_change = {};
         subscription_for_roles_changes = {};
+        access = nullptr;
+        access_with_implicit = nullptr;
         enabled_roles = nullptr;
         roles_info = nullptr;
         enabled_row_policies = nullptr;
@@ -189,8 +199,8 @@ void ContextAccess::setUser(const UserPtr & user_) const
         current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(params.current_roles);
     }
 
-    subscription_for_roles_changes = {};
-    enabled_roles = manager->getEnabledRoles(current_roles, current_roles_with_admin_option);
+    subscription_for_roles_changes.reset();
+    enabled_roles = access_control->getEnabledRoles(current_roles, current_roles_with_admin_option);
     subscription_for_roles_changes = enabled_roles->subscribeForChanges([this](const std::shared_ptr<const EnabledRolesInfo> & roles_info_)
     {
         std::lock_guard lock{mutex};
@@ -205,11 +215,11 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 {
     assert(roles_info_);
     roles_info = roles_info_;
-    enabled_row_policies = manager->getEnabledRowPolicies(
+    enabled_row_policies = access_control->getEnabledRowPolicies(
         *params.user_id, roles_info->enabled_roles);
-    enabled_quota = manager->getEnabledQuota(
+    enabled_quota = access_control->getEnabledQuota(
         *params.user_id, user_name, roles_info->enabled_roles, params.address, params.forwarded_address, params.quota_key);
-    enabled_settings = manager->getEnabledSettings(
+    enabled_settings = access_control->getEnabledSettings(
         *params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
     calculateAccessRights();
 }
@@ -250,32 +260,45 @@ String ContextAccess::getUserName() const
 std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
 {
     std::lock_guard lock{mutex};
-    return roles_info;
+    if (roles_info)
+        return roles_info;
+    static const auto no_roles = std::make_shared<EnabledRolesInfo>();
+    return no_roles;
 }
 
 std::shared_ptr<const EnabledRowPolicies> ContextAccess::getEnabledRowPolicies() const
 {
     std::lock_guard lock{mutex};
-    return enabled_row_policies;
+    if (enabled_row_policies)
+        return enabled_row_policies;
+    static const auto no_row_policies = std::make_shared<EnabledRowPolicies>();
+    return no_row_policies;
 }
 
-ASTPtr ContextAccess::getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType index, const ASTPtr & extra_condition) const
+ASTPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr) const
 {
     std::lock_guard lock{mutex};
-    return enabled_row_policies ? enabled_row_policies->getCondition(database, table_name, index, extra_condition) : nullptr;
+    if (enabled_row_policies)
+        return enabled_row_policies->getFilter(database, table_name, filter_type, combine_with_expr);
+    return nullptr;
 }
 
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 {
     std::lock_guard lock{mutex};
-    return enabled_quota;
+    if (enabled_quota)
+        return enabled_quota;
+    static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
+    return unlimited_quota;
 }
 
 
 std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
     std::lock_guard lock{mutex};
-    return enabled_quota ? enabled_quota->getUsage() : std::optional<QuotaUsage>{};
+    if (enabled_quota)
+        return enabled_quota->getUsage();
+    return {};
 }
 
 
@@ -286,38 +309,52 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
         auto full_access = std::shared_ptr<ContextAccess>(new ContextAccess);
         full_access->is_full_access = true;
         full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
-        full_access->enabled_quota = EnabledQuota::getUnlimitedQuota();
+        full_access->access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*full_access->access));
         return full_access;
     }();
     return res;
 }
 
 
-std::shared_ptr<const Settings> ContextAccess::getDefaultSettings() const
+SettingsChanges ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
-    return enabled_settings ? enabled_settings->getSettings() : nullptr;
+    if (enabled_settings)
+    {
+        if (auto info = enabled_settings->getInfo())
+            return info->settings;
+    }
+    return {};
 }
 
 
-std::shared_ptr<const SettingsConstraints> ContextAccess::getSettingsConstraints() const
+std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo() const
 {
     std::lock_guard lock{mutex};
-    return enabled_settings ? enabled_settings->getConstraints() : nullptr;
+    if (enabled_settings)
+        return enabled_settings->getInfo();
+    static const auto everything_by_default = std::make_shared<SettingsProfilesInfo>(*access_control);
+    return everything_by_default;
 }
 
 
 std::shared_ptr<const AccessRights> ContextAccess::getAccessRights() const
 {
     std::lock_guard lock{mutex};
-    return access;
+    if (access)
+        return access;
+    static const auto nothing_granted = std::make_shared<AccessRights>();
+    return nothing_granted;
 }
 
 
 std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit() const
 {
     std::lock_guard lock{mutex};
-    return access_with_implicit;
+    if (access_with_implicit)
+        return access_with_implicit;
+    static const auto nothing_granted = std::make_shared<AccessRights>();
+    return nothing_granted;
 }
 
 
@@ -388,6 +425,7 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
             | AccessType::TRUNCATE;
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
+        const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
@@ -395,7 +433,7 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
         const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
-        const AccessFlags ddl_flags = table_ddl | dictionary_ddl;
+        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
     };
     static const PrecalculatedFlags precalc;
@@ -549,7 +587,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
     for (auto it = std::begin(role_ids); it != std::end(role_ids); ++it, ++i)
     {
         const UUID & role_id = *it;
-        if (info && info->enabled_roles_with_admin_option.count(role_id))
+        if (info->enabled_roles_with_admin_option.count(role_id))
             continue;
 
         if (throw_if_denied)
@@ -558,7 +596,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
             if (!role_name)
                 role_name = "ID {" + toString(role_id) + "}";
 
-            if (info && info->enabled_roles.count(role_id))
+            if (info->enabled_roles.count(role_id))
                 show_error("Not enough privileges. "
                            "Role " + backQuote(*role_name) + " is granted, but without ADMIN option. "
                            "To execute this query it's necessary to have the role " + backQuoteIfNeed(*role_name) + " granted with ADMIN option.",
@@ -578,7 +616,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
 template <bool throw_if_denied>
 bool ContextAccess::checkAdminOptionImpl(const UUID & role_id) const
 {
-    return checkAdminOptionImplHelper<throw_if_denied>(to_array(role_id), [this](const UUID & id, size_t) { return manager->tryReadName(id); });
+    return checkAdminOptionImplHelper<throw_if_denied>(to_array(role_id), [this](const UUID & id, size_t) { return access_control->tryReadName(id); });
 }
 
 template <bool throw_if_denied>
@@ -596,7 +634,7 @@ bool ContextAccess::checkAdminOptionImpl(const UUID & role_id, const std::unorde
 template <bool throw_if_denied>
 bool ContextAccess::checkAdminOptionImpl(const std::vector<UUID> & role_ids) const
 {
-    return checkAdminOptionImplHelper<throw_if_denied>(role_ids, [this](const UUID & id, size_t) { return manager->tryReadName(id); });
+    return checkAdminOptionImplHelper<throw_if_denied>(role_ids, [this](const UUID & id, size_t) { return access_control->tryReadName(id); });
 }
 
 template <bool throw_if_denied>

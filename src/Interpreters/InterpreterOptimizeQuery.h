@@ -6,27 +6,24 @@
 
 namespace DB
 {
-class Context;
-class AccessRightsElements;
 
+class AccessRightsElements;
 
 /** Just call method "optimize" for table.
   */
-class InterpreterOptimizeQuery : public IInterpreter
+class InterpreterOptimizeQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterOptimizeQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_), context(context_)
-    {
-    }
+    InterpreterOptimizeQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
+
+    bool supportsTransactions() const override { return true; }
 
 private:
     AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;
-    Context & context;
 };
 
 }

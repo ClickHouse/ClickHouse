@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Parsers/IAST.h>
+
 #include <string>
 #include <unordered_map>
-
-#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -13,12 +13,13 @@ enum class ColumnDefaultKind
 {
     Default,
     Materialized,
-    Alias
+    Alias,
+    Ephemeral
 };
 
 
 ColumnDefaultKind columnDefaultKindFromString(const std::string & str);
-std::string toString(const ColumnDefaultKind kind);
+std::string toString(ColumnDefaultKind kind);
 
 
 struct ColumnDefault

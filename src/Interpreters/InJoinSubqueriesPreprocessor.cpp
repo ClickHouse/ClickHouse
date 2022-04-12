@@ -25,9 +25,9 @@ namespace ErrorCodes
 namespace
 {
 
-StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
+StoragePtr tryGetTable(const ASTPtr & database_and_table, ContextPtr context)
 {
-    auto table_id = context.tryResolveStorageID(database_and_table);
+    auto table_id = context->tryResolveStorageID(database_and_table);
     if (!table_id)
         return {};
     return DatabaseCatalog::instance().tryGetTable(table_id, context);
@@ -35,12 +35,21 @@ StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & contex
 
 using CheckShardsAndTables = InJoinSubqueriesPreprocessor::CheckShardsAndTables;
 
-struct NonGlobalTableData
+struct NonGlobalTableData : public WithContext
 {
     using TypeToVisit = ASTTableExpression;
 
+    NonGlobalTableData(
+        ContextPtr context_,
+        const CheckShardsAndTables & checker_,
+        std::vector<ASTPtr> & renamed_tables_,
+        ASTFunction * function_,
+        ASTTableJoin * table_join_)
+        : WithContext(context_), checker(checker_), renamed_tables(renamed_tables_), function(function_), table_join(table_join_)
+    {
+    }
+
     const CheckShardsAndTables & checker;
-    const Context & context;
     std::vector<ASTPtr> & renamed_tables;
     ASTFunction * function = nullptr;
     ASTTableJoin * table_join = nullptr;
@@ -55,19 +64,30 @@ struct NonGlobalTableData
 private:
     void renameIfNeeded(ASTPtr & database_and_table)
     {
-        const DistributedProductMode distributed_product_mode = context.getSettingsRef().distributed_product_mode;
+        const DistributedProductMode distributed_product_mode = getContext()->getSettingsRef().distributed_product_mode;
 
-        StoragePtr storage = tryGetTable(database_and_table, context);
+        StoragePtr storage = tryGetTable(database_and_table, getContext());
         if (!storage || !checker.hasAtLeastTwoShards(*storage))
             return;
 
-        if (distributed_product_mode == DistributedProductMode::DENY)
+        if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
-            throw Exception("Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny')."
-                " You may rewrite query to use local tables in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.",
-                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
+            /// Convert distributed table to corresponding remote table.
+
+            std::string database;
+            std::string table;
+            std::tie(database, table) = checker.getRemoteDatabaseAndTableName(*storage);
+
+            String alias = database_and_table->tryGetAlias();
+            if (alias.empty())
+                throw Exception("Distributed table should have an alias when distributed_product_mode set to local",
+                                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
+
+            auto & identifier = database_and_table->as<ASTTableIdentifier &>();
+            renamed_tables.emplace_back(identifier.clone());
+            identifier.resetTable(database, table);
         }
-        else if (distributed_product_mode == DistributedProductMode::GLOBAL)
+        else if (getContext()->getSettingsRef().prefer_global_in_and_join || distributed_product_mode == DistributedProductMode::GLOBAL)
         {
             if (function)
             {
@@ -89,22 +109,11 @@ private:
             else
                 throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
         }
-        else if (distributed_product_mode == DistributedProductMode::LOCAL)
+        else if (distributed_product_mode == DistributedProductMode::DENY)
         {
-            /// Convert distributed table to corresponding remote table.
-
-            std::string database;
-            std::string table;
-            std::tie(database, table) = checker.getRemoteDatabaseAndTableName(*storage);
-
-            String alias = database_and_table->tryGetAlias();
-            if (alias.empty())
-                throw Exception("Distributed table should have an alias when distributed_product_mode set to local",
-                                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
-
-            auto & identifier = database_and_table->as<ASTIdentifier &>();
-            renamed_tables.emplace_back(identifier.clone());
-            identifier.resetTable(database, table);
+            throw Exception("Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny')."
+                " You may rewrite query to use local tables in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.",
+                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
         }
         else
             throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting",
@@ -119,11 +128,17 @@ using NonGlobalTableVisitor = InDepthNodeVisitor<NonGlobalTableMatcher, true>;
 class NonGlobalSubqueryMatcher
 {
 public:
-    struct Data
+    struct Data : public WithContext
     {
+        using RenamedTables = std::vector<std::pair<ASTPtr, std::vector<ASTPtr>>>;
+
+        Data(ContextPtr context_, const CheckShardsAndTables & checker_, RenamedTables & renamed_tables_)
+        : WithContext(context_), checker(checker_), renamed_tables(renamed_tables_)
+        {
+        }
+
         const CheckShardsAndTables & checker;
-        const Context & context;
-        std::vector<std::pair<ASTPtr, std::vector<ASTPtr>>> & renamed_tables;
+        RenamedTables & renamed_tables;
     };
 
     static void visit(ASTPtr & node, Data & data)
@@ -161,9 +176,9 @@ private:
             }
             auto & subquery = node.arguments->children.at(1);
             std::vector<ASTPtr> renamed;
-            NonGlobalTableVisitor::Data table_data{data.checker, data.context, renamed, &node, nullptr};
+            NonGlobalTableVisitor::Data table_data(data.getContext(), data.checker, renamed, &node, nullptr);
             NonGlobalTableVisitor(table_data).visit(subquery);
-            if (!renamed.empty())
+            if (!renamed.empty()) //-V547
                 data.renamed_tables.emplace_back(subquery, std::move(renamed));
         }
     }
@@ -176,13 +191,25 @@ private:
         ASTTableJoin * table_join = node.table_join->as<ASTTableJoin>();
         if (table_join->locality != ASTTableJoin::Locality::Global)
         {
-            if (auto & subquery = node.table_expression->as<ASTTableExpression>()->subquery)
+            if (auto * table = node.table_expression->as<ASTTableExpression>())
             {
-                std::vector<ASTPtr> renamed;
-                NonGlobalTableVisitor::Data table_data{data.checker, data.context, renamed, nullptr, table_join};
-                NonGlobalTableVisitor(table_data).visit(subquery);
-                if (!renamed.empty())
-                    data.renamed_tables.emplace_back(subquery, std::move(renamed));
+                if (auto & subquery = table->subquery)
+                {
+                    std::vector<ASTPtr> renamed;
+                    NonGlobalTableVisitor::Data table_data(data.getContext(), data.checker, renamed, nullptr, table_join);
+                    NonGlobalTableVisitor(table_data).visit(subquery);
+                    if (!renamed.empty()) //-V547
+                        data.renamed_tables.emplace_back(subquery, std::move(renamed));
+                }
+                else if (table->database_and_table_name)
+                {
+                    auto tb = node.table_expression;
+                    std::vector<ASTPtr> renamed;
+                    NonGlobalTableVisitor::Data table_data{data.getContext(), data.checker, renamed, nullptr, table_join};
+                    NonGlobalTableVisitor(table_data).visit(tb);
+                    if (!renamed.empty()) //-V547
+                        data.renamed_tables.emplace_back(tb, std::move(renamed));
+                }
             }
         }
     }
@@ -202,7 +229,7 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
     if (!query || !query->tables())
         return;
 
-    if (context.getSettingsRef().distributed_product_mode == DistributedProductMode::ALLOW)
+    if (getContext()->getSettingsRef().distributed_product_mode == DistributedProductMode::ALLOW)
         return;
 
     const auto & tables_in_select_query = query->tables()->as<ASTTablesInSelectQuery &>();
@@ -221,12 +248,12 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
 
     /// If not really distributed table, skip it.
     {
-        StoragePtr storage = tryGetTable(table_expression->database_and_table_name, context);
+        StoragePtr storage = tryGetTable(table_expression->database_and_table_name, getContext());
         if (!storage || !checker->hasAtLeastTwoShards(*storage))
             return;
     }
 
-    NonGlobalSubqueryVisitor::Data visitor_data{*checker, context, renamed_tables};
+    NonGlobalSubqueryVisitor::Data visitor_data{getContext(), *checker, renamed_tables};
     NonGlobalSubqueryVisitor(visitor_data).visit(ast);
 }
 

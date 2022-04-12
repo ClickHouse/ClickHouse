@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <limits>
 
-#include <common/extended_types.h>
+#include <base/extended_types.h>
 
 // Also defined in Core/Defines.h
 #if !defined(NO_SANITIZE_UNDEFINED)
@@ -138,9 +138,9 @@ constexpr inline Int128 exp10_i128(int x)
 }
 
 
-inline wInt256 exp10_i256(int x)
+inline Int256 exp10_i256(int x)
 {
-    using Int256 = wInt256;
+    using Int256 = Int256;
     static constexpr Int256 i10e18{1000000000000000000ll};
     static const Int256 values[] = {
         static_cast<Int256>(1ll),

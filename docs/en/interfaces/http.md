@@ -7,19 +7,28 @@ toc_title: HTTP Interface
 
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
 
-By default, clickhouse-server listens for HTTP on port 8123 (this can be changed in the config).
+By default, `clickhouse-server` listens for HTTP on port 8123 (this can be changed in the config).
 
-If you make a GET / request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) default value “Ok.” (with a line feed at the end)
+Sometimes, `curl` command is not available on user operating systems. On Ubuntu or Debian, run `sudo apt install curl`. Please refer this [documentation](https://curl.se/download.html) to install it before running the examples.
+
+If you make a `GET /` request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) default value “Ok.” (with a line feed at the end)
 
 ``` bash
 $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-Use GET /ping request in health-check scripts. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13.
+Web UI can be accessed here: `http://localhost:8123/play`.
+
+![Web UI](../images/play.png)
+
+
+In health-check scripts use `GET /ping` request. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 
 ``` bash
 $ curl 'http://localhost:8123/ping'
+Ok.
+$ curl 'http://localhost:8123/replicas_status'
 Ok.
 ```
 
@@ -51,8 +60,8 @@ X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","writ
 1
 ```
 
-As you can see, curl is somewhat inconvenient in that spaces must be URL escaped.
-Although wget escapes everything itself, we don’t recommend using it because it doesn’t work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
+As you can see, `curl` is somewhat inconvenient in that spaces must be URL escaped.
+Although `wget` escapes everything itself, we do not recommend using it because it does not work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
 
 ``` bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/' --data-binary @-
@@ -75,7 +84,7 @@ ECT 1
 , expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
 ```
 
-By default, data is returned in TabSeparated format (for more information, see the “Formats” section).
+By default, data is returned in [TabSeparated](formats.md#tabseparated) format.
 
 You use the FORMAT clause of the query to request any other format.
 
@@ -90,9 +99,11 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
-The POST method of transmitting data is necessary for INSERT queries. In this case, you can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the INSERT query replaces LOAD DATA LOCAL INFILE from MySQL.
+The POST method of transmitting data is necessary for `INSERT` queries. In this case, you can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.
 
-Examples: Creating a table:
+**Examples**
+
+Creating a table:
 
 ``` bash
 $ echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
@@ -146,7 +157,7 @@ Deleting the table.
 $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-For successful requests that don’t return a data table, an empty response body is returned.
+For successful requests that do not return a data table, an empty response body is returned.
 
 
 ## Compression {#compression}
@@ -179,10 +190,19 @@ $ echo "SELECT 1" | gzip -c | \
 ```
 
 ``` bash
-# Receiving compressed data from the server
+# Receiving compressed data archive from the server
 $ curl -vsS "http://localhost:8123/?enable_http_compression=1" \
     -H 'Accept-Encoding: gzip' --output result.gz -d 'SELECT number FROM system.numbers LIMIT 3'
 $ zcat result.gz
+0
+1
+2
+```
+
+```bash
+# Receiving compressed data from the server and using the gunzip to receive decompressed data
+$ curl -sS "http://localhost:8123/?enable_http_compression=1" \
+    -H 'Accept-Encoding: gzip' -d 'SELECT number FROM system.numbers LIMIT 3' | gunzip -
 0
 1
 2
@@ -273,7 +293,7 @@ Possible header fields:
 -   `written_rows` — Number of rows written.
 -   `written_bytes` — Volume of data written in bytes.
 
-Running requests don’t stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
+Running requests do not stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
 The optional ‘query_id’ parameter can be passed as the query ID (any string). For more information, see the section “Settings, replace_running_query”.
 
 The optional ‘quota_key’ parameter can be passed as the quota key (any string). For more information, see the section “Quotas”.
@@ -417,7 +437,10 @@ Next are the configuration methods for different `type`.
 
 `query` value is a predefined query of `predefined_query_handler`, which is executed by ClickHouse when an HTTP request is matched and the result of the query is returned. It is a must configuration.
 
-The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_alter_threads` settings, then queries the system table to check whether these settings were set successfully.
+The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
+
+!!! note "Warning"
+    To keep the default `handlers` such as` query`, `play`,` ping`, use the `<defaults/>` rule.
 
 Example:
 
@@ -425,7 +448,7 @@ Example:
 <http_handlers>
     <rule>
         <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
-        <method>GET</method>
+        <methods>GET</methods>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
             <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
@@ -436,13 +459,14 @@ Example:
             <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
         </handler>
     </rule>
+    <defaults/>
 </http_handlers>
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_alter_threads?max_threads=1&max_alter_threads=2'
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 !!! note "caution"
@@ -454,7 +478,7 @@ In `dynamic_query_handler`, the query is written in the form of param of the HTT
 
 ClickHouse extracts and executes the value corresponding to the `query_param_name` value in the URL of the HTTP request. The default value of `query_param_name` is `/query` . It is an optional configuration. If there is no definition in the configuration file, the param is not passed in.
 
-To experiment with this functionality, the example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_alter_threads` and `queries` whether the settings were set successfully.
+To experiment with this functionality, the example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` and `queries` whether the settings were set successfully.
 
 Example:
 
@@ -468,13 +492,14 @@ Example:
         <query_param_name>query_param</query_param_name>
     </handler>
     </rule>
+    <defaults/>
 </http_handlers>
 ```
 
 ``` bash
-$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_final_threads=2&param_name_1=max_threads&param_name_2=max_final_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
 max_threads 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 ### static {#static}
@@ -498,7 +523,8 @@ Return a message.
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
-<http_handlers>
+        <defaults/>
+</http_handlers>
 ```
 
 ``` bash
@@ -633,5 +659,3 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
 ```
-
-[Original article](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->

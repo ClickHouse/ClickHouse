@@ -1,10 +1,10 @@
-#include <common/demangle.h>
+#include <base/demangle.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 
 
@@ -25,9 +25,9 @@ class FunctionDemangle : public IFunction
 {
 public:
     static constexpr auto name = "demangle";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
-        context.checkAccess(AccessType::demangle);
+        context->checkAccess(AccessType::demangle);
         return std::make_shared<FunctionDemangle>();
     }
 
@@ -39,6 +39,11 @@ public:
     size_t getNumberOfArguments() const override
     {
         return 1;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return true;
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

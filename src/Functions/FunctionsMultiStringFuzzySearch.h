@@ -9,10 +9,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
+#include <Functions/hyperscanRegexpChecker.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <optional>
 
@@ -27,26 +28,33 @@ namespace ErrorCodes
 }
 
 
-template <typename Impl, typename Name, size_t LimitArgs>
+template <typename Impl, size_t LimitArgs>
 class FunctionsMultiStringFuzzySearch : public IFunction
 {
     static_assert(LimitArgs > 0);
 
 public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static constexpr auto name = Impl::name;
+    static FunctionPtr create(ContextPtr context)
     {
-        if (Impl::is_using_hyperscan && !context.getSettingsRef().allow_hyperscan)
+        if (Impl::is_using_hyperscan && !context->getSettingsRef().allow_hyperscan)
             throw Exception(
                 "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
 
-        return std::make_shared<FunctionsMultiStringFuzzySearch>();
+        return std::make_shared<FunctionsMultiStringFuzzySearch>(
+            context->getSettingsRef().max_hyperscan_regexp_length, context->getSettingsRef().max_hyperscan_regexp_total_length);
+    }
+
+    FunctionsMultiStringFuzzySearch(size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_)
+        : max_hyperscan_regexp_length(max_hyperscan_regexp_length_), max_hyperscan_regexp_total_length(max_hyperscan_regexp_total_length_)
+    {
     }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -113,6 +121,9 @@ public:
         for (const auto & el : src_arr)
             refs.emplace_back(el.get<String>());
 
+        if (Impl::is_using_hyperscan)
+            checkRegexp(refs, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+
         auto col_res = ColumnVector<ResultType>::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
 
@@ -131,6 +142,10 @@ public:
         else
             return col_res;
     }
+
+private:
+    size_t max_hyperscan_regexp_length;
+    size_t max_hyperscan_regexp_total_length;
 };
 
 }

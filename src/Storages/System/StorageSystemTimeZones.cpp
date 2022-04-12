@@ -15,7 +15,7 @@ NamesAndTypesList StorageSystemTimeZones::getNamesAndTypes()
     };
 }
 
-void StorageSystemTimeZones::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemTimeZones::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     for (auto * it = auto_time_zones; *it; ++it)
         res_columns[0]->insert(String(*it));

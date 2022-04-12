@@ -1,11 +1,34 @@
+// Needs to go first because its partial specialization of fmt::formatter
+// should be defined before any instantiation
+#include <fmt/ostream.h>
+
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <cppkafka/cppkafka.h>
 #include <boost/algorithm/string/join.hpp>
-#include <fmt/ostream.h>
 #include <algorithm>
+
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric KafkaAssignedPartitions;
+    extern const Metric KafkaConsumersWithAssignment;
+}
+
+namespace ProfileEvents
+{
+    extern const Event KafkaRebalanceRevocations;
+    extern const Event KafkaRebalanceAssignments;
+    extern const Event KafkaRebalanceErrors;
+    extern const Event KafkaMessagesPolled;
+    extern const Event KafkaCommitFailures;
+    extern const Event KafkaCommits;
+    extern const Event KafkaConsumerErrors;
+}
 
 namespace DB
 {
@@ -42,16 +65,36 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
-        LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
+        CurrentMetrics::add(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
+        ProfileEvents::increment(ProfileEvents::KafkaRebalanceAssignments);
+
+        if (topic_partitions.empty())
+        {
+            LOG_INFO(log, "Got empty assignment: Not enough partitions in the topic for all consumers?");
+        }
+        else
+        {
+            LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
+            CurrentMetrics::add(CurrentMetrics::KafkaConsumersWithAssignment, 1);
+        }
+
         assignment = topic_partitions;
     });
 
     // called (synchronously, during poll) when we leave the consumer group
     consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
+        CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
+        ProfileEvents::increment(ProfileEvents::KafkaRebalanceRevocations);
+
         // Rebalance is happening now, and now we have a chance to finish the work
         // with topics/partitions we were working with before rebalance
         LOG_TRACE(log, "Rebalance initiated. Revoking partitions: {}", topic_partitions);
+
+        if (!topic_partitions.empty())
+        {
+            CurrentMetrics::sub(CurrentMetrics::KafkaConsumersWithAssignment, 1);
+        }
 
         // we can not flush data to target from that point (it is pulled, not pushed)
         // so the best we can now it to
@@ -63,7 +106,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
         cleanUnprocessed();
 
         stalled_status = REBALANCE_HAPPENED;
-        assignment.clear();
+        assignment.reset();
         waited_for_assignment = 0;
 
         // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
@@ -80,6 +123,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     consumer->set_rebalance_error_callback([this](cppkafka::Error err)
     {
         LOG_ERROR(log, "Rebalance error: {}", err);
+        ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
     });
 }
 
@@ -218,8 +262,14 @@ void ReadBufferFromKafkaConsumer::commit()
         if (!committed)
         {
             // TODO: insert atomicity / transactions is needed here (possibility to rollback, on 2 phase commits)
+            ProfileEvents::increment(ProfileEvents::KafkaCommitFailures);
             throw Exception("All commit attempts failed. Last block was already written to target table(s), but was not committed to Kafka.", ErrorCodes::CANNOT_COMMIT_OFFSET);
         }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::KafkaCommits);
+        }
+
     }
     else
     {
@@ -232,7 +282,16 @@ void ReadBufferFromKafkaConsumer::commit()
 void ReadBufferFromKafkaConsumer::subscribe()
 {
     LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(consumer->get_subscription(), ", "));
-    LOG_TRACE(log, "Already assigned to: {}", assignment);
+
+    if (assignment.has_value())
+    {
+        LOG_TRACE(log, "Already assigned to: {}", assignment.value());
+    }
+    else
+    {
+        LOG_TRACE(log, "No assignment");
+    }
+
 
     size_t max_retries = 5;
 
@@ -295,7 +354,7 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
 
 void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
 {
-    if (assignment.empty())
+    if (!assignment.has_value() || assignment->empty())
     {
         LOG_TRACE(log, "Not assignned. Can't reset to last committed position.");
         return;
@@ -360,7 +419,7 @@ bool ReadBufferFromKafkaConsumer::poll()
         {
             // While we wait for an assignment after subscription, we'll poll zero messages anyway.
             // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
-            if (assignment.empty())
+            if (!assignment.has_value())
             {
                 waited_for_assignment += poll_timeout; // slightly innaccurate, but rough calculation is ok.
                 if (waited_for_assignment < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
@@ -369,11 +428,15 @@ bool ReadBufferFromKafkaConsumer::poll()
                 }
                 else
                 {
-                    LOG_WARNING(log, "Can't get assignment. It can be caused by some issue with consumer group (not enough partitions?). Will keep trying.");
+                    LOG_WARNING(log, "Can't get assignment. Will keep trying.");
                     stalled_status = NO_ASSIGNMENT;
                     return false;
                 }
-
+            }
+            else if (assignment->empty())
+            {
+                LOG_TRACE(log, "Empty assignment.");
+                return false;
             }
             else
             {
@@ -399,6 +462,8 @@ bool ReadBufferFromKafkaConsumer::poll()
         return false;
     }
 
+    ProfileEvents::increment(ProfileEvents::KafkaMessagesPolled, messages.size());
+
     stalled_status = NOT_STALLED;
     allowed = true;
     return true;
@@ -412,6 +477,7 @@ size_t ReadBufferFromKafkaConsumer::filterMessageErrors()
     {
         if (auto error = message.get_error())
         {
+            ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
             LOG_ERROR(log, "Consumer error: {}", error);
             return true;
         }
@@ -445,13 +511,19 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     if (!allowed || !hasMorePolledMessages())
         return false;
 
-    // XXX: very fishy place with const casting.
-    auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
-    BufferBase::set(new_position, current->get_payload().get_size(), 0);
-    allowed = false;
+    const auto * message_data = current->get_payload().get_data();
+    size_t message_size = current->get_payload().get_size();
 
+    allowed = false;
     ++current;
 
+    /// If message is empty, return end of stream.
+    if (message_data == nullptr)
+        return false;
+
+    /// const_cast is needed, because ReadBuffer works with non-const char *.
+    auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(message_data));
+    BufferBase::set(new_position, message_size, 0);
     return true;
 }
 

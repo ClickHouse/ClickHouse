@@ -4,6 +4,9 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Interpreters/AggregateDescription.h>
+
 #include <memory>
 
 namespace DB
@@ -17,9 +20,6 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
-
-struct PrewhereDAGInfo;
-using PrewhereDAGInfoPtr = std::shared_ptr<PrewhereDAGInfo>;
 
 struct FilterInfo;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
@@ -39,37 +39,28 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
+struct MergeTreeDataSelectAnalysisResult;
+using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
+
+struct SubqueryForSet;
+using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
+
 struct PrewhereInfo
 {
     /// Actions which are executed in order to alias columns are used for prewhere actions.
-    ExpressionActionsPtr alias_actions;
+    ActionsDAGPtr alias_actions;
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    ExpressionActionsPtr row_level_filter;
+    ActionsDAGPtr row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
-    ExpressionActionsPtr prewhere_actions;
-    /// Actions which are executed after reading from storage in order to remove unused columns.
-    ExpressionActionsPtr remove_columns_actions;
-    String row_level_column_name;
-    String prewhere_column_name;
-    bool remove_prewhere_column = false;
-    bool need_filter = false;
-};
-
-/// Same as PrewhereInfo, but with ActionsDAG.
-struct PrewhereDAGInfo
-{
-    ActionsDAGPtr alias_actions;
-    ActionsDAGPtr row_level_filter_actions;
     ActionsDAGPtr prewhere_actions;
-    ActionsDAGPtr remove_columns_actions;
     String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
 
-    PrewhereDAGInfo() = default;
-    explicit PrewhereDAGInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
+    PrewhereInfo() = default;
+    explicit PrewhereInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
     std::string dump() const;
@@ -96,18 +87,50 @@ struct FilterDAGInfo
 
 struct InputOrderInfo
 {
+    SortDescription order_key_fixed_prefix_descr;
     SortDescription order_key_prefix_descr;
     int direction;
+    UInt64 limit;
 
-    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_)
-        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
-
-    bool operator ==(const InputOrderInfo & other) const
+    InputOrderInfo(
+        const SortDescription & order_key_fixed_prefix_descr_,
+        const SortDescription & order_key_prefix_descr_,
+        int direction_, UInt64 limit_)
+        : order_key_fixed_prefix_descr(order_key_fixed_prefix_descr_)
+        , order_key_prefix_descr(order_key_prefix_descr_)
+        , direction(direction_), limit(limit_)
     {
-        return order_key_prefix_descr == other.order_key_prefix_descr && direction == other.direction;
     }
 
-    bool operator !=(const InputOrderInfo & other) const { return !(*this == other); }
+    bool operator==(const InputOrderInfo &) const = default;
+};
+
+class IMergeTreeDataPart;
+
+using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
+
+// The projection selected to execute current query
+struct ProjectionCandidate
+{
+    ProjectionDescriptionRawPtr desc{};
+    PrewhereInfoPtr prewhere_info;
+    ActionsDAGPtr before_where;
+    String where_column_name;
+    bool remove_where_filter = false;
+    ActionsDAGPtr before_aggregation;
+    Names required_columns;
+    NamesAndTypesList aggregation_keys;
+    AggregateDescriptions aggregate_descriptions;
+    bool aggregate_overflow_row = false;
+    bool aggregate_final = false;
+    bool complete = false;
+    ReadInOrderOptimizerPtr order_optimizer;
+    InputOrderInfoPtr input_order_info;
+    ManyExpressionActions group_by_elements_actions;
+    SortDescription group_by_elements_order_descr;
+    std::shared_ptr<SubqueriesForSets> subqueries_for_sets;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
 
 /** Query along with some additional data,
@@ -118,10 +141,15 @@ struct SelectQueryInfo
 {
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
+    ASTPtr original_query; /// Unmodified query for projection analysis
 
-    /// For optimize_skip_unused_shards.
-    /// Can be modified in getQueryProcessingStage()
+    /// Cluster for the query.
     ClusterPtr cluster;
+    /// Optimized cluster for the query.
+    /// In case of optimize_skip_unused_shards it may differs from original cluster.
+    ///
+    /// Configured in StorageDistributed::getQueryProcessingStage()
+    ClusterPtr optimized_cluster;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
@@ -134,6 +162,20 @@ struct SelectQueryInfo
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
+
+    /// Cached value of ExpressionAnalysisResult::has_window
+    bool has_window = false;
+
+    ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
+
+    /// If not null, it means we choose a projection to execute current query.
+    std::optional<ProjectionCandidate> projection;
+    bool ignore_projections = false;
+    bool is_projection_query = false;
+    bool merge_tree_empty_result = false;
+    bool settings_limit_offset_done = false;
+    Block minmax_count_projection_block;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 };
 
 }

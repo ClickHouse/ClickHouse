@@ -24,7 +24,7 @@ namespace detail
         ColumnRawPtrs all_columns;
         ColumnRawPtrs sort_columns;
 
-        SharedBlock(Block && block) : Block(std::move(block)) {}
+        explicit SharedBlock(Block && block) : Block(std::move(block)) {}
     };
 }
 
@@ -44,7 +44,7 @@ using SharedBlockPtr = boost::intrusive_ptr<detail::SharedBlock>;
 struct SharedBlockRowRef
 {
     ColumnRawPtrs * columns = nullptr;
-    size_t row_num;
+    size_t row_num = 0;
     SharedBlockPtr shared_block;
 
     void swap(SharedBlockRowRef & other)

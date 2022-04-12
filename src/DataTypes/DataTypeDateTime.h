@@ -2,29 +2,10 @@
 
 #include <Core/Types.h>
 #include <DataTypes/DataTypeNumberBase.h>
-
-class DateLUTImpl;
+#include <DataTypes/TimezoneMixin.h>
 
 namespace DB
 {
-
-/** Mixin-class that manages timezone info for timezone-aware DateTime implementations
- *
- * Must be used as a (second) base for class implementing IDateType-interface.
- */
-class TimezoneMixin
-{
-public:
-    explicit TimezoneMixin(const String & time_zone_name = "");
-    TimezoneMixin(const TimezoneMixin &) = default;
-
-    const DateLUTImpl & getTimeZone() const { return time_zone; }
-
-protected:
-    bool has_explicit_time_zone;
-    const DateLUTImpl & time_zone;
-    const DateLUTImpl & utc_time_zone;
-};
 
 /** DateTime stores time as unix timestamp.
   * The value itself is independent of time zone.
@@ -35,7 +16,7 @@ protected:
   *
   * To cast from/to text format, time zone may be specified explicitly or implicit time zone may be used.
   *
-  * Time zone may be specified explicitly as type parameter, example: DateTime('Europe/Moscow').
+  * Time zone may be specified explicitly as type parameter, example: DateTime('Pacific/Pitcairn').
   * As it does not affect the internal representation of values,
   *  all types with different time zones are equivalent and may be used interchangingly.
   * Time zone only affects parsing and displaying in text formats.
@@ -58,22 +39,12 @@ public:
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
 
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-
     bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
+
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 }
-

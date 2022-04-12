@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/Formats/IOutputFormat.h>
-#include <DataStreams/BlockStreamProfileInfo.h>
+#include <QueryPipeline/ProfileInfo.h>
 
 namespace DB
 {
@@ -20,9 +20,11 @@ public:
     Chunk getTotals();
     Chunk getExtremes();
 
-    BlockStreamProfileInfo & getProfileInfo() { return info; }
+    ProfileInfo & getProfileInfo() { return info; }
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
+
+    bool expectMaterializedColumns() const override { return false; }
 
 protected:
     void consume(Chunk chunk) override;
@@ -36,7 +38,7 @@ private:
 
     std::atomic_bool & has_data_flag;
 
-    BlockStreamProfileInfo info;
+    ProfileInfo info;
 
     /// Is not used.
     static WriteBuffer out;

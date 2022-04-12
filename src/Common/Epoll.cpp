@@ -3,7 +3,7 @@
 #include "Epoll.h"
 #include <Common/Exception.h>
 #include <unistd.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -21,12 +21,12 @@ Epoll::Epoll() : events_count(0)
         throwFromErrno("Cannot open epoll descriptor", DB::ErrorCodes::EPOLL_ERROR);
 }
 
-Epoll::Epoll(Epoll && other) : epoll_fd(other.epoll_fd), events_count(other.events_count.load())
+Epoll::Epoll(Epoll && other) noexcept : epoll_fd(other.epoll_fd), events_count(other.events_count.load())
 {
     other.epoll_fd = -1;
 }
 
-Epoll & Epoll::operator=(Epoll && other)
+Epoll & Epoll::operator=(Epoll && other) noexcept
 {
     epoll_fd = other.epoll_fd;
     other.epoll_fd = -1;
@@ -60,7 +60,7 @@ void Epoll::remove(int fd)
 size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking) const
 {
     if (events_count == 0)
-        throw Exception("There is no events in epoll", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("There are no events in epoll", ErrorCodes::LOGICAL_ERROR);
 
     int ready_size;
     int timeout = blocking ? -1 : 0;

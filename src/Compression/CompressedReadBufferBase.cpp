@@ -59,7 +59,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
                                             "or bad RAM on host (look at dmesg or kern.log for enormous amount of EDAC errors, "
                                             "ECC-related reports, Machine Check Exceptions, mcelog; note that ECC memory can fail "
                                             "if the number of errors is huge) or bad CPU on host. If you read data from disk, "
-                                            "this can be caused by disk bit rott. This exception protects ClickHouse "
+                                            "this can be caused by disk bit rot. This exception protects ClickHouse "
                                             "from data corruption due to hardware failures.";
 
     auto flip_bit = [](char * buf, size_t pos)
@@ -71,12 +71,16 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     /// And anyway this is pretty heavy, so avoid burning too much CPU here.
     if (size < (1ULL << 20))
     {
+        /// We need to copy data from ReadBuffer to flip bits as ReadBuffer should be immutable
+        PODArray<char> tmp_buffer(data, data + size);
+        char * tmp_data = tmp_buffer.data();
+
         /// Check if the difference caused by single bit flip in data.
         for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
         {
-            flip_bit(data, bit_pos);
+            flip_bit(tmp_data, bit_pos);
 
-            auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
+            auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(tmp_data, size);
             if (expected_checksum == checksum_of_data_with_flipped_bit)
             {
                 message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
@@ -84,7 +88,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
                 throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
             }
 
-            flip_bit(data, bit_pos);    /// Restore
+            flip_bit(tmp_data, bit_pos);    /// Restore
         }
     }
 
@@ -184,7 +188,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 }
 
 
-void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
+static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec, bool allow_different_codecs)
 {
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
@@ -210,8 +214,35 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
                             ErrorCodes::CANNOT_DECOMPRESS);
         }
     }
+}
 
+
+void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
+{
+    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
     codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
+}
+
+
+void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
+{
+    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
+
+    if (codec->isNone())
+    {
+        /// Shortcut for NONE codec to avoid extra memcpy.
+        /// We doing it by changing the buffer `to` to point to existing uncompressed data.
+
+        UInt8 header_size = ICompressionCodec::getHeaderSize();
+        if (size_compressed_without_checksum < header_size)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Can't decompress data: the compressed data size ({}, this should include header size) is less than the header size ({})",
+                    size_compressed_without_checksum, static_cast<size_t>(header_size));
+
+        to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
+    }
+    else
+        codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin());
 }
 
 
@@ -226,4 +257,3 @@ CompressedReadBufferBase::~CompressedReadBufferBase() = default;    /// Proper d
 
 
 }
-

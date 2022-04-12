@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <profiles>
+        <default>
+            <max_block_size>2</max_block_size>
+        </default>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>

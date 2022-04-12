@@ -2,7 +2,7 @@
 #include <Functions/CustomWeekTransforms.h>
 #include <Functions/FunctionCustomWeekToSomething.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 
 
 namespace DB

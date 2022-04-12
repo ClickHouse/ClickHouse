@@ -4,10 +4,13 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <Columns/IColumn.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
 {
+struct Settings;
 
 
 /** Aggregate function that takes arbitrary number of arbitrary arguments and does nothing.
@@ -25,8 +28,10 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return argument_types.front();
+        return argument_types.empty() ? std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()) : argument_types.front();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void create(AggregateDataPtr) const override
     {
@@ -59,12 +64,16 @@ public:
     {
     }
 
-    void serialize(ConstAggregateDataPtr, WriteBuffer &) const override
+    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer & buf, std::optional<size_t>) const override
     {
+        writeChar('\0', buf);
     }
 
-    void deserialize(AggregateDataPtr, ReadBuffer &, Arena *) const override
+    void deserialize(AggregateDataPtr, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
+        [[maybe_unused]] char symbol;
+        readChar(symbol, buf);
+        assert(symbol == '\0');
     }
 
     void insertResultInto(AggregateDataPtr, IColumn & to, Arena *) const override

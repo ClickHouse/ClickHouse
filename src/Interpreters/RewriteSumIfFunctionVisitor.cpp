@@ -10,7 +10,12 @@ namespace DB
 void RewriteSumIfFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
+    {
+        if (func->is_window_function)
+            return;
+
         visit(*func, ast, data);
+    }
 }
 
 void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
@@ -20,7 +25,8 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
 
     auto lower_name = Poco::toLower(func.name);
 
-    if (lower_name != "sum" && lower_name != "sumif")
+    /// sumIf, SumIf or sUMIf are valid function names, but sumIF or sumiF are not
+    if (lower_name != "sum" && (lower_name != "sumif" || !endsWith(func.name, "If")))
         return;
 
     const auto & func_arguments = func.arguments->children;
@@ -29,7 +35,7 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
     {
         /// sumIf(1, cond) -> countIf(cond)
         const auto * literal = func_arguments[0]->as<ASTLiteral>();
-        if (!literal || !DB::isInt64FieldType(literal->value.getType()))
+        if (!literal || !DB::isInt64OrUInt64FieldType(literal->value.getType()))
             return;
 
         if (func_arguments.size() == 2 && literal->value.get<UInt64>() == 1)
@@ -54,7 +60,7 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
 
         if (first_literal && second_literal)
         {
-            if (!DB::isInt64FieldType(first_literal->value.getType()) || !DB::isInt64FieldType(second_literal->value.getType()))
+            if (!DB::isInt64OrUInt64FieldType(first_literal->value.getType()) || !DB::isInt64OrUInt64FieldType(second_literal->value.getType()))
                 return;
 
             auto first_value = first_literal->value.get<UInt64>();

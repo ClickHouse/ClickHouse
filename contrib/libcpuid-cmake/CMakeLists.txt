@@ -1,17 +1,12 @@
-if (NOT ARCH_ARM)
+if(ARCH_AMD64)
     option (ENABLE_CPUID "Enable libcpuid library (only internal)" ${ENABLE_LIBRARIES})
+elseif(ENABLE_CPUID)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "libcpuid is only supported on x86_64")
+    set (ENABLE_CPUID 0)
 endif()
 
-if (ARCH_ARM AND ENABLE_CPUID)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "cpuid is not supported on ARM")
-    set (ENABLE_CPUID 0)
-endif ()
-
 if (NOT ENABLE_CPUID)
-    add_library (cpuid INTERFACE)
-
-    target_compile_definitions (cpuid INTERFACE USE_CPUID=0)
-
+    message("Not using cpuid")
     return()
 endif()
 
@@ -28,13 +23,12 @@ set (SRCS
     "${LIBRARY_DIR}/libcpuid/recog_intel.c"
 )
 
-add_library (cpuid ${SRCS})
+add_library (_cpuid ${SRCS})
 
-target_include_directories (cpuid SYSTEM PUBLIC "${LIBRARY_DIR}")
-target_compile_definitions (cpuid PUBLIC USE_CPUID=1)
-target_compile_definitions (cpuid PRIVATE VERSION="v0.4.1")
+target_include_directories (_cpuid SYSTEM PUBLIC "${LIBRARY_DIR}")
+target_compile_definitions (_cpuid PRIVATE VERSION="v0.4.1")
 if (COMPILER_CLANG)
-    target_compile_options (cpuid PRIVATE -Wno-reserved-id-macro)
+    target_compile_options (_cpuid PRIVATE -Wno-reserved-id-macro)
 endif ()
 
-message (STATUS "Using cpuid")
+add_library(ch_contrib::cpuid ALIAS _cpuid)

@@ -1,6 +1,6 @@
-#include <Common/typeid_cast.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+
+#include <Parsers/ASTExpressionList.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 
@@ -109,14 +109,17 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
 
     if (database_and_table_name)
     {
+        settings.ostr << " ";
         database_and_table_name->formatImpl(settings, state, frame);
     }
     else if (table_function)
     {
+        settings.ostr << " ";
         table_function->formatImpl(settings, state, frame);
     }
     else if (subquery)
     {
+        settings.ostr << settings.nl_or_ws << indent_str;
         subquery->formatImpl(settings, state, frame);
     }
 
@@ -142,9 +145,15 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
 }
 
 
-void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, FormatState &, FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "");
+    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+
+    if (kind != Kind::Comma)
+    {
+        settings.ostr << settings.nl_or_ws << indent_str;
+    }
 
     switch (locality)
     {
@@ -238,9 +247,12 @@ void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & sta
 
 void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
     frame.expression_list_prepend_whitespace = true;
 
     settings.ostr << (settings.hilite ? hilite_keyword : "")
+        << settings.nl_or_ws
+        << indent_str
         << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN" << (settings.hilite ? hilite_none : "");
 
     settings.one_line
@@ -254,10 +266,7 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
     if (table_expression)
     {
         if (table_join)
-        {
             table_join->as<ASTTableJoin &>().formatImplBeforeTable(settings, state, frame);
-            settings.ostr << " ";
-        }
 
         table_expression->formatImpl(settings, state, frame);
 
@@ -275,13 +284,8 @@ void ASTTablesInSelectQuery::formatImpl(const FormatSettings & settings, FormatS
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-    {
-        if (it != children.begin())
-            settings.ostr << settings.nl_or_ws << indent_str;
-
-        (*it)->formatImpl(settings, state, frame);
-    }
+    for (const auto & child : children)
+        child->formatImpl(settings, state, frame);
 }
 
 }

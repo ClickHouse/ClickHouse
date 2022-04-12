@@ -1,35 +1,41 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <re2/re2.h>
+#include <filesystem>
 
 #if USE_HDFS
 #include <Common/ShellCommand.h>
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int NETWORK_ERROR;
-extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
+    extern const int NETWORK_ERROR;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
+const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
+
+std::once_flag init_libhdfs3_conf_flag;
 
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
-    const String & config_path, bool isUser)
+    const String & prefix, bool isUser)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
 
-    config.keys(config_path, keys);
+    config.keys(prefix, keys);
     for (const auto & key : keys)
     {
-        const String key_path = config_path + "." + key;
+        const String key_path = prefix + "." + key;
 
         String key_name;
         if (key == "hadoop_kerberos_keytab")
@@ -42,11 +48,7 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
         {
             need_kinit = true;
             hadoop_kerberos_principal = config.getString(key_path);
-
-#if USE_INTERNAL_HDFS3_LIBRARY
             hdfsBuilderSetPrincipal(hdfs_builder, hadoop_kerberos_principal.c_str());
-#endif
-
             continue;
         }
         else if (key == "hadoop_kerberos_kinit_command")
@@ -122,6 +124,23 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     if (host.empty())
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
+    // Shall set env LIBHDFS3_CONF *before* HDFSBuilderWrapper construction.
+    std::call_once(init_libhdfs3_conf_flag, [&config]()
+    {
+        String libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
+        if (!libhdfs3_conf.empty())
+        {
+            if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
+            {
+                const String config_path = config.getString("config-file", "config.xml");
+                const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+                if (std::filesystem::exists(config_dir / libhdfs3_conf))
+                    libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+            }
+            setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
+        }
+    });
+
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
         throw Exception("Unable to create builder to connect to HDFS: " +
@@ -144,6 +163,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
 
         hdfsBuilderSetUserName(builder.get(), user.c_str());
     }
+
     hdfsBuilderSetNameNode(builder.get(), host.c_str());
     if (port != 0)
     {
@@ -160,12 +180,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         String user_config_prefix = HDFSBuilderWrapper::CONFIG_PREFIX + "_" + user;
         if (config.has(user_config_prefix))
         {
-#if USE_INTERNAL_HDFS3_LIBRARY
             builder.loadFromConfig(config, user_config_prefix, true);
-#else
-            throw Exception("Multi user HDFS configuration required internal libhdfs3",
-                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-#endif
         }
     }
 
@@ -187,6 +202,27 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
             ErrorCodes::NETWORK_ERROR);
 
     return fs;
+}
+
+String getNameNodeUrl(const String & hdfs_url)
+{
+    const size_t pos = hdfs_url.find('/', hdfs_url.find("//") + 2);
+    String namenode_url = hdfs_url.substr(0, pos) + "/";
+    return namenode_url;
+}
+
+String getNameNodeCluster(const String &hdfs_url)
+{
+    auto pos1 = hdfs_url.find("//") + 2;
+    auto pos2 = hdfs_url.find('/', pos1);
+
+    return hdfs_url.substr(pos1, pos2 - pos1);
+}
+
+void checkHDFSURL(const String & url)
+{
+    if (!re2::RE2::FullMatch(url, HDFS_URL_REGEXP))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'", url);
 }
 
 }

@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_ICU
 #    include <Columns/ColumnConst.h>
@@ -12,7 +10,7 @@
 #    include <IO/WriteHelpers.h>
 #    include <Common/ObjectPool.h>
 #    include <Common/typeid_cast.h>
-#    include <ext/range.h>
+#    include <base/range.h>
 
 #    include <memory>
 #    include <string>
@@ -162,7 +160,7 @@ private:
 
 public:
     static constexpr auto name = "convertCharset";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertCharset>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertCharset>(); }
 
     String getName() const override
     {
@@ -171,9 +169,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 3; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (size_t i : ext::range(0, 3))
+        for (size_t i : collections::range(0, 3))
             if (!isString(arguments[i]))
                 throw Exception("Illegal type " + arguments[i]->getName() + " of argument of function " + getName()
                     + ", must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

@@ -2,7 +2,7 @@
 
 #if USE_CASSANDRA
 #include <Common/Exception.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <mutex>
 
 namespace DB
@@ -16,8 +16,10 @@ extern const int CASSANDRA_INTERNAL_ERROR;
 void cassandraCheck(CassError code)
 {
     if (code != CASS_OK)
-        throw Exception("Cassandra driver error " + std::to_string(code) + ": " + cass_error_desc(code),
-                        ErrorCodes::CASSANDRA_INTERNAL_ERROR);
+        throw Exception(ErrorCodes::CASSANDRA_INTERNAL_ERROR,
+            "Cassandra driver error {}: {}",
+            std::to_string(code),
+            cass_error_desc(code));
 }
 
 
@@ -31,8 +33,12 @@ void cassandraWaitAndCheck(CassFuturePtr & future)
     const char * message;
     size_t message_len;
     cass_future_error_message(future, &message, & message_len);
-    std::string full_message = "Cassandra driver error " + std::to_string(code) + ": " + cass_error_desc(code) + ": " + message;
-    throw Exception(full_message, ErrorCodes::CASSANDRA_INTERNAL_ERROR);
+
+    throw Exception(ErrorCodes::CASSANDRA_INTERNAL_ERROR,
+        "Cassandra driver error {}: {}: {}",
+        std::to_string(code),
+        cass_error_desc(code),
+        message);
 }
 
 static std::once_flag setup_logging_flag;
@@ -52,15 +58,15 @@ void cassandraLogCallback(const CassLogMessage * message, void * data)
 {
     Poco::Logger * logger = static_cast<Poco::Logger *>(data);
     if (message->severity == CASS_LOG_CRITICAL || message->severity == CASS_LOG_ERROR)
-        LOG_ERROR(logger, message->message);
+        LOG_ERROR(logger, fmt::runtime(message->message));
     else if (message->severity == CASS_LOG_WARN)
-        LOG_WARNING(logger, message->message);
+        LOG_WARNING(logger, fmt::runtime(message->message));
     else if (message->severity == CASS_LOG_INFO)
-        LOG_INFO(logger, message->message);
+        LOG_INFO(logger, fmt::runtime(message->message));
     else if (message->severity == CASS_LOG_DEBUG)
-        LOG_DEBUG(logger, message->message);
+        LOG_DEBUG(logger, fmt::runtime(message->message));
     else if (message->severity == CASS_LOG_TRACE)
-        LOG_TRACE(logger, message->message);
+        LOG_TRACE(logger, fmt::runtime(message->message));
 }
 
 }

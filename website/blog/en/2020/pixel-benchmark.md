@@ -1,8 +1,8 @@
 ---
 title: 'Running ClickHouse on an Android phone'
-image: 'https://blog-images.clickhouse.tech/en/2020/pixel-benchmark/main.jpg'
+image: 'https://blog-images.clickhouse.com/en/2020/pixel-benchmark/main.jpg'
 date: '2020-07-16'
-author: '[Alexander Kuzmenkov](https://github.com/akuzm)'
+author: 'Alexander Kuzmenkov'
 tags: ['Android', 'benchmark', 'experiment']
 ---
 
@@ -35,7 +35,7 @@ Surprisingly, it's rather simple to set up. Our build system uses CMake and alre
 
 At last, we have a binary we can actually run. Copy it to  the phone, `chmod +x`, `./clickhouse server --config-path db/config.xml`, run some queries, it works!
 
-<img src="https://blog-images.clickhouse.tech/en/2020/pixel-benchmark/segfault.png" width="40%"/>
+<img src="https://blog-images.clickhouse.com/en/2020/pixel-benchmark/segfault.png" width="40%"/>
 
 Feels so good to see my favorite message.
 
@@ -66,9 +66,9 @@ What is this function, and why do we need it? In this particular stack trace, we
 
 ## Is your phone good enough?
 
-There is a beaten genre of using data sets and queries of a varying degree of syntheticity to prove that a particular DBMS you work on has performance superior to other, less advanced, DBMSes. We've moved past that, and instead use the DBMS we love as a benchmark of hardware. For this benchmark we use a small 100M rows obfuscated data set from Yandex.Metrica, about 12 GB compressed, and some queries representative of Metrica dashboards. There is [this page](https://clickhouse.tech/benchmark/hardware/) with crowdsourced results for various cloud and traditional servers and even some laptops, but how do the phones compare? Let's find out. Following [the manual](https://clickhouse.tech/docs/en/operations/performance-test/) to download the necessary data to the phone and run the benchmark was pretty straightforward. One problem was that some queries can't run because they use too much memory and the server gets killed by Android, so I had to script around that. Also, I'm not sure how to reset a file system cache on Android, so the 'cold run' data is not correct. The results look pretty good:
+There is a beaten genre of using data sets and queries of a varying degree of syntheticity to prove that a particular DBMS you work on has performance superior to other, less advanced, DBMSes. We've moved past that, and instead use the DBMS we love as a benchmark of hardware. For this benchmark we use a small 100M rows obfuscated data set from Yandex.Metrica, about 12 GB compressed, and some queries representative of Metrica dashboards. There is [this page](/benchmark/hardware/) with crowdsourced results for various cloud and traditional servers and even some laptops, but how do the phones compare? Let's find out. Following [the manual](/docs/en/operations/performance-test/) to download the necessary data to the phone and run the benchmark was pretty straightforward. One problem was that some queries can't run because they use too much memory and the server gets killed by Android, so I had to script around that. Also, I'm not sure how to reset a file system cache on Android, so the 'cold run' data is not correct. The results look pretty good:
 
-<img src="https://blog-images.clickhouse.tech/en/2020/pixel-benchmark/compare.png" width="80%"/>
+<img src="https://blog-images.clickhouse.com/en/2020/pixel-benchmark/compare.png" width="80%"/>
 
 My phone is Google Pixel 3a, and it is only 5 times slower on average than my Dell XPS 15 work laptop. The queries where the data doesn't fit into memory and has to go to disk (the flash, I mean) are noticeably slower, up to 20 times, but mostly they don't complete because the server gets killed &mdash; it only has about 3 GB of memory available. Overall I think the results look pretty good for the phone. High-end models should be even more performant, reaching performance comparable to some smaller laptops.
 

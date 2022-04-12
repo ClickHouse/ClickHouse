@@ -17,17 +17,19 @@
 #include <Common/CurrentThread.h>
 
 #include <Poco/String.h>
-#include "registerAggregateFunctions.h"
 
 #include <Functions/FunctionFactory.h>
 
+
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_AGGREGATION;
 }
 
 const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
@@ -68,11 +70,11 @@ static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
 AggregateFunctionPtr AggregateFunctionFactory::get(
     const String & name, const DataTypes & argument_types, const Array & parameters, AggregateFunctionProperties & out_properties) const
 {
-    auto type_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
+    auto types_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
     /// If one of the types is Nullable, we apply aggregate function combinator "Null".
 
-    if (std::any_of(type_without_low_cardinality.begin(), type_without_low_cardinality.end(),
+    if (std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
@@ -80,21 +82,29 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             throw Exception("Logical error: cannot find aggregate function combinator to apply a function to Nullable arguments.",
                 ErrorCodes::LOGICAL_ERROR);
 
-        DataTypes nested_types = combinator->transformArguments(type_without_low_cardinality);
+        DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        bool has_null_arguments = std::any_of(type_without_low_cardinality.begin(), type_without_low_cardinality.end(),
+        bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
         AggregateFunctionPtr nested_function = getImpl(
             name, nested_types, nested_parameters, out_properties, has_null_arguments);
-        return combinator->transformAggregateFunction(nested_function, out_properties, type_without_low_cardinality, parameters);
+
+        // Pure window functions are not real aggregate functions. Applying
+        // combinators doesn't make sense for them, they must handle the
+        // nullability themselves. Another special case is functions from Nothing
+        // that are rewritten to AggregateFunctionNothing, in this case
+        // nested_function is nullptr.
+        if (!nested_function || !nested_function->isOnlyWindowFunction())
+            return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto res = getImpl(name, type_without_low_cardinality, parameters, out_properties, false);
-    if (!res)
+    auto with_original_arguments = getImpl(name, types_without_low_cardinality, parameters, out_properties, false);
+
+    if (!with_original_arguments)
         throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
-    return res;
+    return with_original_arguments;
 }
 
 
@@ -121,7 +131,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         is_case_insensitive = true;
     }
 
-    const Context * query_context = nullptr;
+    ContextPtr query_context;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 
@@ -137,22 +147,51 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
             return nullptr;
 
-        return found.creator(name, argument_types, parameters);
+        const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
+        return found.creator(name, argument_types, parameters, settings);
     }
 
     /// Combinators of aggregate functions.
-    /// For every aggregate function 'agg' and combiner '-Comb' there is combined aggregate function with name 'aggComb',
+    /// For every aggregate function 'agg' and combiner '-Comb' there is a combined aggregate function with the name 'aggComb',
     ///  that can have different number and/or types of arguments, different result type and different behaviour.
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
     {
+        const std::string & combinator_name = combinator->getName();
+
         if (combinator->isForInternalUsageOnly())
-            throw Exception("Aggregate function combinator '" + combinator->getName() + "' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                "Aggregate function combinator '{}' is only for internal usage",
+                combinator_name);
 
         if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator->getName());
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator_name);
 
-        String nested_name = name.substr(0, name.size() - combinator->getName().size());
+        String nested_name = name.substr(0, name.size() - combinator_name.size());
+        /// Nested identical combinators (i.e. uniqCombinedIfIf) is not
+        /// supported (since they don't work -- silently).
+        ///
+        /// But non-identical is supported and works. For example,
+        /// uniqCombinedIfMergeIf is useful in cases when the underlying
+        /// storage stores AggregateFunction(uniqCombinedIf) and in SELECT you
+        /// need to filter aggregation result based on another column.
+
+#if defined(UNBUNDLED)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overread"
+#endif
+
+        if (!combinator->supportsNesting() && nested_name.ends_with(combinator_name))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
+                "Nested identical combinator '{}' is not supported",
+                combinator_name);
+        }
+
+#if defined(UNBUNDLED)
+#pragma GCC diagnostic pop
+#endif
+
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
@@ -201,7 +240,7 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
         return found.properties;
 
     /// Combinators of aggregate functions.
-    /// For every aggregate function 'agg' and combiner '-Comb' there is combined aggregate function with name 'aggComb',
+    /// For every aggregate function 'agg' and combiner '-Comb' there is a combined aggregate function with the name 'aggComb',
     ///  that can have different number and/or types of arguments, different result type and different behaviour.
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))

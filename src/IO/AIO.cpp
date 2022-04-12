@@ -6,6 +6,7 @@
 
 #    include <sys/syscall.h>
 #    include <unistd.h>
+#    include <utility>
 
 
 /** Small wrappers for asynchronous I/O.
@@ -50,7 +51,19 @@ AIOContext::AIOContext(unsigned int nr_events)
 
 AIOContext::~AIOContext()
 {
-    io_destroy(ctx);
+    if (ctx)
+        io_destroy(ctx);
+}
+
+AIOContext::AIOContext(AIOContext && rhs) noexcept
+{
+    *this = std::move(rhs);
+}
+
+AIOContext & AIOContext::operator=(AIOContext && rhs) noexcept
+{
+    std::swap(ctx, rhs.ctx);
+    return *this;
 }
 
 #elif defined(OS_FREEBSD)
@@ -82,7 +95,7 @@ int io_destroy(int ctx)
 
 int io_submit(int ctx, long nr, struct iocb * iocbpp[])
 {
-    for (long i = 0; i < nr; i++)
+    for (long i = 0; i < nr; ++i)
     {
         struct aiocb * iocb = &iocbpp[i]->aio;
 

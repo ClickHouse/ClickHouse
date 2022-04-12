@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <cmath>
+#include <cfloat>
 
 
 /// This function is used in implementations of different T-Tests.
@@ -23,9 +24,15 @@ extern "C"
 
 namespace DB
 {
+struct Settings;
 
 class ReadBuffer;
 class WriteBuffer;
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 /**
  * If you have a cumulative distribution function F, then calculating the p-value for given statistic T is simply 1−F(T)
@@ -57,7 +64,7 @@ class WriteBuffer;
  * Both WelchTTest and StudentTTest have t-statistric with Student distribution but with different degrees of freedom.
  * So the procedure of computing p-value is the same.
 */
-static inline Float64 getPValue(Float64 degrees_of_freedom, Float64 t_stat2)
+static inline Float64 getPValue(Float64 degrees_of_freedom, Float64 t_stat2) /// NOLINT
 {
     Float64 numerator = integrateSimpson(0, degrees_of_freedom / (t_stat2 + degrees_of_freedom),
         [degrees_of_freedom](double x) { return std::pow(x, degrees_of_freedom / 2 - 1) / std::sqrt(1 - x); });
@@ -78,10 +85,29 @@ template <typename Data>
 class AggregateFunctionTTest :
     public IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>
 {
+private:
+    bool need_confidence_interval = false;
+    Float64 confidence_level;
 public:
-    AggregateFunctionTTest(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>({arguments}, {})
+    AggregateFunctionTTest(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>({arguments}, params)
     {
+        if (!params.empty())
+        {
+            need_confidence_interval = true;
+            confidence_level = params.at(0).safeGet<Float64>();
+
+            if (!std::isfinite(confidence_level))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires finite parameter values.", Data::name);
+            }
+
+            if (confidence_level <= 0.0 || confidence_level >= 1.0 || fabs(confidence_level - 0.0) < DBL_EPSILON || fabs(confidence_level - 1.0) < DBL_EPSILON)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Confidence level parameter must be between 0 and 1 in aggregate function {}.", Data::name);
+            }
+
+        }
     }
 
     String getName() const override
@@ -91,23 +117,51 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        DataTypes types
+        if (need_confidence_interval)
         {
-            std::make_shared<DataTypeNumber<Float64>>(),
-            std::make_shared<DataTypeNumber<Float64>>(),
-        };
+            DataTypes types
+            {
+                std::make_shared<DataTypeNumber<Float64>>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
+            };
 
-        Strings names
+            Strings names
+            {
+                "t_statistic",
+                "p_value",
+                "confidence_interval_low",
+                "confidence_interval_high",
+            };
+
+            return std::make_shared<DataTypeTuple>(
+                std::move(types),
+                std::move(names)
+            );
+        }
+        else
         {
-            "t_statistic",
-            "p_value"
-        };
+            DataTypes types
+            {
+                std::make_shared<DataTypeNumber<Float64>>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
+            };
 
-        return std::make_shared<DataTypeTuple>(
-            std::move(types),
-            std::move(names)
-        );
+            Strings names
+            {
+                "t_statistic",
+                "p_value",
+            };
+
+            return std::make_shared<DataTypeTuple>(
+                std::move(types),
+                std::move(names)
+            );
+        }
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -125,29 +179,58 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
         this->data(place).read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto [t_statistic, p_value] = this->data(place).getResult();
+        auto & data = this->data(place);
+        auto & column_tuple = assert_cast<ColumnTuple &>(to);
+
+        if (!data.hasEnoughObservations() || data.isEssentiallyConstant())
+        {
+            auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
+            auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
+            column_stat.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+            column_value.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+
+            if (need_confidence_interval)
+            {
+                auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
+                auto & column_ci_high = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(3));
+                column_ci_low.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+                column_ci_high.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+            }
+
+            return;
+        }
+
+        auto [t_statistic, p_value] = data.getResult();
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));
 
-        auto & column_tuple = assert_cast<ColumnTuple &>(to);
         auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
         auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
 
         column_stat.getData().push_back(t_statistic);
         column_value.getData().push_back(p_value);
+
+        if (need_confidence_interval)
+        {
+            auto [ci_low, ci_high] = data.getConfidenceIntervals(confidence_level, data.getDegreesOfFreedom());
+            auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
+            auto & column_ci_high = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(3));
+            column_ci_low.getData().push_back(ci_low);
+            column_ci_high.getData().push_back(ci_high);
+        }
     }
 };
 

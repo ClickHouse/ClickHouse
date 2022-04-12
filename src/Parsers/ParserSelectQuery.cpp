@@ -1,4 +1,5 @@
 #include <memory>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
@@ -9,6 +10,10 @@
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
@@ -16,11 +21,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOP_AND_LIMIT_TOGETHER;
-    extern const int WITH_TIES_WITHOUT_ORDER_BY;
+    extern const int FIRST_AND_NEXT_TOGETHER;
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
     extern const int ROW_AND_ROWS_TOGETHER;
-    extern const int FIRST_AND_NEXT_TOGETHER;
+    extern const int SYNTAX_ERROR;
+    extern const int TOP_AND_LIMIT_TOGETHER;
+    extern const int WITH_TIES_WITHOUT_ORDER_BY;
+    extern const int OFFSET_FETCH_WITHOUT_ORDER_BY;
 }
 
 
@@ -32,6 +39,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_select("SELECT");
     ParserKeyword s_all("ALL");
     ParserKeyword s_distinct("DISTINCT");
+    ParserKeyword s_distinct_on("DISTINCT ON");
     ParserKeyword s_from("FROM");
     ParserKeyword s_prewhere("PREWHERE");
     ParserKeyword s_where("WHERE");
@@ -55,12 +63,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_rows("ROWS");
     ParserKeyword s_first("FIRST");
     ParserKeyword s_next("NEXT");
+    ParserKeyword s_interpolate("INTERPOLATE");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
+    ParserInterpolateExpressionList interpolate_list;
 
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
@@ -74,15 +84,17 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr having_expression;
     ASTPtr window_list;
     ASTPtr order_expression_list;
+    ASTPtr interpolate_expression_list;
     ASTPtr limit_by_length;
     ASTPtr limit_by_offset;
     ASTPtr limit_by_expression_list;
+    ASTPtr distinct_on_expression_list;
     ASTPtr limit_offset;
     ASTPtr limit_length;
     ASTPtr top_length;
     ASTPtr settings;
 
-    /// WITH expr list
+    /// WITH expr_list
     {
         if (s_with.ignore(pos, expected))
         {
@@ -94,7 +106,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SELECT [ALL/DISTINCT] [TOP N [WITH TIES]] expr list
+    /// SELECT [ALL/DISTINCT [ON (expr_list)]] [TOP N [WITH TIES]] expr_list
     {
         bool has_all = false;
         if (!s_select.ignore(pos, expected))
@@ -103,13 +115,27 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (s_all.ignore(pos, expected))
             has_all = true;
 
-        if (s_distinct.ignore(pos, expected))
+        if (s_distinct_on.ignore(pos, expected))
+        {
+            if (open_bracket.ignore(pos, expected))
+            {
+                if (!exp_list.parse(pos, distinct_on_expression_list, expected))
+                    return false;
+                if (!close_bracket.ignore(pos, expected))
+                    return false;
+            }
+            else
+                return false;
+        }
+        else if (s_distinct.ignore(pos, expected))
+        {
             select_query->distinct = true;
+        }
 
         if (!has_all && s_all.ignore(pos, expected))
             has_all = true;
 
-        if (has_all && select_query->distinct)
+        if (has_all && (select_query->distinct || distinct_on_expression_list))
             return false;
 
         if (s_top.ignore(pos, expected))
@@ -220,6 +246,23 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!order_list.parse(pos, order_expression_list, expected))
             return false;
+
+        /// if any WITH FILL parse possible INTERPOLATE list
+        if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
+                [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
+        {
+            if (s_interpolate.ignore(pos, expected))
+            {
+                if (open_bracket.ignore(pos, expected))
+                {
+                    if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
+                        return false;
+                    if (!close_bracket.ignore(pos, expected))
+                        return false;
+                } else
+                    interpolate_expression_list = std::make_shared<ASTExpressionList>();
+            }
+        }
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.
@@ -256,13 +299,19 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             select_query->limit_with_ties = true;
         }
 
+        if (limit_with_ties_occured && distinct_on_expression_list)
+            throw Exception("Can not use WITH TIES alongside LIMIT BY/DISTINCT ON", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
+
         if (s_by.ignore(pos, expected))
         {
             /// WITH TIES was used alongside LIMIT BY
             /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
             /// So we have to ignore WITH TIES exactly in LIMIT BY state.
             if (limit_with_ties_occured)
-                throw Exception("Can not use WITH TIES alongside LIMIT BY", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
+                throw Exception("Can not use WITH TIES alongside LIMIT BY/DISTINCT ON", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
+
+            if (distinct_on_expression_list)
+                throw Exception("Can not use DISTINCT ON alongside LIMIT BY", ErrorCodes::SYNTAX_ERROR);
 
             limit_by_length = limit_length;
             limit_by_offset = limit_offset;
@@ -299,7 +348,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             /// OFFSET FETCH clause must exists with "ORDER BY"
             if (!order_expression_list)
-                return false;
+                throw Exception("Can not use OFFSET FETCH clause without ORDER BY", ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY);
 
             if (s_first.ignore(pos, expected))
             {
@@ -333,6 +382,17 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
             }
         }
+    }
+
+    if (distinct_on_expression_list)
+    {
+        /// DISTINCT ON and LIMIT BY are mutually exclusive, checked before
+        assert (limit_by_expression_list == nullptr);
+
+        /// Transform `DISTINCT ON expr` to `LIMIT 1 BY expr`
+        limit_by_expression_list = distinct_on_expression_list;
+        limit_by_length = std::make_shared<ASTLiteral>(Field{UInt8(1)});
+        distinct_on_expression_list = nullptr;
     }
 
     /// Because TOP n in totally equals LIMIT n
@@ -394,6 +454,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
+    select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_expression_list));
     return true;
 }
 

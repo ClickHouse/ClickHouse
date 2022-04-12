@@ -5,7 +5,7 @@ toc_title: Applying CatBoost Models
 
 # Applying a Catboost Model in ClickHouse {#applying-catboost-model-in-clickhouse}
 
-[CatBoost](https://catboost.ai) is a free and open-source gradient boosting library developed at [Yandex](https://yandex.com/company/) for machine learning.
+[CatBoost](https://catboost.ai) is a free and open-source gradient boosting library developed at Yandex for machine learning.
 
 With this instruction, you will learn to apply pre-trained models in ClickHouse by running model inference from SQL.
 
@@ -18,9 +18,11 @@ To apply a CatBoost model in ClickHouse:
 
 For more information about training CatBoost models, see [Training and applying models](https://catboost.ai/docs/features/training.html#training).
 
+You can reload CatBoost models if the configuration was updated without restarting the server using [RELOAD MODEL](../sql-reference/statements/system.md#query_language-system-reload-model) and [RELOAD MODELS](../sql-reference/statements/system.md#query_language-system-reload-models) system queries.
+
 ## Prerequisites {#prerequisites}
 
-If you don’t have the [Docker](https://docs.docker.com/install/) yet, install it.
+If you do not have the [Docker](https://docs.docker.com/install/) yet, install it.
 
 !!! note "Note"
     [Docker](https://www.docker.com) is a software platform that allows you to create containers that isolate a CatBoost and ClickHouse installation from the rest of the system.
@@ -159,6 +161,9 @@ The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dl
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
+!!! note "Note"
+    You can change path to the CatBoost model configuration later without restarting server.
+
 ## 4. Run the Model Inference from SQL {#run-model-inference}
 
 For test model run the ClickHouse client `$ clickhouse client`.
@@ -234,4 +239,4 @@ FROM
 !!! note "Note"
     More info about [avg()](../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) and [log()](../sql-reference/functions/math-functions.md) functions.
 
-[Original article](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/guides/apply_catboost_model/) <!--hide-->

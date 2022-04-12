@@ -1,4 +1,4 @@
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -52,6 +52,10 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserKeyword s_set("SET");
 
         if (!s_set.ignore(pos, expected))
+            return false;
+
+        /// Parse SET TRANSACTION ... queries using ParserTransactionControl
+        if (ParserKeyword{"TRANSACTION"}.check(pos, expected))
             return false;
     }
 

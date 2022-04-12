@@ -1,5 +1,8 @@
 #include <Processors/DelayedPortsProcessor.h>
 
+#include <base/sort.h>
+
+
 namespace DB
 {
 
@@ -8,9 +11,35 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+InputPorts createInputPorts(
+    const Block & header,
+    size_t num_ports,
+    IProcessor::PortNumbers delayed_ports,
+    bool assert_main_ports_empty)
+{
+    if (!assert_main_ports_empty)
+        return InputPorts(num_ports, header);
+
+    InputPorts res;
+    ::sort(delayed_ports.begin(), delayed_ports.end());
+    size_t next_delayed_port = 0;
+    for (size_t i = 0; i < num_ports; ++i)
+    {
+        if (next_delayed_port < delayed_ports.size() && i == delayed_ports[next_delayed_port])
+        {
+            res.emplace_back(header);
+            ++next_delayed_port;
+        }
+        else
+            res.emplace_back(Block());
+    }
+
+    return res;
+}
+
 DelayedPortsProcessor::DelayedPortsProcessor(
     const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty)
-    : IProcessor(InputPorts(num_ports, header),
+    : IProcessor(createInputPorts(header, num_ports, delayed_ports, assert_main_ports_empty),
                  OutputPorts((assert_main_ports_empty ? delayed_ports.size() : num_ports), header))
     , num_delayed_ports(delayed_ports.size())
 {

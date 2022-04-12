@@ -1,16 +1,25 @@
 #include <Poco/Net/NetException.h>
 
+#include <base/scope_guard.h>
+
 #include <IO/WriteBufferFromPocoSocket.h>
 
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 
 
 namespace ProfileEvents
 {
     extern const Event NetworkSendElapsedMicroseconds;
+    extern const Event NetworkSendBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric NetworkSend;
 }
 
 
@@ -31,8 +40,13 @@ void WriteBufferFromPocoSocket::nextImpl()
         return;
 
     Stopwatch watch;
-
     size_t bytes_written = 0;
+
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
+    });
+
     while (bytes_written < offset())
     {
         ssize_t res = 0;
@@ -40,6 +54,7 @@ void WriteBufferFromPocoSocket::nextImpl()
         /// Add more details to exceptions.
         try
         {
+            CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkSend);
             res = socket.impl()->sendBytes(working_buffer.begin() + bytes_written, offset() - bytes_written);
         }
         catch (const Poco::Net::NetException & e)
@@ -48,7 +63,9 @@ void WriteBufferFromPocoSocket::nextImpl()
         }
         catch (const Poco::TimeoutException &)
         {
-            throw NetException("Timeout exceeded while writing to socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+            throw NetException(fmt::format("Timeout exceeded while writing to socket ({}, {} ms)",
+                peer_address.toString(),
+                socket.impl()->getSendTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
         }
         catch (const Poco::IOException & e)
         {
@@ -60,8 +77,6 @@ void WriteBufferFromPocoSocket::nextImpl()
 
         bytes_written += res;
     }
-
-    ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
@@ -71,9 +86,7 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-    next();
+    finalize();
 }
 
 }

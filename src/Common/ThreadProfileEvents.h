@@ -1,11 +1,11 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/ProfileEvents.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 #if defined(__linux__)
@@ -24,44 +24,6 @@ namespace ProfileEvents
     extern const Event SystemTimeMicroseconds;
     extern const Event SoftPageFaults;
     extern const Event HardPageFaults;
-    extern const Event VoluntaryContextSwitches;
-    extern const Event InvoluntaryContextSwitches;
-
-#if defined(__linux__)
-    extern const Event OSIOWaitMicroseconds;
-    extern const Event OSCPUWaitMicroseconds;
-    extern const Event OSCPUVirtualTimeMicroseconds;
-    extern const Event OSReadChars;
-    extern const Event OSWriteChars;
-    extern const Event OSReadBytes;
-    extern const Event OSWriteBytes;
-
-    extern const Event PerfCpuCycles;
-    extern const Event PerfInstructions;
-    extern const Event PerfCacheReferences;
-    extern const Event PerfCacheMisses;
-    extern const Event PerfBranchInstructions;
-    extern const Event PerfBranchMisses;
-    extern const Event PerfBusCycles;
-    extern const Event PerfStalledCyclesFrontend;
-    extern const Event PerfStalledCyclesBackend;
-    extern const Event PerfRefCpuCycles;
-
-    extern const Event PerfCpuClock;
-    extern const Event PerfTaskClock;
-    extern const Event PerfContextSwitches;
-    extern const Event PerfCpuMigrations;
-    extern const Event PerfAlignmentFaults;
-    extern const Event PerfEmulationFaults;
-    extern const Event PerfMinEnabledTime;
-    extern const Event PerfMinEnabledRunningTime;
-    extern const Event PerfDataTLBReferences;
-    extern const Event PerfDataTLBMisses;
-    extern const Event PerfInstructionTLBReferences;
-    extern const Event PerfInstructionTLBMisses;
-    extern const Event PerfLocalMemoryReferences;
-    extern const Event PerfLocalMemoryMisses;
-#endif
 }
 
 namespace DB
@@ -105,8 +67,12 @@ struct RUsageCounters
     {
         ::rusage rusage {};
 #if !defined(__APPLE__)
+#if defined(OS_SUNOS)
+        ::getrusage(RUSAGE_LWP, &rusage);
+#else
         ::getrusage(RUSAGE_THREAD, &rusage);
-#endif
+#endif // OS_SUNOS
+#endif // __APPLE
         return RUsageCounters(rusage, getClockMonotonic());
     }
 
@@ -136,9 +102,7 @@ private:
     }
 };
 
-// thread_local is disabled in Arcadia, so we have to use a dummy implementation
-// there.
-#if defined(__linux__) && !defined(ARCADIA_BUILD)
+#if defined(__linux__)
 
 struct PerfEventInfo
 {
@@ -195,7 +159,7 @@ extern thread_local PerfEventsCounters current_thread_counters;
 
 #else
 
-// Not on Linux, or in Arcadia: the functionality is disabled.
+// the functionality is disabled when we are not running on Linux.
 struct PerfEventsCounters
 {
     void initializeProfileEvents(const std::string & /* events_list */) {}
@@ -203,7 +167,6 @@ struct PerfEventsCounters
     void closeEventDescriptors() {}
 };
 
-// thread_local is disabled in Arcadia, so we are going to use a static dummy.
 extern PerfEventsCounters current_thread_counters;
 
 #endif
@@ -214,7 +177,7 @@ class TasksStatsCounters
 {
 public:
     static bool checkIfAvailable();
-    static std::unique_ptr<TasksStatsCounters> create(const UInt64 tid);
+    static std::unique_ptr<TasksStatsCounters> create(UInt64 tid);
 
     void reset();
     void updateCounters(ProfileEvents::Counters & profile_events);
@@ -230,8 +193,7 @@ private:
         Netlink
     };
 
-private:
-    explicit TasksStatsCounters(const UInt64 tid, const MetricsProvider provider);
+    explicit TasksStatsCounters(UInt64 tid, MetricsProvider provider);
 
     static MetricsProvider findBestAvailableProvider();
     static void incrementProfileEvents(const ::taskstats & prev, const ::taskstats & curr, ProfileEvents::Counters & profile_events);

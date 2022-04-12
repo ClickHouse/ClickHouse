@@ -1,0 +1,35 @@
+-- { echo }
+
+drop table if exists tbl;
+create table tbl (p Int64, t Int64, f Float64) Engine=MergeTree partition by p order by t settings index_granularity=1;
+insert into tbl select number / 4, number, 0 from numbers(16);
+select * from tbl WHERE indexHint(t = 1) order by t;
+0	0	0
+0	1	0
+select * from tbl WHERE indexHint(t in (select toInt64(number) + 2 from numbers(3))) order by t;
+0	1	0
+0	2	0
+0	3	0
+1	4	0
+select * from tbl WHERE indexHint(p = 2) order by t;
+2	8	0
+2	9	0
+2	10	0
+2	11	0
+select * from tbl WHERE indexHint(p in (select toInt64(number) - 2 from numbers(3))) order by t;
+0	0	0
+0	1	0
+0	2	0
+0	3	0
+drop table tbl;
+drop table if exists XXXX;
+create table XXXX (t Int64, f Float64) Engine=MergeTree order by t settings index_granularity=128;
+insert into XXXX select number*60, 0 from numbers(100000);
+SELECT sum(t) FROM XXXX WHERE indexHint(t = 42);
+487680
+drop table if exists XXXX;
+create table XXXX (t Int64, f Float64) Engine=MergeTree order by t settings index_granularity=8192;
+insert into XXXX select number*60, 0 from numbers(100000);
+SELECT count() FROM XXXX WHERE indexHint(t = toDateTime(0));
+100000
+drop table XXXX;

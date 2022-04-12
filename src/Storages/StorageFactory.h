@@ -6,7 +6,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
-#include <Access/AccessType.h>
+#include <Access/Common/AccessType.h>
 #include <unordered_map>
 
 
@@ -39,12 +39,16 @@ public:
         /// Relative to <path> from server config (possibly <path> of some <disk> of some <volume> for *MergeTree)
         const String & relative_data_path;
         const StorageID & table_id;
-        Context & local_context;
-        Context & context;
+        ContextWeakMutablePtr local_context;
+        ContextWeakMutablePtr context;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         bool attach;
         bool has_force_restore_data_flag;
+        const String & comment;
+
+        ContextMutablePtr getContext() const;
+        ContextMutablePtr getLocalContext() const;
     };
 
     /// Analog of the IStorage::supports*() helpers
@@ -53,6 +57,7 @@ public:
     {
         bool supports_settings = false;
         bool supports_skipping_indices = false;
+        bool supports_projections = false;
         bool supports_sort_order = false;
         bool supports_ttl = false;
         /// See also IStorage::supportsReplication()
@@ -61,6 +66,7 @@ public:
         bool supports_deduplication = false;
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
+        bool supports_schema_inference = false;
         AccessType source_access_type = AccessType::NONE;
     };
 
@@ -76,8 +82,8 @@ public:
     StoragePtr get(
         const ASTCreateQuery & query,
         const String & relative_data_path,
-        Context & local_context,
-        Context & context,
+        ContextMutablePtr local_context,
+        ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         bool has_force_restore_data_flag) const;
@@ -87,11 +93,13 @@ public:
     void registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features = StorageFeatures{
         .supports_settings = false,
         .supports_skipping_indices = false,
+        .supports_projections = false,
         .supports_sort_order = false,
         .supports_ttl = false,
         .supports_replication = false,
         .supports_deduplication = false,
         .supports_parallel_insert = false,
+        .supports_schema_inference = false,
         .source_access_type = AccessType::NONE,
     });
 
@@ -120,6 +128,12 @@ public:
 
     AccessType getSourceAccessType(const String & table_engine) const;
 
+    bool checkIfStorageSupportsSchemaInterface(const String & storage_name)
+    {
+        if (storages.contains(storage_name))
+            return storages[storage_name].features.supports_schema_inference;
+        return false;
+    }
 private:
     Storages storages;
 };

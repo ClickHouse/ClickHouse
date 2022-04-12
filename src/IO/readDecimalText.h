@@ -3,6 +3,7 @@
 #include <limits>
 #include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
+#include <base/wide_integer_to_string.h>
 
 
 namespace DB
@@ -15,9 +16,9 @@ namespace ErrorCodes
 }
 
 /// Try to read Decimal into underlying type T from ReadBuffer. Throws if 'digits_only' is set and there's unexpected symbol in input.
-/// Returns integer 'exponent' factor that x should be muntiplyed by to get correct Decimal value: result = x * 10^exponent.
+/// Returns integer 'exponent' factor that x should be multiplied by to get correct Decimal value: result = x * 10^exponent.
 /// Use 'digits' input as max allowed meaning decimal digits in result. Place actual number of meaning digits in 'digits' output.
-/// Do not care about decimal scale, only about meaning digits in decimal text representation.
+/// Does not care about decimal scale, only about meaningful digits in decimal text representation.
 template <bool _throw_on_error, typename T>
 inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false)
 {
@@ -160,7 +161,7 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
             " Expected to read decimal with scale {} and precision {}";
 
         if constexpr (is_big_int_v<typename T::NativeType>)
-            throw Exception(fmt::format(pattern, digits, bigintToString(x.value), exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(fmt::format(pattern, digits, x.value, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         else
             throw Exception(fmt::format(pattern, digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }

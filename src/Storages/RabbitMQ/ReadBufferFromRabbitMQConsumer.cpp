@@ -7,16 +7,20 @@
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <boost/algorithm/string/split.hpp>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "Poco/Timer.h"
 #include <amqpcpp.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
-        ChannelPtr consumer_channel_,
-        HandlerPtr event_handler_,
+        RabbitMQHandler & event_handler_,
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
@@ -25,7 +29,6 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
-        , consumer_channel(std::move(consumer_channel_))
         , event_handler(event_handler_)
         , queues(queues_)
         , channel_base(channel_base_)
@@ -35,8 +38,6 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , stopped(stopped_)
         , received(queue_size_)
 {
-    if (consumer_channel)
-        setupChannel();
 }
 
 
@@ -66,9 +67,10 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
                 if (row_delimiter != '\0')
                     message_received += row_delimiter;
 
-                received.push({message_received, message.hasMessageID() ? message.messageID() : "",
+                if (!received.push({message_received, message.hasMessageID() ? message.messageID() : "",
                         message.hasTimestamp() ? message.timestamp() : 0,
-                        redelivered, AckTracker(delivery_tag, channel_id)});
+                        redelivered, AckTracker(delivery_tag, channel_id)}))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
             }
         })
         .onError([&](const char * message)
@@ -122,6 +124,9 @@ void ReadBufferFromRabbitMQConsumer::updateAckTracker(AckTracker record_info)
 
 void ReadBufferFromRabbitMQConsumer::setupChannel()
 {
+    if (!consumer_channel)
+        return;
+
     wait_subscription.store(true);
 
     consumer_channel->onReady([&]()
@@ -159,7 +164,7 @@ bool ReadBufferFromRabbitMQConsumer::needChannelUpdate()
 
 void ReadBufferFromRabbitMQConsumer::iterateEventLoop()
 {
-    event_handler->iterateLoop();
+    event_handler.iterateLoop();
 }
 
 

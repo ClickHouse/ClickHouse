@@ -1,11 +1,13 @@
 #pragma once
 
 #include <memory>
-#include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Names.h>
-#include <Core/Types.h>
-#include <DataTypes/DataTypeCustom_fwd.h>
+#include <Core/TypeId.h>
+#include <Common/COW.h>
+#include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 
 namespace DB
@@ -28,18 +30,30 @@ using DataTypes = std::vector<DataTypePtr>;
 
 struct NameAndTypePair;
 
+struct DataTypeWithConstInfo
+{
+    DataTypePtr type;
+    bool is_const;
+};
+
+using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 /** Properties of data type.
-  * Contains methods for serialization/deserialization.
+  *
+  * Contains methods for getting serialization instances.
+  * One data type may have different serializations, which can be chosen
+  * dynamically before reading or writing, according to information about
+  * column content (see `getSerialization` methods).
+  *
   * Implementations of this interface represent a data type (example: UInt8)
   *  or parametric family of data types (example: Array(...)).
   *
   * DataType is totally immutable object. You can always share them.
   */
-class IDataType : private boost::noncopyable
+class IDataType : private boost::noncopyable, public std::enable_shared_from_this<IDataType>
 {
 public:
-    IDataType();
+    IDataType() = default;
     virtual ~IDataType();
 
     /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
@@ -49,7 +63,15 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    String getName() const;
+    String getName() const
+    {
+      if (custom_name)
+          return custom_name->getName();
+      else
+          return doGetName();
+    }
+
+    DataTypePtr getPtr() const { return shared_from_this(); }
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
@@ -57,278 +79,61 @@ public:
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
 
-    /** Binary serialization for range of values in column - for writing to disk/network, etc.
-      *
-      * Some data types are represented in multiple streams while being serialized.
-      * Example:
-      * - Arrays are represented as stream of all elements and stream of array sizes.
-      * - Nullable types are represented as stream of values (with unspecified values in place of NULLs) and stream of NULL flags.
-      *
-      * Different streams are identified by "path".
-      * If the data type require single stream (it's true for most of data types), the stream will have empty path.
-      * Otherwise, the path can have components like "array elements", "array sizes", etc.
-      *
-      * For multidimensional arrays, path can have arbitrary length.
-      * As an example, for 2-dimensional arrays of numbers we have at least three streams:
-      * - array sizes;                      (sizes of top level arrays)
-      * - array elements / array sizes;     (sizes of second level (nested) arrays)
-      * - array elements / array elements;  (the most deep elements, placed contiguously)
-      *
-      * Descendants must override either serializeBinaryBulk, deserializeBinaryBulk methods (for simple cases with single stream)
-      *  or serializeBinaryBulkWithMultipleStreams, deserializeBinaryBulkWithMultipleStreams, enumerateStreams methods (for cases with multiple streams).
-      *
-      * Default implementations of ...WithMultipleStreams methods will call serializeBinaryBulk, deserializeBinaryBulk for single stream.
-      */
-
-    struct Substream
-    {
-        enum Type
-        {
-            ArrayElements,
-            ArraySizes,
-
-            NullableElements,
-            NullMap,
-
-            TupleElement,
-
-            DictionaryKeys,
-            DictionaryIndexes,
-        };
-        Type type;
-
-        /// Index of tuple element, starting at 1 or name.
-        String tuple_element_name;
-
-        /// Do we need to escape a dot in filenames for tuple elements.
-        bool escape_tuple_delimiter = true;
-
-        Substream(Type type_) : type(type_) {}
-
-        String toString() const;
-    };
-
-    struct SubstreamPath : public std::vector<Substream>
-    {
-        String toString() const;
-    };
-
-    /// Cache for common substreams of one type, but possible different its subcolumns.
-    /// E.g. sizes of arrays of Nested data type.
-    using SubstreamsCache = std::unordered_map<String, ColumnPtr>;
-
-    using StreamCallback = std::function<void(const SubstreamPath &, const IDataType &)>;
-
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
-    void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
-
-    virtual DataTypePtr tryGetSubcolumnType(const String & /* subcolumn_name */) const { return nullptr; }
+    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
-    virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
+
+    ColumnPtr tryGetSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
+
+    SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const;
+
+    using SubstreamData = ISerialization::SubstreamData;
+    using SubstreamPath = ISerialization::SubstreamPath;
+
+    using SubcolumnCallback = std::function<void(
+        const SubstreamPath &,
+        const String &,
+        const SubstreamData &)>;
+
+    static void forEachSubcolumn(
+        const SubcolumnCallback & callback,
+        const SubstreamData & data);
+
     Names getSubcolumnNames() const;
 
-    using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
-    using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
+    virtual MutableSerializationInfoPtr createSerializationInfo(
+        const SerializationInfo::Settings & settings) const;
 
-    struct SerializeBinaryBulkState
-    {
-        virtual ~SerializeBinaryBulkState() = default;
-    };
-    struct DeserializeBinaryBulkState
-    {
-        virtual ~DeserializeBinaryBulkState() = default;
-    };
+    /// TODO: support more types.
+    virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
 
-    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
-    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+    SerializationPtr getDefaultSerialization() const;
+    SerializationPtr getSparseSerialization() const;
 
-    struct SerializeBinaryBulkSettings
-    {
-        OutputStreamGetter getter;
-        SubstreamPath path;
+    /// Chooses serialization according to serialization kind.
+    SerializationPtr getSerialization(ISerialization::Kind kind) const;
 
-        size_t low_cardinality_max_dictionary_size = 0;
-        bool low_cardinality_use_single_dictionary_for_part = true;
+    /// Chooses serialization according to collected information about content of column.
+    virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 
-        bool position_independent_encoding = true;
-    };
+    /// Chooses between subcolumn serialization and regular serialization according to @column.
+    /// This method typically should be used to get serialization for reading column or subcolumn.
+    static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
 
-    struct DeserializeBinaryBulkSettings
-    {
-        InputStreamGetter getter;
-        SubstreamPath path;
-
-        /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
-        bool continuous_reading = true;
-
-        bool position_independent_encoding = true;
-        /// If not zero, may be used to avoid reallocations while reading column of String type.
-        double avg_value_size_hint = 0;
-    };
-
-    /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
-    void serializeBinaryBulkStatePrefix(
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const;
-
-    /// Call after serializeBinaryBulkWithMultipleStreams chain to finish serialization.
-    void serializeBinaryBulkStateSuffix(
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const;
-
-    /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
-    void deserializeBinaryBulkStatePrefix(
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const;
-
-    /** 'offset' and 'limit' are used to specify range.
-      * limit = 0 - means no limit.
-      * offset must be not greater than size of column.
-      * offset + limit could be greater than size of column
-      *  - in that case, column is serialized till the end.
-      */
-    void serializeBinaryBulkWithMultipleStreams(
-        const IColumn & column,
-        size_t offset,
-        size_t limit,
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const;
-
-    /// Read no more than limit values and append them into column.
-    void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t limit,
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsCache * cache = nullptr) const;
-
-    /** Override these methods for data types that require just single stream (most of data types).
-      */
-    virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
-    virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
-
-    /** Serialization/deserialization of individual values.
-      *
-      * These are helper methods for implementation of various formats to input/output for user (like CSV, JSON, etc.).
-      * There is no one-to-one correspondence between formats and these methods.
-      * For example, TabSeparated and Pretty formats could use same helper method serializeTextEscaped.
-      *
-      * For complex data types (like arrays) binary serde for individual values may differ from bulk serde.
-      * For example, if you serialize single array, it will be represented as its size and elements in single contiguous stream,
-      *  but if you bulk serialize column with arrays, then sizes and elements will be written to separate streams.
-      */
-
-    /// There is two variants for binary serde. First variant work with Field.
-    virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
-    virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
-
-    /// Other variants takes a column, to avoid creating temporary Field object.
-    /// Column must be non-constant.
-
-    /// Serialize one value of a column at specified row number.
-    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
-    /// Deserialize one value and insert into a column.
-    /// If method will throw an exception, then column will be in same state as before call to method.
-    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
-
-    /** Text serialization with escaping but without quoting.
-      */
-    void serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-
-    void deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization as a literal that may be inserted into a query.
-      */
-    void serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-
-    void deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization for the CSV format.
-      */
-    void serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-    void deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization for displaying on a terminal or saving into a text file, and the like.
-      * Without escaping or quoting.
-      */
-    void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-
-    /** Text deserialization in case when buffer contains only one value, without any escaping and delimiters.
-      */
-    void deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization intended for using in JSON format.
-      */
-    void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-    void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization for putting into the XML format.
-      */
-    void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+    static SerializationPtr getSerialization(const NameAndTypePair & column);
 
 protected:
-    virtual String doGetName() const;
-
-    virtual void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
-    {
-        callback(path, *this);
-    }
-
-    virtual void serializeBinaryBulkStatePrefixImpl(
-        SerializeBinaryBulkSettings & /*settings*/,
-        SerializeBinaryBulkStatePtr & /*state*/) const {}
-
-    virtual void serializeBinaryBulkStateSuffixImpl(
-        SerializeBinaryBulkSettings & /*settings*/,
-        SerializeBinaryBulkStatePtr & /*state*/) const {}
-
-    virtual void deserializeBinaryBulkStatePrefixImpl(
-        DeserializeBinaryBulkSettings & /*settings*/,
-        DeserializeBinaryBulkStatePtr & /*state*/) const {}
-
-    virtual void serializeBinaryBulkWithMultipleStreamsImpl(
-        const IColumn & column,
-        size_t offset,
-        size_t limit,
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & /*state*/) const
-    {
-        if (WriteBuffer * stream = settings.getter(settings.path))
-            serializeBinaryBulk(column, *stream, offset, limit);
-    }
-
-    virtual void deserializeBinaryBulkWithMultipleStreamsImpl(
-        IColumn & column,
-        size_t limit,
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsCache * cache) const;
-
-    /// Default implementations of text serialization in case of 'custom_text_serialization' is not set.
-
-    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-    {
-        serializeText(column, row_num, ostr, settings);
-    }
+    virtual String doGetName() const { return getFamilyName(); }
+    virtual SerializationPtr doGetDefaultSerialization() const = 0;
 
 public:
-    static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
-    static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
-
-    /** Create empty column for corresponding type.
+    /** Create empty column for corresponding type and default serialization.
       */
     virtual MutableColumnPtr createColumn() const = 0;
+
+    /** Create empty column for corresponding type and serialization.
+     */
+    virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
@@ -356,7 +161,6 @@ public:
 
     /// Checks that two instances belong to the same type
     virtual bool equals(const IDataType & rhs) const = 0;
-
 
     /// Various properties on behaviour of data type.
 
@@ -400,7 +204,7 @@ public:
       */
     virtual bool canBeComparedWithCollation() const { return false; }
 
-    /** If the type is totally comparable (Ints, Date, DateTime, not nullable, not floats)
+    /** If the type is totally comparable (Ints, Date, DateTime, DateTime64, not nullable, not floats)
       *  and "simple" enough (not String, FixedString) to be used as version number
       *  (to select rows with maximum version).
       */
@@ -477,33 +281,37 @@ public:
 
     virtual bool lowCardinality() const { return false; }
 
+    /// Checks if this type is LowCardinality(Nullable(...))
+    virtual bool isLowCardinalityNullable() const { return false; }
+
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 
-    static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
-    static String getSubcolumnNameForStream(const SubstreamPath & path);
-
-    /// Substream path supports special compression methods like codec Delta.
-    /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
-    /// generic compression codecs like LZ4.
-    static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
+
     /// Customize this DataType
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
-    mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
-    mutable DataTypeCustomStreamsPtr custom_streams;
+    mutable SerializationPtr custom_serialization;
 
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
-    const IDataTypeCustomStreams * getCustomStreams() const { return custom_streams.get(); }
+    const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
+
+private:
+    template <typename Ptr>
+    Ptr getForSubcolumn(
+        const String & subcolumn_name,
+        const SubstreamData & data,
+        Ptr SubstreamData::*member,
+        bool throw_if_null) const;
 };
 
 
@@ -512,12 +320,12 @@ struct WhichDataType
 {
     TypeIndex idx;
 
-    constexpr WhichDataType(TypeIndex idx_ = TypeIndex::Nothing) : idx(idx_) {}
-    constexpr WhichDataType(const IDataType & data_type) : idx(data_type.getTypeId()) {}
-    constexpr WhichDataType(const IDataType * data_type) : idx(data_type->getTypeId()) {}
+    constexpr WhichDataType(TypeIndex idx_ = TypeIndex::Nothing) : idx(idx_) {} /// NOLINT
+    constexpr WhichDataType(const IDataType & data_type) : idx(data_type.getTypeId()) {} /// NOLINT
+    constexpr WhichDataType(const IDataType * data_type) : idx(data_type->getTypeId()) {} /// NOLINT
 
     // shared ptr -> is non-constexpr in gcc
-    WhichDataType(const DataTypePtr & data_type) : idx(data_type->getTypeId()) {}
+    WhichDataType(const DataTypePtr & data_type) : idx(data_type->getTypeId()) {} /// NOLINT
 
     constexpr bool isUInt8() const { return idx == TypeIndex::UInt8; }
     constexpr bool isUInt16() const { return idx == TypeIndex::UInt16; }
@@ -552,9 +360,10 @@ struct WhichDataType
     constexpr bool isEnum() const { return isEnum8() || isEnum16(); }
 
     constexpr bool isDate() const { return idx == TypeIndex::Date; }
+    constexpr bool isDate32() const { return idx == TypeIndex::Date32; }
     constexpr bool isDateTime() const { return idx == TypeIndex::DateTime; }
     constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
-    constexpr bool isDateOrDateTime() const { return isDate() || isDateTime() || isDateTime64(); }
+    constexpr bool isDateOrDate32() const { return isDate() || isDate32(); }
 
     constexpr bool isString() const { return idx == TypeIndex::String; }
     constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
@@ -566,13 +375,15 @@ struct WhichDataType
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
+    constexpr bool isObject() const { return idx == TypeIndex::Object; }
 
     constexpr bool isNothing() const { return idx == TypeIndex::Nothing; }
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
+    constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
 
-    constexpr bool IsBigIntOrDeimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
+    constexpr bool isLowCarnality() const { return idx == TypeIndex::LowCardinality; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -580,7 +391,9 @@ struct WhichDataType
 template <typename T>
 inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }
 template <typename T>
-inline bool isDateOrDateTime(const T & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
+inline bool isDate32(const T & data_type) { return WhichDataType(data_type).isDate32(); }
+template <typename T>
+inline bool isDateOrDate32(const T & data_type) { return WhichDataType(data_type).isDateOrDate32(); }
 template <typename T>
 inline bool isDateTime(const T & data_type) { return WhichDataType(data_type).isDateTime(); }
 template <typename T>
@@ -591,11 +404,25 @@ inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data
 inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
 inline bool isMap(const DataTypePtr & data_type) {return WhichDataType(data_type).isMap(); }
+inline bool isNothing(const DataTypePtr & data_type) { return WhichDataType(data_type).isNothing(); }
+inline bool isUUID(const DataTypePtr & data_type) { return WhichDataType(data_type).isUUID(); }
+
+template <typename T>
+inline bool isObject(const T & data_type)
+{
+    return WhichDataType(data_type).isObject();
+}
 
 template <typename T>
 inline bool isUInt8(const T & data_type)
 {
     return WhichDataType(data_type).isUInt8();
+}
+
+template <typename T>
+inline bool isUInt64(const T & data_type)
+{
+    return WhichDataType(data_type).isUInt64();
 }
 
 template <typename T>
@@ -644,7 +471,7 @@ template <typename T>
 inline bool isColumnedAsNumber(const T & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDateTime() || which.isUUID();
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isUUID();
 }
 
 template <typename T>
@@ -659,7 +486,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>::value;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeToTypeIndex<T>;
 }
 
 template <typename T>
@@ -690,7 +517,7 @@ inline bool isNotCreatable(const T & data_type)
 inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt();
+    return which.isInt() || which.isUInt() || which.isFloat();
 }
 
 inline bool isCompilableType(const DataTypePtr & data_type)
@@ -698,42 +525,42 @@ inline bool isCompilableType(const DataTypePtr & data_type)
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
 }
 
-template <TypeIndex TYPE_IDX, typename DataType>
-inline bool isDataType(const DataType & data_type)
+inline bool isBool(const DataTypePtr & data_type)
 {
-    WhichDataType which(data_type);
-    return which.idx == TYPE_IDX;
-}
-
-template <typename ExpectedDataType, typename DataType>
-inline bool isDataType(const DataType & data_type)
-{
-    return isDataType<ExpectedDataType::type_id>(data_type);
+    return data_type->getName() == "Bool";
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
+template <typename DataType> constexpr bool IsDataTypeEnum = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
-template <typename T>
+template <is_decimal T>
 class DataTypeDecimal;
 
 template <typename T>
 class DataTypeNumber;
 
 class DataTypeDate;
+class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
 
-template <typename T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
+template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
 
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
+template <typename T>
+class DataTypeEnum;
+
+template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = true;
 
 }

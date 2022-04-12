@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/ColumnWithTypeAndName.h>
 
 
@@ -50,6 +51,9 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 
 FilterDescription::FilterDescription(const IColumn & column_)
 {
+    if (column_.isSparse())
+        data_holder = recursiveRemoveSparse(column_.getPtr());
+
     if (column_.lowCardinality())
         data_holder = column_.convertToFullColumnIfLowCardinality();
 
@@ -87,18 +91,14 @@ FilterDescription::FilterDescription(const IColumn & column_)
         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 }
 
-
-void checkColumnCanBeUsedAsFilter(const ColumnWithTypeAndName & column_elem)
+SparseFilterDescription::SparseFilterDescription(const IColumn & column)
 {
-    ConstantFilterDescription const_filter;
-    if (column_elem.column)
-        const_filter = ConstantFilterDescription(*column_elem.column);
+    const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column);
+    if (!column_sparse || !typeid_cast<const ColumnUInt8 *>(&column_sparse->getValuesColumn()))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Illegal type {} of column for sparse filter. Must be Sparse(UInt8)", column.getName());
 
-    if (!const_filter.always_false && !const_filter.always_true)
-    {
-        auto column = column_elem.column ? column_elem.column : column_elem.type->createColumn();
-        FilterDescription filter(*column);
-    }
+    filter_indices = &column_sparse->getOffsetsColumn();
 }
 
 }

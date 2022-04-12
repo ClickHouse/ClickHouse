@@ -1,35 +1,32 @@
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 
 namespace DB
 {
 
-KafkaBlockOutputStream::KafkaBlockOutputStream(
+KafkaSink::KafkaSink(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const std::shared_ptr<Context> & context_)
-    : storage(storage_)
+    const ContextPtr & context_)
+    : SinkToStorage(metadata_snapshot_->getSampleBlockNonMaterialized())
+    , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
 {
 }
 
-Block KafkaBlockOutputStream::getHeader() const
-{
-    return metadata_snapshot->getSampleBlockNonMaterialized();
-}
-
-void KafkaBlockOutputStream::writePrefix()
+void KafkaSink::onStart()
 {
     buffer = storage.createWriteBuffer(getHeader());
 
-    auto format_settings = getFormatSettings(*context);
+    auto format_settings = getFormatSettings(context);
     format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
-    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
-        getHeader(), *context,
+    format = FormatFactory::instance().getOutputFormat(storage.getFormatName(), *buffer,
+        getHeader(), context,
         [this](const Columns & columns, size_t row)
         {
             buffer->countRow(columns, row);
@@ -37,20 +34,17 @@ void KafkaBlockOutputStream::writePrefix()
         format_settings);
 }
 
-void KafkaBlockOutputStream::write(const Block & block)
+void KafkaSink::consume(Chunk chunk)
 {
-    child->write(block);
+    format->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
-void KafkaBlockOutputStream::writeSuffix()
+void KafkaSink::onFinish()
 {
-    if (child)
-        child->writeSuffix();
-    flush();
-}
+    if (format)
+        format->finalize();
+    //flush();
 
-void KafkaBlockOutputStream::flush()
-{
     if (buffer)
         buffer->flush();
 }

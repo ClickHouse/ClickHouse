@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/Transforms/CubeTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -30,13 +30,13 @@ CubeStep::CubeStep(const DataStream & input_stream_, AggregatingTransformParamsP
         output_stream->distinct_columns.insert(params->params.src_header.getByPosition(key).name);
 }
 
-void CubeStep::transformPipeline(QueryPipeline & pipeline)
+void CubeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type == QueryPipeline::StreamType::Totals)
+        if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return nullptr;
 
         return std::make_shared<CubeTransform>(header, std::move(params));

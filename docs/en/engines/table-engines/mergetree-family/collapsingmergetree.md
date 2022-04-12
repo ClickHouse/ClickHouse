@@ -126,7 +126,7 @@ Also when there are at least 2 more “state” rows than “cancel” rows, or 
 Thus, collapsing should not change the results of calculating statistics.
 Changes gradually collapsed so that in the end only the last state of almost every object left.
 
-The `Sign` is required because the merging algorithm doesn’t guarantee that all of the rows with the same sorting key will be in the same resulting data part and even on the same physical server. ClickHouse process `SELECT` queries with multiple threads, and it can not predict the order of rows in the result. The aggregation is required if there is a need to get completely “collapsed” data from `CollapsingMergeTree` table.
+The `Sign` is required because the merging algorithm does not guarantee that all of the rows with the same sorting key will be in the same resulting data part and even on the same physical server. ClickHouse process `SELECT` queries with multiple threads, and it can not predict the order of rows in the result. The aggregation is required if there is a need to get completely “collapsed” data from `CollapsingMergeTree` table.
 
 To finalize collapsing, write a query with `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and so on, and also add `HAVING sum(Sign) > 0`.
 
@@ -303,4 +303,4 @@ select * FROM UAct
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

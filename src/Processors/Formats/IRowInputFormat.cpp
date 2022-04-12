@@ -1,6 +1,7 @@
 #include <Processors/Formats/IRowInputFormat.h>
+#include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>    // toString
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -21,6 +22,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
 }
 
 
@@ -36,7 +38,18 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE
         || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
-        || code == ErrorCodes::INCORRECT_DATA;             /// For some ReadHelpers
+        || code == ErrorCodes::INCORRECT_DATA              /// For some ReadHelpers
+        || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
+}
+
+IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
+    : IInputFormat(std::move(header), in_), params(params_)
+{
+    const auto & port_header = getPort().getHeader();
+    size_t num_columns = port_header.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = port_header.getByPosition(i).type->getDefaultSerialization();
 }
 
 
@@ -180,13 +193,14 @@ Chunk IRowInputFormat::generate()
         if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
             Poco::Logger * log = &Poco::Logger::get("IRowInputFormat");
-            LOG_TRACE(log, "Skipped {} rows with errors while reading the input stream", num_errors);
+            LOG_DEBUG(log, "Skipped {} rows with errors while reading the input stream", num_errors);
         }
 
         readSuffix();
         return {};
     }
 
+    finalizeObjectColumns(columns);
     Chunk chunk(std::move(columns), num_rows);
     //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;

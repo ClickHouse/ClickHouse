@@ -284,12 +284,12 @@ ClickHouseサーバー間でデータを交換するポート。
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-ClickHouseが接続を閉じる前に受信要求を待機する秒数。 既定値は3秒です。
+ClickHouseが接続を閉じる前に受信要求を待機する秒数。 既定値は10秒です。
 
 **例**
 
 ``` xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 ## listen_host {#server_configuration_parameters-listen_host}
@@ -464,7 +464,7 @@ SSLのサポートは以下によって提供されます `libpoco` 図書館 �
 -   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
@@ -694,7 +694,7 @@ UTCタイムゾーンまたは地理的位置(たとえば、Africa/Abidjan)のI
 **例**
 
 ``` xml
-<timezone>Europe/Moscow</timezone>
+<timezone>Asia/Istanbul</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
@@ -903,4 +903,4 @@ ClickHouse内部DNSキャッシュに格納されているIPアドレスの更�
 
 -   [アクセス制御とアカウント管理](../access-rights.md#access-control)
 
-[元の記事](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

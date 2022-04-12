@@ -9,10 +9,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 
 namespace DB
@@ -51,13 +51,14 @@ class FunctionsMultiStringPosition : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsMultiStringPosition>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsMultiStringPosition>(); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

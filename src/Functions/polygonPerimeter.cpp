@@ -5,14 +5,14 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeCustomGeo.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <memory>
 #include <string>
@@ -33,7 +33,7 @@ public:
 
     explicit FunctionPolygonPerimeter() = default;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionPolygonPerimeter>();
     }
@@ -58,6 +58,8 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnFloat64::create();
@@ -75,7 +77,7 @@ public:
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
-                for (size_t i = 0; i < input_rows_count; i++)
+                for (size_t i = 0; i < input_rows_count; ++i)
                     res_data.emplace_back(boost::geometry::perimeter(geometries[i]));
             }
         }

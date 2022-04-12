@@ -1,5 +1,5 @@
 SELECT id
-FROM 
+FROM
 (
     SELECT 1 AS id
     UNION ALL
@@ -20,7 +20,7 @@ ORDER BY id;
 SELECT '---';
 
 SELECT *
-FROM 
+FROM
 (
     SELECT NULL AS x
 ) js1
@@ -32,7 +32,7 @@ INNER JOIN
 SELECT '---';
 
 SELECT *
-FROM 
+FROM
 (
     SELECT NULL AS x
 ) js1

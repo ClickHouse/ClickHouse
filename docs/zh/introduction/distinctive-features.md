@@ -17,7 +17,7 @@ toc_title: ClickHouse的特性
 
 在一些列式数据库管理系统中(例如：InfiniDB CE 和 MonetDB) 并没有使用数据压缩。但是, 若想达到比较优异的性能，数据压缩确实起到了至关重要的作用。
 
-除了在磁盘空间和CPU消耗之间进行不同权衡的高效通用压缩编解码器之外，ClickHouse还提供针对特定类型数据的[专用编解码器](../sql-reference/statements/create/table.md#create-query-specialized-codecs)，这使得ClickHouse能够与更小的数据库(如时间序列数据库)竞争并超越它们。
+除了在磁盘空间和CPU消耗之间进行不同权衡的高效通用压缩编解码器之外，ClickHouse还提供针对特定类型数据的[专用编解码器](../sql-reference/statements/create.md#create-query-specialized-codecs)，这使得ClickHouse能够与更小的数据库(如时间序列数据库)竞争并超越它们。
 
 ## 数据的磁盘存储 {#shu-ju-de-ci-pan-cun-chu}
 
@@ -86,4 +86,4 @@ ClickHouse使用SQL查询实现用户帐户管理，并允许[角色的访问控
 2.  缺少高频率，低延迟的修改或删除已存在数据的能力。仅能用于批量删除或修改数据，但这符合 [GDPR](https://gdpr-info.eu)。
 3.  稀疏索引使得ClickHouse不适合通过其键检索单行的点查询。
 
-[来源文章](https://clickhouse.tech/docs/en/introduction/distinctive_features/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/introduction/distinctive_features/) <!--hide-->

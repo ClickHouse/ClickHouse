@@ -10,7 +10,7 @@
 
 #include <pcg_random.hpp>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
@@ -51,8 +51,7 @@ template <DictionaryKeyType dictionary_key_type>
 class CacheDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by cache dictionary");
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     CacheDictionary(
         const StorageID & dict_id_,
@@ -75,9 +74,20 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
+
     double getHitRate() const override
     {
-        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / queries;
     }
 
     bool supportUpdates() const override { return false; }
@@ -94,7 +104,7 @@ public:
                 allow_read_expired_keys);
     }
 
-    const IDictionarySource * getSource() const override;
+    DictionarySourcePtr getSource() const override;
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -107,7 +117,7 @@ public:
 
     DictionaryKeyType getKeyType() const override
     {
-        return dictionary_key_type == DictionaryKeyType::simple ? DictionaryKeyType::simple : DictionaryKeyType::complex;
+        return dictionary_key_type == DictionaryKeyType::Simple ? DictionaryKeyType::Simple : DictionaryKeyType::Complex;
     }
 
     ColumnPtr getColumn(
@@ -126,36 +136,21 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
     std::exception_ptr getLastException() const override;
 
-    bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::simple && hierarchical_attribute; }
+    bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::Simple && dict_struct.hierarchical_attribute_index.has_value(); }
 
-    void toParent(const PaddedPODArray<UInt64> & ids, PaddedPODArray<UInt64> & out) const override;
+    ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & key_type) const override;
 
-    void isInVectorVector(
-        const PaddedPODArray<UInt64> & child_ids,
-        const PaddedPODArray<UInt64> & ancestor_ids,
-        PaddedPODArray<UInt8> & out) const override;
-
-    void isInVectorConstant(
-        const PaddedPODArray<UInt64> & child_ids,
-        const UInt64 ancestor_id, PaddedPODArray<UInt8> & out) const override;
-
-    void isInConstantVector(
-        const UInt64 child_id,
-        const PaddedPODArray<UInt64> & ancestor_ids,
-        PaddedPODArray<UInt8> & out) const override;
+    ColumnUInt8::Ptr isInHierarchy(
+        ColumnPtr key_column,
+        ColumnPtr in_key_column,
+        const DataTypePtr & key_type) const override;
 
 private:
-    using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
-
-    Columns getColumnsImpl(
-        const Strings & attribute_names,
-        const Columns & key_columns,
-        const PaddedPODArray<KeyType> & keys,
-        const Columns & default_values_columns) const;
+    using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
 
     static MutableColumns aggregateColumnsInOrderOfKeys(
         const PaddedPODArray<KeyType> & keys,
@@ -171,15 +166,13 @@ private:
         const MutableColumns & fetched_columns_during_update,
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index);
 
-    void setupHierarchicalAttribute();
-
     void update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit_ptr);
 
     /// Update dictionary source pointer if required and return it. Thread safe.
     /// MultiVersion is not used here because it works with constant pointers.
     /// For some reason almost all methods in IDictionarySource interface are
     /// not constant.
-    SharedDictionarySourcePtr getSourceAndUpdateIfNeeded() const
+    DictionarySourcePtr getSourceAndUpdateIfNeeded() const
     {
         std::lock_guard lock(source_mutex);
         if (error_count)
@@ -193,14 +186,11 @@ private:
         return source_ptr;
     }
 
-    template <typename AncestorType>
-    void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
-
     const DictionaryStructure dict_struct;
 
     /// Dictionary source should be used with mutex
     mutable std::mutex source_mutex;
-    mutable SharedDictionarySourcePtr source_ptr;
+    mutable DictionarySourcePtr source_ptr;
 
     CacheDictionaryStoragePtr cache_storage_ptr;
     mutable CacheDictionaryUpdateQueue<dictionary_key_type> update_queue;
@@ -218,18 +208,17 @@ private:
     /// readers. Surprisingly this lock is also used for last_exception pointer.
     mutable std::shared_mutex rw_lock;
 
-    const DictionaryAttribute * hierarchical_attribute = nullptr;
-
     mutable std::exception_ptr last_exception;
     mutable std::atomic<size_t> error_count {0};
     mutable std::atomic<std::chrono::system_clock::time_point> backoff_end_time{std::chrono::system_clock::time_point{}};
 
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 
 };
 
-extern template class CacheDictionary<DictionaryKeyType::simple>;
-extern template class CacheDictionary<DictionaryKeyType::complex>;
+extern template class CacheDictionary<DictionaryKeyType::Simple>;
+extern template class CacheDictionary<DictionaryKeyType::Complex>;
 
 }

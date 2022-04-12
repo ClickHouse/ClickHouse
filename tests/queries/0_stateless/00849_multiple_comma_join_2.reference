@@ -10,7 +10,7 @@ FROM t1
 ALL INNER JOIN t2 ON b = t2.b
 WHERE b = t2.b
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT
         a AS `--t1.a`,
@@ -21,7 +21,7 @@ FROM
 ALL INNER JOIN t3 ON `--t1.a` = a
 WHERE (`--t1.a` = `--t2.a`) AND (`--t1.a` = a)
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT
         b AS `--t1.b`,
@@ -33,13 +33,13 @@ FROM
 ALL INNER JOIN t3 ON `--t1.b` = b
 WHERE (`--t1.b` = `--t2.b`) AND (`--t1.b` = b)
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT
         `--t1.a`,
         `--t2.a`,
         a AS `--t3.a`
-    FROM 
+    FROM
     (
         SELECT
             a AS `--t1.a`,
@@ -52,14 +52,14 @@ FROM
 ALL INNER JOIN t4 ON `--t1.a` = a
 WHERE (`--t1.a` = `--t2.a`) AND (`--t1.a` = `--t3.a`) AND (`--t1.a` = a)
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT
         `--t1.b`,
         `--t1.a`,
         `--t2.b`,
         b AS `--t3.b`
-    FROM 
+    FROM
     (
         SELECT
             b AS `--t1.b`,
@@ -73,13 +73,13 @@ FROM
 ALL INNER JOIN t4 ON `--t1.b` = b
 WHERE (`--t1.b` = `--t2.b`) AND (`--t1.b` = `--t3.b`) AND (`--t1.b` = b)
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT
         `--t1.a`,
         `--t2.a`,
         a AS `--t3.a`
-    FROM 
+    FROM
     (
         SELECT
             a AS `--t1.a`,
@@ -92,13 +92,13 @@ FROM
 ALL INNER JOIN t4 ON `--t2.a` = a
 WHERE (`--t2.a` = `--t1.a`) AND (`--t2.a` = `--t3.a`) AND (`--t2.a` = a)
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT
         `--t1.a`,
         `--t2.a`,
         a AS `--t3.a`
-    FROM 
+    FROM
     (
         SELECT
             a AS `--t1.a`,
@@ -111,13 +111,13 @@ FROM
 ALL INNER JOIN t4 ON `--t3.a` = a
 WHERE (`--t3.a` = `--t1.a`) AND (`--t3.a` = `--t2.a`) AND (`--t3.a` = a)
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT
         `--t1.a`,
         `--t2.a`,
         a AS `--t3.a`
-    FROM 
+    FROM
     (
         SELECT
             a AS `--t1.a`,
@@ -127,16 +127,16 @@ FROM
     ) AS `--.s`
     CROSS JOIN t3
 ) AS `--.s`
-ALL INNER JOIN t4 ON ((a = `--t1.a`) AND (a = `--t2.a`)) AND (a = `--t3.a`)
+ALL INNER JOIN t4 ON (a = `--t1.a`) AND (a = `--t2.a`) AND (a = `--t3.a`)
 WHERE (a = `--t1.a`) AND (a = `--t2.a`) AND (a = `--t3.a`)
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT
         `--t1.a`,
         `--t2.a`,
         a AS `--t3.a`
-    FROM 
+    FROM
     (
         SELECT
             a AS `--t1.a`,
@@ -149,10 +149,10 @@ FROM
 ALL INNER JOIN t4 ON `--t3.a` = a
 WHERE (`--t1.a` = `--t2.a`) AND (`--t2.a` = `--t3.a`) AND (`--t3.a` = a)
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT `--t1.a`
-    FROM 
+    FROM
     (
         SELECT a AS `--t1.a`
         FROM t1
@@ -162,10 +162,10 @@ FROM
 ) AS `--.s`
 CROSS JOIN t4
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT `--t1.a`
-    FROM 
+    FROM
     (
         SELECT a AS `--t1.a`
         FROM t1
@@ -175,7 +175,7 @@ FROM
 ) AS `--.s`
 CROSS JOIN t4
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
 (
     SELECT a AS `--t1.a`
     FROM t1
@@ -183,7 +183,15 @@ FROM
 ) AS `--.s`
 CROSS JOIN t3
 SELECT `--t1.a` AS `t1.a`
-FROM 
+FROM
+(
+    SELECT a AS `--t1.a`
+    FROM t1
+    ALL INNER JOIN t2 USING (a)
+) AS `--.s`
+CROSS JOIN t3
+SELECT `--t1.a` AS `t1.a`
+FROM
 (
     SELECT
         a AS `--t1.a`,

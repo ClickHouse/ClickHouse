@@ -60,4 +60,4 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 
 请参阅 [AggregatingMergeTree](../../sql-reference/data-types/aggregatefunction.md) 的说明
 
-[来源文章](https://clickhouse.tech/docs/en/data_types/nested_data_structures/aggregatefunction/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/data_types/nested_data_structures/aggregatefunction/) <!--hide-->

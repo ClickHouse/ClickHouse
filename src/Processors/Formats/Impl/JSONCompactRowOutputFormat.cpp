@@ -18,17 +18,17 @@ JSONCompactRowOutputFormat::JSONCompactRowOutputFormat(
 }
 
 
-void JSONCompactRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void JSONCompactRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     if (yield_strings)
     {
         WriteBufferFromOwnString buf;
 
-        type.serializeAsText(column, row_num, buf, settings);
+        serialization.serializeText(column, row_num, buf, settings);
         writeJSONString(buf.str(), *ostr, settings);
     }
     else
-        type.serializeAsTextJSON(column, row_num, *ostr, settings);
+        serialization.serializeTextJSON(column, row_num, *ostr, settings);
 
     ++field_number;
 }
@@ -82,15 +82,15 @@ void JSONCompactRowOutputFormat::writeExtremesElement(const char * title, const 
         if (i != 0)
             writeTotalsFieldDelimiter();
 
-        writeField(*columns[i], *types[i], row_num);
+        writeField(*columns[i], *serializations[i], row_num);
     }
 
     writeChar(']', *ostr);
 }
 
-void registerOutputFormatProcessorJSONCompact(FormatFactory & factory)
+void registerOutputFormatJSONCompact(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("JSONCompact", [](
+    factory.registerOutputFormat("JSONCompact", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -99,7 +99,9 @@ void registerOutputFormatProcessorJSONCompact(FormatFactory & factory)
         return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, params, format_settings, false);
     });
 
-    factory.registerOutputFormatProcessor("JSONCompactStrings", [](
+    factory.markOutputFormatSupportsParallelFormatting("JSONCompact");
+
+    factory.registerOutputFormat("JSONCompactStrings", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -107,6 +109,8 @@ void registerOutputFormatProcessorJSONCompact(FormatFactory & factory)
     {
         return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, params, format_settings, true);
     });
+
+    factory.markOutputFormatSupportsParallelFormatting("JSONCompactStrings");
 }
 
 }

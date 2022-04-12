@@ -5,21 +5,28 @@
 struct ContextHolder
 {
     DB::SharedContextHolder shared_context;
-    DB::Context context;
+    DB::ContextMutablePtr context;
 
     ContextHolder()
         : shared_context(DB::Context::createShared())
         , context(DB::Context::createGlobal(shared_context.get()))
     {
-        context.makeGlobalContext();
-        context.setPath("./");
+        context->makeGlobalContext();
+        context->setPath("./");
     }
 
     ContextHolder(ContextHolder &&) = default;
+
+    void destroy()
+    {
+        context->shutdown();
+        context.reset();
+        shared_context.reset();
+    }
 };
 
-inline const ContextHolder & getContext()
-{
-    static ContextHolder holder;
-    return holder;
-}
+const ContextHolder & getContext();
+
+ContextHolder & getMutableContext();
+
+void destroyContext();

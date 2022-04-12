@@ -51,7 +51,7 @@ void readHeaders(
             if (name.size() > max_name_length)
                 throw Poco::Net::MessageException("Field name is too long");
             if (ch != ':')
-                throw Poco::Net::MessageException("Field name is invalid or no colon found");
+                throw Poco::Net::MessageException(fmt::format("Field name is invalid or no colon found: \"{}\"", name));
         }
 
         in.ignore();
@@ -67,9 +67,6 @@ void readHeaders(
 
         if (in.eof())
             throw Poco::Net::MessageException("Field is invalid");
-
-        if (value.empty())
-            throw Poco::Net::MessageException("Field value is empty");
 
         if (ch == '\n')
             throw Poco::Net::MessageException("No CRLF found");

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long, zookeeper, no-parallel, no-backward-compatibility-check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -47,7 +48,7 @@ done
 
 echo "$query_result"
 
-$CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$first_mutation_id'"
+$CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$first_mutation_id' and database='$CLICKHOUSE_DATABASE'"
 
 check_query="SELECT sum(parts_to_do) FROM system.mutations WHERE table='mutation_table' and database='$CLICKHOUSE_DATABASE'"
 

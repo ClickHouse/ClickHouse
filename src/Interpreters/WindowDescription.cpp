@@ -1,7 +1,11 @@
 #include <Interpreters/WindowDescription.h>
 
+#include <Core/Field.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
+
 
 namespace DB
 {
@@ -47,7 +51,7 @@ std::string WindowFrame::toString() const
 
 void WindowFrame::toString(WriteBuffer & buf) const
 {
-    buf << toString(type) << " BETWEEN ";
+    buf << type << " BETWEEN ";
     if (begin_type == BoundaryType::Current)
     {
         buf << "CURRENT ROW";
@@ -60,7 +64,7 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else
     {
-        buf << abs(begin_offset);
+        buf << applyVisitor(FieldVisitorToString(), begin_offset);
         buf << " "
             << (begin_preceding ? "PRECEDING" : "FOLLOWING");
     }
@@ -77,7 +81,7 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else
     {
-        buf << abs(end_offset);
+        buf << applyVisitor(FieldVisitorToString(), end_offset);
         buf << " "
             << (end_preceding ? "PRECEDING" : "FOLLOWING");
     }
@@ -85,6 +89,38 @@ void WindowFrame::toString(WriteBuffer & buf) const
 
 void WindowFrame::checkValid() const
 {
+    // Check the validity of offsets.
+    if (type == WindowFrame::FrameType::Rows
+        || type == WindowFrame::FrameType::Groups)
+    {
+        if (begin_type == BoundaryType::Offset
+            && !((begin_offset.getType() == Field::Types::UInt64
+                    || begin_offset.getType() == Field::Types::Int64)
+                && begin_offset.get<Int64>() >= 0
+                && begin_offset.get<Int64>() < INT_MAX))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
+                type,
+                applyVisitor(FieldVisitorToString(), begin_offset),
+                begin_offset.getType());
+        }
+
+        if (end_type == BoundaryType::Offset
+            && !((end_offset.getType() == Field::Types::UInt64
+                    || end_offset.getType() == Field::Types::Int64)
+                && end_offset.get<Int64>() >= 0
+                && end_offset.get<Int64>() < INT_MAX))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
+                type,
+                applyVisitor(FieldVisitorToString(), end_offset),
+                end_offset.getType());
+        }
+    }
+
+    // Check relative positioning of offsets.
     // UNBOUNDED PRECEDING end and UNBOUNDED FOLLOWING start should have been
     // forbidden at the parsing level.
     assert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));
@@ -121,23 +157,34 @@ void WindowFrame::checkValid() const
     if (end_type == BoundaryType::Offset
         && begin_type == BoundaryType::Offset)
     {
-        // Frame starting with following rows can't have preceding rows.
-        if (!(end_preceding && !begin_preceding))
+        // Frame start offset must be less or equal that the frame end offset.
+        bool begin_less_equal_end;
+        if (begin_preceding && end_preceding)
         {
-            // Frame start offset must be less or equal that the frame end offset.
-            const bool begin_before_end
-                = begin_offset * (begin_preceding ? -1 : 1)
-                    <= end_offset * (end_preceding ? -1 : 1);
-
-            if (!begin_before_end)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame start offset {} {} does not precede the frame end offset {} {}",
-                    begin_offset, begin_preceding ? "PRECEDING" : "FOLLOWING",
-                    end_offset, end_preceding ? "PRECEDING" : "FOLLOWING");
-            }
-            return;
+            /// we can't compare Fields using operator<= if fields have different types
+            begin_less_equal_end = applyVisitor(FieldVisitorAccurateLessOrEqual(), end_offset, begin_offset);
         }
+        else if (begin_preceding && !end_preceding)
+        {
+            begin_less_equal_end = true;
+        }
+        else if (!begin_preceding && end_preceding)
+        {
+            begin_less_equal_end = false;
+        }
+        else /* if (!begin_preceding && !end_preceding) */
+        {
+            begin_less_equal_end = applyVisitor(FieldVisitorAccurateLessOrEqual(), begin_offset, end_offset);
+        }
+
+        if (!begin_less_equal_end)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Frame start offset {} {} does not precede the frame end offset {} {}",
+                begin_offset, begin_preceding ? "PRECEDING" : "FOLLOWING",
+                end_offset, end_preceding ? "PRECEDING" : "FOLLOWING");
+        }
+        return;
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,

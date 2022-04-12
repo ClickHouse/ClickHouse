@@ -3,10 +3,6 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
-    <settings>
-        <allow_experimental_window_functions>1</allow_experimental_window_functions>
-    </settings>
-
     <!--
         For some counters, find top 10 users by the numer of records.
         First with LIMIT BY, next with window functions.
@@ -107,6 +103,48 @@
             (select number, intDiv(number, 1111) p, mod(number, 111) o
                 from numbers(10000000)) t
         window w as (partition by p order by o)
+        format Null
+    </query>
+
+    <!-- Our variant of lead. -->
+    <query>
+        select leadInFrame(number) over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o
+            rows between unbounded preceding and unbounded following)
+        format Null
+    </query>
+
+    <!-- A faster replacement for lead with constant offset. -->
+    <query>
+        select any(number) over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o
+            rows between 1 following and 1 following)
+        format Null
+    </query>
+
+    <query>
+        select leadInFrame(number, number) over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o
+            rows between unbounded preceding and unbounded following)
+        format Null
+    </query>
+
+    <query>
+        select leadInFrame(number, number, number) over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o
+            rows between unbounded preceding and unbounded following)
         format Null
     </query>
 

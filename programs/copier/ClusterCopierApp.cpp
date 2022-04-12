@@ -3,8 +3,11 @@
 #include <Common/TerminalSize.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Formats/registerFormats.h>
+#include <base/scope_guard_safe.h>
 #include <unistd.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -19,14 +22,19 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
     config_xml_path = config().getString("config-file");
     task_path = config().getString("task-path");
-    log_level = config().getString("log-level", "trace");
+    log_level = config().getString("log-level", "info");
     is_safe_mode = config().has("safe-mode");
+    is_status_mode = config().has("status");
     if (config().has("copy-fault-probability"))
         copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
     if (config().has("move-fault-probability"))
         move_fault_probability = std::max(std::min(config().getDouble("move-fault-probability"), 1.0), 0.0);
-    base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
+    base_dir = (config().has("base-dir")) ? config().getString("base-dir") : fs::current_path().string();
 
+    max_table_tries = std::max<size_t>(config().getUInt("max-table-tries", 3), 1);
+    max_shard_partition_tries = std::max<size_t>(config().getUInt("max-shard-partition-tries", 3), 1);
+    max_shard_partition_piece_tries_for_alter = std::max<size_t>(config().getUInt("max-shard-partition-piece-tries-for-alter", 10), 1);
+    retry_delay_ms = std::chrono::milliseconds(std::max<size_t>(config().getUInt("retry-delay-ms", 1000), 100));
 
     if (config().has("experimental-use-sample-offset"))
         experimental_use_sample_offset = config().getBool("experimental-use-sample-offset");
@@ -37,18 +45,18 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
     process_id = std::to_string(DateLUT::instance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(curr_pid);
     host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
-    process_path = Poco::Path(base_dir + "/clickhouse-copier_" + process_id).absolute().toString();
-    Poco::File(process_path).createDirectories();
+    process_path = fs::weakly_canonical(fs::path(base_dir) / ("clickhouse-copier_" + process_id));
+    fs::create_directories(process_path);
 
     /// Override variables for BaseDaemon
     if (config().has("log-level"))
         config().setString("logger.level", config().getString("log-level"));
 
     if (config().has("base-dir") || !config().has("logger.log"))
-        config().setString("logger.log", process_path + "/log.log");
+        config().setString("logger.log", fs::path(process_path) / "log.log");
 
     if (config().has("base-dir") || !config().has("logger.errorlog"))
-        config().setString("logger.errorlog", process_path + "/log.err.log");
+        config().setString("logger.errorlog", fs::path(process_path) / "log.err.log");
 
     Base::initialize(self);
 }
@@ -94,6 +102,16 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("base-dir").binding("base-dir"));
     options.addOption(Poco::Util::Option("experimental-use-sample-offset", "", "Use SAMPLE OFFSET query instead of cityHash64(PRIMARY KEY) % n == k")
                           .argument("experimental-use-sample-offset").binding("experimental-use-sample-offset"));
+    options.addOption(Poco::Util::Option("status", "", "Get for status for current execution").binding("status"));
+
+    options.addOption(Poco::Util::Option("max-table-tries", "", "Number of tries for the copy table task")
+                          .argument("max-table-tries").binding("max-table-tries"));
+    options.addOption(Poco::Util::Option("max-shard-partition-tries", "", "Number of tries for the copy one partition task")
+                          .argument("max-shard-partition-tries").binding("max-shard-partition-tries"));
+    options.addOption(Poco::Util::Option("max-shard-partition-piece-tries-for-alter", "", "Number of tries for final ALTER ATTACH to destination table")
+                          .argument("max-shard-partition-piece-tries-for-alter").binding("max-shard-partition-piece-tries-for-alter"));
+    options.addOption(Poco::Util::Option("retry-delay-ms", "", "Delay between task retries")
+                          .argument("retry-delay-ms").binding("retry-delay-ms"));
 
     using Me = std::decay_t<decltype(*this)>;
     options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
@@ -103,6 +121,25 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 
 void ClusterCopierApp::mainImpl()
 {
+    /// Status command
+    {
+        if (is_status_mode)
+        {
+            SharedContextHolder shared_context = Context::createShared();
+            auto context = Context::createGlobal(shared_context.get());
+            context->makeGlobalContext();
+            SCOPE_EXIT_SAFE(context->shutdown());
+
+            auto zookeeper = context->getZooKeeper();
+            auto status_json = zookeeper->get(task_path + "/status");
+
+            LOG_INFO(&logger(), "{}", status_json);
+            std::cout << status_json << std::endl;
+
+            context->resetZooKeeper();
+            return;
+        }
+    }
     StatusFile status_file(process_path + "/status", StatusFile::write_full_info);
     ThreadStatus thread_status;
 
@@ -110,9 +147,9 @@ void ClusterCopierApp::mainImpl()
     LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::getVersionRevision());
 
     SharedContextHolder shared_context = Context::createShared();
-    auto context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    auto context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
-    SCOPE_EXIT(context->shutdown());
+    SCOPE_EXIT_SAFE(context->shutdown());
 
     context->setConfig(loaded_config.configuration);
     context->setApplicationType(Context::ApplicationType::LOCAL);
@@ -127,17 +164,28 @@ void ClusterCopierApp::mainImpl()
     registerFormats();
 
     static const std::string default_database = "_local";
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, context));
     context->setCurrentDatabase(default_database);
 
-    /// Initialize query scope just in case.
-    CurrentThread::QueryScope query_scope(*context);
+    /// Disable queries logging, since:
+    /// - There are bits that is not allowed for global context, like adding factories info (for the query_log)
+    /// - And anyway it is useless for copier.
+    context->setSetting("log_queries", false);
 
-    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
+    auto local_context = Context::createCopy(context);
+
+    /// Initialize query scope just in case.
+    CurrentThread::QueryScope query_scope(local_context);
+
+    auto copier = std::make_unique<ClusterCopier>(
+        task_path, host_id, default_database, local_context, log);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);
-
+    copier->setMaxTableTries(max_table_tries);
+    copier->setMaxShardPartitionTries(max_shard_partition_tries);
+    copier->setMaxShardPartitionPieceTriesForAlter(max_shard_partition_piece_tries_for_alter);
+    copier->setRetryDelayMs(retry_delay_ms);
     copier->setExperimentalUseSampleOffset(experimental_use_sample_offset);
 
     auto task_file = config().getString("task-file", "");

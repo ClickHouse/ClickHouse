@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -33,7 +33,7 @@ public:
 
     explicit FunctionPolygonConvexHull() = default;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionPolygonConvexHull>();
     }
@@ -48,6 +48,8 @@ public:
         return false;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override
     {
         return 1;
@@ -55,7 +57,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return DataTypeCustomPolygonSerialization::nestedDataType();
+        return DataTypeFactory::instance().get("Polygon");
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -73,7 +75,7 @@ public:
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
-                for (size_t i = 0; i < input_rows_count; i++)
+                for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     Polygon<Point> convex_hull{};
                     boost::geometry::convex_hull(geometries[i], convex_hull);

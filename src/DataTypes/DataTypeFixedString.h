@@ -2,12 +2,15 @@
 
 #include <DataTypes/IDataType.h>
 #include <Common/PODArray_fwd.h>
+#include <Common/Exception.h>
 
 #define MAX_FIXEDSTRING_SIZE 0xFFFFFF
 
 
 namespace DB
 {
+
+class ColumnFixedString;
 
 namespace ErrorCodes
 {
@@ -21,9 +24,12 @@ private:
     size_t n;
 
 public:
-    static constexpr bool is_parametric = true;
+    using ColumnType = ColumnFixedString;
 
-    DataTypeFixedString(size_t n_) : n(n_)
+    static constexpr bool is_parametric = true;
+    static constexpr auto type_id = TypeIndex::FixedString;
+
+    explicit DataTypeFixedString(size_t n_) : n(n_)
     {
         if (n == 0)
             throw Exception("FixedString size must be positive", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -32,7 +38,7 @@ public:
     }
 
     std::string doGetName() const override;
-    TypeIndex getTypeId() const override { return TypeIndex::FixedString; }
+    TypeIndex getTypeId() const override { return type_id; }
 
     const char * getFamilyName() const override { return "FixedString"; }
 
@@ -41,37 +47,13 @@ public:
         return n;
     }
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
-
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-
-    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
     MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
+
+    SerializationPtr doGetDefaultSerialization() const override;
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }

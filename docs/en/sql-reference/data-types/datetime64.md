@@ -7,9 +7,10 @@ toc_title: DateTime64
 
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day, with defined sub-second precision
 
-Tick size (precision): 10<sup>-precision</sup> seconds
+Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. 
+Typically are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
 
-Syntax:
+**Syntax:**
 
 ``` sql
 DateTime64(precision, [timezone])
@@ -17,25 +18,27 @@ DateTime64(precision, [timezone])
 
 Internally, stores data as a number of ‘ticks’ since epoch start (1970-01-01 00:00:00 UTC) as Int64. The tick resolution is determined by the precision parameter. Additionally, the `DateTime64` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime64` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01.000’). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. See details in [DateTime](../../sql-reference/data-types/datetime.md).
 
+Supported range of values: \[1925-01-01 00:00:00, 2283-11-11 23:59:59.99999999\] (Note: The precision of the maximum value is 8).
+
 ## Examples {#examples}
 
-**1.** Creating a table with `DateTime64`-type column and inserting data into it:
+1. Creating a table with `DateTime64`-type column and inserting data into it:
 
 ``` sql
 CREATE TABLE dt
 (
-    `timestamp` DateTime64(3, 'Europe/Moscow'),
+    `timestamp` DateTime64(3, 'Asia/Istanbul'),
     `event_id` UInt8
 )
-ENGINE = TinyLog
+ENGINE = TinyLog;
 ```
 
 ``` sql
-INSERT INTO dt Values (1546300800000, 1), ('2019-01-01 00:00:00', 2)
+INSERT INTO dt Values (1546300800000, 1), ('2019-01-01 00:00:00', 2);
 ```
 
 ``` sql
-SELECT * FROM dt
+SELECT * FROM dt;
 ```
 
 ``` text
@@ -45,13 +48,13 @@ SELECT * FROM dt
 └─────────────────────────┴──────────┘
 ```
 
--   When inserting datetime as an integer, it is treated as an appropriately scaled Unix Timestamp (UTC). `1546300800000` (with precision 3) represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as a string the value will be shown as `'2019-01-01 03:00:00'`
--   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and stored as `1546290000000`.
+-   When inserting datetime as an integer, it is treated as an appropriately scaled Unix Timestamp (UTC). `1546300800000` (with precision 3) represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as a string the value will be shown as `'2019-01-01 03:00:00'`.
+-   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and stored as `1546290000000`.
 
-**2.** Filtering on `DateTime64` values
+2. Filtering on `DateTime64` values
 
 ``` sql
-SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow')
+SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
 ```
 
 ``` text
@@ -60,27 +63,27 @@ SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europ
 └─────────────────────────┴──────────┘
 ```
 
-Unlike `DateTime`, `DateTime64` values are not converted from `String` automatically
+Unlike `DateTime`, `DateTime64` values are not converted from `String` automatically.
 
-**3.** Getting a time zone for a `DateTime64`-type value:
+3. Getting a time zone for a `DateTime64`-type value:
 
 ``` sql
-SELECT toDateTime64(now(), 3, 'Europe/Moscow') AS column, toTypeName(column) AS x
+SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x;
 ```
 
 ``` text
 ┌──────────────────column─┬─x──────────────────────────────┐
-│ 2019-10-16 04:12:04.000 │ DateTime64(3, 'Europe/Moscow') │
+│ 2019-10-16 04:12:04.000 │ DateTime64(3, 'Asia/Istanbul') │
 └─────────────────────────┴────────────────────────────────┘
 ```
 
-**4.** Timezone conversion
+4. Timezone conversion
 
 ``` sql
 SELECT
 toDateTime64(timestamp, 3, 'Europe/London') as lon_time,
-toDateTime64(timestamp, 3, 'Europe/Moscow') as mos_time
-FROM dt
+toDateTime64(timestamp, 3, 'Asia/Istanbul') as mos_time
+FROM dt;
 ```
 
 ``` text
@@ -90,7 +93,7 @@ FROM dt
 └─────────────────────────┴─────────────────────────┘
 ```
 
-## See Also {#see-also}
+**See Also**
 
 -   [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 -   [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)

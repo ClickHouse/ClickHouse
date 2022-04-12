@@ -817,22 +817,6 @@ load_balancing = first_or_random
 のための一貫性を異なる部分に同じデータを分割)、このオプションにしているときだけサンプリングキーを設定します。
 レプリカラグは制御されません。
 
-## コンパイル {#compile}
-
-を編集ます。 既定では、0(無効)です。
-
-コンパイルは、クエリ処理パイプラインの一部にのみ使用されます。
-この部分のパイプラインのためのクエリを実行するアによる展開の短サイクルinlining集計機能。 複数の単純な集計関数を使用するクエリでは、最大のパフォーマンスの向上が見られます。 通常、性能は軽微であります。 非常に珍しい例で遅くなクエリを実行します。
-
-## min_count_to_compile {#min-count-to-compile}
-
-り方を潜在的に利用コチャンクのコードの実行前に作成する。 デフォルトでは3.
-For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
-値が1以上の場合、コンパイルは別のスレッドで非同期に実行されます。 結果は、現在実行中のクエリを含め、準備が整うとすぐに使用されます。
-
-コンパイルされたコードは、クエリで使用される集計関数とGROUP BY句内のキーの種類のそれぞれの異なる組み合わせに必要です。
-The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
-
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 値がtrueの場合、json\*Int64およびUInt64形式（ほとんどのJavaScript実装との互換性のため）を使用するときに整数が引用符で表示されます。
@@ -1251,4 +1235,4 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 デフォルト値は16です。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+[元の記事](https://clickhouse.com/docs/en/operations/settings/settings/) <!-- hide -->

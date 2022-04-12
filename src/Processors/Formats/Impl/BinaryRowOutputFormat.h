@@ -14,19 +14,19 @@ class WriteBuffer;
 
 /** A stream for outputting data in a binary line-by-line format.
   */
-class BinaryRowOutputFormat: public IRowOutputFormat
+class BinaryRowOutputFormat final: public IRowOutputFormat
 {
 public:
     BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const RowOutputFormatParams & params_);
 
     String getName() const override { return "BinaryRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
-    void writePrefix() override;
-
     String getContentType() const override { return "application/octet-stream"; }
 
-protected:
+private:
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
+    void writePrefix() override;
+
     bool with_names;
     bool with_types;
 };

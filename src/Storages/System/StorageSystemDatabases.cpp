@@ -17,12 +17,20 @@ NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
         {"data_path", std::make_shared<DataTypeString>()},
         {"metadata_path", std::make_shared<DataTypeString>()},
         {"uuid", std::make_shared<DataTypeUUID>()},
+        {"comment", std::make_shared<DataTypeString>()}
     };
 }
 
-void StorageSystemDatabases::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+NamesAndAliases StorageSystemDatabases::getNamesAndAliases()
 {
-    const auto access = context.getAccess();
+    return {
+        {"database", std::make_shared<DataTypeString>(), "name"}
+    };
+}
+
+void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+{
+    const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
@@ -36,9 +44,10 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, const Contex
 
         res_columns[0]->insert(database_name);
         res_columns[1]->insert(database->getEngineName());
-        res_columns[2]->insert(context.getPath() + database->getDataPath());
+        res_columns[2]->insert(context->getPath() + database->getDataPath());
         res_columns[3]->insert(database->getMetadataPath());
         res_columns[4]->insert(database->getUUID());
+        res_columns[5]->insert(database->getDatabaseComment());
    }
 }
 

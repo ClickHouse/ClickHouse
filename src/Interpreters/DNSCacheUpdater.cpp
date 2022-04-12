@@ -1,15 +1,17 @@
 #include "DNSCacheUpdater.h"
-#include <Common/DNSResolver.h>
+
 #include <Interpreters/Context.h>
+#include <Common/DNSResolver.h>
 
 
 namespace DB
 {
 
-DNSCacheUpdater::DNSCacheUpdater(Context & context_, Int32 update_period_seconds_)
-    : context(context_),
-    update_period_seconds(update_period_seconds_),
-    pool(context_.getSchedulePool())
+DNSCacheUpdater::DNSCacheUpdater(ContextPtr context_, Int32 update_period_seconds_, UInt32 max_consecutive_failures_)
+    : WithContext(context_)
+    , update_period_seconds(update_period_seconds_)
+    , max_consecutive_failures(max_consecutive_failures_)
+    , pool(getContext()->getSchedulePool())
 {
     task_handle = pool.createTask("DNSCacheUpdater", [this]{ run(); });
 }
@@ -19,12 +21,12 @@ void DNSCacheUpdater::run()
     auto & resolver = DNSResolver::instance();
 
     /// Reload cluster config if IP of any host has been changed since last update.
-    if (resolver.updateCache())
+    if (resolver.updateCache(max_consecutive_failures))
     {
         LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "IPs of some hosts have been changed. Will reload cluster config.");
         try
         {
-            context.reloadClusterConfig();
+            getContext()->reloadClusterConfig();
         }
         catch (...)
         {

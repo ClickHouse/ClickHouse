@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/UUID.h>
-#include <ext/scope_guard.h>
+#include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <list>
 #include <mutex>
@@ -37,13 +37,13 @@ public:
     using OnChangeHandler = std::function<void(const std::shared_ptr<const EnabledRolesInfo> & info)>;
 
     /// Called when either the specified roles or the roles granted to the specified roles are changed.
-    ext::scope_guard subscribeForChanges(const OnChangeHandler & handler) const;
+    scope_guard subscribeForChanges(const OnChangeHandler & handler) const;
 
 private:
     friend class RoleCache;
-    EnabledRoles(const Params & params_);
+    explicit EnabledRoles(const Params & params_);
 
-    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, ext::scope_guard & notifications);
+    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, scope_guard & notifications);
 
     const Params params;
     mutable std::shared_ptr<const EnabledRolesInfo> info;

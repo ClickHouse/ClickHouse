@@ -16,4 +16,4 @@ toc_title: "\u30ED\u30FC\u30C9"
 -   外部認証サービスとの統合
 -   資源のプールのためのより精密な分布のクラスター能力とユーザー
 
-{## [元の記事](https://clickhouse.tech/docs/en/roadmap/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/roadmap/) ##}

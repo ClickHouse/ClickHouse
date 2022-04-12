@@ -4,7 +4,7 @@
 
 namespace DB
 {
-    void ParallelFormattingOutputFormat::finalize()
+    void ParallelFormattingOutputFormat::finalizeImpl()
     {
         need_flush = true;
         IOutputFormat::finalized = true;
@@ -13,11 +13,15 @@ namespace DB
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE, /*can_throw_exception*/ false);
         collector_finished.wait();
 
-        if (collector_thread.joinable())
-            collector_thread.join();
+        {
+            std::lock_guard<std::mutex> lock(collector_thread_mutex);
+            if (collector_thread.joinable())
+                collector_thread.join();
+        }
 
         {
             std::unique_lock<std::mutex> lock(mutex);
+
             if (background_exception)
                 std::rethrow_exception(background_exception);
         }
@@ -49,9 +53,17 @@ namespace DB
         unit.segment.resize(0);
         unit.status = READY_TO_FORMAT;
         unit.type = type;
+        if (type == ProcessingUnitType::FINALIZE)
+        {
+            std::lock_guard lock(statistics_mutex);
+            unit.statistics = std::move(statistics);
+        }
 
-        scheduleFormatterThreadForUnitWithNumber(current_unit_number);
+        size_t first_row_num = rows_consumed;
+        if (unit.type == ProcessingUnitType::PLAIN)
+            rows_consumed += unit.chunk.getNumRows();
 
+        scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_num);
         ++writer_unit_number;
     }
 
@@ -66,8 +78,11 @@ namespace DB
             writer_condvar.notify_all();
         }
 
-        if (collector_thread.joinable())
-            collector_thread.join();
+        {
+            std::lock_guard<std::mutex> lock(collector_thread_mutex);
+            if (collector_thread.joinable())
+                collector_thread.join();
+        }
 
         try
         {
@@ -80,9 +95,11 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::collectorThreadFunction()
+    void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupStatusPtr & thread_group)
     {
         setThreadName("Collector");
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
 
         try
         {
@@ -135,9 +152,11 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number)
+    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group)
     {
         setThreadName("Formatter");
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
 
         try
         {
@@ -155,17 +174,23 @@ namespace DB
             unit.segment.resize(0);
 
             auto formatter = internal_formatter_creator(out_buffer);
+            formatter->setRowsReadBefore(first_row_num);
 
             switch (unit.type)
             {
                 case ProcessingUnitType::START :
                 {
-                    formatter->doWritePrefix();
+                    formatter->writePrefix();
                     break;
                 }
                 case ProcessingUnitType::PLAIN :
                 {
                     formatter->consume(std::move(unit.chunk));
+                    break;
+                }
+                case ProcessingUnitType::PLAIN_FINISH :
+                {
+                    formatter->writeSuffix();
                     break;
                 }
                 case ProcessingUnitType::TOTALS :
@@ -175,12 +200,15 @@ namespace DB
                 }
                 case ProcessingUnitType::EXTREMES :
                 {
+                    if (are_totals_written)
+                        formatter->setTotalsAreWritten();
                     formatter->consumeExtremes(std::move(unit.chunk));
                     break;
                 }
                 case ProcessingUnitType::FINALIZE :
                 {
-                    formatter->doWriteSuffix();
+                    formatter->setOutsideStatistics(std::move(unit.statistics));
+                    formatter->finalizeImpl();
                     break;
                 }
             }

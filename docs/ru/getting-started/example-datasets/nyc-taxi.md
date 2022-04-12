@@ -283,7 +283,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 ## Скачивание готовых партиций {#skachivanie-gotovykh-partitsii}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
 $ # убедитесь, что установлены корректные права доступа на файлы
 $ sudo service clickhouse-server restart
@@ -380,7 +380,7 @@ Q3: 0.051 sec.
 Q4: 0.072 sec.
 
 В этом случае, время выполнения запросов определяется в первую очередь сетевыми задержками.
-Мы выполняли запросы с помощью клиента, расположенного в дата-центре Яндекса в Мянтсяля (Финляндия), на кластер в России, что добавляет порядка 20 мс задержки.
+Мы выполняли запросы с помощью клиента, расположенного в другом дата-центре, не там где кластер, что добавляет порядка 20 мс задержки.
 
 ## Резюме {#reziume}
 

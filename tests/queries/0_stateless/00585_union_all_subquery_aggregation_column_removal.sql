@@ -4,14 +4,14 @@ DROP TABLE IF EXISTS transactions;
 CREATE TABLE clicks (domain String) ENGINE = Memory;
 CREATE TABLE transactions (domain String) ENGINE = Memory;
 
-INSERT INTO clicks VALUES ('facebook.com'), ('yandex.ru'), ('google.com');
-INSERT INTO transactions VALUES ('facebook.com'), ('yandex.ru'), ('baidu.com');
+INSERT INTO clicks VALUES ('facebook.com'), ('meta.ua'), ('google.com');
+INSERT INTO transactions VALUES ('facebook.com'), ('meta.ua'), ('baidu.com');
 
 
 SELECT
     sum(total_count) AS total, 
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -36,7 +36,7 @@ FORMAT JSONEachRow;
 SELECT
     sum(total_count) AS total, 
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -63,7 +63,7 @@ SELECT DISTINCT * FROM
 SELECT
     sum(total_count) AS total, 
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -88,7 +88,7 @@ UNION ALL
 SELECT
     sum(total_count) AS total, 
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -116,7 +116,7 @@ SELECT
     sum(total_count) AS total, 
     sum(facebookHits) AS facebook,
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -142,7 +142,7 @@ SELECT
     sum(total_count) AS total, 
     max(facebookHits) AS facebook,
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -170,7 +170,7 @@ SELECT * FROM
 SELECT
     sum(total_count) AS total, 
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -195,7 +195,7 @@ ALL FULL OUTER JOIN
 SELECT
     sum(total_count) AS total, 
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -224,7 +224,7 @@ SELECT total FROM
 SELECT
     sum(total_count) AS total, 
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -249,7 +249,7 @@ ALL FULL OUTER JOIN
 SELECT
     sum(total_count) AS total, 
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -278,7 +278,7 @@ SELECT domain FROM
 SELECT
     sum(total_count) AS total, 
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
@@ -303,7 +303,7 @@ ALL FULL OUTER JOIN
 SELECT
     sum(total_count) AS total, 
     domain
-FROM 
+FROM
 (
     SELECT
         COUNT(*) AS total_count, 
