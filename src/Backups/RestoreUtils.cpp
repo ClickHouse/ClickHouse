@@ -70,9 +70,12 @@ namespace
     private:
         void createDatabase()
         {
-            /// We need to call clone() for `create_query` because the interpreter can decide
-            /// to change a passed AST a little bit.
-            InterpreterCreateQuery create_interpreter{create_query->clone(), context};
+            if (restore_settings->create_database == RestoreDatabaseCreationMode::kMustExist)
+                return;
+
+            auto cloned_create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query->clone());
+            cloned_create_query->if_not_exists = (restore_settings->create_database == RestoreDatabaseCreationMode::kCreateIfNotExists);
+            InterpreterCreateQuery create_interpreter{cloned_create_query, context};
             create_interpreter.execute();
         }
 
@@ -92,7 +95,7 @@ namespace
 
         void checkDatabaseCreateQuery()
         {
-            if (ignore_if_database_def_differs || !restore_settings->throw_if_database_def_differs)
+            if (ignore_if_database_def_differs || restore_settings->allow_different_database_def)
                 return;
 
             getDatabaseCreateQuery();
@@ -153,9 +156,12 @@ namespace
     private:
         void createStorage()
         {
-            /// We need to call clone() for `create_query` because the interpreter can decide
-            /// to change a passed AST a little bit.
-            InterpreterCreateQuery create_interpreter{create_query->clone(), context};
+            if (restore_settings->create_table == RestoreTableCreationMode::kMustExist)
+                return;
+
+            auto cloned_create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query->clone());
+            cloned_create_query->if_not_exists = (restore_settings->create_table == RestoreTableCreationMode::kCreateIfNotExists);
+            InterpreterCreateQuery create_interpreter{cloned_create_query, context};
             create_interpreter.execute();
         }
 
@@ -178,7 +184,7 @@ namespace
 
         void checkStorageCreateQuery()
         {
-            if (!restore_settings->throw_if_table_def_differs)
+            if (restore_settings->allow_different_table_def)
                 return;
 
             getStorageCreateQuery();
@@ -330,7 +336,6 @@ namespace
 
             /// Make a create query for this table.
             auto create_query = renameInCreateQuery(readCreateQueryFromBackup(table_name_));
-            create_query->if_not_exists = !restore_settings.throw_if_table_exists;
 
             CreateTableInfo info;
             info.create_query = create_query;
@@ -415,8 +420,6 @@ namespace
                     create_db_query->setDatabase(database_name_);
                     db_name_in_backup.clear();
                 }
-
-                create_db_query->if_not_exists = !restore_settings.throw_if_database_exists;
 
                 CreateDatabaseInfo info_db;
                 info_db.create_query = create_db_query;

@@ -12,6 +12,21 @@ struct StorageRestoreSettings
 {
 };
 
+/// How the RESTORE command will handle table/database existence.
+enum class RestoreTableCreationMode
+{
+    /// RESTORE TABLE always tries to create a table and it throws an exception if the table already exists.
+    kCreate,
+
+    /// RESTORE TABLE never tries to create a table and it throws an exception if the table doesn't exist.
+    kMustExist,
+
+    /// RESTORE TABLE tries to create a table if it doesn't exist.
+    kCreateIfNotExists,
+};
+
+using RestoreDatabaseCreationMode = RestoreTableCreationMode;
+
 /// Settings specified in the "SETTINGS" clause of a RESTORE query.
 struct RestoreSettings : public StorageRestoreSettings
 {
@@ -27,19 +42,21 @@ struct RestoreSettings : public StorageRestoreSettings
     /// without the data of tables.
     bool structure_only = false;
 
-    /// Whether RESTORE DATABASE must throw an exception if a destination database already exists.
-    bool throw_if_database_exists = true;
+    /// How RESTORE command should work if a table to restore already exists.
+    RestoreTableCreationMode create_table = RestoreTableCreationMode::kCreateIfNotExists;
 
-    /// Whether RESTORE TABLE must throw an exception if a destination table already exists.
-    bool throw_if_table_exists = true;
+    /// How RESTORE command should work if a database to restore already exists.
+    RestoreDatabaseCreationMode create_database = RestoreDatabaseCreationMode::kCreateIfNotExists;
 
-    /// Whether RESTORE DATABASE must throw an exception if a destination database has
-    /// a different definition comparing with the definition read from backup.
-    bool throw_if_database_def_differs = true;
+    /// Normally RESTORE command throws an exception if a destination table exists but has a different definition
+    /// (i.e. create query) comparing with its definition extracted from backup.
+    /// Set `allow_different_table_def` to true to skip this check.
+    bool allow_different_table_def = false;
 
-    /// Whether RESTORE TABLE must throw an exception if a destination table has
-    /// a different definition comparing with the definition read from backup.
-    bool throw_if_table_def_differs = true;
+    /// Normally RESTORE command throws an exception if a destination database exists but has a different definition
+    /// (i.e. create query) comparing with its definition extracted from backup.
+    /// Set `allow_different_database_def` to true to skip this check.
+    bool allow_different_database_def = false;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
 };
