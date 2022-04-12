@@ -20,6 +20,7 @@ ProtobufListInputFormat::ProtobufListInputFormat(ReadBuffer & in_, const Block &
         *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::Yes),
         /* with_length_delimiter = */ true,
         /* with_envelope = */ true,
+        /* google_wrappers_special_treatment = */ true,
          *reader))
 {
 }

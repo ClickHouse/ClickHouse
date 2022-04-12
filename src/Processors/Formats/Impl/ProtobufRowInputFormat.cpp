@@ -20,6 +20,7 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & h
           *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No),
           with_length_delimiter_,
           /* with_envelope = */ false,
+          /* google_wrappers_special_treatment = */ true,
          *reader))
 {
 }

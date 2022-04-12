@@ -23,6 +23,7 @@ ProtobufListOutputFormat::ProtobufListOutputFormat(
           *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::Yes),
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
+          /* google_wrappers_special_treatment = */ true,
           *writer))
 {
 }
