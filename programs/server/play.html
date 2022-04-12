@@ -266,12 +266,25 @@
             color: var(--null-color);
         }
 
+        @keyframes hourglass-animation {
+            0% {
+                transform: rotate(-180deg);
+            }
+            50% {
+                transform: rotate(-180deg);
+            }
+            100% {
+                transform: none;
+            }
+        }
+
         #hourglass
         {
             display: none;
-            padding-left: 1rem;
+            margin-left: 1rem;
             font-size: 110%;
             color: #888;
+            animation: hourglass-animation 1s linear infinite;
         }
 
         #check-mark
@@ -457,7 +470,7 @@
         }
 
         document.getElementById('check-mark').style.display = 'none';
-        document.getElementById('hourglass').style.display = 'inline';
+        document.getElementById('hourglass').style.display = 'inline-block';
 
         xhr.send(query);
     }

@@ -3,6 +3,7 @@
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -139,7 +140,11 @@ void ArrowBlockInputFormat::prepareReader()
     }
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(), "Arrow", format_settings.arrow.import_nested, format_settings.arrow.allow_missing_columns);
+        getPort().getHeader(),
+        "Arrow",
+        format_settings.arrow.import_nested,
+        format_settings.arrow.allow_missing_columns,
+        format_settings.arrow.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     if (stream)
@@ -167,8 +172,9 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
         schema = createFileReader(in, format_settings, is_stopped)->schema();
     }
 
-    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, stream ? "ArrowStream" : "Arrow");
-    return header.getNamesAndTypesList();
+    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
+        *schema, stream ? "ArrowStream" : "Arrow", format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference);
+    return getNamesAndRecursivelyNullableTypes(header);
 }
 
 void registerInputFormatArrow(FormatFactory & factory)
@@ -198,13 +204,13 @@ void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "Arrow",
-        [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+        [](ReadBuffer & buf, const FormatSettings & settings)
         {
             return std::make_shared<ArrowSchemaReader>(buf, false, settings);
         });
     factory.registerSchemaReader(
         "ArrowStream",
-        [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+        [](ReadBuffer & buf, const FormatSettings & settings)
         {
             return std::make_shared<ArrowSchemaReader>(buf, true, settings);
         });}

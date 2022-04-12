@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 
+exec &> >(ts)
 set -x -e
+
+cache_status () {
+    ccache --show-config ||:
+    ccache --show-stats ||:
+}
 
 mkdir -p build/cmake/toolchain/darwin-x86_64
 tar xJf MacOSX11.0.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
@@ -19,15 +25,33 @@ read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 env
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
-ccache --show-config ||:
-ccache --show-stats ||:
+if [ "coverity" == "$COMBINED_OUTPUT" ]
+then
+    mkdir -p /opt/cov-analysis
+
+    wget --post-data "token=$COVERITY_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /opt/cov-analysis --strip-components 1
+    export PATH=$PATH:/opt/cov-analysis/bin
+    cov-configure --config ./coverity.config --template --comptype clangcc --compiler "$CC"
+    SCAN_WRAPPER="cov-build --config ./coverity.config --dir cov-int"
+fi
+
+cache_status
+# clear cache stats
 ccache --zero-stats ||:
 
+# No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-ninja $NINJA_FLAGS clickhouse-bundle
+$SCAN_WRAPPER ninja $NINJA_FLAGS clickhouse-bundle
 
-ccache --show-config ||:
-ccache --show-stats ||:
+cache_status
+
+if [ -n "$MAKE_DEB" ]; then
+  rm -rf /build/packages/root
+  # No quotes because I want it to expand to nothing if empty.
+  # shellcheck disable=SC2086
+  DESTDIR=/build/packages/root ninja $NINJA_FLAGS install
+  bash -x /build/packages/build
+fi
 
 mv ./programs/clickhouse* /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
@@ -77,6 +101,12 @@ then
     mv "$COMBINED_OUTPUT.tgz" /output
 fi
 
+if [ "coverity" == "$COMBINED_OUTPUT" ]
+then
+    tar -cv -I pigz -f "coverity-scan.tgz" cov-int
+    mv "coverity-scan.tgz" /output
+fi
+
 # Also build fuzzers if any sanitizer specified
 # if [ -n "$SANITIZER" ]
 # then
@@ -84,8 +114,7 @@ fi
 #   ../docker/packager/other/fuzzer.sh
 # fi
 
-ccache --show-config ||:
-ccache --show-stats ||:
+cache_status
 
 if [ "${CCACHE_DEBUG:-}" == "1" ]
 then

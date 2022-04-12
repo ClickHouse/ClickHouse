@@ -20,7 +20,7 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
@@ -29,7 +29,7 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     std::optional<ParallelReadingExtension> extension_)
     :
     MergeTreeBaseSelectProcessor{
-        pool_->getHeader(), storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
+        pool_->getHeader(), storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
     thread{thread_},
@@ -103,6 +103,7 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
 
     /// Allows pool to reduce number of threads in case of too slow reads.
     auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info_) { pool->profileFeedback(info_); };
+    const auto & metadata_snapshot = storage_snapshot->metadata;
 
     if (!reader)
     {

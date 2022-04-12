@@ -23,7 +23,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     size_t min_marks_for_concurrent_read_,
     RangesInDataParts && parts_,
     const MergeTreeData & data_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const Names & column_names_,
     const BackoffSettings & backoff_settings_,
@@ -32,7 +32,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     : backoff_settings{backoff_settings_}
     , backoff_state{threads_}
     , data{data_}
-    , metadata_snapshot{metadata_snapshot_}
+    , storage_snapshot{storage_snapshot_}
     , column_names{column_names_}
     , do_not_steal_tasks{do_not_steal_tasks_}
     , predict_block_size_bytes{preferred_block_size_bytes_ > 0}
@@ -146,7 +146,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t min_marks_to_read, size_t
 
 Block MergeTreeReadPool::getHeader() const
 {
-    return metadata_snapshot->getSampleBlockForColumns(column_names, data.getVirtuals(), data.getStorageID());
+    return storage_snapshot->getSampleBlockForColumns(column_names);
 }
 
 void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info)
@@ -192,7 +192,7 @@ void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info
 std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts & parts)
 {
     std::vector<size_t> per_part_sum_marks;
-    Block sample_block = metadata_snapshot->getSampleBlock();
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
     is_part_on_remote_disk.resize(parts.size());
 
     for (const auto i : collections::range(0, parts.size()))
@@ -209,7 +209,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
 
         per_part_sum_marks.push_back(sum_marks);
 
-        auto task_columns = getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info);
+        auto task_columns = getReadTaskColumns(data, storage_snapshot, part.data_part, column_names, prewhere_info);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
             : MergeTreeBaseSelectProcessor::getSizePredictor(part.data_part, task_columns, sample_block);

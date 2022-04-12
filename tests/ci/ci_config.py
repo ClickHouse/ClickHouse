@@ -14,7 +14,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
-            "alien_pkgs": True,
+            "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -23,6 +23,16 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "performance",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "tidy": "disable",
+            "with_coverage": False,
+        },
+        "coverity": {
+            "compiler": "clang-13",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "coverity",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -45,7 +55,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
-            "alien_pkgs": True,
+            "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -190,6 +200,7 @@ CI_CONFIG = {
         "ClickHouse build check (actions)": [
             "package_release",
             "performance",
+            "coverity",
             "package_aarch64",
             "package_asan",
             "package_ubsan",
@@ -206,6 +217,7 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
+            "binary_gcc",
         ],
     },
     "tests_config": {
@@ -347,6 +359,9 @@ CI_CONFIG = {
             "required_build": "package_release",
         },
         "Stateless tests flaky check (address, actions)": {
+            "required_build": "package_asan",
+        },
+        "Stateless tests bugfix validate check (address, actions)": {
             "required_build": "package_asan",
         },
         "ClickHouse Keeper Jepsen (actions)": {

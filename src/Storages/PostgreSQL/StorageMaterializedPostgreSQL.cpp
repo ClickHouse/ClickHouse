@@ -246,8 +246,9 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPt
         return;
 
     replication_handler->shutdownFinal();
+    replication_handler.reset();
 
-    auto nested_table = getNested();
+    auto nested_table = tryGetNested() != nullptr;
     if (nested_table)
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), no_delay);
 }
@@ -270,7 +271,7 @@ bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & colu
 
 Pipe StorageMaterializedPostgreSQL::read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
@@ -279,7 +280,7 @@ Pipe StorageMaterializedPostgreSQL::read(
 {
     auto nested_table = getNested();
 
-    auto pipe = readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
+    auto pipe = readFinalFromNestedStorage(nested_table, column_names,
             query_info, context_, processed_stage, max_block_size, num_streams);
 
     auto lock = lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
