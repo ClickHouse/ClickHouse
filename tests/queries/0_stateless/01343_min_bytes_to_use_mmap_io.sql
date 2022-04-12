@@ -1,3 +1,4 @@
+-- Tags: no-s3-storage
 DROP TABLE IF EXISTS test_01343;
 CREATE TABLE test_01343 (x String) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO test_01343 VALUES ('Hello, world');

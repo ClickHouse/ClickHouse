@@ -3,8 +3,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
+
 
 namespace ProfileEvents
 {
@@ -22,7 +24,7 @@ namespace ErrorCodes
 }
 
 ColumnFunction::ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture, bool is_short_circuit_argument_, bool is_function_compiled_)
-        : size_(size), function(function_), is_short_circuit_argument(is_short_circuit_argument_), is_function_compiled(is_function_compiled_)
+        : elements_size(size), function(function_), is_short_circuit_argument(is_short_circuit_argument_), is_function_compiled(is_function_compiled_)
 {
     appendArguments(columns_to_capture);
 }
@@ -38,15 +40,15 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
 
 ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
 {
-    if (size_ != offsets.size())
+    if (elements_size != offsets.size())
         throw Exception("Size of offsets (" + toString(offsets.size()) + ") doesn't match size of column ("
-                        + toString(size_) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+                        + toString(elements_size) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
         column.column = column.column->replicate(offsets);
 
-    size_t replicated_size = 0 == size_ ? 0 : offsets.back();
+    size_t replicated_size = 0 == elements_size ? 0 : offsets.back();
     return ColumnFunction::create(replicated_size, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
@@ -59,11 +61,45 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
+void ColumnFunction::insertFrom(const IColumn & src, size_t n)
+{
+    const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
+
+    size_t num_captured_columns = captured_columns.size();
+    assert(num_captured_columns == src_func.captured_columns.size());
+
+    for (size_t i = 0; i < num_captured_columns; ++i)
+    {
+        auto mut_column = IColumn::mutate(std::move(captured_columns[i].column));
+        mut_column->insertFrom(*src_func.captured_columns[i].column, n);
+        captured_columns[i].column = std::move(mut_column);
+    }
+
+    ++elements_size;
+}
+
+void ColumnFunction::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+{
+    const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
+
+    size_t num_captured_columns = captured_columns.size();
+    assert(num_captured_columns == src_func.captured_columns.size());
+
+    for (size_t i = 0; i < num_captured_columns; ++i)
+    {
+        auto mut_column = IColumn::mutate(std::move(captured_columns[i].column));
+        mut_column->insertRangeFrom(*src_func.captured_columns[i].column, start, length);
+        captured_columns[i].column = std::move(mut_column);
+    }
+
+    elements_size += length;
+}
+
 ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (size_ != filt.size())
+    if (elements_size != filt.size())
         throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column ("
-                        + toString(size_) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+                        + toString(elements_size) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
@@ -88,7 +124,7 @@ void ColumnFunction::expand(const Filter & mask, bool inverted)
         column.column->assumeMutable()->expand(mask, inverted);
     }
 
-    size_ = mask.size();
+    elements_size = mask.size();
 }
 
 ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
@@ -114,9 +150,9 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
 std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_columns,
                                                       const IColumn::Selector & selector) const
 {
-    if (size_ != selector.size())
+    if (elements_size != selector.size())
         throw Exception("Size of selector (" + toString(selector.size()) + ") doesn't match size of column ("
-                        + toString(size_) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+                        + toString(elements_size) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     std::vector<size_t> counts;
     if (captured_columns.empty())
@@ -230,7 +266,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     if (is_function_compiled)
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
-    res.column = function->execute(columns, res.type, size_);
+    res.column = function->execute(columns, res.type, elements_size);
     return res;
 }
 

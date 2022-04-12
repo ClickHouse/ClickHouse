@@ -58,6 +58,8 @@ using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
 struct MergeListElement;
 using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
 
+struct Settings;
+
 
 /**
  * Since merge is executed with multiple threads, this class
@@ -127,15 +129,15 @@ struct MergeListElement : boost::noncopyable
     MergeListElement(
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
-        UInt64 memory_profiler_step,
-        UInt64 memory_profiler_sample_probability,
-        UInt64 max_untracked_memory_);
+        const Settings & settings);
 
     MergeInfo getInfo() const;
 
     MergeListElement * ptr() { return this; }
 
     ~MergeListElement();
+
+    MergeListElement & ref() { return *this; }
 };
 
 /** Maintains a list of currently running merges.

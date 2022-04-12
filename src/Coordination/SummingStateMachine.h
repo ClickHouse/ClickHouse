@@ -17,9 +17,9 @@ public:
 
     nuraft::ptr<nuraft::buffer> pre_commit(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
-    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override;
+    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override; /// NOLINT
 
-    void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
+    void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {} /// NOLINT
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 

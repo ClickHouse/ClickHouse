@@ -90,7 +90,7 @@ void StorageMongoDB::connectIfNotConnected()
 
 Pipe StorageMongoDB::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -99,12 +99,12 @@ Pipe StorageMongoDB::read(
 {
     connectIfNotConnected();
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     Block sample_block;
     for (const String & column_name : column_names)
     {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
+        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
@@ -117,7 +117,7 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
     StorageMongoDBConfiguration configuration;
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
+        auto [common_configuration, storage_specific_args, _] = named_collection.value();
         configuration.set(common_configuration);
 
         for (const auto & [arg_name, arg_value] : storage_specific_args)
@@ -155,6 +155,8 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
             configuration.options = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
     }
+
+    context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
 
     return configuration;
 }

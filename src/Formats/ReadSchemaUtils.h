@@ -15,16 +15,30 @@ namespace DB
 /// If format doesn't have any schema reader or a schema reader
 /// couldn't determine the schema, an exception will be thrown.
 using ReadBufferCreator = std::function<std::unique_ptr<ReadBuffer>()>;
-ColumnsDescription readSchemaFromFormat(const String & format_name, const std::optional<FormatSettings> & format_settings, ReadBufferCreator read_buffer_creator, ContextPtr context);
+ColumnsDescription readSchemaFromFormat(
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    ReadBufferCreator read_buffer_creator,
+    ContextPtr context);
 
-/// Convert type to the most general type:
-/// - IntN, UIntN, FloatN, Decimal -> Float64
+/// If ReadBuffer is created, it will be written to buf_out.
+ColumnsDescription readSchemaFromFormat(
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    ReadBufferCreator read_buffer_creator,
+    ContextPtr context,
+    std::unique_ptr<ReadBuffer> & buf_out);
+
+/// Make type Nullable recursively:
 /// - Type -> Nullable(type)
 /// - Array(Type) -> Array(Nullable(Type))
 /// - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
 /// - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
 /// - LowCardinality(Type) -> LowCardinality(Nullable(Type))
 /// If type is Nothing or one of the nested types is Nothing, return nullptr.
-DataTypePtr generalizeDataType(DataTypePtr type);
+DataTypePtr makeNullableRecursivelyAndCheckForNothing(DataTypePtr type);
 
+/// Call makeNullableRecursivelyAndCheckForNothing for all types
+/// in the block and return names and types.
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header);
 }

@@ -40,7 +40,12 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
         disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context, disks));
     }
     if (!has_default_disk)
-        disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context->getPath(), 0));
+    {
+        disks.emplace(
+            default_disk_name,
+            std::make_shared<DiskLocal>(
+                default_disk_name, context->getPath(), 0, context, config.getUInt("local_disk_check_period_ms", 0)));
+    }
 }
 
 
@@ -96,7 +101,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         }
 
         writeString(" disappeared from configuration, this change will be applied after restart of ClickHouse", warning);
-        LOG_WARNING(&Poco::Logger::get("DiskSelector"), warning.str());
+        LOG_WARNING(&Poco::Logger::get("DiskSelector"), fmt::runtime(warning.str()));
     }
 
     return result;

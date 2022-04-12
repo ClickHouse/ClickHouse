@@ -19,7 +19,8 @@ struct Settings;
 
 
 #define LIST_OF_COORDINATION_SETTINGS(M) \
-    M(Milliseconds, session_timeout_ms, Coordination::DEFAULT_SESSION_TIMEOUT_MS, "Default client session timeout", 0) \
+    M(Milliseconds, min_session_timeout_ms, Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS, "Min client session timeout", 0) \
+    M(Milliseconds, session_timeout_ms, Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS, "Max client session timeout", 0) \
     M(Milliseconds, operation_timeout_ms, Coordination::DEFAULT_OPERATION_TIMEOUT_MS, "Default client operation timeout", 0) \
     M(Milliseconds, dead_session_check_period_ms, 500, "How often leader will check sessions to consider them dead and remove", 0) \
     M(Milliseconds, heart_beat_interval_ms, 500, "Heartbeat interval between quorum nodes", 0) \
@@ -67,7 +68,7 @@ struct KeeperConfigurationAndSettings
     int tcp_port;
     int tcp_port_secure;
 
-    String four_letter_word_white_list;
+    String four_letter_word_allow_list;
 
     String super_digest;
 

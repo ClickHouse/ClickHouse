@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -65,8 +66,29 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_id_first = arguments[0].column.get();
-        const auto * col_id_second = arguments[1].column.get();
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_id_first = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (!col_id_first)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[0].type->getName(),
+                1,
+                getName());
+        const auto & data_id_first = col_id_first->getData();
+
+        const auto * col_id_second = checkAndGetColumn<ColumnUInt64>(non_const_arguments[1].column.get());
+        if (!col_id_second)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[1].type->getName(),
+                2,
+                getName());
+        const auto & data_id_second = col_id_second->getData();
 
         auto dst = ColumnUInt8::create();
         auto & dst_data = dst->getData();
@@ -74,8 +96,8 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 id_first = col_id_first->getInt(row);
-            const UInt64 id_second = col_id_second->getInt(row);
+            const UInt64 id_first = data_id_first[row];
+            const UInt64 id_second = data_id_second[row];
 
             auto first_cell = S2CellId(id_first);
             auto second_cell = S2CellId(id_second);

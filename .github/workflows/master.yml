@@ -9,26 +9,84 @@ on: # yamllint disable-line rule:truthy
     branches:
       - 'master'
 jobs:
-  DockerHubPush:
+  PythonUnitTests:
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Python unit tests
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 -m unittest discover -s . -p '*_test.py'
+  DockerHubPushAarch64:
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
         run: |
-          cd $GITHUB_WORKSPACE/tests/ci
-          python3 docker_images_check.py
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_images_check.py --suffix aarch64
+      - name: Upload images files to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: changed_images_aarch64
+          path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
+  DockerHubPushAmd64:
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Images check
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_images_check.py --suffix amd64
+      - name: Upload images files to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: changed_images_amd64
+          path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
+  DockerHubPush:
+    needs: [DockerHubPushAmd64, DockerHubPushAarch64, PythonUnitTests]
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Download changed aarch64 images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images_aarch64
+          path: ${{ runner.temp }}
+      - name: Download changed amd64 images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images_amd64
+          path: ${{ runner.temp }}
+      - name: Images check
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/docker_images_check/changed_images.json
+          path: ${{ runner.temp }}/changed_images.json
   StyleCheck:
     needs: DockerHubPush
     runs-on: [self-hosted, style-checker]
+    if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
@@ -36,25 +94,27 @@ jobs:
           TEMP_PATH=${{ runner.temp }}/style_check
           EOF
       - name: Download changed images
+        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
+        continue-on-error: true
         uses: actions/download-artifact@v2
         with:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Style Check
         run: |
-          cd $GITHUB_WORKSPACE/tests/ci
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 style_check.py
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   CompatibilityCheck:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, style-checker]
@@ -68,7 +128,7 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download json reports
@@ -77,19 +137,18 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: CompatibilityCheck
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 compatibility_check.py
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 compatibility_check.py
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   SplitBuildSmokeTest:
     needs: [BuilderDebSplitted]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Set envs
@@ -101,7 +160,7 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download json reports
@@ -110,16 +169,16 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Split build check
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 split_build_smoke_check.py
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 split_build_smoke_check.py
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
@@ -144,7 +203,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -152,22 +211,63 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
+  BuilderDebAarch64:
+    needs: [DockerHubPush]
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=package_aarch64
+          EOF
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/images_path
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'true'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+      - name: Upload build URLs to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_URLS }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderPerformance:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
@@ -189,7 +289,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -197,25 +297,24 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinRelease:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -235,7 +334,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -243,22 +342,67 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+  BuilderBinGCC:
+    needs: [DockerHubPush]
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=binary_gcc
+          EOF
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'true'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+      - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -280,7 +424,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -288,22 +432,22 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebUBsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -325,7 +469,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -333,22 +477,22 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebTsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -370,7 +514,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -378,22 +522,22 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebMsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -415,7 +559,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -423,22 +567,22 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebDebug:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -460,7 +604,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -468,28 +612,27 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
 ##########################################################################################
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
   BuilderDebSplitted:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -509,7 +652,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -517,25 +660,24 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinTidy:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -555,7 +697,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -563,25 +705,24 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinDarwin:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -601,7 +742,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -609,25 +750,24 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinAarch64:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -647,7 +787,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -655,25 +795,24 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinFreeBSD:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -693,7 +832,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -701,25 +840,24 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinDarwinAarch64:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -739,7 +877,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -747,25 +885,24 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinPPC64:
     needs: [DockerHubPush]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -785,7 +922,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -793,29 +930,59 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH $CACHES_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+############################################################################################
+##################################### Docker images  #######################################
+############################################################################################
+  DockerServerImages:
+    needs:
+      - BuilderDebRelease
+      - BuilderDebAarch64
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # otherwise we will have no version info
+      - name: Check docker clickhouse/clickhouse-server building
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_server.py --release-type head
+          python3 docker_server.py --release-type head --no-ubuntu \
+            --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
   BuilderReport:
     needs:
       - BuilderDebRelease
+      - BuilderDebAarch64
       - BuilderBinRelease
+      - BuilderBinGCC
       - BuilderDebAsan
       - BuilderDebTsan
       - BuilderDebUBsan
@@ -825,10 +992,16 @@ jobs:
     steps:
       - name: Set envs
         run: |
+          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
+          ${{ toJSON(needs) }}
+          EOF
+          )
+          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/report_check
-          REPORTS_PATH=${{runner.temp}}/reports_dir
           CHECK_NAME=ClickHouse build check (actions)
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          TEMP_PATH=${{runner.temp}}/report_check
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -836,21 +1009,21 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Report Builder
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cd $GITHUB_WORKSPACE/tests/ci
-          python3 build_report_check.py "$CHECK_NAME"
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   BuilderSpecialReport:
     needs:
       - BuilderBinTidy
@@ -875,21 +1048,21 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Report Builder
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cd $GITHUB_WORKSPACE/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 build_report_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ########################### FUNCTIONAl STATELESS TESTS #######################################
 ##############################################################################################
@@ -912,22 +1085,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestReleaseDatabaseOrdinary:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, func-tester]
@@ -947,22 +1120,92 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
+  FunctionalStatelessTestReleaseS3:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_s3_storage
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (release, s3 storage, actions)
+          REPO_COPY=${{runner.temp}}/stateless_s3_storage/ClickHouse
+          KILL_TIMEOUT=10800
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
+  FunctionalStatelessTestAarch64:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_release
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (aarch64, actions)
+          REPO_COPY=${{runner.temp}}/stateless_release/ClickHouse
+          KILL_TIMEOUT=10800
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestAsan0:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
@@ -984,22 +1227,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestAsan1:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
@@ -1021,22 +1264,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestTsan0:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, func-tester]
@@ -1058,22 +1301,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestTsan1:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, func-tester]
@@ -1095,22 +1338,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestTsan2:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, func-tester]
@@ -1132,22 +1375,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestUBsan:
     needs: [BuilderDebUBsan]
     runs-on: [self-hosted, func-tester]
@@ -1167,22 +1410,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestMsan0:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
@@ -1204,22 +1447,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestMsan1:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
@@ -1241,22 +1484,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestMsan2:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
@@ -1278,22 +1521,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestDebug0:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
@@ -1315,22 +1558,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestDebug1:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
@@ -1352,22 +1595,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestDebug2:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
@@ -1389,22 +1632,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ############################ FUNCTIONAl STATEFUL TESTS #######################################
 ##############################################################################################
@@ -1427,22 +1670,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestReleaseDatabaseOrdinary:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, func-tester]
@@ -1462,22 +1705,57 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
+  FunctionalStatefulTestAarch64:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateful_release
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateful tests (aarch64, actions)
+          REPO_COPY=${{runner.temp}}/stateful_release/ClickHouse
+          KILL_TIMEOUT=3600
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestAsan:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
@@ -1497,22 +1775,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestTsan:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, func-tester]
@@ -1532,22 +1810,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestMsan:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
@@ -1567,22 +1845,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestUBsan:
     needs: [BuilderDebUBsan]
     runs-on: [self-hosted, func-tester]
@@ -1602,22 +1880,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestDebug:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
@@ -1637,22 +1915,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ######################################### STRESS TESTS #######################################
 ##############################################################################################
@@ -1674,22 +1952,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 stress_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   StressTestTsan:
     needs: [BuilderDebTsan]
     # func testers have 16 cores + 128 GB memory
@@ -1712,22 +1990,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 stress_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   StressTestMsan:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, stress-tester]
@@ -1746,22 +2024,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 stress_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   StressTestUBsan:
     needs: [BuilderDebUBsan]
     runs-on: [self-hosted, stress-tester]
@@ -1780,22 +2058,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 stress_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   StressTestDebug:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, stress-tester]
@@ -1814,22 +2092,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 stress_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
@@ -1853,22 +2131,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 integration_test_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   IntegrationTestsAsan1:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
@@ -1889,22 +2167,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 integration_test_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   IntegrationTestsAsan2:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
@@ -1925,22 +2203,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 integration_test_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   IntegrationTestsTsan0:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
@@ -1961,22 +2239,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 integration_test_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   IntegrationTestsTsan1:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
@@ -1997,22 +2275,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 integration_test_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   IntegrationTestsTsan2:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
@@ -2033,22 +2311,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 integration_test_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   IntegrationTestsTsan3:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
@@ -2069,22 +2347,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 integration_test_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   IntegrationTestsRelease0:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
@@ -2105,22 +2383,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 integration_test_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   IntegrationTestsRelease1:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
@@ -2141,22 +2419,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 integration_test_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ##################################### AST FUZZERS ############################################
 ##############################################################################################
@@ -2178,22 +2456,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 ast_fuzzer_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   ASTFuzzerTestTsan:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
@@ -2212,22 +2490,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 ast_fuzzer_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   ASTFuzzerTestUBSan:
     needs: [BuilderDebUBsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
@@ -2246,22 +2524,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 ast_fuzzer_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   ASTFuzzerTestMSan:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
@@ -2280,22 +2558,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 ast_fuzzer_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   ASTFuzzerTestDebug:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, fuzzer-unit-tester]
@@ -2314,22 +2592,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 ast_fuzzer_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
 #############################################################################################
 #################################### UNIT TESTS #############################################
 #############################################################################################
@@ -2351,22 +2629,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 unit_tests_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   UnitTestsReleaseClang:
     needs: [BuilderBinRelease]
     runs-on: [self-hosted, fuzzer-unit-tester]
@@ -2385,22 +2663,56 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 unit_tests_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
+  UnitTestsReleaseGCC:
+    needs: [BuilderBinGCC]
+    runs-on: [self-hosted, fuzzer-unit-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/unit_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Unit tests (release-gcc, actions)
+          REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Unit test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 unit_tests_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   UnitTestsTsan:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
@@ -2419,22 +2731,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 unit_tests_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   UnitTestsMsan:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
@@ -2453,22 +2765,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 unit_tests_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   UnitTestsUBsan:
     needs: [BuilderDebUBsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
@@ -2487,22 +2799,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 unit_tests_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
 #############################################################################################
 #################################### PERFORMANCE TESTS ######################################
 #############################################################################################
@@ -2526,22 +2838,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 performance_comparison_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   PerformanceComparison1:
     needs: [BuilderPerformance]
     runs-on: [self-hosted, stress-tester]
@@ -2562,22 +2874,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 performance_comparison_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   PerformanceComparison2:
     needs: [BuilderPerformance]
     runs-on: [self-hosted, stress-tester]
@@ -2598,22 +2910,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 performance_comparison_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   PerformanceComparison3:
     needs: [BuilderPerformance]
     runs-on: [self-hosted, stress-tester]
@@ -2634,22 +2946,22 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 performance_comparison_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
   FinishCheck:
     needs:
       - DockerHubPush
@@ -2659,6 +2971,7 @@ jobs:
       - FunctionalStatelessTestDebug2
       - FunctionalStatelessTestRelease
       - FunctionalStatelessTestReleaseDatabaseOrdinary
+      - FunctionalStatelessTestAarch64
       - FunctionalStatelessTestAsan0
       - FunctionalStatelessTestAsan1
       - FunctionalStatelessTestTsan0
@@ -2671,6 +2984,8 @@ jobs:
       - FunctionalStatefulTestDebug
       - FunctionalStatefulTestRelease
       - FunctionalStatefulTestReleaseDatabaseOrdinary
+      - FunctionalStatelessTestReleaseS3
+      - FunctionalStatefulTestAarch64
       - FunctionalStatefulTestAsan
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
@@ -2709,10 +3024,10 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Finish label
         run: |
-          cd $GITHUB_WORKSPACE/tests/ci
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py

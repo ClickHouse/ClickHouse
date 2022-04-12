@@ -147,6 +147,7 @@ private:
             AttributeContainerType<Decimal64>,
             AttributeContainerType<Decimal128>,
             AttributeContainerType<Decimal256>,
+            AttributeContainerType<DateTime64>,
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
             AttributeContainerType<UUID>,

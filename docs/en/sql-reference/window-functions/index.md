@@ -3,7 +3,7 @@ toc_priority: 62
 toc_title: Window Functions
 ---
 
-# [experimental] Window Functions
+# Window Functions
 
 ClickHouse supports the standard grammar for defining windows and window functions. The following features are currently supported:
 

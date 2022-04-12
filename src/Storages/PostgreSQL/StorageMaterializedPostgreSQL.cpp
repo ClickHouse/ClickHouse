@@ -87,14 +87,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             *replication_settings,
             /* is_materialized_postgresql_database */false);
 
-    if (!is_attach)
-    {
-        replication_handler->addStorage(remote_table_name, this);
-        /// Start synchronization preliminary setup immediately and throw in case of failure.
-        /// It should be guaranteed that if MaterializedPostgreSQL table was created successfully, then
-        /// its nested table was also created.
-        replication_handler->startSynchronization(/* throw_on_error */ true);
-    }
+    replication_handler->addStorage(remote_table_name, this);
+    replication_handler->startup(/* delayed */is_attach);
 }
 
 
@@ -234,19 +228,6 @@ void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 }
 
 
-void StorageMaterializedPostgreSQL::startup()
-{
-    /// replication_handler != nullptr only in case of single table engine MaterializedPostgreSQL.
-    if (replication_handler && is_attach)
-    {
-        replication_handler->addStorage(remote_table_name, this);
-        /// In case of attach table use background startup in a separate thread. First wait until connection is reachable,
-        /// then check for nested table -- it should already be created.
-        replication_handler->startup();
-    }
-}
-
-
 void StorageMaterializedPostgreSQL::shutdown()
 {
     if (replication_handler)
@@ -265,8 +246,9 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPt
         return;
 
     replication_handler->shutdownFinal();
+    replication_handler.reset();
 
-    auto nested_table = getNested();
+    auto nested_table = tryGetNested() != nullptr;
     if (nested_table)
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), no_delay);
 }
@@ -289,26 +271,32 @@ bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & colu
 
 Pipe StorageMaterializedPostgreSQL::read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams)
 {
-    auto materialized_table_lock = lockForShare(String(), context_->getSettingsRef().lock_acquire_timeout);
     auto nested_table = getNested();
-    return readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
+
+    auto pipe = readFinalFromNestedStorage(nested_table, column_names,
             query_info, context_, processed_stage, max_block_size, num_streams);
+
+    auto lock = lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+    pipe.addTableLock(lock);
+    pipe.addStorageHolder(shared_from_this());
+
+    return pipe;
 }
 
 
 std::shared_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterializedColumnsDeclaration(
-        const String name, const String type, UInt64 default_value)
+        String name, String type, UInt64 default_value)
 {
     auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 
-    column_declaration->name = name;
+    column_declaration->name = std::move(name);
     column_declaration->type = makeASTFunction(type);
 
     column_declaration->default_specifier = "MATERIALIZED";
@@ -395,8 +383,6 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override)
 {
     auto create_table_query = std::make_shared<ASTCreateQuery>();
-    if (table_override)
-        applyTableOverrideToCreateQuery(*table_override, create_table_query.get());
 
     auto table_id = getStorageID();
     create_table_query->setTable(getNestedTableName());
@@ -423,7 +409,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                             table_id.database_name, table_id.table_name);
         }
 
-        if (!table_structure->columns && (!table_override || !table_override->columns))
+        if (!table_structure->physical_columns && (!table_override || !table_override->columns))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns returned for table {}.{}",
                             table_id.database_name, table_id.table_name);
@@ -465,7 +451,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
             }
             else
             {
-                ordinary_columns_and_types = *table_structure->columns;
+                ordinary_columns_and_types = table_structure->physical_columns->columns;
                 columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
             }
 
@@ -475,7 +461,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
         }
         else
         {
-            ordinary_columns_and_types = *table_structure->columns;
+            ordinary_columns_and_types = table_structure->physical_columns->columns;
             columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
         }
 
@@ -485,9 +471,9 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 
         NamesAndTypesList merging_columns;
         if (table_structure->primary_key_columns)
-            merging_columns = *table_structure->primary_key_columns;
+            merging_columns = table_structure->primary_key_columns->columns;
         else
-            merging_columns = *table_structure->replica_identity_columns;
+            merging_columns = table_structure->replica_identity_columns->columns;
 
         order_by_expression->name = "tuple";
         order_by_expression->arguments = std::make_shared<ASTExpressionList>();
@@ -509,11 +495,36 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
         constraints = metadata_snapshot->getConstraints();
     }
 
-    columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_sign", "Int8", 1));
-    columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_version", "UInt64", 1));
-    create_table_query->set(create_table_query->columns_list, columns_declare_list);
-
     create_table_query->set(create_table_query->storage, storage);
+
+    if (table_override)
+    {
+        if (auto * columns = table_override->columns)
+        {
+            if (columns->columns)
+            {
+                for (const auto & override_column_ast : columns->columns->children)
+                {
+                    auto * override_column = override_column_ast->as<ASTColumnDeclaration>();
+                    if (override_column->name == "_sign" || override_column->name == "_version")
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot override _sign and _version column");
+                }
+            }
+        }
+
+        create_table_query->set(create_table_query->columns_list, columns_declare_list);
+
+        applyTableOverrideToCreateQuery(*table_override, create_table_query.get());
+
+        create_table_query->columns_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_sign", "Int8", 1));
+        create_table_query->columns_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_version", "UInt64", 1));
+    }
+    else
+    {
+        columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_sign", "Int8", 1));
+        columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_version", "UInt64", 1));
+        create_table_query->set(create_table_query->columns_list, columns_declare_list);
+    }
 
     /// Add columns _sign and _version, so that they can be accessed from nested ReplacingMergeTree table if needed.
     ordinary_columns_and_types.push_back({"_sign", std::make_shared<DataTypeInt8>()});

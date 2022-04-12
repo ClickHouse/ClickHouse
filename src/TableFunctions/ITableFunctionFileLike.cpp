@@ -53,23 +53,28 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
 
     ASTs & args = args_func.at(0)->children;
 
-    if (args.size() < 2)
-        throw Exception("Table function '" + getName() + "' requires at least 2 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (args.empty())
+        throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-    if (args.size() == 2)
+    if (args.size() > 1)
+        format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (format == "auto")
+        format = FormatFactory::instance().getFormatFromFileName(filename, true);
+
+    if (args.size() <= 2)
     {
         checkIfFormatSupportsAutoStructure(getName(), format);
         return;
     }
 
     if (args.size() != 3 && args.size() != 4)
-        throw Exception("Table function '" + getName() + "' requires 2, 3 or 4 arguments: filename, format, structure (default auto) and compression method (default auto)",
+        throw Exception("Table function '" + getName() + "' requires 1, 2, 3 or 4 arguments: filename, format (default auto), structure (default auto) and compression method (default auto)",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
@@ -90,6 +95,9 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     ColumnsDescription columns;
     if (structure != "auto")
         columns = parseColumnsListFromString(structure, context);
+    else if (!structure_hint.empty())
+        columns = structure_hint;
+
     StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method);
     storage->startup();
     return storage;

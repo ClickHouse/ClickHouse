@@ -35,7 +35,13 @@ namespace ErrorCodes
 namespace
 {
 
-using NamesToTypeNames = std::unordered_map<std::string, std::string>;
+struct AttributeConfiguration
+{
+    std::string type;
+    std::string expression;
+};
+
+using AttributeNameToConfiguration = std::unordered_map<std::string, AttributeConfiguration>;
 
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
@@ -44,6 +50,21 @@ String getFieldAsString(const Field & field)
     if (field.getType() == Field::Types::Which::String)
         return field.get<String>();
     return applyVisitor(FieldVisitorToString(), field);
+}
+
+String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr)
+{
+    if (!dict_attr->expression)
+        return {};
+
+    /// EXPRESSION PROPERTY should be expression or string
+    String expression_str;
+    if (const auto * literal = dict_attr->expression->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+        expression_str = getFieldAsString(literal->value);
+    else
+        expression_str = queryToString(dict_attr->expression);
+
+    return expression_str;
 }
 
 
@@ -63,20 +84,19 @@ void buildLifetimeConfiguration(
     AutoPtr<Element> root,
     const ASTDictionaryLifetime * lifetime)
 {
+    if (!lifetime)
+        return;
 
-    if (lifetime)
-    {
-        AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
-        AutoPtr<Element> min_element(doc->createElement("min"));
-        AutoPtr<Element> max_element(doc->createElement("max"));
-        AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
-        min_element->appendChild(min_sec);
-        AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
-        max_element->appendChild(max_sec);
-        lifetime_element->appendChild(min_element);
-        lifetime_element->appendChild(max_element);
-        root->appendChild(lifetime_element);
-    }
+    AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
+    AutoPtr<Element> min_element(doc->createElement("min"));
+    AutoPtr<Element> max_element(doc->createElement("max"));
+    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
+    min_element->appendChild(min_sec);
+    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
+    max_element->appendChild(max_sec);
+    lifetime_element->appendChild(min_element);
+    lifetime_element->appendChild(max_element);
+    root->appendChild(lifetime_element);
 }
 
 /* Transforms next definition
@@ -105,40 +125,43 @@ void buildLayoutConfiguration(
     AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
     layout_element->appendChild(layout_type_element);
 
-    if (layout->parameters)
+    if (!layout->parameters)
+        return;
+
+    for (const auto & param : layout->parameters->children)
     {
-        for (const auto & param : layout->parameters->children)
+        const ASTPair * pair = param->as<ASTPair>();
+        if (!pair)
         {
-            const ASTPair * pair = param->as<ASTPair>();
-            if (!pair)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary layout parameters must be key/value pairs, got '{}' instead",
-                    param->formatForErrorMessage());
-            }
-
-            const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
-            if (!value_literal)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary layout parameter value must be a literal, got '{}' instead",
-                    pair->second->formatForErrorMessage());
-            }
-
-            const auto value_field = value_literal->value;
-
-            if (value_field.getType() != Field::Types::UInt64
-                && value_field.getType() != Field::Types::String)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
-                    value_field.getTypeName());
-            }
-
-            AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-            AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
-            layout_type_parameter_element->appendChild(value_to_append);
-            layout_type_element->appendChild(layout_type_parameter_element);
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameters must be key/value pairs, got '{}' instead",
+                param->formatForErrorMessage());
         }
+
+        const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
+        if (!value_literal)
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be a literal, got '{}' instead",
+                pair->second->formatForErrorMessage());
+        }
+
+        const auto value_field = value_literal->value;
+
+        if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::String)
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
+                value_field.getTypeName());
+        }
+
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
+        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        layout_type_parameter_element->appendChild(value_to_append);
+        layout_type_element->appendChild(layout_type_parameter_element);
     }
 }
 
@@ -149,10 +172,10 @@ void buildLayoutConfiguration(
  *  <range_min><name>StartDate</name></range_min>
  *  <range_max><name>EndDate</name></range_max>
  */
-void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTDictionaryRange * range, const NamesToTypeNames & all_attrs)
+void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTDictionaryRange * range, const AttributeNameToConfiguration & all_attrs)
 {
     // appends <key><name>value</name></key> to root
-    auto append_element = [&doc, &root](const std::string & key, const std::string & name, const std::string & type)
+    auto append_element = [&doc, &root](const std::string & key, const std::string & name, const AttributeConfiguration & configuration)
     {
         AutoPtr<Element> element(doc->createElement(key));
         AutoPtr<Element> name_node(doc->createElement("name"));
@@ -161,22 +184,33 @@ void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const
         element->appendChild(name_node);
 
         AutoPtr<Element> type_node(doc->createElement("type"));
-        AutoPtr<Text> type_text(doc->createTextNode(type));
+        AutoPtr<Text> type_text(doc->createTextNode(configuration.type));
         type_node->appendChild(type_text);
         element->appendChild(type_node);
+
+        if (!configuration.expression.empty())
+        {
+            AutoPtr<Element> expression_node(doc->createElement("expression"));
+            AutoPtr<Text> expression_text(doc->createTextNode(configuration.expression));
+            expression_node->appendChild(expression_text);
+            element->appendChild(expression_node);
+        }
 
         root->appendChild(element);
     };
 
-    if (!all_attrs.count(range->min_attr_name))
+    auto range_min_attribute_it = all_attrs.find(range->min_attr_name);
+    if (range_min_attribute_it == all_attrs.end())
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-            "MIN ({}) attribute is not defined in the dictionary attributes", range->min_attr_name);
-    if (!all_attrs.count(range->max_attr_name))
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-            "MAX ({}) attribute is not defined in the dictionary attributes", range->max_attr_name);
+            "MIN {} attribute is not defined in the dictionary attributes", range->min_attr_name);
 
-    append_element("range_min", range->min_attr_name, all_attrs.at(range->min_attr_name));
-    append_element("range_max", range->max_attr_name, all_attrs.at(range->max_attr_name));
+    auto range_max_attribute_it = all_attrs.find(range->min_attr_name);
+    if (range_max_attribute_it == all_attrs.end())
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+            "MAX {} attribute is not defined in the dictionary attributes", range->max_attr_name);
+
+    append_element("range_min", range->min_attr_name, range_min_attribute_it->second);
+    append_element("range_max", range->max_attr_name, range_max_attribute_it->second);
 }
 
 
@@ -199,25 +233,14 @@ void buildAttributeExpressionIfNeeded(
     AutoPtr<Element> root,
     const ASTDictionaryAttributeDeclaration * dict_attr)
 {
-    if (dict_attr->expression != nullptr)
-    {
-        AutoPtr<Element> expression_element(doc->createElement("expression"));
+    if (!dict_attr->expression)
+        return;
 
-        /// EXPRESSION PROPERTY should be expression or string
-        String expression_str;
-        if (const auto * literal = dict_attr->expression->as<ASTLiteral>();
-                literal && literal->value.getType() == Field::Types::String)
-        {
-            expression_str = getFieldAsString(literal->value);
-        }
-        else
-            expression_str = queryToString(dict_attr->expression);
-
-
-        AutoPtr<Text> expression(doc->createTextNode(expression_str));
-        expression_element->appendChild(expression);
-        root->appendChild(expression_element);
-    }
+    AutoPtr<Element> expression_element(doc->createElement("expression"));
+    String expression_str = getAttributeExpression(dict_attr);
+    AutoPtr<Text> expression(doc->createTextNode(expression_str));
+    expression_element->appendChild(expression);
+    root->appendChild(expression_element);
 }
 
 /** Transofrms single dictionary attribute to configuration
@@ -373,25 +396,28 @@ void buildPrimaryKeyConfiguration(
 
 /** Transforms list of ASTDictionaryAttributeDeclarations to list of dictionary attributes
   */
-NamesToTypeNames buildDictionaryAttributesConfiguration(
+AttributeNameToConfiguration buildDictionaryAttributesConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTExpressionList * dictionary_attributes,
     const Names & key_columns)
 {
     const auto & children = dictionary_attributes->children;
-    NamesToTypeNames attributes_names_and_types;
+    AttributeNameToConfiguration attributes_name_to_configuration;
+
     for (const auto & child : children)
     {
         const ASTDictionaryAttributeDeclaration * dict_attr = child->as<const ASTDictionaryAttributeDeclaration>();
         if (!dict_attr->type)
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Dictionary attribute must has type");
 
-        attributes_names_and_types.emplace(dict_attr->name, queryToString(dict_attr->type));
+        AttributeConfiguration attribute_configuration {queryToString(dict_attr->type), getAttributeExpression(dict_attr)};
+        attributes_name_to_configuration.emplace(dict_attr->name, std::move(attribute_configuration));
+
         if (std::find(key_columns.begin(), key_columns.end(), dict_attr->name) == key_columns.end())
             buildSingleAttribute(doc, root, dict_attr);
     }
-    return attributes_names_and_types;
+    return attributes_name_to_configuration;
 }
 
 /** Transform function with key-value arguments to configuration
@@ -513,10 +539,10 @@ void checkAST(const ASTCreateQuery & query)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty source");
 }
 
-void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs)
+void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names & key_attrs)
 {
     for (const auto & key_attr : key_attrs)
-        if (all_attrs.count(key_attr) == 0)
+        if (all_attrs.find(key_attr) == all_attrs.end())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown key attribute '{}'", key_attr);
 }
 

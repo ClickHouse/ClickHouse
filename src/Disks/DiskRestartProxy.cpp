@@ -20,11 +20,28 @@ public:
     RestartAwareReadBuffer(const DiskRestartProxy & disk, std::unique_ptr<ReadBufferFromFileBase> impl_)
         : ReadBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
 
-    void prefetch() override { impl->prefetch(); }
+    void prefetch() override
+    {
+        swap(*impl);
+        impl->prefetch();
+        swap(*impl);
+    }
 
-    void setReadUntilPosition(size_t position) override { impl->setReadUntilPosition(position); }
+    void setReadUntilPosition(size_t position) override
+    {
+        swap(*impl);
+        impl->setReadUntilPosition(position);
+        swap(*impl);
+    }
 
-    void setReadUntilEnd() override { impl->setReadUntilEnd(); }
+    void setReadUntilEnd() override
+    {
+        swap(*impl);
+        impl->setReadUntilEnd();
+        swap(*impl);
+    }
+
+    String getInfoForLog() override { return impl->getInfoForLog(); }
 
 private:
     ReadLock lock;
@@ -197,10 +214,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskRestartProxy::readFile(
     return std::make_unique<RestartAwareReadBuffer>(*this, std::move(impl));
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskRestartProxy::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskRestartProxy::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
 {
     ReadLock lock (mutex);
-    auto impl = DiskDecorator::writeFile(path, buf_size, mode);
+    auto impl = DiskDecorator::writeFile(path, buf_size, mode, settings);
     return std::make_unique<RestartAwareWriteBuffer>(*this, std::move(impl));
 }
 
@@ -232,6 +249,12 @@ void DiskRestartProxy::removeSharedFile(const String & path, bool keep_s3)
 {
     ReadLock lock (mutex);
     DiskDecorator::removeSharedFile(path, keep_s3);
+}
+
+void DiskRestartProxy::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+{
+    ReadLock lock (mutex);
+    DiskDecorator::removeSharedFiles(files, keep_in_remote_fs);
 }
 
 void DiskRestartProxy::removeSharedRecursive(const String & path, bool keep_s3)
@@ -280,6 +303,24 @@ bool DiskRestartProxy::checkUniqueId(const String & id) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::checkUniqueId(id);
+}
+
+String DiskRestartProxy::getCacheBasePath() const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getCacheBasePath();
+}
+
+std::vector<String> DiskRestartProxy::getRemotePaths(const String & path) const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getRemotePaths(path);
+}
+
+void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getRemotePathsRecursive(path, paths_map);
 }
 
 void DiskRestartProxy::restart()

@@ -1,5 +1,5 @@
 engine : Memory
-CREATE DATABASE default\nENGINE = Memory()\nCOMMENT \'Test DB with comment\'
+CREATE DATABASE default\nENGINE = Memory\nCOMMENT \'Test DB with comment\'
 comment=	Test DB with comment
 
 engine : Atomic

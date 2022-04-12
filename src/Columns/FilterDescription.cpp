@@ -91,4 +91,14 @@ FilterDescription::FilterDescription(const IColumn & column_)
         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 }
 
+SparseFilterDescription::SparseFilterDescription(const IColumn & column)
+{
+    const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column);
+    if (!column_sparse || !typeid_cast<const ColumnUInt8 *>(&column_sparse->getValuesColumn()))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Illegal type {} of column for sparse filter. Must be Sparse(UInt8)", column.getName());
+
+    filter_indices = &column_sparse->getOffsetsColumn();
+}
+
 }

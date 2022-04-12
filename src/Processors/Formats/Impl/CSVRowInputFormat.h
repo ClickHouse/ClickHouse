@@ -26,6 +26,10 @@ public:
 
     String getName() const override { return "CSVRowInputFormat"; }
 
+protected:
+    explicit CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+                      bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_);
+
 private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
@@ -70,13 +74,12 @@ public:
 class CSVSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
-    CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_, ContextPtr context_);
+    CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_);
 
 private:
     DataTypes readRowAndGetDataTypes() override;
 
     CSVFormatReader reader;
-    ContextPtr context;
 };
 
 }

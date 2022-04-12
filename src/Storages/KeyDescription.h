@@ -76,6 +76,9 @@ struct KeyDescription
 
     /// Substitute modulo with moduloLegacy. Used in KeyCondition to allow proper comparison with keys.
     static bool moduloToModuloLegacyRecursive(ASTPtr node_expr);
+
+    /// Parse description from string
+    static KeyDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
 };
 
 }

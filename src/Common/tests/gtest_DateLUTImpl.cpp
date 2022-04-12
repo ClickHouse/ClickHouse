@@ -79,8 +79,12 @@ FailuresCount countFailures(const ::testing::TestResult & test_result)
 TEST(DateLUTTest, makeDayNumTest)
 {
     const DateLUTImpl & lut = DateLUT::instance("UTC");
-    EXPECT_EQ(0, lut.makeDayNum(2500, 12, 25));
     EXPECT_EQ(0, lut.makeDayNum(1924, 12, 31));
+    EXPECT_EQ(-1, lut.makeDayNum(1924, 12, 31, -1));
+    EXPECT_EQ(-16436, lut.makeDayNum(1925, 1, 1));
+    EXPECT_EQ(0, lut.makeDayNum(1970, 1, 1));
+    EXPECT_EQ(114635, lut.makeDayNum(2283, 11, 11));
+    EXPECT_EQ(114635, lut.makeDayNum(2500, 12, 25));
 }
 
 
@@ -142,6 +146,8 @@ TEST(DateLUTTest, TimeValuesInMiddleOfRange)
     EXPECT_EQ(lut.addYears(time, 10), 1884270011 /*time_t*/);
     EXPECT_EQ(lut.timeToString(time), "2019-09-16 19:20:11" /*std::string*/);
     EXPECT_EQ(lut.dateToString(time), "2019-09-16" /*std::string*/);
+    EXPECT_EQ(lut.toLastDayOfMonth(time), 1569790800 /*time_t*/);
+    EXPECT_EQ(lut.toLastDayNumOfMonth(time), DayNum(18169) /*DayNum*/);
 }
 
 
@@ -202,6 +208,8 @@ TEST(DateLUTTest, TimeValuesAtLeftBoderOfRange)
     EXPECT_EQ(lut.addYears(time, 10), 315532800 /*time_t*/);
     EXPECT_EQ(lut.timeToString(time), "1970-01-01 00:00:00" /*std::string*/);
     EXPECT_EQ(lut.dateToString(time), "1970-01-01" /*std::string*/);
+    EXPECT_EQ(lut.toLastDayOfMonth(time), 2592000 /*time_t*/);
+    EXPECT_EQ(lut.toLastDayNumOfMonth(time), DayNum(30) /*DayNum*/);
 }
 
 TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOldLUT)
@@ -221,7 +229,7 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOldLUT)
 
     EXPECT_EQ(lut.toFirstDayOfWeek(time), 4293820800 /*time_t*/);
     EXPECT_EQ(lut.toFirstDayNumOfWeek(time), DayNum(49697));
-    EXPECT_EQ(lut.toFirstDayOfMonth(time), 4291747200 /*time_t*/); // 2016-01-01
+    EXPECT_EQ(lut.toFirstDayOfMonth(time), 4291747200 /*time_t*/); // 2106-01-01
     EXPECT_EQ(lut.toFirstDayNumOfMonth(time), DayNum(49673));
     EXPECT_EQ(lut.toFirstDayNumOfQuarter(time), DayNum(49673) /*DayNum*/);
     EXPECT_EQ(lut.toFirstDayOfQuarter(time), 4291747200 /*time_t*/);
@@ -264,6 +272,8 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOldLUT)
 
     EXPECT_EQ(lut.timeToString(time), "2106-01-31 01:17:53" /*std::string*/);
     EXPECT_EQ(lut.dateToString(time), "2106-01-31" /*std::string*/);
+    EXPECT_EQ(lut.toLastDayOfMonth(time), 4294339200 /*time_t*/); // 2106-01-01
+    EXPECT_EQ(lut.toLastDayNumOfMonth(time), DayNum(49703));
 }
 
 
