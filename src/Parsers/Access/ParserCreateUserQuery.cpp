@@ -16,7 +16,8 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
-
+#include <openssl/crypto.h>
+#include <openssl/rand.h>
 
 namespace DB
 {
@@ -99,6 +100,7 @@ namespace
             }
 
             String value;
+            String parsed_salt;
             boost::container::flat_set<String> common_names;
             if (expect_password || expect_hash)
             {
@@ -107,6 +109,11 @@ namespace
                     return false;
 
                 value = ast->as<const ASTLiteral &>().value.safeGet<String>();
+
+                if (ParserStringLiteral{}.parse(pos, ast, expected))
+                {
+                    parsed_salt = ast->as<const ASTLiteral &>().value.safeGet<String>();
+                }
             }
             else if (expect_ldap_server_name)
             {
@@ -141,6 +148,25 @@ namespace
             }
 
             auth_data = AuthenticationData{*type};
+            if (type == AuthenticationType::SHA256_PASSWORD)
+            {
+                if (!parsed_salt.empty())
+                {
+                    auth_data.setSalt(parsed_salt);
+                }
+                else if (expect_password)
+                {
+                    ///generate and add salt here
+                    ///random generator FIPS complaint
+                    uint8_t key[32];
+                    RAND_bytes(key, sizeof(key));
+                    String salt;
+                    for (size_t i=0; i< 32; ++i)
+                        salt.append(std::to_string(key[i]));
+                    value.append(salt);
+                    auth_data.setSalt(salt);
+                }
+            }
             if (expect_password)
                 auth_data.setPassword(value);
             else if (expect_hash)
