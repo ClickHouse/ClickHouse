@@ -1,0 +1,8 @@
+(Expression)
+ExpressionTransform
+  (SettingQuotaAndLimits)
+    (ReadFromStorage)
+    AggregatingTransform
+      StrictResize
+        ExpressionTransform
+          SourceFromSingleChunk 0 → 1

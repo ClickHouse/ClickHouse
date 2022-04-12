@@ -1,9 +1,0 @@
-<test>
-    <preconditions>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
-    <settings><max_threads>1</max_threads></settings>
-
-    <!-- FIXME this should have been an EXPLAIN test -->
-    <query>SELECT count(JavaEnable) FROM hits_100m_single WHERE WatchID = 1 OR Title = 'next' OR URL = 'prev' OR OriginalURL = '???' OR 1</query>
-</test>
