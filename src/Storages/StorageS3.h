@@ -58,11 +58,10 @@ public:
 
     using IteratorWrapper = std::function<String()>;
 
-    static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column);
+    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     StorageS3Source(
-        bool need_path,
-        bool need_file,
+        const std::vector<NameAndTypePair> & requested_virtual_columns_,
         const String & format,
         String name_,
         const Block & sample_block,
@@ -74,7 +73,8 @@ public:
         String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
-        std::shared_ptr<IteratorWrapper> file_iterator_);
+        std::shared_ptr<IteratorWrapper> file_iterator_,
+        size_t download_thread_num);
 
     String getName() const override;
 
@@ -101,13 +101,16 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
     /// onCancel and generate can be called concurrently
     std::mutex reader_mutex;
-    bool initialized = false;
-    bool with_file_column = false;
-    bool with_path_column = false;
+    std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IteratorWrapper> file_iterator;
+    size_t download_thread_num = 1;
+
+    Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 
     /// Recreate ReadBuffer and BlockInputStream for each file.
     bool initialize();
+
+    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
 };
 
 /**
@@ -191,6 +194,7 @@ private:
 
     ClientAuthentication client_auth;
     std::vector<String> keys;
+    NamesAndTypesList virtual_columns;
 
     String format_name;
     UInt64 max_single_read_retries;

@@ -18,6 +18,7 @@
     <part_log remove="remove" />
     <crash_log remove="remove" />
     <opentelemetry_span_log remove="remove" />
+    <processors_profile_log remove="remove" />
     <!-- just in case it will be enabled by default -->
     <zookeeper_log remove="remove" />
 </clickhouse>

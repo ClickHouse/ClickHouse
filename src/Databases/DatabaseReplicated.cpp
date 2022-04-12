@@ -461,6 +461,10 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
 BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context)
 {
+
+    if (query_context->getCurrentTransaction() && query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed DDL queries inside transactions are not supported");
+
     if (is_readonly)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
 
@@ -674,7 +678,6 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 LOG_INFO(log, "Marked recovered {} as finished", entry_name);
         }
     }
-    current_zookeeper->set(replica_path + "/log_ptr", toString(max_log_ptr));
 }
 
 std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr)

@@ -9,6 +9,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/DumpASTNode.h>
+#include <Parsers/ASTInterpolateElement.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
@@ -100,20 +101,9 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
 {
     auto columns = select_query->select()->children;
 
-    const auto * group_by_expr_with_alias = dynamic_cast<const ASTWithAlias *>(argument.get());
-    if (group_by_expr_with_alias && !group_by_expr_with_alias->alias.empty())
-    {
-        for (const auto & column : columns)
-        {
-            const auto * col_with_alias = dynamic_cast<const ASTWithAlias *>(column.get());
-            if (col_with_alias)
-            {
-                const auto & alias = col_with_alias->alias;
-                if (!alias.empty() && alias == group_by_expr_with_alias->alias)
-                    return false;
-            }
-        }
-    }
+    const auto * expr_with_alias = dynamic_cast<const ASTWithAlias *>(argument.get());
+    if (expr_with_alias && !expr_with_alias->alias.empty())
+        return false;
 
     const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get());
     if (!ast_literal)
@@ -130,7 +120,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
                         pos, columns.size());
 
     const auto & column = columns[--pos];
-    if (typeid_cast<const ASTIdentifier *>(column.get()))
+    if (typeid_cast<const ASTIdentifier *>(column.get()) || typeid_cast<const ASTLiteral *>(column.get()))
     {
         argument = column->clone();
     }
@@ -1324,7 +1314,9 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
             throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
 
         if (getContext()->getSettingsRef().enable_positional_arguments)
+        {
             replaceForPositionalArguments(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
+        }
     }
 
     getRootActions(select_query->orderBy(), only_types, step.actions());
@@ -1340,6 +1332,38 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
         if (ast->with_fill)
             with_fill = true;
+    }
+
+    if (auto interpolate_list = select_query->interpolate())
+    {
+
+        NameSet select;
+        for (const auto & child : select_query->select()->children)
+            select.insert(child->getAliasOrColumnName());
+
+        /// collect columns required for interpolate expressions -
+        /// interpolate expression can use any available column
+        auto find_columns = [&step, &select](IAST * function)
+        {
+            auto f_impl = [&step, &select](IAST * fn, auto fi)
+            {
+                if (auto * ident = fn->as<ASTIdentifier>())
+                {
+                    /// exclude columns from select expression - they are already available
+                    if (select.count(ident->getColumnName()) == 0)
+                        step.addRequiredOutput(ident->getColumnName());
+                    return;
+                }
+                if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())
+                    for (const auto & ch : fn->children)
+                        fi(ch.get(), fi);
+                return;
+            };
+            f_impl(function, f_impl);
+        };
+
+        for (const auto & interpolate : interpolate_list->children)
+            find_columns(interpolate->as<ASTInterpolateElement>()->expr.get());
     }
 
     if (optimize_read_in_order)
