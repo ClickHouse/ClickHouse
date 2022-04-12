@@ -41,12 +41,13 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , settings(settings_)
     , read_until_position(read_until_position_)
     , remote_file_reader_creator(remote_file_reader_creator_)
+    , is_persistent(settings_.cache_file_as_persistent)
 {
 }
 
 void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
 {
-    file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size));
+    file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, is_persistent));
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -63,7 +64,7 @@ void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
 
 SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getCacheReadBuffer(size_t offset) const
 {
-    auto path = cache->getPathInLocalCache(cache_key, offset);
+    auto path = cache->getPathInLocalCache(cache_key, offset, is_persistent);
     auto buf = std::make_shared<ReadBufferFromFile>(path, settings.local_fs_buffer_size);
     if (buf->size() == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);

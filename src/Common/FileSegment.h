@@ -64,7 +64,7 @@ public:
 
     FileSegment(
         size_t offset_, size_t size_, const Key & key_,
-        IFileCache * cache_, State download_state_);
+        IFileCache * cache_, State download_state_, bool is_persistent_ = false);
 
     State state() const;
 
@@ -90,6 +90,8 @@ public:
     const Key & key() const { return file_key; }
 
     size_t offset() const { return range().left; }
+
+    bool isPersistent() const { return is_persistent; }
 
     State wait();
 
@@ -195,6 +197,8 @@ private:
     std::atomic<bool> is_downloaded{false};
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
+
+    bool is_persistent;
 };
 
 struct FileSegmentsHolder : private boost::noncopyable

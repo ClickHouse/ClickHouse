@@ -34,7 +34,6 @@ const int S3_WARN_MAX_PARTS = 10000;
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 struct WriteBufferFromS3::UploadPartTask

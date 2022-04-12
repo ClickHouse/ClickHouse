@@ -565,6 +565,7 @@ class IColumn;
     M(UInt64, filesystem_cache_max_wait_sec, 5, "Allow to wait at most this number of seconds for download of current remote_fs_buffer_size bytes, and skip cache if exceeded", 0) \
     M(Bool, enable_filesystem_cache_on_write_operations, false, "Write into cache on write operations. To actually work this setting requires be added to disk config too", 0) \
     M(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, "", 0) \
+    M(Bool, filesystem_cache_do_not_evict_index_and_marks_files, true, "", 0) \
     \
     M(UInt64, http_max_tries, 10, "Max attempts to read via http.", 0) \
     M(UInt64, http_retry_initial_backoff_ms, 100, "Min milliseconds for backoff, when retrying read via http", 0) \

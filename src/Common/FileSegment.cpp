@@ -20,7 +20,8 @@ FileSegment::FileSegment(
         size_t size_,
         const Key & key_,
         IFileCache * cache_,
-        State download_state_)
+        State download_state_,
+        bool is_persistent_)
     : segment_range(offset_, offset_ + size_ - 1)
     , download_state(download_state_)
     , file_key(key_)
@@ -30,6 +31,7 @@ FileSegment::FileSegment(
 #else
     , log(&Poco::Logger::get("FileSegment"))
 #endif
+    , is_persistent(is_persistent_)
 {
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
     switch (download_state)
@@ -223,7 +225,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset_, bool fin
                             "Cache writer was finalized (downloaded size: {}, state: {})",
                             downloaded_size, stateToString(download_state));
 
-        auto download_path = cache->getPathInLocalCache(key(), offset());
+        auto download_path = cache->getPathInLocalCache(key(), offset(), is_persistent);
         cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
     }
 
