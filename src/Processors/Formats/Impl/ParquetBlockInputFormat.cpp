@@ -121,10 +121,6 @@ void ParquetBlockInputFormat::prepareReader()
         index += indexes_count;
     }
 }
-ProcessorPtr ParquetBlockInputFormat::getParquetFormat(ReadBuffer & in_, Block header_)
-{
-    return std::make_shared<ParquetBlockInputFormat>(in_, header_);
-}
 
 void registerInputFormatProcessorParquet(FormatFactory &factory)
 {

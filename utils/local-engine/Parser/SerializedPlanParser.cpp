@@ -27,6 +27,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/StorageMergeTreeFactory.h>
+#include <Storages/ParquetRowInputFormat.h>
 #include <Poco/Util/MapConfiguration.h>
 #include <common/logger_useful.h>
 
@@ -562,8 +563,8 @@ DB::Chunk local_engine::BatchParquetFileSource::generate()
 
 
             read_buf = std::move(nested_buffer);
-//            ProcessorPtr format = std::make_shared<local_engine::ParquetRowInputFormat>(*read_buf, header);
-            auto format = DB::ParquetBlockInputFormat::getParquetFormat(*read_buf, header);
+            ProcessorPtr format = std::make_shared<local_engine::ParquetRowInputFormat>(*read_buf, header);
+//            auto format = DB::ParquetBlockInputFormat::getParquetFormat(*read_buf, header);
             pipeline = std::make_unique<QueryPipeline>();
             pipeline->init(Pipe(format));
 

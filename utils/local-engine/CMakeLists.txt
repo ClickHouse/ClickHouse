@@ -175,6 +175,11 @@ target_compile_options(farmhash PRIVATE -fPIC)
 target_compile_options(cityhash PRIVATE -fPIC)
 target_compile_options(liblzma PRIVATE -fPIC)
 target_compile_options(brotli PRIVATE -fPIC)
+target_compile_options(bzip2 PRIVATE -fPIC)
+target_compile_options(stemmer PRIVATE -fPIC)
+target_compile_options(wnb PRIVATE -fPIC)
+target_compile_options(lemmagen PRIVATE -fPIC)
+
 #target_compile_options(zstd PRIVATE -fPIC)
 
 #set(CPACK_PACKAGE_VERSION 0.1.0)
