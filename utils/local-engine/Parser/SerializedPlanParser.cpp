@@ -428,13 +428,16 @@ DB::ActionsDAGPtr local_engine::SerializedPlanParser::parseFunction(
     {
         actions_dag = std::make_shared<ActionsDAG>(blockToNameAndTypeList(input.header));
     }
+    auto function_signature = this->function_mapping.at(std::to_string(rel.scalar_function().function_reference()));
+    auto function_name = getFunctionName(function_signature, rel.scalar_function().output_type());
     DB::ActionsDAG::NodeRawConstPtrs args;
     for (const auto & arg : scalar_function.args())
     {
         if (arg.has_scalar_function())
         {
             std::string arg_name;
-            parseFunction(input, arg, arg_name, actions_dag, false);
+            bool keep_arg = local_engine::FUNCTION_NEED_KEEP_ARGUMENTS.contains(function_name);
+            parseFunction(input, arg, arg_name, actions_dag, keep_arg);
             args.emplace_back(&actions_dag->getNodes().back());
         }
         else
@@ -442,8 +445,6 @@ DB::ActionsDAGPtr local_engine::SerializedPlanParser::parseFunction(
             args.emplace_back(parseArgument(actions_dag, arg));
         }
     }
-    auto function_signature = this->function_mapping.at(std::to_string(rel.scalar_function().function_reference()));
-    auto function_name = getFunctionName(function_signature, rel.scalar_function().output_type());
     if (function_name == "alias")
     {
         result_name = args[0]->result_name;
