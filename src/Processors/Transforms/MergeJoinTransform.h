@@ -1,10 +1,14 @@
 #pragma once
 
+#include <cassert>
 #include <mutex>
 #include <optional>
+#include <utility>
 #include <vector>
 #include <IO/ReadBuffer.h>
 #include <Common/PODArray.h>
+#include "Columns/IColumn.h"
+#include "Core/Field.h"
 #include "Interpreters/IJoin.h"
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
@@ -12,6 +16,7 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <base/logger_useful.h>
 #include <Core/SortCursor.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace Poco { class Logger; }
 
@@ -26,83 +31,141 @@ namespace ErrorCodes
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+class FullMergeJoinCursor;
 
-class MultiCursor
+using FullMergeJoinCursorPtr = std::unique_ptr<FullMergeJoinCursor>;
+
+/*
+ * Wrapper for SortCursorImpl
+ * It is used to keep cursor for list of blocks.
+ */
+class FullMergeJoinCursor : boost::noncopyable
 {
-    void next()
-    {
-    }
-
-    bool isLast()
-    {
-        return false;
-    }
-
-    bool isValid()
-    {
-        return false;
-    }
-
-private:
-    SortDescription desc;
+public:
     struct CursorWithBlock
     {
-        SortCursorImpl impl;
+        CursorWithBlock(const Block & header, const SortDescription & desc_, Chunk && chunk)
+            : input(std::move(chunk))
+            , impl(header, input.getColumns(), desc_)
+        {
+        }
+
         Chunk input;
+        SortCursorImpl impl;
     };
+
+    /*
+    /// Used in any join, instead of storing previous block
+    struct Row
+    {
+        std::vector<ColumnPtr> sort_columns;
+
+        explicit Row(const SortCursorImpl & impl_)
+        {
+            assert(impl_.isValid());
+
+            sort_columns.reserve(impl_.sort_columns.size());
+            for (const auto & col : impl_.sort_columns)
+            {
+                auto new_col = col->cloneEmpty();
+                new_col->insertFrom(*col, impl_.getRow());
+                sort_columns.push_back(std::move(new_col));
+            }
+        }
+
+    };
+    */
 
     using CursorList = std::list<CursorWithBlock>;
     using CursorListIt = CursorList::iterator;
 
-    CursorListIt current;
-    CursorList inputs;
-};
+    explicit FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_)
+        : sample_block(sample_block_)
+        , desc(description_)
+        , current(inputs.end())
+    {
+    }
 
-/*
- * Wrapper for SortCursorImpl
- * It is used to store information about the current state of the cursor.
- */
-class FullMergeJoinCursor
-{
-public:
-
-    FullMergeJoinCursor(const Block & block, const SortDescription & desc);
-
-    SortCursor getCursor();
-
-    bool sameUnitlEnd() const;
-
-    bool ALWAYS_INLINE sameNext() const;
+    void next();
 
     size_t nextDistinct();
 
-    void reset();
+    bool haveAllCurrentRange() const;
+    bool isValid() const;
+    bool isLast() const;
+    bool fullyCompleted() const;
 
-    const Chunk & getCurrentChunk() const;
+    void addChunk(Chunk && chunk)
+    {
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} addChunk {} {} {} {}", __FILE__, __LINE__,
+            bool(chunk),
+            chunk.hasRows(), chunk.getNumRows(),
+            chunk.hasColumns());
 
-    void setInput(IMergingAlgorithm::Input && input);
+        assert(!recieved_all_blocks);
+        if (!chunk)
+        {
+            LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} recieved_all_blocks = true", __FILE__, __LINE__);
+            recieved_all_blocks = true;
+            return;
+        }
 
-    bool fullyCompleted() const { return !impl.isValid() && fully_completed; }
+        dropBlocksUntilCurrent();
+        inputs.emplace_back(sample_block, desc, std::move(chunk));
 
-    SortCursorImpl * operator-> () { return &impl; }
-    const SortCursorImpl * operator-> () const { return &impl; }
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} end {} prev {} size {}; [{}/{};{}]", __FILE__, __LINE__,
+            current == inputs.end(),
+            current == std::prev(inputs.end()),
+            inputs.size(),
+            inputs.back().impl.getRow(),
+            inputs.back().impl.rows,
+            inputs.back().input.getNumRows());
+
+        if (current == inputs.end())
+        {
+
+            current = std::prev(inputs.end());
+            LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} end {} prev {} size {}", __FILE__, __LINE__,
+                current == inputs.end(),
+                current == std::prev(inputs.end()),
+                inputs.size());
+
+        }
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} end {} prev {} size {}", __FILE__, __LINE__,
+            current == inputs.end(),
+            current == std::prev(inputs.end()),
+            inputs.size());
+
+    }
+
+    Chunk detachCurrentChunk();
+
+    const CursorWithBlock & getCurrent() const
+    {
+        assert(current != inputs.end());
+        return *current;
+    }
+
+    SortCursorImpl & getCurrentMutable()
+    {
+        assert(isValid());
+        return current->impl;
+    }
+
+    const ColumnRawPtrs & getSortColumns() const;
+    void dropBlocksUntilCurrent();
 
 private:
-    void resetInternalCursor();
-
-
-
-    SortCursorImpl impl;
-
-    IMergingAlgorithm::Input current_input;
-
-
-    bool fully_completed = false;
 
     Block sample_block;
-    // bool has_left_nullable = false;
-    // bool has_right_nullable = false;
+    SortDescription desc;
+
+    CursorList inputs;
+    CursorListIt current;
+
+    bool recieved_all_blocks = false;
 };
+
 
 /*
  * This class is used to join chunks from two sorted streams.
@@ -119,16 +182,16 @@ public:
 
     void onFinish(double seconds)
     {
-        LOG_TRACE(log, "Finished pocessing {} left and {} right blocks in {} seconds",
-            stat.num_blocks[0],
-            stat.num_blocks[1],
-            seconds);
+        LOG_TRACE(log, "Finished pocessing in {} seconds - left: {} blocks, {} rows; right: {} blocks, {} rows",
+            seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1]);
     }
 
 private:
+    Chunk anyJoin(ASTTableJoin::Kind kind);
+
     std::optional<size_t> required_input = std::nullopt;
 
-    std::vector<FullMergeJoinCursor> cursors;
+    std::vector<FullMergeJoinCursorPtr> cursors;
     std::vector<Chunk> sample_chunks;
 
     JoinPtr table_join;
@@ -136,6 +199,7 @@ private:
     struct Statistic
     {
         size_t num_blocks[2] = {0, 0};
+        size_t num_rows[2] = {0, 0};
     };
     Statistic stat;
 
