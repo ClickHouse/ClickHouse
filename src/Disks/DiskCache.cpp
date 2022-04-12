@@ -20,6 +20,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 class CachedWriteBuffer final : public WriteBufferFromFileDecorator
 {
 public:
@@ -45,7 +50,7 @@ public:
 
         size_t remaining_size = size;
 
-        auto file_segments_holder = cache->setDownloading(key, current_download_offset, size);
+        auto file_segments_holder = cache->setDownloading(key, current_download_offset, size, false);
         auto & file_segments = file_segments_holder.file_segments;
 
         for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end(); ++file_segment_it)
@@ -88,6 +93,13 @@ DiskCache::DiskCache(
 {
 }
 
+static bool isFilePersistent(const String & path)
+{
+    return path.ends_with("idx") // index files.
+            || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") /// mark files.
+            || path.ends_with("txt") || path.ends_with("dat");
+}
+
 std::unique_ptr<ReadBufferFromFileBase> DiskCache::readFile(
     const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
@@ -96,6 +108,9 @@ std::unique_ptr<ReadBufferFromFileBase> DiskCache::readFile(
 
     if (IFileCache::isReadOnly())
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+
+    if (settings.filesystem_cache_do_not_evict_index_and_marks_files && isFilePersistent(path))
+        read_settings.cache_file_as_persistent = true;
 
     return DiskDecorator::readFile(path, read_settings, read_hint, file_size);
 }
@@ -200,13 +215,6 @@ void registerDiskCache(DiskFactory & factory)
 
         FileCacheSettings file_cache_settings;
         file_cache_settings.loadFromConfig(config, config_prefix);
-
-        // auto check_non_relesable_path = [] (const String & path)
-        // {
-        //     return path.ends_with("idx") // index files.
-        //             || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") /// mark files.
-        //             || path.ends_with("txt") || path.ends_with("dat");
-        // };
 
         auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings);
         cache->initialize();

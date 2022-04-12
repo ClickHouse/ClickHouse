@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 static String getDiskMetadataPath(
     const String & name,
     const Poco::Util::AbstractConfiguration & config,

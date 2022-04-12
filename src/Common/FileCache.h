@@ -51,7 +51,7 @@ public:
 
     static Key hash(const String & path);
 
-    String getPathInLocalCache(const Key & key, size_t offset);
+    String getPathInLocalCache(const Key & key, size_t offset, bool is_persistent);
 
     String getPathInLocalCache(const Key & key);
 
@@ -70,9 +70,9 @@ public:
      * As long as pointers to returned file segments are hold
      * it is guaranteed that these file segments are not removed from cache.
      */
-    virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) = 0;
+    virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent) = 0;
 
-    virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) = 0;
+    virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size, bool is_persistent) = 0;
 
     virtual FileSegments getSnapshot() const = 0;
 
@@ -122,11 +122,11 @@ public:
         const String & cache_base_path_,
         const FileCacheSettings & cache_settings_);
 
-    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
+    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent) override;
 
     FileSegments getSnapshot() const override;
 
-    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
+    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size, bool is_persistent) override;
 
     void initialize() override;
 
@@ -151,7 +151,7 @@ private:
         /// Pointer to file segment is always hold by the cache itself.
         /// Apart from pointer in cache, it can be hold by cache users, when they call
         /// getorSet(), but cache users always hold it via FileSegmentsHolder.
-        bool releasable() const { return file_segment.unique(); }
+        bool releasable() const { return file_segment.unique() && !file_segment->isPersistent(); }
 
         size_t size() const { return file_segment->reserved_size; }
 
@@ -181,7 +181,8 @@ private:
 
     FileSegmentCell * addCell(
         const Key & key, size_t offset, size_t size,
-        FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
+        FileSegment::State state, bool is_persistent,
+        std::lock_guard<std::mutex> & cache_lock);
 
     void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
 
@@ -209,7 +210,7 @@ private:
     void loadCacheInfoIntoMemory();
 
     FileSegments splitRangeIntoCells(
-        const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
+        const Key & key, size_t offset, size_t size, FileSegment::State state, bool is_persistent, std::lock_guard<std::mutex> & cache_lock);
 
     String dumpStructureImpl(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
 

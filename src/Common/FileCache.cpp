@@ -45,10 +45,10 @@ IFileCache::Key IFileCache::hash(const String & path)
     return sipHash128(path.data(), path.size());
 }
 
-String IFileCache::getPathInLocalCache(const Key & key, size_t offset)
+String IFileCache::getPathInLocalCache(const Key & key, size_t offset, bool is_persistent)
 {
     auto key_str = keyToStr(key);
-    return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str / std::to_string(offset);
+    return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str / (std::to_string(offset) + (is_persistent ? "_persistent" : ""));
 }
 
 String IFileCache::getPathInLocalCache(const Key & key)
@@ -92,7 +92,7 @@ void LRUFileCache::useCell(
     auto file_segment = cell.file_segment;
 
     if (file_segment->isDownloaded()
-        && fs::file_size(getPathInLocalCache(file_segment->key(), file_segment->offset())) == 0)
+        && fs::file_size(getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->isPersistent())) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot have zero size downloaded file segments. Current file segment: {}",
                         file_segment->range().toString());
@@ -205,7 +205,7 @@ FileSegments LRUFileCache::getImpl(
 }
 
 FileSegments LRUFileCache::splitRangeIntoCells(
-    const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock)
+    const Key & key, size_t offset, size_t size, FileSegment::State state, bool is_persistent, std::lock_guard<std::mutex> & cache_lock)
 {
     assert(size > 0);
 
@@ -221,7 +221,7 @@ FileSegments LRUFileCache::splitRangeIntoCells(
         current_cell_size = std::min(remaining_size, max_file_segment_size);
         remaining_size -= current_cell_size;
 
-        auto * cell = addCell(key, current_pos, current_cell_size, state, cache_lock);
+        auto * cell = addCell(key, current_pos, current_cell_size, state, is_persistent, cache_lock);
         if (cell)
             file_segments.push_back(cell->file_segment);
         assert(cell);
@@ -233,7 +233,7 @@ FileSegments LRUFileCache::splitRangeIntoCells(
     return file_segments;
 }
 
-FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t size)
+FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent)
 {
     assertInitialized();
 
@@ -250,7 +250,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, cache_lock);
+        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, is_persistent, cache_lock);
     }
     else
     {
@@ -295,7 +295,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
             assert(current_pos < segment_range.left);
 
             auto hole_size = segment_range.left - current_pos;
-            file_segments.splice(it, splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
+            file_segments.splice(it, splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, is_persistent, cache_lock));
 
             current_pos = segment_range.right + 1;
             ++it;
@@ -309,7 +309,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
             /// segmentN
 
             auto hole_size = range.right - current_pos + 1;
-            file_segments.splice(file_segments.end(), splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
+            file_segments.splice(file_segments.end(), splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, is_persistent, cache_lock));
         }
     }
 
@@ -318,7 +318,8 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 }
 
 LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
-    const Key & key, size_t offset, size_t size, FileSegment::State state,
+    const Key & key, size_t offset, size_t size,
+    FileSegment::State state, bool is_persistent,
     std::lock_guard<std::mutex> & cache_lock)
 {
     /// Create a file segment cell and put it in `files` map by [key][offset].
@@ -332,7 +333,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
             "Cache already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
             keyToStr(key), offset, size, dumpStructureImpl(key, cache_lock));
 
-    auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, state);
+    auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, state, is_persistent);
     FileSegmentCell cell(std::move(file_segment), queue);
 
     auto & offsets = files[key];
@@ -354,7 +355,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     return &(it->second);
 }
 
-FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, size_t size)
+FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, size_t size, bool is_persistent)
 {
     std::lock_guard cache_lock(mutex);
 
@@ -365,7 +366,7 @@ FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, 
             "Cache cell already exists for key `{}` and offset {}",
             keyToStr(key), offset);
 
-    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, cache_lock);
+    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, is_persistent, cache_lock);
     return FileSegmentsHolder(std::move(file_segments));
 }
 
@@ -534,13 +535,15 @@ void LRUFileCache::remove(
     if (!cell)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
 
+    bool is_persistent_file_segment = cell->file_segment->isPersistent();
+
     if (cell->queue_iterator)
         queue.erase(*cell->queue_iterator);
 
     auto & offsets = files[key];
     offsets.erase(offset);
 
-    auto cache_file_path = getPathInLocalCache(key, offset);
+    auto cache_file_path = getPathInLocalCache(key, offset, is_persistent_file_segment);
     if (fs::exists(cache_file_path))
     {
         try
@@ -588,7 +591,19 @@ void LRUFileCache::loadCacheInfoIntoMemory()
             fs::directory_iterator offset_it{key_it->path()};
             for (; offset_it != fs::directory_iterator(); ++offset_it)
             {
-                bool parsed = tryParse<UInt64>(offset, offset_it->path().filename());
+                auto offset_with_suffix = offset_it->path().filename().string();
+                auto delim_pos = offset_with_suffix.find('_');
+                bool parsed;
+                bool is_persistent = false;
+
+                if (delim_pos == std::string::npos)
+                    parsed = tryParse<UInt64>(offset, offset_with_suffix);
+                else
+                {
+                    parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos+1));
+                    is_persistent = offset_with_suffix.substr(delim_pos) == "persistent";
+                }
+
                 if (!parsed)
                 {
                     LOG_WARNING(log, "Unexpected file: ", offset_it->path().string());
@@ -604,7 +619,7 @@ void LRUFileCache::loadCacheInfoIntoMemory()
 
                 if (tryReserve(key, offset, size, cache_lock))
                 {
-                    auto * cell = addCell(key, offset, size, FileSegment::State::DOWNLOADED, cache_lock);
+                    auto * cell = addCell(key, offset, size, FileSegment::State::DOWNLOADED, is_persistent, cache_lock);
                     if (cell)
                         cells.push_back(cell);
                 }
@@ -685,14 +700,14 @@ void LRUFileCache::reduceSizeToDownloaded(
     if (!cell)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "No cell found for key: {}, offset: {}", keyToStr(key), offset);
 
-    const auto & file_segment = cell->file_segment;
+     auto file_segment = cell->file_segment;
 
     size_t downloaded_size = file_segment->downloaded_size;
     if (downloaded_size == file_segment->range().size())
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                         "Nothing to reduce, file segment fully downloaded, key: {}, offset: {}", keyToStr(key), offset);
 
-    cell->file_segment = std::make_shared<FileSegment>(offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED);
+    cell->file_segment = std::make_shared<FileSegment>(offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, file_segment->isPersistent());
 }
 
 bool LRUFileCache::isLastFileSegmentHolder(
@@ -734,7 +749,7 @@ std::vector<String> LRUFileCache::tryGetCachePaths(const Key & key)
     for (const auto & [offset, cell] : cells_by_offset)
     {
         if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
-            cache_paths.push_back(getPathInLocalCache(key, offset));
+            cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->isPersistent()));
     }
 
     return cache_paths;
