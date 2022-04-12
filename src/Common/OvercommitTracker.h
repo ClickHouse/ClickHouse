@@ -96,7 +96,10 @@ private:
         picked_tracker = nullptr;
         cancellation_state = QueryCancellationState::NONE;
         freed_momory = 0;
+        allow_release = true;
     }
+
+    void releaseThreads();
 
     QueryCancellationState cancellation_state;
 
@@ -110,6 +113,8 @@ private:
     std::mutex & global_mutex;
     Int64 freed_momory;
     Int64 required_memory;
+
+    bool allow_release;
 };
 
 namespace DB

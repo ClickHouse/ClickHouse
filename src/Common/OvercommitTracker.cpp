@@ -15,6 +15,7 @@ OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
     , global_mutex(global_mutex_)
     , freed_momory(0)
     , required_memory(0)
+    , allow_release(true)
 {}
 
 void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
@@ -56,6 +57,8 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
         return true;
     }
 
+    allow_release = true;
+
     required_memory += amount;
     required_per_thread[tracker] = amount;
     bool timeout = !cv.wait_for(lk, max_wait_time, [this, tracker]()
@@ -65,12 +68,22 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
     LOG_DEBUG(getLogger(), "Memory was{} freed within timeout", (timeout ? " not" : ""));
 
     required_memory -= amount;
+    auto still_need = required_per_thread[tracker]; // If enough memory is freed it will be 0
     required_per_thread.erase(tracker);
+
+    // If threads where not released since last call of this method,
+    // we can release them now.
+    if (allow_release && required_memory <= freed_momory)
+    {
+        assert(still_need != 0);
+        releaseThreads();
+    }
+
     // All required amount of memory is free now and selected query to stop doesn't know about it.
     // As we don't need to free memory, we can continue execution of the selected query.
     if (required_memory == 0 && cancellation_state == QueryCancellationState::SELECTED)
         reset();
-    return timeout;
+    return timeout || still_need != 0;
 }
 
 void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
@@ -80,12 +93,7 @@ void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
     {
         freed_momory += amount;
         if (freed_momory >= required_memory)
-        {
-            for (auto & required : required_per_thread)
-                required.second = 0;
-            freed_momory = 0;
-            cv.notify_all();
-        }
+            releaseThreads();
     }
 }
 
@@ -99,6 +107,15 @@ void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
         reset();
         cv.notify_all();
     }
+}
+
+void OvercommitTracker::releaseThreads()
+{
+    for (auto & required : required_per_thread)
+        required.second = 0;
+    freed_momory = 0;
+    allow_release = false; // To avoid repeating call of this method in OvercommitTracker::needToStopQuery
+    cv.notify_all();
 }
 
 UserOvercommitTracker::UserOvercommitTracker(DB::ProcessList * process_list, DB::ProcessListForUser * user_process_list_)

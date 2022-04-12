@@ -295,3 +295,88 @@ TEST(OvercommitTracker, GlobalFreeContinueAndAlloc3)
     GlobalOvercommitTrackerForTest global_overcommit_tracker(&process_list);
     free_continue_and_alloc_2_test(global_overcommit_tracker);
 }
+
+template <typename T>
+void free_continue_2_test(T & overcommit_tracker)
+{
+    overcommit_tracker.setMaxWaitTime(WAIT_TIME);
+
+    static constexpr size_t THREADS = 5;
+    std::vector<MemoryTracker> trackers(THREADS);
+    std::atomic<int> need_to_stop = 0;
+    std::vector<std::thread> threads;
+    threads.reserve(THREADS);
+
+    MemoryTracker picked;
+    overcommit_tracker.setCandidate(&picked);
+
+    for (size_t i = 0; i < THREADS; ++i)
+    {
+        threads.push_back(std::thread([&, i](){
+            if (overcommit_tracker.needToStopQuery(&trackers[i], 100))
+                ++need_to_stop;
+        }));
+    }
+
+    std::thread([&](){
+        overcommit_tracker.tryContinueQueryExecutionAfterFree(300);
+    }).join();
+
+    for (auto & thread : threads)
+    {
+        thread.join();
+    }
+
+    ASSERT_EQ(need_to_stop, 2);
+}
+
+TEST(OvercommitTracker, UserFreeContinue2)
+{
+    ProcessList process_list;
+    ProcessListForUser user_process_list(&process_list);
+    UserOvercommitTrackerForTest user_overcommit_tracker(&process_list, &user_process_list);
+    free_continue_2_test(user_overcommit_tracker);
+}
+
+TEST(OvercommitTracker, GlobalFreeContinue2)
+{
+    ProcessList process_list;
+    GlobalOvercommitTrackerForTest global_overcommit_tracker(&process_list);
+    free_continue_2_test(global_overcommit_tracker);
+}
+
+template <typename T>
+void query_stop_not_continue_test(T & overcommit_tracker)
+{
+    overcommit_tracker.setMaxWaitTime(WAIT_TIME);
+
+    std::atomic<int> need_to_stop = 0;
+
+    MemoryTracker picked;
+    overcommit_tracker.setCandidate(&picked);
+
+    MemoryTracker another;
+    auto thread = std::thread([&](){
+            if (overcommit_tracker.needToStopQuery(&another, 100))
+                ++need_to_stop;
+        });
+    overcommit_tracker.onQueryStop(&picked);
+    thread.join();
+
+    ASSERT_EQ(need_to_stop, 1);
+}
+
+TEST(OvercommitTracker, UserQueryStopNotContinue)
+{
+    ProcessList process_list;
+    ProcessListForUser user_process_list(&process_list);
+    UserOvercommitTrackerForTest user_overcommit_tracker(&process_list, &user_process_list);
+    query_stop_not_continue_test(user_overcommit_tracker);
+}
+
+TEST(OvercommitTracker, GlobalQueryStopNotContinue)
+{
+    ProcessList process_list;
+    GlobalOvercommitTrackerForTest global_overcommit_tracker(&process_list);
+    query_stop_not_continue_test(global_overcommit_tracker);
+}
