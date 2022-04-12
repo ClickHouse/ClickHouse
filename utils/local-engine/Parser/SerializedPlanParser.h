@@ -75,6 +75,8 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"alias", "alias"}
 };
 
+static const std::set<std::string> FUNCTION_NEED_KEEP_ARGUMENTS = {"alias"};
+
 struct QueryContext {
     std::shared_ptr<DB::StorageInMemoryMetadata> metadata;
     std::shared_ptr<local_engine::CustomStorageMergeTree> custom_storage_merge_tree;
