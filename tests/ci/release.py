@@ -10,11 +10,15 @@ from git_helper import commit, release_branch
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     ClickHouseVersion,
+    Git,
     VersionType,
     get_abs_path,
     get_version_from_repo,
     update_cmake_version,
 )
+
+
+git = Git()
 
 
 class Repo:
@@ -53,8 +57,8 @@ class Release:
         self._release_commit = ""
         self.release_commit = release_commit
         self.release_type = release_type
-        self._version = get_version_from_repo()
-        self._git = self._version._git
+        self._git = git
+        self._version = get_version_from_repo(git=self._git)
         self._release_branch = ""
         self._rollback_stack = []  # type: List[str]
 
@@ -75,7 +79,7 @@ class Release:
 
     def read_version(self):
         self._git.update()
-        self.version = get_version_from_repo()
+        self.version = get_version_from_repo(git=self._git)
 
     def check_prerequisites(self):
         """
