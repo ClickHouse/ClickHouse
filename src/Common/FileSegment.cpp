@@ -667,14 +667,6 @@ FileSegmentsHolder::~FileSegmentsHolder()
 
         if (file_segment->detached)
         {
-#ifndef NDEBUG
-            {
-                std::lock_guard cache_lock(cache->mutex);
-                std::lock_guard segment_lock(file_segment->mutex);
-                bool is_last_holder = cache->isLastFileSegmentHolder(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-                assert(is_last_holder);
-            }
-#endif
             file_segment_it = file_segments.erase(current_file_segment_it);
             continue;
         }
