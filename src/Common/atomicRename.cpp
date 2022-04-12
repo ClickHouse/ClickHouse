@@ -1,4 +1,4 @@
-#include <Common/renameat2.h>
+#include <Common/atomicRename.h>
 #include <Common/Exception.h>
 #include <Common/VersionNumber.h>
 #include <Poco/Environment.h>
@@ -55,7 +55,7 @@ namespace ErrorCodes
 namespace DB
 {
 
-static bool supportsRenameat2Impl()
+static bool supportsAtomicRenameImpl()
 {
     VersionNumber renameat2_minimal_version(3, 15, 0);
     VersionNumber linux_version(Poco::Environment::osVersion());
@@ -64,7 +64,7 @@ static bool supportsRenameat2Impl()
 
 static bool renameat2(const std::string & old_path, const std::string & new_path, int flags)
 {
-    if (!supportsRenameat2())
+    if (!supportsAtomicRename())
         return false;
     if (old_path.empty() || new_path.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot rename {} to {}: path is empty", old_path, new_path);
@@ -93,9 +93,69 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
     throwFromErrnoWithPath(fmt::format("Cannot rename {} to {}", old_path, new_path), new_path, ErrorCodes::SYSTEM_ERROR);
 }
 
-bool supportsRenameat2()
+bool supportsAtomicRename()
 {
-    static bool supports = supportsRenameat2Impl();
+    static bool supports = supportsAtomicRenameImpl();
+    return supports;
+}
+
+}
+
+#elif defined(__APPLE__)
+
+// Includes
+#include <dlfcn.h>  // For dlsym
+#include <stdio.h>  // For renamex_np
+#include <string.h> // For stderror
+
+#ifndef RENAME_SWAP
+    #define RENAME_SWAP 0x00000002
+#endif
+#ifndef RENAME_EXCL
+    #define RENAME_EXCL 0x00000004
+#endif
+
+
+#define RENAME_NOREPLACE RENAME_EXCL
+#define RENAME_EXCHANGE RENAME_SWAP
+
+namespace DB
+{
+
+static bool renameat2(const std::string & old_path, const std::string & new_path, int flags)
+{
+    using function_type = int (*)(const char * from, const char * to, unsigned int flags);
+    static function_type fun = reinterpret_cast<function_type>(dlsym(RTLD_DEFAULT, "renamex_np"));
+    if (fun == nullptr)
+        return false;
+
+    if (old_path.empty() || new_path.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot rename {} to {}: path is empty", old_path, new_path);
+
+    if (0 == (*fun)(old_path.c_str(), new_path.c_str(), flags))
+        return true;
+    int errnum = errno;
+
+    if (errnum == ENOTSUP || errnum == EINVAL)
+        return false;
+    if (errnum == EEXIST)
+        throwFromErrno(fmt::format("Cannot rename {} to {} because the second path already exists", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
+    if (errnum == ENOENT)
+        throwFromErrno(fmt::format("Paths cannot be exchanged because {} or {} does not exist", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
+    throwFromErrnoWithPath(
+        fmt::format("Cannot rename {} to {}: {}", old_path, new_path, strerror(errnum)), new_path, ErrorCodes::SYSTEM_ERROR);
+}
+
+
+static bool supportsAtomicRenameImpl()
+{
+    auto fun = dlsym(RTLD_DEFAULT, "renamex_np");
+    return fun != nullptr;
+}
+
+bool supportsAtomicRename()
+{
+    static bool supports = supportsAtomicRenameImpl();
     return supports;
 }
 
@@ -114,7 +174,7 @@ static bool renameat2(const std::string &, const std::string &, int)
     return false;
 }
 
-bool supportsRenameat2()
+bool supportsAtomicRename()
 {
     return false;
 }

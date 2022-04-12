@@ -93,7 +93,7 @@ class Git:
         if value == "":
             return
         if not self._tag_pattern.match(value):
-            raise Exception(f"last tag {value} doesn't match the pattern")
+            raise ValueError(f"last tag {value} doesn't match the pattern")
 
     @property
     def latest_tag(self) -> str:
