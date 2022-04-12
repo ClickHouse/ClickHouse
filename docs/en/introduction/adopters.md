@@ -197,5 +197,6 @@ toc_title: Adopters
 | <a href="https://domclick.ru/" class="favicon">ДомКлик</a> | Real Estate | — | — | — | [Article in Russian, October 2021](https://habr.com/ru/company/domclick/blog/585936/) |
 | <a href="https://magenta-technology.ru/sistema-upravleniya-marshrutami-inkassacii-as-strela/" class="favicon">АС "Стрела"</a> | Transportation | — | — | — | [Job posting, Jan 2022](https://vk.com/topic-111905078_35689124?post=3553) |
 | <a href="https://piwik.pro/" class="favicon">Piwik PRO</a> | Web Analytics | — | — | — | [Official website, Dec 2018](https://piwik.pro/blog/piwik-pro-clickhouse-faster-efficient-reports/) |
-
+| <a href="https://www.wechat.com/" class="favicon">WeChat</a> | Messaging, Social Media | — | — | — | [Blog post in Chinese, Nov 2021](https://mp.weixin.qq.com/s/Hc3p2_Yx1BoSA1mR5kvNWQ) [English version](https://segmentfault.com/a/1190000041017853/en)
+    
 [Original article](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->
