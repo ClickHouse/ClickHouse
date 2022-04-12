@@ -50,6 +50,8 @@ compare "-1::Int64"
 compare "[1,2,3]::Array(Int64)"
 compare "[1,2,cos(1)]"
 compare "[a,b,c]" 0
+compare "[a,b,c]::Array(UInt8)" 0
+
 
 compare "number AS a1, number AS b2, number FROM numbers(10)"
 compare "*[n]" 0
