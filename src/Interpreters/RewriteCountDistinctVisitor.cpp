@@ -34,6 +34,8 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
     auto arg = func->arguments->children;
     if (arg.size() != 1)
         return;
+    if (!arg[0]->as<ASTIdentifier>())
+        return;
     auto column_name = arg[0]->as<ASTIdentifier>()->name();
     func->name = "count";
     func->children.clear();
