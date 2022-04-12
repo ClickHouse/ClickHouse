@@ -201,9 +201,6 @@ void LocalConnection::finishQuery()
 {
     next_packet_type = Protocol::Server::EndOfStream;
 
-    if (!state)
-        return;
-
     if (state->executor)
     {
         state->executor.reset();
