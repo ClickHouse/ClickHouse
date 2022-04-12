@@ -172,6 +172,7 @@ Hierarchy of privileges:
         -   `SYSTEM FLUSH LOGS`
 -   [INTROSPECTION](#grant-introspection)
     -   `addressToLine`
+    -   `addressToLineWithInlines`
     -   `addressToSymbol`
     -   `demangle`
 -   [SOURCES](#grant-sources)
@@ -430,6 +431,7 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 
 -   `INTROSPECTION`. Level: `GROUP`. Aliases: `INTROSPECTION FUNCTIONS`
     -   `addressToLine`. Level: `GLOBAL`
+    -   `addressToLineWithInlines`. Level: `GLOBAL`
     -   `addressToSymbol`. Level: `GLOBAL`
     -   `demangle`. Level: `GLOBAL`
 

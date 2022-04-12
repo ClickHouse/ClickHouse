@@ -410,7 +410,7 @@ Useful for breaking away from a specific network interface.
 **Example**
 
 ``` xml
-<interserver_http_host>example.yandex.ru</interserver_http_host>
+<interserver_http_host>example.clickhouse.com</interserver_http_host>
 ```
 
 ## interserver_https_port {#interserver-https-port}
@@ -430,7 +430,7 @@ Similar to `interserver_http_host`, except that this hostname can be used by oth
 **Example**
 
 ``` xml
-<interserver_https_host>example.yandex.ru</interserver_https_host>
+<interserver_https_host>example.clickhouse.com</interserver_https_host>
 ```
 
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
@@ -1247,7 +1247,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 **Example**
 
 ``` xml
-<timezone>Europe/Moscow</timezone>
+<timezone>Asia/Istanbul</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
@@ -1467,6 +1467,18 @@ The update is performed asynchronously, in a separate system thread.
 
 -   [background_schedule_pool_size](../../operations/settings/settings.md#background_schedule_pool_size)
 
+
+## dns_max_consecutive_failures {#server-settings-dns-max-consecutive-failures}
+
+The number of consecutive failures accepted when updating a DNS cache entry before it is dropped.
+Use `0` to disable cache dropping (entries will only be cleaned by `SYSTEM DROP DNS CACHE`)
+
+**Default value**: 5.
+
+**See also**
+
+-   [`SYSTEM DROP DNS CACHE`](../../sql-reference/statements/system.md#query_language-system-drop-dns-cache)
+
 ## distributed_ddl {#server-settings-distributed_ddl}
 
 Manage executing [distributed ddl queries](../../sql-reference/distributed-ddl.md)  (CREATE, DROP, ALTER, RENAME) on cluster.
@@ -1615,4 +1627,15 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
+
+## global_memory_usage_overcommit_max_wait_microseconds {#global_memory_usage_overcommit_max_wait_microseconds}
+
+Sets maximum waiting time for global overcommit tracker.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `0`.
+
 

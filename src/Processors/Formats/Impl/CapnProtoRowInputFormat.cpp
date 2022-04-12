@@ -310,6 +310,7 @@ void registerInputFormatCapnProto(FormatFactory & factory)
             return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params),
                        FormatSchemaInfo(settings, "CapnProto", true), settings);
         });
+    factory.registerFileExtension("capnp", "CapnProto");
 }
 
 void registerCapnProtoSchemaReader(FormatFactory & factory)

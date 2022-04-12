@@ -14,4 +14,4 @@ services:
         image: mongo:5.0
         restart: always
         ports:
-            - "27018:27017"
+            - ${MONGO_NO_CRED_EXTERNAL_PORT}:${MONGO_NO_CRED_INTERNAL_PORT}

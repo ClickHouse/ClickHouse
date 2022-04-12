@@ -30,3 +30,4 @@ clickhouse-at-percona-live-2019.md 2019/clickhouse-at-percona-live-2019.md
 clickhouse-meetup-in-madrid-on-april-2-2019.md 2019/clickhouse-meetup-in-madrid-on-april-2-2019.md
 clickhouse-meetup-in-beijing-on-june-8-2019.md 2019/clickhouse-meetup-in-beijing-on-june-8-2019.md
 five-methods-for-database-obfuscation.md 2020/five-methods-for-database-obfuscation.md
+2022/admixer-aggregates-over-1-billion-unique-users-a-day-using-clickhouse.md 2022/a-mixer-aggregates-over-1-billion-unique-users-a-day-using-clickhouse.md

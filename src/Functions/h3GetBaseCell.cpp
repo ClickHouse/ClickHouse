@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -49,7 +50,20 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * column = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (!column)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                arguments[0].type->getName(),
+                1,
+                getName());
+
+        const auto & data = column->getData();
 
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
@@ -57,7 +71,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 hindex = col_hindex->getUInt(row);
+            const UInt64 hindex = data[row];
 
             UInt8 res = getBaseCellNumber(hindex);
 

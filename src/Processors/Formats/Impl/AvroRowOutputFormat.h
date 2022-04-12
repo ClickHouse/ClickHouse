@@ -43,7 +43,7 @@ private:
     std::unique_ptr<AvroSerializerTraits> traits;
 };
 
-class AvroRowOutputFormat : public IRowOutputFormat
+class AvroRowOutputFormat final : public IRowOutputFormat
 {
 public:
     AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_);
@@ -57,6 +57,8 @@ private:
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
     virtual void writePrefix() override;
     virtual void writeSuffix() override;
+
+    void createFileWriter();
 
     FormatSettings settings;
     AvroSerializer serializer;

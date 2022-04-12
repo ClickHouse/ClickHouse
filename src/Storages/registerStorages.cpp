@@ -3,6 +3,7 @@
 
 #include <Common/config.h>
 #include "config_core.h"
+#include "config_formats.h"
 
 namespace DB
 {
@@ -34,6 +35,11 @@ void registerStorageCOS(StorageFactory & factory);
 
 #if USE_HDFS
 void registerStorageHDFS(StorageFactory & factory);
+
+#if USE_HIVE
+void registerStorageHive(StorageFactory & factory);
+#endif
+
 #endif
 
 void registerStorageODBC(StorageFactory & factory);
@@ -106,6 +112,11 @@ void registerStorages()
 
     #if USE_HDFS
     registerStorageHDFS(factory);
+
+    #if USE_HIVE
+    registerStorageHive(factory);
+    #endif
+
     #endif
 
     registerStorageODBC(factory);
@@ -121,11 +132,11 @@ void registerStorages()
     registerStorageKafka(factory);
     #endif
 
-#if USE_FILELOG
+    #if USE_FILELOG
     registerStorageFileLog(factory);
-#endif
+    #endif
 
-#if USE_AMQPCPP
+    #if USE_AMQPCPP
     registerStorageRabbitMQ(factory);
     #endif
 

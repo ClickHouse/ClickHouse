@@ -1,3 +1,5 @@
+-- Tags: long
+
 -- { echo }
 
 -- just something basic
@@ -13,10 +15,10 @@ select number, abs(number) over (partition by toString(intDiv(number, 3)) rows u
 select number, avg(number) over (order by number rows unbounded preceding) from numbers(10);
 
 -- no order by
-select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) from numbers(10);
+select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by number rows unbounded preceding) from numbers(10);
 
 -- can add an alias after window spec
-select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) q from numbers(10);
+select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by number rows unbounded preceding) q from numbers(10);
 
 -- can't reference it yet -- the window functions are calculated at the
 -- last stage of select, after all other functions.
@@ -81,14 +83,14 @@ select sum(number) over w1, sum(number) over w2
 from numbers(10)
 window
     w1 as (rows unbounded preceding),
-    w2 as (partition by intDiv(number, 3) rows unbounded preceding)
+    w2 as (partition by intDiv(number, 3) as value order by number rows unbounded preceding)
 ;
 
 -- FIXME both functions should use the same window, but they don't. Add an
 -- EXPLAIN test for this.
 select
     sum(number) over w1,
-    sum(number) over (partition by intDiv(number, 3) rows unbounded preceding)
+    sum(number) over (partition by intDiv(number, 3) as value order by number rows unbounded preceding)
 from numbers(10)
 window
     w1 as (partition by intDiv(number, 3) rows unbounded preceding)
@@ -103,35 +105,35 @@ select sum(number) over () from numbers(3);
 -- interesting corner cases.
 select number, intDiv(number, 3) p, mod(number, 2) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o range unbounded preceding)
+window w as (partition by p order by o, number range unbounded preceding)
 order by number
 settings max_block_size = 5
 ;
 
 select number, intDiv(number, 5) p, mod(number, 3) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o range unbounded preceding)
+window w as (partition by p order by o, number range unbounded preceding)
 order by number
 settings max_block_size = 2
 ;
 
 select number, intDiv(number, 5) p, mod(number, 2) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o range unbounded preceding)
+window w as (partition by p order by o, number range unbounded preceding)
 order by number
 settings max_block_size = 3
 ;
 
 select number, intDiv(number, 3) p, mod(number, 5) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o range unbounded preceding)
+window w as (partition by p order by o, number range unbounded preceding)
 order by number
 settings max_block_size = 2
 ;
 
 select number, intDiv(number, 2) p, mod(number, 5) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o range unbounded preceding)
+window w as (partition by p order by o, number range unbounded preceding)
 order by number
 settings max_block_size = 3
 ;
@@ -349,7 +351,7 @@ select number, p, o,
     row_number() over w
 from (select number, intDiv(number, 5) p, mod(number, 3) o
     from numbers(31) order by o, number) t
-window w as (partition by p order by o)
+window w as (partition by p order by o, number)
 order by p, o, number
 settings max_block_size = 2;
 
@@ -442,6 +444,26 @@ from (
     from numbers_mt(10000)
 ) settings max_block_size = 7;
 
+-- a test with aggregate function which is -state type
+select bitmapCardinality(bs)
+from
+    (
+        select groupBitmapMergeState(bm) over (order by k asc rows between unbounded preceding and current row) as bs
+        from
+            (
+                select
+                    groupBitmapState(number) as bm, k
+                from
+                    (
+                        select
+                            number,
+                            number % 3 as k
+                        from numbers(3)
+                    )
+                group by k
+            )
+    );
+
 -- -INT_MIN row offset that can lead to problems with negation, found when fuzzing
 -- under UBSan. Should be limited to at most INT_MAX.
 select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
@@ -456,7 +478,7 @@ select count() over () where null;
 select number, count() over (w1 rows unbounded preceding) from numbers(10)
 window
     w0 as (partition by intDiv(number, 5) as p),
-    w1 as (w0 order by mod(number, 3) as o)
+    w1 as (w0 order by mod(number, 3) as o, number)
 order by p, o, number
 ;
 

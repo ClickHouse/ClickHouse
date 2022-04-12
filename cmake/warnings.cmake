@@ -55,11 +55,6 @@ if (COMPILER_CLANG)
         no_warning(weak-template-vtables)
         no_warning(weak-vtables)
 
-        # XXX: libstdc++ has some of these for 3way compare
-        if (NOT USE_LIBCXX)
-            no_warning(zero-as-null-pointer-constant)
-        endif()
-
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     else ()
         add_warning(comma)
@@ -98,10 +93,7 @@ if (COMPILER_CLANG)
         add_warning(tautological-bitwise-compare)
 
         # XXX: libstdc++ has some of these for 3way compare
-        if (USE_LIBCXX)
-            add_warning(zero-as-null-pointer-constant)
-        endif()
-
+        add_warning(zero-as-null-pointer-constant)
     endif ()
 elseif (COMPILER_GCC)
     # Add compiler options only to c++ compiler
@@ -183,11 +175,8 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wundef)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
-    # XXX: libstdc++ has some of these for 3way compare
-    if (USE_LIBCXX)
-        # Warn when a literal 0 is used as null pointer constant.
-        add_cxx_compile_options(-Wzero-as-null-pointer-constant)
-    endif()
+    # Warn when a literal 0 is used as null pointer constant.
+    add_cxx_compile_options(-Wzero-as-null-pointer-constant)
 
     if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
         # XXX: gcc10 stuck with this option while compiling GatherUtils code

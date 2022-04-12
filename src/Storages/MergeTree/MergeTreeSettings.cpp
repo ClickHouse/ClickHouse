@@ -122,7 +122,7 @@ void MergeTreeSettings::sanityCheck(const Settings & query_settings) const
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 150: {}",
+            "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 1024: {}",
             min_bytes_to_rebalance_partition_over_jbod,
             max_bytes_to_merge_at_max_space_in_pool / 1024);
     }

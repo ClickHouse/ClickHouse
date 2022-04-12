@@ -22,17 +22,19 @@ public:
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
-    bool supportsPrewhere() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsPrewhere() const override { return true; }
+
+    bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -75,6 +77,9 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
+    template <typename F>
+    void forEachTable(F && func) const;
+
     DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
 
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
@@ -111,7 +116,7 @@ protected:
     using Aliases = std::vector<AliasData>;
 
     Pipe createSources(
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         const QueryProcessingStage::Enum & processed_stage,
         UInt64 max_block_size,

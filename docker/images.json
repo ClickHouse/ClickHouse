@@ -7,7 +7,6 @@
         "name": "clickhouse/binary-builder",
         "dependent": [
             "docker/test/split_build_smoke_test",
-            "docker/test/pvs",
             "docker/test/codebrowser"
         ]
     },
@@ -29,10 +28,6 @@
     },
     "docker/test/performance-comparison": {
         "name": "clickhouse/performance-comparison",
-        "dependent": []
-    },
-    "docker/test/pvs": {
-        "name": "clickhouse/pvs-test",
         "dependent": []
     },
     "docker/test/util": {
@@ -72,6 +67,7 @@
         "dependent": []
     },
     "docker/test/integration/runner": {
+        "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
         "dependent": []
     },
@@ -124,6 +120,7 @@
         "dependent": []
     },
     "docker/test/integration/kerberos_kdc": {
+        "only_amd64": true,
         "name": "clickhouse/kerberos-kdc",
         "dependent": []
     },
@@ -137,6 +134,7 @@
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
+        "only_amd64": true,
         "name": "clickhouse/kerberized-hadoop",
         "dependent": []
     },

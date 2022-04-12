@@ -8,6 +8,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Storages/StorageExternalDistributed.h>
+#include <Formats/FormatFactory.h>
 
 
 namespace DB
@@ -50,6 +51,8 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
 
         filename = configuration.url;
         format = configuration.format;
+        if (format == "auto")
+            format = FormatFactory::instance().getFormatFromFileName(filename, true);
         structure = configuration.structure;
         compression_method = configuration.compression_method;
     }

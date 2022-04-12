@@ -28,6 +28,7 @@
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <boost/functional/hash.hpp>
+#include <base/sort.h>
 
 
 namespace DB
@@ -299,7 +300,7 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
 {
     null_as_default = null_as_default_;
 
-    std::sort(replaced_literals.begin(), replaced_literals.end(), [](const LiteralInfo & a, const LiteralInfo & b)
+    ::sort(replaced_literals.begin(), replaced_literals.end(), [](const LiteralInfo & a, const LiteralInfo & b)
     {
         return a.literal->begin.value() < b.literal->begin.value();
     });

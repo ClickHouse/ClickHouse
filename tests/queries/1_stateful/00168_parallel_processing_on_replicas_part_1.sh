@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan
+# Tags: no-tsan, no-random-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -68,8 +68,8 @@ do
     TESTNAME_RESULT="/tmp/result_$TESTNAME"
     NEW_TESTNAME_RESULT="/tmp/result_dist_$TESTNAME"
 
-    $CLICKHOUSE_CLIENT $SETTINGS -nm --testmode < $TESTPATH > $TESTNAME_RESULT
-    $CLICKHOUSE_CLIENT $SETTINGS -nm --testmode < $NEW_TESTNAME > $NEW_TESTNAME_RESULT
+    $CLICKHOUSE_CLIENT $SETTINGS -nm < $TESTPATH > $TESTNAME_RESULT
+    $CLICKHOUSE_CLIENT $SETTINGS -nm < $NEW_TESTNAME > $NEW_TESTNAME_RESULT
 
     expected=$(cat $TESTNAME_RESULT | md5sum)
     actual=$(cat $NEW_TESTNAME_RESULT | md5sum)

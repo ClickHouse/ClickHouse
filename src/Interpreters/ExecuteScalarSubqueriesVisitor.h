@@ -19,11 +19,8 @@ struct ASTTableExpression;
     *
     * Features
     *
-    * A replacement occurs during query analysis, and not during the main runtime.
-    * This means that the progress indicator will not work during the execution of these requests,
-    *  and also such queries can not be aborted.
-    *
-    * But the query result can be used for the index in the table.
+    * A replacement occurs during query analysis, and not during the main runtime, so
+    * the query result can be used for the index in the table.
     *
     * Scalar subqueries are executed on the request-initializer server.
     * The request is sent to remote servers with already substituted constants.
@@ -37,6 +34,7 @@ public:
     {
         size_t subquery_depth;
         Scalars & scalars;
+        Scalars & local_scalars;
         bool only_analyze;
     };
 

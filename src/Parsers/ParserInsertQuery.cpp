@@ -116,7 +116,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Check if file is a source of data.
     if (s_from_infile.ignore(pos, expected))
     {
-        /// Read its name to process it later
+        /// Read file name to process it later
         if (!infile_name_p.parse(pos, infile, expected))
             return false;
 
@@ -130,10 +130,20 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    Pos before_values = pos;
-    String format_str;
+    /// Read SETTINGS if they are defined
+    if (s_settings.ignore(pos, expected))
+    {
+        /// Settings are written like SET query, so parse them with ParserSetQuery
+        ParserSetQuery parser_settings(true);
+        if (!parser_settings.parse(pos, settings_ast, expected))
+            return false;
+    }
 
-    /// VALUES or FROM INFILE or FORMAT or SELECT
+    String format_str;
+    Pos before_values = pos;
+
+    /// VALUES or FORMAT or SELECT or WITH or WATCH.
+    /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
     if (!infile && s_values.ignore(pos, expected))
     {
         /// If VALUES is defined in query, everything except setting will be parsed as data
@@ -162,31 +172,43 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_watch.ignore(pos, expected))
+    else if (!infile && s_watch.ignore(pos, expected))
     {
         /// If WATCH is defined, return to position before WATCH and parse
         /// rest of query as WATCH query.
         pos = before_values;
         ParserWatchQuery watch_p;
         watch_p.parse(pos, watch, expected);
-
-        /// FORMAT section is expected if we have input() in SELECT part
-        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
-            return false;
     }
-    else
+    else if (!infile)
     {
-        /// If all previous conditions were false, query is incorrect
+        /// If all previous conditions were false and it's not FROM INFILE, query is incorrect
         return false;
     }
 
-    /// Read SETTINGS if they are defined
-    if (s_settings.ignore(pos, expected))
+    /// Read SETTINGS after FORMAT.
+    ///
+    /// Note, that part of SETTINGS can be interpreted as values,
+    /// hence it is done only under option.
+    ///
+    /// Refs: https://github.com/ClickHouse/ClickHouse/issues/35100
+    if (allow_settings_after_format_in_insert && s_settings.ignore(pos, expected))
     {
+        if (settings_ast)
+            throw Exception("You have SETTINGS before and after FORMAT, "
+                            "this is not allowed. "
+                            "Consider switching to SETTINGS before FORMAT "
+                            "and disable allow_settings_after_format_in_insert.",
+                            ErrorCodes::SYNTAX_ERROR);
+
         /// Settings are written like SET query, so parse them with ParserSetQuery
         ParserSetQuery parser_settings(true);
         if (!parser_settings.parse(pos, settings_ast, expected))
             return false;
+        /// In case of INSERT INTO ... VALUES SETTINGS ... (...), (...), ...
+        /// we should move data pointer after all settings.
+        if (data != nullptr)
+            data = pos->begin;
     }
 
     if (select)

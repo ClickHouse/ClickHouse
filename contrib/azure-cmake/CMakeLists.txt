@@ -1,3 +1,10 @@
+option (ENABLE_AZURE_BLOB_STORAGE "Enable Azure blob storage" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_AZURE_BLOB_STORAGE)
+    message(STATUS "Not using Azure blob storage")
+    return()
+endif()
+
 set(AZURE_DIR "${ClickHouse_SOURCE_DIR}/contrib/azure")
 set(AZURE_SDK_LIBRARY_DIR "${AZURE_DIR}/sdk")
 
@@ -43,10 +50,10 @@ set(AZURE_SDK_INCLUDES
 
 include("${AZURE_DIR}/cmake-modules/AzureTransportAdapters.cmake")
 
-add_library(azure_sdk ${AZURE_SDK_UNIFIED_SRC})
+add_library(_azure_sdk ${AZURE_SDK_UNIFIED_SRC})
 
 if (COMPILER_CLANG)
-    target_compile_options(azure_sdk PRIVATE
+    target_compile_options(_azure_sdk PRIVATE
         -Wno-deprecated-copy-dtor
         -Wno-extra-semi
         -Wno-suggest-destructor-override
@@ -55,20 +62,22 @@ if (COMPILER_CLANG)
     )
 
     if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
-        target_compile_options(azure_sdk PRIVATE -Wno-reserved-identifier)
+        target_compile_options(_azure_sdk PRIVATE -Wno-reserved-identifier)
     endif()
 endif()
 
 # Originally, on Windows azure-core is built with bcrypt and crypt32 by default
-if (OPENSSL_FOUND)
-    target_link_libraries(azure_sdk PRIVATE ${OPENSSL_LIBRARIES})
+if (TARGET OpenSSL::SSL)
+    target_link_libraries(_azure_sdk PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()
 
 # Originally, on Windows azure-core is built with winhttp by default
-if (CURL_FOUND)
-    target_link_libraries(azure_sdk PRIVATE ${CURL_LIBRARY})
+if (TARGET ch_contrib::curl)
+    target_link_libraries(_azure_sdk PRIVATE ch_contrib::curl)
 endif()
 
-target_link_libraries(azure_sdk PRIVATE ${LIBXML2_LIBRARIES})
+target_link_libraries(_azure_sdk PRIVATE ch_contrib::libxml2)
 
-target_include_directories(azure_sdk SYSTEM PUBLIC ${AZURE_SDK_INCLUDES})
+target_include_directories(_azure_sdk SYSTEM BEFORE PUBLIC ${AZURE_SDK_INCLUDES})
+
+add_library(ch_contrib::azure_sdk ALIAS _azure_sdk)

@@ -48,6 +48,7 @@ void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory &);
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
+void registerAggregateFunctionMeanZTest(AggregateFunctionFactory &);
 void registerAggregateFunctionCramersV(AggregateFunctionFactory &);
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory &);
 void registerAggregateFunctionContingency(AggregateFunctionFactory &);
@@ -58,6 +59,7 @@ void registerAggregateFunctionNothing(AggregateFunctionFactory &);
 void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory &);
 void registerAggregateFunctionSparkbar(AggregateFunctionFactory &);
 void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
+void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -123,11 +125,13 @@ void registerAggregateFunctions()
         registerAggregateFunctionSequenceNextNode(factory);
         registerAggregateFunctionWelchTTest(factory);
         registerAggregateFunctionStudentTTest(factory);
+        registerAggregateFunctionMeanZTest(factory);
         registerAggregateFunctionNothing(factory);
         registerAggregateFunctionSingleValueOrNull(factory);
         registerAggregateFunctionIntervalLengthSum(factory);
         registerAggregateFunctionExponentialMovingAverage(factory);
         registerAggregateFunctionSparkbar(factory);
+        registerAggregateFunctionGroupArraySorted(factory);
 
         registerWindowFunctions(factory);
     }

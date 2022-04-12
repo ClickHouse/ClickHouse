@@ -16,7 +16,6 @@ Checks: '-*,
     modernize-make-unique,
     modernize-raw-string-literal,
     modernize-redundant-void-arg,
-    modernize-replace-auto-ptr,
     modernize-replace-random-shuffle,
     modernize-use-bool-literals,
     modernize-use-nullptr,
@@ -33,6 +32,8 @@ Checks: '-*,
     performance-no-automatic-move,
     performance-trivially-destructible,
     performance-unnecessary-copy-initialization,
+    performance-noexcept-move-constructor,
+    performance-move-const-arg,
 
     readability-avoid-const-params-in-decls,
     readability-const-return-type,
@@ -142,6 +143,8 @@ Checks: '-*,
     clang-analyzer-cplusplus.PlacementNewChecker,
     clang-analyzer-cplusplus.SelfAssignment,
     clang-analyzer-deadcode.DeadStores,
+    clang-analyzer-cplusplus.Move,
+    clang-analyzer-optin.cplusplus.UninitializedObject,
     clang-analyzer-optin.cplusplus.VirtualCall,
     clang-analyzer-security.insecureAPI.UncheckedReturn,
     clang-analyzer-security.insecureAPI.bcmp,
@@ -161,6 +164,8 @@ Checks: '-*,
     clang-analyzer-unix.cstring.NullArg,
 
     boost-use-to-string,
+
+    alpha.security.cert.env.InvalidPtr,
 '
 WarningsAsErrors: '*'
 
@@ -205,3 +210,8 @@ CheckOptions:
     value: CamelCase
   - key: modernize-loop-convert.UseCxx20ReverseRanges
     value: false
+  - key: performance-move-const-arg.CheckTriviallyCopyableMove
+    value: false
+    # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097
+  - key: readability-identifier-naming.TypeTemplateParameterIgnoredRegexp
+    value: expr-type
