@@ -73,11 +73,8 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
 
     // If threads where not released since last call of this method,
     // we can release them now.
-    if (allow_release && required_memory <= freed_momory)
-    {
-        assert(still_need != 0);
+    if (allow_release && required_memory <= freed_momory && still_need != 0)
         releaseThreads();
-    }
 
     // All required amount of memory is free now and selected query to stop doesn't know about it.
     // As we don't need to free memory, we can continue execution of the selected query.
