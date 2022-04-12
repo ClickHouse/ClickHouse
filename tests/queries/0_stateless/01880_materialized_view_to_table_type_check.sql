@@ -8,8 +8,6 @@ CREATE TABLE test(`id` Int32, `pv` AggregateFunction(sum, Int32)) ENGINE = Aggre
 
 CREATE MATERIALIZED VIEW test_mv to test(`id` Int32, `pv` AggregateFunction(sum, Int32)) as SELECT id, sumState(1) as pv from test_input group by id; -- { serverError 70 } 
 
-DROP VIEW test_mv;
-
 INSERT INTO test_input SELECT toInt32(number % 1000) AS id FROM numbers(10);
 select '----------test--------:';
 select * from test;
