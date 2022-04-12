@@ -216,6 +216,7 @@ void LocalConnection::finishQuery()
 
     state->io.onFinish();
     state.reset();
+    last_sent_snapshots.clear();
 }
 
 bool LocalConnection::poll(size_t)

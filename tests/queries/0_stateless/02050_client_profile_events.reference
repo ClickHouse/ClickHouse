@@ -7,6 +7,9 @@ regression test for incorrect filtering out snapshots
 regression test for overlap profile events snapshots between queries
 [ 0 ] SelectedRows: 1 (increment)
 [ 0 ] SelectedRows: 1 (increment)
+regression test for overlap profile events snapshots between queries (clickhouse-local)
+[ 0 ] SelectedRows: 1 (increment)
+[ 0 ] SelectedRows: 1 (increment)
 print everything
 OK
 print each 100 ms

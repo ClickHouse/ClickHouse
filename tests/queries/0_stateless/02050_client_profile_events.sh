@@ -17,6 +17,9 @@ echo $?
 echo 'regression test for overlap profile events snapshots between queries'
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1 -n -q 'select 1; select 1' |& grep -F -o '[ 0 ] SelectedRows: 1 (increment)'
 
+echo 'regression test for overlap profile events snapshots between queries (clickhouse-local)'
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 -n -q 'select 1; select 1' |& grep -F -o '[ 0 ] SelectedRows: 1 (increment)'
+
 echo 'print everything'
 profile_events="$($CLICKHOUSE_CLIENT --max_block_size 1 --print-profile-events -q 'select sleep(1) from numbers(2) format Null' |& grep -c 'SelectedRows')"
 test "$profile_events" -gt 1 && echo OK || echo "FAIL ($profile_events)"
