@@ -8,7 +8,6 @@ SCHEMADIR=$CURDIR/format_schemas
 
 set -eo pipefail
 
-CLICKHOUSE_CLIENT="/home/jk/work/tools/ClickHouse/build/programs/${CLICKHOUSE_CLIENT}"
 BINARY_FILE_PATH=$(mktemp "$CURDIR/02266_protobuf_format_google_wrappers.XXXXXX.binary")
 
 # Run the client.
