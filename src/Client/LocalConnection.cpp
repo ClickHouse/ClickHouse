@@ -323,6 +323,21 @@ bool LocalConnection::poll(size_t)
         }
     }
 
+    if (state->is_finished && !state->sent_profile_events)
+    {
+        state->sent_profile_events = true;
+
+        if (send_profile_events && state->executor)
+        {
+            Block block;
+            state->after_send_profile_events.restart();
+            next_packet_type = Protocol::Server::ProfileEvents;
+            getProfileEvents(block);
+            state->block.emplace(std::move(block));
+            return true;
+        }
+    }
+
     if (state->is_finished)
     {
         finishQuery();
