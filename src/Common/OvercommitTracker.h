@@ -34,6 +34,13 @@ struct OvercommitRatio
 
 class MemoryTracker;
 
+enum class QueryCancellationState
+{
+    NONE     = 0,  // Hard limit is not reached, there is no selected query to kill.
+    SELECTED = 1,  // Hard limit is reached, query to stop was chosen but it still is not aware of cancellation.
+    RUNNING  = 2,  // Hard limit is reached, selected query has started the process of cancellation.
+};
+
 // Usually it's hard to set some reasonable hard memory limit
 // (especially, the default value). This class introduces new
 // mechanisim for the limiting of memory usage.
@@ -91,14 +98,9 @@ private:
         freed_momory = 0;
     }
 
-    enum class QueryCancellationState
-    {
-        NONE,      // Hard limit is not reached, there is no selected query to kill.
-        SELECTED,  // Hard limit is reached, query to stop was chosen but it still is not aware of cancellation.
-        RUNNING,   // Hard limit is reached, selected query has started the process of cancellation.
-    };
-
     QueryCancellationState cancellation_state;
+
+    std::unordered_map<MemoryTracker *, Int64> required_per_thread;
 
     // Global mutex which is used in ProcessList to synchronize
     // insertion and deletion of queries.
@@ -123,7 +125,7 @@ struct UserOvercommitTracker : OvercommitTracker
     ~UserOvercommitTracker() override = default;
 
 protected:
-    void pickQueryToExcludeImpl() override final;
+    void pickQueryToExcludeImpl() override;
 
     Poco::Logger * getLogger() override final { return logger; }
 private:
@@ -138,7 +140,7 @@ struct GlobalOvercommitTracker : OvercommitTracker
     ~GlobalOvercommitTracker() override = default;
 
 protected:
-    void pickQueryToExcludeImpl() override final;
+    void pickQueryToExcludeImpl() override;
 
     Poco::Logger * getLogger() override final { return logger; }
 private:

@@ -55,20 +55,17 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
         cancellation_state = QueryCancellationState::RUNNING;
         return true;
     }
+
     required_memory += amount;
-    bool timeout = !cv.wait_for(lk, max_wait_time, [this]()
+    required_per_thread[tracker] = amount;
+    bool timeout = !cv.wait_for(lk, max_wait_time, [this, tracker]()
     {
-        return freed_momory >= required_memory || cancellation_state == QueryCancellationState::NONE;
+        return required_per_thread[tracker] == 0 || cancellation_state == QueryCancellationState::NONE;
     });
     LOG_DEBUG(getLogger(), "Memory was{} freed within timeout", (timeout ? " not" : ""));
 
-    // If query cancellation is still running, it's possible that other queries will reach
-    // hard limit and end up on waiting on condition variable.
-    // If so we need to specify that some part of freed memory is acquired at this moment.
-    if (!timeout && cancellation_state != QueryCancellationState::NONE)
-        freed_momory -= amount;
-
     required_memory -= amount;
+    required_per_thread.erase(tracker);
     // All required amount of memory is free now and selected query to stop doesn't know about it.
     // As we don't need to free memory, we can continue execution of the selected query.
     if (required_memory == 0 && cancellation_state == QueryCancellationState::SELECTED)
@@ -83,7 +80,12 @@ void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
     {
         freed_momory += amount;
         if (freed_momory >= required_memory)
+        {
+            for (auto & required : required_per_thread)
+                required.second = 0;
+            freed_momory = 0;
             cv.notify_all();
+        }
     }
 }
 
