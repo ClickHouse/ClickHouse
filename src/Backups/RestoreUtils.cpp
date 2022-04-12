@@ -48,12 +48,10 @@ namespace
         RestoreDatabaseTask(
             ContextMutablePtr context_,
             const ASTPtr & create_query_,
-            const RestoreSettingsPtr & restore_settings_,
-            bool ignore_if_database_def_differs_)
+            const RestoreSettingsPtr & restore_settings_)
             : context(context_)
             , create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_))
             , restore_settings(restore_settings_)
-            , ignore_if_database_def_differs(ignore_if_database_def_differs_)
         {
         }
 
@@ -95,7 +93,7 @@ namespace
 
         void checkDatabaseCreateQuery()
         {
-            if (ignore_if_database_def_differs || restore_settings->allow_different_database_def)
+            if (restore_settings->allow_different_database_def)
                 return;
 
             getDatabaseCreateQuery();
@@ -114,7 +112,6 @@ namespace
         ContextMutablePtr context;
         std::shared_ptr<ASTCreateQuery> create_query;
         RestoreSettingsPtr restore_settings;
-        bool ignore_if_database_def_differs = false;
         DatabasePtr database;
         ASTPtr database_create_query;
     };
@@ -302,21 +299,11 @@ namespace
         /// Makes tasks for restoring, should be called after prepare().
         RestoreTasks makeTasks() const
         {
-            /// Check that there are not `different_create_query`. (If it's set it means error.)
-            for (const auto & info : databases | boost::adaptors::map_values)
-            {
-                if (info.different_create_query)
-                    throw Exception(ErrorCodes::CANNOT_RESTORE_DATABASE,
-                                    "Cannot restore a database because two different create queries were generated for it: {} and {}",
-                                    serializeAST(*info.create_query), serializeAST(*info.different_create_query));
-            }
-
             auto restore_settings_ptr = std::make_shared<const RestoreSettings>(restore_settings);
 
             RestoreTasks res;
             for (const auto & info : databases | boost::adaptors::map_values)
-                res.push_back(std::make_unique<RestoreDatabaseTask>(context, info.create_query, restore_settings_ptr,
-                                                                    /* ignore_if_database_def_differs = */ !info.is_explicit));
+                res.push_back(std::make_unique<RestoreDatabaseTask>(context, info.create_query, restore_settings_ptr));
 
             /// TODO: We need to restore tables according to their dependencies.
             for (const auto & info : tables | boost::adaptors::map_values)
@@ -342,52 +329,6 @@ namespace
             info.name_in_backup = table_name_;
             info.partitions = partitions_;
             tables[new_table_name] = std::move(info);
-
-            /// If it's not system or temporary database then probably we need to restore the database's definition too.
-            if (!isSystemOrTemporaryDatabase(new_table_name.first))
-            {
-                if (!databases.contains(new_table_name.first))
-                {
-                    /// Add a create query for restoring the database if we haven't done it yet.
-                    std::shared_ptr<ASTCreateQuery> create_db_query;
-                    String db_name_in_backup = table_name_.first;
-                    if (hasCreateQueryInBackup(db_name_in_backup))
-                    {
-                        create_db_query = renameInCreateQuery(readCreateQueryFromBackup(db_name_in_backup));
-                    }
-                    else
-                    {
-                        create_db_query = std::make_shared<ASTCreateQuery>();
-                        db_name_in_backup.clear();
-                    }
-                    create_db_query->setDatabase(new_table_name.first);
-                    create_db_query->if_not_exists = true;
-
-                    CreateDatabaseInfo info_db;
-                    info_db.create_query = create_db_query;
-                    info_db.name_in_backup = std::move(db_name_in_backup);
-                    info_db.is_explicit = false;
-                    databases[new_table_name.first] = std::move(info_db);
-                }
-                else
-                {
-                    /// We already have added a create query for restoring the database,
-                    /// set `different_create_query` if it's not the same.
-                    auto & info_db = databases[new_table_name.first];
-                    if (!info_db.is_explicit && (info_db.name_in_backup != table_name_.first) && !info_db.different_create_query)
-                    {
-                        std::shared_ptr<ASTCreateQuery> create_db_query;
-                        if (hasCreateQueryInBackup(table_name_.first))
-                            create_db_query = renameInCreateQuery(readCreateQueryFromBackup(table_name_.first));
-                        else
-                            create_db_query = std::make_shared<ASTCreateQuery>();
-                        create_db_query->setDatabase(new_table_name.first);
-                        create_db_query->if_not_exists = true;
-                        if (!areDatabaseDefinitionsSame(*info_db.create_query, *create_db_query))
-                            info_db.different_create_query = create_db_query;
-                    }
-                }
-            }
         }
 
         /// Prepares to restore a database and all tables in it.
@@ -395,37 +336,34 @@ namespace
         {
             /// Check that we are not trying to restore the same database again.
             String new_database_name = renaming_settings.getNewDatabaseName(database_name_);
-            if (databases.contains(new_database_name) && databases[new_database_name].is_explicit)
+            if (databases.contains(new_database_name))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_DATABASE, "Cannot restore the database {} twice", backQuoteIfNeed(new_database_name));
 
             Strings table_metadata_filenames = backup->listFiles("metadata/" + escapeForFileName(database_name_) + "/", "/");
+            bool has_tables_in_backup = !table_metadata_filenames.empty();
+            bool has_create_query_in_backup = hasCreateQueryInBackup(database_name_);
 
-            bool throw_if_no_create_database_query = table_metadata_filenames.empty();
-            if (throw_if_no_create_database_query && !hasCreateQueryInBackup(database_name_))
+            if (!has_create_query_in_backup && !has_tables_in_backup)
                 throw Exception(ErrorCodes::CANNOT_RESTORE_DATABASE, "Cannot restore the database {} because there is no such database in the backup", backQuoteIfNeed(database_name_));
 
             /// Of course we're not going to restore the definition of the system or the temporary database.
             if (!isSystemOrTemporaryDatabase(new_database_name))
             {
                 /// Make a create query for this database.
-                std::shared_ptr<ASTCreateQuery> create_db_query;
-                String db_name_in_backup = database_name_;
-                if (hasCreateQueryInBackup(db_name_in_backup))
+                std::shared_ptr<ASTCreateQuery> create_query;
+                if (has_create_query_in_backup)
                 {
-                    create_db_query = renameInCreateQuery(readCreateQueryFromBackup(db_name_in_backup));
+                    create_query = renameInCreateQuery(readCreateQueryFromBackup(database_name_));
                 }
                 else
                 {
-                    create_db_query = std::make_shared<ASTCreateQuery>();
-                    create_db_query->setDatabase(database_name_);
-                    db_name_in_backup.clear();
+                    create_query = std::make_shared<ASTCreateQuery>();
+                    create_query->setDatabase(database_name_);
                 }
 
-                CreateDatabaseInfo info_db;
-                info_db.create_query = create_db_query;
-                info_db.name_in_backup = std::move(db_name_in_backup);
-                info_db.is_explicit = true;
-                databases[new_database_name] = std::move(info_db);
+                CreateDatabaseInfo info;
+                info.create_query = create_query;
+                databases[new_database_name] = std::move(info);
             }
 
             /// Restore tables in this database.
@@ -513,25 +451,14 @@ namespace
         struct CreateDatabaseInfo
         {
             ASTPtr create_query;
-            String name_in_backup;
-
-            /// Whether the creation of this database is specified explicitly, via RESTORE DATABASE or
-            /// RESTORE ALL DATABASES.
-            /// It's false if the creation of this database is caused by creating a table contained in it.
-            bool is_explicit = false;
-
-            /// If this is set it means the following error:
-            /// it means that for implicitly created database there were two different create query
-            /// generated so we cannot restore the database.
-            ASTPtr different_create_query;
         };
 
         ContextMutablePtr context;
         BackupPtr backup;
         RestoreSettings restore_settings;
         DDLRenamingSettings renaming_settings;
-        std::map<String, CreateDatabaseInfo> databases;
-        std::map<DatabaseAndTableName, CreateTableInfo> tables;
+        std::map<String /* new_db_name */, CreateDatabaseInfo> databases;
+        std::map<DatabaseAndTableName /* new_table_name */, CreateTableInfo> tables;
     };
 
 
