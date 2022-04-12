@@ -1981,6 +1981,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 bool ReplicatedMergeTreeMergePredicate::operator()(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
+    const MergeTreeTransaction *,
     String * out_reason) const
 {
     if (left)
