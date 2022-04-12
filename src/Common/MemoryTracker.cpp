@@ -211,6 +211,9 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         }
         else
         {
+            // If OvercommitTracker::needToStopQuery returned false, it guarantees that enough memory is freed.
+            // This memory is already counted in variable `amount` in the moment of `will_be` initialization.
+            // Now we just need to update value stored in `will_be`, because it should have changed.
             will_be = amount.load(std::memory_order_relaxed);
         }
     }
