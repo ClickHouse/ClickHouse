@@ -1071,6 +1071,33 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
+    /// Check type compatible for materialized dest table and select columns
+    if (create.select && create.is_materialized_view && create.to_table_id)
+    {
+        StoragePtr to_table = DatabaseCatalog::instance().getTable({create.to_table_id.database_name,
+            create.to_table_id.table_name,
+            create.to_table_id.uuid},
+            getContext());
+        const auto & to_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock();
+
+        ColumnsWithTypeAndName view_output_columns;
+        for (const auto & [name, type] : properties.columns.getAllPhysical())
+            view_output_columns.emplace_back(type, name);
+
+        Block input_columns = InterpreterSelectWithUnionQuery(
+            create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
+
+        ActionsDAG::makeConvertingActions(
+            input_columns.getColumnsWithTypeAndName(),
+            view_output_columns,
+            ActionsDAG::MatchColumnsMode::Name);
+
+        ActionsDAG::makeConvertingActions(
+            view_output_columns,
+            to_output_columns.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+    }
+
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
@@ -1097,29 +1124,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (!created)   /// Table already exists
         return {};
-
-    /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && create.to_table_id)
-    {
-        StoragePtr to_table = DatabaseCatalog::instance().getTable({create.to_table_id.database_name,
-            create.to_table_id.table_name,
-            create.to_table_id.uuid},
-            getContext());
-        const auto & to_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock();
-        StoragePtr view_table = DatabaseCatalog::instance().getTable({create.database, create.table, create.uuid}, getContext());
-        const auto & view_output_columns = view_table->getInMemoryMetadataPtr()->getSampleBlock();
-
-        Block input_columns = InterpreterSelectWithUnionQuery(
-            create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
-        ActionsDAG::makeConvertingActions(
-            input_columns.getColumnsWithTypeAndName(),
-            to_output_columns.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
-        ActionsDAG::makeConvertingActions(
-            input_columns.getColumnsWithTypeAndName(),
-            view_output_columns.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
-    }
 
     /// If table has dependencies - add them to the graph
     QualifiedTableName qualified_name{database_name, create.getTable()};
