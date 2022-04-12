@@ -20,6 +20,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 
 #include <base/logger_useful.h>
+#include <Parsers/queryToString.h>
 
 using namespace std::literals;
 
@@ -624,7 +625,7 @@ enum Action
 class Layer
 {
 public:
-    Layer(TokenType end_bracket_ = TokenType::Whitespace, String func_name_ = "", bool layer_zero_ = false) : 
+    Layer(TokenType end_bracket_ = TokenType::Whitespace, String func_name_ = "", bool layer_zero_ = false) :
         end_bracket(end_bracket_),
         func_name(func_name_),
         layer_zero(layer_zero_)
@@ -1371,6 +1372,92 @@ private:
 };
 
 
+class CaseLayer : public Layer
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        if (state == 0)
+        {
+            auto old_pos = pos;
+            has_case_expr = !ParserKeyword("WHEN").ignore(pos, expected);
+            pos = old_pos;
+
+            state = 1;
+        }
+
+        if (state == 1)
+        {
+            if (ParserKeyword("WHEN").ignore(pos, expected))
+            {
+                if ((has_case_expr || result.size() > 0) && !wrapLayer())
+                    return false;
+
+                action = Action::OPERAND;
+                state = 2;
+            }
+            else if (ParserKeyword("ELSE").ignore(pos, expected))
+            {
+                if (!wrapLayer())
+                    return false;
+
+                action = Action::OPERAND;
+                state = 3;
+            }
+            else if (ParserKeyword("END").ignore(pos, expected))
+            {
+                if (!wrapLayer())
+                    return false;
+
+                Field field_with_null;
+                ASTLiteral null_literal(field_with_null);
+                result.push_back(std::make_shared<ASTLiteral>(null_literal));
+
+                if (has_case_expr)
+                    result = {makeASTFunction("caseWithExpression", result)};
+                else
+                    result = {makeASTFunction("multiIf", result)};
+                finished = true;
+            }
+        }
+
+        if (state == 2)
+        {
+            if (ParserKeyword("THEN").ignore(pos, expected))
+            {
+                if (!wrapLayer())
+                    return false;
+
+                action = Action::OPERAND;
+                state = 1;
+            }
+        }
+
+        if (state == 3)
+        {
+            if (ParserKeyword("END").ignore(pos, expected))
+            {
+                if (!wrapLayer())
+                    return false;
+
+                if (has_case_expr)
+                    result = {makeASTFunction("caseWithExpression", result)};
+                else
+                    result = {makeASTFunction("multiIf", result)};
+
+                finished = true;
+            }
+        }
+
+        return true;
+    }
+
+private:
+    int state = 0;
+    bool has_case_expr;
+};
+
+
 bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     IParser::Pos begin = pos;
@@ -1528,6 +1615,11 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 next = Action::OPERAND;
                 storage.push_back(std::make_unique<IntervalLayer>());
             }
+            else if (parseOperator(pos, "CASE", expected))
+            {
+                next = Action::OPERAND; // ???
+                storage.push_back(std::make_unique<CaseLayer>());
+            }
             else if (ParseDateOperatorExpression(pos, tmp, expected) ||
                      ParseTimestampOperatorExpression(pos, tmp, expected) ||
                      tuple_literal_parser.parse(pos, tmp, expected) ||
@@ -1541,7 +1633,6 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                      asterisk_parser.parse(pos, tmp, expected))
             {
                 /// If the next token is '(' then it is a plain function, '[' - arrayElement function
-
                 if (pos->type == TokenType::OpeningRoundBracket)
                 {
                     ++pos;
@@ -1657,6 +1748,17 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     storage.back()->pushOperand(func);
                 }
                 storage.back()->pushOperator(cur_op->second);
+            }
+            else if (parseOperator(pos, "::", expected))
+            {
+                next = Action::OPERATOR;
+
+                ASTPtr type_ast;
+                if (!ParserDataType().parse(pos, type_ast, expected))
+                    return false; // ???
+
+                storage.back()->pushOperator(Operator("CAST", 50, 2));
+                storage.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
             }
             else if (pos->type == TokenType::Comma)
             {

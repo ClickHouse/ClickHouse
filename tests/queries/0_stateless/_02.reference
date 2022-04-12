@@ -21,6 +21,7 @@ equal (AST): SELECT [1,2,3]::Array(Int64)
 equal (RES): SELECT [1,2,cos(1)]
 equal (AST): SELECT [1,2,cos(1)]
 equal (AST): SELECT [a,b,c]
+equal (AST): SELECT [a,b,c]::Array(UInt8)
 equal (RES): SELECT number AS a1, number AS b2, number FROM numbers(10)
 equal (AST): SELECT number AS a1, number AS b2, number FROM numbers(10)
 equal (AST): SELECT *[n]
