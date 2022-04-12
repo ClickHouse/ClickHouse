@@ -1072,32 +1072,35 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
     /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && create.to_table_id &&
-        DatabaseCatalog::instance().isTableExist(
-            {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
-            getContext()
-        )
-    )
+    if (create.select && create.is_materialized_view && create.to_table_id)
     {
-        Block input_block = InterpreterSelectWithUnionQuery(
-            create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
-
-        StoragePtr to_table = DatabaseCatalog::instance().getTable(
+        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
             {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
             getContext()
-        );
+        ))
+        {
+            Block input_block = InterpreterSelectWithUnionQuery(
+                create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
 
-        Block to_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock();
+            Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
 
-        ColumnsWithTypeAndName output_columns;
-        for (const auto & column : input_block)
-            output_columns.push_back(to_columns.findByName(column.name)->cloneEmpty());
+            ColumnsWithTypeAndName input_columns;
+            ColumnsWithTypeAndName output_columns;
+            for (const auto & input_column : input_block)
+            {
+                if (const auto * output_column = output_block.findByName(input_column.name))
+                {
+                    input_columns.push_back(input_column.cloneEmpty());
+                    output_columns.push_back(output_column->cloneEmpty());
+                }
+            }
 
-        ActionsDAG::makeConvertingActions(
-            input_block.getColumnsWithTypeAndName(),
-            output_columns,
-            ActionsDAG::MatchColumnsMode::Name
-        );
+            ActionsDAG::makeConvertingActions(
+                input_columns,
+                output_columns,
+                ActionsDAG::MatchColumnsMode::Position
+            );
+        }
     }
 
     DatabasePtr database;
