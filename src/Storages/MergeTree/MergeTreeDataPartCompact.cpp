@@ -53,6 +53,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
+    DataPartStorageBuilderPtr data_part_storage_builder,
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -69,7 +70,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
-        shared_from_this(), ordered_columns_list, metadata_snapshot,
+        shared_from_this(), std::move(data_part_storage_builder), ordered_columns_list, metadata_snapshot,
         indices_to_recalc, index_granularity_info.marks_file_extension,
         default_codec_, writer_settings, computed_index_granularity);
 }

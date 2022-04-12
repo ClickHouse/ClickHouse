@@ -18,7 +18,7 @@ class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
-        DiskPtr disk_,
+        DataPartStoragePtr data_part_storage_,
         const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings_,
@@ -42,7 +42,7 @@ public:
 private:
     size_t getRightOffset(size_t right_mark_non_included);
 
-    DiskPtr disk;
+    DataPartStoragePtr data_part_storage;
     std::string path_prefix;
     std::string data_file_extension;
 

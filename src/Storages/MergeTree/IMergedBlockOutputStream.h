@@ -12,6 +12,7 @@ class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
+        DataPartStorageBuilderPtr data_part_storage_builder_,
         const MergeTreeDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,
@@ -44,9 +45,7 @@ protected:
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
 
-    VolumePtr volume;
-    String part_path;
-
+    DataPartStorageBuilderPtr data_part_storage_builder;
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
 
     bool reset_columns = false;
