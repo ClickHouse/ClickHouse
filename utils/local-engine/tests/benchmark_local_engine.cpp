@@ -435,7 +435,7 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
                           .column("l_discount", "FP64")
                           .column("l_extendedprice", "FP64")
                           .column("l_quantity", "FP64")
-                          .column("l_shipdate_new", "FP64")
+                          .column("l_shipdate", "Date")
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
         auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
@@ -457,9 +457,9 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
                                                                                                                                                                                                                                                     }),
                                                                                                                                                                                                                           scalarFunction(IS_NOT_NULL, {selection(2)})
                                                                                                                                                                                                                       }),
-                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literal(8766.0)})
+                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literalDate(8766)})
                                                                                                                                                                                         }),
-                                                                                                                                                              scalarFunction(LESS_THAN, {selection(3), literal(9131.0)})
+                                                                                                                                                              scalarFunction(LESS_THAN, {selection(3), literalDate(9131.0)})
                                                                                                                                                           }),
                                                                                                                                 scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})
                                                                                                                             }),
@@ -467,7 +467,7 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
                                                                                               }),
                                                                     scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
                                                                 }))
-                        .readMergeTree("default", "test", "home/saber/Documents/data/mergetree/", 1, 12, std::move(schema)).build();
+                        .readMergeTree("default", "test", "home/saber/Documents/data/mergetree/", 1, 4, std::move(schema)).build();
 
         auto query_plan = parser.parse(std::move(plan));
         local_engine::LocalExecutor local_executor;
@@ -491,7 +491,7 @@ static void BM_MERGE_TREE_TPCH_Q6_NEW(benchmark::State& state) {
                           .column("l_discount", "FP64")
                           .column("l_extendedprice", "FP64")
                           .column("l_quantity", "FP64")
-                          .column("l_shipdate_new", "FP64")
+                          .column("l_shipdate", "Date")
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
         auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
@@ -515,9 +515,9 @@ static void BM_MERGE_TREE_TPCH_Q6_NEW(benchmark::State& state) {
                                                                                                                                                                                                                                                     }),
                                                                                                                                                                                                                           scalarFunction(IS_NOT_NULL, {selection(2)})
                                                                                                                                                                                                                       }),
-                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literal(8766.0)})
+                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literalDate(8766)})
                                                                                                                                                                                         }),
-                                                                                                                                                              scalarFunction(LESS_THAN, {selection(3), literal(9131.0)})
+                                                                                                                                                              scalarFunction(LESS_THAN, {selection(3), literalDate(9131)})
                                                                                                                                                           }),
                                                                                                                                 scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})
                                                                                                                             }),
@@ -525,7 +525,7 @@ static void BM_MERGE_TREE_TPCH_Q6_NEW(benchmark::State& state) {
                                                                                               }),
                                                                     scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
                                                                 }))
-                        .readMergeTree("default", "test", "home/saber/Documents/data/mergetree/", 1, 12, std::move(schema)).build();
+                        .readMergeTree("default", "test", "home/saber/Documents/data/mergetree/", 1, 4, std::move(schema)).build();
 
         auto query_plan = parser.parse(std::move(plan));
         local_engine::LocalExecutor local_executor;
