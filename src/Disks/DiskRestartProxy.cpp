@@ -221,16 +221,16 @@ std::unique_ptr<WriteBufferFromFileBase> DiskRestartProxy::writeFile(const Strin
     return std::make_unique<RestartAwareWriteBuffer>(*this, std::move(impl));
 }
 
-void DiskRestartProxy::removeFile(const String & path)
+bool DiskRestartProxy::removeFile(const String & path)
 {
     ReadLock lock (mutex);
-    DiskDecorator::removeFile(path);
+    return DiskDecorator::removeFile(path);
 }
 
-void DiskRestartProxy::removeFileIfExists(const String & path)
+bool DiskRestartProxy::removeFileIfExists(const String & path)
 {
     ReadLock lock (mutex);
-    DiskDecorator::removeFileIfExists(path);
+    return DiskDecorator::removeFileIfExists(path);
 }
 
 void DiskRestartProxy::removeDirectory(const String & path)
@@ -245,10 +245,16 @@ void DiskRestartProxy::removeRecursive(const String & path)
     DiskDecorator::removeRecursive(path);
 }
 
-void DiskRestartProxy::removeSharedFile(const String & path, bool keep_s3)
+bool DiskRestartProxy::removeSharedFile(const String & path, bool keep_s3)
 {
     ReadLock lock (mutex);
-    DiskDecorator::removeSharedFile(path, keep_s3);
+    return DiskDecorator::removeSharedFile(path, keep_s3);
+}
+
+bool DiskRestartProxy::removeSharedFileIfExists(const String & path, bool keep_s3)
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::removeSharedFile(path, keep_s3);
 }
 
 void DiskRestartProxy::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
@@ -305,7 +311,7 @@ bool DiskRestartProxy::checkUniqueId(const String & id) const
     return DiskDecorator::checkUniqueId(id);
 }
 
-String DiskRestartProxy::getCacheBasePath() const
+const String & DiskRestartProxy::getCacheBasePath() const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getCacheBasePath();

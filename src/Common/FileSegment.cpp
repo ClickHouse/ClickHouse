@@ -190,7 +190,7 @@ void FileSegment::resetRemoteFileReader()
     remote_file_reader.reset();
 }
 
-void FileSegment::write(const char * from, size_t size, size_t offset_)
+void FileSegment::write(const char * from, size_t size, size_t offset_, bool finalize)
 {
     if (!size)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Writing zero size is not allowed");
@@ -250,78 +250,18 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
         throw;
     }
 
+    if (finalize)
+    {
+        if (downloaded_size != range().size())
+            throw Exception(
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                "Cannot finalize write, file segment is not downloaded ({} < {})", downloaded_size, range().size());
+
+        std::lock_guard segment_lock(mutex);
+        setDownloaded(segment_lock);
+    }
+
     assert(getDownloadOffset() == offset_ + size);
-}
-
-void FileSegment::writeInMemory(const char * from, size_t size)
-{
-    if (!size)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Attempt to write zero size cache file");
-
-    if (availableSize() < size)
-        throw Exception(
-            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-            "Not enough space is reserved. Available: {}, expected: {}", availableSize(), size);
-
-    std::lock_guard segment_lock(mutex);
-
-    if (cache_writer)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache writer already initialized");
-
-    auto download_path = cache->getPathInLocalCache(key(), offset());
-    cache_writer = std::make_unique<WriteBufferFromFile>(download_path, size + 1);
-
-    try
-    {
-        cache_writer->write(from, size);
-    }
-    catch (Exception & e)
-    {
-        wrapWithCacheInfo(e, "while writing into cache", segment_lock);
-
-        setDownloadFailed(segment_lock);
-
-        cv.notify_all();
-
-        throw;
-    }
-}
-
-size_t FileSegment::finalizeWrite()
-{
-    std::lock_guard segment_lock(mutex);
-
-    if (!cache_writer)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache writer not initialized");
-
-    size_t size = cache_writer->offset();
-
-    if (size == 0)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Writing size is not allowed");
-
-    try
-    {
-        cache_writer->next();
-    }
-    catch (Exception & e)
-    {
-        wrapWithCacheInfo(e, "while writing into cache", segment_lock);
-
-        setDownloadFailed(segment_lock);
-
-        cv.notify_all();
-
-        throw;
-    }
-
-    downloaded_size += size;
-
-    if (downloaded_size != range().size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected downloaded size to equal file segment size ({} == {})", downloaded_size, range().size());
-
-    setDownloaded(segment_lock);
-
-    return size;
 }
 
 FileSegment::State FileSegment::wait()

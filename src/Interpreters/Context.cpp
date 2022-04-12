@@ -2562,7 +2562,9 @@ DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock *
         constexpr auto config_name = "storage_configuration.disks";
         const auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, shared_from_this());
+        auto disk_selector = std::make_shared<DiskSelector>();
+        disk_selector->initialize(config, config_name, shared_from_this());
+        shared->merge_tree_disk_selector = disk_selector;
     }
     return shared->merge_tree_disk_selector;
 }

@@ -178,10 +178,11 @@ public:
         const WriteSettings & settings = {}) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
-    virtual void removeFile(const String & path) = 0;
+    /// Return whether file was finally removed. (For remote disks it is not always removed).
+    virtual bool removeFile(const String & path) = 0;
 
     /// Remove file if it exists.
-    virtual void removeFileIfExists(const String & path) = 0;
+    virtual bool removeFileIfExists(const String & path) = 0;
 
     /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
     virtual void removeDirectory(const String & path) = 0;
@@ -192,7 +193,7 @@ public:
     /// Remove file. Throws exception if file doesn't exists or if directory is not empty.
     /// Differs from removeFile for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedFile(const String & path, bool) { removeFile(path); }
+    virtual bool removeSharedFile(const String & path, bool) { return removeFile(path); }
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     /// Differs from removeRecursive for S3/HDFS disks
@@ -202,10 +203,11 @@ public:
     /// Remove file or directory if it exists.
     /// Differs from removeFileIfExists for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedFileIfExists(const String & path, bool) { removeFileIfExists(path); }
+    virtual bool removeSharedFileIfExists(const String & path, bool) { return removeFileIfExists(path); }
 
+    virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is not cache path"); }
 
-    virtual String getCacheBasePath() const { return ""; }
+    virtual bool isCached() const { return false; }
 
     /// Returns a list of paths because for Log family engines there might be
     /// multiple files in remote fs for single clickhouse file.

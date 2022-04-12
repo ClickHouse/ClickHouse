@@ -11,7 +11,6 @@
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/S3Common.h>
 #include "DiskS3.h"
-#include "Disks/DiskCacheWrapper.h"
 #include "Storages/StorageS3Settings.h"
 #include "ProxyConfiguration.h"
 #include "ProxyListConfiguration.h"
@@ -186,14 +185,11 @@ void registerDiskS3(DiskFactory & factory)
 
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
-        FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
-
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
             uri.bucket,
             uri.key,
             metadata_disk,
-            std::move(cache),
             context,
             getSettings(config, config_prefix, context),
             getSettings);
@@ -207,21 +203,6 @@ void registerDiskS3(DiskFactory & factory)
         }
 
         s3disk->startup();
-
-
-#ifdef NDEBUG
-        bool use_cache = true;
-#else
-        /// Current S3 cache implementation lead to allocations in destructor of
-        /// read buffer.
-        bool use_cache = false;
-#endif
-
-        if (config.getBool(config_prefix + ".cache_enabled", use_cache))
-        {
-            String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
-            s3disk = wrapWithCache(s3disk, "s3-cache", cache_path, metadata_path);
-        }
 
         return std::make_shared<DiskRestartProxy>(s3disk);
     };

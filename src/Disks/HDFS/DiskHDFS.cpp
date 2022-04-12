@@ -36,7 +36,7 @@ DiskHDFS::DiskHDFS(
     SettingsPtr settings_,
     DiskPtr metadata_disk_,
     const Poco::Util::AbstractConfiguration & config_)
-    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_disk_, nullptr, "DiskHDFS", settings_->thread_pool_size)
+    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_disk_, "DiskHDFS", settings_->thread_pool_size)
     , config(config_)
     , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
     , hdfs_fs(createHDFSFS(hdfs_builder.get()))
@@ -77,7 +77,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
         readOrCreateUpdateAndStoreMetadata(path, mode, false, [file_name, count] (Metadata & metadata) { metadata.addObject(file_name, count); return true; });
     };
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(create_metadata_callback), hdfs_path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(create_metadata_callback), file_name);
 }
 
 void DiskHDFS::removeFromRemoteFS(const std::vector<String> & paths)
