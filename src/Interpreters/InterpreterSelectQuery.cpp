@@ -1915,10 +1915,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && !query_analyzer->hasAggregation()
         && !query_analyzer->hasWindow()
         && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset
-        && limit_length + limit_offset < max_block_size)
+        && std::abs(limit_length + limit_offset) < max_block_size)
     {
-        if (is_limit_positive)
-            max_block_size = std::max(UInt64(1), limit_length + limit_offset);
+        max_block_size = std::max(UInt64(1), std::abs(limit_length + limit_offset));
         max_threads_execute_query = max_streams = 1;
     }
 

@@ -37,12 +37,7 @@ LimitTransform::LimitTransform(
     }
 
     for (const auto & desc : description)
-    {
-        if (!desc.column_name.empty())
-            sort_column_positions.push_back(header_.getPositionByName(desc.column_name));
-        else
-            sort_column_positions.push_back(desc.column_number);
-    }
+        sort_column_positions.push_back(header_.getPositionByName(desc.column_name));
 
     if (!is_limit_positive)
         always_read_till_end = true;
