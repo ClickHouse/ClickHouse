@@ -41,8 +41,8 @@ namespace
     void executeBackup(const ContextPtr & context, const ASTBackupQuery & query)
     {
         auto backup_settings = BackupSettings::fromBackupQuery(query);
-        BackupMutablePtr backup = createBackup(BackupInfo::fromAST(*query.backup_name), backup_settings, context);
         auto backup_entries = makeBackupEntries(context, query.elements, backup_settings);
+        BackupMutablePtr backup = createBackup(BackupInfo::fromAST(*query.backup_name), backup_settings, context);
         writeBackupEntries(backup, std::move(backup_entries), context->getSettingsRef().max_backup_threads);
     }
 
