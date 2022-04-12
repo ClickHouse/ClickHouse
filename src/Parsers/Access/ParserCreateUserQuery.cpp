@@ -166,7 +166,7 @@ namespace
                     auth_data.setSalt(salt);
                 }
             }
-	    if (expect_password)
+            if (expect_password)
                 auth_data.setPassword(value);
             else if (expect_hash)
                 auth_data.setPasswordHashHex(value);
