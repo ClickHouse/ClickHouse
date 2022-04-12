@@ -4,8 +4,8 @@ str1    1
 str2    3
 
 Binary representation of second row:
-00000000  0a 02 0a 00 10 02                                 |......|
-00000006
+00000000  0a 00 10 02                                       |....|
+00000004
 
 Decoded:
 str {
@@ -23,9 +23,9 @@ Table after putting the message in:
 str     3
 
 Proto output of the table:
-00000000  02 10 01 06 0a 02 0a 00  10 02 09 0a 05 0a 03 73  |...............s|
-00000010  74 72 10 03                                       |tr..|
-00000014
+00000000  02 10 01 04 0a 00 10 02  09 0a 05 0a 03 73 74 72  |.............str|
+00000010  10 03                                             |..|
+00000012
 
 Proto output of the table without using wrapper:
 00000000  02 10 01 02 10 02 07 0a  03 73 74 72 10 03        |.........str..|

@@ -113,16 +113,15 @@ namespace
     {
         const auto * message_descriptor = field_descriptor.message_type();
         if (message_descriptor == nullptr)
-        {
             return false;
-        }
         return isGoogleWrapperMessage(*message_descriptor);
     }
 
-    bool isGoogleWrapperValue(const FieldDescriptor & field_descriptor)
+    bool isGoogleWrapperField(const FieldDescriptor * field_descriptor)
     {
-        const auto * message_descriptor = field_descriptor.containing_type();
-        return message_descriptor != nullptr && isGoogleWrapperMessage(*message_descriptor);
+        if (field_descriptor == nullptr)
+            return false;
+        return isGoogleWrapperField(*field_descriptor);
     }
 
     std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
@@ -138,7 +137,7 @@ namespace
             return false;
         if (field_descriptor.containing_type()->options().map_entry())
             return false;
-        if (isGoogleWrapperValue(field_descriptor))
+        if (isGoogleWrapperField(field_descriptor))
             return false;
         return field_descriptor.message_type() || (field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3);
     }
@@ -2233,7 +2232,7 @@ namespace
                 info.field_serializer->setColumns(field_columns.data(), field_columns.size());
             }
 
-            if (reader)
+            if (reader || isGoogleWrapperField(parent_field_descriptor))
             {
                 mutable_columns.resize(num_columns_);
                 for (size_t i : collections::range(num_columns_))
@@ -2277,7 +2276,8 @@ namespace
             if (parent_field_descriptor)
             {
                 bool is_group = (parent_field_descriptor->type() == FieldTypeId::TYPE_GROUP);
-                writer->endNestedMessage(parent_field_descriptor->number(), is_group, should_skip_if_empty);
+                writer->endNestedMessage(parent_field_descriptor->number(), is_group,
+                    should_skip_if_empty || nullGoogleWrapper(row_num));
             }
             else if (has_envelope_as_parent)
             {
@@ -2319,7 +2319,7 @@ namespace
                             info.field_read = false;
                         else
                         {
-                            if (isGoogleWrapperValue(*(info.field_descriptor))
+                            if (isGoogleWrapperField(parent_field_descriptor)
                                 && mutable_columns[info.column_indices[0]].get()->isNullable())
                             {
                                 auto * nullable_ser = reinterpret_cast<ProtobufSerializerNullable*>(info.field_serializer.get());
@@ -2409,6 +2409,19 @@ namespace
         {
             if (has_missing_columns)
                 missing_columns_filler->addDefaults(mutable_columns, row_num);
+        }
+
+        bool nullGoogleWrapper(size_t row_num)
+        {
+            if (isGoogleWrapperField(parent_field_descriptor)) {
+                auto column = mutable_columns[0].get();
+                if (column->isNullable()) {
+                    const auto & column_nullable = assert_cast<const ColumnNullable &>(*column);
+                    const auto & null_map = column_nullable.getNullMapData();
+                    return null_map[row_num];
+                }
+            }
+            return false;
         }
 
         struct FieldInfo
