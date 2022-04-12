@@ -1074,28 +1074,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Check type compatible for materialized dest table and select columns
     if (create.select && create.is_materialized_view && create.to_table_id)
     {
-        StoragePtr to_table = DatabaseCatalog::instance().getTable({create.to_table_id.database_name,
-            create.to_table_id.table_name,
-            create.to_table_id.uuid},
-            getContext());
-        const auto & to_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock();
-
-        ColumnsWithTypeAndName view_output_columns;
-        for (const auto & [name, type] : properties.columns.getAllPhysical())
-            view_output_columns.emplace_back(type, name);
-
-        Block input_columns = InterpreterSelectWithUnionQuery(
+        Block input_block = InterpreterSelectWithUnionQuery(
             create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
 
-        ActionsDAG::makeConvertingActions(
-            input_columns.getColumnsWithTypeAndName(),
-            view_output_columns,
-            ActionsDAG::MatchColumnsMode::Name);
+        StoragePtr to_table = DatabaseCatalog::instance().getTable(
+            {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
+            getContext()
+        );
+
+        Block to_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock();
+
+        ColumnsWithTypeAndName output_columns;
+        for (const auto & column : input_block)
+            output_columns.push_back(to_columns.findByName(column.name)->cloneEmpty());
 
         ActionsDAG::makeConvertingActions(
-            view_output_columns,
-            to_output_columns.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            input_block.getColumnsWithTypeAndName(),
+            output_columns,
+            ActionsDAG::MatchColumnsMode::Name
+        );
     }
 
     DatabasePtr database;
