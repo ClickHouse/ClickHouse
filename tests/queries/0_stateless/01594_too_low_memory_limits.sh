@@ -19,17 +19,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+mkdir $CURDIR/01594_clickhouse
+
 server_opts=(
     "--config-file=$CURDIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml"
     "--"
+    "--path=$CURDIR/01594_clickhouse"
     # to avoid multiple listen sockets (complexity for port discovering)
     "--listen_host=127.1"
     # we will discover the real port later.
     "--tcp_port=0"
     "--shutdown_wait_unfinished=0"
 )
-mkdir 01594_clickhouse
-(cd 01594_clickhouse; CLICKHOUSE_WATCHDOG_ENABLE=0 exec $CLICKHOUSE_SERVER_BINARY "${server_opts[@]}") >clickhouse-server.log 2>clickhouse-server.stderr &
+CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY "${server_opts[@]}" >clickhouse-server.log 2>clickhouse-server.stderr &
 server_pid=$!
 
 trap cleanup EXIT

@@ -4,9 +4,8 @@ set -x
 
 install_and_run_server() {
     mkdir /unpacked
-    cd /unpacked
     tar -xzf /package_folder/shared_build.tgz -C /unpacked --strip 1
-    LD_LIBRARY_PATH=/unpacked /unpacked/clickhouse-server --config /unpacked/config/config.xml >/test_output/stderr.log 2>&1 &
+    LD_LIBRARY_PATH=/unpacked /unpacked/clickhouse-server --config /unpacked/config/config.xml -- --path /unpacked >/test_output/stderr.log 2>&1 &
 }
 
 run_client() {
