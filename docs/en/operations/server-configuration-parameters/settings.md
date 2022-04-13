@@ -366,12 +366,12 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 <http_server_default_response>
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
-```  
+```
 ## hsts_max_age  {#hsts-max-age}
-  
-Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.  
-  
-**Example**  
+
+Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.
+
+**Example**
 
 ```xml
 <hsts_max_age>600000</hsts_max_age>
@@ -468,7 +468,7 @@ To enable authentication, set `interserver_http_credentials.allow_empty` to `tru
 
 After configuring all replicas set `allow_empty` to `false` or remove this setting. It makes authentication with new credentials mandatory.
 
-To change existing credentials, move the username and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this point the server uses new credentials to connect to other replicas and accepts connections with either new or old credentials. 
+To change existing credentials, move the username and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this point the server uses new credentials to connect to other replicas and accepts connections with either new or old credentials.
 
 ``` xml
 <interserver_http_credentials>
@@ -834,7 +834,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
-Possible values: 
+Possible values:
 
 -   Positive integer.
 
@@ -850,7 +850,7 @@ Default value: `10000`.
 
 If the number of **idle** threads in the Global Thread pool is greater than `max_thread_pool_free_size`, then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
 
-Possible values: 
+Possible values:
 
 -   Positive integer.
 
@@ -866,7 +866,7 @@ Default value: `1000`.
 
 The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [max_thread_pool_size](#max-thread-pool-size).
 
-Possible values: 
+Possible values:
 
 -   Positive integer.
 
@@ -941,30 +941,30 @@ For more information, see the MergeTreeSettings.h header file.
 
 SSL client/server configuration.
 
-Support for SSL is provided by the `libpoco` library. The interface is described in the file [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
+Support for SSL is provided by the `libpoco` library. The available configuration options are explained in [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). Default values can be found in [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
 
 Keys for server/client settings:
 
 -   privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
 -   certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.
--   caConfig – The path to the file or directory that contains trusted root certificates.
--   verificationMode – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
--   verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
--   loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`. \|
--   cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
--   cacheSessions – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
--   sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
--   sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
--   sessionTimeout – Time for caching the session on the server.
--   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
--   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
--   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
--   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
--   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
--   disableProtocols – Protocols that are not allowed to use.
--   preferServerCiphers – Preferred server ciphers on the client.
+-   caConfig (default: none) – The path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html).
+-   verificationMode (default: relaxed) – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
+-   verificationDepth (default: 9) – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
+-   loadDefaultCAFile (default: true) – Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).
+-   cipherList (default: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`) - Supported OpenSSL encryptions.
+-   cacheSessions (default: false) – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
+-   sessionIdContext (default: `${application.name}`) – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
+-   sessionCacheSize (default: [1024\*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978)) – The maximum number of sessions that the server caches. A value of 0 means unlimited sessions.
+-   sessionTimeout (default: [2h](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1926)) – Time for caching the session on the server.
+-   extendedVerification (default: false) – If enabled, verify that the certificate CN or SAN matches the peer hostname.
+-   requireTLSv1 (default: false) – Require a TLSv1 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_1 (default: false) – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_2 (default: false) – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
+-   fips (default: false) – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
+-   privateKeyPassphraseHandler (default: `KeyConsoleHandler`)– Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
+-   invalidCertificateHandler (default: `ConsoleCertificateHandler`) – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
+-   disableProtocols (default: "") – Protocols that are not allowed to use.
+-   preferServerCiphers (default: false) – Preferred server ciphers on the client.
 
 **Example of settings:**
 
