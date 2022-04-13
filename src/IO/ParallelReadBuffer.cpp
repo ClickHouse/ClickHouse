@@ -205,7 +205,7 @@ bool ParallelReadBuffer::nextImpl()
 void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 {
     SCOPE_EXIT({
-        if (--active_working_reader == 0)
+        if (active_working_reader.fetch_sub(1) == 1)
             active_working_reader.notify_all();
     });
 
