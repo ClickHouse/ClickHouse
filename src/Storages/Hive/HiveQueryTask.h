@@ -18,7 +18,7 @@
 namespace DB
 {
 /**
- * @brief An abstract strategy for collecting hive files. Make StorageHive more extensible and cant support hive cluster query later
+ * @brief An abstract strategy for collecting hive files. Make StorageHive more extensible and can't support hive cluster query later
  */
 class IHiveQueryTaskFilesCollector : public WithContext
 {
