@@ -270,7 +270,7 @@ std::unordered_map<String, String> IDiskRemote::getSerializedMetadata(const std:
     return metadatas;
 }
 
-void IDiskRemote::removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)
+void IDiskRemote::removeMetadata(const String & path, std::vector<std::string> & paths_to_remove)
 {
     LOG_TRACE(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
 
@@ -282,13 +282,13 @@ void IDiskRemote::removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_p
 
     try
     {
-        auto metadata_updater = [fs_paths_keeper, this] (Metadata & metadata)
+        auto metadata_updater = [&paths_to_remove, this] (Metadata & metadata)
         {
             if (metadata.ref_count == 0)
             {
                 for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
                 {
-                    fs_paths_keeper->addPath(remote_fs_root_path + remote_fs_object_path);
+                    paths_to_remove.push_back(remote_fs_root_path + remote_fs_object_path);
 
                     if (cache)
                     {
@@ -327,18 +327,18 @@ void IDiskRemote::removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_p
 }
 
 
-void IDiskRemote::removeMetadataRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)
+void IDiskRemote::removeMetadataRecursive(const String & path, std::vector<String> & paths_to_remove)
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
     if (metadata_disk->isFile(path))
     {
-        removeMetadata(path, fs_paths_keeper);
+        removeMetadata(path, paths_to_remove);
     }
     else
     {
         for (auto it = iterateDirectory(path); it->isValid(); it->next())
-            removeMetadataRecursive(it->path(), fs_paths_keeper);
+            removeMetadataRecursive(it->path(), paths_to_remove);
 
         metadata_disk->removeDirectory(path);
     }
@@ -480,50 +480,47 @@ void IDiskRemote::replaceFile(const String & from_path, const String & to_path)
         moveFile(from_path, to_path);
 }
 
-
 void IDiskRemote::removeSharedFile(const String & path, bool delete_metadata_only)
 {
-    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
-    removeMetadata(path, fs_paths_keeper);
+    std::vector<String> paths_to_remove;
+    removeMetadata(path, paths_to_remove);
 
     if (!delete_metadata_only)
-        removeFromRemoteFS(fs_paths_keeper);
+        removeFromRemoteFS(paths_to_remove);
 }
-
 
 void IDiskRemote::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
 {
-    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
-
+    std::vector<String> paths_to_remove;
     if (metadata_disk->exists(path))
     {
-        removeMetadata(path, fs_paths_keeper);
+        removeMetadata(path, paths_to_remove);
         if (!delete_metadata_only)
-            removeFromRemoteFS(fs_paths_keeper);
+            removeFromRemoteFS(paths_to_remove);
     }
 }
 
 void IDiskRemote::removeSharedFiles(const RemoveBatchRequest & files, bool delete_metadata_only)
 {
-    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
+    std::vector<String> paths_to_remove;
     for (const auto & file : files)
     {
         bool skip = file.if_exists && !metadata_disk->exists(file.path);
         if (!skip)
-            removeMetadata(file.path, fs_paths_keeper);
+            removeMetadata(file.path, paths_to_remove);
     }
 
     if (!delete_metadata_only)
-        removeFromRemoteFS(fs_paths_keeper);
+        removeFromRemoteFS(paths_to_remove);
 }
 
 void IDiskRemote::removeSharedRecursive(const String & path, bool delete_metadata_only)
 {
-    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
-    removeMetadataRecursive(path, fs_paths_keeper);
+    std::vector<String> paths_to_remove;
+    removeMetadataRecursive(path, paths_to_remove);
 
     if (!delete_metadata_only)
-        removeFromRemoteFS(fs_paths_keeper);
+        removeFromRemoteFS(paths_to_remove);
 }
 
 
