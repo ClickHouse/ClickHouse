@@ -230,7 +230,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         case MergeAlgorithm::Vertical :
         {
             ctx->rows_sources_file = createTemporaryFile(ctx->tmp_disk->getPath());
-            ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->writeFile(fileName(ctx->rows_sources_file->path()));
+            ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->writeFile(fileName(ctx->rows_sources_file->path()), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, global_ctx->context->getWriteSettings());
             ctx->rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*ctx->rows_sources_uncompressed_write_buf);
 
             MergeTreeDataPartInMemory::ColumnToSize local_merged_column_to_size;
@@ -260,8 +260,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
         ctx->compression_codec,
+        global_ctx->txn,
         /*reset_columns=*/ true,
-        ctx->blocks_are_granules_size);
+        ctx->blocks_are_granules_size,
+        global_ctx->context->getWriteSettings());
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -592,6 +594,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             projection_merging_params,
             global_ctx->new_data_part.get(),
             ".proj",
+            NO_TRANSACTION_PTR,
             global_ctx->data,
             global_ctx->mutator,
             global_ctx->merges_blocker,
