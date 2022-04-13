@@ -193,19 +193,28 @@ static void checkASTStructure(const ASTPtr & child)
 
 static void autoAssignNumberForEnum(const ASTPtr & arguments)
 {
-    Int16 child_count = 1;
+    UInt64 literal_child_count = 0;
+    UInt64 func_child_count = 0;
     ASTs assign_number_child;
     assign_number_child.reserve(arguments->children.size());
     for (const ASTPtr & child : arguments->children)
     {
         if (child->as<ASTLiteral>())
         {
-            ASTPtr func = makeASTFunction("equals", child, std::make_shared<ASTLiteral>(child_count++));
+            ASTPtr func = makeASTFunction("equals", child, std::make_shared<ASTLiteral>(++literal_child_count));
             assign_number_child.emplace_back(func);
         }
         else
+        {
+            ++func_child_count;
             assign_number_child.emplace_back(child);
+        }
     }
+
+    if (func_child_count > 0 && literal_child_count > 0)
+        throw Exception("ALL Elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer",
+                        ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
     arguments->children = assign_number_child;
 }
 
