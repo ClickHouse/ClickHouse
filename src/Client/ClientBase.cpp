@@ -394,8 +394,16 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (need_render_progress && (stdout_is_a_tty || is_interactive) && !select_into_file)
         progress_indication.clearProgressOutput();
 
-    output_format->write(materializeBlock(block));
-    written_first_block = true;
+    try
+    {
+        output_format->write(materializeBlock(block));
+        written_first_block = true;
+    }
+    catch (const Exception &)
+    {
+        /// Catch client errors like NO_ROW_DELIMITER
+        throw LocalFormatError(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+    }
 
     /// Received data block is immediately displayed to the user.
     output_format->flush();
@@ -1838,7 +1846,7 @@ void ClientBase::runInteractive()
     }
 
     LineReader::Patterns query_extenders = {"\\"};
-    LineReader::Patterns query_delimiters = {";", "\\G"};
+    LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
 
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
@@ -1860,9 +1868,13 @@ void ClientBase::runInteractive()
             break;
 
         has_vertical_output_suffix = false;
-        if (input.ends_with("\\G"))
+        if (input.ends_with("\\G") || input.ends_with("\\G;"))
         {
-            input.resize(input.size() - 2);
+            if (input.ends_with("\\G"))
+                input.resize(input.size() - 2);
+            else if (input.ends_with("\\G;"))
+                input.resize(input.size() - 3);
+
             has_vertical_output_suffix = true;
         }
 
