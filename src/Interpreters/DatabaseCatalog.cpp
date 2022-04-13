@@ -12,7 +12,7 @@
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
-#include <Common/renameat2.h>
+#include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
 #include <base/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
