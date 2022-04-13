@@ -1173,6 +1173,9 @@ def check_server_started(args):
             retry_count -= 1
             sleep(0.5)
             continue
+        except TimeoutError:
+            print("\nConnection timeout, will not retry")
+            break
 
     print('\nAll connection tries failed')
     sys.stdout.flush()
