@@ -336,7 +336,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getImplementationBuffer(File
             size_t seek_offset = file_offset_of_buffer_end - range.left;
 
             if (file_offset_of_buffer_end < range.left)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed invariant. Expected {} > {}", file_offset_of_buffer_end, range.left);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invariant failed. Expected {} > {} (current offset > file segment's start offset)", file_offset_of_buffer_end, range.left);
 
             read_buffer_for_file_segment->seek(seek_offset, SEEK_SET);
 
