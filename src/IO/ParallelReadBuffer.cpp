@@ -33,7 +33,6 @@ bool ParallelReadBuffer::addReaderToPool(std::unique_lock<std::mutex> & /*buffer
 
     auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader)));
 
-    ++active_working_reader;
     schedule([this, worker = std::move(worker)]() mutable { readerThreadFunction(std::move(worker)); });
 
     return true;
@@ -204,6 +203,11 @@ bool ParallelReadBuffer::nextImpl()
 
 void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 {
+    {
+        std::lock_guard lock{mutex};
+        ++active_working_reader;
+    }
+
     SCOPE_EXIT({
         std::lock_guard lock{mutex};
         --active_working_reader;
