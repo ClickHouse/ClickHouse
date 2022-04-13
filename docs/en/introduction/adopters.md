@@ -158,6 +158,7 @@ toc_title: Adopters
 | <a href="https://www.staffcop.ru/" class="favicon">Staffcop</a> | Information Security | Main Product | — | — | [Official website, Documentation](https://www.staffcop.ru/sce43) |
 | <a href="https://www.suning.com/" class="favicon">Suning</a> | E-Commerce | User behaviour analytics | — | — | [Blog article](https://www.sohu.com/a/434152235_411876) |
 | <a href="https://superwall.me/" class="favicon">Superwall</a> | Monetization Tooling | Main product | — | — | [Word of mouth, Jan 2022](https://github.com/ClickHouse/ClickHouse/pull/33573) |
+| <a href="https://swetrix.com" class="favicon">Swetrix</a> | Analytics | Main Product | — | — | [Source code](https://github.com/swetrix/swetrix-api) |
 | <a href="https://www.teralytics.net/" class="favicon">Teralytics</a> | Mobility | Analytics | — | — | [Tech blog](https://www.teralytics.net/knowledge-hub/visualizing-mobility-data-the-scalability-challenge) |
 | <a href="https://www.tencent.com" class="favicon">Tencent</a> | Big Data | Data processing | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/5.%20ClickHouse大数据集群应用_李俊飞腾讯网媒事业部.pdf) |
 | <a href="https://www.tencent.com" class="favicon">Tencent</a> | Messaging | Logging | — | — | [Talk in Chinese, November 2019](https://youtu.be/T-iVQRuw-QY?t=5050) |

@@ -35,7 +35,7 @@ public:
 private:
     bool backupExists() const override;
     void openImpl(OpenMode open_mode_) override;
-    void closeImpl(bool writing_finalized_) override;
+    void closeImpl(const Strings & written_files_, bool writing_finalized_) override;
     bool supportsWritingInMultipleThreads() const override { return false; }
     std::unique_ptr<ReadBuffer> readFileImpl(const String & file_name) const override;
     std::unique_ptr<WriteBuffer> writeFileImpl(const String & file_name) override;
