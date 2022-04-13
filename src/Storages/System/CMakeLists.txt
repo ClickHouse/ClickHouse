@@ -6,11 +6,46 @@ include(${ClickHouse_SOURCE_DIR}/cmake/embed_binary.cmake)
 
 set (CONFIG_BUILD "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemBuildOptions.generated.cpp")
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
-get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 
 get_property(TZDATA_VERSION GLOBAL PROPERTY TZDATA_VERSION_PROP)
 
-configure_file (StorageSystemBuildOptions.generated.cpp.in ${CONFIG_BUILD})
+
+find_package(Git)
+if(Git_FOUND)
+    # The commit's git hash, and whether the building workspace was dirty or not
+    execute_process(COMMAND
+      "${GIT_EXECUTABLE}" rev-parse HEAD
+      WORKING_DIRECTORY "${ClickHouse_SOURCE_DIR}"
+      OUTPUT_VARIABLE GIT_HASH
+      ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    # Git branch name
+    execute_process(COMMAND
+      "${GIT_EXECUTABLE}" rev-parse --abbrev-ref HEAD
+      WORKING_DIRECTORY "${ClickHouse_SOURCE_DIR}"
+      OUTPUT_VARIABLE GIT_BRANCH
+      ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    # The date of the commit
+    SET(ENV{TZ} "UTC")
+    execute_process(COMMAND
+      "${GIT_EXECUTABLE}" log -1 --format=%ad --date=iso-local
+      WORKING_DIRECTORY "${ClickHouse_SOURCE_DIR}"
+      OUTPUT_VARIABLE GIT_DATE
+      ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    # The subject of the commit
+    execute_process(COMMAND
+      "${GIT_EXECUTABLE}" log -1 --format=%s
+      WORKING_DIRECTORY "${ClickHouse_SOURCE_DIR}"
+      OUTPUT_VARIABLE GIT_COMMIT_SUBJECT
+      ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+
+function(generate_system_build_options)
+    include(${ClickHouse_SOURCE_DIR}/src/configure_config.cmake)
+    include(${ClickHouse_SOURCE_DIR}/src/Functions/configure_config.cmake)
+    include(${ClickHouse_SOURCE_DIR}/src/Formats/configure_config.cmake)
+    configure_file(StorageSystemBuildOptions.generated.cpp.in ${CONFIG_BUILD})
+endfunction()
+generate_system_build_options()
 
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(storages_system .)
@@ -49,7 +84,8 @@ clickhouse_embed_binaries(
         RESOURCES schemata.sql tables.sql views.sql columns.sql
 )
 
-add_library(clickhouse_storages_system ${storages_system_headers} ${storages_system_sources})
+list (SORT storages_system_sources) # Reproducible build
+add_library(clickhouse_storages_system ${storages_system_sources})
 
 add_dependencies(clickhouse_storages_system information_schema_metadata)
 

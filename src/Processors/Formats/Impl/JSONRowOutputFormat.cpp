@@ -26,8 +26,10 @@ JSONRowOutputFormat::JSONRowOutputFormat(
             need_validate_utf8 = true;
 
         WriteBufferFromOwnString buf;
-        writeJSONString(fields[i].name, buf, settings);
-
+        {
+            WriteBufferValidUTF8 validating_buf(buf);
+            writeJSONString(fields[i].name, validating_buf, settings);
+        }
         fields[i].name = buf.str();
     }
 
@@ -152,9 +154,9 @@ void JSONRowOutputFormat::writeBeforeTotals()
 
 void JSONRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
-    size_t num_columns = columns.size();
+    size_t columns_size = columns.size();
 
-    for (size_t i = 0; i < num_columns; ++i)
+    for (size_t i = 0; i < columns_size; ++i)
     {
         if (i != 0)
             writeTotalsFieldDelimiter();
@@ -215,11 +217,15 @@ void JSONRowOutputFormat::writeAfterExtremes()
     writeCString("\t}", *ostr);
 }
 
-void JSONRowOutputFormat::writeLastSuffix()
+void JSONRowOutputFormat::finalizeImpl()
 {
     writeCString(",\n\n", *ostr);
     writeCString("\t\"rows\": ", *ostr);
     writeIntText(row_count, *ostr);
+
+    auto outside_statistics = getOutsideStatistics();
+    if (outside_statistics)
+        statistics = std::move(*outside_statistics);
 
     writeRowsBeforeLimitAtLeast();
 
@@ -233,11 +239,11 @@ void JSONRowOutputFormat::writeLastSuffix()
 
 void JSONRowOutputFormat::writeRowsBeforeLimitAtLeast()
 {
-    if (applied_limit)
+    if (statistics.applied_limit)
     {
         writeCString(",\n\n", *ostr);
         writeCString("\t\"rows_before_limit_at_least\": ", *ostr);
-        writeIntText(rows_before_limit, *ostr);
+        writeIntText(statistics.rows_before_limit, *ostr);
     }
 }
 
@@ -248,13 +254,13 @@ void JSONRowOutputFormat::writeStatistics()
     writeCString("\t{\n", *ostr);
 
     writeCString("\t\t\"elapsed\": ", *ostr);
-    writeText(watch.elapsedSeconds(), *ostr);
+    writeText(statistics.watch.elapsedSeconds(), *ostr);
     writeCString(",\n", *ostr);
     writeCString("\t\t\"rows_read\": ", *ostr);
-    writeText(progress.read_rows.load(), *ostr);
+    writeText(statistics.progress.read_rows.load(), *ostr);
     writeCString(",\n", *ostr);
     writeCString("\t\t\"bytes_read\": ", *ostr);
-    writeText(progress.read_bytes.load(), *ostr);
+    writeText(statistics.progress.read_bytes.load(), *ostr);
     writeChar('\n', *ostr);
 
     writeCString("\t}", *ostr);
@@ -262,7 +268,7 @@ void JSONRowOutputFormat::writeStatistics()
 
 void JSONRowOutputFormat::onProgress(const Progress & value)
 {
-    progress.incrementPiecewiseAtomically(value);
+    statistics.progress.incrementPiecewiseAtomically(value);
 }
 
 
@@ -277,6 +283,9 @@ void registerOutputFormatJSON(FormatFactory & factory)
         return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, false);
     });
 
+    factory.markOutputFormatSupportsParallelFormatting("JSON");
+    factory.markFormatHasNoAppendSupport("JSON");
+
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
         const Block & sample,
@@ -285,6 +294,9 @@ void registerOutputFormatJSON(FormatFactory & factory)
     {
         return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, true);
     });
+
+    factory.markOutputFormatSupportsParallelFormatting("JSONStrings");
+    factory.markFormatHasNoAppendSupport("JSONStrings");
 }
 
 }

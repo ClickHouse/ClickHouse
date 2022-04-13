@@ -2,6 +2,7 @@
 #include <vector>
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -141,7 +142,16 @@ void ODBCSource::insertValue(
             assert_cast<ColumnUInt32 &>(column).insertValue(time);
             break;
         }
-        case ValueType::vtDateTime64:[[fallthrough]];
+        case ValueType::vtDateTime64:
+        {
+            auto value = row.get<std::string>(idx);
+            ReadBufferFromString in(value);
+            DateTime64 time = 0;
+            const auto * datetime_type = assert_cast<const DataTypeDateTime64 *>(data_type.get());
+            readDateTime64Text(time, datetime_type->getScale(), in, datetime_type->getTimeZone());
+            assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
+            break;
+        }
         case ValueType::vtDecimal32: [[fallthrough]];
         case ValueType::vtDecimal64: [[fallthrough]];
         case ValueType::vtDecimal128: [[fallthrough]];

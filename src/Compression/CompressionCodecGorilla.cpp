@@ -7,7 +7,6 @@
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTIdentifier.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>

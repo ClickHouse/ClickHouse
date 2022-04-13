@@ -146,17 +146,23 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
     : access_control(&access_control_)
     , params(params_)
 {
-    std::lock_guard lock{mutex};
+}
 
-    subscription_for_user_change = access_control->subscribeForChanges(
-        *params.user_id, [this](const UUID &, const AccessEntityPtr & entity)
-    {
-        UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
-        std::lock_guard lock2{mutex};
-        setUser(changed_user);
-    });
 
-    setUser(access_control->read<User>(*params.user_id));
+void ContextAccess::initialize()
+{
+     std::lock_guard lock{mutex};
+     subscription_for_user_change = access_control->subscribeForChanges(
+         *params.user_id, [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
+     {
+         auto ptr = weak_ptr.lock();
+         if (!ptr)
+             return;
+         UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
+         std::lock_guard lock2{ptr->mutex};
+         ptr->setUser(changed_user);
+     });
+     setUser(access_control->read<User>(*params.user_id));
 }
 
 
@@ -269,11 +275,11 @@ std::shared_ptr<const EnabledRowPolicies> ContextAccess::getEnabledRowPolicies()
     return no_row_policies;
 }
 
-ASTPtr ContextAccess::getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType index, const ASTPtr & extra_condition) const
+ASTPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr) const
 {
     std::lock_guard lock{mutex};
     if (enabled_row_policies)
-        return enabled_row_policies->getCondition(database, table_name, index, extra_condition);
+        return enabled_row_policies->getFilter(database, table_name, filter_type, combine_with_expr);
     return nullptr;
 }
 
@@ -419,6 +425,7 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
             | AccessType::TRUNCATE;
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
+        const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
@@ -426,7 +433,7 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
         const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
-        const AccessFlags ddl_flags = table_ddl | dictionary_ddl;
+        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
     };
     static const PrecalculatedFlags precalc;

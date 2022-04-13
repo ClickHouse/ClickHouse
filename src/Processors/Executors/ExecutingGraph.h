@@ -1,7 +1,10 @@
 #pragma once
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
+#include <Processors/Executors/UpgradableLock.h>
 #include <mutex>
+#include <queue>
+#include <stack>
 
 namespace DB
 {
@@ -81,8 +84,7 @@ public:
         ExecStatus status = ExecStatus::Idle;
         std::mutex status_mutex;
 
-        /// Job and exception. Job calls processor->work() inside and catch exception.
-        std::function<void()> job;
+        /// Exception which happened after processor execution.
         std::exception_ptr exception;
 
         /// Last state for profiling.
@@ -112,6 +114,7 @@ public:
         }
     };
 
+    using Queue = std::queue<Node *>;
     using NodePtr = std::unique_ptr<Node>;
     using Nodes = std::vector<NodePtr>;
     Nodes nodes;
@@ -120,12 +123,19 @@ public:
     using ProcessorsMap = std::unordered_map<const IProcessor *, uint64_t>;
     ProcessorsMap processors_map;
 
-    explicit ExecutingGraph(const Processors & processors);
+    explicit ExecutingGraph(Processors & processors_, bool profile_processors_);
 
-    /// Update graph after processor returned ExpandPipeline status.
-    /// Processors should already contain newly-added processors.
-    /// Returns newly-added nodes and nodes which edges were modified.
-    std::vector<uint64_t> expandPipeline(const Processors & processors);
+    const Processors & getProcessors() const { return processors; }
+
+    /// Traverse graph the first time to update all the childless nodes.
+    void initializeExecution(Queue & queue);
+
+    /// Update processor with pid number (call IProcessor::prepare).
+    /// Check parents and children of current processor and push them to stacks if they also need to be updated.
+    /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
+    bool updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
+
+    void cancel();
 
 private:
     /// Add single edge to edges list. Check processor is known.
@@ -134,6 +144,17 @@ private:
     /// Append new edges for node. It is called for new node or when new port were added after ExpandPipeline.
     /// Returns true if new edge was added.
     bool addEdges(uint64_t node);
+
+    /// Update graph after processor (pid) returned ExpandPipeline status.
+    /// All new nodes and nodes with updated ports are pushed into stack.
+    bool expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
+
+    Processors & processors;
+    std::mutex processors_mutex;
+
+    UpgradableMutex nodes_mutex;
+
+    const bool profile_processors;
 };
 
 }

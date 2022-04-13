@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 /// Transform 64-byte mask to 64-bit mask
-inline UInt64 Bytes64MaskToBits64Mask(const UInt8 * bytes64)
+inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
 {
 #if defined(__AVX512F__) && defined(__AVX512BW__)
     static const __m512i zero64 = _mm512_setzero_epi32();
@@ -46,10 +46,8 @@ inline UInt64 Bytes64MaskToBits64Mask(const UInt8 * bytes64)
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48) & 0xffff000000000000);
 #else
     UInt64 res = 0;
-    const UInt8 * pos = bytes64;
-    const UInt8 * end = pos + 64;
-    for (; pos < end; ++pos)
-        res |= ((*pos == 0)<<(pos-bytes64));
+    for (size_t i = 0; i < 64; ++i)
+        res |= static_cast<UInt64>(0 == bytes64[i]) << i;
 #endif
     return ~res;
 }
@@ -98,13 +96,13 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
             "Size of indexes ({}) is less than required ({})", indexes.size(), limit);
 
-    if (auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))
+    if (const auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))
         return column.template indexImpl<UInt8>(*data_uint8, limit);
-    else if (auto * data_uint16 = detail::getIndexesData<UInt16>(indexes))
+    else if (const auto * data_uint16 = detail::getIndexesData<UInt16>(indexes))
         return column.template indexImpl<UInt16>(*data_uint16, limit);
-    else if (auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
+    else if (const auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
         return column.template indexImpl<UInt32>(*data_uint32, limit);
-    else if (auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
+    else if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
         return column.template indexImpl<UInt64>(*data_uint64, limit);
     else
         throw Exception("Indexes column for IColumn::select must be ColumnUInt, got " + indexes.getName(),
@@ -120,6 +118,7 @@ ColumnPtr permuteImpl(const Column & column, const IColumn::Permutation & perm, 
     return column.indexImpl(perm, limit);
 }
 
+/// NOLINTNEXTLINE
 #define INSTANTIATE_INDEX_IMPL(Column) \
     template ColumnPtr Column::indexImpl<UInt8>(const PaddedPODArray<UInt8> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const; \

@@ -23,7 +23,7 @@ public:
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -34,8 +34,7 @@ public:
     void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const override;
+        const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
         SerializeBinaryBulkSettings & settings,

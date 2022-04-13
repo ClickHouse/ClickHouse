@@ -1,8 +1,8 @@
 #include <Access/AccessRights.h>
 #include <base/logger_useful.h>
+#include <base/sort.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/sort.hpp>
 #include <unordered_map>
 
 namespace DB
@@ -23,37 +23,27 @@ namespace
 
         friend bool operator<(const ProtoElement & left, const ProtoElement & right)
         {
-            static constexpr auto compare_name = [](const boost::container::small_vector<std::string_view, 3> & left_name,
-                                                    const boost::container::small_vector<std::string_view, 3> & right_name,
-                                                    size_t i)
+            /// Compare components alphabetically.
+            size_t min_size = std::min(left.full_name.size(), right.full_name.size());
+            for (size_t i = 0; i != min_size; ++i)
             {
-                if (i < left_name.size())
-                {
-                    if (i < right_name.size())
-                        return left_name[i].compare(right_name[i]);
-                    else
-                        return 1; /// left_name is longer => left_name > right_name
-                }
-                else if (i < right_name.size())
-                    return 1; /// right_name is longer => left < right
-                else
-                    return 0; /// left_name == right_name
-            };
+                int cmp = left.full_name[i].compare(right.full_name[i]);
+                if (cmp != 0)
+                    return cmp < 0;
+            }
 
-            if (int cmp = compare_name(left.full_name, right.full_name, 0))
-                return cmp < 0;
+            /// Names with less number of components first.
+            if (left.full_name.size() != right.full_name.size())
+                return left.full_name.size() < right.full_name.size();
 
-            if (int cmp = compare_name(left.full_name, right.full_name, 1))
-                return cmp < 0;
-
+            /// Grants before partial revokes.
             if (left.is_partial_revoke != right.is_partial_revoke)
-                return right.is_partial_revoke;
+                return right.is_partial_revoke; /// if left is grant, right is partial revoke, we assume left < right
 
+            /// Grants with grant option after other grants.
+            /// Revoke grant option after normal revokes.
             if (left.grant_option != right.grant_option)
-                return right.grant_option;
-
-            if (int cmp = compare_name(left.full_name, right.full_name, 2))
-                return cmp < 0;
+                return right.grant_option; /// if left is without grant option, and right is with grant option, we assume left < right
 
             return (left.access_flags < right.access_flags);
         }
@@ -111,7 +101,7 @@ namespace
         AccessRightsElements getResult() const
         {
             ProtoElements sorted = *this;
-            boost::range::sort(sorted);
+            ::sort(sorted.begin(), sorted.end());
             AccessRightsElements res;
             res.reserve(sorted.size());
 
@@ -716,8 +706,8 @@ private:
 
 AccessRights::AccessRights() = default;
 AccessRights::~AccessRights() = default;
-AccessRights::AccessRights(AccessRights && src) = default;
-AccessRights & AccessRights::operator =(AccessRights && src) = default;
+AccessRights::AccessRights(AccessRights && src) noexcept = default;
+AccessRights & AccessRights::operator =(AccessRights && src) noexcept = default;
 
 
 AccessRights::AccessRights(const AccessRights & src)

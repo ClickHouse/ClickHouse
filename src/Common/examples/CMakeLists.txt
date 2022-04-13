@@ -1,7 +1,7 @@
 add_executable (hashes_test hashes_test.cpp)
-target_link_libraries (hashes_test PRIVATE clickhouse_common_io ${CITYHASH_LIBRARIES})
-if(OPENSSL_CRYPTO_LIBRARY)
-    target_link_libraries (hashes_test PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
+target_link_libraries (hashes_test PRIVATE clickhouse_common_io ch_contrib::cityhash)
+if (TARGET OpenSSL::Crypto)
+    target_link_libraries (hashes_test PRIVATE OpenSSL::Crypto)
 endif()
 
 add_executable (sip_hash_perf sip_hash_perf.cpp)
@@ -23,8 +23,7 @@ add_executable (compact_array compact_array.cpp)
 target_link_libraries (compact_array PRIVATE clickhouse_common_io)
 
 add_executable (radix_sort radix_sort.cpp)
-target_link_libraries (radix_sort PRIVATE clickhouse_common_io)
-target_include_directories(radix_sort SYSTEM PRIVATE ${PDQSORT_INCLUDE_DIR})
+target_link_libraries (radix_sort PRIVATE clickhouse_common_io ch_contrib::pdqsort)
 
 add_executable (arena_with_free_lists arena_with_free_lists.cpp)
 target_link_libraries (arena_with_free_lists PRIVATE dbms)
@@ -42,12 +41,10 @@ add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving PRIVATE clickhouse_common_io)
 
 add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
-target_include_directories (integer_hash_tables_and_hashes SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
-target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms abseil_swiss_tables)
+target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms ch_contrib::abseil_swiss_tables ch_contrib::sparsehash)
 
 add_executable (integer_hash_tables_benchmark integer_hash_tables_benchmark.cpp)
-target_include_directories (integer_hash_tables_benchmark SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
-target_link_libraries (integer_hash_tables_benchmark PRIVATE dbms abseil_swiss_tables)
+target_link_libraries (integer_hash_tables_benchmark PRIVATE dbms ch_contrib::abseil_swiss_tables ch_contrib::sparsehash)
 
 add_executable (cow_columns cow_columns.cpp)
 target_link_libraries (cow_columns PRIVATE clickhouse_common_io)
@@ -80,3 +77,11 @@ target_link_libraries (shell_command_inout PRIVATE clickhouse_common_io)
 
 add_executable (executable_udf executable_udf.cpp)
 target_link_libraries (executable_udf PRIVATE dbms)
+
+if (ENABLE_HIVE)
+    add_executable (hive_metastore_client hive_metastore_client.cpp)
+    target_link_libraries (hive_metastore_client PUBLIC ch_contrib::hivemetastore ch_contrib::thrift)
+endif()
+
+add_executable (interval_tree interval_tree.cpp)
+target_link_libraries (interval_tree PRIVATE dbms)

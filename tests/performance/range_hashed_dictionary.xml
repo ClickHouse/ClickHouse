@@ -1,0 +1,126 @@
+<test>
+    <create_query>
+        CREATE TABLE simple_key_range_hashed_dictionary_source_table
+        (
+            id UInt64,
+            value UInt64,
+            start UInt64,
+            end UInt64
+        ) ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE complex_key_range_hashed_dictionary_source_table
+        (
+            id UInt64,
+            id_key String,
+            value UInt64,
+            start UInt64,
+            end UInt64
+        ) ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE DICTIONARY simple_key_range_hashed_dictionary
+        (
+            id UInt64,
+            value UInt64,
+            start UInt64,
+            end UInt64
+        )
+        PRIMARY KEY id
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'simple_key_range_hashed_dictionary_source_table'))
+        LAYOUT(RANGE_HASHED())
+        RANGE(MIN start MAX end)
+        LIFETIME(MIN 0 MAX 1000);
+    </create_query>
+
+    <create_query>
+        CREATE DICTIONARY complex_key_range_hashed_dictionary
+        (
+            id UInt64,
+            id_key String,
+            value UInt64,
+            start UInt64,
+            end UInt64
+        )
+        PRIMARY KEY id, id_key
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'complex_key_range_hashed_dictionary_source_table'))
+        LAYOUT(COMPLEX_KEY_RANGE_HASHED())
+        RANGE(MIN start MAX end)
+        LIFETIME(MIN 0 MAX 1000);
+    </create_query>
+
+    <fill_query>
+        INSERT INTO simple_key_range_hashed_dictionary_source_table
+        SELECT key, key, range_start * 2, range_start * 2 + 1 FROM
+            (SELECT number as key FROM numbers(10000)) as keys,
+            (SELECT number as range_start FROM numbers(1000)) as ranges;
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO complex_key_range_hashed_dictionary_source_table
+        SELECT key, toString(key), key, range_start * 2, range_start * 2 + 1 FROM
+            (SELECT number as key FROM numbers(10000)) as keys,
+            (SELECT number as range_start FROM numbers(1000)) as ranges;
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>elements_count</name>
+            <values>
+                <value>500000</value>
+                <value>750000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>
+        WITH rand64() % 5000 as key
+        SELECT dictGet('default.simple_key_range_hashed_dictionary', 'value', toUInt64(key), key)
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
+
+    <query>
+        WITH rand64() % 5000 as key
+        SELECT dictHas('default.simple_key_range_hashed_dictionary', toUInt64(key), key)
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
+
+    <query>
+        SELECT * FROM simple_key_range_hashed_dictionary
+        FORMAT Null;
+    </query>
+
+    <query>
+        WITH (rand64() % toUInt64(5000) as key, toString(key) as key_id) as complex_key
+        SELECT dictGet('default.complex_key_range_hashed_dictionary', 'value', complex_key, key)
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
+
+    <query>
+        WITH (rand64() % toUInt64(5000) as key, toString(key) as key_id) as complex_key
+        SELECT dictHas('default.complex_key_range_hashed_dictionary', complex_key, key)
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
+
+    <query>
+        SELECT * FROM complex_key_range_hashed_dictionary
+        FORMAT Null;
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS simple_key_range_hashed_dictionary_source_table;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS complex_key_range_hashed_dictionary_source_table;</drop_query>
+
+    <drop_query>DROP DICTIONARY IF EXISTS simple_key_range_hashed_dictionary;</drop_query>
+    <drop_query>DROP DICTIONARY IF EXISTS complex_key_range_hashed_dictionary;</drop_query>
+
+</test>

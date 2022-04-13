@@ -56,6 +56,16 @@ public:
         return nested_func->getReturnType();
     }
 
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);
@@ -130,14 +140,14 @@ public:
         nested_func->mergeBatch(batch_size, places, place_offset, rhs, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        nested_func->serialize(place, buf);
+        nested_func->serialize(place, buf, version);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
-        nested_func->deserialize(place, buf, arena);
+        nested_func->deserialize(place, buf, version, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override

@@ -17,7 +17,6 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
-    extern const Event Seek;
 }
 
 namespace CurrentMetrics
@@ -37,6 +36,9 @@ namespace ErrorCodes
 
 std::future<IAsynchronousReader::Result> SynchronousReader::submit(Request request)
 {
+    /// If size is zero, then read() cannot be distinguished from EOF
+    assert(request.size);
+
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
 
 #if defined(POSIX_FADV_WILLNEED)
@@ -80,10 +82,8 @@ std::future<IAsynchronousReader::Result> SynchronousReader::submit(Request reque
         watch.stop();
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-        return bytes_read;
+        return Result{ .size = bytes_read, .offset = request.ignore };
     });
 }
 
 }
-
-

@@ -46,8 +46,12 @@ public:
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context);
 
-    void stopReplication();
+    bool hasReplicationThread() const override { return true; }
 
+    void stopReplication() override;
+
+    String getShardName() const { return shard_name; }
+    String getReplicaName() const { return replica_name; }
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
@@ -70,6 +74,16 @@ private:
     void tryConnectToZooKeeperAndInitDatabase(bool force_attach);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
+
+    struct
+    {
+        String cluster_username{"default"};
+        String cluster_password;
+        String cluster_secret;
+        bool cluster_secure_connection{false};
+    } cluster_auth_info;
+
+    void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
 

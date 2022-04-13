@@ -1,15 +1,16 @@
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 
 #include <Access/ContextAccess.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
@@ -40,7 +41,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
     auto & user_defined_function_factory = UserDefinedSQLFunctionFactory::instance();
 
-    auto & function_name = create_function_query.function_name;
+    auto function_name = create_function_query.getFunctionName();
 
     bool if_not_exists = create_function_query.if_not_exists;
     bool replace = create_function_query.or_replace;
@@ -56,17 +57,36 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
 void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const String & name)
 {
-    const auto * args_tuple = function->as<ASTFunction>()->arguments->children.at(0)->as<ASTFunction>();
+    auto & lambda_function = function->as<ASTFunction &>();
+    auto & lambda_function_expression_list = lambda_function.arguments->children;
+
+    if (lambda_function_expression_list.size() != 2)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have arguments and body");
+
+    const ASTFunction * tuple_function_arguments = lambda_function_expression_list[0]->as<ASTFunction>();
+
+    if (!tuple_function_arguments || !tuple_function_arguments->arguments)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid arguments");
+
     std::unordered_set<String> arguments;
-    for (const auto & argument : args_tuple->arguments->children)
+
+    for (const auto & argument : tuple_function_arguments->arguments->children)
     {
-        const auto & argument_name = argument->as<ASTIdentifier>()->name();
+        const auto * argument_identifier = argument->as<ASTIdentifier>();
+
+        if (!argument_identifier)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda argument must be identifier");
+
+        const auto & argument_name = argument_identifier->name();
         auto [_, inserted] = arguments.insert(argument_name);
         if (!inserted)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Identifier {} already used as function parameter", argument_name);
     }
 
-    ASTPtr function_body = function->as<ASTFunction>()->children.at(0)->children.at(1);
+    ASTPtr function_body = lambda_function_expression_list[1];
+    if (!function_body)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid function body");
+
     validateFunctionRecursiveness(function_body, name);
 }
 
@@ -81,5 +101,4 @@ void InterpreterCreateFunctionQuery::validateFunctionRecursiveness(ASTPtr node, 
         validateFunctionRecursiveness(child, function_to_create);
     }
 }
-
 }

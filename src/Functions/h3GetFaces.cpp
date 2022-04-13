@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -51,7 +52,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * column = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (!column)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                arguments[0].type->getName(),
+                1,
+                getName());
+
         const auto & data = column->getData();
 
         auto result_column_data = ColumnUInt8::create();
@@ -64,7 +77,7 @@ public:
         auto current_offset = 0;
         std::vector<int> faces;
 
-        for (size_t row = 0; row < input_rows_count; row++)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             int max_faces = maxFaceCount(data[row]);
 
@@ -73,7 +86,7 @@ public:
             // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
             getIcosahedronFaces(data[row], faces.data());
 
-            for (int i = 0; i < max_faces; i++)
+            for (int i = 0; i < max_faces; ++i)
             {
                 // valid icosahedron faces are represented by integers 0-19
                 if (faces[i] >= 0 && faces[i] <= 19)

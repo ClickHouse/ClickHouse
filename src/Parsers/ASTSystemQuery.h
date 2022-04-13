@@ -28,6 +28,7 @@ public:
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
+        DROP_FILESYSTEM_CACHE,
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
@@ -70,10 +71,17 @@ public:
 
     Type type = Type::UNKNOWN;
 
+    ASTPtr database;
+    ASTPtr table;
+
+    String getDatabase() const;
+    String getTable() const;
+
+    void setDatabase(const String & name);
+    void setTable(const String & name);
+
     String target_model;
     String target_function;
-    String database;
-    String table;
     String replica;
     String replica_zk_path;
     bool is_drop_whole_replica{};
@@ -81,17 +89,27 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+    String filesystem_cache_path;
 
     String getID(char) const override { return "SYSTEM query"; }
 
-    ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTSystemQuery>(*this);
+        res->children.clear();
+
+        if (database) { res->database = database->clone(); res->children.push_back(res->database); }
+        if (table) { res->table = table->clone(); res->children.push_back(res->table); }
+
+        return res;
+    }
 
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
         return removeOnCluster<ASTSystemQuery>(clone(), new_database);
     }
 
-    const char * getQueryKindString() const override { return "System"; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::System; }
 
 protected:
 

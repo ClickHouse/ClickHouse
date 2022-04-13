@@ -3,13 +3,14 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
@@ -303,20 +304,20 @@ private:
 
 Pipe StorageSystemColumns::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     /// Create a mask of what columns are needed in the result.
 
     NameSet names_set(column_names.begin(), column_names.end());
 
-    Block sample_block = metadata_snapshot->getSampleBlock();
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
     Block header;
 
     std::vector<UInt8> columns_mask(sample_block.columns());

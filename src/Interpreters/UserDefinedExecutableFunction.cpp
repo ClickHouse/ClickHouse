@@ -13,14 +13,12 @@ namespace DB
 
 UserDefinedExecutableFunction::UserDefinedExecutableFunction(
     const UserDefinedExecutableFunctionConfiguration & configuration_,
-    const ExternalLoadableLifetime & lifetime_,
-    std::shared_ptr<ProcessPool> process_pool_)
+    std::shared_ptr<ShellCommandSourceCoordinator> coordinator_,
+    const ExternalLoadableLifetime & lifetime_)
     : configuration(configuration_)
+    , coordinator(std::move(coordinator_))
     , lifetime(lifetime_)
-    , process_pool(process_pool_)
 {
-    if (!process_pool && configuration.type == UserDefinedExecutableFunctionType::executable_pool)
-        process_pool = std::make_shared<ProcessPool>(configuration.pool_size == 0 ? std::numeric_limits<int>::max() : configuration.pool_size);
 }
 
 };

@@ -13,22 +13,20 @@
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>
-
+#include <Coordination/Keeper4LWInfo.h>
+#include <Coordination/KeeperConnectionStats.h>
 
 namespace DB
 {
-
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
 
 /// Highlevel wrapper for ClickHouse Keeper.
 /// Process user requests via consensus and return responses.
 class KeeperDispatcher
 {
-
 private:
-    std::mutex push_request_mutex;
+    mutable std::mutex push_request_mutex;
 
-    CoordinationSettingsPtr coordination_settings;
     using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
     using UpdateConfigurationQueue = ConcurrentBoundedQueue<ConfigUpdateAction>;
@@ -43,7 +41,7 @@ private:
 
     std::atomic<bool> shutdown_called{false};
 
-    std::mutex session_to_response_callback_mutex;
+    mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
     /// The first map is subscription map for normal responses like
     /// (get, set, list, etc.). Dispatcher determines callback for each response
@@ -70,12 +68,15 @@ private:
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
 
+    KeeperConnectionStats keeper_stats;
+
+    KeeperConfigurationAndSettingsPtr configuration_and_settings;
+
     Poco::Logger * log;
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
-private:
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
@@ -123,6 +124,18 @@ public:
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
+    /// Get new session ID
+    int64_t getSessionID(int64_t session_timeout_ms);
+
+    /// Register session and subscribe for responses with callback
+    void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
+
+    /// Call if we don't need any responses for this session no more (session was expired)
+    void finishSession(int64_t session_id);
+
+    /// Invoked when a request completes.
+    void updateKeeperStatLatency(uint64_t process_time_ms);
+
     /// Are we leader
     bool isLeader() const
     {
@@ -134,14 +147,47 @@ public:
         return server->isLeaderAlive();
     }
 
-    /// Get new session ID
-    int64_t getSessionID(int64_t session_timeout_ms);
+    bool isObserver() const
+    {
+        return server->isObserver();
+    }
 
-    /// Register session and subscribe for responses with callback
-    void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
+    uint64_t getLogDirSize() const;
 
-    /// Call if we don't need any responses for this session no more (session was expired)
-    void finishSession(int64_t session_id);
+    uint64_t getSnapDirSize() const;
+
+    /// Request statistics such as qps, latency etc.
+    KeeperConnectionStats & getKeeperConnectionStats()
+    {
+        return keeper_stats;
+    }
+
+    Keeper4LWInfo getKeeper4LWInfo() const;
+
+    const KeeperStateMachine & getStateMachine() const
+    {
+        return *server->getKeeperStateMachine();
+    }
+
+    const KeeperConfigurationAndSettingsPtr & getKeeperConfigurationAndSettings() const
+    {
+        return configuration_and_settings;
+    }
+
+    void incrementPacketsSent()
+    {
+        keeper_stats.incrementPacketsSent();
+    }
+
+    void incrementPacketsReceived()
+    {
+        keeper_stats.incrementPacketsReceived();
+    }
+
+    void resetConnectionStats()
+    {
+        keeper_stats.reset();
+    }
 };
 
 }

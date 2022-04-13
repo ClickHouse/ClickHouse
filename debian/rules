@@ -45,6 +45,10 @@ ifdef DEB_CXX
 ifeq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
         CC := $(DEB_CC)
         CXX := $(DEB_CXX)
+else ifeq (clang,$(findstring clang,$(DEB_CXX)))
+# If we crosscompile with clang, it knows what to do
+        CC := $(DEB_CC)
+        CXX := $(DEB_CXX)
 else
         CC := $(DEB_HOST_GNU_TYPE)-$(DEB_CC)
         CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)
@@ -77,10 +81,6 @@ else
     THREADS_COUNT = 1
 endif
 
-ifneq ($(THREADS_COUNT),)
-    THREADS_COUNT:=-j$(THREADS_COUNT)
-endif
-
 %:
 	dh $@ $(DH_FLAGS) --buildsystem=cmake
 
@@ -89,12 +89,15 @@ override_dh_auto_configure:
 
 override_dh_auto_build:
 	# Fix for ninja. Do not add -O.
-	$(MAKE) $(THREADS_COUNT) -C $(BUILDDIR) $(MAKE_TARGET)
+	$(MAKE) -j$(THREADS_COUNT) -C $(BUILDDIR) $(MAKE_TARGET)
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
-	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V
+	cd $(BUILDDIR) && ctest -j$(THREADS_COUNT) -V
 endif
+
+# Disable config.guess and config.sub update
+override_dh_update_autotools_config:
 
 override_dh_clean:
 	rm -rf debian/copyright debian/clickhouse-client.docs debian/clickhouse-common-static.docs
@@ -120,7 +123,7 @@ override_dh_install:
 	dh_install --list-missing --sourcedir=$(DESTDIR)
 
 override_dh_auto_install:
-	env DESTDIR=$(DESTDIR) $(MAKE) $(THREADS_COUNT) -C $(BUILDDIR) install
+	env DESTDIR=$(DESTDIR) $(MAKE) -j$(THREADS_COUNT) -C $(BUILDDIR) install
 
 override_dh_shlibdeps:
 	true # We depend only on libc and dh_shlibdeps gives us wrong (too strict) dependency.

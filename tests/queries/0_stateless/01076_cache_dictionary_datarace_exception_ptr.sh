@@ -7,7 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query="CREATE DATABASE IF NOT EXISTS dictdb_01076; "
+$CLICKHOUSE_CLIENT --query="DROP DATABASE IF EXISTS dictdb_01076;"
+$CLICKHOUSE_CLIENT --query="CREATE DATABASE dictdb_01076;"
 
 $CLICKHOUSE_CLIENT --query="
 CREATE TABLE dictdb_01076.table_datarace
@@ -37,35 +38,29 @@ LAYOUT(CACHE(SIZE_IN_CELLS 10));
 
 function thread1()
 {
-    for _ in {1..50}
-    do
-        # This query will be ended with exception, because source dictionary has UUID as a key type.
-        $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(1));"
-    done
+    # This query will be ended with exception, because source dictionary has UUID as a key type.
+    $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(1));"
 }
 
 
 function thread2()
 {
-    for _ in {1..50}
-    do
-        # This query will be ended with exception, because source dictionary has UUID as a key type.
-        $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(2));"
-    done
+    # This query will be ended with exception, because source dictionary has UUID as a key type.
+    $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(2));"
 }
 
-export -f thread1;
-export -f thread2;
+export -f thread1
+export -f thread2
 
 TIMEOUT=5
 
-timeout $TIMEOUT bash -c thread1 > /dev/null 2>&1 &
-timeout $TIMEOUT bash -c thread2 > /dev/null 2>&1 &
+clickhouse_client_loop_timeout $TIMEOUT thread1 > /dev/null 2>&1 &
+clickhouse_client_loop_timeout $TIMEOUT thread2 > /dev/null 2>&1 &
 
 wait
 
 echo OK
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE dictdb_01076.table_datarace;"
 $CLICKHOUSE_CLIENT --query="DROP DICTIONARY dictdb_01076.dict_datarace;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE dictdb_01076.table_datarace;"
 $CLICKHOUSE_CLIENT --query="DROP DATABASE dictdb_01076;"

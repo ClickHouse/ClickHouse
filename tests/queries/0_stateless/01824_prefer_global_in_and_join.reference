@@ -42,7 +42,7 @@ GLOBAL ALL INNER JOIN
 (
     SELECT id
     FROM t1_distr AS d1
-    ALL INNER JOIN t2_distr AS d2 ON id = d2.id
+    GLOBAL ALL INNER JOIN t2_distr AS d2 ON id = d2.id
     WHERE id > 0
     ORDER BY id ASC
 ) AS s0 USING (id)

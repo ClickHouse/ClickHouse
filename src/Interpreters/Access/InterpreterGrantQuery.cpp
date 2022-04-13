@@ -118,7 +118,7 @@ namespace
     {
         auto current_user = current_user_access.getUser();
         if (current_user && !current_user->grantees.match(grantee_id))
-            throw Exception(grantee.outputTypeAndName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
+            throw Exception(grantee.formatTypeWithName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
     }
 
     /// Checks if grantees are allowed for the current user, throws an exception if not.

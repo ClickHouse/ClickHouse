@@ -192,7 +192,7 @@ namespace
     {
         const size_t size = src_offsets.size();
         if (size != filt.size())
-            throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
         ResultOffsetsBuilder result_offsets_builder(res_offsets);
 
@@ -235,7 +235,7 @@ namespace
 
         while (filt_pos < filt_end_aligned)
         {
-            uint64_t mask = Bytes64MaskToBits64Mask(filt_pos);
+            uint64_t mask = bytes64MaskToBits64Mask(filt_pos);
 
             if (0xffffffffffffffff == mask)
             {

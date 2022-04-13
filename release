@@ -87,7 +87,7 @@ if [ -z "$NO_BUILD" ] ; then
     # Build (only binary packages).
     debuild --preserve-env -e PATH \
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
-    -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+    -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS} ${DEB_ARCH_FLAG}
 fi
 
 if [ -n "$MAKE_RPM" ]; then

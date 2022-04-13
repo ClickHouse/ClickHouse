@@ -18,6 +18,8 @@ toc_title: "Введение"
 
         Это один из методов создания таблицы.
 
+-   Запросе [INSERT INTO TABLE FUNCTION](../../sql-reference/statements/insert-into.md#inserting-into-table-function).
+
 !!! warning "Предупреждение"
     Если настройка [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) выключена, то использовать табличные функции невозможно.
 

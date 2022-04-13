@@ -1,0 +1,33 @@
+File generated:
+Options: --input-format=CSV --output-format JSONEachRow --format TSV
+{"num1":"0","num2":"0"}
+{"num1":"1","num2":"2"}
+{"num1":"2","num2":"4"}
+{"num1":"3","num2":"6"}
+{"num1":"4","num2":"8"}
+{"num1":"5","num2":"10"}
+{"num1":"6","num2":"12"}
+Options: --input-format=CSV --format TSV
+0	0
+1	2
+2	4
+3	6
+4	8
+5	10
+6	12
+Options: --output-format=JSONEachRow --format CSV
+{"num1":"0","num2":"0"}
+{"num1":"1","num2":"2"}
+{"num1":"2","num2":"4"}
+{"num1":"3","num2":"6"}
+{"num1":"4","num2":"8"}
+{"num1":"5","num2":"10"}
+{"num1":"6","num2":"12"}
+Options: --format CSV
+0,0
+1,2
+2,4
+3,6
+4,8
+5,10
+6,12

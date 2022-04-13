@@ -20,7 +20,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
-#include <base/Typelists.h>
+#include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
 #include <base/range.h>
 
@@ -403,8 +403,8 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
-    TLUtils::forEach(TLIntegral{}, NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
-    TLUtils::forEach(TLDecimals{}, DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListUtils::forEach(TypeListIntAndFloat{}, NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListUtils::forEach(TypeListDecimal{}, DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
 
     using DateMap = ClearableHashMapWithStackMemory<DataTypeDate::FieldType,
         size_t, DefaultHash<DataTypeDate::FieldType>, INITIAL_SIZE_DEGREE>;
@@ -477,7 +477,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     columns.reserve(args);
     for (const auto & arg : arrays.args)
     {
-        if constexpr (std::is_same<ColumnType, IColumn>::value)
+        if constexpr (std::is_same_v<ColumnType, IColumn>)
             columns.push_back(arg.nested_column);
         else
             columns.push_back(checkAndGetColumn<ColumnType>(arg.nested_column));
@@ -530,7 +530,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     {
                         value = &map[columns[arg_num]->getElement(i)];
                     }
-                    else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
+                    else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                         value = &map[columns[arg_num]->getDataAt(i)];
                     else
                     {
@@ -566,7 +566,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 ++result_offset;
                 if constexpr (is_numeric_column)
                     result_data.insertValue(pair.getKey());
-                else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
+                else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                     result_data.insertData(pair.getKey().data, pair.getKey().size);
                 else
                     result_data.deserializeAndInsertFromArena(pair.getKey().data);

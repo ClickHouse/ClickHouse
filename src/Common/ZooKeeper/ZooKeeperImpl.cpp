@@ -8,6 +8,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/logger_useful.h>
+#include <base/getThreadId.h>
 
 #include <Common/config.h>
 
@@ -451,7 +452,7 @@ void ZooKeeper::connect(
     }
     else
     {
-        LOG_TEST(log, "Connected to ZooKeeper at {} with session_id {}", socket.peerAddress().toString(), session_id);
+        LOG_TEST(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
     }
 }
 
@@ -489,7 +490,15 @@ void ZooKeeper::receiveHandshake()
 
     read(protocol_version_read);
     if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
-        throw Exception("Unexpected protocol version: " + DB::toString(protocol_version_read), Error::ZMARSHALLINGERROR);
+    {
+        /// Special way to tell a client that server is not ready to serve it.
+        /// It's better for faster failover than just connection drop.
+        /// Implemented in clickhouse-keeper.
+        if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
+            throw Exception("Keeper server rejected the connection during the handshake. Possibly it's overloaded, doesn't see leader or stale", Error::ZCONNECTIONLOSS);
+        else
+            throw Exception("Unexpected protocol version: " + DB::toString(protocol_version_read), Error::ZMARSHALLINGERROR);
+    }
 
     read(timeout);
     if (timeout != session_timeout.totalMilliseconds())
@@ -838,7 +847,7 @@ void ZooKeeper::receiveEvent()
 void ZooKeeper::finalize(bool error_send, bool error_receive, const String & reason)
 {
     /// If some thread (send/receive) already finalizing session don't try to do it
-    bool already_started = finalization_started.exchange(true);
+    bool already_started = finalization_started.test_and_set();
 
     LOG_TEST(log, "Finalizing session {}: finalization_started={}, queue_finished={}, reason={}",
              session_id, already_started, requests_queue.isFinished(), reason);
@@ -1008,6 +1017,11 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     try
     {
         info.time = clock::now();
+        if (zk_log)
+        {
+            info.request->thread_id = getThreadId();
+            info.request->query_id = String(CurrentThread::getQueryId());
+        }
 
         if (!info.request->xid)
         {
@@ -1222,6 +1236,7 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     std::atomic_store(&zk_log, std::move(zk_log_));
 }
 
+#ifdef ZOOKEEPER_LOG
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize)
 {
     auto maybe_zk_log = std::atomic_load(&zk_log);
@@ -1260,8 +1275,17 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
         elem.event_time = event_time;
         elem.address = socket_address;
         elem.session_id = session_id;
+        if (request)
+        {
+            elem.thread_id = request->thread_id;
+            elem.query_id = request->query_id;
+        }
         maybe_zk_log->add(elem);
     }
 }
+#else
+void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeeperResponsePtr &, bool)
+{}
+#endif
 
 }

@@ -9,6 +9,8 @@
 #include <Core/SettingsEnums.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <base/types.h>
 
@@ -29,7 +31,8 @@ struct QueryViewsLogElement
     {
         DEFAULT = 1,
         MATERIALIZED = 2,
-        LIVE = 3
+        LIVE = 3,
+        WINDOW = 4,
     };
 
     struct ViewRuntimeStats

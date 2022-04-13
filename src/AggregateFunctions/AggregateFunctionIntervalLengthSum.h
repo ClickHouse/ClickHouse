@@ -1,11 +1,15 @@
 #pragma once
 
+#include <unordered_set>
+
 #include <AggregateFunctions/AggregateFunctionNull.h>
 
 #include <Columns/ColumnsNumber.h>
 
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
+#include <base/sort.h>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -13,7 +17,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <unordered_set>
 
 namespace DB
 {
@@ -23,12 +26,11 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-/**
- * Calculate total length of intervals without intersections. Each interval is the pair of numbers [begin, end];
- * Return UInt64 for integral types (UInt/Int*, Date/DateTime) and return Float64 for Float*.
- *
- * Implementation simply stores intervals sorted by beginning and sums lengths at final.
- */
+/** Calculate total length of intervals without intersections. Each interval is the pair of numbers [begin, end];
+  * Returns UInt64 for integral types (UInt/Int*, Date/DateTime) and returns Float64 for Float*.
+  *
+  * Implementation simply stores intervals sorted by beginning and sums lengths at final.
+  */
 template <typename T>
 struct AggregateFunctionIntervalLengthSumData
 {
@@ -43,10 +45,14 @@ struct AggregateFunctionIntervalLengthSumData
 
     void add(T begin, T end)
     {
+        /// Reversed intervals are counted by absolute value of their length.
+        if (unlikely(end < begin))
+            std::swap(begin, end);
+        else if (unlikely(begin == end))
+            return;
+
         if (sorted && !segments.empty())
-        {
             sorted = segments.back().first <= begin;
-        }
         segments.emplace_back(begin, end);
     }
 
@@ -62,7 +68,7 @@ struct AggregateFunctionIntervalLengthSumData
         /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
         {
-            std::sort(std::begin(segments), std::end(segments));
+            ::sort(std::begin(segments), std::end(segments));
         }
         else
         {
@@ -71,10 +77,10 @@ struct AggregateFunctionIntervalLengthSumData
             const auto end = std::end(segments);
 
             if (!sorted)
-                std::sort(begin, middle);
+                ::sort(begin, middle);
 
             if (!other.sorted)
-                std::sort(middle, end);
+                ::sort(middle, end);
 
             std::inplace_merge(begin, middle, end);
         }
@@ -84,11 +90,11 @@ struct AggregateFunctionIntervalLengthSumData
 
     void sort()
     {
-        if (!sorted)
-        {
-            std::sort(std::begin(segments), std::end(segments));
-            sorted = true;
-        }
+        if (sorted)
+            return;
+
+        ::sort(std::begin(segments), std::end(segments));
+        sorted = true;
     }
 
     void serialize(WriteBuffer & buf) const
@@ -130,6 +136,11 @@ template <typename T, typename Data>
 class AggregateFunctionIntervalLengthSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>
 {
 private:
+    static auto NO_SANITIZE_UNDEFINED length(typename Data::Segment segment)
+    {
+        return segment.second - segment.first;
+    }
+
     template <typename TResult>
     TResult getIntervalLengthSum(Data & data) const
     {
@@ -140,21 +151,24 @@ private:
 
         TResult res = 0;
 
-        typename Data::Segment cur_segment = data.segments[0];
+        typename Data::Segment curr_segment = data.segments[0];
 
-        for (size_t i = 1, sz = data.segments.size(); i < sz; ++i)
+        for (size_t i = 1, size = data.segments.size(); i < size; ++i)
         {
-            /// Check if current interval intersect with next one then add length, otherwise advance interval end
-            if (cur_segment.second < data.segments[i].first)
-            {
-                res += cur_segment.second - cur_segment.first;
-                cur_segment = data.segments[i];
-            }
-            else
-                cur_segment.second = std::max(cur_segment.second, data.segments[i].second);
-        }
+            const typename Data::Segment & next_segment = data.segments[i];
 
-        res += cur_segment.second - cur_segment.first;
+            /// Check if current interval intersects with next one then add length, otherwise advance interval end.
+            if (curr_segment.second < next_segment.first)
+            {
+                res += length(curr_segment);
+                curr_segment = next_segment;
+            }
+            else if (next_segment.second > curr_segment.second)
+            {
+                curr_segment.second = next_segment.second;
+            }
+        }
+        res += length(curr_segment);
 
         return res;
     }
@@ -197,12 +211,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

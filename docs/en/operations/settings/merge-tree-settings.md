@@ -27,6 +27,10 @@ An example of changing the settings for a specific table with the `ALTER TABLE .
 ``` sql
 ALTER TABLE foo
     MODIFY SETTING max_suspicious_broken_parts = 100;
+    
+-- reset to default (use value from system.merge_tree_settings)
+ALTER TABLE foo
+    RESET SETTING max_suspicious_broken_parts;
 ```
 
 ## parts_to_throw_insert {#parts-to-throw-insert}
@@ -252,7 +256,7 @@ Possible values:
 
 Default value: 161061273600 (150 GB).
 
-The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there is enough free resources in the pool, it starts background merges. Merges occur until the total size of the source parts is less than `max_bytes_to_merge_at_max_space_in_pool`.
+The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there is enough free resources in the pool, it starts background merges. Merges occur until the total size of the source parts is larger than `max_bytes_to_merge_at_max_space_in_pool`.
 
 Merges initiated by [OPTIMIZE FINAL](../../sql-reference/statements/optimize.md) ignore `max_bytes_to_merge_at_max_space_in_pool` and merge parts only taking into account available resources (free disk's space) until one part remains in the partition.
 
@@ -342,4 +346,38 @@ Default value: `0`.
 
 **Usage**
 
-The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) setting. Otherwise, ClickHouse throws an exception.
+The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should not be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) / 1024. Otherwise, ClickHouse throws an exception.
+
+## detach_not_byte_identical_parts {#detach_not_byte_identical_parts}
+
+Enables or disables detaching a data part on a replica after a merge or a mutation, if it is not byte-identical to data parts on other replicas. If disabled, the data part is removed. Activate this setting if you want to analyze such parts later.
+
+The setting is applicable to `MergeTree` tables with enabled [data replication](../../engines/table-engines/mergetree-family/replication.md).
+
+Possible values:
+
+-   0 — Parts are removed.
+-   1 — Parts are detached.
+
+Default value: `0`.
+
+## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
+
+Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: `60` seconds.
+
+## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
+
+Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: `1` second.
+

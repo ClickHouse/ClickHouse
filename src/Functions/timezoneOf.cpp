@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <base/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/Field.h>
 
 
@@ -21,7 +21,7 @@ namespace
 
 
 /** timezoneOf(x) - get the name of the timezone of DateTime data type.
-  * Example: Europe/Moscow.
+  * Example: Pacific/Pitcairn.
   */
 class FunctionTimezoneOf : public IFunction
 {
@@ -74,4 +74,3 @@ void registerFunctionTimezoneOf(FunctionFactory & factory)
 }
 
 }
-

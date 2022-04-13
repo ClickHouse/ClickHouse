@@ -1,13 +1,8 @@
 #pragma once
+
+#include <base/StringRef.h>
 #include <Common/OptimizedRegularExpression.h>
-
-namespace DB
-{
-
-class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
-
-}
+#include <AggregateFunctions/IAggregateFunction.h>
 
 /** Intended for implementation of "rollup" - aggregation (rounding) of older data
   *  for a table with Graphite data (Graphite is the system for time series monitoring).
@@ -97,22 +92,41 @@ using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 namespace DB::Graphite
 {
 
+// sync with rule_types_str
+enum RuleType
+{
+    RuleTypeAll = 0,        // default, with regex, compatible with old scheme
+    RuleTypePlain = 1,      // plain metrics, with regex, compatible with old scheme
+    RuleTypeTagged = 2,     // tagged metrics, with regex, compatible with old scheme
+    RuleTypeTagList = 3     // tagged metrics, with regex (converted to  RuleTypeTagged from string like 'retention=10min ; env=(staging|prod)')
+};
+
+const String & ruleTypeStr(RuleType rule_type);
+
 struct Retention
 {
     UInt32 age;
     UInt32 precision;
 };
 
+bool operator==(const Retention & a, const Retention & b);
+
 using Retentions = std::vector<Retention>;
+
+std::ostream &operator<<(std::ostream & stream, const Retentions & a);
 
 struct Pattern
 {
+    RuleType rule_type = RuleTypeAll;
     std::shared_ptr<OptimizedRegularExpression> regexp;
     std::string regexp_str;
     AggregateFunctionPtr function;
     Retentions retentions;    /// Must be ordered by 'age' descending.
     enum { TypeUndef, TypeRetention, TypeAggregation, TypeAll } type = TypeAll; /// The type of defined pattern, filled automatically
 };
+
+bool operator==(const Pattern & a, const Pattern & b);
+std::ostream &operator<<(std::ostream & stream, const Pattern & a);
 
 using Patterns = std::vector<Pattern>;
 using RetentionPattern = Pattern;
@@ -125,9 +139,16 @@ struct Params
     String time_column_name;
     String value_column_name;
     String version_column_name;
+    bool patterns_typed;
     Graphite::Patterns patterns;
+    Graphite::Patterns patterns_plain;
+    Graphite::Patterns patterns_tagged;
 };
 
 using RollupRule = std::pair<const RetentionPattern *, const AggregationPattern *>;
+
+Graphite::RollupRule selectPatternForPath(const Graphite::Params & params, StringRef path);
+
+void setGraphitePatternsFromConfig(ContextPtr context, const String & config_element, Graphite::Params & params);
 
 }

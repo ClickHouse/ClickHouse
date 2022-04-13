@@ -102,11 +102,16 @@ private:
     size_t width;
     X min_x;
     X max_x;
+    bool specified_min_max_x;
 
-    String getBar(const UInt8 value) const
+    template <class T>
+    String getBar(const T value) const
     {
+        if (isNaN(value) || value > 8 || value < 1)
+            return " ";
+
         // ▁▂▃▄▅▆▇█
-        switch (value)
+        switch (static_cast<UInt8>(value))
         {
             case 1: return "▁";
             case 2: return "▂";
@@ -136,9 +141,20 @@ private:
         String value;
         if (data.points.empty() || !width)
             return value;
-        X local_min_x = data.min_x;
-        X local_max_x = data.max_x;
-        size_t diff_x = local_max_x - local_min_x;
+
+        size_t diff_x;
+        X min_x_local;
+        if (specified_min_max_x)
+        {
+            diff_x = max_x - min_x;
+            min_x_local = min_x;
+        }
+        else
+        {
+            diff_x = data.max_x - data.min_x;
+            min_x_local = data.min_x;
+        }
+
         if ((diff_x + 1) <= width)
         {
             Y min_y = data.min_y;
@@ -149,15 +165,15 @@ private:
             {
                 for (size_t i = 0; i <= diff_x; ++i)
                 {
-                    auto it = data.points.find(local_min_x + i);
+                    auto it = data.points.find(min_x_local + i);
                     bool found = it != data.points.end();
-                    value += getBar(found ? static_cast<UInt8>(std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1) : 0);
+                    value += getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
                 }
             }
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                    value += getBar(data.points.has(local_min_x + i) ? 1 : 0);
+                    value += getBar(data.points.has(min_x_local + i) ? 1 : 0);
             }
         }
         else
@@ -169,33 +185,33 @@ private:
             std::optional<Float64> max_y;
 
             std::optional<Float64> new_y;
-            std::vector<std::optional<Float64>> newPoints;
-            newPoints.reserve(width);
+            std::vector<std::optional<Float64>> new_points;
+            new_points.reserve(width);
 
             std::pair<size_t, Float64> bound{0, 0.0};
             size_t cur_bucket_num = 0;
             // upper bound for bucket
-            auto upperBound = [&](size_t bucket_num)
+            auto upper_bound = [&](size_t bucket_num)
             {
                 bound.second = (bucket_num + 1) * multiple_d;
                 bound.first = std::floor(bound.second);
             };
-            upperBound(cur_bucket_num);
+            upper_bound(cur_bucket_num);
             for (size_t i = 0; i <= (diff_x + 1); ++i)
             {
                 if (i == bound.first) // is bound
                 {
                     Float64 proportion = bound.second - bound.first;
-                    auto it = data.points.find(local_min_x + i);
+                    auto it = data.points.find(min_x_local + i);
                     bool found = (it != data.points.end());
-                    if (found)
+                    if (found && proportion > 0)
                         new_y = new_y.value_or(0) + it->getMapped() * proportion;
 
                     if (new_y)
                     {
                         Float64 avg_y = new_y.value() / multiple_d;
 
-                        newPoints.emplace_back(avg_y);
+                        new_points.emplace_back(avg_y);
                         // If min_y has no value, or if the avg_y of the current bucket is less than min_y, update it.
                         if (!min_y || avg_y < min_y)
                             min_y = avg_y;
@@ -204,16 +220,16 @@ private:
                     }
                     else
                     {
-                        newPoints.emplace_back();
+                        new_points.emplace_back();
                     }
 
                     // next bucket
                     new_y = found ? ((1 - proportion) * it->getMapped()) : std::optional<Float64>();
-                    upperBound(++cur_bucket_num);
+                    upper_bound(++cur_bucket_num);
                 }
                 else
                 {
-                    auto it = data.points.find(local_min_x + i);
+                    auto it = data.points.find(min_x_local + i);
                     if (it != data.points.end())
                         new_y = new_y.value_or(0) + it->getMapped();
                 }
@@ -224,19 +240,19 @@ private:
 
             Float64 diff_y = max_y.value() - min_y.value();
 
-            auto getBars = [&] (const std::optional<Float64> & point_y)
+            auto get_bars = [&] (const std::optional<Float64> & point_y)
             {
-                value += getBar(point_y ? static_cast<UInt8>(std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1) : 0);
+                value += getBar(point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
             };
-            auto getBarsForConstant = [&] (const std::optional<Float64> & point_y)
+            auto get_bars_for_constant = [&] (const std::optional<Float64> & point_y)
             {
                 value += getBar(point_y ? 1 : 0);
             };
 
             if (diff_y)
-                std::for_each(newPoints.begin(), newPoints.end(), getBars);
+                std::for_each(new_points.begin(), new_points.end(), get_bars);
             else
-                std::for_each(newPoints.begin(), newPoints.end(), getBarsForConstant);
+                std::for_each(new_points.begin(), new_points.end(), get_bars_for_constant);
         }
         return value;
     }
@@ -250,11 +266,13 @@ public:
         width = params.at(0).safeGet<UInt64>();
         if (params.size() == 3)
         {
+            specified_min_max_x = true;
             min_x = params.at(1).safeGet<X>();
             max_x = params.at(2).safeGet<X>();
         }
         else
         {
+            specified_min_max_x = false;
             min_x = std::numeric_limits<X>::min();
             max_x = std::numeric_limits<X>::max();
         }
@@ -285,12 +303,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

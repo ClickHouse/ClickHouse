@@ -37,7 +37,7 @@ Next, you need to download the source files onto your working machine. This is c
 
 In the command line terminal run:
 
-    git clone git@github.com:your_github_username/ClickHouse.git
+    git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 Note: please, substitute *your_github_username* with what is appropriate!
@@ -65,7 +65,7 @@ It generally means that the SSH keys for connecting to GitHub are missing. These
 
 You can also clone the repository via https protocol:
 
-    git clone https://github.com/ClickHouse/ClickHouse.git
+    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 
 This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
@@ -125,10 +125,6 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
 
 Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
 
-## Optional External Libraries {#optional-external-libraries}
-
-ClickHouse uses several external libraries for building. All of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
-
 ## C++ Compiler {#c-compiler}
 
 Compilers Clang starting from version 11 is supported for building ClickHouse.
@@ -157,6 +153,8 @@ While inside the `build` directory, configure your build by running CMake. Befor
 
     export CC=clang CXX=clang++
     cmake ..
+
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-13 CXX=clang++-13`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -231,6 +229,25 @@ As simple code editors, you can use Sublime Text or Visual Studio Code, or Kate 
 
 Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
 
+## Debugging
+
+Many graphical IDEs offer with an integrated debugger but you can also use a standalone debugger.
+
+### GDB
+
+### LLDB
+
+    # tell LLDB where to find the source code
+    settings set target.source-map /path/to/build/dir /path/to/source/dir
+
+    # configure LLDB to display code before/after currently executing line
+    settings set stop-line-count-before 10
+    settings set stop-line-count-after 10
+
+    target create ./clickhouse-client
+    # <set breakpoints here>
+    process launch -- --query="SELECT * FROM TAB"
+
 ## Writing Code {#writing-code}
 
 The description of ClickHouse architecture can be found here: https://clickhouse.com/docs/en/development/architecture/
@@ -241,11 +258,11 @@ Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib
 
 Writing tests: https://clickhouse.com/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest
 
 ## Test Data {#test-data}
 
-Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data from Yandex.Metrica. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of the development tasks.
+Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data of web analytics. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of the development tasks.
 
     sudo apt install wget xz-utils
 
@@ -272,7 +289,7 @@ Navigate to your fork repository in GitHub’s UI. If you have been developing i
 
 A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelogs.
 
-Testing will commence as soon as Yandex employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
+Testing will commence as soon as ClickHouse employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 
 The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the “Details” link next to “ClickHouse build check” entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 

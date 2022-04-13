@@ -14,7 +14,7 @@ class WriteBuffer;
 /** The stream for outputting data in csv format.
   * Does not conform with https://tools.ietf.org/html/rfc4180 because it uses LF, not CR LF.
   */
-class CSVRowOutputFormat : public IRowOutputFormat
+class CSVRowOutputFormat final : public IRowOutputFormat
 {
 public:
     /** with_names - output in the first line a header with column names
@@ -24,14 +24,6 @@ public:
 
     String getName() const override { return "CSVRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
-    void writeFieldDelimiter() override;
-    void writeRowEndDelimiter() override;
-    void writeBeforeTotals() override;
-    void writeBeforeExtremes() override;
-
-    void doWritePrefix() override;
-
     /// https://www.iana.org/assignments/media-types/text/csv
     String getContentType() const override
     {
@@ -39,6 +31,13 @@ public:
     }
 
 private:
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
+    void writeFieldDelimiter() override;
+    void writeRowEndDelimiter() override;
+    void writeBeforeTotals() override;
+    void writeBeforeExtremes() override;
+
+    void writePrefix() override;
     void writeLine(const std::vector<String> & values);
 
     bool with_names;

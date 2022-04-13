@@ -20,14 +20,11 @@ namespace ErrorCodes
 
 namespace
 {
-    using EntityType = IAccessEntity::Type;
-    using EntityTypeInfo = IAccessEntity::TypeInfo;
-
-    bool parseEntityType(IParserBase::Pos & pos, Expected & expected, EntityType & type, bool & plural)
+    bool parseEntityType(IParserBase::Pos & pos, Expected & expected, AccessEntityType & type, bool & plural)
     {
-        for (auto i : collections::range(EntityType::MAX))
+        for (auto i : collections::range(AccessEntityType::MAX))
         {
-            const auto & type_info = EntityTypeInfo::get(i);
+            const auto & type_info = AccessEntityTypeInfo::get(i);
             if (ParserKeyword{type_info.name.c_str()}.ignore(pos, expected)
                 || (!type_info.alias.empty() && ParserKeyword{type_info.alias.c_str()}.ignore(pos, expected)))
             {
@@ -37,9 +34,9 @@ namespace
             }
         }
 
-        for (auto i : collections::range(EntityType::MAX))
+        for (auto i : collections::range(AccessEntityType::MAX))
         {
-            const auto & type_info = EntityTypeInfo::get(i);
+            const auto & type_info = AccessEntityTypeInfo::get(i);
             if (ParserKeyword{type_info.plural_name.c_str()}.ignore(pos, expected)
                 || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias.c_str()}.ignore(pos, expected)))
             {
@@ -68,7 +65,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
     if (!ParserKeyword{"SHOW CREATE"}.ignore(pos, expected))
         return false;
 
-    EntityType type;
+    AccessEntityType type;
     bool plural;
     if (!parseEntityType(pos, expected, type, plural))
         return false;
@@ -83,7 +80,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
 
     switch (type)
     {
-        case EntityType::USER:
+        case AccessEntityType::USER:
         {
             if (parseCurrentUserTag(pos, expected))
                 current_user = true;
@@ -96,7 +93,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
                 current_user = true;
             break;
         }
-        case EntityType::ROLE:
+        case AccessEntityType::ROLE:
         {
             if (parseRoleNames(pos, expected, names))
             {
@@ -107,7 +104,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
                 return false;
             break;
         }
-        case EntityType::ROW_POLICY:
+        case AccessEntityType::ROW_POLICY:
         {
             ASTPtr ast;
             String database, table_name;
@@ -130,7 +127,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
                 return false;
             break;
         }
-        case EntityType::SETTINGS_PROFILE:
+        case AccessEntityType::SETTINGS_PROFILE:
         {
             if (parseIdentifiersOrStringLiterals(pos, expected, names))
             {
@@ -141,7 +138,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
                 return false;
             break;
         }
-        case EntityType::QUOTA:
+        case AccessEntityType::QUOTA:
         {
             if (parseIdentifiersOrStringLiterals(pos, expected, names))
             {
@@ -152,7 +149,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
                 current_quota = true;
             break;
         }
-        case EntityType::MAX:
+        case AccessEntityType::MAX:
             throw Exception("Type " + toString(type) + " is not implemented in SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
     }
 

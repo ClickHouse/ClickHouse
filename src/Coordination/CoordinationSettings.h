@@ -5,6 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -18,7 +19,8 @@ struct Settings;
 
 
 #define LIST_OF_COORDINATION_SETTINGS(M) \
-    M(Milliseconds, session_timeout_ms, Coordination::DEFAULT_SESSION_TIMEOUT_MS, "Default client session timeout", 0) \
+    M(Milliseconds, min_session_timeout_ms, Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS, "Min client session timeout", 0) \
+    M(Milliseconds, session_timeout_ms, Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS, "Max client session timeout", 0) \
     M(Milliseconds, operation_timeout_ms, Coordination::DEFAULT_OPERATION_TIMEOUT_MS, "Default client operation timeout", 0) \
     M(Milliseconds, dead_session_check_period_ms, 500, "How often leader will check sessions to consider them dead and remove", 0) \
     M(Milliseconds, heart_beat_interval_ms, 500, "Heartbeat interval between quorum nodes", 0) \
@@ -50,5 +52,40 @@ struct CoordinationSettings : public BaseSettings<CoordinationSettingsTraits>
 };
 
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
+
+/// Coordination settings + some other parts of keeper configuration
+/// which are not stored in settings. Allows to dump configuration
+/// with 4lw commands.
+struct KeeperConfigurationAndSettings
+{
+    static constexpr int NOT_EXIST = -1;
+    static const String DEFAULT_FOUR_LETTER_WORD_CMD;
+
+    KeeperConfigurationAndSettings();
+    int server_id;
+
+    bool enable_ipv6;
+    int tcp_port;
+    int tcp_port_secure;
+
+    String four_letter_word_allow_list;
+
+    String super_digest;
+
+    bool standalone_keeper;
+    CoordinationSettingsPtr coordination_settings;
+
+    String log_storage_path;
+    String snapshot_storage_path;
+
+    void dump(WriteBufferFromOwnString & buf) const;
+    static std::shared_ptr<KeeperConfigurationAndSettings> loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
+
+private:
+    static String getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
+    static String getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
+};
+
+using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;
 
 }

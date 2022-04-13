@@ -9,793 +9,831 @@ from testflows.core import Requirement
 Heading = Specification.Heading
 
 RQ_SRS_018_ClickHouse_Map_DataType = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Map(key, value)` data type that stores `key:value` pairs.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `Map(key, value)` data type that stores `key:value` pairs.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.1.1')
+    num="3.1.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Performance_Vs_ArrayOfTuples = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Performance.Vs.ArrayOfTuples',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Performance.Vs.ArrayOfTuples",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL provide comparable performance for `Map(key, value)` data type as\n'
-        'compared to `Array(Tuple(K,V))` data type.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL provide comparable performance for `Map(key, value)` data type as\n"
+        "compared to `Array(Tuple(K,V))` data type.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.2.1')
+    num="3.2.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Performance_Vs_TupleOfArrays = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Performance.Vs.TupleOfArrays',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Performance.Vs.TupleOfArrays",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL provide comparable performance for `Map(key, value)` data type as\n'
-        'compared to `Tuple(Array(String), Array(String))` data type where the first\n'
-        'array defines an array of keys and the second array defines an array of values.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL provide comparable performance for `Map(key, value)` data type as\n"
+        "compared to `Tuple(Array(String), Array(String))` data type where the first\n"
+        "array defines an array of keys and the second array defines an array of values.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.2.2')
+    num="3.2.2",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Key_String = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Key.String',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Key.String",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Map(key, value)` data type where key is of a [String] type.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `Map(key, value)` data type where key is of a [String] type.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.3.1')
+    num="3.3.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Key_Integer = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Key.Integer',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Key.Integer",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Map(key, value)` data type where key is of an [Integer] type.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `Map(key, value)` data type where key is of an [Integer] type.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.3.2')
+    num="3.3.2",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Value_String = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Value.String',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Value.String",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Map(key, value)` data type where value is of a [String] type.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `Map(key, value)` data type where value is of a [String] type.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.4.1')
+    num="3.4.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Value_Integer = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Value.Integer',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Value.Integer",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Map(key, value)` data type where value is of a [Integer] type.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `Map(key, value)` data type where value is of a [Integer] type.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.4.2')
+    num="3.4.2",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Value_Array = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Value.Array',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Value.Array",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Map(key, value)` data type where value is of a [Array] type.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `Map(key, value)` data type where value is of a [Array] type.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.4.3')
+    num="3.4.3",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Invalid_Nullable = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Invalid.Nullable',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Invalid.Nullable",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL not support creating table columns that have `Nullable(Map(key, value))` data type.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL not support creating table columns that have `Nullable(Map(key, value))` data type.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.5.1')
+    num="3.5.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Invalid_NothingNothing = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Invalid.NothingNothing',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Invalid.NothingNothing",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL not support creating table columns that have `Map(Nothing, Nothing))` data type.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL not support creating table columns that have `Map(Nothing, Nothing))` data type.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.5.2')
+    num="3.5.2",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_DuplicatedKeys = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.DuplicatedKeys',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.DuplicatedKeys",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] MAY support `Map(key, value)` data type with duplicated keys.\n'
-        '\n'
-        ),
+        "[ClickHouse] MAY support `Map(key, value)` data type with duplicated keys.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.6.1')
+    num="3.6.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_ArrayOfMaps = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.ArrayOfMaps',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.ArrayOfMaps",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Array(Map(key, value))` data type.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `Array(Map(key, value))` data type.\n" "\n"
+    ),
     link=None,
     level=3,
-    num='3.7.1')
+    num="3.7.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_NestedWithMaps = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.NestedWithMaps',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.NestedWithMaps",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support defining `Map(key, value)` data type inside the [Nested] data type.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support defining `Map(key, value)` data type inside the [Nested] data type.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.8.1')
+    num="3.8.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Value_Retrieval = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support getting the value from a `Map(key, value)` data type using `map[key]` syntax.\n'
-        'If `key` has duplicates then the first `key:value` pair MAY be returned. \n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL support getting the value from a `Map(key, value)` data type using `map[key]` syntax.\n"
+        "If `key` has duplicates then the first `key:value` pair MAY be returned. \n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT a['key2'] FROM table_map;\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.9.1')
+    num="3.9.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Value_Retrieval_KeyInvalid = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval.KeyInvalid',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval.KeyInvalid",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when key does not match the key type.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT map(1,2) AS m, m[1024]\n'
-        '```\n'
-        '\n'
-        'Exceptions:\n'
-        '\n'
-        '* when key is `NULL` the return value MAY be `NULL`\n'
-        '* when key value is not valid for the key type, for example it is out of range for [Integer] type, \n'
-        '  when reading from a table column it MAY return the default value for key data type\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when key does not match the key type.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT map(1,2) AS m, m[1024]\n"
+        "```\n"
+        "\n"
+        "Exceptions:\n"
+        "\n"
+        "* when key is `NULL` the return value MAY be `NULL`\n"
+        "* when key value is not valid for the key type, for example it is out of range for [Integer] type, \n"
+        "  when reading from a table column it MAY return the default value for key data type\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.9.2')
+    num="3.9.2",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Value_Retrieval_KeyNotFound = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval.KeyNotFound',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval.KeyNotFound",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return default value for the data type of the value\n'
+        "[ClickHouse] SHALL return default value for the data type of the value\n"
         "when there's no corresponding `key` defined in the `Map(key, value)` data type. \n"
-        '\n'
-        '\n'
-        ),
+        "\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.9.3')
+    num="3.9.3",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Conversion_From_TupleOfArraysToMap = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.TupleOfArraysToMap',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.TupleOfArraysToMap",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support converting [Tuple(Array, Array)] to `Map(key, value)` using the [CAST] function.\n'
-        '\n'
-        '``` sql\n'
+        "[ClickHouse] SHALL support converting [Tuple(Array, Array)] to `Map(key, value)` using the [CAST] function.\n"
+        "\n"
+        "``` sql\n"
         "SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map;\n"
-        '```\n'
-        '\n'
-        '``` text\n'
-        '┌─map───────────────────────────┐\n'
+        "```\n"
+        "\n"
+        "``` text\n"
+        "┌─map───────────────────────────┐\n"
         "│ {1:'Ready',2:'Steady',3:'Go'} │\n"
-        '└───────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "└───────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.10.1')
+    num="3.10.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Conversion_From_TupleOfArraysMap_Invalid = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.TupleOfArraysMap.Invalid',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.TupleOfArraysMap.Invalid",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] MAY return an error when casting [Tuple(Array, Array)] to `Map(key, value)`\n'
-        '\n'
-        '* when arrays are not of equal size\n'
-        '\n'
-        '  For example,\n'
-        '\n'
-        '  ```sql\n'
+        "[ClickHouse] MAY return an error when casting [Tuple(Array, Array)] to `Map(key, value)`\n"
+        "\n"
+        "* when arrays are not of equal size\n"
+        "\n"
+        "  For example,\n"
+        "\n"
+        "  ```sql\n"
         "  SELECT CAST(([2, 1, 1023], ['', '']), 'Map(UInt8, String)') AS map, map[10]\n"
-        '  ```\n'
-        '\n'
-        ),
+        "  ```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.10.2')
+    num="3.10.2",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Conversion_From_ArrayOfTuplesToMap = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.ArrayOfTuplesToMap',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.ArrayOfTuplesToMap",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support converting [Array(Tuple(K,V))] to `Map(key, value)` using the [CAST] function.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL support converting [Array(Tuple(K,V))] to `Map(key, value)` using the [CAST] function.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT CAST(([(1,2),(3)]), 'Map(UInt8, UInt8)') AS map\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.11.1')
+    num="3.11.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Conversion_From_ArrayOfTuplesToMap_Invalid = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.ArrayOfTuplesToMap.Invalid',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.ArrayOfTuplesToMap.Invalid",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] MAY return an error when casting [Array(Tuple(K, V))] to `Map(key, value)`\n'
-        '\n'
-        '* when element is not a [Tuple]\n'
-        '\n'
-        '  ```sql\n'
+        "[ClickHouse] MAY return an error when casting [Array(Tuple(K, V))] to `Map(key, value)`\n"
+        "\n"
+        "* when element is not a [Tuple]\n"
+        "\n"
+        "  ```sql\n"
         "  SELECT CAST(([(1,2),(3)]), 'Map(UInt8, UInt8)') AS map\n"
-        '  ```\n'
-        '\n'
-        '* when [Tuple] does not contain two elements\n'
-        '\n'
-        '  ```sql\n'
+        "  ```\n"
+        "\n"
+        "* when [Tuple] does not contain two elements\n"
+        "\n"
+        "  ```sql\n"
         "  SELECT CAST(([(1,2),(3,)]), 'Map(UInt8, UInt8)') AS map\n"
-        '  ```\n'
-        '\n'
-        ),
+        "  ```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.11.2')
+    num="3.11.2",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_SubColumns_Keys = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `keys` subcolumn in the `Map(key, value)` type that can be used \n'
-        'to retrieve an [Array] of map keys.\n'
-        '\n'
-        '```sql\n'
-        'SELECT m.keys FROM t_map;\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `keys` subcolumn in the `Map(key, value)` type that can be used \n"
+        "to retrieve an [Array] of map keys.\n"
+        "\n"
+        "```sql\n"
+        "SELECT m.keys FROM t_map;\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.12.1')
+    num="3.12.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_SubColumns_Keys_ArrayFunctions = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys.ArrayFunctions',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys.ArrayFunctions",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support applying [Array] functions to the `keys` subcolumn in the `Map(key, value)` type.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL support applying [Array] functions to the `keys` subcolumn in the `Map(key, value)` type.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT * FROM t_map WHERE has(m.keys, 'a');\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.12.2')
+    num="3.12.2",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_SubColumns_Keys_InlineDefinedMap = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys.InlineDefinedMap',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys.InlineDefinedMap",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] MAY not support using inline defined map to get `keys` subcolumn.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] MAY not support using inline defined map to get `keys` subcolumn.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT map( 'aa', 4, '44' , 5) as c, c.keys\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.12.3')
+    num="3.12.3",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_SubColumns_Values = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `values` subcolumn in the `Map(key, value)` type that can be used \n'
-        'to retrieve an [Array] of map values.\n'
-        '\n'
-        '```sql\n'
-        'SELECT m.values FROM t_map;\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `values` subcolumn in the `Map(key, value)` type that can be used \n"
+        "to retrieve an [Array] of map values.\n"
+        "\n"
+        "```sql\n"
+        "SELECT m.values FROM t_map;\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.12.4')
+    num="3.12.4",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_SubColumns_Values_ArrayFunctions = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values.ArrayFunctions',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values.ArrayFunctions",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support applying [Array] functions to the `values` subcolumn in the `Map(key, value)` type.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL support applying [Array] functions to the `values` subcolumn in the `Map(key, value)` type.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT * FROM t_map WHERE has(m.values, 'a');\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.12.5')
+    num="3.12.5",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_SubColumns_Values_InlineDefinedMap = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values.InlineDefinedMap',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values.InlineDefinedMap",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] MAY not support using inline defined map to get `values` subcolumn.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] MAY not support using inline defined map to get `values` subcolumn.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT map( 'aa', 4, '44' , 5) as c, c.values\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.12.6')
+    num="3.12.6",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_InlineDefinedMap = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.InlineDefinedMap',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.InlineDefinedMap",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support using inline defined maps as an argument to map functions.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL support using inline defined maps as an argument to map functions.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT map( 'aa', 4, '44' , 5) as c, mapKeys(c)\n"
         "SELECT map( 'aa', 4, '44' , 5) as c, mapValues(c)\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='3.13.1')
+    num="3.13.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_Length = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Length',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Length",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Map(key, value)` data type as an argument to the [length] function\n'
-        'that SHALL return number of keys in the map.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT length(map(1,2,3,4))\n'
-        'SELECT length(map())\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `Map(key, value)` data type as an argument to the [length] function\n"
+        "that SHALL return number of keys in the map.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT length(map(1,2,3,4))\n"
+        "SELECT length(map())\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.13.2.1')
+    num="3.13.2.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_Empty = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Empty',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Empty",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Map(key, value)` data type as an argument to the [empty] function\n'
-        'that SHALL return 1 if number of keys in the map is 0 otherwise if the number of keys is \n'
-        'greater or equal to 1 it SHALL return 0.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT empty(map(1,2,3,4))\n'
-        'SELECT empty(map())\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `Map(key, value)` data type as an argument to the [empty] function\n"
+        "that SHALL return 1 if number of keys in the map is 0 otherwise if the number of keys is \n"
+        "greater or equal to 1 it SHALL return 0.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT empty(map(1,2,3,4))\n"
+        "SELECT empty(map())\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.13.3.1')
+    num="3.13.3.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_NotEmpty = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.NotEmpty',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.NotEmpty",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `Map(key, value)` data type as an argument to the [notEmpty] function\n'
-        'that SHALL return 0 if number if keys in the map is 0 otherwise if the number of keys is\n'
-        'greater or equal to 1 it SHALL return 1.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT notEmpty(map(1,2,3,4))\n'
-        'SELECT notEmpty(map())\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `Map(key, value)` data type as an argument to the [notEmpty] function\n"
+        "that SHALL return 0 if number if keys in the map is 0 otherwise if the number of keys is\n"
+        "greater or equal to 1 it SHALL return 1.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT notEmpty(map(1,2,3,4))\n"
+        "SELECT notEmpty(map())\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.13.4.1')
+    num="3.13.4.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_Map = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support arranging `key, value` pairs into `Map(key, value)` data type\n'
-        'using `map` function.\n'
-        '\n'
-        '**Syntax** \n'
-        '\n'
-        '``` sql\n'
-        'map(key1, value1[, key2, value2, ...])\n'
-        '```\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '``` sql\n'
+        "[ClickHouse] SHALL support arranging `key, value` pairs into `Map(key, value)` data type\n"
+        "using `map` function.\n"
+        "\n"
+        "**Syntax** \n"
+        "\n"
+        "``` sql\n"
+        "map(key1, value1[, key2, value2, ...])\n"
+        "```\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "``` sql\n"
         "SELECT map('key1', number, 'key2', number * 2) FROM numbers(3);\n"
-        '\n'
+        "\n"
         "┌─map('key1', number, 'key2', multiply(number, 2))─┐\n"
         "│ {'key1':0,'key2':0}                              │\n"
         "│ {'key1':1,'key2':2}                              │\n"
         "│ {'key1':2,'key2':4}                              │\n"
-        '└──────────────────────────────────────────────────┘\n'
-        '```\n'
-        '\n'
-        ),
+        "└──────────────────────────────────────────────────┘\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.13.5.1')
+    num="3.13.5.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_Map_InvalidNumberOfArguments = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.InvalidNumberOfArguments',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.InvalidNumberOfArguments",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `map` function is called with non even number of arguments.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `map` function is called with non even number of arguments.\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.13.5.2')
+    num="3.13.5.2",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_Map_MixedKeyOrValueTypes = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MixedKeyOrValueTypes',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MixedKeyOrValueTypes",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when `map` function is called with mixed key or value types.\n'
-        '\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when `map` function is called with mixed key or value types.\n"
+        "\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.13.5.3')
+    num="3.13.5.3",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_Map_MapAdd = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapAdd',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapAdd",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support converting the results of `mapAdd` function to a `Map(key, value)` data type.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '``` sql\n'
+        "[ClickHouse] SHALL support converting the results of `mapAdd` function to a `Map(key, value)` data type.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "``` sql\n"
         'SELECT CAST(mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])), "Map(Int8,Int8)")\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.13.5.4')
+    num="3.13.5.4",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_Map_MapSubstract = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapSubstract',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapSubstract",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support converting the results of `mapSubstract` function to a `Map(key, value)` data type.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL support converting the results of `mapSubstract` function to a `Map(key, value)` data type.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         'SELECT CAST(mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1])), "Map(Int8,Int8)")\n'
-        '```\n'
-        ),
+        "```\n"
+    ),
     link=None,
     level=4,
-    num='3.13.5.5')
+    num="3.13.5.5",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_Map_MapPopulateSeries = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapPopulateSeries',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapPopulateSeries",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support converting the results of `mapPopulateSeries` function to a `Map(key, value)` data type.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL support converting the results of `mapPopulateSeries` function to a `Map(key, value)` data type.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         'SELECT CAST(mapPopulateSeries([1,2,4], [11,22,44], 5), "Map(Int8,Int8)")\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.13.5.6')
+    num="3.13.5.6",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_MapContains = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapContains',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapContains",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `mapContains(map, key)` function to check weather `map.keys` contains the `key`.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL support `mapContains(map, key)` function to check weather `map.keys` contains the `key`.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
         "SELECT mapContains(a, 'abc') from table_map;\n"
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.13.6.1')
+    num="3.13.6.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_MapKeys = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapKeys',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapKeys",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `mapKeys(map)` function to return all the map keys in the [Array] format.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT mapKeys(a) from table_map;\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `mapKeys(map)` function to return all the map keys in the [Array] format.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT mapKeys(a) from table_map;\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=4,
-    num='3.13.7.1')
+    num="3.13.7.1",
+)
 
 RQ_SRS_018_ClickHouse_Map_DataType_Functions_MapValues = Requirement(
-    name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapValues',
-    version='1.0',
+    name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapValues",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `mapValues(map)` function to return all the map values in the [Array] format.\n'
-        '\n'
-        'For example,\n'
-        '\n'
-        '```sql\n'
-        'SELECT mapValues(a) from table_map;\n'
-        '```\n'
-        '\n'
-        '[Nested]: https://clickhouse.com/docs/en/sql-reference/data-types/nested-data-structures/nested/\n'
-        '[length]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#array_functions-length\n'
-        '[empty]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#function-empty\n'
-        '[notEmpty]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#function-notempty\n'
-        '[CAST]: https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast\n'
-        '[Tuple]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple/\n'
-        '[Tuple(Array,Array)]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple/\n'
-        '[Array]: https://clickhouse.com/docs/en/sql-reference/data-types/array/ \n'
-        '[String]: https://clickhouse.com/docs/en/sql-reference/data-types/string/\n'
-        '[Integer]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/\n'
-        '[ClickHouse]: https://clickhouse.com\n'
-        '[GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/map_type/requirements/requirements.md \n'
-        '[Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/map_type/requirements/requirements.md\n'
-        '[Git]: https://git-scm.com/\n'
-        '[GitHub]: https://github.com\n'
-        ),
+        "[ClickHouse] SHALL support `mapValues(map)` function to return all the map values in the [Array] format.\n"
+        "\n"
+        "For example,\n"
+        "\n"
+        "```sql\n"
+        "SELECT mapValues(a) from table_map;\n"
+        "```\n"
+        "\n"
+        "[Nested]: https://clickhouse.com/docs/en/sql-reference/data-types/nested-data-structures/nested/\n"
+        "[length]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#array_functions-length\n"
+        "[empty]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#function-empty\n"
+        "[notEmpty]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#function-notempty\n"
+        "[CAST]: https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast\n"
+        "[Tuple]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple/\n"
+        "[Tuple(Array,Array)]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple/\n"
+        "[Array]: https://clickhouse.com/docs/en/sql-reference/data-types/array/ \n"
+        "[String]: https://clickhouse.com/docs/en/sql-reference/data-types/string/\n"
+        "[Integer]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/\n"
+        "[ClickHouse]: https://clickhouse.com\n"
+        "[GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/map_type/requirements/requirements.md \n"
+        "[Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/map_type/requirements/requirements.md\n"
+        "[Git]: https://git-scm.com/\n"
+        "[GitHub]: https://github.com\n"
+    ),
     link=None,
     level=4,
-    num='3.13.8.1')
+    num="3.13.8.1",
+)
 
 SRS018_ClickHouse_Map_Data_Type = Specification(
-    name='SRS018 ClickHouse Map Data Type', 
+    name="SRS018 ClickHouse Map Data Type",
     description=None,
     author=None,
-    date=None, 
-    status=None, 
+    date=None,
+    status=None,
     approved_by=None,
     approved_date=None,
     approved_version=None,
@@ -807,69 +845,211 @@ SRS018_ClickHouse_Map_Data_Type = Specification(
     parent=None,
     children=None,
     headings=(
-        Heading(name='Revision History', level=1, num='1'),
-        Heading(name='Introduction', level=1, num='2'),
-        Heading(name='Requirements', level=1, num='3'),
-        Heading(name='General', level=2, num='3.1'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType', level=3, num='3.1.1'),
-        Heading(name='Performance', level=2, num='3.2'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Performance.Vs.ArrayOfTuples', level=3, num='3.2.1'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Performance.Vs.TupleOfArrays', level=3, num='3.2.2'),
-        Heading(name='Key Types', level=2, num='3.3'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Key.String', level=3, num='3.3.1'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Key.Integer', level=3, num='3.3.2'),
-        Heading(name='Value Types', level=2, num='3.4'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Value.String', level=3, num='3.4.1'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Value.Integer', level=3, num='3.4.2'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Value.Array', level=3, num='3.4.3'),
-        Heading(name='Invalid Types', level=2, num='3.5'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Invalid.Nullable', level=3, num='3.5.1'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Invalid.NothingNothing', level=3, num='3.5.2'),
-        Heading(name='Duplicated Keys', level=2, num='3.6'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.DuplicatedKeys', level=3, num='3.6.1'),
-        Heading(name='Array of Maps', level=2, num='3.7'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.ArrayOfMaps', level=3, num='3.7.1'),
-        Heading(name='Nested With Maps', level=2, num='3.8'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.NestedWithMaps', level=3, num='3.8.1'),
-        Heading(name='Value Retrieval', level=2, num='3.9'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval', level=3, num='3.9.1'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval.KeyInvalid', level=3, num='3.9.2'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval.KeyNotFound', level=3, num='3.9.3'),
-        Heading(name='Converting Tuple(Array, Array) to Map', level=2, num='3.10'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.TupleOfArraysToMap', level=3, num='3.10.1'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.TupleOfArraysMap.Invalid', level=3, num='3.10.2'),
-        Heading(name='Converting Array(Tuple(K,V)) to Map', level=2, num='3.11'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.ArrayOfTuplesToMap', level=3, num='3.11.1'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.ArrayOfTuplesToMap.Invalid', level=3, num='3.11.2'),
-        Heading(name='Keys and Values Subcolumns', level=2, num='3.12'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys', level=3, num='3.12.1'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys.ArrayFunctions', level=3, num='3.12.2'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys.InlineDefinedMap', level=3, num='3.12.3'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values', level=3, num='3.12.4'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values.ArrayFunctions', level=3, num='3.12.5'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values.InlineDefinedMap', level=3, num='3.12.6'),
-        Heading(name='Functions', level=2, num='3.13'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.InlineDefinedMap', level=3, num='3.13.1'),
-        Heading(name='`length`', level=3, num='3.13.2'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Length', level=4, num='3.13.2.1'),
-        Heading(name='`empty`', level=3, num='3.13.3'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Empty', level=4, num='3.13.3.1'),
-        Heading(name='`notEmpty`', level=3, num='3.13.4'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.NotEmpty', level=4, num='3.13.4.1'),
-        Heading(name='`map`', level=3, num='3.13.5'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map', level=4, num='3.13.5.1'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.InvalidNumberOfArguments', level=4, num='3.13.5.2'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MixedKeyOrValueTypes', level=4, num='3.13.5.3'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapAdd', level=4, num='3.13.5.4'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapSubstract', level=4, num='3.13.5.5'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapPopulateSeries', level=4, num='3.13.5.6'),
-        Heading(name='`mapContains`', level=3, num='3.13.6'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapContains', level=4, num='3.13.6.1'),
-        Heading(name='`mapKeys`', level=3, num='3.13.7'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapKeys', level=4, num='3.13.7.1'),
-        Heading(name='`mapValues`', level=3, num='3.13.8'),
-        Heading(name='RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapValues', level=4, num='3.13.8.1'),
+        Heading(name="Revision History", level=1, num="1"),
+        Heading(name="Introduction", level=1, num="2"),
+        Heading(name="Requirements", level=1, num="3"),
+        Heading(name="General", level=2, num="3.1"),
+        Heading(name="RQ.SRS-018.ClickHouse.Map.DataType", level=3, num="3.1.1"),
+        Heading(name="Performance", level=2, num="3.2"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Performance.Vs.ArrayOfTuples",
+            level=3,
+            num="3.2.1",
         ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Performance.Vs.TupleOfArrays",
+            level=3,
+            num="3.2.2",
+        ),
+        Heading(name="Key Types", level=2, num="3.3"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Key.String", level=3, num="3.3.1"
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Key.Integer", level=3, num="3.3.2"
+        ),
+        Heading(name="Value Types", level=2, num="3.4"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Value.String", level=3, num="3.4.1"
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Value.Integer",
+            level=3,
+            num="3.4.2",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Value.Array", level=3, num="3.4.3"
+        ),
+        Heading(name="Invalid Types", level=2, num="3.5"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Invalid.Nullable",
+            level=3,
+            num="3.5.1",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Invalid.NothingNothing",
+            level=3,
+            num="3.5.2",
+        ),
+        Heading(name="Duplicated Keys", level=2, num="3.6"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.DuplicatedKeys",
+            level=3,
+            num="3.6.1",
+        ),
+        Heading(name="Array of Maps", level=2, num="3.7"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.ArrayOfMaps", level=3, num="3.7.1"
+        ),
+        Heading(name="Nested With Maps", level=2, num="3.8"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.NestedWithMaps",
+            level=3,
+            num="3.8.1",
+        ),
+        Heading(name="Value Retrieval", level=2, num="3.9"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval",
+            level=3,
+            num="3.9.1",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval.KeyInvalid",
+            level=3,
+            num="3.9.2",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Value.Retrieval.KeyNotFound",
+            level=3,
+            num="3.9.3",
+        ),
+        Heading(name="Converting Tuple(Array, Array) to Map", level=2, num="3.10"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.TupleOfArraysToMap",
+            level=3,
+            num="3.10.1",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.TupleOfArraysMap.Invalid",
+            level=3,
+            num="3.10.2",
+        ),
+        Heading(name="Converting Array(Tuple(K,V)) to Map", level=2, num="3.11"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.ArrayOfTuplesToMap",
+            level=3,
+            num="3.11.1",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Conversion.From.ArrayOfTuplesToMap.Invalid",
+            level=3,
+            num="3.11.2",
+        ),
+        Heading(name="Keys and Values Subcolumns", level=2, num="3.12"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys",
+            level=3,
+            num="3.12.1",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys.ArrayFunctions",
+            level=3,
+            num="3.12.2",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Keys.InlineDefinedMap",
+            level=3,
+            num="3.12.3",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values",
+            level=3,
+            num="3.12.4",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values.ArrayFunctions",
+            level=3,
+            num="3.12.5",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.SubColumns.Values.InlineDefinedMap",
+            level=3,
+            num="3.12.6",
+        ),
+        Heading(name="Functions", level=2, num="3.13"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.InlineDefinedMap",
+            level=3,
+            num="3.13.1",
+        ),
+        Heading(name="`length`", level=3, num="3.13.2"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Length",
+            level=4,
+            num="3.13.2.1",
+        ),
+        Heading(name="`empty`", level=3, num="3.13.3"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Empty",
+            level=4,
+            num="3.13.3.1",
+        ),
+        Heading(name="`notEmpty`", level=3, num="3.13.4"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.NotEmpty",
+            level=4,
+            num="3.13.4.1",
+        ),
+        Heading(name="`map`", level=3, num="3.13.5"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map",
+            level=4,
+            num="3.13.5.1",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.InvalidNumberOfArguments",
+            level=4,
+            num="3.13.5.2",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MixedKeyOrValueTypes",
+            level=4,
+            num="3.13.5.3",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapAdd",
+            level=4,
+            num="3.13.5.4",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapSubstract",
+            level=4,
+            num="3.13.5.5",
+        ),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.Map.MapPopulateSeries",
+            level=4,
+            num="3.13.5.6",
+        ),
+        Heading(name="`mapContains`", level=3, num="3.13.6"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapContains",
+            level=4,
+            num="3.13.6.1",
+        ),
+        Heading(name="`mapKeys`", level=3, num="3.13.7"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapKeys",
+            level=4,
+            num="3.13.7.1",
+        ),
+        Heading(name="`mapValues`", level=3, num="3.13.8"),
+        Heading(
+            name="RQ.SRS-018.ClickHouse.Map.DataType.Functions.MapValues",
+            level=4,
+            num="3.13.8.1",
+        ),
+    ),
     requirements=(
         RQ_SRS_018_ClickHouse_Map_DataType,
         RQ_SRS_018_ClickHouse_Map_DataType_Performance_Vs_ArrayOfTuples,
@@ -910,8 +1090,8 @@ SRS018_ClickHouse_Map_Data_Type = Specification(
         RQ_SRS_018_ClickHouse_Map_DataType_Functions_MapContains,
         RQ_SRS_018_ClickHouse_Map_DataType_Functions_MapKeys,
         RQ_SRS_018_ClickHouse_Map_DataType_Functions_MapValues,
-        ),
-    content='''
+    ),
+    content="""
 # SRS018 ClickHouse Map Data Type
 # Software Requirements Specification
 
@@ -1424,4 +1604,5 @@ SELECT mapValues(a) from table_map;
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/map_type/requirements/requirements.md
 [Git]: https://git-scm.com/
 [GitHub]: https://github.com
-''')
+""",
+)

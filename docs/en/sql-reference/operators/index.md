@@ -71,7 +71,7 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
-*See [IN operators](../../sql-reference/operators/in.md).*
+See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-reference/operators/exists.md) operator.
 
 `a IN ...` – The `in(a, b)` function.
 
@@ -254,7 +254,7 @@ You can work with dates without using `INTERVAL`, just by adding or subtracting 
 Examples:
 
 ``` sql
-SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
+SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
 ```
 
 ``` text

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/sort.h>
+
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
@@ -101,7 +103,7 @@ struct QuantileExactWeighted
             ++i;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         Float64 threshold = std::ceil(sum_weight * level);
         Float64 accumulated = 0;
@@ -151,7 +153,7 @@ struct QuantileExactWeighted
             ++i;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         Float64 accumulated = 0;
 

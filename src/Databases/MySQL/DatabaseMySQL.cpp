@@ -53,16 +53,29 @@ DatabaseMySQL::DatabaseMySQL(
     const ASTStorage * database_engine_define_,
     const String & database_name_in_mysql_,
     std::unique_ptr<ConnectionMySQLSettings> settings_,
-    mysqlxx::PoolWithFailover && pool)
+    mysqlxx::PoolWithFailover && pool,
+    bool attach)
     : IDatabase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
     , database_settings(std::move(settings_))
-    , mysql_pool(std::move(pool))
+    , mysql_pool(std::move(pool)) /// NOLINT
 {
-    empty(); /// test database is works fine.
+    try
+    {
+        /// Test that the database is working fine; it will also fetch tables.
+        empty();
+    }
+    catch (...)
+    {
+        if (attach)
+            tryLogCurrentException("DatabaseMySQL");
+        else
+            throw;
+    }
+
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
 
@@ -113,53 +126,6 @@ StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPt
     return StoragePtr{};
 }
 
-static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & database_engine_define)
-{
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
-
-    auto table_storage_define = database_engine_define->clone();
-    create_table_query->set(create_table_query->storage, table_storage_define);
-
-    auto columns_declare_list = std::make_shared<ASTColumns>();
-    auto columns_expression_list = std::make_shared<ASTExpressionList>();
-
-    columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
-    create_table_query->set(create_table_query->columns_list, columns_declare_list);
-
-    {
-        /// init create query.
-        auto table_id = storage->getStorageID();
-        create_table_query->table = table_id.table_name;
-        create_table_query->database = table_id.database_name;
-
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
-        {
-            const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
-            column_declaration->name = column_type_and_name.name;
-            column_declaration->type = dataTypeConvertToQuery(column_type_and_name.type);
-            columns_expression_list->children.emplace_back(column_declaration);
-        }
-
-        ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-        ASTs storage_children = ast_storage->children;
-        auto storage_engine_arguments = ast_storage->engine->arguments;
-
-        /// Add table_name to engine arguments
-        auto mysql_table_name = std::make_shared<ASTLiteral>(table_id.table_name);
-        storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
-
-        /// Unset settings
-        storage_children.erase(
-            std::remove_if(storage_children.begin(), storage_children.end(),
-                [&](const ASTPtr & element) { return element.get() == ast_storage->settings; }),
-            storage_children.end());
-        ast_storage->settings = nullptr;
-    }
-
-    return create_table_query;
-}
-
 ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
@@ -174,7 +140,27 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         return nullptr;
     }
 
-    return getCreateQueryFromStorage(local_tables_cache[table_name].second, database_engine_define);
+    auto storage = local_tables_cache[table_name].second;
+    auto table_storage_define = database_engine_define->clone();
+    {
+        ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
+        ASTs storage_children = ast_storage->children;
+        auto storage_engine_arguments = ast_storage->engine->arguments;
+
+        /// Add table_name to engine arguments
+        auto mysql_table_name = std::make_shared<ASTLiteral>(table_name);
+        storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
+
+        /// Unset settings
+        storage_children.erase(
+            std::remove_if(storage_children.begin(), storage_children.end(),
+                           [&](const ASTPtr & element) { return element.get() == ast_storage->settings; }),
+            storage_children.end());
+        ast_storage->settings = nullptr;
+    }
+    auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
+                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
+    return create_table_query;
 }
 
 time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_name) const
@@ -192,7 +178,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = getDatabaseName();
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
@@ -362,7 +348,7 @@ void DatabaseMySQL::cleanOutdatedTables()
     }
 }
 
-void DatabaseMySQL::attachTable(const String & table_name, const StoragePtr & storage, const String &)
+void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -385,7 +371,7 @@ void DatabaseMySQL::attachTable(const String & table_name, const StoragePtr & st
         fs::remove(remove_flag);
 }
 
-StoragePtr DatabaseMySQL::detachTable(const String & table_name)
+StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -482,7 +468,7 @@ DatabaseMySQL::~DatabaseMySQL()
     }
 }
 
-void DatabaseMySQL::createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
+void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
 {
     const auto & create = create_query->as<ASTCreateQuery>();
 
@@ -500,7 +486,7 @@ void DatabaseMySQL::createTable(ContextPtr, const String & table_name, const Sto
         throw Exception("The MySQL database engine can only execute attach statements of type attach table database_name.table_name",
             ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-    attachTable(table_name, storage, {});
+    attachTable(local_context, table_name, storage, {});
 }
 
 }

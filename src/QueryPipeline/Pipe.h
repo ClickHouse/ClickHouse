@@ -3,12 +3,12 @@
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/PipelineResourcesHolder.h>
 #include <QueryPipeline/Chain.h>
-#include <Access/EnabledQuota.h>
 #include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
 
+class EnabledQuota;
 struct StreamLocalLimits;
 
 class Pipe;
@@ -141,7 +141,6 @@ private:
     bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
-    void setOutputFormat(ProcessorPtr output);
 
     friend class QueryPipelineBuilder;
     friend class QueryPipeline;

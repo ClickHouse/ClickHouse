@@ -252,10 +252,11 @@ void DiskEncrypted::copy(const String & from_path, const std::shared_ptr<IDisk> 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> size) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, size);
+    auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
     if (buffer->eof())
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
@@ -268,7 +269,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     return std::make_unique<ReadBufferFromEncryptedFile>(settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
 {
     auto wrapped_path = wrappedPath(path);
     FileEncryption::Header header;

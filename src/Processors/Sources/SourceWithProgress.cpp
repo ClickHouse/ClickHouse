@@ -26,6 +26,8 @@ SourceWithProgress::SourceWithProgress(Block header, bool enable_auto_progress)
 void SourceWithProgress::setProcessListElement(QueryStatus * elem)
 {
     process_list_elem = elem;
+    if (!elem)
+        return;
 
     /// Update total_rows_approx as soon as possible.
     ///
@@ -143,7 +145,7 @@ void SourceWithProgress::progress(const Progress & value)
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
         if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
-            quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
+            quota->used({QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes});
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);

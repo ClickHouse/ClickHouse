@@ -26,6 +26,11 @@ void registerTableFunctionCOS(TableFunctionFactory & factory);
 
 #if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory);
+void registerTableFunctionHDFSCluster(TableFunctionFactory & factory);
+#endif
+
+#if USE_HIVE
+void registerTableFunctionHive(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionODBC(TableFunctionFactory & factory);
@@ -46,6 +51,8 @@ void registerTableFunctionSQLite(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
+
+void registerTableFunctionFormat(TableFunctionFactory & factory);
 
 void registerTableFunctions();
 

@@ -60,7 +60,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
         throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
-void ParquetBlockOutputFormat::finalize()
+void ParquetBlockOutputFormat::finalizeImpl()
 {
     if (!file_writer)
     {
@@ -85,6 +85,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
         {
             return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
         });
+    factory.markFormatHasNoAppendSupport("Parquet");
 }
 
 }

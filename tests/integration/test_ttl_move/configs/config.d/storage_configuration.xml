@@ -76,6 +76,14 @@
             </volumes>
         </jbod1_with_jbod2>
 
+        <only_jbod_1>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+            </volumes>
+        </only_jbod_1>
+
         <only_jbod2>
             <volumes>
                 <main>

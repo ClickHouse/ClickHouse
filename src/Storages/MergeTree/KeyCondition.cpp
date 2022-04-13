@@ -18,9 +18,10 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Storages/KeyDescription.h>
@@ -52,7 +53,7 @@ String Range::toString() const
 
 
 /// Example: for `Hello\_World% ...` string it returns `Hello_World`, and for `%test%` returns an empty string.
-static String extractFixedPrefixFromLikePattern(const String & like_pattern)
+String extractFixedPrefixFromLikePattern(const String & like_pattern)
 {
     String fixed_prefix;
 
@@ -277,27 +278,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
     },
     {
-        "notLike",
-        [] (RPNElement & out, const Field & value)
-        {
-            if (value.getType() != Field::Types::String)
-                return false;
-
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>());
-            if (prefix.empty())
-                return false;
-
-            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
-
-            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-            out.range = !right_bound.empty()
-                        ? Range(prefix, true, right_bound, false)
-                        : Range::createLeftBounded(prefix, true);
-
-            return true;
-        }
-    },
-    {
         "startsWith",
         [] (RPNElement & out, const Field & value)
         {
@@ -468,7 +448,7 @@ KeyCondition::KeyCondition(
 {
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
-        std::string name = key_column_names[i];
+        const auto & name = key_column_names[i];
         if (!key_columns.count(name))
             key_columns[name] = i;
     }
@@ -735,18 +715,12 @@ bool KeyCondition::transformConstantWithValidFunctions(
 
             if (is_valid_chain)
             {
-                /// Here we cast constant to the input type.
-                /// It is not clear, why this works in general.
-                /// I can imagine the case when expression like `column < const` is legal,
-                /// but `type(column)` and `type(const)` are of different types,
-                /// and const cannot be casted to column type.
-                /// (There could be `superType(type(column), type(const))` which is used for comparison).
-                ///
-                /// However, looks like this case newer happenes (I could not find such).
-                /// Let's assume that any two comparable types are castable to each other.
                 auto const_type = cur_node->result_type;
                 auto const_column = out_type->createColumnConst(1, out_value);
-                auto const_value = (*castColumn({const_column, out_type, ""}, const_type))[0];
+                auto const_value = (*castColumnAccurateOrNull({const_column, out_type, ""}, const_type))[0];
+
+                if (const_value.isNull())
+                    return false;
 
                 while (!chain.empty())
                 {
@@ -1312,8 +1286,8 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 key_expr_type_not_null = key_expr_type;
 
             bool cast_not_needed = is_set_const /// Set args are already casted inside Set::createFromAST
-                || ((isNativeNumber(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
-                    && (isNativeNumber(const_type) || isDateTime(const_type))); /// Numbers and DateTime are accurately compared without cast.
+                || ((isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
+                    && (isNativeInteger(const_type) || isDateTime(const_type))); /// Native integers and DateTime are accurately compared without cast.
 
             if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
             {
@@ -1326,7 +1300,10 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 }
                 else
                 {
-                    DataTypePtr common_type = getLeastSupertype({key_expr_type_not_null, const_type});
+                    DataTypePtr common_type = tryGetLeastSupertype({key_expr_type_not_null, const_type});
+                    if (!common_type)
+                        return false;
+
                     if (!const_type->equals(*common_type))
                     {
                         castValueToType(common_type, const_value, const_type, node);
@@ -1337,8 +1314,9 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                     }
                     if (!key_expr_type_not_null->equals(*common_type))
                     {
-                        auto common_type_maybe_nullable
-                            = key_expr_type_is_nullable ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type)) : common_type;
+                        auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
+                            ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
+                            : common_type;
                         ColumnsWithTypeAndName arguments{
                             {nullptr, key_expr_type, ""},
                             {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type_maybe_nullable, ""}};
@@ -1346,7 +1324,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                         auto func_cast = func_builder_cast->build(arguments);
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-                        if (!func_cast || (!single_point && !func_cast->hasInformationAboutMonotonicity()))
+                        if (!single_point && !func_cast->hasInformationAboutMonotonicity())
                             return false;
                         chain.push_back(func_cast);
                     }
@@ -2015,7 +1993,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!element.set_index)
                 throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types));
+            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }

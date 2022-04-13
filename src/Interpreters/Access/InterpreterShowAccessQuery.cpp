@@ -10,14 +10,12 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/AccessControl.h>
 #include <base/range.h>
-#include <boost/range/algorithm/sort.hpp>
-#include <boost/range/algorithm_ext/push_back.hpp>
+#include <base/sort.h>
+#include <base/insertAtEnd.h>
 
 
 namespace DB
 {
-using EntityType = IAccessEntity::Type;
-
 
 BlockIO InterpreterShowAccessQuery::execute()
 {
@@ -53,7 +51,7 @@ std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
     getContext()->checkAccess(AccessType::SHOW_ACCESS);
 
     std::vector<AccessEntityPtr> entities;
-    for (auto type : collections::range(EntityType::MAX))
+    for (auto type : collections::range(AccessEntityType::MAX))
     {
         auto ids = access_control.findAll(type);
         for (const auto & id : ids)
@@ -63,7 +61,7 @@ std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
         }
     }
 
-    boost::range::sort(entities, IAccessEntity::LessByTypeAndName{});
+    ::sort(entities.begin(), entities.end(), IAccessEntity::LessByTypeAndName{});
     return entities;
 }
 
@@ -77,12 +75,12 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
     for (const auto & entity : entities)
     {
         create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, access_control));
-        if (entity->isTypeOf(EntityType::USER) || entity->isTypeOf(EntityType::ROLE))
-            boost::range::push_back(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
+        if (entity->isTypeOf(AccessEntityType::USER) || entity->isTypeOf(AccessEntityType::ROLE))
+            insertAtEnd(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
     }
 
     ASTs result = std::move(create_queries);
-    boost::range::push_back(result, std::move(grant_queries));
+    insertAtEnd(result, std::move(grant_queries));
     return result;
 }
 

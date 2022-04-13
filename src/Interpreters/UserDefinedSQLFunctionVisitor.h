@@ -34,7 +34,7 @@ public:
 private:
     static void visit(ASTFunction & func, const Data & data);
 
-    static ASTPtr tryToReplaceFunction(const ASTFunction & function);
+    static ASTPtr tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process);
 
 };
 
