@@ -8,6 +8,8 @@ cache_status () {
     ccache --show-stats ||:
 }
 
+git config --global --add safe.directory /build
+
 mkdir -p build/cmake/toolchain/darwin-x86_64
 tar xJf MacOSX11.0.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
 ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
@@ -17,12 +19,14 @@ ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
 # export CCACHE_LOGFILE=/build/ccache.log
 # export CCACHE_DEBUG=1
 
+
 mkdir -p build/build_docker
 cd build/build_docker
 rm -f CMakeCache.txt
 # Read cmake arguments into array (possibly empty)
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 env
+
 
 # build keeper with musl separately
 if [ "$BUILD_MUSL_KEEPER" == "1" ]
