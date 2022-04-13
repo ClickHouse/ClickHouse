@@ -6,7 +6,7 @@ namespace DB
 {
 
 /// Returns true, if the following functions supported by the system
-bool supportsRenameat2();
+bool supportsAtomicRename();
 
 /// Atomically rename old_path to new_path. If new_path exists, do not overwrite it and throw exception
 void renameNoReplace(const std::string & old_path, const std::string & new_path);

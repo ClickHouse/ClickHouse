@@ -40,7 +40,10 @@ enum class ExecuteTTLType
 class MergeTreeDataMergerMutator
 {
 public:
-    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)>;
+    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &,
+                                                        const MergeTreeData::DataPartPtr &,
+                                                        const MergeTreeTransaction *,
+                                                        String *)>;
 
     MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_);
 
@@ -72,6 +75,7 @@ public:
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
         bool merge_with_ttl_allowed,
+        const MergeTreeTransactionPtr & txn,
         String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
@@ -85,6 +89,7 @@ public:
         const String & partition_id,
         bool final,
         const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeTransactionPtr & txn,
         String * out_disable_reason = nullptr,
         bool optimize_skip_merged_partitions = false);
 
@@ -107,6 +112,7 @@ public:
         bool deduplicate,
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
+        const MergeTreeTransactionPtr & txn,
         const IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 
@@ -118,12 +124,14 @@ public:
         MergeListEntry * merge_entry,
         time_t time_of_mutation,
         ContextPtr context,
+        const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
         TableLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
+        const MergeTreeTransactionPtr & txn,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
 
