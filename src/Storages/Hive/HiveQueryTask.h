@@ -13,8 +13,6 @@
 #include <Storages/Hive/HiveFile.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Poco/JSON/Parser.h>
-#include <Storages/Hive/HiveFilesCollector.h>
-
 namespace DB
 {
 /**
@@ -23,6 +21,18 @@ namespace DB
 class IHiveQueryTaskFilesCollector : public WithContext
 {
 public:
+
+    enum class PruneLevel
+    {
+        None, /// Do not prune
+        Partition,
+        File,
+        Split,
+        Max = Split,
+    };
+
+    static String pruneLevelToString(PruneLevel level) { return String(magic_enum::enum_name(level)); }
+
     virtual ~IHiveQueryTaskFilesCollector() = default;
     struct Arguments
     {
@@ -39,7 +49,7 @@ public:
     };
     virtual void setupCallbackData(const String & data_) = 0;
     virtual void setupArgs(const Arguments &) = 0;
-    virtual HiveFiles collectHiveFiles(HiveFilesCollector::PruneLevel prune_level) = 0;
+    virtual HiveFiles collect(PruneLevel prune_level) = 0;
     virtual String getName() = 0;
 };
 using HiveQueryTaskFilesCollectorPtr = std::shared_ptr<IHiveQueryTaskFilesCollector>;

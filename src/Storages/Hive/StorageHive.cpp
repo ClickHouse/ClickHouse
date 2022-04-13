@@ -34,7 +34,7 @@
 #include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/Hive/SingleHiveQueryTaskBuilder.h>
+#include <Storages/Hive/LocalHiveQueryTaskBuilder.h>
 
 namespace DB
 {
@@ -416,7 +416,6 @@ void StorageHive::getActualColumnsToRead(Block & sample_block, const Block & hea
             }
         }
     }
-    LOG_TRACE(&Poco::Logger::get("StorageHive"), "actual columns to read: {}", sample_block.dumpNames());
 }
 
 Pipe StorageHive::read(
@@ -432,7 +431,7 @@ Pipe StorageHive::read(
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_files_collector = getHiveFilesCollector(query_info);
-    auto hive_files = hive_files_collector->collectHiveFiles(HiveFilesCollector::PruneLevel::Max);
+    auto hive_files = hive_files_collector->collect(PruneLevel::Max);
     if (hive_files.empty())
         return {};
 
@@ -488,30 +487,30 @@ NamesAndTypesList StorageHive::getVirtuals() const
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
-std::optional<UInt64> StorageHive::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageHive::totalRows(const Settings & /*settings*/) const
 {
     // In hive cluster query, this cannot work
     if (is_distributed_mode)
         return {};
     /// query_info is not used when prune_level == PruneLevel::None
     SelectQueryInfo query_info;
-    return totalRowsImpl(settings, query_info, getContext(), PruneLevel::None);
+    return totalRowsImpl(query_info, PruneLevel::None);
 }
 
-std::optional<UInt64> StorageHive::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const
+std::optional<UInt64> StorageHive::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr /*context_*/) const
 {
-    return totalRowsImpl(context_->getSettingsRef(), query_info, context_, PruneLevel::Partition);
+    return totalRowsImpl(query_info, PruneLevel::Partition);
 }
 
 std::optional<UInt64>
-StorageHive::totalRowsImpl(const Settings & /*settings*/, const SelectQueryInfo & query_info, ContextPtr /*context_*/, PruneLevel prune_level) const
+StorageHive::totalRowsImpl(const SelectQueryInfo & query_info, PruneLevel prune_level) const
 {
     /// Row-based format like Text doesn't support totalRowsByPartitionPredicate
     if (!isColumnOriented())
         return {};
 
     auto hive_files_collector = getHiveFilesCollector(query_info);
-    auto hive_files = hive_files_collector->collectHiveFiles(prune_level);
+    auto hive_files = hive_files_collector->collect(prune_level);
 
     UInt64 total_rows = 0;
     for (const auto & hive_file : hive_files)
@@ -541,12 +540,12 @@ std::shared_ptr<IHiveQueryTaskFilesCollector> StorageHive::getHiveFilesCollector
     /**
      * Hdfs files collection action is wrapped into IHiveQueryTaskFilesCollector.
      * On Hive() engine, hive_task_files_collector_builder is nullptr.
-     * SingleHiveQueryTaskFilesCollector will collect all files.
+     * LocalHiveQueryTaskFilesCollector will collect all files.
      *
      */
     if (!hive_task_files_collector_builder)
     {
-        hive_task_files_collector = std::make_shared<SingleHiveQueryTaskFilesCollector>();
+        hive_task_files_collector = std::make_shared<LocalHiveQueryTaskFilesCollector>();
     }
     else
         hive_task_files_collector = (*hive_task_files_collector_builder)();

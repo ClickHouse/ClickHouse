@@ -77,7 +77,7 @@ public:
     /**
      * @brief transform file format representation from hive metastore to inner representation
      */
-    static String hiveMetaStoreFileFormatToHiveFileFormat(const String & format_class);
+    static String HiveInputFormatToCHFormat(const String & format_class);
 
     IHiveFile(
         const FieldVector & partition_values_,

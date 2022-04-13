@@ -1,17 +1,14 @@
-#include <Storages/Hive/SingleHiveQueryTaskBuilder.h>
+#include <memory>
+#include <Storages/Hive/LocalHiveQueryTaskBuilder.h>
 #if USE_HIVE
 #include <Storages/Hive/HiveFilesCollector.h>
 namespace DB
 {
 
-void SingleHiveQueryTaskFilesCollector::setupArgs(const Arguments & args_)
+void LocalHiveQueryTaskFilesCollector::setupArgs(const Arguments & args_)
 {
     args = args_;
-}
-
-HiveFiles SingleHiveQueryTaskFilesCollector::collectHiveFiles(HiveFilesCollector::PruneLevel prune_level)
-{
-    HiveFilesCollector files_collector(
+    files_collector = std::make_unique<HiveFilesCollector>(
         args.context,
         args.query_info,
         args.partition_by_ast,
@@ -21,7 +18,11 @@ HiveFiles SingleHiveQueryTaskFilesCollector::collectHiveFiles(HiveFilesCollector
         args.hive_table,
         args.num_streams,
         args.storage_settings);
-    auto total_hive_files = files_collector.collect(prune_level);
+}
+
+HiveFiles LocalHiveQueryTaskFilesCollector::collect(PruneLevel prune_level)
+{
+    auto total_hive_files = files_collector->collect(prune_level);
     HiveFiles task_files;
     task_files.reserve(total_hive_files.size());
     for (const auto & file : total_hive_files)

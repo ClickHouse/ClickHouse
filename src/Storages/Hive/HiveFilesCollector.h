@@ -4,6 +4,7 @@
 #include <Storages/Hive/HiveFile.h>
 #include <Storages/Hive/HiveCommon.h>
 #include <Poco/Logger.h>
+#include <Storages/Hive/HiveQueryTask.h>
 namespace DB
 {
 /**
@@ -13,17 +14,7 @@ namespace DB
 class HiveFilesCollector
 {
 public:
-    enum class PruneLevel
-    {
-        None, /// Do not prune
-        Partition,
-        File,
-        Split,
-        Max = Split,
-    };
-
-    static String pruneLevelToString(PruneLevel level) { return String(magic_enum::enum_name(level)); }
-
+    using PruneLevel = IHiveQueryTaskFilesCollector::PruneLevel;
     struct FileInfo
     {
         String hdfs_namenode_url;
@@ -52,7 +43,7 @@ public:
         , num_streams(num_streams_)
         , storage_settings(storage_settings_)
     {
-
+        prepare();
     }
 
     std::vector<FileInfo> collect(PruneLevel prune_level = PruneLevel::Max);

@@ -77,7 +77,7 @@ private:
     using FileFormat = IHiveFile::FileFormat;
     using FileInfo = HiveMetastoreClient::FileInfo;
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
-    using PruneLevel = HiveFilesCollector::PruneLevel;
+    using PruneLevel = IHiveQueryTaskFilesCollector::PruneLevel;
 
     void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
 
@@ -85,7 +85,7 @@ private:
     void lazyInitialize();
 
     std::optional<UInt64>
-    totalRowsImpl(const Settings & settings, const SelectQueryInfo & query_info, ContextPtr context_, PruneLevel prune_level) const;
+    totalRowsImpl(const SelectQueryInfo & query_info, PruneLevel prune_level) const;
 
     std::shared_ptr<IHiveQueryTaskFilesCollector> getHiveFilesCollector(const SelectQueryInfo & query_info) const;
 
