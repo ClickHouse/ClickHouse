@@ -667,6 +667,9 @@ FileSegmentsHolder::~FileSegmentsHolder()
 
         if (file_segment->detached)
         {
+            /// This file segment is not owned by cache, so it will be destructed
+            /// at this point, therefore no completion required.
+            assert(file_segment->state() == State::EMPTY);
             file_segment_it = file_segments.erase(current_file_segment_it);
             continue;
         }
