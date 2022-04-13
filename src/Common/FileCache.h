@@ -72,6 +72,15 @@ public:
      */
     virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) = 0;
 
+    /**
+     * Segments in returned list are ordered in ascending order and represent a full contiguous
+     * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
+     *
+     * If file segment has state EMPTY, then it is also marked as "detached". E.g. it is "detached"
+     * from cache (not owned by cache), and as a result will never change it's state and will be destructed
+     * with the destruction of the holder, while in getOrSet() EMPTY file segments can eventually change 
+     * it's state (and become DOWNLOADED).
+     */
     virtual FileSegmentsHolder get(const Key & key, size_t offset, size_t size) = 0;
 
     virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) = 0;
