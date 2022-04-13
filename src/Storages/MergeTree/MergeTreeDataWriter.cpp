@@ -7,6 +7,7 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
@@ -433,7 +434,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     auto out = std::make_unique<MergedBlockOutputStream>(new_data_part, metadata_snapshot, columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec,
+        context->getCurrentTransaction(), false, false, context->getWriteSettings());
+
 
     out->writeWithPermutation(block, perm_ptr);
 
@@ -448,7 +451,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
                 temp_part.streams.emplace_back(std::move(stream));
         }
     }
-    auto finalizer = out->finalizePartAsync(new_data_part, data_settings->fsync_after_insert);
+    auto finalizer = out->finalizePartAsync(
+        new_data_part,
+        data_settings->fsync_after_insert,
+        nullptr, nullptr,
+        context->getWriteSettings());
 
     temp_part.part = new_data_part;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -561,7 +568,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
-        compression_codec);
+        compression_codec,
+        NO_TRANSACTION_PTR);
 
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePartAsync(new_data_part, false);
