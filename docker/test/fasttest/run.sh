@@ -115,6 +115,7 @@ function start_server
 
 function clone_root
 {
+    git config --global --add safe.directory "$FASTTEST_SOURCE"
     git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
     (

@@ -13,7 +13,6 @@
 #include <Common/ThreadPool.h>
 #include <filesystem>
 
-
 namespace CurrentMetrics
 {
     extern const Metric DiskSpaceReservedForMerge;
@@ -22,23 +21,23 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/// Helper class to collect paths into chunks of maximum size.
-/// For s3 it is Aws::vector<ObjectIdentifier>, for hdfs it is std::vector<std::string>.
-class RemoteFSPathKeeper
+/// Path to blob with it's size
+struct BlobPathWithSize
 {
-public:
-    explicit RemoteFSPathKeeper(size_t chunk_limit_) : chunk_limit(chunk_limit_) {}
+    std::string relative_path;
+    uint64_t bytes_size;
 
-    virtual ~RemoteFSPathKeeper() = default;
+    BlobPathWithSize() = default;
+    BlobPathWithSize(const BlobPathWithSize & other) = default;
 
-    virtual void addPath(const String & path) = 0;
-
-protected:
-    size_t chunk_limit;
+    BlobPathWithSize(const std::string & relative_path_, uint64_t bytes_size_)
+        : relative_path(relative_path_)
+        , bytes_size(bytes_size_)
+    {}
 };
 
-using RemoteFSPathKeeperPtr = std::shared_ptr<RemoteFSPathKeeper>;
-
+/// List of blobs with their sizes
+using BlobsPathToSize = std::vector<BlobPathWithSize>;
 
 class IAsynchronousReader;
 using AsynchronousReaderPtr = std::shared_ptr<IAsynchronousReader>;
@@ -148,9 +147,7 @@ public:
 
     bool checkUniqueId(const String & id) const override = 0;
 
-    virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
-
-    virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
+    virtual void removeFromRemoteFS(const std::vector<String> & paths) = 0;
 
     static AsynchronousReaderPtr getThreadPoolReader();
     static ThreadPool & getThreadPoolWriter();
@@ -173,9 +170,9 @@ protected:
     FileCachePtr cache;
 
 private:
-    void removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
+    void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
 
-    void removeMetadataRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
+    void removeMetadataRecursive(const String & path, std::vector<String> & paths_to_remove);
 
     bool tryReserve(UInt64 bytes);
 
@@ -191,10 +188,8 @@ using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
 /// Minimum info, required to be passed to ReadIndirectBufferFromRemoteFS<T>
 struct RemoteMetadata
 {
-    using PathAndSize = std::pair<String, size_t>;
-
     /// Remote FS objects paths and their sizes.
-    std::vector<PathAndSize> remote_fs_objects;
+    std::vector<BlobPathWithSize> remote_fs_objects;
 
     /// URI
     const String & remote_fs_root_path;

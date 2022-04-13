@@ -802,7 +802,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         /// e.g. ALTER referencing the same table in scalar subquery
         bool execute_scalar_subqueries = !dry_run;
         auto syntax_result = TreeRewriter(context).analyze(
-            all_asts, all_columns, storage, storage->getStorageSnapshot(metadata_snapshot),
+            all_asts, all_columns, storage, storage->getStorageSnapshot(metadata_snapshot, context),
             false, true, execute_scalar_subqueries);
 
         if (execute_scalar_subqueries && context->hasQueryContext())

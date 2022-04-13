@@ -1639,6 +1639,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 server.start();
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
+
+            global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
 

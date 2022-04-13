@@ -105,8 +105,11 @@ ColumnsDescription readSchemaFromFormat(const String & format_name, const std::o
     return readSchemaFromFormat(format_name, format_settings, read_buffer_creator, context, buf_out);
 }
 
-DataTypePtr generalizeDataType(DataTypePtr type)
+DataTypePtr makeNullableRecursivelyAndCheckForNothing(DataTypePtr type)
 {
+    if (!type)
+        return nullptr;
+
     WhichDataType which(type);
 
     if (which.isNothing())
@@ -115,16 +118,13 @@ DataTypePtr generalizeDataType(DataTypePtr type)
     if (which.isNullable())
     {
         const auto * nullable_type = assert_cast<const DataTypeNullable *>(type.get());
-        return generalizeDataType(nullable_type->getNestedType());
+        return makeNullableRecursivelyAndCheckForNothing(nullable_type->getNestedType());
     }
-
-    if (isNumber(type))
-        return makeNullable(std::make_shared<DataTypeFloat64>());
 
     if (which.isArray())
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
-        auto nested_type = generalizeDataType(array_type->getNestedType());
+        auto nested_type = makeNullableRecursivelyAndCheckForNothing(array_type->getNestedType());
         return nested_type ? std::make_shared<DataTypeArray>(nested_type) : nullptr;
     }
 
@@ -134,7 +134,7 @@ DataTypePtr generalizeDataType(DataTypePtr type)
         DataTypes nested_types;
         for (const auto & element : tuple_type->getElements())
         {
-            auto nested_type = generalizeDataType(element);
+            auto nested_type = makeNullableRecursivelyAndCheckForNothing(element);
             if (!nested_type)
                 return nullptr;
             nested_types.push_back(nested_type);
@@ -145,19 +145,27 @@ DataTypePtr generalizeDataType(DataTypePtr type)
     if (which.isMap())
     {
         const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
-        auto key_type = removeNullable(generalizeDataType(map_type->getKeyType()));
-        auto value_type = generalizeDataType(map_type->getValueType());
-        return key_type && value_type ? std::make_shared<DataTypeMap>(key_type, value_type) : nullptr;
+        auto key_type = makeNullableRecursivelyAndCheckForNothing(map_type->getKeyType());
+        auto value_type = makeNullableRecursivelyAndCheckForNothing(map_type->getValueType());
+        return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
     }
 
     if (which.isLowCarnality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
-        auto nested_type = generalizeDataType(lc_type->getDictionaryType());
+        auto nested_type = makeNullableRecursivelyAndCheckForNothing(lc_type->getDictionaryType());
         return nested_type ? std::make_shared<DataTypeLowCardinality>(nested_type) : nullptr;
     }
 
     return makeNullable(type);
+}
+
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header)
+{
+    NamesAndTypesList result;
+    for (auto & [name, type] : header.getNamesAndTypesList())
+        result.emplace_back(name, makeNullableRecursivelyAndCheckForNothing(type));
+    return result;
 }
 
 }
