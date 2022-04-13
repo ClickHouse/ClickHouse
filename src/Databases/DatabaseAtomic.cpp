@@ -235,15 +235,19 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
-    table->checkTableCanBeRenamed();
+    StorageID old_table_id = table->getStorageID();
+    StorageID new_table_id = {other_db.database_name, to_table_name, old_table_id.uuid};
+    table->checkTableCanBeRenamed({new_table_id});
     assert_can_move_mat_view(table);
     StoragePtr other_table;
+    StorageID other_table_new_id = StorageID::createEmpty();
     if (exchange)
     {
         other_table = other_db.getTableUnlocked(to_table_name, other_db_lock);
         if (dictionary && !other_table->isDictionary())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
-        other_table->checkTableCanBeRenamed();
+        other_table_new_id = {database_name, table_name, other_table->getStorageID().uuid};
+        other_table->checkTableCanBeRenamed(other_table_new_id);
         assert_can_move_mat_view(other_table);
     }
 
@@ -265,11 +269,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (exchange)
         other_table_data_path = detach(other_db, to_table_name, other_table->storesDataOnDisk());
 
-    auto old_table_id = table->getStorageID();
-
-    table->renameInMemory({other_db.database_name, to_table_name, old_table_id.uuid});
+    table->renameInMemory(new_table_id);
     if (exchange)
-        other_table->renameInMemory({database_name, table_name, other_table->getStorageID().uuid});
+        other_table->renameInMemory(other_table_new_id);
 
     if (!inside_database)
     {

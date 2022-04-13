@@ -411,6 +411,8 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
             Macros::MacroExpansionInfo info;
             info.table_id = {getDatabaseName(), create->getTable(), create->uuid};
+            info.shard = getShardName();
+            info.replica = getReplicaName();
             query_context->getMacros()->expand(maybe_path, info);
             bool maybe_shard_macros = info.expanded_other;
             info.expanded_other = false;
