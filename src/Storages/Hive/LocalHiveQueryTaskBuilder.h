@@ -18,7 +18,7 @@ public:
     using PruneLevel = IHiveQueryTaskFilesCollector::PruneLevel;
     void setupArgs(const Arguments & args_) override;
     HiveFiles collect(PruneLevel prune_level) override;
-    String getName() override { return "SingleHiveTask"; }
+    String getName() override { return "LocalHiveTask"; }
     void setupCallbackData(const String &) override { }
 
 private:
