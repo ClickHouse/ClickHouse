@@ -23,6 +23,16 @@ rm -f CMakeCache.txt
 # Read cmake arguments into array (possibly empty)
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 env
+
+# build keeper with musl separately
+if [ "$BUILD_MUSL_KEEPER" == "1" ]
+then
+    cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
+    ninja $NINJA_FLAGS clickhouse-keeper
+fi
+
+rm -f CMakeCache.txt
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
 if [ "coverity" == "$COMBINED_OUTPUT" ]
@@ -45,13 +55,6 @@ $SCAN_WRAPPER ninja $NINJA_FLAGS clickhouse-bundle
 
 cache_status
 
-# build keeper with musl separately
-if [ "$BUILD_MUSL_KEEPER" == "1" ]
-then
-    rm -f CMakeCache.txt
-    cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
-    ninja $NINJA_FLAGS clickhouse-keeper
-fi
 
 if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
