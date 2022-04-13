@@ -11,6 +11,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>

@@ -162,7 +162,7 @@ def test_put(started_cluster, maybe_auth, positive, compression):
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test.csv"
     put_query = f"""insert into table function s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{filename}',
-                    {maybe_auth}'CSV', '{table_format}', '{compression}') values settings s3_truncate_on_insert=1 {values}"""
+                    {maybe_auth}'CSV', '{table_format}', '{compression}') settings s3_truncate_on_insert=1 values {values}"""
 
     try:
         run_query(instance, put_query)
@@ -362,7 +362,7 @@ def test_put_csv(started_cluster, maybe_auth, positive):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
-    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') format CSV settings s3_truncate_on_insert=1".format(
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') settings s3_truncate_on_insert=1 format CSV".format(
         started_cluster.minio_ip,
         MINIO_INTERNAL_PORT,
         bucket,
@@ -392,7 +392,7 @@ def test_put_get_with_redirect(started_cluster):
     values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
     values_csv = "1,1,1\n1,1,1\n11,11,11\n"
     filename = "test.csv"
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values settings s3_truncate_on_insert=1 {}".format(
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
         started_cluster.minio_redirect_host,
         started_cluster.minio_redirect_port,
         bucket,
@@ -431,7 +431,7 @@ def test_put_with_zero_redirect(started_cluster):
     filename = "test.csv"
 
     # Should work without redirect
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values settings s3_truncate_on_insert=1 {}".format(
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
         started_cluster.minio_ip,
         MINIO_INTERNAL_PORT,
         bucket,
@@ -442,7 +442,7 @@ def test_put_with_zero_redirect(started_cluster):
     run_query(instance, query)
 
     # Should not work with redirect
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values settings s3_truncate_on_insert=1 {}".format(
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
         started_cluster.minio_redirect_host,
         started_cluster.minio_redirect_port,
         bucket,
@@ -1406,4 +1406,25 @@ def test_insert_select_schema_inference(started_cluster):
     result = instance.query(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_insert_select.native')"
     )
+    assert int(result) == 1
+
+
+def test_parallel_reading_with_memory_limit(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') select * from numbers(100000)"
+    )
+
+    result = instance.query_and_get_error(
+        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') settings max_memory_usage=10000"
+    )
+
+    assert "Memory limit (for query) exceeded" in result
+
+    sleep(5)
+
+    # Check that server didn't crash
+    result = instance.query("select 1")
     assert int(result) == 1

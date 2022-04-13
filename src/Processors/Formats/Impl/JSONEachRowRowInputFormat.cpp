@@ -387,12 +387,12 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory
 
 void registerJSONEachRowSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("JSONEachRow", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    factory.registerSchemaReader("JSONEachRow", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
     });
 
-    factory.registerSchemaReader("JSONStringsEachRow", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    factory.registerSchemaReader("JSONStringsEachRow", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_unique<JSONEachRowSchemaReader>(buf, true, settings);
     });
