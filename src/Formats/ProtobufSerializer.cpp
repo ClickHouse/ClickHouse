@@ -1,7 +1,5 @@
 #include <Formats/ProtobufSerializer.h>
 
-#define USE_PROTOBUF 1
-
 #if USE_PROTOBUF
 #   include <Columns/ColumnAggregateFunction.h>
 #   include <Columns/ColumnArray.h>
