@@ -389,3 +389,24 @@ def test_cache_read_bytes(started_cluster):
         test_passed = True
         break
     assert test_passed
+
+
+def test_explain_estimate(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result = node.query(
+        """
+    CREATE TABLE IF NOT EXISTS default.demo_explain_estimate (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+            """
+    )
+    assert result.strip() == ""
+
+    result = node.query(
+        """
+        EXPLAIN ESTIMATE select count(*) from default.demo_explain_estimate where day = '2021-11-05' and score > 12;
+        """
+    )
+    assert (
+        result
+        == """default	bigolive_showeruid_fake_share_orc_file_index	{"files_after_prune":1,"files_before_prune":1,"partitions_after_prune":1,"partitions_before_prune":4}
+"""
+    )

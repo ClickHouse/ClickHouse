@@ -5,10 +5,10 @@
 202201-0	2022-01-01 00:30:00	2022-01-31 22:30:00	2021-12-31 16:30:00	2022-01-31 14:30:00	2000
 202301-0	2023-01-31 22:30:00	2023-01-31 22:30:00	2023-01-31 14:30:00	2023-01-31 14:30:00	1000
 202112-0
-default	weird_partitions_02245	1	1000	1
+default	weird_partitions_02245	{"selected_marks":1,"selected_parts":1,"selected_rows":1000}
 202201-0
-default	weird_partitions_02245	1	2000	1
+default	weird_partitions_02245	{"selected_marks":1,"selected_parts":1,"selected_rows":2000}
 202112-0
 202201-0
-default	weird_partitions_02245	2	3000	2
-default	weird_partitions_02245	0	0	0
+default	weird_partitions_02245	{"selected_marks":2,"selected_parts":2,"selected_rows":3000}
+default	weird_partitions_02245	{"selected_marks":0,"selected_parts":0,"selected_rows":0}
