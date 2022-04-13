@@ -1,7 +1,6 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <boost/algorithm/string.hpp>
 
 namespace DB
@@ -30,12 +29,7 @@ static void chooseResultType(
         DataTypePtr common_type;
         if (common_type_checker)
             common_type = common_type_checker(type, new_type);
-//        Check if we have Bool and Number and if allow_bools_as_numbers
-//        is true make the result type Number
-//        auto not_nullable_type = removeNullable(type);
-//        auto not_nullable_new_type = removeNullable(new_type);
-//        bool bool_type_presents = isBool(not_nullable_type) || isBool(not_nullable_new_type);
-//        bool number_type_presents = isNumber(not_nullable_type) || isNumber(not_nullable_new_type);
+
         if (common_type)
             type = common_type;
         else if (default_type)
