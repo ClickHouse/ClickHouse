@@ -255,6 +255,10 @@ struct JSONEachRowFieldsExtractor
     std::vector<Element> extract(const Element & element)
     {
         /// {..., "<column_name>" : <value>, ...}
+
+        if (!element.isObject())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Root JSON value is not an object");
+
         auto object = element.getObject();
         std::vector<Element> fields;
         fields.reserve(object.size());
@@ -287,6 +291,9 @@ struct JSONCompactEachRowFieldsExtractor
     std::vector<Element> extract(const Element & element)
     {
         /// [..., <value>, ...]
+        if (!element.isArray())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Root JSON value is not an array");
+
         auto array = element.getArray();
         std::vector<Element> fields;
         fields.reserve(array.size());
