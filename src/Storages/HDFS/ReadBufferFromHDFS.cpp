@@ -181,6 +181,16 @@ size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
     return impl->getPosition();
 }
 
+ReadBufferFromHDFS::ReadResult ReadBufferFromHDFS::readInto(char * data, size_t size, size_t offset, size_t ignore)
+{
+    set(data, size);
+    seek(offset, SEEK_SET);
+    auto result = nextImpl();
+    if (result)
+        return {working_buffer.size(), ignore};
+    return {0, 0};
+}
+
 }
 
 #endif

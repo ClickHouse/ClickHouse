@@ -3,36 +3,33 @@
 #include <Common/config.h>
 
 #if USE_HDFS
+#include <string>
+#include <memory>
+
+#include <hdfs/hdfs.h>
+#include <Poco/Util/AbstractConfiguration.h>
+
+#include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/AsynchronousReader.h>
-#include <string>
-#include <memory>
-#include <hdfs/hdfs.h>
-#include <base/types.h>
-#include <Interpreters/Context.h>
 #include <IO/SeekableReadBuffer.h>
-
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
-/** Accepts HDFS path to file and opens it.
- * Closes file by himself (thus "owns" a file descriptor).
- */
-class ReadBufferFromHDFS : public SeekableReadBufferWithSize
+class AsynchronousReadBufferFromHDFS : public SeekableReadBufferWithSize
 {
-struct ReadBufferFromHDFSImpl;
+class AsynchronousReadBufferFromHDFSImpl;
 
 public:
-    using ReadResult = IAsynchronousReader::Result;
-
-    ReadBufferFromHDFS(const String & hdfs_uri_, const String & hdfs_file_path_,
+    AsynchronousReadBufferFromHDFS(const String & hdfs_uri_, const String & hdfs_file_path_,
                        const Poco::Util::AbstractConfiguration & config_,
                        size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
                        size_t read_until_position_ = 0);
 
-    ~ReadBufferFromHDFS() override;
+    ~AsynchronousReadBufferFromHDFS() override;
 
     bool nextImpl() override;
 
@@ -44,11 +41,9 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override;
 
-    ReadResult readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
-
 private:
-    std::unique_ptr<ReadBufferFromHDFSImpl> impl;
+    std::unique_ptr<AsynchronousReadBufferFromHDFSImpl> impl;
 };
-}
 
+}
 #endif
