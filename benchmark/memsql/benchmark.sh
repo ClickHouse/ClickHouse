@@ -5,7 +5,7 @@ TABLE=$1
 PASSWORD=$2
 TRIES=3
 
-if [ "$PASSWORD" == "RUN" ];
+if [ "$PASSWORD" == "855520D2A5B0B1A64B939E7E30889E2A" ];
 then
   # shellcheck disable=SC2162
   # shellcheck disable=SC2002
