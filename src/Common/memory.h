@@ -91,7 +91,7 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unuse
 
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
-inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align)
+inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align [[maybe_unused]])
 {
     size_t actual_size = size;
 
@@ -120,7 +120,7 @@ inline ALWAYS_INLINE void trackMemory(std::size_t size, TAlign... align)
 
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
-inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]] = 0, TAlign... align) noexcept
+inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]] = 0, TAlign... align [[maybe_unused]]) noexcept
 {
     try
     {
