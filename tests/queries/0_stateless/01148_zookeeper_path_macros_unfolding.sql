@@ -1,6 +1,9 @@
--- Tags: zookeeper, no-replicated-database, no-parallel
+-- Tags: zookeeper, no-replicated-database, no-parallel, no-ordinary-database
 
 DROP TABLE IF EXISTS rmt;
+DROP TABLE IF EXISTS rmt1;
+DROP TABLE IF EXISTS rmt2;
+DROP TABLE IF EXISTS rmt3;
 
 CREATE TABLE rmt (n UInt64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test_01148/{shard}/{database}/{table}', '{replica}') ORDER BY n;
 SHOW CREATE TABLE rmt;
@@ -17,5 +20,26 @@ DETACH TABLE rmt;
 ATTACH TABLE rmt;
 SHOW CREATE TABLE rmt;
 
+CREATE TABLE rmt2 ON CLUSTER test_shard_localhost (n int, PRIMARY KEY n) ENGINE=ReplicatedMergeTree;
+CREATE TABLE rmt3 AS rmt2; -- { serverError 62 }
+CREATE TABLE rmt4 ON CLUSTER test_shard_localhost AS rmt2;
+SHOW CREATE TABLE rmt2;
+RENAME TABLE rmt4 to rmt3;
+SHOW CREATE TABLE rmt3;
+
+DROP DATABASE IF EXISTS test_01148_ordinary;
+CREATE DATABASE test_01148_ordinary ENGINE=Ordinary;
+RENAME TABLE rmt3 to test_01148_ordinary.rmt3; -- { serverError 48 }
+DROP DATABASE test_01148_ordinary;
+
 DROP TABLE rmt;
 DROP TABLE rmt1;
+DROP TABLE rmt2;
+DROP TABLE rmt3;
+
+DROP DATABASE IF EXISTS imdb_01148;
+CREATE DATABASE imdb_01148 ENGINE = Replicated('/test/databases/imdb_01148', '{shard}', '{replica}');
+CREATE TABLE imdb_01148.movie_directors (`director_id` UInt64, `movie_id` UInt64) ENGINE = ReplicatedMergeTree ORDER BY (director_id, movie_id) SETTINGS index_granularity = 8192;
+CREATE TABLE imdb_01148.anything AS imdb_01148.movie_directors;
+SHOW CREATE TABLE imdb_01148.anything;
+DROP DATABASE imdb_01148;
