@@ -14,7 +14,7 @@ namespace DB
 struct Settings;
 struct SettingChange;
 class SettingsChanges;
-class AccessControlManager;
+class AccessControl;
 
 
 /** Checks if specified changes of settings are allowed or not.
@@ -51,11 +51,11 @@ class AccessControlManager;
 class SettingsConstraints
 {
 public:
-    SettingsConstraints(const AccessControlManager & manager_);
+    explicit SettingsConstraints(const AccessControl & access_control_);
     SettingsConstraints(const SettingsConstraints & src);
-    SettingsConstraints & operator =(const SettingsConstraints & src);
-    SettingsConstraints(SettingsConstraints && src);
-    SettingsConstraints & operator =(SettingsConstraints && src);
+    SettingsConstraints & operator=(const SettingsConstraints & src);
+    SettingsConstraints(SettingsConstraints && src) noexcept;
+    SettingsConstraints & operator=(SettingsConstraints && src) noexcept;
     ~SettingsConstraints();
 
     void clear();
@@ -109,7 +109,7 @@ private:
     const Constraint * tryGetConstraint(const std::string_view & setting_name) const;
 
     std::unordered_map<std::string_view, Constraint> constraints;
-    const AccessControlManager * manager = nullptr;
+    const AccessControl * access_control = nullptr;
 };
 
 }

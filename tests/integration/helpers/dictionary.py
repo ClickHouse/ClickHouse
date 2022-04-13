@@ -4,18 +4,18 @@ import copy
 
 class Layout(object):
     LAYOUTS_STR_DICT = {
-        'flat': '<flat/>',
-        'hashed': '<hashed/>',
-        'cache': '<cache><size_in_cells>128</size_in_cells></cache>',
-        'ssd_cache': '<ssd_cache><path>/etc/clickhouse-server/dictionaries/all</path></ssd_cache>',
-        'complex_key_hashed': '<complex_key_hashed/>',
-        'complex_key_hashed_one_key': '<complex_key_hashed/>',
-        'complex_key_hashed_two_keys': '<complex_key_hashed/>',
-        'complex_key_cache': '<complex_key_cache><size_in_cells>128</size_in_cells></complex_key_cache>',
-        'complex_key_ssd_cache': '<complex_key_ssd_cache><path>/etc/clickhouse-server/dictionaries/all</path></complex_key_ssd_cache>',
-        'range_hashed': '<range_hashed/>',
-        'direct': '<direct/>',
-        'complex_key_direct': '<complex_key_direct/>'
+        "flat": "<flat/>",
+        "hashed": "<hashed/>",
+        "cache": "<cache><size_in_cells>128</size_in_cells></cache>",
+        "ssd_cache": "<ssd_cache><path>/etc/clickhouse-server/dictionaries/all</path></ssd_cache>",
+        "complex_key_hashed": "<complex_key_hashed/>",
+        "complex_key_hashed_one_key": "<complex_key_hashed/>",
+        "complex_key_hashed_two_keys": "<complex_key_hashed/>",
+        "complex_key_cache": "<complex_key_cache><size_in_cells>128</size_in_cells></complex_key_cache>",
+        "complex_key_ssd_cache": "<complex_key_ssd_cache><path>/etc/clickhouse-server/dictionaries/all</path></complex_key_ssd_cache>",
+        "range_hashed": "<range_hashed/>",
+        "direct": "<direct/>",
+        "complex_key_direct": "<complex_key_direct/>",
     }
 
     def __init__(self, name):
@@ -23,14 +23,14 @@ class Layout(object):
         self.is_complex = False
         self.is_simple = False
         self.is_ranged = False
-        if self.name.startswith('complex'):
-            self.layout_type = 'complex'
+        if self.name.startswith("complex"):
+            self.layout_type = "complex"
             self.is_complex = True
-        elif name.startswith('range'):
-            self.layout_type = 'ranged'
+        elif name.startswith("range"):
+            self.layout_type = "ranged"
             self.is_ranged = True
         else:
-            self.layout_type = 'simple'
+            self.layout_type = "simple"
             self.is_simple = True
 
     def get_str(self):
@@ -38,8 +38,8 @@ class Layout(object):
 
     def get_key_block_name(self):
         if self.is_complex:
-            return 'key'
-        return 'id'
+            return "key"
+        return "id"
 
 
 class Row(object):
@@ -59,8 +59,17 @@ class Row(object):
 
 
 class Field(object):
-    def __init__(self, name, field_type, is_key=False, is_range_key=False, default=None, hierarchical=False,
-                 range_hash_type=None, default_value_for_get=None):
+    def __init__(
+        self,
+        name,
+        field_type,
+        is_key=False,
+        is_range_key=False,
+        default=None,
+        hierarchical=False,
+        range_hash_type=None,
+        default_value_for_get=None,
+    ):
         self.name = name
         self.field_type = field_type
         self.is_key = is_key
@@ -72,30 +81,32 @@ class Field(object):
         self.default_value_for_get = default_value_for_get
 
     def get_attribute_str(self):
-        return '''
+        return """
             <attribute>
               <name>{name}</name>
               <type>{field_type}</type>
               <null_value>{default}</null_value>
               <hierarchical>{hierarchical}</hierarchical>
-            </attribute>'''.format(
+            </attribute>""".format(
             name=self.name,
             field_type=self.field_type,
-            default=self.default if self.default else '',
-            hierarchical='true' if self.hierarchical else 'false',
+            default=self.default if self.default else "",
+            hierarchical="true" if self.hierarchical else "false",
         )
 
     def get_simple_index_str(self):
-        return '<name>{name}</name>'.format(name=self.name)
+        return "<name>{name}</name>".format(name=self.name)
 
     def get_range_hash_str(self):
         if not self.range_hash_type:
             raise Exception("Field {} is not range hashed".format(self.name))
-        return '''
+        return """
             <range_{type}>
                 <name>{name}</name>
             </range_{type}>
-        '''.format(type=self.range_hash_type, name=self.name)
+        """.format(
+            type=self.range_hash_type, name=self.name
+        )
 
 
 class DictionaryStructure(object):
@@ -125,9 +136,14 @@ class DictionaryStructure(object):
 
         if not self.layout.is_complex and len(self.keys) > 1:
             raise Exception(
-                "More than one key {} field in non complex layout {}".format(len(self.keys), self.layout.name))
+                "More than one key {} field in non complex layout {}".format(
+                    len(self.keys), self.layout.name
+                )
+            )
 
-        if self.layout.is_ranged and (not self.range_key or len(self.range_fields) != 2):
+        if self.layout.is_ranged and (
+            not self.range_key or len(self.range_fields) != 2
+        ):
             raise Exception("Inconsistent configuration of ranged dictionary")
 
     def get_structure_str(self):
@@ -148,7 +164,7 @@ class DictionaryStructure(object):
             for range_field in self.range_fields:
                 ranged_strs.append(range_field.get_range_hash_str())
 
-        return '''
+        return """
         <layout>
             {layout_str}
         </layout>
@@ -158,12 +174,12 @@ class DictionaryStructure(object):
             </{key_block_name}>
             {range_strs}
             {attributes_str}
-        </structure>'''.format(
+        </structure>""".format(
             layout_str=self.layout.get_str(),
             key_block_name=self.layout.get_key_block_name(),
-            key_str='\n'.join(key_strs),
-            attributes_str='\n'.join(fields_strs),
-            range_strs='\n'.join(ranged_strs),
+            key_str="\n".join(key_strs),
+            attributes_str="\n".join(fields_strs),
+            range_strs="\n".join(ranged_strs),
         )
 
     def get_ordered_names(self):
@@ -179,15 +195,19 @@ class DictionaryStructure(object):
     def get_all_fields(self):
         return self.keys + self.range_fields + self.ordinary_fields
 
-    def _get_dict_get_common_expression(self, dict_name, field, row, or_default, with_type, has):
+    def _get_dict_get_common_expression(
+        self, dict_name, field, row, or_default, with_type, has
+    ):
         if field in self.keys:
-            raise Exception("Trying to receive key field {} from dictionary".format(field.name))
+            raise Exception(
+                "Trying to receive key field {} from dictionary".format(field.name)
+            )
 
         if not self.layout.is_complex:
             if not or_default:
-                key_expr = ', toUInt64({})'.format(row.data[self.keys[0].name])
+                key_expr = ", toUInt64({})".format(row.data[self.keys[0].name])
             else:
-                key_expr = ', toUInt64({})'.format(self.keys[0].default_value_for_get)
+                key_expr = ", toUInt64({})".format(self.keys[0].default_value_for_get)
         else:
             key_exprs_strs = []
             for key in self.keys:
@@ -197,48 +217,57 @@ class DictionaryStructure(object):
                     val = key.default_value_for_get
                 if isinstance(val, str):
                     val = "'" + val + "'"
-                key_exprs_strs.append('to{type}({value})'.format(type=key.field_type, value=val))
-            key_expr = ', tuple(' + ','.join(key_exprs_strs) + ')'
+                key_exprs_strs.append(
+                    "to{type}({value})".format(type=key.field_type, value=val)
+                )
+            key_expr = ", tuple(" + ",".join(key_exprs_strs) + ")"
 
-        date_expr = ''
+        date_expr = ""
         if self.layout.is_ranged:
             val = row.data[self.range_key.name]
             if isinstance(val, str):
                 val = "'" + val + "'"
             val = "to{type}({val})".format(type=self.range_key.field_type, val=val)
 
-            date_expr = ', ' + val
+            date_expr = ", " + val
 
             if or_default:
-                raise Exception("Can create 'dictGetOrDefault' query for ranged dictionary")
+                raise Exception(
+                    "Can create 'dictGetOrDefault' query for ranged dictionary"
+                )
 
         if or_default:
-            or_default_expr = 'OrDefault'
+            or_default_expr = "OrDefault"
             if field.default_value_for_get is None:
                 raise Exception(
-                    "Can create 'dictGetOrDefault' query for field {} without default_value_for_get".format(field.name))
+                    "Can create 'dictGetOrDefault' query for field {} without default_value_for_get".format(
+                        field.name
+                    )
+                )
 
             val = field.default_value_for_get
             if isinstance(val, str):
                 val = "'" + val + "'"
-            default_value_for_get = ', to{type}({value})'.format(type=field.field_type, value=val)
+            default_value_for_get = ", to{type}({value})".format(
+                type=field.field_type, value=val
+            )
         else:
-            or_default_expr = ''
-            default_value_for_get = ''
+            or_default_expr = ""
+            default_value_for_get = ""
 
         if with_type:
             field_type = field.field_type
         else:
-            field_type = ''
+            field_type = ""
 
         field_name = ", '" + field.name + "'"
         if has:
             what = "Has"
-            field_type = ''
-            or_default = ''
-            field_name = ''
-            date_expr = ''
-            def_for_get = ''
+            field_type = ""
+            or_default = ""
+            field_name = ""
+            date_expr = ""
+            def_for_get = ""
         else:
             what = "Get"
 
@@ -255,28 +284,38 @@ class DictionaryStructure(object):
 
     def get_get_expressions(self, dict_name, field, row):
         return [
-            self._get_dict_get_common_expression(dict_name, field, row, or_default=False, with_type=False, has=False),
-            self._get_dict_get_common_expression(dict_name, field, row, or_default=False, with_type=True, has=False),
+            self._get_dict_get_common_expression(
+                dict_name, field, row, or_default=False, with_type=False, has=False
+            ),
+            self._get_dict_get_common_expression(
+                dict_name, field, row, or_default=False, with_type=True, has=False
+            ),
         ]
 
     def get_get_or_default_expressions(self, dict_name, field, row):
         if not self.layout.is_ranged:
             return [
-                self._get_dict_get_common_expression(dict_name, field, row, or_default=True, with_type=False,
-                                                     has=False),
-                self._get_dict_get_common_expression(dict_name, field, row, or_default=True, with_type=True, has=False),
+                self._get_dict_get_common_expression(
+                    dict_name, field, row, or_default=True, with_type=False, has=False
+                ),
+                self._get_dict_get_common_expression(
+                    dict_name, field, row, or_default=True, with_type=True, has=False
+                ),
             ]
         return []
 
     def get_has_expressions(self, dict_name, field, row):
         if not self.layout.is_ranged:
-            return [self._get_dict_get_common_expression(dict_name, field, row, or_default=False, with_type=False,
-                                                         has=True)]
+            return [
+                self._get_dict_get_common_expression(
+                    dict_name, field, row, or_default=False, with_type=False, has=True
+                )
+            ]
         return []
 
     def get_hierarchical_expressions(self, dict_name, row):
         if self.layout.is_simple:
-            key_expr = 'toUInt64({})'.format(row.data[self.keys[0].name])
+            key_expr = "toUInt64({})".format(row.data[self.keys[0].name])
             return [
                 "dictGetHierarchy('{dict_name}', {key})".format(
                     dict_name=dict_name,
@@ -288,21 +327,31 @@ class DictionaryStructure(object):
 
     def get_is_in_expressions(self, dict_name, row, parent_row):
         if self.layout.is_simple:
-            child_key_expr = 'toUInt64({})'.format(row.data[self.keys[0].name])
-            parent_key_expr = 'toUInt64({})'.format(parent_row.data[self.keys[0].name])
+            child_key_expr = "toUInt64({})".format(row.data[self.keys[0].name])
+            parent_key_expr = "toUInt64({})".format(parent_row.data[self.keys[0].name])
             return [
                 "dictIsIn('{dict_name}', {child_key}, {parent_key})".format(
                     dict_name=dict_name,
                     child_key=child_key_expr,
-                    parent_key=parent_key_expr, )
+                    parent_key=parent_key_expr,
+                )
             ]
 
         return []
 
 
 class Dictionary(object):
-    def __init__(self, name, structure, source, config_path,
-                 table_name, fields, min_lifetime=3, max_lifetime=5):
+    def __init__(
+        self,
+        name,
+        structure,
+        source,
+        config_path,
+        table_name,
+        fields,
+        min_lifetime=3,
+        max_lifetime=5,
+    ):
         self.name = name
         self.structure = copy.deepcopy(structure)
         self.source = copy.deepcopy(source)
@@ -313,10 +362,11 @@ class Dictionary(object):
         self.max_lifetime = max_lifetime
 
     def generate_config(self):
-        with open(self.config_path, 'w') as result:
-            if 'direct' not in self.structure.layout.get_str():
-                result.write('''
-                <yandex>
+        with open(self.config_path, "w") as result:
+            if "direct" not in self.structure.layout.get_str():
+                result.write(
+                    """
+                <clickhouse>
                 <dictionary>
                     <lifetime>
                         <min>{min_lifetime}</min>
@@ -328,17 +378,19 @@ class Dictionary(object):
                     {source}
                     </source>
                 </dictionary>
-                </yandex>
-                '''.format(
-                    min_lifetime=self.min_lifetime,
-                    max_lifetime=self.max_lifetime,
-                    name=self.name,
-                    structure=self.structure.get_structure_str(),
-                    source=self.source.get_source_str(self.table_name),
-                ))
+                </clickhouse>
+                """.format(
+                        min_lifetime=self.min_lifetime,
+                        max_lifetime=self.max_lifetime,
+                        name=self.name,
+                        structure=self.structure.get_structure_str(),
+                        source=self.source.get_source_str(self.table_name),
+                    )
+                )
             else:
-                result.write('''
-                <yandex>
+                result.write(
+                    """
+                <clickhouse>
                 <dictionary>
                     <name>{name}</name>
                     {structure}
@@ -346,39 +398,60 @@ class Dictionary(object):
                     {source}
                     </source>
                 </dictionary>
-                </yandex>
-                '''.format(
-                    min_lifetime=self.min_lifetime,
-                    max_lifetime=self.max_lifetime,
-                    name=self.name,
-                    structure=self.structure.get_structure_str(),
-                    source=self.source.get_source_str(self.table_name),
-                ))
+                </clickhouse>
+                """.format(
+                        min_lifetime=self.min_lifetime,
+                        max_lifetime=self.max_lifetime,
+                        name=self.name,
+                        structure=self.structure.get_structure_str(),
+                        source=self.source.get_source_str(self.table_name),
+                    )
+                )
 
     def prepare_source(self, cluster):
         self.source.prepare(self.structure, self.table_name, cluster)
 
     def load_data(self, data):
         if not self.source.prepared:
-            raise Exception("Cannot load data for dictionary {}, source is not prepared".format(self.name))
+            raise Exception(
+                "Cannot load data for dictionary {}, source is not prepared".format(
+                    self.name
+                )
+            )
 
         self.source.load_data(data, self.table_name)
 
     def get_select_get_queries(self, field, row):
-        return ['select {}'.format(expr) for expr in self.structure.get_get_expressions(self.name, field, row)]
+        return [
+            "select {}".format(expr)
+            for expr in self.structure.get_get_expressions(self.name, field, row)
+        ]
 
     def get_select_get_or_default_queries(self, field, row):
-        return ['select {}'.format(expr) for expr in
-                self.structure.get_get_or_default_expressions(self.name, field, row)]
+        return [
+            "select {}".format(expr)
+            for expr in self.structure.get_get_or_default_expressions(
+                self.name, field, row
+            )
+        ]
 
     def get_select_has_queries(self, field, row):
-        return ['select {}'.format(expr) for expr in self.structure.get_has_expressions(self.name, field, row)]
+        return [
+            "select {}".format(expr)
+            for expr in self.structure.get_has_expressions(self.name, field, row)
+        ]
 
     def get_hierarchical_queries(self, row):
-        return ['select {}'.format(expr) for expr in self.structure.get_hierarchical_expressions(self.name, row)]
+        return [
+            "select {}".format(expr)
+            for expr in self.structure.get_hierarchical_expressions(self.name, row)
+        ]
 
     def get_is_in_queries(self, row, parent_row):
-        return ['select {}'.format(expr) for expr in self.structure.get_is_in_expressions(self.name, row, parent_row)]
+        return [
+            "select {}".format(expr)
+            for expr in self.structure.get_is_in_expressions(self.name, row, parent_row)
+        ]
 
     def is_complex(self):
         return self.structure.layout.is_complex

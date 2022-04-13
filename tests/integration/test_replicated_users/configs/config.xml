@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <remote_servers>
         <default>
             <shard>
@@ -19,4 +19,4 @@
             <zookeeper_path>/clickhouse/access</zookeeper_path>
         </replicated>
     </user_directories>
-</yandex>
+</clickhouse>

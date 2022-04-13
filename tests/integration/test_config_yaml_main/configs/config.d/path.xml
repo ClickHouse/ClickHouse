@@ -1,8 +1,8 @@
-<yandex>
-    <path replace="replace">./</path>
-    <tmp_path replace="replace">./tmp/</tmp_path>
-    <user_files_path replace="replace">./user_files/</user_files_path>
-    <format_schema_path replace="replace">./format_schemas/</format_schema_path>
-    <access_control_path replace="replace">./access/</access_control_path>
-    <top_level_domains_path replace="replace">./top_level_domains/</top_level_domains_path>
-</yandex>
+<clickhouse>
+    <path replace="replace">/var/lib/clickhouse</path>
+    <tmp_path replace="replace">/var/lib/clickhouse/tmp/</tmp_path>
+    <user_files_path replace="replace">/var/lib/clickhouse/user_files/</user_files_path>
+    <format_schema_path replace="replace">/var/lib/clickhouse/format_schemas/</format_schema_path>
+    <access_control_path replace="replace">/var/lib/clickhouse/access/</access_control_path>
+    <top_level_domains_path replace="replace">/var/lib/clickhouse/top_level_domains/</top_level_domains_path>
+</clickhouse>

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
@@ -72,5 +73,7 @@ class ZooKeeperLog : public SystemLog<ZooKeeperLogElement>
 {
     using SystemLog<ZooKeeperLogElement>::SystemLog;
 };
+
+DataTypePtr getCoordinationErrorCodesEnumType();
 
 }

@@ -13,11 +13,13 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
+#include <set>
 
 namespace DB
 {
@@ -32,17 +34,28 @@ public:
     explicit AddDefaultDatabaseVisitor(
         ContextPtr context_,
         const String & database_name_,
-        bool only_replace_current_database_function_ = false)
+        bool only_replace_current_database_function_ = false,
+        bool only_replace_in_join_ = false)
         : context(context_)
         , database_name(database_name_)
         , only_replace_current_database_function(only_replace_current_database_function_)
-    {}
+        , only_replace_in_join(only_replace_in_join_)
+    {
+        if (!context->isGlobalContext())
+        {
+            for (const auto & [table_name, _ /* storage */] : context->getExternalTables())
+            {
+                external_tables.insert(table_name);
+            }
+        }
+    }
 
     void visitDDL(ASTPtr & ast) const
     {
         visitDDLChildren(ast);
 
-        if (!tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
+        if (!tryVisitDynamicCast<ASTAlterQuery>(ast) &&
+            !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
             !tryVisitDynamicCast<ASTRenameQuery>(ast) &&
             !tryVisitDynamicCast<ASTFunction>(ast))
         {}
@@ -79,8 +92,10 @@ private:
     ContextPtr context;
 
     const String database_name;
+    std::set<String> external_tables;
 
     bool only_replace_current_database_function = false;
+    bool only_replace_in_join = false;
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -122,6 +137,9 @@ private:
 
     void visit(ASTTablesInSelectQueryElement & tables_element, ASTPtr &) const
     {
+        if (only_replace_in_join && !tables_element.table_join)
+            return;
+
         if (tables_element.table_expression)
             tryVisit<ASTTableExpression>(tables_element.table_expression);
     }
@@ -136,8 +154,17 @@ private:
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
     {
-        if (!identifier.compound())
-            ast = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
+        /// Already has database.
+        if (identifier.compound())
+            return;
+        /// There is temporary table with such name, should not be rewritten.
+        if (external_tables.count(identifier.shortName()))
+            return;
+
+        auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
+        if (!identifier.alias.empty())
+            qualified_identifier->setAlias(identifier.alias);
+        ast = qualified_identifier;
     }
 
     void visit(ASTSubquery & subquery, ASTPtr &) const
@@ -232,8 +259,8 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        if (node.database.empty())
-            node.database = database_name;
+        if (!node.database)
+            node.setDatabase(database_name);
     }
 
     void visitDDL(ASTRenameQuery & node, ASTPtr &) const
@@ -247,6 +274,24 @@ private:
                 elem.from.database = database_name;
             if (elem.to.database.empty())
                 elem.to.database = database_name;
+        }
+    }
+
+    void visitDDL(ASTAlterQuery & node, ASTPtr &) const
+    {
+        if (only_replace_current_database_function)
+            return;
+
+        if (!node.database)
+            node.setDatabase(database_name);
+
+        for (const auto & child : node.command_list->children)
+        {
+            auto * command_ast = child->as<ASTAlterCommand>();
+            if (command_ast->from_database.empty())
+                command_ast->from_database = database_name;
+            if (command_ast->to_database.empty())
+                command_ast->to_database = database_name;
         }
     }
 

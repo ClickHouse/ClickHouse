@@ -19,6 +19,8 @@ toc_title: "Логические функции"
 and(val1, val2...)
 ```
 
+Чтобы вычислять функцию `and` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `vali` вычисляется только для строк, где условие `(val1 AND val2 AND ... AND val{i-1})` верно. Например, при выполнении запроса `SELECT and(number = 2, intDiv(1, number)) FROM numbers(10)` не будет сгенерировано исключение из-за деления на ноль.
+
 **Аргументы**
 
 -   `val1, val2, ...` — список из как минимум двух значений. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) или [Nullable](../../sql-reference/data-types/nullable.md).
@@ -68,8 +70,10 @@ SELECT and(NULL, 1, 10, -2);
 **Синтаксис**
 
 ``` sql
-and(val1, val2...)
+or(val1, val2...)
 ```
+
+Чтобы вычислять функцию `or` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `vali` вычисляется только для строк, где условие `((NOT val1) AND (NOT val2) AND ... AND (NOT val{i-1}))` верно. Например, при выполнении запроса `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(10)` не будет сгенерировано исключение из-за деления на ноль.
 
 **Аргументы**
 

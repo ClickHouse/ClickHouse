@@ -1,11 +1,10 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
+#include "config_formats.h"
 
 #if USE_PROTOBUF
 #   include <Columns/IColumn.h>
+#include <Core/NamesAndTypes.h>
 
 
 namespace google::protobuf { class Descriptor; }
@@ -49,6 +48,8 @@ public:
         bool with_length_delimiter,
         ProtobufWriter & writer);
 };
+
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor);
 
 }
 #endif

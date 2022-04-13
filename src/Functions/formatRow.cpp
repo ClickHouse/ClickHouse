@@ -1,6 +1,5 @@
 #include <memory>
 #include <Columns/ColumnString.h>
-#include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -10,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <common/map.h>
+#include <base/map.h>
 
 
 namespace DB
@@ -78,6 +77,8 @@ public:
         if (!dynamic_cast<IRowOutputFormat *>(out.get()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot turn rows into a {} format strings. {} function supports only row output formats", format_name, getName());
 
+        /// Don't write prefix if any.
+        out->doNotWritePrefix();
         out->write(arg_columns);
         return col_str;
     }

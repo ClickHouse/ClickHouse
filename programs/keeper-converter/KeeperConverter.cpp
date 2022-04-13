@@ -8,7 +8,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Logger.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv)

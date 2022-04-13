@@ -1,6 +1,7 @@
 #include <Processors/Formats/IRowInputFormat.h>
+#include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>    // toString
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -199,6 +200,7 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
+    finalizeObjectColumns(columns);
     Chunk chunk(std::move(columns), num_rows);
     //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;

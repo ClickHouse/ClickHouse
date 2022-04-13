@@ -1,7 +1,6 @@
 #include "DictionarySourceHelpers.h"
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include "DictionaryStructure.h"
@@ -53,36 +52,42 @@ Block blockForKeys(
 
         auto filtered_column = source_column->filter(filter, requested_rows.size());
 
-        block.insert({std::move(filtered_column), (*dict_struct.key)[i].type, (*dict_struct.key)[i].name});
+        block.insert({filtered_column, (*dict_struct.key)[i].type, (*dict_struct.key)[i].name});
     }
 
     return block;
 }
 
-ContextMutablePtr copyContextAndApplySettings(
-    const std::string & config_prefix,
-    ContextPtr context,
-    const Poco::Util::AbstractConfiguration & config)
+
+SettingsChanges readSettingsFromDictionaryConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
-    auto local_context = Context::createCopy(context);
-    if (config.has(config_prefix + ".settings"))
+    if (!config.has(config_prefix + ".settings"))
+        return {};
+
+    const auto prefix = config_prefix + ".settings";
+
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(prefix, config_keys);
+
+    SettingsChanges changes;
+
+    for (const std::string & key : config_keys)
     {
-        const auto prefix = config_prefix + ".settings";
-
-        Poco::Util::AbstractConfiguration::Keys config_keys;
-        config.keys(prefix, config_keys);
-
-        SettingsChanges changes;
-
-        for (const std::string & key : config_keys)
-        {
-            const auto value = config.getString(prefix + "." + key);
-            changes.emplace_back(key, value);
-        }
-
-        local_context->applySettingsChanges(changes);
+        const auto value = config.getString(prefix + "." + key);
+        changes.emplace_back(key, value);
     }
-    return local_context;
+
+    return changes;
+}
+
+
+ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(
+    const ContextPtr & context, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+{
+    auto context_copy = Context::createCopy(context);
+    auto changes = readSettingsFromDictionaryConfig(config, config_prefix);
+    context_copy->applySettingsChanges(changes);
+    return context_copy;
 }
 
 static Block transformHeader(Block header, Block block_to_add)

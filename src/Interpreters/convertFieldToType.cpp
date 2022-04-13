@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -21,8 +22,9 @@
 #include <Core/AccurateComparison.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
+#include <Common/FieldVisitorToString.h>
 
-#include <common/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
@@ -33,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 
@@ -60,7 +63,7 @@ static Field convertNumericTypeImpl(const Field & from)
 template <typename To>
 static Field convertNumericType(const Field & from, const IDataType & type)
 {
-    if (from.getType() == Field::Types::UInt64)
+    if (from.getType() == Field::Types::UInt64 || from.getType() == Field::Types::Bool)
         return convertNumericTypeImpl<UInt64, To>(from);
     if (from.getType() == Field::Types::Int64)
         return convertNumericTypeImpl<Int64, To>(from);
@@ -75,8 +78,8 @@ static Field convertNumericType(const Field & from, const IDataType & type)
     if (from.getType() == Field::Types::Int256)
         return convertNumericTypeImpl<Int256, To>(from);
 
-    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-        + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
+        type.getName(), from.getType());
 }
 
 
@@ -134,8 +137,8 @@ static Field convertDecimalType(const Field & from, const To & type)
     if (from.getType() == Field::Types::Decimal128)
         return convertDecimalToDecimalType<Decimal128>(from, type);
 
-    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-        + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
+        type.getName(), from.getType());
 }
 
 
@@ -203,6 +206,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
+        if (which_type.isDate32() && src.getType() == Field::Types::Int64)
+        {
+            /// We don't need any conversion Int64 is under type of Date32
+            return src;
+        }
+
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
             /// Already in needed type.
@@ -210,7 +219,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         if (which_type.isDateTime64()
-            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDate() || which_from_type.isDateTime() || which_from_type.isDateTime64()))
+            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDate() || which_from_type.isDate32() || which_from_type.isDateTime() || which_from_type.isDateTime64()))
         {
             const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
             const auto decimal_value = DecimalUtils::decimalFromComponents<DateTime64>(src.reinterpret<Int64>(), 0, scale);
@@ -239,6 +248,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
             return src;
         }
+
+        return applyVisitor(FieldVisitorToString(), src);
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
     {
@@ -346,14 +357,55 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (const DataTypeAggregateFunction * agg_func_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
     {
         if (src.getType() != Field::Types::AggregateFunctionState)
-            throw Exception(String("Cannot convert ") + src.getTypeName() + " to " + agg_func_type->getName(),
-                    ErrorCodes::TYPE_MISMATCH);
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Cannot convert {} to {}",
+                src.getTypeName(), agg_func_type->getName());
 
         const auto & name = src.get<AggregateFunctionStateData>().name;
         if (agg_func_type->getName() != name)
             throw Exception("Cannot convert " + name + " to " + agg_func_type->getName(), ErrorCodes::TYPE_MISMATCH);
 
         return src;
+    }
+    else if (isObject(type))
+    {
+        const auto * from_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
+        if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->haveExplicitNames())
+        {
+            const auto & names = from_type_tuple->getElementNames();
+            const auto & tuple = src.get<const Tuple &>();
+
+            if (names.size() != tuple.size())
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Bad size of tuple in IN or VALUES section (while converting to Object). Expected size: {}, actual size: {}",
+                        names.size(), tuple.size());
+
+            Object object;
+            for (size_t i = 0; i < names.size(); ++i)
+                object[names[i]] = tuple[i];
+
+            return object;
+        }
+
+        if (src.getType() == Field::Types::Map)
+        {
+            Object object;
+            const auto & map = src.get<const Map &>();
+            for (size_t i = 0; i < map.size(); ++i)
+            {
+                const auto & map_entry = map[i].get<Tuple>();
+                const auto & key = map_entry[0];
+                const auto & value = map_entry[1];
+
+                if (key.getType() != Field::Types::String)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH,
+                        "Cannot convert from Map with key of type {} to Object", key.getTypeName());
+
+                object[key.get<const String &>()] = value;
+            }
+
+            return object;
+        }
     }
 
     /// Conversion from string by parsing.
@@ -377,18 +429,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
         catch (Exception & e)
         {
+            if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
+
             e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
             throw;
         }
-        if (!in_buffer.eof())
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
 
         Field parsed = (*col)[0];
         return convertFieldToType(parsed, type, from_type_hint);
     }
 
-    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-        + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
+        type.getName(), src.getType());
 }
 
 }

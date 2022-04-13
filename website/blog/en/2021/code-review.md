@@ -1,8 +1,8 @@
 ---
 title: 'The Tests Are Passing, Why Would I Read The Diff Again?'
-image: 'https://blog-images.clickhouse.tech/en/2021/code-review/two-ducks.jpg'
+image: 'https://blog-images.clickhouse.com/en/2021/code-review/two-ducks.jpg'
 date: '2021-04-14'
-author: '[Alexander Kuzmenkov](https://github.com/akuzm)'
+author: 'Alexander Kuzmenkov'
 tags: ['code review', 'development']
 ---
 
@@ -34,7 +34,7 @@ You probably don't need to be concerned with trivia such as code style. There ar
 
 Start with checking the high-level description of the problem that the pull request is trying to solve. Read the description of the bug it fixes, or the docs for the feature it adds. For bigger features, there is normally a design document that describes the overall implementation without getting too deep into the code details. After you understand the problem, start reading the code. Does it make sense to you? You shouldn't try too hard to understand it. Imagine that you are tired and under time pressure. If you feel you have to make a lot of effort to understand the code, ask the author for clarifications. As you talk, you might discover that the code is not correct, or it may be rewritten in a more straightforward way, or it needs more comments.
 
-<img src="https://blog-images.clickhouse.tech/en/2021/code-review/hidden-items.png"/>
+<img src="https://blog-images.clickhouse.com/en/2021/code-review/hidden-items.png"/>
 
 After you get the answers, don't forget to update the code and the comments to reflect them. Don't just stop after getting it explained to you personally. If you had a question as a reviewer, chances are that other people will also have this question later, but there might be nobody around to ask. They will have to resort to `git blame` and re-reading the entire pull request or several of them. Code archaeology is sometimes fun, but it's the last thing you want to do when you are investigating an urgent bug. All the answers should be on the surface.
 

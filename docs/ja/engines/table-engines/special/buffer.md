@@ -68,4 +68,4 @@ DROP TABLEまたはDETACH TABLEを使用してサーバーを停止すると、�
 
 バッファテーブルであっても、一度にデータ行を挿入することは意味がありません。 これにより、毎秒数千行の速度が生成されますが、より大きなデータブロックを挿入すると、毎秒百万行を超える速度が生成されます（セクションを参照 “Performance”).
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/buffer/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/buffer/) <!--hide-->

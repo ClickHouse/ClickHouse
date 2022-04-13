@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -19,7 +19,6 @@ public:
     /// Value is closed in brackets (HOST '127.0.0.1')
     bool second_with_brackets;
 
-public:
     explicit ASTPair(bool second_with_brackets_)
         : second_with_brackets(second_with_brackets_)
     {
@@ -54,7 +53,6 @@ public:
     {
     }
 
-public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;

@@ -1,8 +1,9 @@
 ---
 title: 'Evolution of Data Structures in Yandex.Metrica'
-image: 'https://blog-images.clickhouse.tech/en/2016/evolution-of-data-structures-in-yandex-metrica/main.jpg'
+image: 'https://blog-images.clickhouse.com/en/2016/evolution-of-data-structures-in-yandex-metrica/main.jpg'
 date: '2016-12-13'
 tags: ['Yandex.Metrica', 'data structures', 'LSM tree', 'columnar storage']
+author: 'Alexey Milovidov'
 ---
 
 [Yandex.Metrica](https://metrica.yandex.com/) takes in a stream of data representing events that took place on sites or on apps. Our task is to keep this data and present it in an analyzable form. The real challenge lies in trying to determine what form the processed results should be saved in so that they are easy to work with. During the development process, we had to completely change our approach to data storage organization several times. We started with MyISAM tables, then used LSM-trees and eventually came up with column-oriented database, ClickHouse.
@@ -18,7 +19,7 @@ A MyISAM table is comprised of a data file and an index file. If nothing was del
 Let's look at the real-life situation when the index is in RAM (key cache in MySQL or system page cache), but the table data is not cached. Let's assume that we are using HDDs. The time it takes to read data depends on the volume of data that needs to be read and how many Seek operations need to be run. The number of Seek's is determined by the locality of data on the disk.
 
 Data locality illustrated:
-![Data locality](https://blog-images.clickhouse.tech/en/2016/evolution-of-data-structures-in-yandex-metrica/1.jpg)
+![Data locality](https://blog-images.clickhouse.com/en/2016/evolution-of-data-structures-in-yandex-metrica/1.jpg)
 
 Metrica events are received in almost the same order in which they actually took place. In this incoming stream, data from different counters is scattered completely at random. In other words, incoming data is local by time, but not local by CounterID. When writing to a MyISAM table, data from different counters is also placed quite randomly. This means that to read the data report, you will need to perform about as many random reads as there are rows that we need in the table.
 
@@ -32,7 +33,7 @@ It took a lot of tricks like periodic table sorting, complicated manual partitio
 
 Metrage is an implementation of [LSM Tree](https://en.wikipedia.org/wiki/Log-structured_merge-tree), a fairly common data structure that works well for workloads with intensive stream of writes and mostly primary key reads, like Yandex.Metrica has. LevelDB did not exist in 2010 and TokuDB was proprietary at the time.
 
-![LSM Tree](https://blog-images.clickhouse.tech/en/2016/evolution-of-data-structures-in-yandex-metrica/2.jpg)
+![LSM Tree](https://blog-images.clickhouse.com/en/2016/evolution-of-data-structures-in-yandex-metrica/2.jpg)
 
 In Metrage arbitrary data structures (fixed at compile time) can be used as “rows” in it. Every row is a key, value pair. A key is a structure with comparison operations for equality and inequality. The value is an arbitrary structure with operations to update (to add something) and merge (to aggregate or combine with another value). In short, it's a CRDT. Data is located pretty locally on the hard disk, so the primary key range reads are quick. Blocks of data are effectively compressed even with fast algorithms because of ordering (in 2010 we used QuickLZ, since 2011 - LZ4). Storing data in a systematic manner enables us to use a sparse index.
 
@@ -50,7 +51,7 @@ To mitigate this we had to keep for a while a separate storage for custom report
 
 Using OLAPServer, we developed an understanding of how well column-oriented DBMS's handle ad-hoc analytics tasks with non-aggregated data. If you can retrieve any report from non-aggregated data, then it begs the question of whether data even needs to be aggregated in advance, as we did with Metrage.
 
-![](https://blog-images.clickhouse.tech/en/2016/evolution-of-data-structures-in-yandex-metrica/3.gif)
+![](https://blog-images.clickhouse.com/en/2016/evolution-of-data-structures-in-yandex-metrica/3.gif)
 
 On the one hand, pre-aggregating data can reduce the volume of data that is used at the moment when the report page is loading. On the other hand, though, aggregated data doesn't solve everything. Here are the reasons why:
 
@@ -104,5 +105,3 @@ Effective hardware utilization is very important to us. In our experience, when 
 To maximize efficiency, it's important to customize your solution to meet the needs of specific type of workload. There is no data structure that copes well with completely different scenarios. For example, it's clear that key-value databases don't work for analytical queries. The greater the load on the system, the narrower the specialization required. One should not be afraid to use completely different data structures for different tasks.
 
 We were able to set things up so that Yandex.Metrica's hardware was relatively inexpensive. This has allowed us to offer the service free of charge to even very large sites and mobile apps, even larger than Yanex‘s own, while competitors typically start asking for a paid subscription plan.
-
-

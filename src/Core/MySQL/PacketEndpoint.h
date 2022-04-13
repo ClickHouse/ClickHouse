@@ -5,7 +5,7 @@
 #include "IMySQLReadPacket.h"
 #include "IMySQLWritePacket.h"
 #include "IO/MySQLPacketPayloadReadBuffer.h"
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 namespace DB
 {

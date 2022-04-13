@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/TCPServerConnection.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -9,9 +9,7 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include "IServer.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -26,11 +24,14 @@ namespace CurrentMetrics
 
 namespace DB
 {
+class ReadBufferFromPocoSocket;
+class TCPServer;
+
 /// Handler for MySQL wire protocol connections. Allows to connect to ClickHouse using MySQL client.
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_);
+    MySQLHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_);
 
     void run() final;
 
@@ -54,6 +55,7 @@ protected:
     virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
 
     IServer & server;
+    TCPServer & tcp_server;
     Poco::Logger * log;
     UInt64 connection_id = 0;
 
@@ -70,7 +72,7 @@ protected:
     Replacements replacements;
 
     std::unique_ptr<MySQLProtocol::Authentication::IPlugin> auth_plugin;
-    std::shared_ptr<ReadBuffer> in;
+    std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     bool secure_connection = false;
 };
@@ -79,7 +81,7 @@ protected:
 class MySQLHandlerSSL : public MySQLHandler
 {
 public:
-    MySQLHandlerSSL(IServer & server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_);
+    MySQLHandlerSSL(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_);
 
 private:
     void authPluginSSL() override;

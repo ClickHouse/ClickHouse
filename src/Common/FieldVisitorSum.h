@@ -21,14 +21,14 @@ public:
     bool operator() (UInt64 & x) const;
     bool operator() (Float64 & x) const;
     bool operator() (Null &) const;
-    bool operator() (NegativeInfinity & x) const;
-    bool operator() (PositiveInfinity & x) const;
     bool operator() (String &) const;
     bool operator() (Array &) const;
     bool operator() (Tuple &) const;
     bool operator() (Map &) const;
+    bool operator() (Object &) const;
     bool operator() (UUID &) const;
     bool operator() (AggregateFunctionStateData &) const;
+    bool operator() (bool &) const;
 
     template <typename T>
     bool operator() (DecimalField<T> & x) const
@@ -37,7 +37,8 @@ public:
         return x.getValue() != T(0);
     }
 
-    template <typename T, typename = std::enable_if_t<is_big_int_v<T>> >
+    template <typename T>
+    requires is_big_int_v<T>
     bool operator() (T & x) const
     {
         x += rhs.reinterpret<T>();

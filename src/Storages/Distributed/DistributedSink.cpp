@@ -1,11 +1,12 @@
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
@@ -13,31 +14,26 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/RemoteBlockOutputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Formats/NativeWriter.h>
+#include <Processors/Sinks/RemoteSink.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
-#include <common/logger_useful.h>
-#include <common/range.h>
-#include <common/scope_guard.h>
+#include <base/logger_useful.h>
+#include <base/range.h>
+#include <base/scope_guard.h>
 
-#include <future>
-#include <condition_variable>
-#include <mutex>
 #include <filesystem>
 
 
@@ -72,19 +68,24 @@ static Block adoptBlock(const Block & header, const Block & block, Poco::Logger 
         "Structure does not match (remote: {}, local: {}), implicit conversion will be done.",
         header.dumpStructure(), block.dumpStructure());
 
-    ConvertingBlockInputStream convert(
-        std::make_shared<OneBlockInputStream>(block),
-        header,
-        ConvertingBlockInputStream::MatchColumnsMode::Name);
-    return convert.read();
+    auto converting_dag = ActionsDAG::makeConvertingActions(
+        block.cloneEmpty().getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name);
+
+    auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+    Block converted = block;
+    converting_actions->execute(converted);
+
+    return converted;
 }
 
 
-static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, size_t repeats, Poco::Logger * log)
+static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, Poco::Logger * log)
 {
-    Block adopted_block = adoptBlock(out->getHeader(), block, log);
+    Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
-        out->write(adopted_block);
+        executor.push(adopted_block);
 }
 
 
@@ -125,7 +126,7 @@ DistributedSink::DistributedSink(
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
     const auto & settings = context->getSettingsRef();
-    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth > settings.max_distributed_depth)
+    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
         throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
     context->getClientInfo().distributed_depth += 1;
     random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
@@ -140,7 +141,7 @@ void DistributedSink::consume(Chunk chunk)
         is_first_chunk = false;
     }
 
-    auto ordinary_block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto ordinary_block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (insert_sync)
         writeSync(ordinary_block);
@@ -331,12 +332,17 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         const Settings & settings = context->getSettingsRef();
 
         /// Do not initiate INSERT for empty block.
-        if (shard_block.rows() == 0)
+        size_t rows = shard_block.rows();
+        if (rows == 0)
             return;
+
+        OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+        span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
+        span.addAttribute("clickhouse.written_rows", rows);
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
-            if (!job.stream)
+            if (!job.executor)
             {
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
                 if (shard_info.hasInternalReplication())
@@ -368,19 +374,20 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(
-                    *job.connection_entry, timeouts, query_string, settings, context->getClientInfo());
-                job.stream->writePrefix();
+                job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
+                    *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
+                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+                job.executor->start();
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
-            Block adopted_shard_block = adoptBlock(job.stream->getHeader(), shard_block, log);
-            job.stream->write(adopted_shard_block);
+            Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
+            job.executor->push(adopted_shard_block);
         }
         else // local
         {
-            if (!job.stream)
+            if (!job.executor)
             {
                 /// Forward user settings
                 job.local_context = Context::createCopy(context);
@@ -396,21 +403,24 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized);
                 auto block_io = interp.execute();
 
-                job.stream = block_io.out;
-                job.stream->writePrefix();
+                job.pipeline = std::move(block_io.pipeline);
+                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+                job.executor->start();
             }
 
-            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount(), log);
+            writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log);
         }
 
         job.blocks_written += 1;
-        job.rows_written += shard_block.rows();
+        job.rows_written += rows;
     };
 }
 
 
 void DistributedSink::writeSync(const Block & block)
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+
     const Settings & settings = context->getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
     Block block_to_send = removeSuperfluousColumns(block);
@@ -454,6 +464,10 @@ void DistributedSink::writeSync(const Block & block)
 
     size_t num_shards = end - start;
 
+    span.addAttribute("clickhouse.start_shard", start);
+    span.addAttribute("clickhouse.end_shard", end);
+    span.addAttribute("db.statement", this->query_string);
+
     if (num_shards > 1)
     {
         auto current_selector = createSelector(block);
@@ -487,6 +501,7 @@ void DistributedSink::writeSync(const Block & block)
     catch (Exception & exception)
     {
         exception.addMessage(getCurrentStateDescription());
+        span.addAttribute(exception);
         throw;
     }
 
@@ -514,11 +529,11 @@ void DistributedSink::onFinish()
             {
                 for (JobReplica & job : shard_jobs.replicas_jobs)
                 {
-                    if (job.stream)
+                    if (job.executor)
                     {
                         pool->scheduleOrThrowOnError([&job]()
                         {
-                            job.stream->writeSuffix();
+                            job.executor->finish();
                         });
                     }
                 }
@@ -595,9 +610,14 @@ void DistributedSink::writeSplitAsync(const Block & block)
 
 void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 {
+    OpenTelemetrySpanHolder span("DistributedBlockOutputStream::writeAsyncImpl()");
+
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();
     Block block_to_send = removeSuperfluousColumns(block);
+
+    span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
+    span.addAttribute("clickhouse.written_rows", block.rows());
 
     if (shard_info.hasInternalReplication())
     {
@@ -632,18 +652,24 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 
 void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+    span.addAttribute("db.statement", this->query_string);
+
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
     auto block_io = interp.execute();
+    PushingPipelineExecutor executor(block_io.pipeline);
 
-    block_io.out->writePrefix();
-    writeBlockConvert(block_io.out, block, repeats, log);
-    block_io.out->writeSuffix();
+    executor.start();
+    writeBlockConvert(executor, block, repeats, log);
+    executor.finish();
 }
 
 
 void DistributedSink::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
 
@@ -699,7 +725,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
 
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out, compression_codec};
-            NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+            NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
             /// See also readDistributedHeader() in DirectoryMonitor (for reading side)
@@ -710,14 +736,26 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
             writeStringBinary(query_string, header_buf);
             context->getSettingsRef().write(header_buf);
-            context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+
+            if (context->getClientInfo().client_trace_context.trace_id != UUID() && CurrentThread::isInitialized())
+            {
+                // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
+                auto client_info = context->getClientInfo();
+                client_info.client_trace_context = CurrentThread::get().thread_trace_context;
+                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+            }
+            else
+            {
+                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+            }
+
             writeVarUInt(block.rows(), header_buf);
             writeVarUInt(block.bytes(), header_buf);
             writeStringBinary(block.cloneEmpty().dumpStructure(), header_buf); /// obsolete
             /// Write block header separately in the batch header.
             /// It is required for checking does conversion is required or not.
             {
-                NativeBlockOutputStream header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+                NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
                 header_stream.write(block.cloneEmpty());
             }
 
@@ -731,10 +769,9 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             writeStringBinary(header, out);
             writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
 
-            stream.writePrefix();
             stream.write(block);
-            stream.writeSuffix();
 
+            compress.finalize();
             out.finalize();
             if (fsync)
                 out.sync();

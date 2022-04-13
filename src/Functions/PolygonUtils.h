@@ -1,14 +1,14 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/Defines.h>
-#include <Core/TypeListNumber.h>
+#include <base/TypeLists.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
-#include <common/range.h>
+#include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
 #pragma GCC diagnostic push
@@ -53,14 +53,14 @@ UInt64 getPolygonAllocatedBytes(const Polygon & polygon)
     using RingType = typename Polygon::ring_type;
     using ValueType = typename RingType::value_type;
 
-    auto sizeOfRing = [](const RingType & ring) { return sizeof(ring) + ring.capacity() * sizeof(ValueType); };
+    auto size_of_ring = [](const RingType & ring) { return sizeof(ring) + ring.capacity() * sizeof(ValueType); };
 
-    size += sizeOfRing(polygon.outer());
+    size += size_of_ring(polygon.outer());
 
     const auto & inners = polygon.inners();
     size += sizeof(inners) + inners.capacity() * sizeof(RingType);
     for (auto & inner : inners)
-        size += sizeOfRing(inner);
+        size += size_of_ring(inner);
 
     return size;
 }
@@ -604,7 +604,7 @@ struct CallPointInPolygon<Type, Types ...>
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
-        using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
+        using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
         return CallPointInPolygon<Types ...>::call(x, y, impl);
@@ -630,7 +630,7 @@ struct CallPointInPolygon<>
 template <typename PointInPolygonImpl>
 NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
+    using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
     return Impl::call(x, y, impl);
 }
 

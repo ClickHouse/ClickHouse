@@ -39,7 +39,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         const Block & sample_block_,
-        ContextPtr context);
+        ContextMutablePtr context_);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
@@ -60,7 +60,7 @@ public:
 
     bool hasUpdateField() const override;
 
-    DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_shared<ClickHouseDictionarySource>(*this); }
 
     std::string toString() const override;
 

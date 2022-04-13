@@ -2,6 +2,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/hex.h>
 #include <DataTypes/DataTypeString.h>
@@ -42,7 +43,7 @@ struct HexImpl
     static constexpr size_t word_size = 2;
 
     template <typename T>
-    static void executeOneUInt(T x, char *& out)
+    static void executeOneUInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
     {
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
@@ -50,15 +51,18 @@ struct HexImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset)
+            if (byte == 0 && !was_nonzero && offset && skip_leading_zero) //-V560
                 continue;
 
             was_nonzero = true;
             writeHexByteUppercase(byte, out);
             out += word_size;
         }
-        *out = '\0';
-        ++out;
+        if (auto_close)
+        {
+            *out = '\0';
+            ++out;
+        }
     }
 
     static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
@@ -130,7 +134,7 @@ struct BinImpl
     static constexpr size_t word_size = 8;
 
     template <typename T>
-    static void executeOneUInt(T x, char *& out)
+    static void executeOneUInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
     {
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
@@ -138,15 +142,18 @@ struct BinImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset)
+            if (byte == 0 && !was_nonzero && offset && skip_leading_zero) //-V560
                 continue;
 
             was_nonzero = true;
             writeBinByte(byte, out);
             out += word_size;
         }
-        *out = '\0';
-        ++out;
+        if (auto_close)
+        {
+            *out = '\0';
+            ++out;
+        }
     }
 
     template <typename T>
@@ -275,6 +282,7 @@ public:
             !which.isUInt() &&
             !which.isFloat() &&
             !which.isDecimal() &&
+            !which.isUUID() &&
             !which.isAggregateFunction())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -306,7 +314,8 @@ public:
             tryExecuteFloat<Float64>(column, res_column) ||
             tryExecuteDecimal<Decimal32>(column, res_column) ||
             tryExecuteDecimal<Decimal64>(column, res_column) ||
-            tryExecuteDecimal<Decimal128>(column, res_column))
+            tryExecuteDecimal<Decimal128>(column, res_column) ||
+            tryExecuteUUID(column, res_column))
             return res_column;
 
         throw Exception("Illegal column " + arguments[0].column->getName()
@@ -473,6 +482,54 @@ public:
         {
             const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
             Impl::executeFloatAndDecimal(in_vec, col_res, sizeof(T));
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    bool tryExecuteUUID(const IColumn * col, ColumnPtr & col_res) const
+    {
+        const ColumnUUID * col_vec = checkAndGetColumn<ColumnUUID>(col);
+
+        static constexpr size_t MAX_LENGTH = sizeof(UUID) * word_size + 1;    /// Including trailing zero byte.
+
+        if (col_vec)
+        {
+            auto col_str = ColumnString::create();
+            ColumnString::Chars & out_vec = col_str->getChars();
+            ColumnString::Offsets & out_offsets = col_str->getOffsets();
+
+            const typename ColumnUUID::Container & in_vec = col_vec->getData();
+            const UUID* uuid = in_vec.data();
+
+            size_t size = in_vec.size();
+            out_offsets.resize(size);
+            out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
+
+            size_t pos = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                /// Manual exponential growth, so as not to rely on the linear amortized work time of `resize` (no one guarantees it).
+                if (pos + MAX_LENGTH > out_vec.size())
+                    out_vec.resize(out_vec.size() * word_size + MAX_LENGTH);
+
+                char * begin = reinterpret_cast<char *>(&out_vec[pos]);
+                char * end = begin;
+
+                // use executeOnUInt instead of using executeOneString
+                // because the latter one outputs the string in the memory order
+                Impl::executeOneUInt(uuid[i].toUnderType().items[0], end, false, false);
+                Impl::executeOneUInt(uuid[i].toUnderType().items[1], end, false, true);
+
+                pos += end - begin;
+                out_offsets[i] = pos;
+            }
+            out_vec.resize(pos);
+
+            col_res = std::move(col_str);
             return true;
         }
         else

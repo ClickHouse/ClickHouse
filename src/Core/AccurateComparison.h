@@ -2,10 +2,10 @@
 
 #include <cmath>
 #include <limits>
-#include <common/DecomposedFloat.h>
+#include <base/DecomposedFloat.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
-#include <common/extended_types.h>
+#include <base/extended_types.h>
 #include <Common/NaNUtils.h>
 
 /** Preceptually-correct number comparisons.
@@ -33,7 +33,7 @@ bool lessOp(A a, B b)
         return false;
 
     /// int vs int
-    if constexpr (is_integer_v<A> && is_integer_v<B>)
+    if constexpr (is_integer<A> && is_integer<B>)
     {
         /// same signedness
         if constexpr (is_signed_v<A> == is_signed_v<B>)
@@ -49,7 +49,7 @@ bool lessOp(A a, B b)
     }
 
     /// int vs float
-    if constexpr (is_integer_v<A> && std::is_floating_point_v<B>)
+    if constexpr (is_integer<A> && std::is_floating_point_v<B>)
     {
         if constexpr (sizeof(A) <= 4)
             return static_cast<double>(a) < static_cast<double>(b);
@@ -57,7 +57,7 @@ bool lessOp(A a, B b)
         return DecomposedFloat<B>(b).greater(a);
     }
 
-    if constexpr (std::is_floating_point_v<A> && is_integer_v<B>)
+    if constexpr (std::is_floating_point_v<A> && is_integer<B>)
     {
         if constexpr (sizeof(B) <= 4)
             return static_cast<double>(a) < static_cast<double>(b);
@@ -65,8 +65,8 @@ bool lessOp(A a, B b)
         return DecomposedFloat<A>(a).less(b);
     }
 
-    static_assert(is_integer_v<A> || std::is_floating_point_v<A>);
-    static_assert(is_integer_v<B> || std::is_floating_point_v<B>);
+    static_assert(is_integer<A> || std::is_floating_point_v<A>);
+    static_assert(is_integer<B> || std::is_floating_point_v<B>);
     __builtin_unreachable();
 }
 
@@ -109,7 +109,7 @@ bool equalsOp(A a, B b)
         return false;
 
     /// int vs int
-    if constexpr (is_integer_v<A> && is_integer_v<B>)
+    if constexpr (is_integer<A> && is_integer<B>)
     {
         /// same signedness
         if constexpr (is_signed_v<A> == is_signed_v<B>)
@@ -125,7 +125,7 @@ bool equalsOp(A a, B b)
     }
 
     /// int vs float
-    if constexpr (is_integer_v<A> && std::is_floating_point_v<B>)
+    if constexpr (is_integer<A> && std::is_floating_point_v<B>)
     {
         if constexpr (sizeof(A) <= 4)
             return static_cast<double>(a) == static_cast<double>(b);
@@ -133,7 +133,7 @@ bool equalsOp(A a, B b)
         return DecomposedFloat<B>(b).equals(a);
     }
 
-    if constexpr (std::is_floating_point_v<A> && is_integer_v<B>)
+    if constexpr (std::is_floating_point_v<A> && is_integer<B>)
     {
         if constexpr (sizeof(B) <= 4)
             return static_cast<double>(a) == static_cast<double>(b);
@@ -151,9 +151,9 @@ bool notEqualsOp(A a, B b)
     return !equalsOp(a, b);
 }
 
-
 /// Converts numeric to an equal numeric of other type.
-template <typename From, typename To>
+/// When `strict` is `true` check that result exactly same as input, otherwise just check overflow
+template <typename From, typename To, bool strict = true>
 inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
 {
     /// If the type is actually the same it's not necessary to do any checks.
@@ -192,7 +192,9 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
     }
 
     result = static_cast<To>(value);
-    return equalsOp(value, result);
+    if constexpr (strict)
+        return equalsOp(value, result);
+    return true;
 }
 
 }

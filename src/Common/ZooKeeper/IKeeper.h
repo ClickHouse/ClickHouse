@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/Exception.h>
 
 #include <vector>
@@ -47,9 +47,9 @@ struct Stat
     int32_t version;
     int32_t cversion;
     int32_t aversion;
-    int64_t ephemeralOwner;
-    int32_t dataLength;
-    int32_t numChildren;
+    int64_t ephemeralOwner; /// NOLINT
+    int32_t dataLength; /// NOLINT
+    int32_t numChildren; /// NOLINT
     int64_t pzxid;
 };
 
@@ -387,12 +387,12 @@ class Exception : public DB::Exception
 {
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, const Error code_, int);
+    Exception(const std::string & msg, const Error code_, int); /// NOLINT
 
 public:
-    explicit Exception(const Error code_);
-    Exception(const std::string & msg, const Error code_);
-    Exception(const Error code_, const std::string & path);
+    explicit Exception(const Error code_); /// NOLINT
+    Exception(const std::string & msg, const Error code_); /// NOLINT
+    Exception(const Error code_, const std::string & path); /// NOLINT
     Exception(const Exception & exc);
 
     const char * name() const throw() override { return "Coordination::Exception"; }
@@ -481,7 +481,7 @@ public:
         MultiCallback callback) = 0;
 
     /// Expire session and finish all pending requests
-    virtual void finalize() = 0;
+    virtual void finalize(const String & reason) = 0;
 };
 
 }

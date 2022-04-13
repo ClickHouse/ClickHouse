@@ -23,4 +23,4 @@ SELECT toTypeName(array())
 └─────────────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/special_data_types/nothing/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/special_data_types/nothing/) <!--hide-->

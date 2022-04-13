@@ -5,7 +5,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <common/range.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/range.h>
 
 
 namespace DB

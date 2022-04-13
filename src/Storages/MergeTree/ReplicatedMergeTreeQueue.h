@@ -31,6 +31,8 @@ class ReplicatedMergeTreeQueue
 private:
     friend class CurrentlyExecuting;
     friend class ReplicatedMergeTreeMergePredicate;
+    friend class MergeFromLogEntryTask;
+    friend class ReplicatedMergeMutateTaskBase;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -154,6 +156,8 @@ private:
     /// We need it because alters have to be executed sequentially (one by one).
     ReplicatedMergeTreeAltersSequence alter_sequence;
 
+    Strings broken_parts_to_enqueue_fetches_on_loading;
+
     /// List of subscribers
     /// A subscriber callback is called when an entry queue is deleted
     mutable std::mutex subscribers_mutex;
@@ -180,7 +184,7 @@ private:
 
     /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
     bool checkReplaceRangeCanBeRemoved(
-        const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
+        const MergeTreePartInfo & part_info, LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
 
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
@@ -206,7 +210,7 @@ private:
       * Should be called under state_mutex.
       */
     bool isNotCoveredByFuturePartsImpl(
-        const String & log_entry_name,
+        const LogEntry & entry,
         const String & new_part_name, String & out_reason,
         std::lock_guard<std::mutex> & state_lock) const;
 
@@ -219,7 +223,7 @@ private:
         std::unique_lock<std::mutex> & state_lock);
 
     /// Add part for mutations with block_number > part.getDataVersion()
-    void addPartToMutations(const String & part_name);
+    void addPartToMutations(const String & part_name, const MergeTreePartInfo & part_info);
 
     /// Remove covered parts from mutations (parts_to_do) which were assigned
     /// for mutation. If remove_covered_parts = true, than remove parts covered
@@ -247,11 +251,18 @@ private:
         friend class ReplicatedMergeTreeQueue;
 
         /// Created only in the selectEntryToProcess function. It is called under mutex.
-        CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_);
+        CurrentlyExecuting(
+            const ReplicatedMergeTreeQueue::LogEntryPtr & entry_,
+            ReplicatedMergeTreeQueue & queue_,
+            std::lock_guard<std::mutex> & state_lock);
 
         /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under state_mutex.
-        static void setActualPartName(ReplicatedMergeTreeQueue::LogEntry & entry, const String & actual_part_name,
-            ReplicatedMergeTreeQueue & queue);
+        static void setActualPartName(
+            ReplicatedMergeTreeQueue::LogEntry & entry,
+            const String & actual_part_name,
+            ReplicatedMergeTreeQueue & queue,
+            std::lock_guard<std::mutex> & state_lock);
+
     public:
         ~CurrentlyExecuting();
     };
@@ -321,8 +332,10 @@ public:
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
+      * covering_entry is as an entry that caused removal of entries in range (usually, DROP_RANGE)
       */
-    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info,
+                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -353,7 +366,7 @@ public:
       * If there was an exception during processing, it saves it in `entry`.
       * Returns true if there were no exceptions during the processing.
       */
-    bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
+    bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, std::function<bool(LogEntryPtr &)> func);
 
     /// Count the number of merges and mutations of single parts in the queue.
     OperationsInQueue countMergesAndPartMutations() const;
@@ -453,6 +466,13 @@ public:
     /// It's needed because queue itself can trigger it's task handler and in
     /// this case race condition is possible.
     QueueLocks lockQueue();
+
+    /// Can be called only on data parts loading.
+    /// We need loaded queue to create GET_PART entry for broken (or missing) part,
+    /// but queue is not loaded yet on data parts loading.
+    void setBrokenPartsToEnqueueFetchesOnLoading(Strings && parts_to_fetch);
+    /// Must be called right after queue loading.
+    void createLogEntriesToFetchBrokenParts();
 };
 
 class ReplicatedMergeTreeMergePredicate

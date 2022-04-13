@@ -57,7 +57,7 @@ void MergeTreeWriteAheadLog::init()
 
     /// Small hack: in NativeBlockOutputStream header is used only in `getHeader` method.
     /// To avoid complex logic of changing it during ALTERs we leave it empty.
-    block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, Block{});
+    block_out = std::make_unique<NativeWriter>(*out, 0, Block{});
     min_block_number = std::numeric_limits<Int64>::max();
     max_block_number = -1;
     bytes_at_last_sync = 0;
@@ -109,6 +109,8 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
         + toString(min_block_number) + "_"
         + toString(max_block_number) + WAL_FILE_EXTENSION;
 
+    /// Finalize stream before file rename
+    out->finalize();
     disk->replaceFile(path, storage.getRelativeDataPath() + new_name);
     init();
 }
@@ -118,8 +120,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
     std::unique_lock lock(write_mutex);
 
     MergeTreeData::MutableDataPartsVector parts;
-    auto in = disk->readFile(path, DBMS_DEFAULT_BUFFER_SIZE);
-    NativeBlockInputStream block_in(*in, 0);
+    auto in = disk->readFile(path, {});
+    NativeReader block_in(*in, 0);
     NameSet dropped_parts;
 
     while (!in->eof())
@@ -197,23 +199,23 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 {},
                 CompressionCodecFactory::instance().get("NONE", {}));
 
-            part->minmax_idx.update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+            part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);
+            part->setColumns(block.getNamesAndTypesList());
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 
-            part_out.writePrefix();
             part_out.write(block);
 
             for (const auto & projection : metadata_snapshot->getProjections())
             {
                 auto projection_block = projection.calculate(block, context);
+                auto temp_part = MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, part.get());
+                temp_part.finalize();
                 if (projection_block.rows())
-                    part->addProjectionPart(
-                        projection.name,
-                        MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, part.get()));
+                    part->addProjectionPart(projection.name, std::move(temp_part.part));
             }
-            part_out.writeSuffixAndFinalizePart(part);
+            part_out.finalizePart(part, false);
 
             min_block_number = std::min(min_block_number, part->info.min_block);
             max_block_number = std::max(max_block_number, part->info.max_block);

@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/Transforms/FillingTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
@@ -36,11 +36,11 @@ FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_
         throw Exception("FillingStep expects single input", ErrorCodes::LOGICAL_ERROR);
 }
 
-void FillingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
+        bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         return std::make_shared<FillingTransform>(header, sort_description, on_totals);
     });
 }

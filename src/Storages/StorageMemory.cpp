@@ -2,14 +2,20 @@
 #include <Common/Exception.h>
 
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/getColumnFromBlock.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
+#include <DataTypes/ObjectUtils.h>
+#include <Columns/ColumnObject.h>
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
@@ -28,13 +34,13 @@ public:
 
     MemorySource(
         Names column_names_,
-        const StorageMemory & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
-        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names_and_types(metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names_, true))
+        : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
+        , column_names_and_types(storage_snapshot->getColumnsByNames(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
@@ -60,20 +66,20 @@ protected:
         }
 
         const Block & src = (*data)[current_index];
+
         Columns columns;
-        columns.reserve(columns.size());
+        size_t num_columns = column_names_and_types.size();
+        columns.reserve(num_columns);
 
-        /// Add only required columns to `res`.
-        for (const auto & elem : column_names_and_types)
+        auto name_and_type = column_names_and_types.begin();
+        for (size_t i = 0; i < num_columns; ++i)
         {
-            auto current_column = src.getByName(elem.getNameInStorage()).column;
-            current_column = current_column->decompress();
-
-            if (elem.isSubcolumn())
-                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
-            else
-                columns.emplace_back(std::move(current_column));
+            columns.emplace_back(tryGetColumnFromBlock(src, *name_and_type));
+            ++name_and_type;
         }
+
+        fillMissingColumns(columns, src.rows(), column_names_and_types, /*metadata_snapshot=*/ nullptr);
+        assert(std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column != nullptr; }));
 
         return Chunk(std::move(columns), src.rows());
     }
@@ -107,7 +113,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_))
     {
     }
 
@@ -115,8 +121,16 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
-        metadata_snapshot->check(block, true);
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        storage_snapshot->metadata->check(block, true);
+        if (!storage_snapshot->object_columns.empty())
+        {
+            auto columns = storage_snapshot->metadata->getColumns().getAllPhysical().filter(block.getNames());
+            auto extended_storage_columns = storage_snapshot->getColumns(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
+
+            convertObjectsToTuples(columns, block, extended_storage_columns);
+        }
 
         if (storage.compress)
         {
@@ -157,7 +171,7 @@ private:
     Blocks new_blocks;
 
     StorageMemory & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
 };
 
 
@@ -176,17 +190,36 @@ StorageMemory::StorageMemory(
     setInMemoryMetadata(storage_metadata);
 }
 
+StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
+{
+    auto snapshot_data = std::make_unique<SnapshotData>();
+    snapshot_data->blocks = data.get();
+
+    if (!hasObjectColumns(metadata_snapshot->getColumns()))
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
+
+    auto object_columns = getObjectColumns(
+        snapshot_data->blocks->begin(),
+        snapshot_data->blocks->end(),
+        metadata_snapshot->getColumns(),
+        [](const auto & block) -> const auto & { return block.getColumnsWithTypeAndName(); });
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+}
 
 Pipe StorageMemory::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
+
+    const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
+    auto current_data = snapshot_data.blocks;
 
     if (delay_read_for_global_subqueries)
     {
@@ -200,17 +233,15 @@ Pipe StorageMemory::read(
 
         return Pipe(std::make_shared<MemorySource>(
             column_names,
-            *this,
-            metadata_snapshot,
+            storage_snapshot,
             nullptr /* data */,
             nullptr /* parallel execution index */,
-            [this](std::shared_ptr<const Blocks> & data_to_initialize)
+            [current_data](std::shared_ptr<const Blocks> & data_to_initialize)
             {
-                data_to_initialize = data.get();
+                data_to_initialize = current_data;
             }));
     }
 
-    auto current_data = data.get();
     size_t size = current_data->size();
 
     if (num_streams > size)
@@ -222,7 +253,7 @@ Pipe StorageMemory::read(
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, *this, metadata_snapshot, current_data, parallel_execution_index));
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, storage_snapshot, current_data, parallel_execution_index));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -271,11 +302,12 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, true);
-    auto in = interpreter->execute();
+    auto pipeline = interpreter->execute();
+    PullingPipelineExecutor executor(pipeline);
 
-    in->readPrefix();
     Blocks out;
-    while (Block block = in->read())
+    Block block;
+    while (executor.pull(block))
     {
         if (compress)
             for (auto & elem : block)
@@ -283,7 +315,6 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 
         out.push_back(block);
     }
-    in->readSuffix();
 
     std::unique_ptr<Blocks> new_data;
 

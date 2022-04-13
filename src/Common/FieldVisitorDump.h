@@ -10,8 +10,6 @@ class FieldVisitorDump : public StaticVisitor<String>
 {
 public:
     String operator() (const Null & x) const;
-    String operator() (const NegativeInfinity & x) const;
-    String operator() (const PositiveInfinity & x) const;
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
     String operator() (const UInt256 & x) const;
@@ -24,11 +22,13 @@ public:
     String operator() (const Array & x) const;
     String operator() (const Tuple & x) const;
     String operator() (const Map & x) const;
+    String operator() (const Object & x) const;
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
     String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
+    String operator() (const bool & x) const;
 };
 
 }

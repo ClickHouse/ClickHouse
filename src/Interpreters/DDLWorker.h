@@ -30,6 +30,11 @@ namespace Coordination
     struct Stat;
 }
 
+namespace zkutil
+{
+    class ZooKeeperLock;
+}
+
 namespace DB
 {
 class ASTAlterQuery;
@@ -38,7 +43,6 @@ struct DDLTaskBase;
 using DDLTaskPtr = std::unique_ptr<DDLTaskBase>;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 class AccessRightsElements;
-
 
 class DDLWorker
 {
@@ -94,7 +98,8 @@ protected:
         StoragePtr storage,
         const String & rewritten_query,
         const String & node_path,
-        const ZooKeeperPtr & zookeeper);
+        const ZooKeeperPtr & zookeeper,
+        std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
     bool tryExecuteQuery(const String & query, DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
 

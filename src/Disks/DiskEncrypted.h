@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_SSL
 #include <Disks/IDisk.h>
@@ -121,11 +119,9 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size,
-        size_t estimated_size,
-        size_t aio_threshold,
-        size_t mmap_threshold,
-        MMappedFileCache * mmap_cache) const override;
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -215,7 +211,8 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
-    DiskType::Type getType() const override { return DiskType::Type::Encrypted; }
+    DiskType getType() const override { return DiskType::Encrypted; }
+    bool isRemote() const override { return delegate->isRemote(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 

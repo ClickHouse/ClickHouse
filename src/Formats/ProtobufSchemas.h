@@ -6,7 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-#include <common/types.h>
+#include <base/types.h>
 #include <boost/noncopyable.hpp>
 
 

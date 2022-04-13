@@ -55,7 +55,7 @@ public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    FunctionExtractAllGroups(ContextPtr context_)
+    explicit FunctionExtractAllGroups(ContextPtr context_)
         : context(context_)
     {}
 
@@ -73,8 +73,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", isStringOrFixedString, nullptr, "const String or const FixedString"},
-            {"needle", isStringOrFixedString, isColumnConst, "const String or const FixedString"},
+            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "const String or const FixedString"},
+            {"needle", &isStringOrFixedString<IDataType>, isColumnConst, "const String or const FixedString"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 

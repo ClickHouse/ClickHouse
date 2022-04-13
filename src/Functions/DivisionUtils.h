@@ -6,9 +6,8 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "config_core.h"
+#include <Common/config.h>
 
 
 namespace DB
@@ -72,6 +71,7 @@ struct DivideIntegralImpl
 {
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -81,7 +81,7 @@ struct DivideIntegralImpl
 
         /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
-        if constexpr (is_integer_v<A> && is_integer_v<B> && (is_signed_v<A> || is_signed_v<B>))
+        if constexpr (is_integer<A> && is_integer<B> && (is_signed_v<A> || is_signed_v<B>))
         {
             using SignedCastA = make_signed_t<CastA>;
             using SignedCastB = std::conditional_t<sizeof(A) <= sizeof(B), make_signed_t<CastB>, SignedCastA>;
@@ -126,6 +126,7 @@ struct ModuloImpl
     using IntegerBType = typename NumberTraits::ToInteger<B>::Type;
 
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)

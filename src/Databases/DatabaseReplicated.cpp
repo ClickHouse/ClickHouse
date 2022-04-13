@@ -15,9 +15,10 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/Cluster.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -141,7 +142,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", database_name);
         Int32 cversion = stat.cversion;
-        std::sort(hosts.begin(), hosts.end());
+        ::sort(hosts.begin(), hosts.end());
 
         std::vector<zkutil::ZooKeeper::FutureGet> futures;
         futures.reserve(hosts.size());
@@ -325,12 +326,21 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     createEmptyLogEntry(current_zookeeper);
 }
 
-void DatabaseReplicated::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool /*force_restore*/, bool force_attach)
 {
     tryConnectToZooKeeperAndInitDatabase(force_attach);
+}
 
-    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
+void DatabaseReplicated::loadStoredObjects(
+    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
+{
+    beforeLoadingMetadata(local_context, force_restore, force_attach);
+    DatabaseAtomic::loadStoredObjects(local_context, force_restore, force_attach, skip_startup_tables);
+}
 
+void DatabaseReplicated::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
+{
+    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     ddl_worker->startup();
 }
@@ -340,9 +350,9 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     /// Replicas will set correct name of current database in query context (database name can be different on replicas)
     if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
     {
-        if (ddl_query->database != getDatabaseName())
+        if (ddl_query->getDatabase() != getDatabaseName())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
-        ddl_query->database.clear();
+        ddl_query->database.reset();
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
@@ -382,7 +392,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             /// NOTE: we cannot check here that substituted values will be actually different on shards and replicas.
 
             Macros::MacroExpansionInfo info;
-            info.table_id = {getDatabaseName(), create->table, create->uuid};
+            info.table_id = {getDatabaseName(), create->getTable(), create->uuid};
             query_context->getMacros()->expand(maybe_path, info);
             bool maybe_shard_macros = info.expanded_other;
             info.expanded_other = false;
@@ -706,13 +716,13 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
     auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth);
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid == UUIDHelpers::Nil || create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER || !create.database.empty())
+    if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", node_name, query);
 
     bool is_materialized_view_with_inner_table = create.is_materialized_view && create.to_table_id.empty();
 
-    create.database = getDatabaseName();
-    create.table = unescapeForFileName(node_name);
+    create.setDatabase(getDatabaseName());
+    create.setTable(unescapeForFileName(node_name));
     create.attach = is_materialized_view_with_inner_table;
 
     return ast;
@@ -802,7 +812,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
-        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.table);
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.getTable());
         String statement = getObjectDefinitionFromCreateQuery(query.clone());
         /// zk::multi(...) will throw if `metadata_zk_path` exists
         txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));

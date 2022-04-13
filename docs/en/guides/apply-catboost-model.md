@@ -5,7 +5,7 @@ toc_title: Applying CatBoost Models
 
 # Applying a Catboost Model in ClickHouse {#applying-catboost-model-in-clickhouse}
 
-[CatBoost](https://catboost.ai) is a free and open-source gradient boosting library developed at [Yandex](https://yandex.com/company/) for machine learning.
+[CatBoost](https://catboost.ai) is a free and open-source gradient boosting library developed at Yandex for machine learning.
 
 With this instruction, you will learn to apply pre-trained models in ClickHouse by running model inference from SQL.
 
@@ -239,4 +239,4 @@ FROM
 !!! note "Note"
     More info about [avg()](../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) and [log()](../sql-reference/functions/math-functions.md) functions.
 
-[Original article](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/guides/apply_catboost_model/) <!--hide-->

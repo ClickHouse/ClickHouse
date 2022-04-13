@@ -2,6 +2,7 @@
 
 #include <Parsers/formatAST.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
 #include <Common/PODArray.h>
@@ -24,6 +25,7 @@ namespace DB
 
 class Context;
 class StorageDistributed;
+class PushingPipelineExecutor;
 
 /** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.
  *  Otherwise, the write is asynchronous - the data is first written to the local filesystem, and then sent to the remote servers.
@@ -125,7 +127,8 @@ private:
 
         ConnectionPool::Entry connection_entry;
         ContextPtr local_context;
-        BlockOutputStreamPtr stream;
+        QueryPipeline pipeline;
+        std::unique_ptr<PushingPipelineExecutor> executor;
 
         UInt64 blocks_written = 0;
         UInt64 rows_written = 0;

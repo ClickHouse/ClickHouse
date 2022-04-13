@@ -1,7 +1,7 @@
-<yandex>
+<clickhouse>
     <merge_tree>
         <assign_part_uuids>1</assign_part_uuids>
         <part_moves_between_shards_enable>1</part_moves_between_shards_enable>
         <part_moves_between_shards_delay_seconds>3</part_moves_between_shards_delay_seconds>
     </merge_tree>
-</yandex>
+</clickhouse>

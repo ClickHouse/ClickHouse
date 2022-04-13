@@ -38,6 +38,12 @@ Columns:
 
 -   `marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The size of the file with marks.
 
+-   `secondary_indices_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
+
+-   `secondary_indices_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
+
+-   `secondary_indices_marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The size of the file with marks for secondary indices.
+
 -   `modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – The time the directory with the data part was modified. This usually corresponds to the time of data part creation.
 
 -   `remove_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – The time when the data part became inactive.
@@ -76,7 +82,7 @@ Columns:
 
 -   `path` ([String](../../sql-reference/data-types/string.md)) – Absolute path to the folder with data part files.
 
--   `disk` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
+-   `disk_name` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
 
 -   `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md#hash_functions-siphash128) of compressed files.
 
@@ -119,6 +125,9 @@ rows:                                  6
 bytes_on_disk:                         310
 data_compressed_bytes:                 157
 data_uncompressed_bytes:               91
+secondary_indices_compressed_bytes:    58
+secondary_indices_uncompressed_bytes:  6
+secondary_indices_marks_bytes:         48
 marks_bytes:                           144
 modification_time:                     2020-06-18 13:01:49
 remove_time:                           1970-01-01 00:00:00
@@ -155,4 +164,4 @@ move_ttl_info.max:                     []
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [TTL for Columns and Tables](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/parts) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/parts) <!--hide-->

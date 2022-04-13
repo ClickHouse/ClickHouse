@@ -1,3 +1,5 @@
+-- Tags: shard
+
 -- Leaf limits is unreliable w/ prefer_localhost_replica=1.
 -- Since in this case initial query and the query on the local node (to the
 -- underlying table) has the same counters, so if query on the remote node

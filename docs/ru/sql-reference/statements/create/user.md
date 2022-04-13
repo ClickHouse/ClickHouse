@@ -15,6 +15,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
@@ -42,7 +43,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 -   `HOST ANY` — Пользователь может подключиться с любого хоста. Используется по умолчанию.
 -   `HOST LOCAL` — Пользователь может подключиться только локально.
 -   `HOST NAME 'fqdn'` — Хост задается через FQDN. Например, `HOST NAME 'mysite.com'`.
--   `HOST NAME REGEXP 'regexp'` — Позволяет использовать регулярные выражения [pcre](http://www.pcre.org/), чтобы задать хосты. Например, `HOST NAME REGEXP '.*\.mysite\.com'`.
+-   `HOST REGEXP 'regexp'` — Позволяет использовать регулярные выражения [pcre](http://www.pcre.org/), чтобы задать хосты. Например, `HOST REGEXP '.*\.mysite\.com'`.
 -   `HOST LIKE 'template'` — Позволяет использовать оператор [LIKE](../../functions/string-search-functions.md#function-like) для фильтрации хостов. Например, `HOST LIKE '%'` эквивалентен `HOST ANY`; `HOST LIKE '%.mysite.com'` разрешает подключение со всех хостов в домене `mysite.com`.
 
 Также, чтобы задать хост, вы можете использовать `@` вместе с именем пользователя. Примеры:

@@ -5,7 +5,7 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 
 using namespace Coordination;

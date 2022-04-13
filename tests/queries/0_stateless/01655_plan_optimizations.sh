@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT -q "select x + 1 from (select y + 2 as x from (select dummy +
 echo "> sipHash should be calculated after filtration"
 $CLICKHOUSE_CLIENT -q "explain actions = 1 select sum(x), sum(y) from (select sipHash64(number) as x, bitAnd(number, 1024) as y from numbers_mt(1000000000) limit 1000000000) where y = 0" | grep -o "FUNCTION sipHash64\|Filter column: equals"
 echo "> sorting steps should know about limit"
-$CLICKHOUSE_CLIENT -q "explain actions = 1 select number from (select number from numbers(500000000) order by -number) limit 10" | grep -o "MergingSorted\|MergeSorting\|PartialSorting\|Limit 10"
+$CLICKHOUSE_CLIENT -q "explain actions = 1 select number from (select number from numbers(500000000) order by -number) limit 10" | grep -o "Sorting\|Limit 10"
 
 echo "-- filter push down --"
 echo "> filter should be pushed down after aggregating"
@@ -64,7 +64,7 @@ $CLICKHOUSE_CLIENT -q "
     settings enable_optimize_predicate_expression=0"
 
 echo "> one condition of filter should be pushed down after aggregating, other two conditions are ANDed"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --convert_query_to_cnf=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 8 and s - 4
@@ -77,7 +77,7 @@ $CLICKHOUSE_CLIENT -q "
     settings enable_optimize_predicate_expression=0"
 
 echo "> two conditions of filter should be pushed down after aggregating and ANDed, one condition is aliased"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --convert_query_to_cnf=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s != 8 and y - 4
@@ -127,12 +127,12 @@ $CLICKHOUSE_CLIENT -q "
     settings enable_optimize_predicate_expression=0"
 
 echo "> filter is pushed down before sorting steps"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --convert_query_to_cnf=0 -q "
     explain actions = 1 select x, y from (
         select number % 2 as x, number % 3 as y from numbers(6) order by y desc
     ) where x != 0 and y != 0
     settings enable_optimize_predicate_expression = 0" |
-    grep -o "MergingSorted\|MergeSorting\|PartialSorting\|Filter column: and(notEquals(x, 0), notEquals(y, 0))"
+    grep -o "Sorting\|Filter column: and(notEquals(x, 0), notEquals(y, 0))"
 $CLICKHOUSE_CLIENT -q "
     select x, y from (
         select number % 2 as x, number % 3 as y from numbers(6) order by y desc

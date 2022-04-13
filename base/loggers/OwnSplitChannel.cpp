@@ -1,4 +1,5 @@
 #include "OwnSplitChannel.h"
+#include "OwnFormattingChannel.h"
 
 #include <iostream>
 #include <Core/Block.h>
@@ -9,7 +10,9 @@
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
-#include <common/getThreadId.h>
+#include <Common/setThreadName.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <base/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/IO.h>
 
@@ -17,10 +20,13 @@ namespace DB
 {
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
+
+#ifdef WITH_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
     if (channels.empty() && (logs_queue == nullptr || msg.getPriority() > logs_queue->max_priority))
         return;
+#endif
 
     if (auto * masker = SensitiveDataMasker::getInstance())
     {
@@ -56,7 +62,7 @@ void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
     /// but let's log it into the stderr at least.
     catch (...)
     {
-        MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
         const std::string & exception_message = getCurrentExceptionMessage(true);
         const std::string & message = msg.getText();
@@ -75,7 +81,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
     ExtendedLogMessage msg_ext = ExtendedLogMessage::getFrom(msg);
 
     /// Log data to child channels
-    for (auto & channel : channels)
+    for (auto & [name, channel] : channels)
     {
         if (channel.second)
             channel.second->logExtended(msg_ext); // extended child
@@ -83,6 +89,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
             channel.first->log(msg); // ordinary child
     }
 
+#ifdef WITH_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
     /// Log to "TCP queue" if message is not too noisy
@@ -100,7 +107,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         columns[i++]->insert(msg.getSource());
         columns[i++]->insert(msg.getText());
 
-        logs_queue->emplace(std::move(columns));
+        [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
     }
 
     /// Also log to system.text_log table, if message is not too noisy
@@ -134,19 +141,32 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         if (text_log_locked)
             text_log_locked->add(elem);
     }
+#endif
 }
 
 
-void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
+void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name)
 {
-    channels.emplace_back(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get()));
+    channels.emplace(name, ExtendedChannelPtrPair(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get())));
 }
 
+#ifdef WITH_TEXT_LOG
 void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
     std::lock_guard<std::mutex> lock(text_log_mutex);
     text_log = log;
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
+}
+#endif
+
+void OwnSplitChannel::setLevel(const std::string & name, int level)
+{
+     auto it = channels.find(name);
+     if (it != channels.end())
+     {
+         if (auto * channel = dynamic_cast<DB::OwnFormattingChannel *>(it->second.first.get()))
+            channel->setLevel(level);
+     }
 }
 
 }

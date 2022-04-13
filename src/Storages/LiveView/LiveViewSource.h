@@ -26,7 +26,7 @@ public:
         : SourceWithProgress(storage_->getHeader())
         , storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)),
           blocks_metadata_ptr(std::move(blocks_metadata_ptr_)),
-          active_ptr(std::move(active_ptr_)),
+          active_ptr(active_ptr_),
           has_limit(has_limit_), limit(limit_),
           heartbeat_interval_usec(heartbeat_interval_sec_ * 1000000)
     {
@@ -34,11 +34,11 @@ public:
         active = active_ptr.lock();
     }
 
-    String getName() const override { return "LiveViewBlockInputStream"; }
+    String getName() const override { return "LiveViewSource"; }
 
     void onCancel() override
     {
-        if (isCancelled() || storage->shutdown_called)
+        if (storage->shutdown_called)
             return;
 
         std::lock_guard lock(storage->mutex);
@@ -145,7 +145,6 @@ protected:
                         /// Or spurious wakeup.
                         bool signaled = std::cv_status::no_timeout == storage->condition.wait_for(lock,
                             std::chrono::microseconds(std::max(UInt64(0), heartbeat_interval_usec - (timestamp_usec - last_event_timestamp_usec))));
-
                         if (isCancelled() || storage->shutdown_called)
                         {
                             return { Block(), true };

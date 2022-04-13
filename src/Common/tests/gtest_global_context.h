@@ -18,8 +18,4 @@ struct ContextHolder
     ContextHolder(ContextHolder &&) = default;
 };
 
-inline const ContextHolder & getContext()
-{
-    static ContextHolder holder;
-    return holder;
-}
+const ContextHolder & getContext();

@@ -1,12 +1,10 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Interpreters/Context.h>
 #include <Core/MySQL/PacketEndpoint.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_SSL
 #    include <openssl/pem.h>
@@ -43,7 +41,7 @@ class Native41 : public IPlugin
 public:
     Native41();
 
-    Native41(const String & password, const String & auth_plugin_data);
+    Native41(const String & password_, const String & scramble_);
 
     String getName() override { return "mysql_native_password"; }
 

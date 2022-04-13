@@ -1,3 +1,5 @@
+-- Tags: long, zookeeper
+
 DROP TABLE IF EXISTS i20203_1;
 DROP TABLE IF EXISTS i20203_2;
 

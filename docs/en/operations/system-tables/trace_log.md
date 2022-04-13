@@ -4,7 +4,7 @@ Contains stack traces collected by the sampling query profiler.
 
 ClickHouse creates this table when the [trace_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) server configuration section is set. Also the [query_profiler_real_time_period_ns](../../operations/settings/settings.md#query_profiler_real_time_period_ns) and [query_profiler_cpu_time_period_ns](../../operations/settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
 
-To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
+To analyze logs, use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` introspection functions.
 
 Columns:
 
@@ -54,4 +54,4 @@ trace:                   [371912858,371912789,371798468,371799717,371801313,3717
 size:                    5244400
 ```
 
- [Original article](https://clickhouse.tech/docs/en/operations/system-tables/trace_log) <!--hide-->
+ [Original article](https://clickhouse.com/docs/en/operations/system-tables/trace_log) <!--hide-->

@@ -26,6 +26,7 @@ SELECT
 ## timeZone {#timezone}
 
 Возвращает часовой пояс сервера.
+Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
 **Синтаксис**
 
@@ -56,7 +57,7 @@ toTimezone(value, timezone)
 **Аргументы**
 
 -   `value` — время или дата с временем. [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — часовой пояс для возвращаемого значения. [String](../../sql-reference/data-types/string.md).
+-   `timezone` — часовой пояс для возвращаемого значения. [String](../../sql-reference/data-types/string.md). Этот аргумент является константой, потому что `toTimezone` изменяет часовой пояс столбца (часовой пояс является атрибутом типов `DateTime*`). 
 
 **Возвращаемое значение**
 
@@ -334,7 +335,7 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 **Синтаксис**
 
 ``` sql
-toStartOfSecond(value[, timezone])
+toStartOfSecond(value, [timezone])
 ```
 
 **Аргументы**

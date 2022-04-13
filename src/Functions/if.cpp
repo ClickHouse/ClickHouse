@@ -221,7 +221,7 @@ private:
     template <typename T0, typename T1>
     static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
     {
-        if constexpr (IsDecimalNumber<T0> && IsDecimalNumber<T1>)
+        if constexpr (is_decimal<T0> && is_decimal<T1>)
         {
             UInt32 left_scale = getDecimalScale(*arguments[1].type);
             UInt32 right_scale = getDecimalScale(*arguments[2].type);
@@ -416,8 +416,8 @@ private:
     ColumnPtr executeTyped(
         const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
-        using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
+        using ColVecT0 = ColumnVectorOrDecimal<T0>;
+        using ColVecT1 = ColumnVectorOrDecimal<T1>;
 
         const IColumn * col_left_untyped = arguments[1].column.get();
 
@@ -632,7 +632,7 @@ private:
         const ColumnWithTypeAndName & arg1 = arguments[1];
         const ColumnWithTypeAndName & arg2 = arguments[2];
 
-        DataTypePtr common_type = getLeastSupertype({arg1.type, arg2.type});
+        DataTypePtr common_type = getLeastSupertype(DataTypes{arg1.type, arg2.type});
 
         ColumnPtr col_then = castColumn(arg1, common_type);
         ColumnPtr col_else = castColumn(arg2, common_type);
@@ -969,7 +969,7 @@ private:
 
     static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments)
     {
-        int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
+        int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
         if (last_short_circuit_argument_index == -1)
             return;
 
@@ -1022,12 +1022,12 @@ public:
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument (condition) of function if. Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return getLeastSupertype({arguments[1], arguments[2]});
+        return getLeastSupertype(DataTypes{arguments[1], arguments[2]});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName arguments = std::move(args);
+        ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
         ColumnPtr res;
         if (   (res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count))

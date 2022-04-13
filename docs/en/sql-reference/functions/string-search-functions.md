@@ -351,8 +351,6 @@ Checks whether the string matches the `pattern` regular expression. A `re2` regu
 
 Returns 0 if it does not match, or 1 if it matches.
 
-Note that the backslash symbol (`\`) is used for escaping in the regular expression. The same symbol is used for escaping in string literals. So in order to escape the symbol in a regular expression, you must write two backslashes (\\) in a string literal.
-
 The regular expression works with the string as if it is a set of bytes. The regular expression can’t contain null bytes.
 For patterns to search for substrings in a string, it is better to use LIKE or ‘position’, since they work much faster.
 
@@ -373,7 +371,7 @@ The same as `multiMatchAny`, but returns the array of all indicies that match th
 
 ## multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchanyhaystack-distance-pattern1-pattern2-patternn}
 
-The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance). This function is also in an experimental mode and can be extremely slow. For more information see [hyperscan documentation](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
+The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance). This function relies on the experimental feature of [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) library, and can be slow for some corner cases. The performance depends on the edit distance value and patterns used, but it's always more expensive compared to a non-fuzzy variants.
 
 ## multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchanyindexhaystack-distance-pattern1-pattern2-patternn}
 
@@ -502,7 +500,7 @@ The same thing as ‘like’, but negative.
 
 ## ilike {#ilike}
 
-Case insensitive variant of [like](https://clickhouse.tech/docs/en/sql-reference/functions/string-search-functions/#function-like) function. You can use `ILIKE` operator instead of the `ilike` function.
+Case insensitive variant of [like](https://clickhouse.com/docs/en/sql-reference/functions/string-search-functions/#function-like) function. You can use `ILIKE` operator instead of the `ilike` function.
 
 **Syntax**
 
@@ -558,7 +556,7 @@ Result:
 
 **See Also**
 
--   [like](https://clickhouse.tech/docs/en/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+-   [like](https://clickhouse.com/docs/en/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
 
 ## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 

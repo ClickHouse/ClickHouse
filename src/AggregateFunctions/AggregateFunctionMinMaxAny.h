@@ -9,14 +9,12 @@
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -44,13 +42,14 @@ struct SingleValueDataFixed
 {
 private:
     using Self = SingleValueDataFixed;
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColVecType = ColumnVectorOrDecimal<T>;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
     T value;
 
 public:
     static constexpr bool is_nullable = false;
+    static constexpr bool is_any = false;
 
     bool has() const
     {
@@ -473,6 +472,7 @@ private:
 
 public:
     static constexpr bool is_nullable = false;
+    static constexpr bool is_any = false;
 
     bool has() const
     {
@@ -698,6 +698,7 @@ private:
 
 public:
     static constexpr bool is_nullable = false;
+    static constexpr bool is_any = false;
 
     bool has() const
     {
@@ -932,6 +933,7 @@ template <typename Data>
 struct AggregateFunctionAnyData : Data
 {
     using Self = AggregateFunctionAnyData;
+    static constexpr bool is_any = true;
 
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeFirstTime(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeFirstTime(to, arena); }
@@ -1122,11 +1124,13 @@ struct AggregateFunctionAnyHeavyData : Data
 template <typename Data>
 class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
+    static constexpr bool is_any = Data::is_any;
+
 private:
     SerializationPtr serialization;
 
 public:
-    AggregateFunctionsSingleValue(const DataTypePtr & type)
+    explicit AggregateFunctionsSingleValue(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {})
         , serialization(type->getDefaultSerialization())
     {
@@ -1154,17 +1158,86 @@ public:
         this->data(place).changeIfBetter(*columns[0], row_num, arena);
     }
 
+    void addBatchSinglePlace(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
+    {
+        if constexpr (is_any)
+            if (this->data(place).has())
+                return;
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = 0; i < batch_size; ++i)
+            {
+                if (flags[i])
+                {
+                    this->data(place).changeIfBetter(*columns[0], i, arena);
+                    if constexpr (is_any)
+                        break;
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < batch_size; ++i)
+            {
+                this->data(place).changeIfBetter(*columns[0], i, arena);
+                if constexpr (is_any)
+                    break;
+            }
+        }
+    }
+
+    void addBatchSinglePlaceNotNull( /// NOLINT
+        size_t batch_size,
+        AggregateDataPtr place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if constexpr (is_any)
+            if (this->data(place).has())
+                return;
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = 0; i < batch_size; ++i)
+            {
+                if (!null_map[i] && flags[i])
+                {
+                    this->data(place).changeIfBetter(*columns[0], i, arena);
+                    if constexpr (is_any)
+                        break;
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < batch_size; ++i)
+            {
+                if (!null_map[i])
+                {
+                    this->data(place).changeIfBetter(*columns[0], i, arena);
+                    if constexpr (is_any)
+                        break;
+                }
+            }
+        }
+    }
+
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         this->data(place).changeIfBetter(this->data(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf, *serialization);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).read(buf, *serialization, arena);
     }

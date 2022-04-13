@@ -421,7 +421,7 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
+            AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(data_ptr_0);
             const UInt64 range_start = is_column_const[1] ? (*container1)[0] : (*container1)[i];
@@ -615,7 +615,7 @@ private:
         size_t to_end;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
+            AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
             if (is_column_const[1])
@@ -923,7 +923,7 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
+            AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
             const UInt64 data1 = is_column_const[1] ? (*container1)[0] : (*container1)[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
@@ -1030,8 +1030,8 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr data_ptr_0 = is_column_const[0] ? container0[0] : container0[i];
-            const AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
+            AggregateDataPtr data_ptr_0 = is_column_const[0] ? container0[0] : container0[i];
+            AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_1
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_2
@@ -1075,6 +1075,11 @@ struct BitmapAndnotImpl
     {
         bitmap_data_1.rbs.rb_andnot(bitmap_data_2.rbs);
     }
+};
+
+struct NameBitmapAnd
+{
+    static constexpr auto name = "bitmapAnd";
 };
 
 template <template <typename> class Impl, typename Name>
@@ -1173,13 +1178,19 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr data_ptr_0 = is_column_const[0] ? container0[0] : container0[i];
-            const AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
+            AggregateDataPtr data_ptr_0 = is_column_const[0] ? container0[0] : container0[i];
+            AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
 
-            col_to->insertFrom(data_ptr_0);
+            // bitmapAnd(RoaringBitMap, SmallSet) is slower than bitmapAnd(SmallSet, RoaringBitMap), so we can exchange the position of two arguments for the speed
+            auto * bm_1 = reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
+            auto * bm_2 = reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
+
+            // check the name of operation (bitmapAnd) and check if it is the situation mentioned above
+            auto need_exchange = (name == NameBitmapAnd::name) && bm_1->rbs.isLarge() && bm_2->rbs.isSmall();
+            col_to->insertFrom(need_exchange ? data_ptr_1 : data_ptr_0);
             AggregateFunctionGroupBitmapData<T> & bitmap_data_1 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_2
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(need_exchange ? data_ptr_0 : data_ptr_1);
             Impl<T>::apply(bitmap_data_1, bitmap_data_2);
         }
         return col_to;
@@ -1237,10 +1248,6 @@ using FunctionBitmapAndnotCardinality = FunctionBitmapCardinality<BitmapAndnotCa
 using FunctionBitmapHasAll = FunctionBitmapCardinality<BitmapHasAllImpl, NameBitmapHasAll, UInt8>;
 using FunctionBitmapHasAny = FunctionBitmapCardinality<BitmapHasAnyImpl, NameBitmapHasAny, UInt8>;
 
-struct NameBitmapAnd
-{
-    static constexpr auto name = "bitmapAnd";
-};
 struct NameBitmapOr
 {
     static constexpr auto name = "bitmapOr";

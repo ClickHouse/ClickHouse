@@ -8,6 +8,9 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
+#include <Interpreters/FunctionNameNormalizer.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 
 namespace DB
@@ -151,6 +154,27 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     }
 
     return result;
+}
+
+KeyDescription KeyDescription::buildEmptyKey()
+{
+    KeyDescription result;
+    result.expression_list_ast = std::make_shared<ASTExpressionList>();
+    result.expression = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(), ExpressionActionsSettings{});
+    return result;
+}
+
+KeyDescription KeyDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
+{
+    KeyDescription result;
+    if (str.empty())
+        return result;
+
+    ParserExpression parser;
+    ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    FunctionNameNormalizer().visit(ast.get());
+
+    return getKeyFromAST(ast, columns, context);
 }
 
 }

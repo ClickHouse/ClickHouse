@@ -1,5 +1,13 @@
+#include <algorithm>
 #include <iomanip>
-#include <common/scope_guard.h>
+#include <iterator>
+#include <memory>
+#include <mutex>
+#include <vector>
+#include <string_view>
+#include <string.h>
+#include <base/types.h>
+#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
@@ -16,15 +24,14 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
+#include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
@@ -32,43 +39,33 @@
 #include <Access/Credentials.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Compression/CompressionFactory.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
+using namespace std::literals;
+
+
+namespace CurrentMetrics
+{
+    extern const Metric QueryThread;
+}
 
 namespace DB
 {
-
-namespace
-{
-std::string formatHTTPErrorResponse(const Poco::Util::AbstractConfiguration& config)
-{
-    std::string result = fmt::format(
-        "HTTP/1.0 400 Bad Request\r\n\r\n"
-        "Port {} is for clickhouse-client program\r\n",
-        config.getString("tcp_port"));
-
-    if (config.has("http_port"))
-    {
-        result += fmt::format(
-            "You must use port {} for HTTP.\r\n",
-            config.getString("http_port"));
-    }
-
-    return result;
-}
-}
-
 
 namespace ErrorCodes
 {
@@ -84,9 +81,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_PROTOCOL;
 }
 
-TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
+    , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
     , server_display_name(std::move(server_display_name_))
@@ -175,13 +173,13 @@ void TCPHandler::runImpl()
         throw;
     }
 
-    while (true)
+    while (tcp_server.isOpen())
     {
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {
             Stopwatch idle_time;
             UInt64 timeout_ms = std::min(poll_interval, idle_connection_timeout) * 1000000;
-            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
+            while (tcp_server.isOpen() && !server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
             {
                 if (idle_time.elapsedSeconds() > idle_connection_timeout)
                 {
@@ -192,7 +190,7 @@ void TCPHandler::runImpl()
         }
 
         /// If we need to shut down, or client disconnects.
-        if (server.isCancelled() || in->eof())
+        if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
             break;
 
         Stopwatch watch;
@@ -244,7 +242,16 @@ void TCPHandler::runImpl()
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
-                CurrentThread::setFatalErrorCallback([this]{ sendLogs(); });
+                CurrentThread::setFatalErrorCallback([this]
+                {
+                    std::lock_guard lock(fatal_error_mutex);
+                    sendLogs();
+                });
+            }
+            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
+            {
+                state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+                CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
             }
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
@@ -302,32 +309,72 @@ void TCPHandler::runImpl()
             query_context->setReadTaskCallback([this]() -> String
             {
                 std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return {};
+
                 sendReadTaskRequestAssumeLocked();
                 return receiveReadTaskResponseAssumeLocked();
             });
 
-            bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
+            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+            {
+                std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return std::nullopt;
+
+                sendMergeTreeReadTaskRequestAssumeLocked(std::move(request));
+                return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+            });
+
             /// Processing Query
-            state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
+            state.io = executeQuery(state.query, query_context, false, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            if (state.io.out)
+            if (state.io.pipeline.pushing())
+            /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
             {
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
             }
-            else if (state.need_receive_data_for_input) // It implies pipeline execution
+            else if (state.io.pipeline.pulling())
             {
-                /// It is special case for input(), all works for reading data from client will be done in callbacks.
-                auto executor = state.io.pipeline.execute();
-                executor->execute(state.io.pipeline.getNumThreads());
-            }
-            else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors();
-            else if (state.io.in)
-                processOrdinaryQuery();
+            }
+            else if (state.io.pipeline.completed())
+            {
+                CompletedPipelineExecutor executor(state.io.pipeline);
+                /// Should not check for cancel in case of input.
+                if (!state.need_receive_data_for_input)
+                {
+                    auto callback = [this]()
+                    {
+                        std::lock_guard lock(fatal_error_mutex);
+
+                        if (isQueryCancelled())
+                            return true;
+
+                        sendProgress();
+                        sendProfileEvents();
+                        sendLogs();
+
+                        return false;
+                    };
+
+                    executor.setCancelCallback(callback, interactive_delay / 1000);
+                }
+                executor.execute();
+
+                /// Send final progress
+                ///
+                /// NOTE: we cannot send Progress for regular INSERT (w/ VALUES)
+                /// w/o breaking protocol compatibility, but it can be done
+                /// by increasing revision.
+                sendProgress();
+            }
 
             state.io.onFinish();
 
@@ -419,7 +466,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, getExceptionMessage(e, true));
+                LOG_ERROR(log, fmt::runtime(getExceptionMessage(e, true)));
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
@@ -562,110 +609,50 @@ void TCPHandler::skipData()
 
 void TCPHandler::processInsertQuery()
 {
-    /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
-      *  client receive exception before sending data.
-      */
-    state.io.out->writePrefix();
+    size_t num_threads = state.io.pipeline.getNumThreads();
 
-    /// Send ColumnsDescription for insertion table
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
+    auto run_executor = [&](auto & executor)
     {
-        const auto & table_id = query_context->getInsertionTable();
-        if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+        /// Made above the rest of the lines,
+        /// so that in case of `writePrefix` function throws an exception,
+        /// client receive exception before sending data.
+        executor.start();
+
+        /// Send ColumnsDescription for insertion table
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
         {
-            if (!table_id.empty())
+            const auto & table_id = query_context->getInsertionTable();
+            if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
             {
-                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
-                sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
+                if (!table_id.empty())
+                {
+                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                    sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
+                }
             }
         }
-    }
 
-    /// Send block to the client - table structure.
-    sendData(state.io.out->getHeader());
+        /// Send block to the client - table structure.
+        sendData(executor.getHeader());
 
-    try
+        sendLogs();
+
+        while (readDataNext())
+            executor.push(std::move(state.block_for_insert));
+
+        executor.finish();
+    };
+
+    if (num_threads > 1)
     {
-        readData();
+        PushingAsyncPipelineExecutor executor(state.io.pipeline);
+        run_executor(executor);
     }
-    catch (...)
+    else
     {
-        /// To avoid flushing from the destructor, that may lead to uncaught exception.
-        state.io.out->writeSuffix();
-        throw;
+        PushingPipelineExecutor executor(state.io.pipeline);
+        run_executor(executor);
     }
-    state.io.out->writeSuffix();
-}
-
-
-void TCPHandler::processOrdinaryQuery()
-{
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-
-    /// Pull query execution result, if exists, and send it to network.
-    if (state.io.in)
-    {
-
-        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
-            sendPartUUIDs();
-
-        /// This allows the client to prepare output format
-        if (Block header = state.io.in->getHeader())
-            sendData(header);
-
-        /// Use of async mode here enables reporting progress and monitoring client cancelling the query
-        AsynchronousBlockInputStream async_in(state.io.in);
-
-        async_in.readPrefix();
-        while (true)
-        {
-            if (isQueryCancelled())
-            {
-                async_in.cancel(false);
-                break;
-            }
-
-            if (after_send_progress.elapsed() / 1000 >= interactive_delay)
-            {
-                /// Some time passed.
-                after_send_progress.restart();
-                sendProgress();
-            }
-
-            sendLogs();
-
-            if (async_in.poll(interactive_delay / 1000))
-            {
-                const auto block = async_in.read();
-                if (!block)
-                    break;
-
-                if (!state.io.null_format)
-                    sendData(block);
-            }
-        }
-        async_in.readSuffix();
-
-        /** When the data has run out, we send the profiling data and totals up to the terminating empty block,
-          * so that this information can be used in the suffix output of stream.
-          * If the request has been interrupted, then sendTotals and other methods should not be called,
-          * because we have not read all the data.
-          */
-        if (!isQueryCancelled())
-        {
-            sendTotals(state.io.in->getTotals());
-            sendExtremes(state.io.in->getExtremes());
-            sendProfileInfo(state.io.in->getProfileInfo());
-            sendProgress();
-        }
-
-        if (state.is_connection_closed)
-            return;
-
-        sendData({});
-    }
-
-    sendProgress();
 }
 
 
@@ -691,10 +678,13 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         Block block;
         while (executor.pull(block, interactive_delay / 1000))
         {
-            std::lock_guard lock(task_callback_mutex);
+            std::unique_lock lock(task_callback_mutex);
 
             if (isQueryCancelled())
             {
+                /// Several callback like callback for parallel reading could be called from inside the pipeline
+                /// and we have to unlock the mutex from our side to prevent deadlock.
+                lock.unlock();
                 /// A packet was received requesting to stop execution of the request.
                 executor.cancel();
                 break;
@@ -705,6 +695,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                 /// Some time passed and there is a progress.
                 after_send_progress.restart();
                 sendProgress();
+                sendProfileEvents();
             }
 
             sendLogs();
@@ -730,6 +721,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendProfileInfo(executor.getProfileInfo());
             sendProgress();
             sendLogs();
+            sendProfileEvents();
         }
 
         if (state.is_connection_closed)
@@ -812,7 +804,16 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
     out->next();
 }
 
-void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
+
+void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request)
+{
+    writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
+    request.serialize(*out);
+    out->next();
+}
+
+
+void TCPHandler::sendProfileInfo(const ProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
     info.write(*out);
@@ -847,6 +848,25 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
         state.block_out->write(extremes);
         state.maybe_compressed_out->next();
+        out->next();
+    }
+}
+
+void TCPHandler::sendProfileEvents()
+{
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
+        return;
+
+    Block block;
+    ProfileEvents::getProfileEvents(server_display_name, state.profile_queue, block, last_sent_snapshots);
+    if (block.rows() != 0)
+    {
+        initProfileEventsBlockOutput(block);
+
+        writeVarUInt(Protocol::Server::ProfileEvents, *out);
+        writeStringBinary("", *out);
+
+        state.profile_events_block_out->write(block);
         out->next();
     }
 }
@@ -924,6 +944,29 @@ bool TCPHandler::receiveProxyHeader()
 }
 
 
+namespace
+{
+
+std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Util::AbstractConfiguration& config)
+{
+    std::string result = fmt::format(
+        "HTTP/1.0 400 Bad Request\r\n\r\n"
+        "Port {} is for clickhouse-client program\r\n",
+        config.getString("tcp_port"));
+
+    if (config.has("http_port"))
+    {
+        result += fmt::format(
+            "You must use port {} for HTTP.\r\n",
+            config.getString("http_port"));
+    }
+
+    return result;
+}
+
+}
+
+
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
@@ -939,9 +982,7 @@ void TCPHandler::receiveHello()
           */
         if (packet_type == 'G' || packet_type == 'P')
         {
-            writeString(formatHTTPErrorResponse(server.config()),
-                        *out);
-
+            writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
             throw Exception("Client has connected to wrong port", ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT);
         }
         else
@@ -975,9 +1016,15 @@ void TCPHandler::receiveHello()
     client_info.client_version_patch = client_version_patch;
     client_info.client_tcp_protocol_version = client_tcp_protocol_version;
 
+    client_info.connection_client_version_major = client_version_major;
+    client_info.connection_client_version_minor = client_version_minor;
+    client_info.connection_client_version_patch = client_version_patch;
+    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
+
     is_interserver_mode = (user == USER_INTERSERVER_MARKER);
     if (is_interserver_mode)
     {
+        client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
         receiveClusterNameAndSalt();
         return;
     }
@@ -1128,6 +1175,35 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
 }
 
 
+std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != Protocol::Client::MergeTreeReadTaskResponse)
+    {
+        if (packet_type == Protocol::Client::Cancel)
+        {
+            state.is_cancelled = true;
+            /// For testing connection collector.
+            if (sleep_in_receive_cancel.totalMilliseconds())
+            {
+                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
+                std::this_thread::sleep_for(ms);
+            }
+            return std::nullopt;
+        }
+        else
+        {
+            throw Exception(fmt::format("Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        }
+    }
+    PartitionReadResponse response;
+    response.deserialize(*in);
+    return response;
+}
+
+
 void TCPHandler::receiveClusterNameAndSalt()
 {
     readStringBinary(cluster, *in);
@@ -1168,7 +1244,13 @@ void TCPHandler::receiveQuery()
     if (is_interserver_mode)
     {
         ClientInfo original_session_client_info = session->getClientInfo();
-        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP);
+
+        /// Cleanup fields that should not be reused from previous query.
+        original_session_client_info.current_user.clear();
+        original_session_client_info.current_query_id.clear();
+        original_session_client_info.current_address = {};
+
+        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP_INTERSERVER);
         session->getClientInfo() = original_session_client_info;
     }
 
@@ -1279,7 +1361,7 @@ void TCPHandler::receiveQuery()
     /// compatibility.
     if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        query_context->setSetting("normalize_function_names", Field(0));
+        query_context->setSetting("normalize_function_names", false);
     }
 }
 
@@ -1356,10 +1438,11 @@ bool TCPHandler::receiveData(bool scalar)
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         /// The data will be written directly to the table.
-        auto temporary_table_out = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
-        temporary_table_out->write(block);
-        temporary_table_out->writeSuffix();
-
+        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context));
+        PushingPipelineExecutor executor(temporary_table_out);
+        executor.start();
+        executor.push(block);
+        executor.finish();
     }
     else if (state.need_receive_data_for_input)
     {
@@ -1369,7 +1452,7 @@ bool TCPHandler::receiveData(bool scalar)
     else
     {
         /// INSERT query.
-        state.io.out->write(block);
+        state.block_for_insert = block;
     }
     return true;
 }
@@ -1386,7 +1469,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
     else
         maybe_compressed_in = in;
 
-    auto skip_block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, client_tcp_protocol_version);
+    auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
     bool read_ok = skip_block_in->read();
 
     if (!read_ok)
@@ -1411,12 +1494,12 @@ void TCPHandler::initBlockInput()
             state.maybe_compressed_in = in;
 
         Block header;
-        if (state.io.out)
-            header = state.io.out->getHeader();
+        if (state.io.pipeline.pushing())
+            header = state.io.pipeline.getHeader();
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
-        state.block_in = std::make_shared<NativeBlockInputStream>(
+        state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version);
@@ -1447,7 +1530,7 @@ void TCPHandler::initBlockOutput(const Block & block)
                 state.maybe_compressed_out = out;
         }
 
-        state.block_out = std::make_shared<NativeBlockOutputStream>(
+        state.block_out = std::make_unique<NativeWriter>(
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
@@ -1461,7 +1544,21 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
     {
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = query_context->getSettingsRef();
-        state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
+        state.logs_block_out = std::make_unique<NativeWriter>(
+            *out,
+            client_tcp_protocol_version,
+            block.cloneEmpty(),
+            !query_settings.low_cardinality_allow_in_native_format);
+    }
+}
+
+
+void TCPHandler::initProfileEventsBlockOutput(const Block & block)
+{
+    if (!state.profile_events_block_out)
+    {
+        const Settings & query_settings = query_context->getSettingsRef();
+        state.profile_events_block_out = std::make_unique<NativeWriter>(
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
@@ -1513,7 +1610,7 @@ bool TCPHandler::isQueryCancelled()
                 return true;
 
             default:
-                throw NetException("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+                throw NetException("Unknown packet from client " + toString(packet_type), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
         }
     }
 
@@ -1674,7 +1771,7 @@ void TCPHandler::run()
     catch (Poco::Exception & e)
     {
         /// Timeout - not an error.
-        if (!strcmp(e.what(), "Timeout"))
+        if (e.what() == "Timeout"sv)
         {
             LOG_DEBUG(log, "Poco::Exception. Code: {}, e.code() = {}, e.displayText() = {}, e.what() = {}", ErrorCodes::POCO_EXCEPTION, e.code(), e.displayText(), e.what());
         }

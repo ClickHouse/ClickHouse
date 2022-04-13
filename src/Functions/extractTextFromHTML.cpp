@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 
 

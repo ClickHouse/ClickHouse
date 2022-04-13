@@ -1,5 +1,5 @@
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
 
 namespace DB

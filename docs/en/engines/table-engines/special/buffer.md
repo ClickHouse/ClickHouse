@@ -54,10 +54,8 @@ If the set of columns in the Buffer table does not match the set of columns in a
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same thing happens if the subordinate table does not exist when the buffer is flushed.
 
-If you need to run ALTER for a subordinate table, and the Buffer table, we recommend first deleting the Buffer table, running ALTER for the subordinate table, then creating the Buffer table again.
-
 !!! attention "Attention"
-    Running ALTER on the Buffer table in releases made before 28 Sep 2020 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117)), so deleting the Buffer table and then recreating is the only option. It is advisable to check that this error is fixed in your release before trying to run ALTER on the Buffer table.
+    Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. It is advisable to check that this error is fixed in your release before trying to run ALTER on the Buffer table.
 
 If the server is restarted abnormally, the data in the buffer is lost.
 
@@ -75,4 +73,4 @@ A Buffer table is used when too many INSERTs are received from a large number of
 
 Note that it does not make sense to insert data one row at a time, even for Buffer tables. This will only produce a speed of a few thousand rows per second, while inserting larger blocks of data can produce over a million rows per second (see the section “Performance”).
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/buffer/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/buffer/) <!--hide-->

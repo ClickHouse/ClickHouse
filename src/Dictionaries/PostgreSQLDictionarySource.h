@@ -1,16 +1,14 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
 
 #if USE_LIBPQXX
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
-#include <common/LocalDateTime.h>
-#include <common/logger_useful.h>
+#include <Common/LocalDateTime.h>
+#include <base/logger_useful.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
 

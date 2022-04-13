@@ -93,4 +93,4 @@ FROM system.numbers
 
 -   [JDBCテーブル関数](../../../sql-reference/table-functions/jdbc.md).
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/jdbc/) <!--hide-->

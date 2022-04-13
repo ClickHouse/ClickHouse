@@ -64,19 +64,12 @@ void ODBCDriver2BlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 
 void ODBCDriver2BlockOutputFormat::consume(Chunk chunk)
 {
-    writePrefixIfNot();
     write(std::move(chunk), PortKind::Main);
 }
 
 void ODBCDriver2BlockOutputFormat::consumeTotals(Chunk chunk)
 {
-    writePrefixIfNot();
     write(std::move(chunk), PortKind::Totals);
-}
-
-void ODBCDriver2BlockOutputFormat::finalize()
-{
-    writePrefixIfNot();
 }
 
 void ODBCDriver2BlockOutputFormat::writePrefix()
@@ -110,9 +103,9 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
 }
 
 
-void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory)
+void registerOutputFormatODBCDriver2(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor(
+    factory.registerOutputFormat(
         "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const RowOutputFormatParams &, const FormatSettings & format_settings)
         {
             return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, sample, format_settings);

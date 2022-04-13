@@ -111,31 +111,3 @@
                 }
               ],
               "Limit": 3,
---
-                  "Sort Description": [
-                    {
-                      "Column": "number",
-                      "Ascending": false,
-                      "With Fill": false
-                    },
-                    {
-                      "Column": "plus(number, 1)",
-                      "Ascending": true,
-                      "With Fill": false
-                    }
-                  ],
-                  "Limit": 3,
---
-                      "Sort Description": [
-                        {
-                          "Column": "number",
-                          "Ascending": false,
-                          "With Fill": false
-                        },
-                        {
-                          "Column": "plus(number, 1)",
-                          "Ascending": true,
-                          "With Fill": false
-                        }
-                      ],
-                      "Limit": 3,

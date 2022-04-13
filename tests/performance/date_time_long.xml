@@ -83,7 +83,7 @@
             <name>time_zone</name>
             <values>
                <value>UTC</value>
-               <value>Europe/Moscow</value>
+               <value>Asia/Istanbul</value>
                <value>Asia/Kolkata</value>
             </values>
         </substitution>

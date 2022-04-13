@@ -1,7 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
@@ -26,7 +26,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -41,6 +41,10 @@ public:
     void startup() override;
 
     void renameInMemory(const StorageID & new_table_id) override;
+
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
+
+    void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &) override;
 
     Poco::Timestamp getUpdateTime() const;
     LoadablesConfigurationPtr getConfiguration() const;
@@ -73,7 +77,6 @@ private:
     Poco::Timestamp update_time;
     LoadablesConfigurationPtr configuration;
 
-    std::atomic<bool> remove_repository_callback_executed = false;
     scope_guard remove_repository_callback;
 
     void removeDictionaryConfigurationFromRepository();
@@ -90,6 +93,7 @@ private:
         const StorageID & table_id_,
         const String & dictionary_name_,
         const DictionaryStructure & dictionary_structure,
+        const String & comment,
         Location location_,
         ContextPtr context_);
 

@@ -7,7 +7,7 @@ namespace DB
 {
 
 template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
+void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
 {
     size_t src_pos = 0;
     size_t dst_pos = 0;
@@ -68,8 +68,13 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 template <typename F>
 static inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
 {
-    if (isValidIdentifier(std::string_view{s}))
+    if (isValidIdentifier(std::string_view{s})
+        /// This are valid identifiers but are problematic if present unquoted in SQL query.
+        && !(s.size == strlen("distinct") && 0 == strncasecmp(s.data, "distinct", strlen("distinct")))
+        && !(s.size == strlen("all") && 0 == strncasecmp(s.data, "all", strlen("all"))))
+    {
         writeString(s, buf);
+    }
     else
         write_quoted_string(s, buf);
 }

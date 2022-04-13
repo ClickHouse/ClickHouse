@@ -9,8 +9,10 @@
 #include <Core/SettingsEnums.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace ProfileEvents
 {
@@ -29,7 +31,8 @@ struct QueryViewsLogElement
     {
         DEFAULT = 1,
         MATERIALIZED = 2,
-        LIVE = 3
+        LIVE = 3,
+        WINDOW = 4,
     };
 
     struct ViewRuntimeStats
@@ -37,7 +40,7 @@ struct QueryViewsLogElement
         String target_name;
         ViewType type = ViewType::DEFAULT;
         std::unique_ptr<ThreadStatus> thread_status = nullptr;
-        UInt64 elapsed_ms = 0;
+        std::atomic_uint64_t elapsed_ms = 0;
         std::chrono::time_point<std::chrono::system_clock> event_time;
         ViewStatus event_status = ViewStatus::QUERY_START;
 
@@ -64,7 +67,7 @@ struct QueryViewsLogElement
     UInt64 written_rows{};
     UInt64 written_bytes{};
     Int64 peak_memory_usage{};
-    std::shared_ptr<ProfileEvents::Counters> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
     ViewStatus status = ViewStatus::QUERY_START;
     Int32 exception_code{};

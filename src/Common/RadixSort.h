@@ -13,8 +13,8 @@
 #include <type_traits>
 #include <memory>
 
-#include <common/bit_cast.h>
-#include <common/extended_types.h>
+#include <base/bit_cast.h>
+#include <base/extended_types.h>
 #include <Core/Defines.h>
 
 
@@ -37,12 +37,12 @@
   */
 struct RadixSortAllocator
 {
-    void * allocate(size_t size)
+    static void * allocate(size_t size)
     {
         return ::operator new(size);
     }
 
-    void deallocate(void * ptr, size_t size)
+    static void deallocate(void * ptr, size_t size)
     {
         ::operator delete(ptr, size);
     }
@@ -187,7 +187,7 @@ struct RadixSortIntTraits
 
 template <typename T>
 using RadixSortNumTraits = std::conditional_t<
-    is_integer_v<T>,
+    is_integer<T>,
     std::conditional_t<is_unsigned_v<T>, RadixSortUIntTraits<T>, RadixSortIntTraits<T>>,
     RadixSortFloatTraits<T>>;
 

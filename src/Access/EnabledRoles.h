@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/UUID.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <list>
 #include <mutex>
@@ -41,7 +41,7 @@ public:
 
 private:
     friend class RoleCache;
-    EnabledRoles(const Params & params_);
+    explicit EnabledRoles(const Params & params_);
 
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, scope_guard & notifications);
 

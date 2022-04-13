@@ -222,7 +222,7 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         }
 
         const auto & join = table->table_join->as<ASTTableJoin &>();
-        if (isComma(join.kind))
+        if (join.kind == ASTTableJoin::Kind::Comma)
             throw Exception("COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query", ErrorCodes::NOT_IMPLEMENTED);
 
         if (join.using_expression_list)
@@ -576,7 +576,7 @@ std::shared_ptr<ASTExpressionList> subqueryExpressionList(
     needed_columns[table_pos].fillExpressionList(*expression_list);
 
     for (const auto & expr : alias_pushdown[table_pos])
-        expression_list->children.emplace_back(std::move(expr));
+        expression_list->children.emplace_back(expr);
 
     return expression_list;
 }

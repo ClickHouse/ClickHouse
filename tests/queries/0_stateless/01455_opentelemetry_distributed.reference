@@ -1,13 +1,11 @@
 ===http===
 {"query":"select 1 from remote('127.0.0.2', system, one) format Null\n","status":"QueryFinish","tracestate":"some custom state","sorted_by_start_time":1}
 {"query":"DESC TABLE system.one","status":"QueryFinish","tracestate":"some custom state","sorted_by_start_time":1}
-{"query":"DESC TABLE system.one","status":"QueryFinish","tracestate":"some custom state","sorted_by_start_time":1}
-{"query":"SELECT 1 FROM system.one","status":"QueryFinish","tracestate":"some custom state","sorted_by_start_time":1}
+{"query":"SELECT 1 FROM `system`.`one`","status":"QueryFinish","tracestate":"some custom state","sorted_by_start_time":1}
 {"query":"DESC TABLE system.one","query_status":"QueryFinish","tracestate":"some custom state","sorted_by_finish_time":1}
-{"query":"DESC TABLE system.one","query_status":"QueryFinish","tracestate":"some custom state","sorted_by_finish_time":1}
-{"query":"SELECT 1 FROM system.one","query_status":"QueryFinish","tracestate":"some custom state","sorted_by_finish_time":1}
+{"query":"SELECT 1 FROM `system`.`one`","query_status":"QueryFinish","tracestate":"some custom state","sorted_by_finish_time":1}
 {"query":"select 1 from remote('127.0.0.2', system, one) format Null\n","query_status":"QueryFinish","tracestate":"some custom state","sorted_by_finish_time":1}
-{"total spans":"4","unique spans":"4","unique non-zero parent spans":"3"}
+{"total spans":"3","unique spans":"3","unique non-zero parent spans":"3"}
 {"initial query spans with proper parent":"1"}
 {"unique non-empty tracestate values":"1"}
 ===native===

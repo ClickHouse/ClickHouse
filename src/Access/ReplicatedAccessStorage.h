@@ -1,16 +1,19 @@
 #pragma once
 
-#include <Access/IAccessStorage.h>
-#include <Common/ThreadPool.h>
-#include <Common/ZooKeeper/Common.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <common/scope_guard.h>
-#include <Coordination/ThreadSafeQueue.h>
 #include <atomic>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+
+#include <base/scope_guard.h>
+
+#include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ConcurrentBoundedQueue.h>
+
+#include <Access/IAccessStorage.h>
 
 
 namespace DB
@@ -29,6 +32,10 @@ public:
     virtual void startup();
     virtual void shutdown();
 
+    bool exists(const UUID & id) const override;
+    bool hasSubscription(const UUID & id) const override;
+    bool hasSubscription(AccessEntityType type) const override;
+
 private:
     String zookeeper_path;
     zkutil::GetZooKeeper get_zookeeper;
@@ -36,15 +43,15 @@ private:
     std::atomic<bool> initialized = false;
     std::atomic<bool> stop_flag = false;
     ThreadFromGlobalPool worker_thread;
-    ThreadSafeQueue<UUID> refresh_queue;
+    ConcurrentBoundedQueue<UUID> refresh_queue;
 
-    UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
-    void removeImpl(const UUID & id) override;
-    void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
+    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
+    bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
-    void insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists);
-    void removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
-    void updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func);
+    bool insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    bool removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists);
+    bool updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
 
     void runWorkerThread();
     void resetAfterError();
@@ -66,22 +73,17 @@ private:
         mutable std::list<OnChangedHandler> handlers_by_id;
     };
 
-    std::optional<UUID> findImpl(EntityType type, const String & name) const override;
-    std::vector<UUID> findAllImpl(EntityType type) const override;
-    bool existsImpl(const UUID & id) const override;
-    AccessEntityPtr readImpl(const UUID & id) const override;
-    String readNameImpl(const UUID & id) const override;
-    bool canInsertImpl(const AccessEntityPtr &) const override { return true; }
+    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
+    std::vector<UUID> findAllImpl(AccessEntityType type) const override;
+    AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
 
     void prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
-    bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(EntityType type) const override;
+    scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
 
     mutable std::mutex mutex;
     std::unordered_map<UUID, Entry> entries_by_id;
-    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
-    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];
+    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
+    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(AccessEntityType::MAX)];
 };
 }

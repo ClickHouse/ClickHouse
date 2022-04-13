@@ -6,7 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 
 #include <Common/typeid_cast.h>
-#include <DataStreams/finalizeBlock.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
@@ -27,6 +27,25 @@ void finalizeChunk(Chunk & chunk)
             column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
 
     chunk.setColumns(std::move(columns), num_rows);
+}
+
+void finalizeBlock(Block & block)
+{
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        ColumnWithTypeAndName & current = block.getByPosition(i);
+        const DataTypeAggregateFunction * unfinalized_type = typeid_cast<const DataTypeAggregateFunction *>(current.type.get());
+
+        if (unfinalized_type)
+        {
+            current.type = unfinalized_type->getReturnType();
+            if (current.column)
+            {
+                auto mut_column = IColumn::mutate(std::move(current.column));
+                current.column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
+            }
+        }
+    }
 }
 
 Block TotalsHavingTransform::transformHeader(
@@ -119,7 +138,7 @@ IProcessor::Status TotalsHavingTransform::prepare()
     if (!totals_output.canPush())
         return Status::PortFull;
 
-    if (!totals)
+    if (!total_prepared)
         return Status::Ready;
 
     totals_output.push(std::move(totals));
@@ -293,6 +312,8 @@ void TotalsHavingTransform::prepareTotals()
         /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
         totals = Chunk(block.getColumns(), num_rows);
     }
+
+    total_prepared = true;
 }
 
 }

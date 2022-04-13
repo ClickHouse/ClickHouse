@@ -7,7 +7,7 @@ toc_title: MaterializedPostgreSQL
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 
-If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) database engine instead of the table engine and use the [materialized_postgresql_tables_list](../../../operations/settings/settings.md#materialized-postgresql-tables-list) setting, which specifies the tables to be replicated. It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
+If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 
 ## Creating a Table {#creating-a-table}
 
@@ -38,7 +38,7 @@ PRIMARY KEY key;
 -   `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 -   `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
-    - `1` — Row is not deleted, 
+    - `1` — Row is not deleted,
     - `-1` — Row is deleted.
 
 These columns do not need to be added when a table is created. They are always accessible in `SELECT` query.

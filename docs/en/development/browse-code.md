@@ -1,11 +1,11 @@
 ---
-toc_priority: 71
+toc_priority: 72
 toc_title: Source Code Browser
 ---
 
 # Browse ClickHouse Source Code {#browse-clickhouse-source-code}
 
-You can use **Woboq** online code browser available [here](https://clickhouse.tech/codebrowser/html_report/ClickHouse/src/index.html). It provides code navigation and semantic highlighting, search and indexing. The code snapshot is updated daily.
+You can use **Woboq** online code browser available [here](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). It provides code navigation and semantic highlighting, search and indexing. The code snapshot is updated daily.
 
 Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
 

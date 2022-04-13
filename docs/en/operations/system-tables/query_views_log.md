@@ -4,12 +4,14 @@ Contains information about the dependent views executed when running a query, fo
 
 To start logging:
 
-1.  Configure parameters in the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) section.
-2.  Set [log_query_views](../../operations/settings/settings.md#settings-log-query-views) to 1.
+1. Configure parameters in the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) section.
+2. Set [log_query_views](../../operations/settings/settings.md#settings-log-query-views) to 1.
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
+
+You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_views_log` table.
 
 Columns:
 
@@ -43,9 +45,13 @@ Columns:
 
 **Example**
 
+Query:
+
 ``` sql
- SELECT * FROM system.query_views_log LIMIT 1 \G
+SELECT * FROM system.query_views_log LIMIT 1 \G;
 ```
+
+Result:
 
 ``` text
 Row 1:
@@ -77,5 +83,4 @@ stack_trace:
 -   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
 
-
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_thread_log) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system_tables/query_thread_log) <!--hide-->

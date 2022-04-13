@@ -26,6 +26,8 @@ SourceWithProgress::SourceWithProgress(Block header, bool enable_auto_progress)
 void SourceWithProgress::setProcessListElement(QueryStatus * elem)
 {
     process_list_elem = elem;
+    if (!elem)
+        return;
 
     /// Update total_rows_approx as soon as possible.
     ///
@@ -47,9 +49,14 @@ void SourceWithProgress::setProcessListElement(QueryStatus * elem)
     }
 }
 
+bool SourceWithProgress::checkTimeLimit() const
+{
+    return limits.speed_limits.checkTimeLimit(total_stopwatch, limits.timeout_overflow_mode);
+}
+
 void SourceWithProgress::work()
 {
-    if (!limits.speed_limits.checkTimeLimit(total_stopwatch, limits.timeout_overflow_mode))
+    if (!checkTimeLimit())
     {
         cancel();
     }
@@ -64,8 +71,7 @@ void SourceWithProgress::work()
     }
 }
 
-/// Aggregated copy-paste from IBlockInputStream::progressImpl.
-/// Most of this must be done in PipelineExecutor outside. Now it's done for compatibility with IBlockInputStream.
+/// TODO: Most of this must be done in PipelineExecutor outside.
 void SourceWithProgress::progress(const Progress & value)
 {
     was_progress_called = true;
@@ -130,18 +136,16 @@ void SourceWithProgress::progress(const Progress & value)
 
         if (last_profile_events_update_time + profile_events_update_period_microseconds < total_elapsed_microseconds)
         {
-            /// Should be done in PipelineExecutor.
-            /// It is here for compatibility with IBlockInputsStream.
+            /// TODO: Should be done in PipelineExecutor.
             CurrentThread::updatePerformanceCounters();
             last_profile_events_update_time = total_elapsed_microseconds;
         }
 
-        /// Should be done in PipelineExecutor.
-        /// It is here for compatibility with IBlockInputsStream.
+        /// TODO: Should be done in PipelineExecutor.
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
         if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
-            quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
+            quota->used({QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes});
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);

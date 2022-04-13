@@ -1,3 +1,6 @@
+-- Tags: long, no-fasttest
+-- Tag no-fasttest: JSON functions
+
 -- https://github.com/minimaxir/big-list-of-naughty-strings
 
 /*
@@ -23,6 +26,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+
+SET max_insert_threads = 0;
 
 DROP TABLE IF EXISTS test;
 

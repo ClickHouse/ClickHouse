@@ -1,12 +1,12 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/ClusterProxy/IStreamFactory.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -116,7 +116,7 @@ void executeQuery(
 
     const Settings & settings = context->getSettingsRef();
 
-    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth > settings.max_distributed_depth)
+    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
         throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
 
     std::vector<QueryPlanPtr> plans;

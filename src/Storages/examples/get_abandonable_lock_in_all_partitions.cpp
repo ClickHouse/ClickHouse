@@ -4,7 +4,7 @@
 #include <Common/Stopwatch.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <iostream>
 

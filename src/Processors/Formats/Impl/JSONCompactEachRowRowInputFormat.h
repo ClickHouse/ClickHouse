@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -10,6 +11,7 @@ namespace DB
 
 class ReadBuffer;
 
+
 /** A stream for reading data in a bunch of formats:
  *  - JSONCompactEachRow
  *  - JSONCompactEachRowWithNamesAndTypes
@@ -17,50 +19,69 @@ class ReadBuffer;
  *  - JSONCompactStringsEachRowWithNamesAndTypes
  *
 */
-class JSONCompactEachRowRowInputFormat : public IRowInputFormat
+class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAndTypes
 {
 public:
     JSONCompactEachRowRowInputFormat(
-        ReadBuffer & in_,
         const Block & header_,
+        ReadBuffer & in_,
         Params params_,
-        const FormatSettings & format_settings_,
         bool with_names_,
-        bool yield_strings_);
+        bool with_types_,
+        bool yield_strings_,
+        const FormatSettings & format_settings_);
 
     String getName() const override { return "JSONCompactEachRowRowInputFormat"; }
 
-
-    void readPrefix() override;
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-    void resetParser() override;
+};
+
+class JSONCompactEachRowFormatReader final : public FormatWithNamesAndTypesReader
+{
+public:
+    JSONCompactEachRowFormatReader(ReadBuffer & in_, bool yield_strings_, const FormatSettings & format_settings_);
+
+
+    bool parseRowStartWithDiagnosticInfo(WriteBuffer & out) override;
+    bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
+    bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
+    bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override
+    {
+        return *pos != ',' && *pos != ']' && *pos != ' ' && *pos != '\t';
+    }
+
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+
+    void skipField(size_t /*column_index*/) override { skipField(); }
+    void skipField();
+    void skipHeaderRow();
+    void skipNames() override { skipHeaderRow(); }
+    void skipTypes() override { skipHeaderRow(); }
+    void skipRowStartDelimiter() override;
+    void skipFieldDelimiter() override;
+    void skipRowEndDelimiter() override;
+
+    std::vector<String> readHeaderRow();
+    std::vector<String> readNames() override { return readHeaderRow(); }
+    std::vector<String> readTypes() override { return readHeaderRow(); }
+
+    bool yieldStrings() const { return yield_strings; }
+private:
+    bool yield_strings;
+};
+
+class JSONCompactEachRowRowSchemaReader : public FormatWithNamesAndTypesSchemaReader
+{
+public:
+    JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);
 
 private:
-    void addInputColumn(const String & column_name);
-    void skipEndOfLine();
-    void readField(size_t index, MutableColumns & columns);
+    DataTypes readRowAndGetDataTypes() override;
 
-    const FormatSettings format_settings;
-
-    using IndexesMap = std::unordered_map<String, size_t>;
-    IndexesMap column_indexes_by_names;
-
-    using OptionalIndexes = std::vector<std::optional<size_t>>;
-    OptionalIndexes column_indexes_for_input_fields;
-
-    DataTypes data_types;
-    std::vector<UInt8> read_columns;
-    std::vector<size_t> not_seen_columns;
-
-    /// This is for the correct exceptions in skipping unknown fields.
-    std::vector<String> names_of_columns;
-
-    /// For *WithNamesAndTypes formats.
-    bool with_names;
-    /// For JSONCompactString* formats.
-    bool yield_strings;
+    JSONCompactEachRowFormatReader reader;
+    bool first_row = true;
 };
 
 }

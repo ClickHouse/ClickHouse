@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -25,7 +25,7 @@ public:
     };
 
     MergeTreeDataPartType() : value(UNKNOWN) {}
-    MergeTreeDataPartType(Value value_) : value(value_) {}
+    MergeTreeDataPartType(Value value_) : value(value_) {} /// NOLINT
 
     bool operator==(const MergeTreeDataPartType & other) const
     {

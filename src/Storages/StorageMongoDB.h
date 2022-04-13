@@ -1,10 +1,11 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <Poco/MongoDB/Connection.h>
+
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
-
-#include <Poco/MongoDB/Connection.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -21,7 +22,7 @@ public:
     StorageMongoDB(
         const StorageID & table_id_,
         const std::string & host_,
-        short unsigned int port_,
+        uint16_t port_,
         const std::string & database_name_,
         const std::string & collection_name_,
         const std::string & username_,
@@ -35,18 +36,20 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
+    static StorageMongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+
 private:
     void connectIfNotConnected();
 
     const std::string host;
-    const short unsigned int port;
+    const uint16_t port; /// NOLINT
     const std::string database_name;
     const std::string collection_name;
     const std::string username;

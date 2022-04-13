@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_SSL
 #include <Core/Types.h>
@@ -58,7 +56,7 @@ public:
 
     /// Adds a specified offset to the counter.
     InitVector & operator++() { ++counter; return *this; }
-    InitVector operator++(int) { InitVector res = *this; ++counter; return res; }
+    InitVector operator++(int) { InitVector res = *this; ++counter; return res; } /// NOLINT
     InitVector & operator+=(size_t offset) { counter += offset; return *this; }
     InitVector operator+(size_t offset) const { InitVector res = *this; return res += offset; }
 

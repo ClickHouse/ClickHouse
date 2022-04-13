@@ -1,14 +1,11 @@
 #include <city.h>
 #include <string.h>
 
-#include <common/unaligned.h>
-#include <common/types.h>
+#include <base/unaligned.h>
+#include <base/types.h>
 
 #include "CompressedWriteBuffer.h"
 #include <Compression/CompressionFactory.h>
-
-#include <Common/MemorySanitizer.h>
-#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -35,12 +32,10 @@ void CompressedWriteBuffer::nextImpl()
     out.write(compressed_buffer.data(), compressed_size);
 }
 
-
-void CompressedWriteBuffer::finalize()
+CompressedWriteBuffer::~CompressedWriteBuffer()
 {
-    next();
+    finalize();
 }
-
 
 CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_,
@@ -48,14 +43,6 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     size_t buf_size)
     : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(std::move(codec_))
 {
-}
-
-
-CompressedWriteBuffer::~CompressedWriteBuffer()
-{
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-    next();
 }
 
 }

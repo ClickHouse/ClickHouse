@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
@@ -11,14 +11,19 @@
             <operation_timeout_ms>5000</operation_timeout_ms>
             <session_timeout_ms>10000</session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>
+
+            <!-- For instant start in single node configuration -->
+            <heart_beat_interval_ms>0</heart_beat_interval_ms>
+            <election_timeout_lower_bound_ms>0</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>0</election_timeout_upper_bound_ms>
         </coordination_settings>
 
         <raft_configuration>
             <server>
                 <id>1</id>
                 <hostname>localhost</hostname>
-                <port>44444</port>
+                <port>9234</port>
             </server>
         </raft_configuration>
     </keeper_server>
-</yandex>
+</clickhouse>

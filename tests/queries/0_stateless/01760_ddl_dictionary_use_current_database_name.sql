@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS ddl_dictonary_test_source;
 CREATE TABLE ddl_dictonary_test_source
 (

@@ -71,12 +71,16 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     /// And anyway this is pretty heavy, so avoid burning too much CPU here.
     if (size < (1ULL << 20))
     {
+        /// We need to copy data from ReadBuffer to flip bits as ReadBuffer should be immutable
+        PODArray<char> tmp_buffer(data, data + size);
+        char * tmp_data = tmp_buffer.data();
+
         /// Check if the difference caused by single bit flip in data.
         for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
         {
-            flip_bit(data, bit_pos);
+            flip_bit(tmp_data, bit_pos);
 
-            auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
+            auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(tmp_data, size);
             if (expected_checksum == checksum_of_data_with_flipped_bit)
             {
                 message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
@@ -84,7 +88,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
                 throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
             }
 
-            flip_bit(data, bit_pos);    /// Restore
+            flip_bit(tmp_data, bit_pos);    /// Restore
         }
     }
 
@@ -253,4 +257,3 @@ CompressedReadBufferBase::~CompressedReadBufferBase() = default;    /// Proper d
 
 
 }
-

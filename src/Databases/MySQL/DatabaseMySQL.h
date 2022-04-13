@@ -45,7 +45,8 @@ public:
         const ASTStorage * database_engine_define,
         const String & database_name_in_mysql,
         std::unique_ptr<ConnectionMySQLSettings> settings_,
-        mysqlxx::PoolWithFailover && pool);
+        mysqlxx::PoolWithFailover && pool,
+        bool attach);
 
     String getEngineName() const override { return "MySQL"; }
 
@@ -57,7 +58,7 @@ public:
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
     ASTPtr getCreateDatabaseQuery() const override;
 
@@ -75,15 +76,15 @@ public:
 
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
 
-    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach, bool skip_startup_tables) override;
 
-    StoragePtr detachTable(const String & table_name) override;
+    StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
     void dropTable(ContextPtr context, const String & table_name, bool no_delay) override;
 
-    void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
+    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;

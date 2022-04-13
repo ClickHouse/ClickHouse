@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -14,7 +14,7 @@ class StorageSystemPrivileges final : public shared_ptr_helper<StorageSystemPriv
 public:
     std::string getName() const override { return "SystemPrivileges"; }
     static NamesAndTypesList getNamesAndTypes();
-    static const std::vector<std::pair<String, Int8>> & getAccessTypeEnumValues();
+    static const std::vector<std::pair<String, Int16>> & getAccessTypeEnumValues();
 
 protected:
     friend struct shared_ptr_helper<StorageSystemPrivileges>;

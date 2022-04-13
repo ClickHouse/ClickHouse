@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/PODArray.h>
 
 #include <algorithm>
@@ -101,6 +101,13 @@ public:
     {
         return prompter.getHints(name, getAllRegisteredNames());
     }
+
+    IHints() = default;
+
+    IHints(const IHints &) = default;
+    IHints(IHints &&) noexcept = default;
+    IHints & operator=(const IHints &) = default;
+    IHints & operator=(IHints &&) noexcept = default;
 
     virtual ~IHints() = default;
 

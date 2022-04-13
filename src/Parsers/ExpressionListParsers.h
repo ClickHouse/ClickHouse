@@ -5,8 +5,8 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/SelectUnionMode.h>
 #include <Common/IntervalKind.h>
 
 namespace DB
@@ -108,7 +108,7 @@ protected:
     const char * getName() const override { return "list of union elements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 private:
-    ASTSelectWithUnionQuery::UnionModes union_modes;
+    SelectUnionModes union_modes;
 };
 
 /** An expression with an infix binary left-associative operator.
@@ -204,7 +204,13 @@ protected:
 class ParserCastExpression : public IParserBase
 {
 private:
-    ParserExpressionElement elem_parser;
+    ParserPtr elem_parser;
+
+public:
+    explicit ParserCastExpression(ParserPtr && elem_parser_)
+        : elem_parser(std::move(elem_parser_))
+    {
+    }
 
 protected:
     const char * getName() const override { return "CAST expression"; }
@@ -241,7 +247,7 @@ class ParserUnaryExpression : public IParserBase
 {
 private:
     static const char * operators[];
-    ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserTupleElementExpression>()};
+    ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserCastExpression>(std::make_unique<ParserTupleElementExpression>())};
 
 protected:
     const char * getName() const override { return "unary expression"; }

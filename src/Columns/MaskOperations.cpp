@@ -249,8 +249,8 @@ MaskInfo extractInvertedMask(
 
 void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info)
 {
-    for (size_t i = 0; i != mask.size(); ++i)
-        mask[i] = !mask[i];
+    for (auto & byte : mask)
+        byte = !byte;
     std::swap(mask_info.has_ones, mask_info.has_zeros);
 }
 
@@ -293,7 +293,7 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
         column.column = column_function->getResultType()->createColumn();
 }
 
-int checkShirtCircuitArguments(const ColumnsWithTypeAndName & arguments)
+int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments)
 {
     int last_short_circuit_argument_index = -1;
     for (size_t i = 0; i != arguments.size(); ++i)

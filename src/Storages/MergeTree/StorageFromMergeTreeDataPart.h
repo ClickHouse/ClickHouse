@@ -6,10 +6,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Defines.h>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB
@@ -24,7 +24,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -35,8 +35,7 @@ public:
                                               .readFromParts(
                                                   parts,
                                                   column_names,
-                                                  metadata_snapshot,
-                                                  metadata_snapshot,
+                                                  storage_snapshot,
                                                   query_info,
                                                   context,
                                                   max_block_size,
@@ -73,9 +72,14 @@ public:
         return storage.getPartitionIDFromQuery(ast, context);
     }
 
+    bool materializeTTLRecalculateOnly() const
+    {
+        return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
+    }
+
 protected:
     /// Used in part mutation.
-    StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
+    explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
         , parts({part_})
         , storage(part_->storage)

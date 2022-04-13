@@ -15,12 +15,12 @@ public:
 
     BlockIO execute() override;
 
-    static Block getSampleBlock(const ASTExplainQuery::ExplainKind kind);
+    static Block getSampleBlock(ASTExplainQuery::ExplainKind kind);
 
 private:
     ASTPtr query;
 
-    BlockInputStreamPtr executeImpl();
+    QueryPipeline executeImpl();
 };
 
 

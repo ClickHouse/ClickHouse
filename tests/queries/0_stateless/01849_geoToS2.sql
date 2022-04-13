@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: needs s2
+
 DROP TABLE IF EXISTS s2_indexes;
 
 CREATE TABLE s2_indexes (s2_index UInt64, longitude Float64, latitude Float64) ENGINE = Memory;

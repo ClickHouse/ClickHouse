@@ -19,4 +19,4 @@ ClickHouseサポート:
 -   [組み込み辞書](internal-dicts.md#internal_dicts) 特定の [関数のセット](../../sql-reference/functions/ym-dict-functions.md).
 -   [プラグイン(外部)辞書](external-dictionaries/external-dicts.md#dicts-external-dicts) と [関数のセット](../../sql-reference/functions/ext-dict-functions.md).
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/dicts/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/dicts/) <!--hide-->

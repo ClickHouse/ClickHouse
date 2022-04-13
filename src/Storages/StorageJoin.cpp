@@ -5,7 +5,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
@@ -14,10 +14,12 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
+#include <Interpreters/join_common.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h> /// toLower
 
 
@@ -63,7 +65,7 @@ StorageJoin::StorageJoin(
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
     restore();
 }
 
@@ -81,7 +83,7 @@ SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataP
     return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
 }
 
-void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, TableExclusiveLockHolder &)
+void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
 {
     std::lock_guard mutate_lock(mutate_mutex);
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
@@ -91,7 +93,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_s
     disk->createDirectories(path + "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -113,25 +115,24 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
     auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
-    auto backup_stream = NativeBlockOutputStream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
+    auto backup_stream = NativeWriter(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
 
-    auto new_data = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
+    auto new_data = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
 
     // New scope controls lifetime of InputStream.
     {
         auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
         auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
-        auto in = interpreter->execute();
-        in->readPrefix();
+        auto pipeline = interpreter->execute();
+        PullingPipelineExecutor executor(pipeline);
 
-        while (const Block & block = in->read())
+        Block block;
+        while (executor.pull(block))
         {
             new_data->addJoinedBlock(block, true);
             if (persistent)
                 backup_stream.write(block);
         }
-
-        in->readSuffix();
     }
 
     /// Now acquire exclusive lock and modify storage.
@@ -167,8 +168,10 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 
     if ((analyzed_join->forceNullableRight() && !use_nulls) ||
         (!analyzed_join->forceNullableRight() && isLeftOrFull(analyzed_join->kind()) && use_nulls))
-        throw Exception("Table " + getStorageID().getNameForLogs() + " needs the same join_use_nulls setting as present in LEFT or FULL JOIN.",
-                        ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+        throw Exception(
+            ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+            "Table {} needs the same join_use_nulls setting as present in LEFT or FULL JOIN",
+            getStorageID().getNameForLogs());
 
     /// TODO: check key columns
 
@@ -177,7 +180,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     /// Qualifies will be added by join implementation (HashJoin)
     analyzed_join->setRightKeys(key_names);
 
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, getRightSampleBlock());
 
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     join_clone->setLock(holder);
@@ -261,9 +264,7 @@ void registerStorageJoin(StorageFactory & factory)
                     disk_name = setting.value.get<String>();
                 else if (setting.name == "persistent")
                 {
-                    auto join_settings = std::make_unique<JoinSettings>();
-                    join_settings->loadFromQuery(*args.storage_def);
-                    persistent = join_settings->persistent;
+                    persistent = setting.value.get<bool>();
                 }
                 else
                     throw Exception("Unknown setting " + setting.name + " for storage " + args.engine_name, ErrorCodes::BAD_ARGUMENTS);
@@ -386,6 +387,9 @@ public:
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
     {
+        if (!join->getTableJoin().oneDisjunct())
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
+
         column_indices.resize(sample_block.columns());
 
         auto & saved_block = join->getJoinedData()->sample_block;
@@ -419,7 +423,7 @@ protected:
             return {};
 
         Chunk chunk;
-        if (!joinDispatch(join->kind, join->strictness, join->data->maps,
+        if (!joinDispatch(join->kind, join->strictness, join->data->maps.front(),
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
             throw Exception("Logical error: unknown JOIN strictness", ErrorCodes::LOGICAL_ERROR);
         return chunk;
@@ -575,16 +579,16 @@ private:
 // TODO: multiple stream read and index read
 Pipe StorageJoin::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
-    Block source_sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    Block source_sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     return Pipe(std::make_shared<JoinSource>(join, std::move(holder), max_block_size, source_sample_block));
 }

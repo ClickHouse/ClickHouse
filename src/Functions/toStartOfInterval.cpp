@@ -1,4 +1,4 @@
-#include <common/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -37,7 +37,7 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 years, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfYearInterval(ExtendedDayNum(d), years);
+            return time_zone.toStartOfYearInterval(DayNum(d), years);
         }
 
         static UInt16 execute(Int32 d, UInt64 years, const DateLUTImpl & time_zone)
@@ -63,7 +63,7 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 quarters, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfQuarterInterval(ExtendedDayNum(d), quarters);
+            return time_zone.toStartOfQuarterInterval(DayNum(d), quarters);
         }
 
         static UInt16 execute(Int32 d, UInt64 quarters, const DateLUTImpl & time_zone)
@@ -89,7 +89,7 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 months, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfMonthInterval(ExtendedDayNum(d), months);
+            return time_zone.toStartOfMonthInterval(DayNum(d), months);
         }
 
         static UInt16 execute(Int32 d, UInt64 months, const DateLUTImpl & time_zone)
@@ -115,7 +115,7 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 weeks, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfWeekInterval(ExtendedDayNum(d), weeks);
+            return time_zone.toStartOfWeekInterval(DayNum(d), weeks);
         }
 
         static UInt16 execute(Int32 d, UInt64 weeks, const DateLUTImpl & time_zone)
@@ -261,10 +261,10 @@ public:
                         + ". This argument is optional and must be a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (first_argument_is_date && result_type_is_date)
-                throw Exception(
-                    "The timezone argument of function " + getName() + " with interval type " + interval_type->getKind().toString()
-                        + " is allowed only when the 1st argument has the type DateTime",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The timezone argument of function {} with interval type {} is allowed only when the 1st argument "
+                    "has the type DateTime",
+                        getName(), interval_type->getKind().toString());
         };
 
         if (arguments.size() == 2)
@@ -311,7 +311,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return { true, true, true };
+        return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
 private:
