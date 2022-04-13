@@ -129,6 +129,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr watch_command = std::make_shared<WatchCommand>(keeper_dispatcher);
         factory.registerCommand(watch_command);
 
+        FourLetterCommandPtr recovery_command = std::make_shared<RecoveryCommand>(keeper_dispatcher);
+        factory.registerCommand(recovery_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -417,6 +420,12 @@ String IsReadOnlyCommand::run()
         return "ro";
     else
         return "rw";
+}
+
+String RecoveryCommand::run()
+{
+    keeper_dispatcher.forceRecovery();
+    return "";
 }
 
 }

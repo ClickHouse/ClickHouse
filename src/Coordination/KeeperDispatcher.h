@@ -109,6 +109,8 @@ public:
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
     void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async);
 
+    void startServer();
+
     bool checkInit() const
     {
         return server && server->checkInit();
@@ -125,6 +127,8 @@ public:
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
+
+    void forceRecovery();
 
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
