@@ -201,9 +201,6 @@ void LocalConnection::finishQuery()
 {
     next_packet_type = Protocol::Server::EndOfStream;
 
-    if (!state)
-        return;
-
     if (state->executor)
     {
         state->executor.reset();
@@ -219,6 +216,7 @@ void LocalConnection::finishQuery()
 
     state->io.onFinish();
     state.reset();
+    last_sent_snapshots.clear();
 }
 
 bool LocalConnection::poll(size_t)
@@ -322,6 +320,21 @@ bool LocalConnection::poll(size_t)
         {
             next_packet_type = Protocol::Server::ProfileInfo;
             state->profile_info = state->executor->getProfileInfo();
+            return true;
+        }
+    }
+
+    if (state->is_finished && !state->sent_profile_events)
+    {
+        state->sent_profile_events = true;
+
+        if (send_profile_events && state->executor)
+        {
+            Block block;
+            state->after_send_profile_events.restart();
+            next_packet_type = Protocol::Server::ProfileEvents;
+            getProfileEvents(block);
+            state->block.emplace(std::move(block));
             return true;
         }
     }
