@@ -57,12 +57,12 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getDataPartsVector({State::Active, State::Outdated}, &state, require_projection_parts);
+            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, &state, require_projection_parts);
 
         return data->getAllDataPartsVector(&state, require_projection_parts);
     }
 
-    return data->getDataPartsVector({State::Active}, &state, require_projection_parts);
+    return data->getDataPartsVectorForInternalUsage({State::Active}, &state, require_projection_parts);
 }
 
 StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
@@ -268,7 +268,7 @@ Pipe StorageSystemPartsBase::read(
 
     while (StoragesInfo info = stream.next())
     {
-        processNextStorage(res_columns, columns_mask, info, has_state_column);
+        processNextStorage(context, res_columns, columns_mask, info, has_state_column);
     }
 
     if (has_state_column)

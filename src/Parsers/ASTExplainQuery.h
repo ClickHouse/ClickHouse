@@ -19,6 +19,7 @@ public:
         QueryPipeline, /// 'EXPLAIN PIPELINE ...'
         QueryEstimate, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
+        CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
     };
 
     explicit ASTExplainQuery(ExplainKind kind_) : kind(kind_) {}
@@ -111,6 +112,7 @@ private:
             case QueryPipeline: return "EXPLAIN PIPELINE";
             case QueryEstimate: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
+            case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
         }
 
         __builtin_unreachable();
