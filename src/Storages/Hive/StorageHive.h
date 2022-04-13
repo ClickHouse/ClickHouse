@@ -14,6 +14,7 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveCommon.h>
 #include <Storages/Hive/HiveFile.h>
+#include <Storages/Hive/HiveQueryTask.h>
 
 namespace DB
 {
@@ -68,63 +69,25 @@ protected:
         const String & comment_,
         const ASTPtr & partition_by_ast_,
         std::unique_ptr<HiveSettings> storage_settings_,
-        ContextPtr context_);
+        ContextPtr context_,
+        std::shared_ptr<HiveQueryTaskFilesCollectorBuilder> hive_task_files_collector_builder_ = nullptr,
+        bool is_distributed_mode_ = false);
 
 private:
     using FileFormat = IHiveFile::FileFormat;
     using FileInfo = HiveMetastoreClient::FileInfo;
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
-
-    enum class PruneLevel
-    {
-        None, /// Do not prune
-        Partition,
-        File,
-        Split,
-        Max = Split,
-    };
-
-    static String pruneLevelToString(PruneLevel level)
-    {
-        return String(magic_enum::enum_name(level));
-    }
-
-    static ASTPtr extractKeyExpressionList(const ASTPtr & node);
-
-    static std::vector<FileInfo> listDirectory(const String & path, const HiveTableMetadataPtr & hive_table_metadata, const HDFSFSPtr & fs);
-
-    void initMinMaxIndexExpression();
-
-    HiveFiles collectHiveFiles(
-        unsigned max_threads,
-        const SelectQueryInfo & query_info,
-        const HiveTableMetadataPtr & hive_table_metadata,
-        const HDFSFSPtr & fs,
-        const ContextPtr & context_,
-        PruneLevel prune_level = PruneLevel::Max) const;
-
-    HiveFiles collectHiveFilesFromPartition(
-        const Apache::Hadoop::Hive::Partition & partition,
-        const SelectQueryInfo & query_info,
-        const HiveTableMetadataPtr & hive_table_metadata,
-        const HDFSFSPtr & fs,
-        const ContextPtr & context_,
-        PruneLevel prune_level = PruneLevel::Max) const;
-
-    HiveFilePtr getHiveFileIfNeeded(
-        const FileInfo & file_info,
-        const FieldVector & fields,
-        const SelectQueryInfo & query_info,
-        const HiveTableMetadataPtr & hive_table_metadata,
-        const ContextPtr & context_,
-        PruneLevel prune_level = PruneLevel::Max) const;
+    using PruneLevel = HiveFilesCollector::PruneLevel;
 
     void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
 
+    static ASTPtr extractKeyExpressionList(const ASTPtr & node);
     void lazyInitialize();
 
     std::optional<UInt64>
     totalRowsImpl(const Settings & settings, const SelectQueryInfo & query_info, ContextPtr context_, PruneLevel prune_level) const;
+
+    std::shared_ptr<IHiveQueryTaskFilesCollector> getHiveFilesCollector(const SelectQueryInfo & query_info) const;
 
     String hive_metastore_url;
 
@@ -146,7 +109,6 @@ private:
 
     const ASTPtr partition_by_ast;
     NamesAndTypesList partition_name_types;
-    Names partition_names;
     DataTypes partition_types;
     ExpressionActionsPtr partition_key_expr;
     ExpressionActionsPtr partition_minmax_idx_expr;
@@ -157,6 +119,9 @@ private:
     std::shared_ptr<HiveSettings> storage_settings;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
+
+    std::shared_ptr<HiveQueryTaskFilesCollectorBuilder> hive_task_files_collector_builder;
+    bool is_distributed_mode;
 };
 
 }
