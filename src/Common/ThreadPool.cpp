@@ -245,7 +245,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
     while (true)
     {
         /// This is inside the loop to also reset previous thread names set inside the jobs.
-        setThreadName("ThreadPoolIdle");
+        setThreadName("ThreadPool");
 
         Job job;
         bool need_shutdown = false;
