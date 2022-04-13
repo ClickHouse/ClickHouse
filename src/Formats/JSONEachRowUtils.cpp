@@ -343,4 +343,34 @@ bool readFieldImpl(ReadBuffer & in, IColumn & column, const DataTypePtr & type, 
     }
 }
 
+DataTypePtr getCommonTypeForJSONFormats(const DataTypePtr & first, const DataTypePtr & second, bool allow_bools_as_numbers)
+{
+    if (allow_bools_as_numbers)
+    {
+        auto not_nullable_first = removeNullable(first);
+        auto not_nullable_second = removeNullable(second);
+        /// Check if we have Bool and Number and if so make the result type Number
+        bool bool_type_presents = isBool(not_nullable_first) || isBool(not_nullable_second);
+        bool number_type_presents = isNumber(not_nullable_first) || isNumber(not_nullable_second);
+        if (bool_type_presents && number_type_presents)
+        {
+            if (isBool(not_nullable_first))
+                return second;
+            return first;
+        }
+    }
+
+    /// If we have Map and Object, make result type Object
+    DataTypePtr object_type = isObject(first) ? first : isObject(second) ? second : nullptr;
+    DataTypePtr map_type = isMap(first) ? first : isMap(second) ? second : nullptr;
+    if (object_type && map_type)
+        return object_type;
+
+    /// If we have different Maps, make result type Object
+    if (isMap(first) && isMap(second) && !first->equals(*second))
+        return DataTypeFactory::instance().get("JSON");
+
+    return nullptr;
+}
+
 }
