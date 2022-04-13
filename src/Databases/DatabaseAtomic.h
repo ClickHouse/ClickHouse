@@ -76,6 +76,8 @@ protected:
 
     void tryCreateMetadataSymlink();
 
+    virtual bool allowMoveTableToOtherDatabaseEngine(IDatabase & /*to_database*/) const { return false; }
+
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;
     NameToPathMap table_name_to_path;

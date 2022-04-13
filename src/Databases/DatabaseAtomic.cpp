@@ -1,5 +1,6 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabaseReplicated.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -151,11 +152,15 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 {
     if (typeid(*this) != typeid(to_database))
     {
-        if (!typeid_cast<DatabaseOrdinary *>(&to_database))
+        if (typeid_cast<DatabaseOrdinary *>(&to_database))
+        {
+            /// Allow moving tables between Atomic and Ordinary (with table lock)
+            DatabaseOnDisk::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
+            return;
+        }
+
+        if (!allowMoveTableToOtherDatabaseEngine(to_database))
             throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
-        /// Allow moving tables between Atomic and Ordinary (with table lock)
-        DatabaseOnDisk::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
-        return;
     }
 
     if (exchange && !supportsRenameat2())
