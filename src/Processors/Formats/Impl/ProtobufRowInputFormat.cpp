@@ -10,7 +10,8 @@
 namespace DB
 {
 
-ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_)
+ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_,
+    const FormatSchemaInfo & schema_info_, bool with_length_delimiter_, bool google_wrappers_special_treatment_)
     : IRowInputFormat(header_, in_, params_)
     , reader(std::make_unique<ProtobufReader>(in_))
     , serializer(ProtobufSerializer::create(
@@ -20,7 +21,7 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & h
           *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No),
           with_length_delimiter_,
           /* with_envelope = */ false,
-          /* google_wrappers_special_treatment = */ true,
+          google_wrappers_special_treatment_,
          *reader))
 {
 }
@@ -65,7 +66,8 @@ void registerInputFormatProtobuf(FormatFactory & factory)
         {
             return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
                 FormatSchemaInfo(settings, "Protobuf", true),
-                with_length_delimiter);
+                with_length_delimiter,
+                settings.protobuf.google_wrappers_special_treatment);
         });
     }
 }
