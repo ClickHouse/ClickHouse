@@ -153,13 +153,19 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Fast Test
-        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE"
+          mkdir "$GITHUB_WORKSPACE"
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ env.TEMP_PATH }}
+      - name: Fast Test
+        run: |
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 fast_test_check.py
       - name: Cleanup
