@@ -367,6 +367,11 @@ void KeeperDispatcher::shutdown()
     LOG_DEBUG(log, "Dispatcher shut down");
 }
 
+void KeeperDispatcher::forceRecovery()
+{
+    server->forceRecovery();
+}
+
 KeeperDispatcher::~KeeperDispatcher()
 {
     shutdown();

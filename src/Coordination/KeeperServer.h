@@ -59,12 +59,15 @@ private:
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
 
+    nuraft::ptr<nuraft::cluster_config> last_read_config;
+
     Poco::Logger * log;
 
     /// Callback func which is called by NuRaft on all internal events.
     /// Used to determine the moment when raft is ready to server new requests
     nuraft::cb_func::ReturnCode callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param);
 
+    void startupRaftServer(bool enable_ipv6);
     /// Almost copy-paste from nuraft::launcher, but with separated server init and start
     /// Allows to avoid race conditions.
     void launchRaftServer(
@@ -108,6 +111,8 @@ public:
     {
         return state_machine;
     }
+
+    void forceRecovery();
 
     bool isLeader() const;
 

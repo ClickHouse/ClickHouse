@@ -144,14 +144,15 @@ void KeeperServer::loadLatestConfig()
     }
 }
 
-void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
+void KeeperServer::forceRecovery()
 {
-    state_machine->init();
+    shutdownRaftServer();
+    recover = true;
+    startupRaftServer(true);
+}
 
-    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
-
-    loadLatestConfig();
-
+void KeeperServer::startupRaftServer(bool enable_ipv6)
+{
     nuraft::raft_params params;
     params.heart_beat_interval_ = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
     params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
@@ -187,10 +188,8 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
         params.with_custom_election_quorum_size(1);
 
         auto latest_config = state_manager->load_config();
-        auto configuration = state_manager->parseServersConfiguration(config, false);
-        auto local_cluster_config = configuration.cluster_config;
         auto new_config = std::make_shared<nuraft::cluster_config>(0, latest_config ? latest_config->get_log_idx() : 0);
-        new_config->get_servers() = local_cluster_config->get_servers();
+        new_config->get_servers() = last_read_config->get_servers();
         new_config->set_log_idx(state_manager->getLogStore()->next_slot());
 
         state_manager->save_config(*new_config);
@@ -200,6 +199,19 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
+}
+
+void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
+{
+    state_machine->init();
+
+    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
+
+    loadLatestConfig();
+
+    last_read_config = state_manager->parseServersConfiguration(config, true).cluster_config;
+
+    startupRaftServer(enable_ipv6);
 }
 
 void KeeperServer::launchRaftServer(
@@ -450,17 +462,16 @@ std::vector<int64_t> KeeperServer::getDeadSessions()
 
 ConfigUpdateActions KeeperServer::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
 {
-    return state_manager->getConfigurationDiff(config);
+    auto diff = state_manager->getConfigurationDiff(config);
+
+    if (!diff.empty())
+        last_read_config = state_manager->parseServersConfiguration(config, true).cluster_config;
+
+    return diff;
 }
 
 void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
 {
-    if (recover)
-    {
-        LOG_INFO(log, "Config update ignored because we are in recovery mode");
-        return;
-    }
-
     size_t sleep_ms = 500;
     if (task.action_type == ConfigUpdateActionType::AddServer)
     {
