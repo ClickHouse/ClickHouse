@@ -160,12 +160,12 @@ public:
     SchemaReaderPtr getSchemaReader(
         const String & name,
         ReadBuffer & buf,
-        ContextPtr context,
+        ContextPtr & context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     ExternalSchemaReaderPtr getExternalSchemaReader(
         const String & name,
-        ContextPtr context,
+        ContextPtr & context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);

@@ -961,45 +961,31 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx)
 {
-    std::vector<String> keys = {client_auth.uri.key};
-    auto file_iterator = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, ctx);
-
-    std::string current_key;
-    std::string exception_messages;
-    bool read_buffer_creator_was_used = false;
-    do
+    auto file_iterator = createFileIterator(client_auth, {client_auth.uri.key}, is_key_with_globs, distributed_processing, ctx);
+    std::vector<String> keys;
+    String key = (*file_iterator)();
+    while (!key.empty())
     {
-        current_key = (*file_iterator)();
-        auto read_buffer_creator = [&]()
-        {
-            read_buffer_creator_was_used = true;
-            if (current_key.empty())
-                throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file, because there are no files with provided path in S3. You must specify "
-                    "table structure manually",
-                    format);
+        keys.push_back(key);
+        key = (*file_iterator)();
+    }
 
-            return wrapReadBufferWithCompressionMethod(
-                std::make_unique<ReadBufferFromS3>(
-                    client_auth.client, client_auth.uri.bucket, current_key, max_single_read_retries, ctx->getReadSettings()),
-                chooseCompressionMethod(current_key, compression_method));
-        };
+    if (keys.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
+        throw Exception(
+            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+            "Cannot extract table structure from {} format file, because there are no files with provided path in S3. You must specify "
+            "table structure manually",
+            format);
 
-        try
-        {
-            return readSchemaFromFormat(format, format_settings, read_buffer_creator, ctx);
-        }
-        catch (...)
-        {
-            if (!is_key_with_globs || !read_buffer_creator_was_used)
-                throw;
-
-            exception_messages += getCurrentExceptionMessage(false) + "\n";
-        }
-    } while (!current_key.empty());
-
-    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from s3 files failed. Errors:\n{}", exception_messages);
+    auto read_buffer_creator = [&](std::vector<String>::iterator & it)
+    {
+        return wrapReadBufferWithCompressionMethod(
+            std::make_unique<ReadBufferFromS3>(
+                client_auth.client, client_auth.uri.bucket, *it, max_single_read_retries, ctx->getReadSettings()),
+            chooseCompressionMethod(*it, compression_method));
+    };
+    ReadBufferListIterator read_buffer_iterator(keys.begin(), keys.end(), read_buffer_creator);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, ctx);
 }
 
 

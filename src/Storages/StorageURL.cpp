@@ -551,49 +551,27 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         urls_to_check = {uri};
     }
 
-    String exception_messages;
-    bool read_buffer_creator_was_used = false;
 
-    std::vector<String>::const_iterator option = urls_to_check.begin();
-    do
+    auto read_buffer_creator = [&](std::vector<String>::const_iterator & it)
     {
-        auto read_buffer_creator = [&]()
-        {
-            read_buffer_creator_was_used = true;
-            return StorageURLSource::getFirstAvailableURLReadBuffer(
-                option,
-                urls_to_check.end(),
-                context,
-                {},
-                Poco::Net::HTTPRequest::HTTP_GET,
-                {},
-                ConnectionTimeouts::getHTTPTimeouts(context),
-                compression_method,
-                credentials,
-                headers,
-                false,
-                false,
-                context->getSettingsRef().max_download_threads);
-        };
+        return StorageURLSource::getFirstAvailableURLReadBuffer(
+            it,
+            urls_to_check.cend(),
+            context,
+            {},
+            Poco::Net::HTTPRequest::HTTP_GET,
+            {},
+            ConnectionTimeouts::getHTTPTimeouts(context),
+            compression_method,
+            credentials,
+            headers,
+            false,
+            false,
+            context->getSettingsRef().max_download_threads);
+    };
 
-        try
-        {
-            return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
-        }
-        catch (...)
-        {
-            if (urls_to_check.size() == 1 || !read_buffer_creator_was_used)
-                throw;
-
-            exception_messages += getCurrentExceptionMessage(false) + "\n";
-        }
-
-    } while (++option < urls_to_check.end());
-
-    throw Exception(
-        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-        "All attempts to extract table structure from urls failed. Errors:\n{}",
-        exception_messages);
+    ReadBufferListIterator read_buffer_iterator(urls_to_check.cbegin(), urls_to_check.cend(), read_buffer_creator);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, context);
 }
 
 bool IStorageURLBase::isColumnOriented() const
