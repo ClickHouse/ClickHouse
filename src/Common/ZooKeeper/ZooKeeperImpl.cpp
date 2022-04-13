@@ -8,6 +8,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/logger_useful.h>
+#include <base/getThreadId.h>
 
 #include <Common/config.h>
 
@@ -1016,6 +1017,11 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     try
     {
         info.time = clock::now();
+        if (zk_log)
+        {
+            info.request->thread_id = getThreadId();
+            info.request->query_id = String(CurrentThread::getQueryId());
+        }
 
         if (!info.request->xid)
         {
@@ -1269,6 +1275,11 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
         elem.event_time = event_time;
         elem.address = socket_address;
         elem.session_id = session_id;
+        if (request)
+        {
+            elem.thread_id = request->thread_id;
+            elem.query_id = request->query_id;
+        }
         maybe_zk_log->add(elem);
     }
 }
