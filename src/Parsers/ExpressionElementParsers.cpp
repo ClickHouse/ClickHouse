@@ -298,28 +298,46 @@ namespace
 {
     bool parseCastAs(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
-        /// expr AS type
+        /** Possible variants for cast operator
+          * First try to match with cast(expr AS Type);
+          * Then try to match with cast(expr [[as] alias_1], alias_expr [[as] alias_2]);
+          *
+          * We need to check if after keyword AS there is identifier followed by comma,
+          * if it is then it is not cast(expr AS Type)
+          */
 
         ASTPtr expr_node;
         ASTPtr type_node;
+        ASTPtr identifier_node;
 
-        if (ParserExpressionWithOptionalAlias(true /*allow_alias_without_as_keyword*/).parse(pos, expr_node, expected))
+        if (ParserExpression().parse(pos, expr_node, expected))
         {
-            if (ParserKeyword("AS").ignore(pos, expected))
+            bool parse_as = ParserKeyword("AS").ignore(pos, expected);
+
+            if (parse_as)
             {
-                if (ParserDataType().parse(pos, type_node, expected))
+                auto begin = pos;
+                auto expected_copy = expected;
+                bool next_identifier_with_comma
+                    = ParserIdentifier().ignore(begin, expected_copy) && ParserToken(TokenType::Comma).ignore(begin, expected_copy);
+
+                if (!next_identifier_with_comma && ParserDataType().parse(pos, type_node, expected))
                 {
                     node = createFunctionCast(expr_node, type_node);
                     return true;
                 }
             }
-            else if (ParserToken(TokenType::Comma).ignore(pos, expected))
+
+            if (ParserIdentifier().parse(pos, identifier_node, expected))
+                expr_node->setAlias(getIdentifierName(identifier_node));
+            else if (parse_as)
+                return false;
+
+            if (ParserToken(TokenType::Comma).ignore(pos, expected)
+                && ParserExpressionWithOptionalAlias(true /*allow_alias_without_as_keyword*/).parse(pos, type_node, expected))
             {
-                if (ParserExpressionWithOptionalAlias(true /*allow_alias_without_as_keyword*/).parse(pos, type_node, expected))
-                {
-                    node = makeASTFunction("CAST", expr_node, type_node);
-                    return true;
-                }
+                node = makeASTFunction("CAST", expr_node, type_node);
+                return true;
             }
         }
 

@@ -2,8 +2,9 @@
 
 SELECT cast('1234' AS lhs, 'UInt32' AS rhs), lhs, rhs;
 SELECT cast('1234' lhs, 'UInt32' rhs), lhs, rhs;
-SELECT cast('1234' lhs AS UInt32), lhs;
-SELECT cast('1234' AS lhs AS UInt32), lhs;
+SELECT cast(('1234' AS lhs) AS UInt32), lhs;
+SELECT cast('1234' AS lhs AS UInt32), lhs; --{clientError 62}
+SELECT cast('1234' lhs AS UInt32), lhs; --{clientError 62}
 
 -- SUBSTRING expression
 
