@@ -77,6 +77,29 @@ Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatist
     return Range(min_val, true, max_val, true);
 }
 
+std::optional<size_t> IHiveFile::getRows()
+{
+    if (!rows)
+        rows = getRowsImpl();
+    return rows;
+}
+
+void IHiveFile::loadFileMinMaxIndex()
+{
+    if (file_minmax_idx_loaded)
+        return;
+    loadFileMinMaxIndexImpl();
+    file_minmax_idx_loaded = true;
+}
+
+void IHiveFile::loadSplitMinMaxIndexes()
+{
+    if (split_minmax_idxes_loaded)
+        return;
+    loadSplitMinMaxIndexesImpl();
+    split_minmax_idxes_loaded = true;
+}
+
 Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
 {
     if (!col_stats || col_stats->hasNull())
@@ -183,8 +206,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
     return idx;
 }
 
-
-void HiveORCFile::loadFileMinMaxIndex()
+void HiveORCFile::loadFileMinMaxIndexImpl()
 {
     if (!reader)
     {
@@ -202,7 +224,7 @@ bool HiveORCFile::useSplitMinMaxIndex() const
 }
 
 
-void HiveORCFile::loadSplitMinMaxIndex()
+void HiveORCFile::loadSplitMinMaxIndexesImpl()
 {
     if (!reader)
     {
@@ -226,6 +248,18 @@ void HiveORCFile::loadSplitMinMaxIndex()
     }
 }
 
+std::optional<size_t> HiveORCFile::getRowsImpl()
+{
+    if (!reader)
+    {
+        prepareReader();
+        prepareColumnMapping();
+    }
+
+    auto * raw_reader = reader->GetRawORCReader();
+    return raw_reader->getNumberOfRows();
+}
+
 bool HiveParquetFile::useSplitMinMaxIndex() const
 {
     return storage_settings->enable_parquet_rowgroup_minmax_index;
@@ -239,7 +273,7 @@ void HiveParquetFile::prepareReader()
     THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped), arrow::default_memory_pool(), &reader));
 }
 
-void HiveParquetFile::loadSplitMinMaxIndex()
+void HiveParquetFile::loadSplitMinMaxIndexesImpl()
 {
     if (!reader)
         prepareReader();
@@ -310,6 +344,15 @@ void HiveParquetFile::loadSplitMinMaxIndex()
         }
         split_minmax_idxes[i]->initialized = true;
     }
+}
+
+std::optional<size_t> HiveParquetFile::getRowsImpl()
+{
+    if (!reader)
+        prepareReader();
+
+    auto meta = reader->parquet_reader()->metadata();
+    return meta->num_rows();
 }
 
 }
