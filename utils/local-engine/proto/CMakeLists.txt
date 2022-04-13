@@ -27,5 +27,5 @@ target_compile_options(substrait PUBLIC
 add_dependencies(substrait generate_substrait)
 target_include_directories(substrait PRIVATE ${PROTOBUF_INCLUDE_DIR})
 target_include_directories(substrait PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/)
-target_link_libraries(substrait libprotobuf)
+target_link_libraries(substrait _libprotobuf)
 
