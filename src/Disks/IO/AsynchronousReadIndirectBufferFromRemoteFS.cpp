@@ -101,7 +101,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::readInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
-    request.descriptor = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>(impl);
+    request.descriptor = std::make_shared<RemoteFSFileDescriptor<ReadBufferFromRemoteFSGather>>(impl);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;

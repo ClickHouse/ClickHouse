@@ -10,30 +10,29 @@
 namespace DB
 {
 
+template <class Reader>
 class ThreadPoolRemoteFSReader : public IAsynchronousReader
 {
-
-private:
-    ThreadPool pool;
-
 public:
     ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_);
 
     std::future<Result> submit(Request request) override;
 
-    struct RemoteFSFileDescriptor;
+private:
+    ThreadPool pool;
 };
 
 
-struct ThreadPoolRemoteFSReader::RemoteFSFileDescriptor : public IFileDescriptor
+template <class Reader>
+class RemoteFSFileDescriptor : public IAsynchronousReader::IFileDescriptor
 {
 public:
-    explicit RemoteFSFileDescriptor(std::shared_ptr<ReadBufferFromRemoteFSGather> reader_) : reader(reader_) {}
+    explicit RemoteFSFileDescriptor(std::shared_ptr<Reader> reader_) : reader(std::move(reader_)) { }
 
-    ReadBufferFromRemoteFSGather::ReadResult readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
+    IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
 private:
-    std::shared_ptr<ReadBufferFromRemoteFSGather> reader;
+    std::shared_ptr<Reader> reader;
 };
 
 }

@@ -27,20 +27,22 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-ReadBufferFromRemoteFSGather::ReadResult ThreadPoolRemoteFSReader::RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset, size_t ignore)
+template <class Reader>
+IAsynchronousReader::Result RemoteFSFileDescriptor<Reader>::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
     return reader->readInto(data, size, offset, ignore);
 }
 
 
-ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_)
+template <class Reader>
+ThreadPoolRemoteFSReader<Reader>::ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_)
     : pool(pool_size, pool_size, queue_size_)
 {
 }
 
 
-std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
+template <class Reader>
+std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader<Reader>::submit(Request request)
 {
     ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
             ? CurrentThread::get().getThreadGroup()
@@ -65,7 +67,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         setThreadName("VFSRead");
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
-        auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
+        auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor<Reader> *>(request.descriptor.get());
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
