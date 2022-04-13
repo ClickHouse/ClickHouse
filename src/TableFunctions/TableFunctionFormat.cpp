@@ -53,8 +53,8 @@ ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr conte
     {
         return std::make_unique<ReadBufferFromString>(data);
     };
-
-    return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, context);
+    ReadBufferSingleIterator read_buffer_iterator(read_buffer_creator);
+    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, context);
 }
 
 Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr context) const

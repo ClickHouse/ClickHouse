@@ -247,7 +247,8 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
         return read_buf;
     };
 
-    auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_creator, context, peekable_read_buffer_from_fd);
+    ReadBufferSingleIterator read_buffer_iterator(read_buffer_creator);
+    auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, context, peekable_read_buffer_from_fd);
     if (peekable_read_buffer_from_fd)
     {
         /// If we have created read buffer in readSchemaFromFormat we should rollback to checkpoint.
@@ -274,38 +275,20 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
-    std::string exception_messages;
-    bool read_buffer_creator_was_used = false;
-    for (const auto & path : paths)
+    if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
+        throw Exception(
+            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+            "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
+            "table structure manually",
+            format);
+
+    auto read_buffer_creator = [&](std::vector<String>::const_iterator & it)
     {
-        auto read_buffer_creator = [&]()
-        {
-            read_buffer_creator_was_used = true;
+        return createReadBuffer(*it, false, "File", -1, compression_method, context);
+    };
 
-            if (!std::filesystem::exists(path))
-                throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
-                    "table structure manually",
-                    format);
-
-            return createReadBuffer(path, false, "File", -1, compression_method, context);
-        };
-
-        try
-        {
-            return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
-        }
-        catch (...)
-        {
-            if (paths.size() == 1 || !read_buffer_creator_was_used)
-                throw;
-
-            exception_messages += getCurrentExceptionMessage(false) + "\n";
-        }
-    }
-
-    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:\n{}", exception_messages);
+    ReadBufferListIterator read_buffer_iterator(paths.begin(), paths.end(), read_buffer_creator);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, context);
 }
 
 bool StorageFile::isColumnOriented() const
