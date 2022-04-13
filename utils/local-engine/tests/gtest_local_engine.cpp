@@ -21,6 +21,7 @@
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/CustomMergeTreeSink.h>
+#include <Processors/Executors/PipelineExecutor.h>
 //#include <Poco/URI.h>
 
 using namespace dbms;
@@ -233,19 +234,20 @@ TEST(TestSelect, MergeTreeWriteTest)
 
     auto files_info = std::make_shared<FilesInfo>();
     files_info->files.push_back("/home/kyligence/Documents/test-dataset/intel-gazelle-test-150.snappy.parquet");
-    auto source = std::make_shared<BatchParquetFileSource>(files_info, sink->getPort().getHeader());
+    auto source = std::make_shared<BatchParquetFileSource>(files_info, sink->getHeader());
 
     QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
-    QueryPipeline query_pipeline;
+    QueryPipelineBuilder query_pipeline;
     query_pipeline.init(Pipe(source));
-    query_pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
+    query_pipeline.setSinks([&](const Block &, Pipe::StreamType type) -> ProcessorPtr
                           {
-                              if (type != QueryPipeline::StreamType::Main)
+                              if (type != Pipe::StreamType::Main)
                                   return nullptr;
 
                               return std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
                           });
-    query_pipeline.execute()->execute(1);
+    auto executor = query_pipeline.execute();
+    executor->execute(1);
 }
 
 TEST(TESTUtil, TestByteToLong) {

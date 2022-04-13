@@ -111,6 +111,7 @@ static void BM_MergeTreeRead(benchmark::State& state) {
                                                            "",
                                                            param,
                                                            std::move(settings));
+    auto snapshot = std::make_shared<StorageSnapshot>(custom_merge_tree, metadata);
     custom_merge_tree.loadDataParts(false);
     for (auto _: state)
     {
@@ -124,17 +125,17 @@ static void BM_MergeTreeRead(benchmark::State& state) {
                        [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
         auto query = custom_merge_tree.reader.readFromParts(selected_parts,
                                                             names_and_types_list.getNames(),
-                                                            metadata,
-                                                            metadata,
+                                                            snapshot,
                                                             *query_info,
                                                             global_context,
                                                             10000,
                                                             1);
         QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
-        QueryPipeline query_pipeline;
+        QueryPipelineBuilder query_pipeline;
         query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
         state.ResumeTiming();
-        auto executor = PullingPipelineExecutor(query_pipeline);
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(query_pipeline));
+        auto executor = PullingPipelineExecutor(pipeline);
         Chunk chunk;
         int sum =0;
         while(executor.pull(chunk))
@@ -181,6 +182,7 @@ static void BM_ShuffleSplitter(benchmark::State& state) {
                                                            param,
                                                            std::move(settings));
     custom_merge_tree.loadDataParts(false);
+    auto snapshot = std::make_shared<StorageSnapshot>(custom_merge_tree, metadata);
     for (auto _: state)
     {
         state.PauseTiming();
@@ -193,17 +195,17 @@ static void BM_ShuffleSplitter(benchmark::State& state) {
                      [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
         auto query = custom_merge_tree.reader.readFromParts(selected_parts,
                                                             names_and_types_list.getNames(),
-                                                            metadata,
-                                                            metadata,
+                                                            snapshot,
                                                             *query_info,
                                                             global_context,
                                                             10000,
                                                             1);
         QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
-        QueryPipeline query_pipeline;
+        QueryPipelineBuilder query_pipeline;
         query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(query_pipeline));
         state.ResumeTiming();
-        auto executor = PullingPipelineExecutor(query_pipeline);
+        auto executor = PullingPipelineExecutor(pipeline);
         Block chunk = executor.getHeader();
         int sum =0;
         auto root = "/tmp/test_shuffle/"+local_engine::ShuffleSplitter::compress_methods[state.range(1)];
@@ -264,6 +266,8 @@ static void BM_HashShuffleSplitter(benchmark::State& state) {
                                                            param,
                                                            std::move(settings));
     custom_merge_tree.loadDataParts(false);
+    auto snapshot = std::make_shared<StorageSnapshot>(custom_merge_tree, metadata);
+
     for (auto _: state)
     {
         state.PauseTiming();
@@ -276,17 +280,17 @@ static void BM_HashShuffleSplitter(benchmark::State& state) {
                      [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
         auto query = custom_merge_tree.reader.readFromParts(selected_parts,
                                                             names_and_types_list.getNames(),
-                                                            metadata,
-                                                            metadata,
+                                                            snapshot,
                                                             *query_info,
                                                             global_context,
                                                             10000,
                                                             1);
         QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
-        QueryPipeline query_pipeline;
+        QueryPipelineBuilder query_pipeline;
         query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(query_pipeline));
         state.ResumeTiming();
-        auto executor = PullingPipelineExecutor(query_pipeline);
+        auto executor = PullingPipelineExecutor(pipeline);
         Block chunk = executor.getHeader();
         int sum =0;
         auto root = "/tmp/test_shuffle/"+local_engine::ShuffleSplitter::compress_methods[state.range(1)];

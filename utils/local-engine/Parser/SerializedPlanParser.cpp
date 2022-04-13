@@ -360,6 +360,7 @@ DB::QueryPlanStepPtr local_engine::SerializedPlanParser::parseAggregate(DB::Quer
         1000000,
         1,
         1,
+        1,
         false,
         nullptr,
         DB::SortDescription());
