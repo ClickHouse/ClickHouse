@@ -382,7 +382,7 @@ void StorageHive::lazyInitialize()
     if (!partition_key_expr_list->children.empty())
     {
         auto syntax_result = TreeRewriter(getContext()).analyze(partition_key_expr_list, all_name_and_types);
-        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, getContext()).getActions(false);
+        auto partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, getContext()).getActions(false);
         partition_name_types = partition_key_expr->getRequiredColumnsWithTypes();
     }
 

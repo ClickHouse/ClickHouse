@@ -109,12 +109,6 @@ private:
 
     const ASTPtr partition_by_ast;
     NamesAndTypesList partition_name_types;
-    DataTypes partition_types;
-    ExpressionActionsPtr partition_key_expr;
-    ExpressionActionsPtr partition_minmax_idx_expr;
-
-    NamesAndTypesList hivefile_name_types;
-    ExpressionActionsPtr hivefile_minmax_idx_expr;
 
     std::shared_ptr<HiveSettings> storage_settings;
 
