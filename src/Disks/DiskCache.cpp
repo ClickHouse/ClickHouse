@@ -121,7 +121,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskCache::writeFile(
     auto impl = DiskDecorator::writeFile(path, buf_size, mode, settings);
 
     bool cache_on_write = fs::path(path).extension() != ".tmp"
-        && settings.enable_filesystem_cache_on_write_operations;
+        && settings.enable_filesystem_cache_on_write_operations
+        && FileCacheFactory::instance().getSettings(cache_base_path).cache_on_write_operations;
 
     if (cache_on_write)
         return std::make_unique<CachedWriteBuffer>(std::move(impl), cache, impl->getFileName());
