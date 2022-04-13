@@ -3523,7 +3523,6 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const google::protobuf::Descriptor & message_descriptor,
     bool with_length_delimiter,
     bool with_envelope,
-
     bool google_wrappers_special_treatment,
     ProtobufReader & reader)
 {
@@ -3536,7 +3535,6 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const google::protobuf::Descriptor & message_descriptor,
     bool with_length_delimiter,
     bool with_envelope,
-
     bool google_wrappers_special_treatment,
     ProtobufWriter & writer)
 {

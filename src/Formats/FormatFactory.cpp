@@ -105,6 +105,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
+    format_settings.protobuf.google_wrappers_special_treatment = settings.format_protobuf_google_wrappers_special_treatment;
     format_settings.regexp.escaping_rule = settings.format_regexp_escaping_rule;
     format_settings.regexp.regexp = settings.format_regexp;
     format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;

@@ -28,7 +28,13 @@ class ReadBuffer;
 class ProtobufRowInputFormat final : public IRowInputFormat
 {
 public:
-    ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_);
+    ProtobufRowInputFormat(
+        ReadBuffer & in_,
+        const Block & header_,
+        const Params & params_,
+        const FormatSchemaInfo & schema_info_,
+        bool with_length_delimiter_,
+        bool google_wrappers_special_treatment_);
 
     String getName() const override { return "ProtobufRowInputFormat"; }
 
