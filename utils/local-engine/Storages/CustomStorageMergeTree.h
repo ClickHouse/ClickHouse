@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/MutationCommands.h>
 
 using namespace DB;
@@ -29,7 +29,7 @@ public:
         bool has_force_restore_data_flag = false);
     string getName() const override;
     vector<MergeTreeMutationStatus> getMutationsStatus() const override;
-    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & executor) override;
 
     MergeTreeDataWriter writer;
     MergeTreeDataSelectExecutor reader;

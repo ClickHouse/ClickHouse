@@ -1,6 +1,6 @@
 #pragma once
 #include <IO/ReadBuffer.h>
-#include <DataStreams/NativeBlockInputStream.h>
+#include <Formats/NativeReader.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <jni.h>
 
@@ -23,7 +23,7 @@ public:
 
 private:
     std::unique_ptr<CompressedReadBuffer> compressed_in;
-    std::unique_ptr<NativeBlockInputStream> input_stream;
+    std::unique_ptr<NativeReader> input_stream;
     Block header;
 };
 

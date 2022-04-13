@@ -20,7 +20,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/MergeTreeTool.h>
 #include <Common/Logger.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Functions/FunctionFactory.h>
 #include <Shuffle/ShuffleSplitter.h>

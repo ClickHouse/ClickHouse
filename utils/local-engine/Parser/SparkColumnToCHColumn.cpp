@@ -82,7 +82,7 @@ static void writeRowToColumns(std::vector<MutableColumnPtr> & columns, SparkRowR
         }
         else
         {
-            throw std::runtime_error("doesn't support type " + std::string(getTypeName(columns[i]->getDataType())));
+            throw std::runtime_error("doesn't support type " + String(magic_enum::enum_name(columns[i]->getDataType())));
         }
     }
 }

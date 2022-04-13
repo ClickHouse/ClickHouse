@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Parser/CHColumnToSparkRow.h>
 
 namespace local_engine

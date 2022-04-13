@@ -8,6 +8,8 @@
 #include <IO/WriteHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Parser/SerializedPlanParser.h>
+#include <boost/algorithm/string/case_conv.hpp>
+
 
 namespace local_engine
 {
@@ -108,7 +110,7 @@ void ShuffleSplitter::spillPartition(size_t partition_id)
     {
         partition_write_buffers[partition_id]
             = getPartitionWriteBuffer(partition_id);
-        partition_outputs[partition_id] = std::make_unique<DB::NativeBlockOutputStream>(
+        partition_outputs[partition_id] = std::make_unique<DB::NativeWriter>(
             *partition_write_buffers[partition_id], 0, partition_buffer[partition_id].getHeader());
     }
     DB::Block result = partition_buffer[partition_id].releaseColumns();

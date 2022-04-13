@@ -15,11 +15,15 @@ add_custom_target(
         DEPENDS protobuf::protoc
         COMMENT "Running cpp protocol buffer compiler"
         VERBATIM )
+set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
 
-include_directories(${Protobuf_INCLUDE_DIRS})
+include_directories(${Protobuf_INCLUDE_DIR})
 
 set_source_files_properties(${SUBSTRAIT_SRCS} PROPERTIES GENERATED TRUE)
 add_library(substrait ${SUBSTRAIT_SRCS})
+target_compile_options(substrait PUBLIC
+        -Wno-error
+        )
 add_dependencies(substrait generate_substrait)
 target_include_directories(substrait PRIVATE ${PROTOBUF_INCLUDE_DIR})
 target_include_directories(substrait PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/)
