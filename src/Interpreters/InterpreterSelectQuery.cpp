@@ -630,6 +630,10 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     }
     executeImpl(query_plan, std::move(input_pipe));
 
+    auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_ptr);
+    caching_step->setStepDescription("Cache query result");
+    query_plan.addStep(std::move(caching_step));
+
     /// We must guarantee that result structure is the same as in getSampleBlock()
     ///
     /// But if it's a projection query, plan header does not match result_header.
@@ -1118,10 +1122,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                 if (query.limitLength())
                     executePreLimit(query_plan, true);
-
-                auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_ptr);
-                caching_step->setStepDescription("Cache query result");
-                query_plan.addStep(std::move(caching_step));
             }
         };
 
