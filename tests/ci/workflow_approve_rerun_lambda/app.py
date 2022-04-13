@@ -121,6 +121,7 @@ TRUSTED_CONTRIBUTORS = {
         "YiuRULE",
         "zlobober",  # Developer of YT
         "BoloniniD",  # Seasoned contributor, HSE
+        "tylerhannan",  # ClickHouse Employee
     ]
 }
 
