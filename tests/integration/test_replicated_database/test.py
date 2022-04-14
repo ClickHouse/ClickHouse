@@ -727,10 +727,10 @@ def test_recover_staled_replica(started_cluster):
         == f"{test_recover_staled_replica_run}\n"
     )
     assert (
-            dummy_node.query(
-                "SELECT count() FROM system.tables WHERE database='recover_broken_replicated_tables'"
-            )
-            == f"{test_recover_staled_replica_run}\n"
+        dummy_node.query(
+            "SELECT count() FROM system.tables WHERE database='recover_broken_replicated_tables'"
+        )
+        == f"{test_recover_staled_replica_run}\n"
     )
     test_recover_staled_replica_run += 1
     table = dummy_node.query(
@@ -744,7 +744,9 @@ def test_recover_staled_replica(started_cluster):
         "SHOW TABLES FROM recover_broken_replicated_tables LIKE 'rmt5_29_%' LIMIT 1"
     ).strip()
     assert (
-        dummy_node.query("SELECT (*,).1 FROM recover_broken_replicated_tables.{}".format(table))
+        dummy_node.query(
+            "SELECT (*,).1 FROM recover_broken_replicated_tables.{}".format(table)
+        )
         == "42\n"
     )
 
