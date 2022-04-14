@@ -2322,9 +2322,7 @@ namespace
                             info.field_read = false;
                         else
                         {
-                            if (google_wrappers_special_treatment
-                                && isGoogleWrapperField(parent_field_descriptor)
-                                && mutable_columns[info.column_indices[0]].get()->isNullable())
+                            if (google_wrappers_special_treatment && nullableGoogleWrapper())
                             {
                                 auto * nullable_ser = reinterpret_cast<ProtobufSerializerNullable*>(info.field_serializer.get());
                                 nullable_ser->insertNestedDefaults(row_num);
@@ -2418,6 +2416,11 @@ namespace
         bool nullGoogleWrapper(size_t row_num)
         {
             return isGoogleWrapperField(parent_field_descriptor) && mutable_columns[0].get()->isNullAt(row_num);
+        }
+
+        bool nullableGoogleWrapper()
+        {
+            return isGoogleWrapperField(parent_field_descriptor) && mutable_columns[0].get()->isNullable();
         }
 
         struct FieldInfo
@@ -3337,7 +3340,7 @@ namespace
                             tuple_data_type.getElements().data(),
                             *field_descriptor.message_type(),
                             /* with_length_delimiter = */ false,
-                            /* google_wrappers_special_treatment = */ false,
+                            google_wrappers_special_treatment,
                             &field_descriptor,
                             used_column_indices,
                             /* columns_are_reordered_outside = */ false,
