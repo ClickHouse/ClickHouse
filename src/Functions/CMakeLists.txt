@@ -21,6 +21,7 @@ target_link_libraries(clickhouse_functions
         clickhouse_parsers
         consistent-hashing
         dbms
+        farsh
         metrohash
         murmurhash
 
