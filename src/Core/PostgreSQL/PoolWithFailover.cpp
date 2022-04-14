@@ -20,22 +20,21 @@ namespace postgres
 {
 
 PoolWithFailover::PoolWithFailover(
-        const DB::ExternalDataSourcesConfigurationByPriority & configurations_by_priority,
-        size_t pool_size, size_t pool_wait_timeout_, size_t max_tries_)
+        std::vector<AuthSettings> connection_infos,
+        size_t pool_size,
+        size_t pool_wait_timeout_,
+        size_t max_tries_)
         : pool_wait_timeout(pool_wait_timeout_)
         , max_tries(max_tries_)
 {
     LOG_TRACE(&Poco::Logger::get("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
 
-    for (const auto & [priority, configurations] : configurations_by_priority)
+    for (const auto & info : connection_infos)
     {
-        for (const auto & replica_configuration : configurations)
-        {
-            auto connection_info = formatConnectionString(replica_configuration.database,
-                replica_configuration.host, replica_configuration.port, replica_configuration.username, replica_configuration.password);
-            replicas_with_priority[priority].emplace_back(connection_info, pool_size);
-        }
+        auto connection_info = formatConnectionString(info.database,
+            info.host, info.port, info.username, info.password);
+        replicas_with_priority[info.priority].emplace_back(connection_info, pool_size);
     }
 }
 

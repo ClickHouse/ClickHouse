@@ -80,20 +80,46 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<T> & settings = {});
 
 
-/// Highest priority is 0, the bigger the number in map, the less the priority.
-using ExternalDataSourcesConfigurationByPriority = std::map<size_t, std::vector<ExternalDataSourceConfiguration>>;
+bool isNamedCollection(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix);
 
-struct ExternalDataSourcesByPriority
+String getCollectionName(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix);
+
+using Configuration = std::unordered_map<String, Field>;
+using Configurations = std::vector<Configuration>;
+
+struct ConfigKeyInfo
 {
-    String database;
-    String table;
-    String schema;
-    ExternalDataSourcesConfigurationByPriority replicas_configurations;
+    WhichDataType which;
+    std::optional<Field> default_value;
 };
 
-ExternalDataSourcesByPriority
-getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key);
+struct ListedConfiguration
+{
+    Configuration root_configuration;
+    Configurations listed_configurations;
+};
 
+/**
+ * Get configuration represented as root configuration and some listed configuration.
+ * Root configuration can be common to all listed configurations, listed configuration
+ * overrides common configuration. Listed configuration is defined by enumerate_by_key prefix.
+ */
+ListedConfiguration getListedConfigurationFromNamedCollection(
+    const String & collection_name,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::unordered_map<String, ConfigKeyInfo> & keys,
+    const String & enumerate_by_key);
+
+/**
+ * Given a list of keys and config prefix, get a list of key-value pairs for each key in `keys`.
+ */
+Configuration parseConfigKeys(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    const std::unordered_map<String, ConfigKeyInfo> & keys);
+
+void validateConfigKeys(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix, const std::unordered_map<String, ConfigKeyInfo> & keys, const String & prefix);
 
 struct URLBasedDataSourceConfiguration
 {

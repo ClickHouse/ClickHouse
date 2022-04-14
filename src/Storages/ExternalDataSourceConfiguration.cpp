@@ -207,6 +207,19 @@ static void validateConfigKeys(
     }
 }
 
+void validateConfigKeys(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix, const std::unordered_map<String, ConfigKeyInfo> & keys, const String & prefix)
+{
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    dict_config.keys(config_prefix, config_keys);
+    for (const auto & config_key : config_keys)
+    {
+        std::cerr << "\n\n\nvalidating: " << config_key << "\n\n\n";
+        if (!keys.contains(config_key) && !config_key.starts_with(prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected key `{}` found by path {}", config_key, config_prefix);
+    }
+}
+
 template <typename T>
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
@@ -249,72 +262,103 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
 }
 
 
-ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key)
+bool isNamedCollection(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix)
 {
-    validateConfigKeys(dict_config, dict_config_prefix, has_config_key);
-    ExternalDataSourceConfiguration common_configuration;
+    return dict_config.has(dict_config_prefix + ".name");
+}
 
-    auto named_collection = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context, has_config_key);
-    if (named_collection)
+String getCollectionName(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix)
+{
+    if (!isNamedCollection(dict_config, dict_config_prefix))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection");
+
+    return dict_config.getString(dict_config_prefix + ".name");
+}
+
+Configuration parseConfigKeys(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    const std::unordered_map<String, ConfigKeyInfo> & keys)
+{
+    Configuration configuration;
+
+    for (const auto & [key, key_info] : keys)
     {
-        common_configuration = named_collection->configuration;
-    }
-    else
-    {
-        common_configuration.host = dict_config.getString(dict_config_prefix + ".host", "");
-        common_configuration.port = dict_config.getUInt(dict_config_prefix + ".port", 0);
-        common_configuration.username = dict_config.getString(dict_config_prefix + ".user", "");
-        common_configuration.password = dict_config.getString(dict_config_prefix + ".password", "");
-        common_configuration.database = dict_config.getString(dict_config_prefix + ".db", dict_config.getString(dict_config_prefix + ".database", ""));
-        common_configuration.table = dict_config.getString(fmt::format("{}.table", dict_config_prefix), "");
-        common_configuration.schema = dict_config.getString(fmt::format("{}.schema", dict_config_prefix), "");
-    }
+        Field value;
+        auto path = config_prefix + "." + key;
+        auto which = key_info.which;
+        auto default_value = key_info.default_value;
 
-    ExternalDataSourcesByPriority configuration
-    {
-        .database = common_configuration.database,
-        .table = common_configuration.table,
-        .schema = common_configuration.schema,
-        .replicas_configurations = {}
-    };
+        if (which.isString())
+            value = config.getString(path, default_value ? default_value->get<String>() : "");
+        else if (which.isInt())
+            value = config.getInt(path, default_value ? default_value->get<Int64>() : 0);
+        else if (which.isUInt())
+            value = config.getUInt(path, default_value ? default_value->get<UInt64>() : 0);
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type");
 
-    if (dict_config.has(dict_config_prefix + ".replica"))
-    {
-        Poco::Util::AbstractConfiguration::Keys config_keys;
-        dict_config.keys(dict_config_prefix, config_keys);
-
-        for (const auto & config_key : config_keys)
-        {
-            if (config_key.starts_with("replica"))
-            {
-                ExternalDataSourceConfiguration replica_configuration(common_configuration);
-                String replica_name = dict_config_prefix + "." + config_key;
-                validateConfigKeys(dict_config, replica_name, has_config_key);
-
-                size_t priority = dict_config.getInt(replica_name + ".priority", 0);
-                replica_configuration.host = dict_config.getString(replica_name + ".host", common_configuration.host);
-                replica_configuration.port = dict_config.getUInt(replica_name + ".port", common_configuration.port);
-                replica_configuration.username = dict_config.getString(replica_name + ".user", common_configuration.username);
-                replica_configuration.password = dict_config.getString(replica_name + ".password", common_configuration.password);
-
-                if (replica_configuration.host.empty() || replica_configuration.port == 0
-                    || replica_configuration.username.empty() || replica_configuration.password.empty())
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Named collection of connection parameters is missing some of the parameters and no other dictionary parameters are added");
-                }
-
-                configuration.replicas_configurations[priority].emplace_back(replica_configuration);
-            }
-        }
-    }
-    else
-    {
-        configuration.replicas_configurations[0].emplace_back(common_configuration);
+        configuration.emplace(key, value);
     }
 
     return configuration;
+}
+
+static Configuration getConfigurationFromNamedCollection(
+    const String & collection_name,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::unordered_map<String, ConfigKeyInfo> & keys)
+{
+    Configuration configuration;
+
+    const auto & collection_prefix = fmt::format("named_collections.{}", collection_name);
+
+    if (!config.has(collection_prefix))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
+
+    validateConfigKeys(config, collection_prefix, keys, "");
+
+    return parseConfigKeys(config, collection_prefix, keys);
+}
+
+
+ListedConfiguration getListedConfigurationFromNamedCollection(
+    const String & collection_name,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::unordered_map<String, ConfigKeyInfo> & keys,
+    const String & enumerate_by_key)
+{
+    ListedConfiguration configuration;
+
+    const auto & collection_prefix = fmt::format("named_collections.{}", collection_name);
+    validateConfigKeys(config, collection_prefix, keys, enumerate_by_key);
+
+    auto root_configuration = getConfigurationFromNamedCollection(collection_name, config, keys);
+
+    if (!config.has(collection_prefix + "." + enumerate_by_key))
+        return ListedConfiguration{ .root_configuration = root_configuration };
+
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(collection_prefix, config_keys);
+
+    Configurations configurations;
+    auto modified_keys{keys};
+    for (const auto & config_key : config_keys)
+    {
+        if (config_key.starts_with(enumerate_by_key))
+        {
+            for (const auto & [key, value] : root_configuration)
+                modified_keys.find(key)->second.default_value = value;
+
+            String current_config_prefix = collection_prefix + "." + config_key;
+            validateConfigKeys(config, current_config_prefix, keys, "");
+
+            auto current_configuration = parseConfigKeys(config, current_config_prefix, modified_keys);
+            configurations.push_back(std::move(current_configuration));
+        }
+    }
+
+    return ListedConfiguration{ .root_configuration = root_configuration, .listed_configurations = std::move(configurations) };
 }
 
 
