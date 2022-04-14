@@ -1,4 +1,4 @@
-Table (Nullable(String), Int32):
+Insert ('str1',1),('',2),('str2',3) into table (Nullable(String), Int32):
 str1    1
         2
 str2    3
@@ -7,7 +7,7 @@ Protobuf representation of the second row:
 00000000  0a 00 10 02                                       |....|
 00000004
 
-Decoded:
+Decoded with protoc:
 str {
 }
 ref: 2
@@ -17,7 +17,7 @@ Proto message with (NULL, 1), ('', 2), ('str', 3):
 00000010  10 03                                             |..|
 00000012
 
-Initial table after putting the message in:
+Insert proto message into table (Nullable(String), Int32):
 \N      1
         2
 str     3
@@ -31,7 +31,7 @@ Proto output of the table without using Google wrappers:
 00000000  02 10 01 02 10 02 07 0a  03 73 74 72 10 03        |.........str..|
 0000000e
 
-Inserting message into table (Tuple(String), Int32)
+Insert proto message into table (Tuple(String), Int32)
 with disabled format_protobuf_google_wrappers_special_treatment:
 ('')    1
 ('')    2

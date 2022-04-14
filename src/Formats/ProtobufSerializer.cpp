@@ -2280,7 +2280,7 @@ namespace
             {
                 bool is_group = (parent_field_descriptor->type() == FieldTypeId::TYPE_GROUP);
                 writer->endNestedMessage(parent_field_descriptor->number(), is_group,
-                    should_skip_if_empty || nullGoogleWrapper(row_num));
+                    should_skip_if_empty || (google_wrappers_special_treatment && nullGoogleWrapper(row_num)));
             }
             else if (has_envelope_as_parent)
             {
@@ -2418,16 +2418,6 @@ namespace
         bool nullGoogleWrapper(size_t row_num)
         {
             return isGoogleWrapperField(parent_field_descriptor) && mutable_columns[0].get()->isNullAt(row_num);
-            // if (isGoogleWrapperField(parent_field_descriptor)) {
-            //     // auto column = mutable_columns[0].get();
-            //     // if (column->isNullable()) {
-            //     //     const auto & column_nullable = assert_cast<const ColumnNullable &>(*column);
-            //     //     const auto & null_map = column_nullable.getNullMapData();
-            //     //     return null_map[row_num];
-            //     // }
-            //     return mutable_columns[0].get()->isNullAt(row_num);
-            // }
-            // return false;
         }
 
         struct FieldInfo
