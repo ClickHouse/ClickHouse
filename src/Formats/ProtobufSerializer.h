@@ -42,7 +42,6 @@ public:
         bool with_length_delimiter,
         bool with_envelope,
         bool google_wrappers_special_treatment,
-
         ProtobufReader & reader);
 
     static std::unique_ptr<ProtobufSerializer> create(
@@ -52,7 +51,6 @@ public:
         bool with_length_delimiter,
         bool with_envelope,
         bool google_wrappers_special_treatment,
-
         ProtobufWriter & writer);
 };
 
