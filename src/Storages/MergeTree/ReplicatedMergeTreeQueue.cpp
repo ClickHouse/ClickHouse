@@ -94,6 +94,12 @@ bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & 
     return !virtual_part_name.empty() && virtual_part_name != data_part->name;
 }
 
+bool ReplicatedMergeTreeQueue::hasDropRange(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info) const
+{
+    std::lock_guard lock(state_mutex);
+    return drop_ranges.hasDropRange(part_info, out_drop_range_info);
+}
+
 bool ReplicatedMergeTreeQueue::checkPartInQueueAndGetSourceParts(const String & part_name, Strings & source_parts) const
 {
     std::lock_guard lock(state_mutex);
@@ -2141,21 +2147,21 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     if (pinned_part_uuids.part_uuids.contains(part->uuid))
     {
         if (out_reason)
-            *out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
+            *out_reason = fmt::format("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
         return false;
     }
 
     if (part->name == inprogress_quorum_part)
     {
         if (out_reason)
-            *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
+            *out_reason = fmt::format("Quorum insert for part {} is currently in progress", part->name);
         return false;
     }
 
     if (prev_virtual_parts.getContainingPart(part->info).empty())
     {
         if (out_reason)
-            *out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
+            *out_reason = fmt::format("Entry for part {} hasn't been read from the replication log yet", part->name);
         return false;
     }
 
@@ -2167,7 +2173,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     if (containing_part != part->name)
     {
         if (out_reason)
-            *out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
+            *out_reason = fmt::format("Part {} has already been assigned a merge into {}", part->name, containing_part);
         return false;
     }
 
@@ -2262,8 +2268,7 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
 
 bool ReplicatedMergeTreeMergePredicate::hasDropRange(const MergeTreePartInfo & new_drop_range_info) const
 {
-    std::lock_guard lock(queue.state_mutex);
-    return queue.drop_ranges.hasDropRange(new_drop_range_info);
+    return queue.hasDropRange(new_drop_range_info);
 }
 
 
