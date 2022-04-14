@@ -1428,3 +1428,18 @@ def test_parallel_reading_with_memory_limit(started_cluster):
     # Check that server didn't crash
     result = instance.query("select 1")
     assert int(result) == 1
+
+
+def test_wrong_format_usage(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native') select * from numbers(10)"
+    )
+
+    result = instance.query_and_get_error(
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native', 'Parquet') settings input_format_allow_seeks=0, max_memory_usage=1000"
+    )
+
+    assert "Not a Parquet file" in result
