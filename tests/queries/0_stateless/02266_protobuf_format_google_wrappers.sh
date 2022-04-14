@@ -17,6 +17,7 @@ MESSAGE_FILE_PATH=$(mktemp "$CURDIR/${PROTOBUF_FILE_NAME}_message.XXXXXX.binary"
 MAIN_TABLE="google_wrappers_02266"
 ROUNDTRIP_TABLE="roundtrip_google_wrappers_02266"
 COMPATIBILITY_TABLE="compatibility_google_wrappers_02266"
+MULTI_TABLE="multi_google_wrappers_02266"
 
 # takes ClickHouse format and protobuf class as arguments
 format_settings() {
@@ -29,6 +30,7 @@ $CLICKHOUSE_CLIENT -n --query "
   DROP TABLE IF EXISTS $MAIN_TABLE;
   DROP TABLE IF EXISTS $ROUNDTRIP_TABLE;
   DROP TABLE IF EXISTS $COMPATIBILITY_TABLE;
+  DROP TABLE IF EXISTS $MULTI_TABLE;
 
   CREATE TABLE $MAIN_TABLE
   (
@@ -42,6 +44,13 @@ $CLICKHOUSE_CLIENT -n --query "
   (
     str Tuple(value String),
     ref Int32
+  ) ENGINE = MergeTree ORDER BY tuple();
+
+  CREATE TABLE $MULTI_TABLE
+  (
+    x0 Nullable(Int32),
+    x1 Nullable(Int32),
+    x2 Int32
   ) ENGINE = MergeTree ORDER BY tuple();
 "
 
@@ -93,6 +102,15 @@ $CLICKHOUSE_CLIENT -n --query "
 " < "$MESSAGE_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM $COMPATIBILITY_TABLE"
 
+MULTI_WRAPPER_VALUES="(0,1,2)"
+echo
+echo "Insert $MULTI_WRAPPER_VALUES and reinsert using Google wrappers into:"
+echo "Table (Nullable(Int32), Nullable(Int32), Int32):"
+$CLICKHOUSE_CLIENT --query "INSERT INTO $MULTI_TABLE VALUES $MULTI_WRAPPER_VALUES"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM $MULTI_TABLE $(format_settings Protobuf MessageMultiWrapper)" > "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "INSERT INTO $MULTI_TABLE $(format_settings Protobuf MessageMultiWrapper)" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM $MULTI_TABLE"
+
 rm "$BINARY_FILE_PATH"
 rm "$MESSAGE_FILE_PATH"
 
@@ -100,4 +118,5 @@ $CLICKHOUSE_CLIENT -n --query "
   DROP TABLE $MAIN_TABLE;
   DROP TABLE $ROUNDTRIP_TABLE;
   DROP TABLE $COMPATIBILITY_TABLE;
+  DROP TABLE $MULTI_TABLE;
 "
