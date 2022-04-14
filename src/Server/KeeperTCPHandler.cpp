@@ -365,15 +365,7 @@ void KeeperTCPHandler::runImpl()
     }
     else
     {
-        String reason;
-        if (!keeper_dispatcher->checkInit() && !keeper_dispatcher->hasLeader() && !keeper_dispatcher->inRecover())
-            reason = "server is not initialized yet and no alive leader exists";
-        else if (!keeper_dispatcher->checkInit())
-            reason = "server is not initialized yet";
-        else
-            reason = "no alive leader exists";
-
-        LOG_WARNING(log, "Ignoring user request, because {}", reason);
+        LOG_WARNING(log, "Ignoring user request, because the server is not acitve yet");
         sendHandshake(false);
         return;
     }

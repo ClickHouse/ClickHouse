@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Coordination/InMemoryLogStore.h>
-#include <Coordination/KeeperStateManager.h>
-#include <Coordination/KeeperStateMachine.h>
-#include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
-#include <Poco/Util/AbstractConfiguration.h>
+#include <Coordination/InMemoryLogStore.h>
+#include <Coordination/KeeperStateMachine.h>
+#include <Coordination/KeeperStateManager.h>
+#include <Coordination/KeeperStorage.h>
 #include <libnuraft/raft_server.hxx>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -66,10 +66,7 @@ public:
     /// responses queue
     void putLocalReadRequest(const KeeperStorage::RequestForSession & request);
 
-    bool isRecovering() const
-    {
-        return is_recovering;
-    }
+    bool isRecovering() const { return is_recovering; }
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
     /// responses_queue.
@@ -78,10 +75,7 @@ public:
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
 
-    nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const
-    {
-        return state_machine;
-    }
+    nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
 
     void forceRecovery();
 
@@ -103,10 +97,7 @@ public:
     void waitInit();
 
     /// Return true if KeeperServer initialized
-    bool checkInit() const
-    {
-        return initialized_flag;
-    }
+    bool checkInit() const { return initialized_flag; }
 
     void shutdown();
 
