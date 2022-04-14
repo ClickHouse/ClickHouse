@@ -160,7 +160,11 @@ def get_workflow_description_fallback(event_data) -> List[WorkflowDescription]:
     workflows_data = []
     i = 1
     for i in range(1, 6):
-        workflows = _exec_get_with_retry(f"{request_url}&page={i}")
+        try:
+            workflows = _exec_get_with_retry(f"{request_url}&page={i}")
+        except Exception as e:
+            print(f"Exception occured, still continue: {e}")
+            continue
         if not workflows["workflow_runs"]:
             break
         # Prefilter workflows
