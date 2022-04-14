@@ -34,6 +34,9 @@ then
     cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
     # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
     ninja $NINJA_FLAGS clickhouse-keeper
+    ls -la ./programs/
+    ldd ./programs/clickhouse-keeper
+    mv ./programs/clickhouse-keeper ./programs/clickhouse-keeper-musl
 fi
 
 rm -f CMakeCache.txt
@@ -56,6 +59,13 @@ ccache --zero-stats ||:
 # No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
 $SCAN_WRAPPER ninja $NINJA_FLAGS clickhouse-bundle
+
+ls -la ./programs
+
+if [ -f "./programs/clickhouse-keeper-musl" ]; then
+    rm ./programs/clickhouse-keeper
+    mv ./programs/clickhouse-keeper-musl ./programs/clickhouse-keeper
+fi
 
 cache_status
 
