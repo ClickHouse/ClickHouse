@@ -25,7 +25,7 @@ Overview of compression:
     |______________________|
 */
 
-/* 
+/*
 Metadata contains:
     1) number of files to support multiple file compression
     2) start_of_files_data to know start of files metadata
@@ -147,7 +147,7 @@ int compress(int in_fd, int out_fd, int level, off_t& pointer, const struct stat
     }
 
     /// Shrink file size and unmap
-    if (0 != ftruncate(out_fd, pointer) || 0 != munmap(input, info_in.st_size) || 
+    if (0 != ftruncate(out_fd, pointer) || 0 != munmap(input, info_in.st_size) ||
         0 != munmap(output, pointer + info_in.st_size / 3))
     {
         perror(nullptr);
@@ -157,7 +157,7 @@ int compress(int in_fd, int out_fd, int level, off_t& pointer, const struct stat
 }
 
 /// Save Metadata at the end of file
-int saveMetaData(char* filenames[], int count, int output_fd, const MetaData& metadata, 
+int saveMetaData(char* filenames[], int count, int output_fd, const MetaData& metadata,
                  FileData* files_data, size_t pointer, size_t sum_file_size)
 {
     /// Allocate memory for metadata
@@ -168,7 +168,7 @@ int saveMetaData(char* filenames[], int count, int output_fd, const MetaData& me
     }
 
     char * output = static_cast<char*>(
-        mmap(nullptr, 
+        mmap(nullptr,
             pointer + count * sizeof(FileData) + sum_file_size + sizeof(MetaData),
             PROT_READ | PROT_WRITE, MAP_SHARED,
             output_fd,
@@ -241,7 +241,8 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
             return 1;
         }
 
-        if (info_in.st_size == 0) {
+        if (info_in.st_size == 0)
+        {
             std::cout << "Empty input file will be skipped." << std::endl;
             continue;
         }
@@ -252,14 +253,14 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
         /// start of it's compression version
         files_data[i].uncompressed_size = info_in.st_size;
         files_data[i].start = pointer;
-  
+
         /// Compressed data will be added to the end of file
         /// It will allow to create self extracting executable from file
         if (0 != compress(input_fd, output_fd, level, pointer, info_in))
         {
             perror(nullptr);
             delete [] files_data;
-            return 1; 
+            return 1;
         }
 
         /// This error is less important, than others.
@@ -291,14 +292,14 @@ int main(int argc, char* argv[])
         std::cout << "Not enough arguments.\ncompressor [OPTIONAL --level of compression] [file name for compressed file] [files that should be compressed]" << std::endl;
         return 0;
     }
-    
+
     int start_of_files = 1;
 
     /// Set compression level 
     int level = 5;
     if (0 == memcmp(argv[1], "--level=", 8))
     {
-        level = strtol(argv[argc - 1], nullptr, 10);
+        level = strtol(argv[1] + 8, nullptr, 10);
         ++start_of_files;
     }
 
@@ -317,10 +318,11 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    std::cout << "Compression with level " << level << std::endl;
     if (0 != compressFiles(&argv[start_of_files], argc - start_of_files, output_fd, level, info_out))
     {
         std::cout << "Compression was not successful." << std::endl;
-    
+
         /// Cancel changes. Reset the file to its original state 
         if (0 != ftruncate(output_fd, info_out.st_size))
         {
