@@ -20,22 +20,23 @@ DETACH TABLE rmt;
 ATTACH TABLE rmt;
 SHOW CREATE TABLE rmt;
 
-CREATE TABLE rmt2 ON CLUSTER test_shard_localhost (n int, PRIMARY KEY n) ENGINE=ReplicatedMergeTree;
-CREATE TABLE rmt3 AS rmt2; -- { serverError 62 }
-CREATE TABLE rmt4 ON CLUSTER test_shard_localhost AS rmt2;
-SHOW CREATE TABLE rmt2;
-RENAME TABLE rmt4 to rmt3;
-SHOW CREATE TABLE rmt3;
+DROP DATABASE IF EXISTS test_01148_atomic;
+CREATE DATABASE test_01148_atomic ENGINE=Atomic;
+CREATE TABLE test_01148_atomic.rmt2 ON CLUSTER test_shard_localhost (n int, PRIMARY KEY n) ENGINE=ReplicatedMergeTree;
+CREATE TABLE test_01148_atomic.rmt3 AS test_01148_atomic.rmt2; -- { serverError 62 }
+CREATE TABLE test_01148_atomic.rmt4 ON CLUSTER test_shard_localhost AS test_01148_atomic.rmt2;
+SHOW CREATE TABLE test_01148_atomic.rmt2;
+RENAME TABLE test_01148_atomic.rmt4 to test_01148_atomic.rmt3;
+SHOW CREATE TABLE test_01148_atomic.rmt3;
 
 DROP DATABASE IF EXISTS test_01148_ordinary;
 CREATE DATABASE test_01148_ordinary ENGINE=Ordinary;
-RENAME TABLE rmt3 to test_01148_ordinary.rmt3; -- { serverError 48 }
+RENAME TABLE test_01148_atomic.rmt3 to test_01148_ordinary.rmt3; -- { serverError 48 }
 DROP DATABASE test_01148_ordinary;
+DROP DATABASE test_01148_atomic;
 
 DROP TABLE rmt;
 DROP TABLE rmt1;
-DROP TABLE rmt2;
-DROP TABLE rmt3;
 
 DROP DATABASE IF EXISTS imdb_01148;
 CREATE DATABASE imdb_01148 ENGINE = Replicated('/test/databases/imdb_01148', '{shard}', '{replica}');
