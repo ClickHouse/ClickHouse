@@ -269,9 +269,6 @@
     <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
     -->
 
-    <!-- Maximum number of concurrent queries. -->
-    <max_concurrent_queries>100</max_concurrent_queries>
-
     <!-- Maximum memory usage (resident set size) for server process.
          Zero value or unset means default. Default is "max_server_memory_usage_to_ram_ratio" of available physical RAM.
          If the value is larger than "max_server_memory_usage_to_ram_ratio" of available physical RAM, it will be cut down.
@@ -1145,11 +1142,12 @@
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
-    <!--
     <merge_tree>
-        <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+        <!--max_suspicious_broken_parts>5</max_suspicious_broken_parts-->
+
+        <!-- Maximum number of concurrent queries. -->
+        <max_concurrent_queries>100</max_concurrent_queries>
     </merge_tree>
-    -->
 
     <!-- Protection from accidental DROP.
          If size of a MergeTree table is greater than max_table_size_to_drop (in bytes) than table could not be dropped with any DROP query.
