@@ -7,6 +7,12 @@
 #include <numeric>
 
 #include <boost/algorithm/string.hpp>
+#pragma clang diagnostic push 
+#pragma clang diagnostic ignored  "-Wframe-larger-than="
+#include <logging.h>
+#include <init.h>
+#pragma clang diagnostic pop
+
 
 
 namespace DB
@@ -101,6 +107,9 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("hypothesis", hypothesisIndexCreator);
     registerValidator("hypothesis", hypothesisIndexValidator);
+
+    
+    similarity::  initLibrary(0, LIB_LOGSTDERR, nullptr);
 
     registerCreator("simple_hnsw", simpleHnswIndexCreator);
     registerValidator("simple_hnsw", simpleHnswIndexValidator);

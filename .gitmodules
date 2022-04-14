@@ -265,3 +265,6 @@
 [submodule "contrib/--name"]
 	path = contrib/--name
 	url = git@github.com:Piachonkin-Alex/nmslib.git
+[submodule "contrib/nmslib"]
+	path = contrib/nmslib
+	url = git@github.com:Piachonkin-Alex/nmslib.git

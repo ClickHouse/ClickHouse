@@ -17,6 +17,164 @@
 #include <Poco/Logger.h>
 #include "Storages/MergeTree/KeyCondition.h"
 
+namespace HnswWrapper{
+
+    using namespace similarity;
+    using  namespace DB;
+
+    template<typename Dist>
+    IndexWrap<Dist>::IndexWrap(const std::string &space_type_,const AnyParams &space_params) :
+            space_type(space_type_),
+            space(SpaceFactoryRegistry<Dist>::Instance().CreateSpace(space_type_, space_params)) {
+    }
+
+    template<typename Dist>
+    void IndexWrap<Dist>::createIndex(const AnyParams& params) {
+        index = std::make_unique<Hnsw<Dist>>(false, *space, data);
+        index->CreateIndex(params);
+    }
+
+
+    template<typename Dist>
+    void IndexWrap<Dist>::loadIndex(ReadBuffer & istr, bool load_data) {
+       if (load_data) {
+            std::vector<std::string> dummy;
+            freeAndClearObjectVector();
+            size_t qty;
+            size_t obj_size;
+            istr.read(reinterpret_cast<char*>(&qty), sizeof(qty));
+            for (size_t i = 0; i < qty; ++i) {
+                istr.read(reinterpret_cast<char*>(&obj_size), sizeof(size_t));
+                unique_ptr<char[]> buf(new char[obj_size]);
+                istr.read(&buf[0], obj_size);
+                data.push_back(new Object(buf.release(), true));
+            }
+        }
+        index = std::make_unique<Hnsw<Dist>>(false, *space, data);
+
+        LOG(LIB_INFO) << "Loading optimized index.";
+        istr.read(reinterpret_cast<char*>(&index->totalElementsStored_), sizeof(index->totalElementsStored_));
+        istr.read(reinterpret_cast<char*>(&index->memoryPerObject_), sizeof(index->memoryPerObject_));
+        istr.read(reinterpret_cast<char*>(&index->offsetLevel0_), sizeof(index->offsetLevel0_));
+        istr.read(reinterpret_cast<char*>(&index->offsetData_), sizeof(index->offsetData_));
+        istr.read(reinterpret_cast<char*>(&index->maxlevel_), sizeof(index->maxlevel_));
+        istr.read(reinterpret_cast<char*>(&index->enterpointId_), sizeof(index->enterpointId_));
+        istr.read(reinterpret_cast<char*>(&index->maxM_), sizeof(index->maxM_));
+        istr.read(reinterpret_cast<char*>(&index->maxM0_), sizeof(index->maxM0_));
+        istr.read(reinterpret_cast<char*>(&index->dist_func_type_), sizeof(index->dist_func_type_));
+        istr.read(reinterpret_cast<char*>(&index->searchMethod_), sizeof(index->searchMethod_));
+
+
+        LOG(LIB_INFO) << "searchMethod: " << index->searchMethod_;
+
+        index->fstdistfunc_ = getDistFunc(index->dist_func_type_);
+        index->iscosine_ = (index->dist_func_type_ == kNormCosine);
+        size_t data_plus_links0_size = index->memoryPerObject_ * index->totalElementsStored_;
+        index->data_level0_memory_ = static_cast<char*>(malloc(data_plus_links0_size + 64));
+        istr.read(index->data_level0_memory_, data_plus_links0_size);
+        index->linkLists_ = static_cast<char**>(malloc((sizeof(void *) * index->totalElementsStored_) + 64));
+        index->data_rearranged_.resize(index->totalElementsStored_);
+
+        for (size_t i = 0; i <index->totalElementsStored_; i++) {
+            size_t link_list_size;
+             istr.read(reinterpret_cast<char*>(&link_list_size), sizeof(link_list_size));
+
+            if (link_list_size == 0) {
+                index->linkLists_[i] = nullptr;
+            } else {
+                index->linkLists_[i] =  static_cast<char*>(malloc(link_list_size));
+                istr.read(index->linkLists_[i], link_list_size);
+            }
+            index->data_rearranged_[i] = new Object(index->data_level0_memory_ +
+            (i) * index->memoryPerObject_ + index->offsetData_);
+        }
+        index->visitedlistpool = new VisitedListPool(1, index->totalElementsStored_);
+        index->ResetQueryTimeParams();
+    }
+
+
+
+    template<typename Dist>
+    void IndexWrap<Dist>::saveIndex(WriteBuffer & ostr, bool save_data) {
+        if (save_data) {
+            size_t size = data.size();
+            ostr.write(reinterpret_cast<char*>(&size),sizeof(size_t));
+            for (auto &obj: data) {
+                size_t obj_size = obj->bufferlength();
+                ostr.write(reinterpret_cast<char*>(&obj_size),sizeof(size_t));
+                ostr.write(obj->buffer(), obj_size);
+            }
+        }
+
+        index->totalElementsStored_ =  index->ElList_.size();
+        ostr.write(reinterpret_cast<char*>(&index->totalElementsStored_),sizeof(index->totalElementsStored_));
+        ostr.write(reinterpret_cast<char*>(&index->memoryPerObject_), sizeof(index->memoryPerObject_));
+        ostr.write(reinterpret_cast<char*>(&index->offsetLevel0_), sizeof(index->offsetLevel0_));
+        ostr.write(reinterpret_cast<char*>(&index->offsetData_), sizeof(index->offsetData_));
+        ostr.write(reinterpret_cast<char*>(&index->maxlevel_), sizeof(index->maxlevel_));
+        ostr.write(reinterpret_cast<char*>(&index->enterpointId_), sizeof(index->enterpointId_));
+        ostr.write(reinterpret_cast<char*>(&index->maxM_), sizeof(index->maxM_));
+        ostr.write(reinterpret_cast<char*>(&index->maxM0_), sizeof(index->maxM0_));
+        ostr.write(reinterpret_cast<char*>(&index->dist_func_type_), sizeof(index->dist_func_type_));
+        ostr.write(reinterpret_cast<char*>(&index->searchMethod_), sizeof(index->searchMethod_));
+
+        size_t data_plus_links0_size = index->memoryPerObject_ * index->totalElementsStored_;
+
+        ostr.write(index->data_level0_memory_, data_plus_links0_size);
+        for (size_t i = 0; i < index->totalElementsStored_;++i){
+            size_t sizemass = ((index->ElList_[i]->level) * (index->maxM_ + 1)) * sizeof(int);
+             ostr.write(reinterpret_cast<char*>(&sizemass), sizeof(sizemass));
+             if(sizemass){
+                  ostr.write(index->linkLists_[i], sizemass);
+             }
+        }
+    }
+
+    template<typename Dist>
+    KNNQueue<Dist> * IndexWrap<Dist>::knnQuery(const Object &obj, size_t k) {
+        KNNQuery<Dist> knn(*space, &obj, k);
+        index->Search(&knn, -1);
+        return knn.Result()->Clone();
+    }
+
+    template<typename Dist>
+    void IndexWrap<Dist>::addPoint(const Object &point) {
+        data.push_back(new Object(data.size(), -1, point.datalength(), point.data()));
+    }
+
+
+    template<typename Dist>
+    void IndexWrap<Dist>::addPointUnsafe(const Object* obj){
+        data.push_back(obj);
+    }
+
+
+    template<typename Dist>
+    void IndexWrap<Dist>::addBatch(const ObjectVector &new_data) {
+        for (const auto &elem: new_data) {
+            addPoint(*elem);
+        }
+    }
+
+    template<typename Dist>
+    void IndexWrap<Dist>::addBatchUnsafe(ObjectVector &&new_data){
+        data = std::move(new_data);
+    }
+
+    template<typename Dist>
+    void IndexWrap<Dist>::freeAndClearObjectVector() {
+        for (auto & i : data){
+            delete i;
+        }
+        data.clear();
+    }
+
+    template<typename Dist>
+    IndexWrap<Dist>::~IndexWrap(){
+        freeAndClearObjectVector();
+    }
+}
+
 namespace DB
 {
 
@@ -25,89 +183,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace detail{
 
-    using namespace similarity;
-
-    void freeAndClearObjectVector(ObjectVector &data) {
-    for (auto& datum: data) {
-        delete datum;
-    }
-    data.clear();
-}
-
-template<typename Dist>
-struct IndexWrap {
-    IndexWrap(const std::string &method_,
-              const std::string &space_type_,
-              const AnyParams &space_params = AnyParams()) :
-            method(method_), space_type(space_type_), space(SpaceFactoryRegistry<Dist>::Instance().CreateSpace(
-            space_type_, space_params)) {
-    }
-
-    void createIndex(const AnyParams &index_params, bool print_progress = false) {
-        index.reset(MethodFactoryRegistry<Dist>::Instance().CreateMethod(print_progress,
-                                                                           method, space_type, *space, data));
-        index->CreateIndex(index_params);
-    }
-
-    void loadIndex(std::istream &input, bool load_data = true) {
-        index.reset(MethodFactoryRegistry<Dist>::Instance().CreateMethod(false,
-                                                                           method, space_type, *space, data));
-        if (load_data) {
-            std::vector<std::string> dummy;
-            freeAndClearObjectVector(data);
-            size_t qty;
-            size_t obj_size;
-            readBinaryPOD(input, qty);
-            for (size_t i = 0; i < qty; ++i) {
-                readBinaryPOD(input, obj_size);
-                unique_ptr<char[]> buf(new char[obj_size]);
-                input.read(&buf[0], obj_size);
-                data.push_back(new Object(buf.release(), true));
-            }
-        }
-        index->LoadIndex(input);
-        index->ResetQueryTimeParams();
-    }
-
-    void saveIndex(std::ostream &output, bool save_data = true) {
-        if (save_data) {
-            writeBinaryPOD(output, data.size());
-            for (auto &i: data) {
-                writeBinaryPOD(output, i->bufferlength());
-                output.write(i->buffer(), i->bufferlength());
-            }
-        }
-        index->SaveIndex(output);
-    }
-
-    KNNQueue<Dist> knnQuery(const Object &obj, size_t k) {
-        KNNQuery<Dist> knn(*space, &obj, k);
-        index->Search(knn, -1);
-        return knn.Result()->Clone();
-    }
-
-    void addPoint(const Object &point) {
-        data.push_back(new Object(data.size(), -1, point.datalength(), point.data()));
-    }
-
-    void addBatch(const std::vector<Object> &new_data) {
-        for (const auto &elem: new_data) {
-            addPoint(elem);
-        }
-    }
-
-
-private:
-    std::string method;
-    std::string space_type;
-    std::unique_ptr<similarity::Space<Dist>> space;
-    std::unique_ptr<Index<Dist>> index;
-    ObjectVector data;
-
-};
-}
 
 MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, 
     const Block & index_sample_block_)
@@ -116,37 +192,23 @@ MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & 
 {}
 
 
-MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_,
-    const Block & index_sample_block_, std::unique_ptr<similarity::Space<float>> space_, similarity::ObjectVector && data_, 
-    std::unique_ptr<similarity::Hnsw<float>> index_impl_)
+MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_,
+     std::unique_ptr<HnswWrapper::IndexWrap<float>> index_impl_)
     : index_name(index_name_),
-     index_sample_block(index_sample_block_), space(std::move(space_)),
-     data(std::move(data_)), index_impl(std::move(index_impl_))
+    index_sample_block(index_sample_block_), index_impl(std::move(index_impl_))
 {}
 
 
 void MergeTreeIndexGranuleSimpleHnsw::serializeBinary(WriteBuffer & ostr) const {
-     std::ostringstream ost;
-     index_impl->SaveIndex(ost);
-     ostr.write(ost.str().data(), ost.str().size());
+     index_impl->saveIndex(ostr, true);
 }
 
-void MergeTreeIndexGranuleSimpleHnsw::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version){
-    if (version != 1){
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+void MergeTreeIndexGranuleSimpleHnsw::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/){
+    if(!index_impl){
+        index_impl = std::make_unique<HnswWrapper::IndexWrap<float>>("l2");
     }
-    size_t index_size = istr.available();
-    std::string str(index_size, '\0');
-    istr.read(str.data(), index_size);
-    std::istringstream ist(str);
-    index_impl->LoadIndex(ist);
+    index_impl->loadIndex(istr, true); // true for loading data
 }
-
-MergeTreeIndexGranuleSimpleHnsw::~MergeTreeIndexGranuleSimpleHnsw() {
-    for (auto & obj : data){
-        delete obj;
-    }
- }
 
 MergeTreeIndexAggregatorSimpleHnsw::MergeTreeIndexAggregatorSimpleHnsw(const String & index_name_, 
 const Block & index_sample_block_)
@@ -156,12 +218,11 @@ const Block & index_sample_block_)
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSimpleHnsw::getGranuleAndReset()
 {
-    auto space = std::unique_ptr<similarity::Space<float>>(new similarity::SpaceLp<float>(2));
-    similarity::AnyParams params;
-    auto index_impl = std::make_unique<similarity::Hnsw<float>>(false, *space, data);
-    index_impl->CreateIndex(params);
-    return std::make_shared<MergeTreeIndexGranuleSimpleHnsw>(index_name, index_sample_block, std::move(space),
-    std::move(data) ,std::move(index_impl));
+    auto impl = std::make_unique<HnswWrapper::IndexWrap<float>>("l2");
+    impl->addBatchUnsafe(std::move(data));
+    impl->createIndex();
+    LOG_DEBUG(&Poco::Logger::get("Hnsw"), "Create here");
+    return std::make_shared<MergeTreeIndexGranuleSimpleHnsw>(index_name, index_sample_block,std::move(impl));
 }
 
 void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * pos, size_t limit){
@@ -170,9 +231,10 @@ void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * po
                 "The provided position is not less than the number of block rows. Position: "
                 + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
+    LOG_DEBUG(&Poco::Logger::get("Hnsw"), "Update here");
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
-   auto index_column_name = index_sample_block.getByPosition(0).name;
+    auto index_column_name = index_sample_block.getByPosition(0).name;
     const auto & column = block.getByName(index_column_name).column->cut(*pos, rows_read);
 
     for (size_t i = 0; i < rows_read; ++i) {
@@ -181,7 +243,7 @@ void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * po
 
         auto field_array = field.safeGet<Tuple>();
 
-        auto *obj = new similarity::Object(-1, i, field_array.size() * sizeof(float), nullptr); 
+        auto *obj = new similarity::Object(data.size(), -1, field_array.size() * sizeof(float), nullptr); 
 
         float *raw_vector = reinterpret_cast<float*>(obj->data());
 
@@ -213,21 +275,19 @@ bool MergeTreeIndexConditionSimpleHnsw::alwaysUnknownOrTrue() const
 
 bool MergeTreeIndexConditionSimpleHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Here we are");
+    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Checking granule begin");
     auto center_obj = std::make_unique<similarity::Object>(-1, -1, 3 * sizeof(float), nullptr);
     auto *raw_center_obj = reinterpret_cast<float*>(center_obj->data());
-    raw_center_obj[0] = 0;
-    raw_center_obj[1] = 0;
-    raw_center_obj[2] = 0;
-    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Create query");
+    raw_center_obj[0] = 0.2;
+    raw_center_obj[1] = 0.2;
+    raw_center_obj[2] = 0.2;
     std::shared_ptr<MergeTreeIndexGranuleSimpleHnsw> granule
          = std::dynamic_pointer_cast<MergeTreeIndexGranuleSimpleHnsw>(idx_granule);
     if (!granule)
          throw Exception(
              "SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
-    auto query = similarity::KNNQuery<float>(*granule->space, center_obj.get(), 1);
-    granule->index_impl->Search(&query, -1);
-    return query.Radius() < 10;
+    auto result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(*center_obj, 1));
+    return result->TopDistance() < 10;
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexSimpleHnsw::createIndexGranule() const
