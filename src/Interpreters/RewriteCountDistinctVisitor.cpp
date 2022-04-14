@@ -19,14 +19,10 @@ namespace DB
 void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
 {
     auto * selectq = ast->as<ASTSelectQuery>();
-    if (!selectq)
+    if (!selectq || !selectq->tables() || selectq->tables()->children.size() != 1)
         return;
     auto expr_list = selectq->select();
-    if (!expr_list)
-    {
-        return;
-    }
-    if (expr_list->children.size() != 1)
+    if (!expr_list || expr_list->children.size() != 1)
         return;
     auto * func = expr_list->children[0]->as<ASTFunction>();
     if (!func || (Poco::toLower(func->name) != "countdistinct" && Poco::toLower(func->name) != "uniqexact"))
@@ -36,18 +32,17 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
         return;
     if (!arg[0]->as<ASTIdentifier>())
         return;
+    auto * table_expr = selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children[0]->as<ASTTableExpression>();
+    if (!table_expr || !table_expr->database_and_table_name)
+        return;
+
     auto column_name = arg[0]->as<ASTIdentifier>()->name();
     func->name = "count";
     func->children.clear();
     func->children.emplace_back(std::make_shared<ASTExpressionList>());
     func->arguments = func->children[0];
     func->parameters = nullptr;
-    if (!selectq->tables() || selectq->tables()->children.size() != 1)
-        return;
 
-    auto * table_expr = selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children[0]->as<ASTTableExpression>();
-    if (!table_expr || !table_expr->database_and_table_name)
-        return;
     auto table_name = table_expr->database_and_table_name->as<ASTTableIdentifier>()->name();
     table_expr->children.clear();
     table_expr->children.emplace_back(std::make_shared<ASTSubquery>());
