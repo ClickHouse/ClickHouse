@@ -553,6 +553,7 @@ set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
 
 find_contrib_lib(farmhash)
+find_contrib_lib(farsh)
 
 if (ENABLE_TESTS)
     include (cmake/find/gtest.cmake)
