@@ -954,6 +954,9 @@ void ClientBase::onProfileEvents(Block & block)
         auto elapsed_time = profile_events.watch.elapsedMicroseconds();
         progress_indication.updateThreadEventData(thread_times, elapsed_time);
 
+        if (need_render_progress)
+            progress_indication.writeProgress();
+
         if (profile_events.print)
         {
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
