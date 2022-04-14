@@ -6,6 +6,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <libnuraft/raft_server.hxx>
 
 namespace DB
 {
@@ -15,33 +16,6 @@ using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buff
 class KeeperServer
 {
 private:
-
-    struct KeeperRaftServer : public nuraft::raft_server
-    {
-        bool isClusterHealthy()
-        {
-            if (timer_from_init)
-            {
-                size_t expiry = get_current_params().heart_beat_interval_ *
-                                 raft_server::raft_limits_.response_limit_;
-
-                if (timer_from_init->elapsedMilliseconds() < expiry)
-                    return false;
-            }
-
-            const size_t voting_members = get_num_voting_members();
-            const auto not_responding_peers = get_not_responding_peers();
-            const auto quorum_size = voting_members / 2 + 1;
-            const auto max_not_responding_peers = voting_members - quorum_size;
-
-            return not_responding_peers <= max_not_responding_peers;
-        }
-
-        using nuraft::raft_server::raft_server;
-
-        std::optional<Stopwatch> timer_from_init = std::make_optional<Stopwatch>();
-    };
-
     const int server_id;
 
     CoordinationSettingsPtr coordination_settings;
@@ -50,6 +24,7 @@ private:
 
     nuraft::ptr<KeeperStateManager> state_manager;
 
+    struct KeeperRaftServer;
     nuraft::ptr<KeeperRaftServer> raft_instance;
     nuraft::ptr<nuraft::asio_service> asio_service;
     nuraft::ptr<nuraft::rpc_listener> asio_listener;
@@ -59,7 +34,7 @@ private:
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
 
-    nuraft::ptr<nuraft::cluster_config> last_read_config;
+    nuraft::ptr<nuraft::cluster_config> last_local_config;
 
     Poco::Logger * log;
 
@@ -67,19 +42,15 @@ private:
     /// Used to determine the moment when raft is ready to server new requests
     nuraft::cb_func::ReturnCode callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param);
 
-    void startupRaftServer(bool enable_ipv6);
     /// Almost copy-paste from nuraft::launcher, but with separated server init and start
     /// Allows to avoid race conditions.
-    void launchRaftServer(
-        bool enable_ipv6,
-        const nuraft::raft_params & params,
-        const nuraft::asio_service::options & asio_opts);
+    void launchRaftServer(bool enable_ipv6);
 
     void shutdownRaftServer();
 
     void loadLatestConfig();
 
-    std::atomic_bool recover = false;
+    std::atomic_bool is_recovering = false;
 
 public:
     KeeperServer(
@@ -95,9 +66,9 @@ public:
     /// responses queue
     void putLocalReadRequest(const KeeperStorage::RequestForSession & request);
 
-    bool inRecover() const
+    bool isRecovering() const
     {
-        return recover;
+        return is_recovering;
     }
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
