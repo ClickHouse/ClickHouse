@@ -16,8 +16,10 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
-#include <openssl/crypto.h>
-#include <openssl/rand.h>
+#if USE_SSL
+#     include <openssl/crypto.h>
+#     include <openssl/rand.h>
+#endif
 
 namespace DB
 {
