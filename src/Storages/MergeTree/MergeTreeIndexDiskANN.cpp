@@ -11,6 +11,11 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
+#include "KeyCondition.h"
+#include "Parsers/ASTIdentifier.h"
+#include "Parsers/ASTSelectQuery.h"
+#include "Parsers/IAST_fwd.h"
+
 #include <Parsers/ASTFunction.h>
 #include <Poco/Logger.h>
 
@@ -272,13 +277,243 @@ void MergeTreeIndexAggregatorDiskANN::update(const Block & block, size_t * pos, 
     *pos += rows_read;
 }
 
+MergeTreeIndexConditionDiskANN::MergeTreeIndexConditionDiskANN(
+    const IndexDescription & index,
+    const SelectQueryInfo & query,
+    ContextPtr context)
+    : index_data_types(index.data_types)
+{
+    // Build Reverse Polish notation from the query
+    RPN rpn = buildRPN(query, context); 
+
+    // Match RPN with the pattern of the query for this type of index
+    // and extract expression data for the future usage of the index
+    matchRPN(rpn);
+}
+
+bool MergeTreeIndexConditionDiskANN::alwaysUnknownOrTrue() const
+{
+    // In matchRPN() function we populate expession field in case of the success
+    return !expression.has_value();
+}
+
 bool MergeTreeIndexConditionDiskANN::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    std::shared_ptr<MergeTreeIndexGranuleDiskANN> granule
-        = std::dynamic_pointer_cast<MergeTreeIndexGranuleDiskANN>(idx_granule);
-    if (!granule)
-        throw Exception(
-            "DiskANN index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+    // TODO: Change assert to the exception
+    assert(expression.has_value());
+
+    std::vector<float> target_vec = expression.value().target;
+    float min_distance = expression.value().distance;
+
+    // Number of target vectors
+    size_t n = 1;
+
+    // Number of NN to search
+    size_t k = n;
+
+    // Will be populated by diskann
+    std::vector<float> distances(n);
+    std::vector<uint64_t> indecies(n); 
+    std::vector<unsigned> init_ids{};
+
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleDiskANN>(idx_granule);
+    auto disk_ann_index = std::dynamic_pointer_cast<DiskANNIndex>(granule->base_index);
+
+    // TODO: change depending on dim;
+    target_vec.resize(8);
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Searching for vector of dim {}", target_vec.size());
+
+    disk_ann_index->search(target_vec.data(), k, n, init_ids, indecies.data(), distances.data());
+
+    float distance = *std::min_element(distances.begin(), distances.end());
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Maybe true on granule distances: {} <? {}", distance, min_distance);
+
+    return distance < min_distance * 10000; // untrustworthy :((
+}
+
+MergeTreeIndexConditionDiskANN::RPN MergeTreeIndexConditionDiskANN::buildRPN(const SelectQueryInfo & query, ContextPtr context)
+{
+    RPN rpn;
+
+    // Get block_with_constants for the future usage from query
+    block_with_constants = KeyCondition::getBlockWithConstants(query.query, query.syntax_analyzer_result, context);
+
+    const auto & select = query.query->as<ASTSelectQuery &>();
+
+    // Sometimes our ANN expression in where can be placed in prewhere section
+    // In this case we populate RPN from both source, but it can be dangerous in case
+    // of some additional expressions in our query
+    // We can either check prewhere or where, either match independently where and
+    // prewhere
+    // TODO: Need to think
+    if (select.where()) 
+    {
+        traverseAST(select.where(), rpn);
+    }
+    if (select.prewhere())
+    {
+        traverseAST(select.prewhere(), rpn);
+    }
+
+    // Return prefix rpn, so reverse the result
+    std::reverse(rpn.begin(), rpn.end());
+    return rpn;
+}
+
+void MergeTreeIndexConditionDiskANN::traverseAST(const ASTPtr & node, RPN & rpn) 
+{
+    RPNElement element;
+
+    // We need to go deeper only if we have ASTFunction in this node
+    if (const auto * func = node->as<ASTFunction>()) 
+    {
+        const ASTs & args = func->arguments->children;
+
+        // Traverse children
+        for (const auto & arg : args) 
+        {
+            traverseAST(arg, rpn);
+        }
+    } 
+
+    // Extract information about current node and populate it in the element
+    if (!traverseAtomAST(node, element)) {
+        // If we cannot identify our node type
+        element.function = RPNElement::FUNCTION_UNKNOWN;
+    }
+
+    rpn.emplace_back(std::move(element)); 
+}
+
+bool MergeTreeIndexConditionDiskANN::traverseAtomAST(const ASTPtr & node, RPNElement & out) {
+    // Firstly check if we have contants behind the node
+    {
+        Field const_value;
+        DataTypePtr const_type;
+
+
+        if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
+        {
+            /// Check constant type (use Float64 because all Fields implementation contains Float64 (for Float32 too))
+            if (const_value.getType() == Field::Types::Float64)
+            {
+                out.function = RPNElement::FUNCTION_FLOAT_LITERAL;
+                out.literal.emplace(const_value.get<Float32>());
+
+                return true;
+            }
+        }
+    }
+
+    // Match function naming with a type
+    if (const auto * function = node->as<ASTFunction>())
+    {
+        // TODO: Add support for other metrics 
+        if (function->name == "L2Distance") 
+        {
+            out.function = RPNElement::FUNCTION_DISTANCE;
+        } 
+        else if (function->name == "tuple") 
+        {
+            out.function = RPNElement::FUNCTION_TUPLE;
+        } 
+        else if (function->name == "less") 
+        {
+            out.function = RPNElement::FUNCTION_LESS;
+        } 
+        else 
+        {
+            return false;
+        }
+
+        return true;
+    }
+    // Match identifier 
+    else if (const auto * identifier = node->as<ASTIdentifier>()) 
+    {
+        out.function = RPNElement::FUNCTION_IDENTIFIER;
+        out.identifier.emplace(identifier->name());
+
+        return true;
+    } 
+
+    return false;
+}
+
+bool MergeTreeIndexConditionDiskANN::matchRPN(const RPN & rpn) 
+{
+    // Can we place it outside the function? 
+    // Use for match the rpn
+    // Take care of matching tuples (because it can contains arbitary number of fields)
+    RPN prefix_template_rpn{
+        RPNElement{RPNElement::FUNCTION_LESS}, 
+        RPNElement{RPNElement::FUNCTION_FLOAT_LITERAL}, 
+        RPNElement{RPNElement::FUNCTION_DISTANCE}, 
+        RPNElement{RPNElement::FUNCTION_TUPLE}, 
+        RPNElement{RPNElement::FUNCTION_IDENTIFIER}, 
+    };
+
+    // Placeholders for the extracted data
+    Target target_vec;
+    float distance = 0;
+
+    size_t rpn_idx = 0;
+    size_t template_idx = 0;
+
+    // TODO: Should we check what we have the same size of RPNs?
+    // If we wand to support complex expressions, we will not check it
+    while (rpn_idx < rpn.size() && template_idx < prefix_template_rpn.size()) 
+    {
+        const auto & element = rpn[rpn_idx];
+        const auto & template_element = prefix_template_rpn[template_idx];
+
+        if (element.function != template_element.function) 
+        {
+            return false;
+        }
+
+        if (element.function == RPNElement::FUNCTION_FLOAT_LITERAL) 
+        {
+            assert(element.literal.has_value());
+            auto value = element.literal.value();
+
+            distance = value; 
+        }
+
+        if (element.function == RPNElement::FUNCTION_TUPLE) 
+        {
+            // TODO: Better tuple extraction
+            // Extract target vec
+            ++rpn_idx;
+            while (rpn_idx < rpn.size()) {
+                if (rpn[rpn_idx].function == RPNElement::FUNCTION_FLOAT_LITERAL) 
+                {
+                    // Extract tuple element
+                    assert(rpn[rpn_idx].literal.has_value());
+                    auto value = rpn[rpn_idx].literal.value();
+                    target_vec.push_back(value);
+                    ++rpn_idx;
+                } else {
+                    ++template_idx;
+                    break;
+                } 
+            }
+            continue;
+        }
+
+        if (element.function == RPNElement::FUNCTION_IDENTIFIER) 
+        {
+            // TODO: Check that we have the same columns
+        }
+
+        ++rpn_idx;
+        ++template_idx;
+    }
+
+    expression.emplace(ANNExpression{
+        .target = std::move(target_vec),
+        .distance = distance,
+    });
 
     return true;
 }
@@ -296,9 +531,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexDiskANN::createIndexAggregator() const
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexDiskANN::createIndexCondition(
-    const SelectQueryInfo & /*query*/, ContextPtr /*context*/) const
+    const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionDiskANN>();
+    return std::make_shared<MergeTreeIndexConditionDiskANN>(index, query, context);
 };
 
 MergeTreeIndexFormat MergeTreeIndexDiskANN::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
