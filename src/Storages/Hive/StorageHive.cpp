@@ -478,8 +478,10 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
         throw Exception(
             fmt::format("Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size()),
             ErrorCodes::INVALID_PARTITION_VALUE);
-    auto analysis_result = query_info.hive_select_result_ptr;
-    analysis_result->partitions_before_prune.fetch_add(1, std::memory_order_relaxed);
+
+    const auto & analysis_result = query_info.hive_select_result_ptr;
+    if (analysis_result)
+        analysis_result->partitions_before_prune.fetch_add(1, std::memory_order_relaxed);
 
     /// Join partition values in CSV format
     WriteBufferFromOwnString wb;
@@ -515,7 +517,9 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
         const KeyCondition partition_key_condition(query_info, getContext(), partition_names, partition_minmax_idx_expr);
         if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
             return {};
-        analysis_result->partitions_after_prune.fetch_add(1, std::memory_order_relaxed);
+
+        if (analysis_result)
+            analysis_result->partitions_after_prune.fetch_add(1, std::memory_order_relaxed);
     }
 
     HiveFiles hive_files;
@@ -523,6 +527,9 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     hive_files.reserve(file_infos.size());
     for (const auto & file_info : file_infos)
     {
+        if (analysis_result)
+            analysis_result->files_before_prune.fetch_add(1, std::memory_order_relaxed);
+
         auto hive_file = getHiveFileIfNeeded(file_info, fields, query_info, hive_table_metadata, context_, prune_level);
         if (hive_file)
         {
@@ -533,8 +540,11 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
                 boost::join(partition.values, ","),
                 pruneLevelToString(prune_level));
             hive_files.push_back(hive_file);
-            analysis_result->files_before_prune.fetch_add(1, std::memory_order_relaxed);
+
+            if (analysis_result)
+                analysis_result->files_after_prune.fetch_add(1, std::memory_order_relaxed);
         }
+
     }
     return hive_files;
 }
@@ -697,6 +707,9 @@ Pipe StorageHive::read(
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
 
+    if (!query_info.hive_select_result_ptr)
+        query_info.hive_select_result_ptr = std::make_shared<HiveSelectAnalysisResult>();
+
     /// Collect Hive files to read
     HiveFiles hive_files = collectHiveFiles(num_streams, query_info, hive_table_metadata, fs, context_);
     if (hive_files.empty())
@@ -827,6 +840,7 @@ StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & qu
     /// Row-based format like Text doesn't support totalRowsByPartitionPredicate
     if (!isColumnOriented())
         return {};
+
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
