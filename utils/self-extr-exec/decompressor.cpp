@@ -7,10 +7,11 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <stdlib.h>
 
-/* 
+/*
 Metadata contains:
     1) number of files to support multiple file compression
     2) start_of_files_data to know start of files metadata
@@ -41,19 +42,20 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
     size_t decompressed_size = ZSTD_decompressDCtx(dctx, output + out_offset, output_size, input + in_offset, input_size);
     if (ZSTD_isError(decompressed_size))
     {
+        printf("%s\n", ZSTD_getErrorName(decompressed_size));
         return 1;
     }
-    in_offset += input_size;
-    out_offset += decompressed_size;
     return 0;
 }
 
 /// decompress data from in_fd into out_fd
-int decompress(char * input, char * output, off_t start, off_t end)
+int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
 {
     off_t in_pointer = start, out_pointer = 0;
     off_t size = 0;
     off_t max_block_size = 1ull<<27;
+    off_t decompressed_size = 0;
+    size_t number_of_forks = 0;
 
     /// Create context
     ZSTD_DCtx * dctx = ZSTD_createDCtx();
@@ -62,23 +64,89 @@ int decompress(char * input, char * output, off_t start, off_t end)
         printf("Failed to create context for compression");
         return 1;
     }
+    pid_t pid;
+    bool error_happened = false;
 
     /// Compress data
-    while (in_pointer < end)
+    while (in_pointer < end  && !error_happened)
     {
         size = ZSTD_findFrameCompressedSize(input + in_pointer, max_block_size);
+        if (ZSTD_isError(size))
+        {
+            printf("%s\n", ZSTD_getErrorName(size));
+            break;
+        }
 
-        /// Compress data or exit if error happens
-        if (0 != doDecompress(input, output, in_pointer, out_pointer, size, max_block_size, dctx))
-            return 1;
+        decompressed_size = ZSTD_getFrameContentSize(input + in_pointer, max_block_size);
+        if (ZSTD_isError(decompressed_size))
+        {
+            printf("%s\n", ZSTD_getErrorName(decompressed_size));
+            break;
+        }
+
+        pid = fork();
+        if (-1 == pid)
+        {
+            perror(nullptr);
+            /// Decompress data in main process. Exit if error happens
+            if (0 != doDecompress(input, output, in_pointer, out_pointer, size, max_block_size, dctx))
+                break;
+        }
+        else if (pid == 0)
+        {
+            /// Decompress data. Exit if error happens
+            if (0 != doDecompress(input, output, in_pointer, out_pointer, size, max_block_size, dctx))
+                exit(1);
+            exit(0);
+        }
+        else
+        {
+            ++number_of_forks;
+            while (number_of_forks >= max_number_of_forks)
+            {
+                /// Wait any fork
+                int status;
+                waitpid(0, &status, 0);
+
+                /// If error happened, stop processing
+                if (WEXITSTATUS(status) != 0)
+                {
+                    error_happened = true;
+                    break;
+                }
+
+                --number_of_forks;
+            }
+            in_pointer += size;
+            out_pointer += decompressed_size;
+        }
     }
+
+    /// wait for all working decompressions
+    while (number_of_forks > 0)
+    {
+        /// Wait any fork
+        int status;
+        waitpid(0, &status, 0);
+
+        if (WEXITSTATUS(status) != 0)
+        {
+            error_happened = true;
+        }
+
+        --number_of_forks;
+    }
+
+    /// If error happen end of processed part will not reach end
+    if (in_pointer < end || error_happened)
+        return 1;
 
     return 0;
 }
 
 
 /// Read data about files and decomrpess them.
-int decompressFiles(int input_fd, char* argv[])
+int decompressFiles(int input_fd, char* argv[], bool & have_compressed_analoge)
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
@@ -124,7 +192,7 @@ int decompressFiles(int input_fd, char* argv[])
     }
     if (fs_info.f_blocks * info_in.st_blksize < decompressed_full_size)
     {
-        printf("Not enough space for decompression. Have %lu, need %zu.", 
+        printf("Not enough space for decompression. Have %lu, need %zu.",
                 fs_info.f_blocks * info_in.st_blksize, decompressed_full_size);
         return 1;
     }
@@ -136,7 +204,9 @@ int decompressFiles(int input_fd, char* argv[])
         /// Read information about file
         file_info = *reinterpret_cast<FileData*>(input + files_pointer);
         files_pointer += sizeof(FileData);
-        char file_name[file_info.name_length];
+        char file_name[file_info.name_length + 1];
+        /// Filename should be ended with \0
+        memset(file_name, '\0', file_info.name_length + 1);
         memcpy(file_name, input + files_pointer, file_info.name_length);
         files_pointer += file_info.name_length;
 
@@ -150,6 +220,7 @@ int decompressFiles(int input_fd, char* argv[])
             memcpy(new_file_name, file_name, file_info.name_length);
             memcpy(new_file_name + file_info.name_length, ".decompressed", 13);
             output_fd = open(new_file_name, O_RDWR | O_CREAT, 0775);
+            have_compressed_analoge = true;
         }
         else
         {
@@ -173,10 +244,10 @@ int decompressFiles(int input_fd, char* argv[])
         }
 
         char * output = static_cast<char*>(
-            mmap(nullptr, 
-                file_info.uncompressed_size, 
-                PROT_READ | PROT_WRITE, MAP_SHARED, 
-                output_fd, 
+            mmap(nullptr,
+                file_info.uncompressed_size,
+                PROT_READ | PROT_WRITE, MAP_SHARED,
+                output_fd,
                 0)
             );
         if (output == MAP_FAILED)
@@ -197,25 +268,56 @@ int decompressFiles(int input_fd, char* argv[])
             return 1;
         }
 
-        /// TODO: return 1?
         if (0 != fsync(output_fd))
             perror(nullptr);
         if (0 != close(output_fd))
             perror(nullptr);
     }
-    
+
     if (0 != munmap(input, info_in.st_size))
         perror(nullptr);
     return 0;
 }
 
+/// Copy particular part of command and update shift
 void fill(char * dest, char * source, size_t length, size_t& shift)
 {
     memcpy(dest + shift, source, length);
     shift += length;
 }
 
-int main(int /*argc*/, char* argv[])
+/// Set command to `mv filename.decompressed filename && filename agrs...`
+void fillCommand(char command[], int argc, char * argv[], size_t length)
+{
+    memset(command, '\0', 3 + strlen(argv[0]) + 14 + strlen(argv[0]) + 4 + strlen(argv[0]) + length + argc);
+
+    /// position in command
+    size_t shift = 0;
+
+    /// Support variables to create command
+    char mv[] = "mv ";
+    char decompressed[] = ".decompressed ";
+    char add_command[] = " && ";
+    char space[] = " ";
+
+    fill(command, mv, 3, shift);
+    fill(command, argv[0], strlen(argv[0]), shift);
+    fill(command, decompressed, 14, shift);
+    fill(command, argv[0], strlen(argv[0]), shift);
+    fill(command, add_command, 4, shift);
+    fill(command, argv[0], strlen(argv[0]), shift);
+    fill(command, space, 1, shift);
+
+    /// forward all arguments
+    for (int i = 1; i < argc; ++i)
+    {
+        fill(command, argv[i], strlen(argv[i]), shift);
+        if (i != argc - 1)
+            fill(command, space, 1, shift);
+    }
+}
+
+int main(int argc, char* argv[])
 {
     int input_fd = open(argv[0], O_RDONLY);
     if (input_fd == -1)
@@ -224,8 +326,10 @@ int main(int /*argc*/, char* argv[])
         return 0;
     }
 
+    bool have_compressed_analoge = false;
+
     /// Decompress all files
-    if (0 != decompressFiles(input_fd, argv))
+    if (0 != decompressFiles(input_fd, argv, have_compressed_analoge))
     {
         printf("Error happend");
         if (0 != close(input_fd))
@@ -242,45 +346,37 @@ int main(int /*argc*/, char* argv[])
     /// `rename.ul` is set instead. It will lead to errors 
     /// that can be easily avoided with help of `mv` 
 
-    // /// TODO: decompressor name can differ from executable
-    // char bash[] = "/usr/bin/bash";
-    // size_t length = 0;
-    // for (int i = 1; i < argc; ++i)
-    //     length += strlen(argv[i]);
-    // /// mv filename.decompressed filename && filename agrs...
-    // char command[8 + 3 + strlen(argv[0]) + 14 + strlen(argv[0]) + 4 + strlen(argv[0]) + length + argc - 1];
-    // memset(command, '\0', 8 + 3 + strlen(argv[0]) + 14 + strlen(argv[0]) + 4 + strlen(argv[0]) + length + argc - 1);
-    
-    // /// fill command
-    // size_t shift = 0;
-    // char executable[] = "bash -c ";
-    // char mv[] = "mv ";
-    // char decompressed[] = ".decompressed ";
-    // char add_command[] = " && ";
-    // char space[] = " ";
-    // fill(command, executable, 8, shift);
-    // fill(command, mv, 3, shift);
-    // fill(command, argv[0], strlen(argv[0]), shift);
-    // fill(command, decompressed, 14, shift);
-    // fill(command, argv[0], strlen(argv[0]), shift);
-    // fill(command, add_command, 4, shift);
-    // fill(command, argv[0], strlen(argv[0]), shift);
-    // fill(command, space, 1, shift);
-    // for (int i = 1; i < argc; ++i)
-    // {
-    //     fill(command, argv[i], strlen(argv[i]), shift);
-    //     if (i != argc - 1)
-    //         fill(command, space, 1, shift);
-    // }
-    // printf("%s", command);
-    // fflush(stdout);
+    if (!have_compressed_analoge)
+    {
+        printf("Can't apply arguments to this binary");
+        /// remove file
+        char * name = strrchr(argv[0], '/') + 1;
+        execlp("rm", "rm", name, NULL);
+        perror(nullptr);
+        return 1;
+    }
+    else
+    {
+        /// move decompressed file instead of this binary and apply command
+        char bash[] = "/usr/bin/bash";
+        char executable[] = "-c";
 
-    // char *newargv[] = { bash, command, nullptr };
-    // char *newenviron[] = { nullptr };
-    // execve("/usr/bin/bash", newargv, newenviron);
+        /// length of forwarded args
+        size_t length = 0;
+        for (int i = 1; i < argc; ++i)
+            length += strlen(argv[i]);
 
-    /// This part of code will be reached only if error happened
-    execl("/usr/bin/bash", "bash", "-c", "mv ./clickhouse.decompressed ./clickhouse", NULL);
-    perror(nullptr);
-    return 1;
+        /// mv filename.decompressed filename && filename agrs...
+        char command[3 + strlen(argv[0]) + 14 + strlen(argv[0]) + 4 + strlen(argv[0]) + length + argc];
+        fillCommand(command, argc, argv, length);
+
+        /// replace file and call executable
+        char * newargv[] = { bash, executable, command, nullptr };
+        char * newenviron[] = { nullptr };
+        execve("/usr/bin/bash", newargv, newenviron);
+
+        /// This part of code will be reached only if error happened
+        perror(nullptr);
+        return 1;
+    }
 }
