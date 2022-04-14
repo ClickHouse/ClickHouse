@@ -394,7 +394,7 @@ def rerun_workflow(workflow_description, token):
 def main(event):
     token = get_token_from_aws()
     event_data = json.loads(event["body"])
-    print("The body received:", event_data)
+    print("The body received:", event["body"])
     workflow_description = get_workflow_description_from_event(event_data)
 
     print("Got workflow description", workflow_description)
