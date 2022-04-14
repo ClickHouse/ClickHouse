@@ -108,7 +108,7 @@ def _exec_get_with_retry(url):
 
 
 WorkflowDescription = namedtuple(
-    "WorkflowDescription", ["run_id", "status", "rerun_url", "cancel_url"]
+    "WorkflowDescription", ["run_id", "status", "rerun_url", "cancel_url", "conclusion"]
 )
 
 
@@ -163,6 +163,7 @@ def get_workflows_description_for_pull_request(
                     status=workflow["status"],
                     rerun_url=workflow["rerun_url"],
                     cancel_url=workflow["cancel_url"],
+                    conclusion=workflow["conclusion"],
                 )
             )
 
@@ -225,6 +226,7 @@ def get_workflow_description_fallback(event_data) -> List[WorkflowDescription]:
             status=wf["status"],
             rerun_url=wf["rerun_url"],
             cancel_url=wf["cancel_url"],
+            conclusion=wf["conclusion"],
         )
         for wf in workflows_data
     ]
@@ -232,13 +234,14 @@ def get_workflow_description_fallback(event_data) -> List[WorkflowDescription]:
     return workflow_descriptions
 
 
-def get_workflow_description(workflow_id):
+def get_workflow_description(workflow_id) -> WorkflowDescription:
     workflow = _exec_get_with_retry(API_URL + f"/actions/runs/{workflow_id}")
     return WorkflowDescription(
         run_id=workflow["id"],
         status=workflow["status"],
         rerun_url=workflow["rerun_url"],
         cancel_url=workflow["cancel_url"],
+        conclusion=workflow["conclusion"],
     )
 
 
@@ -282,7 +285,10 @@ def main(event):
         )
         urls_to_cancel = []
         for workflow_description in workflow_descriptions:
-            if workflow_description.status != "completed":
+            if (
+                workflow_description.status != "completed"
+                and workflow_description.conclusion != "cancelled"
+            ):
                 urls_to_cancel.append(workflow_description.cancel_url)
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
@@ -294,7 +300,10 @@ def main(event):
         )
         urls_to_cancel = []
         for workflow_description in workflow_descriptions:
-            if workflow_description.status != "completed":
+            if (
+                workflow_description.status != "completed"
+                and workflow_description.conclusion != "cancelled"
+            ):
                 urls_to_cancel.append(workflow_description.cancel_url)
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
@@ -311,7 +320,10 @@ def main(event):
         sorted_workflows = list(sorted(workflow_descriptions, key=lambda x: x.run_id))
         most_recent_workflow = sorted_workflows[-1]
         print("Latest workflow", most_recent_workflow)
-        if most_recent_workflow.status != "completed":
+        if (
+            most_recent_workflow.status != "completed"
+            and most_recent_workflow.conclusion != "cancelled"
+        ):
             print("Latest workflow is not completed, cancelling")
             exec_workflow_url([most_recent_workflow.cancel_url], token)
             print("Cancelled")
