@@ -244,7 +244,7 @@ void Keeper::handleCustomArguments(const std::string & arg, const std::string & 
     if (arg == "force-recovery")
     {
         assert(value.empty());
-        config().setBool("keeper_server.recover", true);
+        config().setBool("keeper_server.force_recovery", true);
         return;
     }
 
@@ -264,7 +264,7 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
             .repeatable(false)
             .binding("version"));
     options.addOption(
-        Poco::Util::Option("force-recovery", "force-recovery", "Force recovery mode allowing Keeper to overwrite cluster configuration")
+        Poco::Util::Option("force-recovery", "force-recovery", "Force recovery mode allowing Keeper to overwrite cluster configuration without quorum")
         .required(false)
         .repeatable(false)
         .noArgument()

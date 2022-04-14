@@ -1,23 +1,23 @@
-#include <Coordination/KeeperServer.h>
 #include <Coordination/Defines.h>
+#include <Coordination/KeeperServer.h>
 
 #include "config_core.h"
 
-#include <Coordination/LoggerWrapper.h>
+#include <chrono>
+#include <filesystem>
+#include <string>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
-#include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <Coordination/LoggerWrapper.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
+#include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <chrono>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <string>
-#include <filesystem>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Util/Application.h>
 #include <boost/algorithm/string.hpp>
 #include <libnuraft/raft_server.hxx>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/Application.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
 
 namespace DB
 {
@@ -63,7 +63,6 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
 }
 #endif
 
-
 std::string checkAndGetSuperdigest(const String & user_and_digest)
 {
     if (user_and_digest.empty())
@@ -72,7 +71,8 @@ std::string checkAndGetSuperdigest(const String & user_and_digest)
     std::vector<std::string> scheme_and_id;
     boost::split(scheme_and_id, user_and_digest, [](char c) { return c == ':'; });
     if (scheme_and_id.size() != 2 || scheme_and_id[0] != "super")
-        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Incorrect superdigest in keeper_server config. Must be 'super:base64string'");
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER, "Incorrect superdigest in keeper_server config. Must be 'super:base64string'");
 
     return user_and_digest;
 }
@@ -81,7 +81,12 @@ int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name
 {
     if (value > std::numeric_limits<int32_t>::max())
     {
-        LOG_WARNING(log, "Got {} value for setting '{}' which is bigger than int32_t max value, lowering value to {}.", value, name, std::numeric_limits<int32_t>::max());
+        LOG_WARNING(
+            log,
+            "Got {} value for setting '{}' which is bigger than int32_t max value, lowering value to {}.",
+            value,
+            name,
+            std::numeric_limits<int32_t>::max());
         return std::numeric_limits<int32_t>::max();
     }
 
@@ -98,13 +103,15 @@ KeeperServer::KeeperServer(
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , state_machine(nuraft::cs_new<KeeperStateMachine>(
-                        responses_queue_, snapshots_queue_,
-                        configuration_and_settings_->snapshot_storage_path,
-                        coordination_settings,
-                        checkAndGetSuperdigest(configuration_and_settings_->super_digest)))
-    , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
+          responses_queue_,
+          snapshots_queue_,
+          configuration_and_settings_->snapshot_storage_path,
+          coordination_settings,
+          checkAndGetSuperdigest(configuration_and_settings_->super_digest)))
+    , state_manager(nuraft::cs_new<KeeperStateManager>(
+          server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
-    , is_recovering(config.has("keeper_server.recover") && config.getBool("keeper_server.recover"))
+    , is_recovering(config.has("keeper_server.force_recovery") && config.getBool("keeper_server.force_recovery"))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
@@ -116,8 +123,7 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     {
         if (timer_from_init)
         {
-            size_t expiry = get_current_params().heart_beat_interval_ *
-                             raft_server::raft_limits_.response_limit_;
+            size_t expiry = get_current_params().heart_beat_interval_ * raft_server::raft_limits_.response_limit_;
 
             if (timer_from_init->elapsedMilliseconds() < expiry)
                 return false;
@@ -186,18 +192,25 @@ void KeeperServer::forceRecovery()
 void KeeperServer::launchRaftServer(bool enable_ipv6)
 {
     nuraft::raft_params params;
-    params.heart_beat_interval_ = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
-    params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
-    params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
+    params.heart_beat_interval_
+        = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
+    params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
+    params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
     params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
     params.stale_log_gap_ = getValueOrMaxInt32AndLogWarning(coordination_settings->stale_log_gap, "stale_log_gap", log);
     params.fresh_log_gap_ = getValueOrMaxInt32AndLogWarning(coordination_settings->fresh_log_gap, "fresh_log_gap", log);
-    params.client_req_timeout_ = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds(), "operation_timeout_ms", log);
+    params.client_req_timeout_
+        = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds(), "operation_timeout_ms", log);
     params.auto_forwarding_ = coordination_settings->auto_forwarding;
-    params.auto_forwarding_req_timeout_ = std::max<uint64_t>(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, std::numeric_limits<int32_t>::max());
-    params.auto_forwarding_req_timeout_ = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, "operation_timeout_ms", log);
-    params.max_append_size_ = getValueOrMaxInt32AndLogWarning(coordination_settings->max_requests_batch_size, "max_requests_batch_size", log);
+    params.auto_forwarding_req_timeout_
+        = std::max<uint64_t>(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, std::numeric_limits<int32_t>::max());
+    params.auto_forwarding_req_timeout_
+        = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, "operation_timeout_ms", log);
+    params.max_append_size_
+        = getValueOrMaxInt32AndLogWarning(coordination_settings->max_requests_batch_size, "max_requests_batch_size", log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
@@ -207,15 +220,17 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
 #if USE_SSL
         setSSLParams(asio_opts);
 #else
-        throw Exception{"SSL support for NuRaft is disabled because ClickHouse was built without SSL support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
+        throw Exception{
+            "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
     }
 
     if (is_recovering)
     {
-        LOG_WARNING(log, "This instance is in recovery mode. Until the quorum is restored, no requests should be sent to any "
-                "of the cluster instances. This instance will start accepting requests only when the recovery is finished.");
+        LOG_WARNING(
+            log,
+            "This instance is in recovery mode. Until the quorum is restored, no requests should be sent to any "
+            "of the cluster instances. This instance will start accepting requests only when the recovery is finished.");
         params.with_custom_commit_quorum_size(1);
         params.with_custom_election_quorum_size(1);
 
@@ -231,10 +246,7 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
 
     init_options.skip_initial_election_timeout_ = state_manager->shouldStartAsFollower();
     init_options.start_server_in_constructor_ = false;
-    init_options.raft_callback_ = [this] (nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
-    {
-        return callbackFunc(type, param);
-    };
+    init_options.raft_callback_ = [this](nuraft::cb_func::Type type, nuraft::cb_func::Param * param) { return callbackFunc(type, param); };
 
     nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", DB::LogsLevel::information);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);
@@ -250,9 +262,8 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
     nuraft::ptr<nuraft::state_machine> casted_state_machine = state_machine;
 
     /// raft_server creates unique_ptr from it
-    nuraft::context * ctx = new nuraft::context(
-        casted_state_manager, casted_state_machine,
-        asio_listener, logger, rpc_cli_factory, scheduler, params);
+    nuraft::context * ctx
+        = new nuraft::context(casted_state_manager, casted_state_machine, asio_listener, logger, rpc_cli_factory, scheduler, params);
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
 
@@ -345,7 +356,6 @@ void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & 
 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
-
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     for (const auto & [session_id, time, request] : requests_for_sessions)
         entries.push_back(getZooKeeperLogEntry(session_id, time, request));
@@ -421,7 +431,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     if (next_index < last_commited || next_index - last_commited <= 1)
         commited_store = true;
 
-    auto set_initialized = [this] ()
+    auto set_initialized = [this]()
     {
         std::unique_lock lock(initialized_mutex);
         initialized_flag = true;
@@ -518,12 +528,21 @@ void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
 
             auto result = raft_instance->add_srv(*task.server);
             if (!result->get_accepted())
-                LOG_INFO(log, "Command to add server {} was not accepted for the {} time, will sleep for {} ms and retry", task.server->get_id(), i + 1, sleep_ms * (i + 1));
+                LOG_INFO(
+                    log,
+                    "Command to add server {} was not accepted for the {} time, will sleep for {} ms and retry",
+                    task.server->get_id(),
+                    i + 1,
+                    sleep_ms * (i + 1));
 
             std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
         }
         if (!added)
-            throw Exception(ErrorCodes::RAFT_ERROR, "Configuration change to add server (id {}) was not accepted by RAFT after all {} retries", task.server->get_id(), coordination_settings->configuration_change_tries_count);
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Configuration change to add server (id {}) was not accepted by RAFT after all {} retries",
+                task.server->get_id(),
+                coordination_settings->configuration_change_tries_count);
     }
     else if (task.action_type == ConfigUpdateActionType::RemoveServer)
     {
@@ -532,8 +551,10 @@ void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
         bool removed = false;
         if (task.server->get_id() == state_manager->server_id())
         {
-            LOG_INFO(log, "Trying to remove leader node (ourself), so will yield leadership and some other node (new leader) will try remove us. "
-                        "Probably you will have to run SYSTEM RELOAD CONFIG on the new leader node");
+            LOG_INFO(
+                log,
+                "Trying to remove leader node (ourself), so will yield leadership and some other node (new leader) will try remove us. "
+                "Probably you will have to run SYSTEM RELOAD CONFIG on the new leader node");
 
             raft_instance->yield_leadership();
             return;
@@ -556,12 +577,21 @@ void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
 
             auto result = raft_instance->remove_srv(task.server->get_id());
             if (!result->get_accepted())
-                LOG_INFO(log, "Command to remove server {} was not accepted for the {} time, will sleep for {} ms and retry", task.server->get_id(), i + 1, sleep_ms * (i + 1));
+                LOG_INFO(
+                    log,
+                    "Command to remove server {} was not accepted for the {} time, will sleep for {} ms and retry",
+                    task.server->get_id(),
+                    i + 1,
+                    sleep_ms * (i + 1));
 
             std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
         }
         if (!removed)
-            throw Exception(ErrorCodes::RAFT_ERROR, "Configuration change to remove server (id {}) was not accepted by RAFT after all {} retries", task.server->get_id(), coordination_settings->configuration_change_tries_count);
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Configuration change to remove server (id {}) was not accepted by RAFT after all {} retries",
+                task.server->get_id(),
+                coordination_settings->configuration_change_tries_count);
     }
     else if (task.action_type == ConfigUpdateActionType::UpdatePriority)
         raft_instance->set_priority(task.server->get_id(), task.server->get_priority());
@@ -572,7 +602,6 @@ void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
 
 bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
 {
-
     size_t sleep_ms = 500;
     if (task.action_type == ConfigUpdateActionType::AddServer)
     {
