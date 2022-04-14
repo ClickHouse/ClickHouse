@@ -231,3 +231,25 @@ def test_auth_source(started_cluster):
     )
     assert node.query("SELECT count() FROM simple_mongo_table_ok") == "100\n"
     simple_mongo_table.drop()
+
+
+@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
+def test_missing_columns(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.add_user("root", "clickhouse")
+    simple_mongo_table = db["simple_table"]
+    data = []
+    for i in range(0, 10):
+        data.append({"key": i, "data": hex(i * i)})
+    for i in range(0, 10):
+        data.append({"key": i})
+    simple_mongo_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    node.query(
+        "create table simple_mongo_table(key UInt64, data Nullable(String)) engine = MongoDB(mongo1)"
+    )
+    result = node.query("SELECT count() FROM simple_mongo_table WHERE isNull(data)")
+    assert result == "10\n"
+    simple_mongo_table.drop()
