@@ -19,6 +19,7 @@
 #include <base/logger_useful.h>
 #include <Core/SortCursor.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <boost/core/noncopyable.hpp>
 
 namespace Poco { class Logger; }
 
@@ -43,25 +44,27 @@ struct AnyJoinState : boost::noncopyable
     /// Used instead of storing previous block
     struct Row
     {
-        std::vector<ColumnPtr> current_row;
+        std::vector<ColumnPtr> row_key;
+        Chunk value;
 
-        explicit Row(const SortCursorImpl & impl_, size_t pos)
+        explicit Row(const SortCursorImpl & impl_, size_t pos, Chunk value_)
+            : value(std::move(value_))
         {
-            current_row.reserve(impl_.sort_columns.size());
+            row_key.reserve(impl_.sort_columns.size());
             for (const auto & col : impl_.sort_columns)
             {
                 auto new_col = col->cloneEmpty();
                 new_col->insertFrom(*col, pos);
-                current_row.push_back(std::move(new_col));
+                row_key.push_back(std::move(new_col));
             }
         }
 
         bool equals(const SortCursorImpl & impl) const
         {
-            assert(this->current_row.size() == impl.sort_columns_size);
+            assert(this->row_key.size() == impl.sort_columns_size);
             for (size_t i = 0; i < impl.sort_columns_size; ++i)
             {
-                int cmp = this->current_row[i]->compareAt(0, impl.getRow(), *impl.sort_columns[i], 0);
+                int cmp = this->row_key[i]->compareAt(0, impl.getRow(), *impl.sort_columns[i], 0);
                 if (cmp != 0)
                     return false;
             }
@@ -69,13 +72,14 @@ struct AnyJoinState : boost::noncopyable
         }
     };
 
-    void set(const SortCursorImpl & impl_, size_t pos, size_t source_num)
+    void setLeft(const SortCursorImpl & impl_, size_t pos, Chunk value)
     {
-        if (source_num == 0)
-            left = std::make_unique<Row>(impl_, pos);
+        left = std::make_unique<Row>(impl_, pos, std::move(value));
+    }
 
-        if (source_num == 1)
-            right = std::make_unique<Row>(impl_, pos);
+    void setRight(const SortCursorImpl & impl_, size_t pos, Chunk value)
+    {
+        right = std::make_unique<Row>(impl_, pos, std::move(value));
     }
 
     std::unique_ptr<Row> left;
@@ -89,7 +93,7 @@ struct AnyJoinState : boost::noncopyable
 class FullMergeJoinCursor : boost::noncopyable
 {
 public:
-    struct CursorWithBlock
+    struct CursorWithBlock : boost::noncopyable
     {
         CursorWithBlock() = default;
 
