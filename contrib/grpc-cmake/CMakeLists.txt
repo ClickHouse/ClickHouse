@@ -46,7 +46,7 @@ set(_gRPC_SSL_LIBRARIES OpenSSL::Crypto OpenSSL::SSL)
 set(gRPC_ABSL_PROVIDER "clickhouse" CACHE STRING "" FORCE)
 
 # Choose to build static or shared library for c-ares.
-if (MAKE_STATIC_LIBRARIES)
+if (USE_STATIC_LIBRARIES)
   set(CARES_STATIC ON CACHE BOOL "" FORCE)
   set(CARES_SHARED OFF CACHE BOOL "" FORCE)
 else ()

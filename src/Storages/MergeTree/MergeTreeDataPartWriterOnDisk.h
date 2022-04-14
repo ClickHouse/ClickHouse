@@ -55,7 +55,8 @@ public:
             const std::string & marks_path_,
             const std::string & marks_file_extension_,
             const CompressionCodecPtr & compression_codec_,
-            size_t max_compress_block_size_);
+            size_t max_compress_block_size_,
+            const WriteSettings & query_write_settings);
 
         String escaped_column_name;
         std::string data_file_extension;
@@ -70,6 +71,10 @@ public:
         /// marks -> marks_file
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
         HashingWriteBuffer marks;
+
+        bool is_prefinalized = false;
+
+        void preFinalize();
 
         void finalize();
 
@@ -107,9 +112,11 @@ protected:
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
-    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    void fillPrimaryIndexChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void finishPrimaryIndexSerialization(bool sync);
     /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
-    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    void fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void finishSkipIndicesSerialization(bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)
     size_t getCurrentMark() const { return current_mark; }

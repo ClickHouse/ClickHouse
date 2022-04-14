@@ -3,6 +3,8 @@
 #include <numeric>
 #include <cmath>
 
+#include <base/sort.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -59,7 +61,7 @@ void IPolygonDictionary::convertKeyColumns(Columns & key_columns, DataTypes & ke
 
         auto & key_column_to_cast = key_columns[key_type_index];
         ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-        auto casted_column = castColumnAccurate(std::move(column_to_cast), float_64_type);
+        auto casted_column = castColumnAccurate(column_to_cast, float_64_type);
         key_column_to_cast = std::move(casted_column);
         key_type = float_64_type;
     }
@@ -250,7 +252,7 @@ void IPolygonDictionary::loadData()
         polygon_ids.emplace_back(polygon, i);
     }
 
-    std::sort(polygon_ids.begin(), polygon_ids.end(), [& areas](const auto & lhs, const auto & rhs)
+    ::sort(polygon_ids.begin(), polygon_ids.end(), [& areas](const auto & lhs, const auto & rhs)
     {
         return areas[lhs.second] < areas[rhs.second];
     });

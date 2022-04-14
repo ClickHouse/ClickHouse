@@ -93,6 +93,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
         });
+    factory.markFormatHasNoAppendSupport("Arrow");
 
     factory.registerOutputFormat(
         "ArrowStream",
@@ -103,6 +104,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
         });
+    factory.markFormatHasNoAppendSupport("ArrowStream");
 }
 
 }

@@ -12,6 +12,8 @@ namespace
 {
     template <typename... Ts> constexpr size_t numArgs(Ts &&...) { return sizeof...(Ts); }
     template <typename T, typename... Ts> constexpr auto firstArg(T && x, Ts &&...) { return std::forward<T>(x); }
+    /// For implicit conversion of fmt::basic_runtime<> to char* for std::string ctor
+    template <typename T, typename... Ts> constexpr auto firstArg(fmt::basic_runtime<T> && data, Ts &&...) { return data.str.data(); }
 }
 
 

@@ -31,7 +31,7 @@ public:
     using UnderType = UInt64;
     using Container = std::vector<UnderType>;
 
-    BloomFilter(const BloomFilterParameters & params);
+    explicit BloomFilter(const BloomFilterParameters & params);
     /// size -- size of filter in bytes.
     /// hashes -- number of used hash functions.
     /// seed -- random seed for hash functions generation.

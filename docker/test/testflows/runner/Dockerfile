@@ -43,24 +43,27 @@ RUN pip3 install urllib3 testflows==1.7.20 docker-compose==1.29.1 docker==5.0.0 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 20.10.6
 
-RUN set -eux; \
-  \
-# this "case" statement is generated via "update.sh"
-  \
-  if ! wget -nv -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
-    echo >&2 "error: failed to download 'docker-${DOCKER_VERSION}' from '${DOCKER_CHANNEL}' for '${x86_64}'"; \
-    exit 1; \
-  fi; \
-  \
-  tar --extract \
+# Architecture of the image when BuildKit/buildx is used
+ARG TARGETARCH
+
+# Install docker
+RUN arch=${TARGETARCH:-amd64} \
+  && case $arch in \
+      amd64) rarch=x86_64 ;; \
+      arm64) rarch=aarch64 ;; \
+    esac \
+  && set -eux \
+  && if ! wget -nv -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/${rarch}/docker-${DOCKER_VERSION}.tgz"; then \
+    echo >&2 "error: failed to download 'docker-${DOCKER_VERSION}' from '${DOCKER_CHANNEL}' for '${rarch}'" \
+    && exit 1; \
+  fi \
+  && tar --extract \
     --file docker.tgz \
     --strip-components 1 \
     --directory /usr/local/bin/ \
-  ; \
-  rm docker.tgz; \
-  \
-  dockerd --version; \
-  docker --version
+  && rm docker.tgz \
+  && dockerd --version \
+  && docker --version
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

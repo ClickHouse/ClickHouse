@@ -10,6 +10,11 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>minio123</secret_access_key>
         </s3_parquet>
+        <s3_parquet_gz>
+            <url>http://minio1:9001/root/test_parquet_gz</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>minio123</secret_access_key>
+        </s3_parquet_gz>
         <s3_orc>
             <url>http://minio1:9001/root/test_orc</url>
             <access_key_id>minio</access_key_id>
@@ -25,5 +30,10 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>minio123</secret_access_key>
         </s3_arrow>
+        <s3_parquet2>
+            <url>http://minio1:9001/root/test.parquet</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>minio123</secret_access_key>
+        </s3_parquet2>
     </named_collections>
 </clickhouse>

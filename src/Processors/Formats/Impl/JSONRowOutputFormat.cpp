@@ -154,9 +154,9 @@ void JSONRowOutputFormat::writeBeforeTotals()
 
 void JSONRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
-    size_t num_columns = columns.size();
+    size_t columns_size = columns.size();
 
-    for (size_t i = 0; i < num_columns; ++i)
+    for (size_t i = 0; i < columns_size; ++i)
     {
         if (i != 0)
             writeTotalsFieldDelimiter();
@@ -284,6 +284,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSON");
+    factory.markFormatHasNoAppendSupport("JSON");
 
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
@@ -295,6 +296,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSONStrings");
+    factory.markFormatHasNoAppendSupport("JSONStrings");
 }
 
 }

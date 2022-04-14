@@ -78,6 +78,7 @@ add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (bzip2-cmake bzip2)
+add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (rocksdb-cmake rocksdb)
 add_contrib (thrift-cmake thrift)
@@ -118,9 +119,13 @@ add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
-add_contrib (curl-cmake curl)
-add_contrib (azure-cmake azure)
-add_contrib (sentry-native-cmake sentry-native) # requires: curl
+
+if (ENABLE_CURL_BUILD)
+    add_contrib (curl-cmake curl)
+    add_contrib (azure-cmake azure)
+    add_contrib (sentry-native-cmake sentry-native) # requires: curl
+endif()
+
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
@@ -140,6 +145,8 @@ if (ENABLE_NLP)
     add_contrib (libstemmer-c-cmake libstemmer_c)
     add_contrib (wordnet-blast-cmake wordnet-blast)
     add_contrib (lemmagen-c-cmake lemmagen-c)
+    add_contrib (nlp-data-cmake nlp-data)
+    add_contrib (cld2-cmake cld2)
 endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)

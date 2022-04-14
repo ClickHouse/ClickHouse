@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -66,8 +67,29 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_lon = arguments[0].column.get();
-        const auto * col_lat = arguments[1].column.get();
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
+        if (!col_lon)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be Float64",
+                arguments[0].type->getName(),
+                1,
+                getName());
+        const auto & data_col_lon = col_lon->getData();
+
+        const auto * col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
+        if (!col_lat)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be Float64",
+                arguments[0].type->getName(),
+                2,
+                getName());
+        const auto & data_col_lat = col_lat->getData();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -75,16 +97,14 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const Float64 lon = col_lon->getFloat64(row);
-            const Float64 lat = col_lat->getFloat64(row);
+            const Float64 lon = data_col_lon[row];
+            const Float64 lat = data_col_lat[row];
 
             if (isNaN(lon) || isNaN(lat))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments must not be NaN");
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments must not be NaN");
 
             if (!(isFinite(lon) && isFinite(lat)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments must not be infinite");
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments must not be infinite");
 
             /// S2 acceptes point as (latitude, longitude)
             S2LatLng lat_lng = S2LatLng::FromDegrees(lat, lon);
@@ -95,7 +115,6 @@ public:
 
         return dst;
     }
-
 };
 
 }
@@ -104,7 +123,6 @@ void registerFunctionGeoToS2(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGeoToS2>();
 }
-
 
 }
 

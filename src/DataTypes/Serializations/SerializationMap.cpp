@@ -53,13 +53,15 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     size_t size;
     readVarUInt(size, istr);
-    field = Map(size);
-    for (auto & elem : field.get<Map &>())
+    field = Map();
+    Map & map = field.get<Map &>();
+    map.reserve(size);
+    for (size_t i = 0; i < size; ++i)
     {
         Tuple tuple(2);
         key->deserializeBinary(tuple[0], istr);
         value->deserializeBinary(tuple[1], istr);
-        elem = std::move(tuple);
+        map.push_back(std::move(tuple));
     }
 }
 

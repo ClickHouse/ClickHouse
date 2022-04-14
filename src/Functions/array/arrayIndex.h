@@ -432,7 +432,7 @@ public:
                 const auto & map_array_column = map_column.getNestedColumn();
                 auto offsets = map_array_column.getOffsetsPtr();
                 auto keys = map_column.getNestedData().getColumnPtr(0);
-                auto array_column = ColumnArray::create(std::move(keys), std::move(offsets));
+                auto array_column = ColumnArray::create(keys, offsets);
 
                 const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
                 auto array_type = std::make_shared<DataTypeArray>(type_map.getKeyType());
@@ -474,7 +474,7 @@ private:
         auto arg_decayed = removeNullable(removeLowCardinality(arg));
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
-            || getLeastSupertype({inner_type_decayed, arg_decayed});
+            || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
     /**
@@ -1045,7 +1045,7 @@ private:
         DataTypePtr array_elements_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
         const DataTypePtr & index_type = arguments[1].type;
 
-        DataTypePtr common_type = getLeastSupertype({array_elements_type, index_type});
+        DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, index_type});
 
         ColumnPtr col_nested = castColumn({ col->getDataPtr(), array_elements_type, "" }, common_type);
 

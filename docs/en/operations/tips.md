@@ -139,7 +139,7 @@ With the default settings, ZooKeeper is a time bomb:
 
 This bomb must be defused.
 
-The ZooKeeper (3.5.1) configuration below is used in the Yandex.Metrica production environment as of May 20, 2017:
+The ZooKeeper (3.5.1) configuration below is used in a large production environment:
 
 zoo.cfg:
 
