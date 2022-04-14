@@ -79,6 +79,10 @@ if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
 endif ()
 
+if (USE_INTERNAL_FARSH_LIBRARY)
+    add_subdirectory (farsh)
+endif ()
+
 if (USE_INTERNAL_ZLIB_LIBRARY)
     if (INTERNAL_ZLIB_NAME STREQUAL "zlib-ng")
         add_subdirectory (zlib-ng-cmake)
