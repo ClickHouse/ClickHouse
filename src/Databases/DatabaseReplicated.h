@@ -112,7 +112,7 @@ private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     std::atomic_bool is_readonly = true;
-    bool is_recovering = false;
+    std::atomic_bool is_recovering = false;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
     UInt32 max_log_ptr_at_creation = 0;
 
