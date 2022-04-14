@@ -36,7 +36,7 @@ namespace ErrorCodes
             throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
-String IHiveFile::hiveMetaStoreFileFormatToHiveFileFormat(const String & format_class)
+String IHiveFile::hiveInputFormatToCHFormat(const String & format_class)
 {
     using FileFormat = IHiveFile::FileFormat;
     FileFormat hdfs_file_format = IHiveFile::toFileFormat(format_class);

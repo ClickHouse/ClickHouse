@@ -60,7 +60,7 @@ std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collect(PruneLevel
     hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->getTable()->sd.location);
     auto hdfs_builder = createHDFSBuilder(hdfs_namenode_url, context->getGlobalContext()->getConfigRef());
     auto hdfs_fs = createHDFSFS(hdfs_builder.get());
-    format_name = IHiveFile::HiveInputFormatToCHFormat(hive_table_metadata->getTable()->sd.inputFormat);
+    format_name = IHiveFile::hiveInputFormatToCHFormat(hive_table_metadata->getTable()->sd.inputFormat);
 
     if (!partition_name_and_types.empty() && partitions.empty())
         return {};
