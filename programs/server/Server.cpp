@@ -20,8 +20,11 @@
 #include <base/phdr_cache.h>
 #include <base/ErrorHandlers.h>
 #include <base/getMemoryAmount.h>
+#include <base/getAvailableMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/safeExit.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
@@ -31,7 +34,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <base/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
@@ -44,6 +46,8 @@
 #include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -78,6 +82,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/Elf.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -95,8 +100,6 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
-#    include <unistd.h>
-#    include <sys/syscall.h>
 #endif
 
 #if USE_SSL
@@ -505,18 +508,100 @@ void checkForUsersNotInMainConfig(
     }
 }
 
-[[noreturn]] void forceShutdown()
+/// Unused in other builds
+#if defined(OS_LINUX)
+static String readString(const String & path)
 {
-#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
-    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
-    /// while connection handling threads are still run.
-    (void)syscall(SYS_exit_group, 0);
-    __builtin_unreachable();
-#else
-    _exit(0);
-#endif
+    ReadBufferFromFile in(path);
+    String contents;
+    readStringUntilEOF(contents, in);
+    return contents;
 }
 
+static int readNumber(const String & path)
+{
+    ReadBufferFromFile in(path);
+    int result;
+    readText(result, in);
+    return result;
+}
+
+#endif
+
+static void sanityChecks(Server * server)
+{
+    std::string data_path = getCanonicalPath(server->config().getString("path", DBMS_DEFAULT_PATH));
+    std::string logs_path = server->config().getString("logger.log", "");
+
+#if defined(OS_LINUX)
+    try
+    {
+        if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
+            server->context()->addWarningMessage("Linux is not using fast TSC clock source. Performance can be degraded.");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
+            server->context()->addWarningMessage("Linux memory overcommit is disabled.");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
+            server->context()->addWarningMessage("Linux transparent hugepage are set to \"always\".");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readNumber("/proc/sys/kernel/pid_max") < 30000)
+            server->context()->addWarningMessage("Linux max PID is too low.");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readNumber("/proc/sys/kernel/threads-max") < 30000)
+            server->context()->addWarningMessage("Linux threads max count is too low.");
+    }
+    catch (...)
+    {
+    }
+
+    std::string dev_id = getBlockDeviceId(data_path);
+    if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
+        server->context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
+#endif
+
+    try
+    {
+        if (getAvailableMemoryAmount() < (2l << 30))
+            server->context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
+
+        if (!enoughSpaceInDirectory(data_path, 1ull << 30))
+            server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
+
+        if (!logs_path.empty())
+        {
+            if (!enoughSpaceInDirectory(fs::path(logs_path).parent_path(), 1ull << 30))
+                server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
+        }
+    }
+    catch (...)
+    {
+    }
+}
 
 int Server::main(const std::vector<std::string> & /*args*/)
 {
@@ -551,13 +636,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
 #endif
 
-if (ThreadFuzzer::instance().isEffective())
-    global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
+    if (ThreadFuzzer::instance().isEffective())
+        global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
+    sanityChecks(this);
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
@@ -568,6 +654,10 @@ if (ThreadFuzzer::instance().isEffective())
         config().getUInt("thread_pool_queue_size", 10000)
     );
 
+    IOThreadPool::initialize(
+        config().getUInt("max_io_thread_pool_size", 100),
+        config().getUInt("max_io_thread_pool_free_size", 0),
+        config().getUInt("io_thread_pool_queue_size", 10000));
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -775,6 +865,38 @@ if (ThreadFuzzer::instance().isEffective())
         }
     }
 
+    /// Try to increase limit on number of threads.
+    {
+        rlimit rlim;
+        if (getrlimit(RLIMIT_NPROC, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+
+        if (rlim.rlim_cur == rlim.rlim_max)
+        {
+            LOG_DEBUG(log, "rlimit on number of threads is {}", rlim.rlim_cur);
+        }
+        else
+        {
+            rlim_t old = rlim.rlim_cur;
+            rlim.rlim_cur = rlim.rlim_max;
+            int rc = setrlimit(RLIMIT_NPROC, &rlim);
+            if (rc != 0)
+            {
+                LOG_WARNING(log, "Cannot set max number of threads to {}. error: {}", rlim.rlim_cur, strerror(errno));
+                rlim.rlim_cur = old;
+            }
+            else
+            {
+                LOG_DEBUG(log, "Set max number of threads to {} (was {}).", rlim.rlim_cur, old);
+            }
+        }
+
+        if (rlim.rlim_cur < 30000)
+        {
+            global_context->addWarningMessage("Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries.");
+        }
+    }
+
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
 
@@ -837,6 +959,36 @@ if (ThreadFuzzer::instance().isEffective())
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(path / "metadata_dropped/");
     }
+
+#if USE_ROCKSDB
+    /// Initialize merge tree metadata cache
+    if (config().has("merge_tree_metadata_cache"))
+    {
+        fs::create_directories(path / "rocksdb/");
+        size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
+        bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
+        try
+        {
+            LOG_DEBUG(
+                log, "Initiailizing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
+            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+        }
+        catch (...)
+        {
+            if (continue_if_corrupted)
+            {
+                /// Rename rocksdb directory and reinitialize merge tree metadata cache
+                time_t now = time(nullptr);
+                fs::rename(path / "rocksdb", path / ("rocksdb.old." + std::to_string(now)));
+                global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
+#endif
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
@@ -946,6 +1098,8 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->loadOrReloadModels(*config);
             global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
+            global_context->setRemoteHostFilter(*config);
+
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
                 global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
@@ -1009,6 +1163,11 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
         FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
+        auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
+        {
+            return global_context->getConfigRef();
+        };
+
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -1027,7 +1186,11 @@ if (ThreadFuzzer::instance().isEffective())
                         port_name,
                         "Keeper (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
+                            new KeeperTCPHandlerFactory(
+                                config_getter, global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(),
+                                false), server_pool, socket));
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -1046,7 +1209,10 @@ if (ThreadFuzzer::instance().isEffective())
                         secure_port_name,
                         "Keeper with secure protocol (tcp_secure): " + address.toString(),
                         std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
+                            new KeeperTCPHandlerFactory(
+                                config_getter, global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(), true), server_pool, socket));
 #else
                     UNUSED(port);
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -1069,6 +1235,9 @@ if (ThreadFuzzer::instance().isEffective())
     auto & access_control = global_context->getAccessControl();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
+
+    access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
+    access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
 
     /// Initialize access storages.
     try
@@ -1317,7 +1486,7 @@ if (ThreadFuzzer::instance().isEffective())
 #endif
 
 #if !defined(__x86_64__)
-    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
+    LOG_INFO(log, "Query Profiler and TraceCollector is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())
@@ -1334,7 +1503,8 @@ if (ThreadFuzzer::instance().isEffective())
     else
     {
         /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(global_context, config().getInt("dns_cache_update_period", 15));
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
     }
 
 #if defined(OS_LINUX)
@@ -1469,6 +1639,8 @@ if (ThreadFuzzer::instance().isEffective())
                 server.start();
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
+
+            global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
 
@@ -1527,7 +1699,7 @@ if (ThreadFuzzer::instance().isEffective())
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_INFO(log, "Will shutdown forcefully.");
-                forceShutdown();
+                safeExit(0);
             }
         });
 

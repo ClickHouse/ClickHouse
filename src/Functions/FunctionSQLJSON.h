@@ -8,13 +8,13 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/DummyJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
-#include <Functions/RapidJSONParser.h>
-#include <Functions/SimdJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
@@ -242,7 +242,7 @@ public:
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
-        Element res;
+
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
             if (status == VisitorStatus::Ok)

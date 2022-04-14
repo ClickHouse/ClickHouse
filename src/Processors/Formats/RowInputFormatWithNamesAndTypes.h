@@ -124,11 +124,12 @@ class FormatWithNamesAndTypesSchemaReader : public IRowSchemaReader
 public:
     FormatWithNamesAndTypesSchemaReader(
         ReadBuffer & in,
-        size_t max_rows_to_read_,
+        const FormatSettings & format_settings,
         bool with_names_,
         bool with_types_,
         FormatWithNamesAndTypesReader * format_reader_,
-        DataTypePtr default_type_ = nullptr);
+        DataTypePtr default_type_ = nullptr,
+        bool allow_bools_as_numbers_ = false);
 
     NamesAndTypesList readSchema() override;
 

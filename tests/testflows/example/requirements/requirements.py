@@ -9,76 +9,79 @@ from testflows.core import Requirement
 Heading = Specification.Heading
 
 RQ_SRS_001_Example = Requirement(
-    name='RQ.SRS-001.Example',
-    version='1.0',
+    name="RQ.SRS-001.Example",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        'This is a long description of the requirement that can include any\n'
-        'relevant information. \n'
-        '\n'
-        'The one-line block that follows the requirement defines the `version` \n'
-        'of the requirement. The version is controlled manually and is used\n'
-        'to indicate material changes to the requirement that would \n'
-        'require tests that cover this requirement to be updated.\n'
-        '\n'
-        'It is a good practice to use requirement names that are broken\n'
-        'up into groups. It is not recommended to use only numbers\n'
-        'because if the requirement must be moved the numbering will not match.\n'
-        'Therefore, the requirement name should start with the group\n'
-        'name which is then followed by a number if any. For example,\n'
-        '\n'
-        '    RQ.SRS-001.Group.Subgroup.1\n'
-        '\n'
+        "This is a long description of the requirement that can include any\n"
+        "relevant information. \n"
+        "\n"
+        "The one-line block that follows the requirement defines the `version` \n"
+        "of the requirement. The version is controlled manually and is used\n"
+        "to indicate material changes to the requirement that would \n"
+        "require tests that cover this requirement to be updated.\n"
+        "\n"
+        "It is a good practice to use requirement names that are broken\n"
+        "up into groups. It is not recommended to use only numbers\n"
+        "because if the requirement must be moved the numbering will not match.\n"
+        "Therefore, the requirement name should start with the group\n"
+        "name which is then followed by a number if any. For example,\n"
+        "\n"
+        "    RQ.SRS-001.Group.Subgroup.1\n"
+        "\n"
         "To keep names short, try to use abbreviations for the requirement's group name.\n"
-        '\n'
-        ),
+        "\n"
+    ),
     link=None,
     level=2,
-    num='4.1')
+    num="4.1",
+)
 
 RQ_SRS_001_Example_Subgroup = Requirement(
-    name='RQ.SRS-001.Example.Subgroup',
-    version='1.0',
+    name="RQ.SRS-001.Example.Subgroup",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        'This an example of a sub-requirement of the [RQ.SRS-001.Example](#rqsrs-001example).\n'
-        '\n'
-        ),
+        "This an example of a sub-requirement of the [RQ.SRS-001.Example](#rqsrs-001example).\n"
+        "\n"
+    ),
     link=None,
     level=2,
-    num='4.2')
+    num="4.2",
+)
 
 RQ_SRS_001_Example_Select_1 = Requirement(
-    name='RQ.SRS-001.Example.Select.1',
-    version='1.0',
+    name="RQ.SRS-001.Example.Select.1",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return `1` when user executes query\n'
-        '\n'
-        '```sql\n'
-        'SELECT 1\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return `1` when user executes query\n"
+        "\n"
+        "```sql\n"
+        "SELECT 1\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=2,
-    num='4.3')
+    num="4.3",
+)
 
 SRS_001_ClickHouse_Software_Requirements_Specification_Template = Specification(
-    name='SRS-001 ClickHouse Software Requirements Specification Template', 
+    name="SRS-001 ClickHouse Software Requirements Specification Template",
     description=None,
-    author='[name of the author]',
-    date='[date]', 
-    status=None, 
+    author="[name of the author]",
+    date="[date]",
+    status=None,
     approved_by=None,
     approved_date=None,
     approved_version=None,
@@ -90,26 +93,26 @@ SRS_001_ClickHouse_Software_Requirements_Specification_Template = Specification(
     parent=None,
     children=None,
     headings=(
-        Heading(name='Revision History', level=1, num='1'),
-        Heading(name='Introduction', level=1, num='2'),
-        Heading(name='Table of Contents', level=2, num='2.1'),
-        Heading(name='Generating HTML version', level=2, num='2.2'),
-        Heading(name='Generating Python Requirements', level=2, num='2.3'),
-        Heading(name='Terminology', level=1, num='3'),
-        Heading(name='SRS', level=2, num='3.1'),
-        Heading(name='Some term that you will use', level=2, num='3.2'),
-        Heading(name='Requirements', level=1, num='4'),
-        Heading(name='RQ.SRS-001.Example', level=2, num='4.1'),
-        Heading(name='RQ.SRS-001.Example.Subgroup', level=2, num='4.2'),
-        Heading(name='RQ.SRS-001.Example.Select.1', level=2, num='4.3'),
-        Heading(name='References', level=1, num='5'),
-        ),
+        Heading(name="Revision History", level=1, num="1"),
+        Heading(name="Introduction", level=1, num="2"),
+        Heading(name="Table of Contents", level=2, num="2.1"),
+        Heading(name="Generating HTML version", level=2, num="2.2"),
+        Heading(name="Generating Python Requirements", level=2, num="2.3"),
+        Heading(name="Terminology", level=1, num="3"),
+        Heading(name="SRS", level=2, num="3.1"),
+        Heading(name="Some term that you will use", level=2, num="3.2"),
+        Heading(name="Requirements", level=1, num="4"),
+        Heading(name="RQ.SRS-001.Example", level=2, num="4.1"),
+        Heading(name="RQ.SRS-001.Example.Subgroup", level=2, num="4.2"),
+        Heading(name="RQ.SRS-001.Example.Select.1", level=2, num="4.3"),
+        Heading(name="References", level=1, num="5"),
+    ),
     requirements=(
         RQ_SRS_001_Example,
         RQ_SRS_001_Example_Subgroup,
         RQ_SRS_001_Example_Select_1,
-        ),
-    content='''
+    ),
+    content="""
 # SRS-001 ClickHouse Software Requirements Specification Template
 
 **Author:** [name of the author]
@@ -245,4 +248,5 @@ SELECT 1
 [Some term that you will use]: #Sometermthatyouwilluse
 [ClickHouse]: https://clickhouse.com
 [Git]: https://git-scm.com/
-''')
+""",
+)

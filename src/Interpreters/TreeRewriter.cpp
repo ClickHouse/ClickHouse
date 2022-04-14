@@ -32,6 +32,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
@@ -345,7 +346,10 @@ void replaceWithSumCount(String column_name, ASTFunction & func)
     {
         /// Rewrite "avg" to sumCount().1 / sumCount().2
         auto new_arg1 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(1)));
-        auto new_arg2 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(2)));
+        auto new_arg2 = makeASTFunction("CAST",
+            makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(2))),
+            std::make_shared<ASTLiteral>("Float64"));
+
         func.name = "divide";
         exp_list->children.push_back(new_arg1);
         exp_list->children.push_back(new_arg2);
@@ -417,7 +421,8 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 /// Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
 /// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are impossible.
-void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
+/// Also remove all INTERPOLATE columns which are not in SELECT anymore.
+void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
 {
     ASTs & elements = select_query->select()->children;
 
@@ -446,6 +451,8 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
     ASTs new_elements;
     new_elements.reserve(elements.size());
 
+    NameSet remove_columns;
+
     for (const auto & elem : elements)
     {
         String name = elem->getAliasOrColumnName();
@@ -462,6 +469,8 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
         }
         else
         {
+            remove_columns.insert(name);
+
             ASTFunction * func = elem->as<ASTFunction>();
 
             /// Never remove untuple. It's result column may be in required columns.
@@ -472,6 +481,24 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
             if (func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name) && !select_query->groupBy())
                 new_elements.push_back(elem);
+        }
+    }
+
+    if (select_query->interpolate())
+    {
+        auto & children = select_query->interpolate()->children;
+        if (!children.empty())
+        {
+            for (auto it = children.begin(); it != children.end();)
+            {
+                if (remove_columns.count((*it)->as<ASTInterpolateElement>()->column))
+                    it = select_query->interpolate()->children.erase(it);
+                else
+                    ++it;
+            }
+
+            if (children.empty())
+                select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, nullptr);
         }
     }
 
@@ -518,7 +545,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
             bool found = false;
             for (const auto & column : source_columns)
             {
-                auto split = Nested::splitName(column.name);
+                auto split = Nested::splitName(column.name, /*reverse=*/ true);
                 if (split.first == source_name && !split.second.empty())
                 {
                     result.array_join_result_to_source[Nested::concatenateName(result_name, split.second)] = column.name;
@@ -831,10 +858,10 @@ using RewriteShardNumVisitor = InDepthNodeVisitor<RewriteShardNum, true>;
 TreeRewriterResult::TreeRewriterResult(
     const NamesAndTypesList & source_columns_,
     ConstStoragePtr storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     bool add_special)
     : storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , source_columns(source_columns_)
 {
     collectSourceColumns(add_special);
@@ -847,13 +874,12 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
 {
     if (storage)
     {
-        const ColumnsDescription & columns = metadata_snapshot->getColumns();
-
-        NamesAndTypesList columns_from_storage;
+        auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
+        options.withExtendedObjects();
         if (storage->supportsSubcolumns())
-            columns_from_storage = add_special ? columns.getAllWithSubcolumns() : columns.getAllPhysicalWithSubcolumns();
-        else
-            columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+            options.withSubcolumns();
+
+        auto columns_from_storage = storage_snapshot->getColumns(options);
 
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
@@ -960,9 +986,9 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
-    else if (is_select && metadata_snapshot && !columns_context.has_array_join)
+    else if (is_select && storage_snapshot && !columns_context.has_array_join)
     {
-        const auto & partition_desc = metadata_snapshot->getPartitionKey();
+        const auto & partition_desc = storage_snapshot->metadata->getPartitionKey();
         if (partition_desc.expression)
         {
             auto partition_source_columns = partition_desc.expression->getRequiredColumns();
@@ -1018,7 +1044,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         {
             for (const auto & name_type : storage_virtuals)
             {
-                if (name_type.name == "_shard_num" && storage->isVirtualColumn("_shard_num", metadata_snapshot))
+                if (name_type.name == "_shard_num" && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()))
                 {
                     has_virtual_shard_num = true;
                     break;
@@ -1190,7 +1216,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
     bool is_initiator = getContext()->getClientInfo().distributed_depth == 0;
-    if (settings.optimize_respect_aliases && result.metadata_snapshot && is_initiator)
+    if (settings.optimize_respect_aliases && result.storage_snapshot && is_initiator)
     {
         std::unordered_set<IAST *> excluded_nodes;
         {
@@ -1201,7 +1227,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
                 excluded_nodes.insert(table_join_ast->using_expression_list.get());
         }
 
-        bool is_changed = replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(),
+        bool is_changed = replaceAliasColumnsInQuery(query, result.storage_snapshot->metadata->getColumns(),
                                                      result.array_join_result_to_source, getContext(), excluded_nodes);
         /// If query is changed, we need to redo some work to correct name resolution.
         if (is_changed)
@@ -1234,7 +1260,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     ASTPtr & query,
     const NamesAndTypesList & source_columns,
     ConstStoragePtr storage,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     bool allow_aggregations,
     bool allow_self_aliases,
     bool execute_scalar_subqueries) const
@@ -1244,7 +1270,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     const auto & settings = getContext()->getSettingsRef();
 
-    TreeRewriterResult result(source_columns, storage, metadata_snapshot, false);
+    TreeRewriterResult result(source_columns, storage, storage_snapshot, false);
 
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases);
 

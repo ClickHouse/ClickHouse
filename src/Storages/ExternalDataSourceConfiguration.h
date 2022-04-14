@@ -16,7 +16,7 @@ struct ExternalDataSourceConfiguration
 {
     String host;
     UInt16 port = 0;
-    String username;
+    String username = "default";
     String password;
     String database;
     String table;
@@ -112,6 +112,12 @@ struct StorageS3Configuration : URLBasedDataSourceConfiguration
 {
     String access_key_id;
     String secret_access_key;
+};
+
+
+struct StorageS3ClusterConfiguration : StorageS3Configuration
+{
+    String cluster_name;
 };
 
 struct URLBasedDataSourceConfig

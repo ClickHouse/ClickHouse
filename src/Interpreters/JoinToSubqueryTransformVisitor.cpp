@@ -182,7 +182,6 @@ struct RewriteTablesVisitorData
     }
 };
 
-template <size_t version = 1>
 bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *> & table_expressions)
 {
     if (!select.tables())
@@ -233,8 +232,6 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         return false;
 
     /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
-    if (num_using && version <= 1)
-        throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
     if (num_array_join)
         throw Exception("Multiple JOIN does not support mix with ARRAY JOINs", ErrorCodes::NOT_IMPLEMENTED);
     return true;
@@ -380,7 +377,11 @@ private:
     static void visit(ASTSelectQuery & select, ASTPtr &, Data & data)
     {
         if (!data.done)
+        {
+            if (data.expression_list->children.empty())
+                data.expression_list->children.emplace_back(std::make_shared<ASTAsterisk>());
             select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(data.expression_list));
+        }
         data.done = true;
     }
 };
@@ -576,7 +577,7 @@ std::shared_ptr<ASTExpressionList> subqueryExpressionList(
     needed_columns[table_pos].fillExpressionList(*expression_list);
 
     for (const auto & expr : alias_pushdown[table_pos])
-        expression_list->children.emplace_back(std::move(expr));
+        expression_list->children.emplace_back(expr);
 
     return expression_list;
 }
@@ -605,7 +606,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data & data)
 {
     std::vector<const ASTTableExpression *> table_expressions;
-    if (!needRewrite<2>(select, table_expressions))
+    if (!needRewrite(select, table_expressions))
         return;
 
     auto & src_tables = select.tables()->children;
