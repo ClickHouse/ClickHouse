@@ -1,0 +1,41 @@
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+
+CREATE TABLE t1 (key UInt32, s String) engine = MergeTree ORDER BY key;
+CREATE TABLE t2 (key UInt32, s String) engine = MergeTree ORDER BY key;
+
+{% set table_size = 10 %}
+
+INSERT INTO t1 VALUES (1, 'val1'), (2, 'val21'), (2, 'val22'), (2, 'val23'), (2, 'val24'), (2, 'val25'), (2, 'val26'), (2, 'val27'), (3, 'val3');
+INSERT INTO t2 VALUES (1, 'val11'), (1, 'val12'), (2, 'val22'), (2, 'val23'), (2, 'val24'), (2, 'val25'), (2, 'val26'), (2, 'val27'), (2, 'val28'), (3, 'val3');
+
+-- SET join_algorithm = 'full_sorting_merge';
+
+{% for block_size in range (1, table_size + 1) %}
+
+SET max_block_size = {{ block_size }};
+
+SELECT 'simple cases, block size = {{ block_size }}';
+
+SELECT 'ANY INNER';
+SELECT t1.key, t2.key FROM t1
+ANY INNER JOIN t2
+ON t1.key == t2.key
+ORDER BY t1.key, t2.key
+;
+
+SELECT 'ANY LEFT';
+SELECT t1.key, t2.key, t1.s FROM t1
+ANY LEFT JOIN t2
+ON t1.key == t2.key
+ORDER BY  t1.key, t2.key, t1.s
+;
+
+SELECT 'ANY RIGHT';
+SELECT t1.key, t2.key, t2.s FROM t1
+ANY RIGHT JOIN t2
+ON t1.key == t2.key
+ORDER BY t1.key, t2.key, t2.s
+;
+
+{% endfor %}

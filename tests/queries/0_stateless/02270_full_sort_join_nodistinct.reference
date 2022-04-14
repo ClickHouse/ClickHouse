@@ -1,0 +1,260 @@
+simple cases, block size = 1
+ANY INNER
+1	1
+2	2
+3	3
+ANY LEFT
+1	1	val1
+2	2	val21
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+3	3	val3
+ANY RIGHT
+1	1	val11
+1	1	val12
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+2	2	val28
+3	3	val3
+simple cases, block size = 2
+ANY INNER
+1	1
+2	2
+3	3
+ANY LEFT
+1	1	val1
+2	2	val21
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+3	3	val3
+ANY RIGHT
+1	1	val11
+1	1	val12
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+2	2	val28
+3	3	val3
+simple cases, block size = 3
+ANY INNER
+1	1
+2	2
+3	3
+ANY LEFT
+1	1	val1
+2	2	val21
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+3	3	val3
+ANY RIGHT
+1	1	val11
+1	1	val12
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+2	2	val28
+3	3	val3
+simple cases, block size = 4
+ANY INNER
+1	1
+2	2
+3	3
+ANY LEFT
+1	1	val1
+2	2	val21
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+3	3	val3
+ANY RIGHT
+1	1	val11
+1	1	val12
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+2	2	val28
+3	3	val3
+simple cases, block size = 5
+ANY INNER
+1	1
+2	2
+3	3
+ANY LEFT
+1	1	val1
+2	2	val21
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+3	3	val3
+ANY RIGHT
+1	1	val11
+1	1	val12
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+2	2	val28
+3	3	val3
+simple cases, block size = 6
+ANY INNER
+1	1
+2	2
+3	3
+ANY LEFT
+1	1	val1
+2	2	val21
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+3	3	val3
+ANY RIGHT
+1	1	val11
+1	1	val12
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+2	2	val28
+3	3	val3
+simple cases, block size = 7
+ANY INNER
+1	1
+2	2
+3	3
+ANY LEFT
+1	1	val1
+2	2	val21
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+3	3	val3
+ANY RIGHT
+1	1	val11
+1	1	val12
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+2	2	val28
+3	3	val3
+simple cases, block size = 8
+ANY INNER
+1	1
+2	2
+3	3
+ANY LEFT
+1	1	val1
+2	2	val21
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+3	3	val3
+ANY RIGHT
+1	1	val11
+1	1	val12
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+2	2	val28
+3	3	val3
+simple cases, block size = 9
+ANY INNER
+1	1
+2	2
+3	3
+ANY LEFT
+1	1	val1
+2	2	val21
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+3	3	val3
+ANY RIGHT
+1	1	val11
+1	1	val12
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+2	2	val28
+3	3	val3
+simple cases, block size = 10
+ANY INNER
+1	1
+2	2
+3	3
+ANY LEFT
+1	1	val1
+2	2	val21
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+3	3	val3
+ANY RIGHT
+1	1	val11
+1	1	val12
+2	2	val22
+2	2	val23
+2	2	val24
+2	2	val25
+2	2	val26
+2	2	val27
+2	2	val28
+3	3	val3
