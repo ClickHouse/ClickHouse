@@ -548,11 +548,13 @@ include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
 include (cmake/find/datasketches.cmake)
 include (cmake/find/libprotobuf-mutator.cmake)
+include (cmake/find/farsh.cmake)
 
 set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
 
 find_contrib_lib(farmhash)
+
 
 if (ENABLE_TESTS)
     include (cmake/find/gtest.cmake)

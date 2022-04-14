@@ -80,7 +80,7 @@ if (USE_INTERNAL_FARMHASH_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_FARSH_LIBRARY)
-    add_subdirectory (farsh)
+    add_subdirectory (farsh-cmake)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
