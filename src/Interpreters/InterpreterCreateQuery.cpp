@@ -460,8 +460,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
-        DataTypePtr column_type = nullptr;
+        if (col_decl.collation && !context_->getSettingsRef().compatibility_ignore_collation_in_create_table)
+        {
+            throw Exception{"Cannot support collation, please set compatibility_ignore_collation_in_create_table=true", ErrorCodes::LOGICAL_ERROR};
+        }
 
+        DataTypePtr column_type = nullptr;
         if (col_decl.type)
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
