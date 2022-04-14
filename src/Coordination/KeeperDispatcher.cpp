@@ -579,6 +579,11 @@ void KeeperDispatcher::updateConfigurationThread()
     }
 }
 
+bool KeeperDispatcher::isServerActive() const
+{
+    return checkInit() && hasLeader() && !server->isRecovering();
+}
+
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     auto diff = server->getConfigurationDiff(config);

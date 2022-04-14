@@ -116,9 +116,11 @@ public:
         return server && server->checkInit();
     }
 
-    bool isServerActive() const
+    bool isServerActive() const;
+
+    bool serverIsRecovering() const
     {
-        return checkInit() && hasLeader() && !server->inRecover();
+        return server->isRecovering();
     }
 
     /// Registered in ConfigReloader callback. Add new configuration changes to
@@ -154,11 +156,6 @@ public:
     bool hasLeader() const
     {
         return server->isLeaderAlive();
-    }
-
-    bool inRecover() const
-    {
-        return server->inRecover();
     }
 
     bool isObserver() const
