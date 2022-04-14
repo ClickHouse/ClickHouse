@@ -3077,7 +3077,8 @@ namespace
                 {
                     /// Simple case: one column is serialized as one field.
                     const auto & field_descriptor = *field_descriptors_with_suffixes[0].first;
-                    auto field_serializer = buildFieldSerializer(column_name, data_type, field_descriptor, field_descriptor.is_repeated());
+                    auto field_serializer = buildFieldSerializer(column_name, data_type,
+                        field_descriptor, field_descriptor.is_repeated(), google_wrappers_special_treatment);
 
                     if (field_serializer)
                     {
@@ -3245,7 +3246,8 @@ namespace
             const std::string_view & column_name,
             const DataTypePtr & data_type,
             const FieldDescriptor & field_descriptor,
-            bool allow_repeat)
+            bool allow_repeat,
+            bool google_wrappers_special_treatment)
         {
             auto data_type_id = data_type->getTypeId();
             switch (data_type_id)
@@ -3282,7 +3284,8 @@ namespace
                 case TypeIndex::Nullable:
                 {
                     const auto & nullable_data_type = assert_cast<const DataTypeNullable &>(*data_type);
-                    auto nested_serializer = buildFieldSerializer(column_name, nullable_data_type.getNestedType(), field_descriptor, allow_repeat);
+                    auto nested_serializer = buildFieldSerializer(column_name, nullable_data_type.getNestedType(),
+                        field_descriptor, allow_repeat, google_wrappers_special_treatment);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerNullable>(std::move(nested_serializer));
@@ -3292,7 +3295,8 @@ namespace
                 {
                     const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*data_type);
                     auto nested_serializer
-                        = buildFieldSerializer(column_name, low_cardinality_data_type.getDictionaryType(), field_descriptor, allow_repeat);
+                        = buildFieldSerializer(column_name, low_cardinality_data_type.getDictionaryType(),
+                        field_descriptor, allow_repeat, google_wrappers_special_treatment);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerLowCardinality>(std::move(nested_serializer));
@@ -3301,7 +3305,8 @@ namespace
                 case TypeIndex::Map:
                 {
                     const auto & map_data_type = assert_cast<const DataTypeMap &>(*data_type);
-                    auto nested_serializer = buildFieldSerializer(column_name, map_data_type.getNestedType(), field_descriptor, allow_repeat);
+                    auto nested_serializer = buildFieldSerializer(column_name, map_data_type.getNestedType(),
+                        field_descriptor, allow_repeat, google_wrappers_special_treatment);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerMap>(std::move(nested_serializer));
@@ -3316,7 +3321,8 @@ namespace
                         throwFieldNotRepeated(field_descriptor, column_name);
 
                     auto nested_serializer = buildFieldSerializer(column_name, array_data_type.getNestedType(), field_descriptor,
-                                                                  /* allow_repeat = */ false); // We do our repeating now, so for nested type we forget about the repeating.
+                                                                  /* allow_repeat = */ false, // We do our repeating now, so for nested type we forget about the repeating.
+                                                                  google_wrappers_special_treatment);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerArray>(std::move(nested_serializer));
@@ -3367,7 +3373,8 @@ namespace
                     for (const auto & nested_data_type : tuple_data_type.getElements())
                     {
                         auto nested_serializer = buildFieldSerializer(column_name, nested_data_type, field_descriptor,
-                                                                      /* allow_repeat = */ false); // We do our repeating now, so for nested type we forget about the repeating.
+                                                                      /* allow_repeat = */ false, // We do our repeating now, so for nested type we forget about the repeating.
+                                                                      google_wrappers_special_treatment);
                         if (!nested_serializer)
                             break;
                         nested_serializers.push_back(std::move(nested_serializer));
