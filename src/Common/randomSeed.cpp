@@ -5,6 +5,7 @@
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
 #include <base/getThreadId.h>
+#include <base/getFQDNOrHostName.h>
 #include <base/types.h>
 
 
@@ -29,6 +30,6 @@ DB::UInt64 randomSeed()
     hash.update(times.tv_nsec);
     hash.update(times.tv_sec);
     hash.update(getThreadId());
-    hash.update(&times);
+    hash.update(getFQDNOrHostName());
     return hash.get64();
 }

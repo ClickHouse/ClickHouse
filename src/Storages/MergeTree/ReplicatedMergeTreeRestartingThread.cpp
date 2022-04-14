@@ -303,6 +303,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
     String is_active_path = fs::path(storage.replica_path) / "is_active";
+    zookeeper->waitForEphemeralToDisappearIfAny(is_active_path);
 
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
