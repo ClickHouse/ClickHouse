@@ -29,6 +29,11 @@ namespace
     };
 }
 
+namespace ProfileEvents
+{
+    extern const Event ExecuteShellCommand;
+}
+
 namespace DB
 {
 
@@ -158,6 +163,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     const Config & config)
 {
     logCommand(filename, argv);
+    ProfileEvents::increment(ProfileEvents::ExecuteShellCommand);
 
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,

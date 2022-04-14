@@ -139,7 +139,7 @@ pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhous
 #   directly
 # - even though ci auto-compress some files (but not *.tsv) it does this only
 #   for files >64MB, we want this files to be compressed explicitly
-for table in query_log zookeeper_log trace_log
+for table in query_log zookeeper_log trace_log transactions_info_log
 do
     clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz &
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

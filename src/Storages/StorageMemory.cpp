@@ -122,10 +122,11 @@ class MemorySink : public SinkToStorage
 public:
     MemorySink(
         StorageMemory & storage_,
-        const StorageMetadataPtr & metadata_snapshot_)
+        const StorageMetadataPtr & metadata_snapshot_,
+        ContextPtr context)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
-        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_))
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
     {
     }
 
@@ -137,11 +138,10 @@ public:
         storage_snapshot->metadata->check(block, true);
         if (!storage_snapshot->object_columns.empty())
         {
-            auto columns = storage_snapshot->metadata->getColumns().getAllPhysical().filter(block.getNames());
             auto extended_storage_columns = storage_snapshot->getColumns(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
 
-            convertObjectsToTuples(columns, block, extended_storage_columns);
+            convertObjectsToTuples(block, extended_storage_columns);
         }
 
         if (storage.compress)
@@ -202,7 +202,7 @@ StorageMemory::StorageMemory(
     setInMemoryMetadata(storage_metadata);
 }
 
-StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
+StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
@@ -272,9 +272,9 @@ Pipe StorageMemory::read(
 }
 
 
-SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    return std::make_shared<MemorySink>(*this, metadata_snapshot);
+    return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
 }
 
 

@@ -71,13 +71,18 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
 {
     const char * begin = task.entry.query.data();
     const char * end = begin + task.entry.query.size();
-    String cluster_name;
-    ParserQuery parser_query(end);
+    const auto & settings = context->getSettingsRef();
+
     String description = fmt::format("from {}", task.entry_path);
+    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     ASTPtr query = parseQuery(parser_query, begin, end, description,
-                              context->getSettingsRef().max_query_size, context->getSettingsRef().max_parser_depth);
+                              settings.max_query_size,
+                              settings.max_parser_depth);
+
+    String cluster_name;
     if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query.get()))
         cluster_name = query_on_cluster->cluster;
+
     return cluster_name;
 }
 
