@@ -50,13 +50,13 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    docker_image = get_image_with_version(temp_path, "clickhouse/docs-check")
+    docker_image = get_image_with_version(temp_path, "clickhouse/docs-builder")
 
     test_output = os.path.join(temp_path, "docs_check_log")
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
-    cmd = f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
+    cmd = f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={test_output}:/output_path {docker_image} --out-dir /output_path"
 
     run_log_path = os.path.join(test_output, "runlog.log")
     logging.info("Running command: '%s'", cmd)
