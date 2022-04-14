@@ -126,7 +126,7 @@ ProgressValues Progress::fetchAndResetPiecewiseAtomically()
     return res;
 }
 
-Progress & Progress::operator=(Progress && other)
+Progress & Progress::operator=(Progress && other) noexcept
 {
     read_rows = other.read_rows.load(std::memory_order_relaxed);
     read_bytes = other.read_bytes.load(std::memory_order_relaxed);

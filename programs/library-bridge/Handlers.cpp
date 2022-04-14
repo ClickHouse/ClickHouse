@@ -37,7 +37,7 @@ namespace
         if (!response.sent())
             *response.send() << message << std::endl;
 
-        LOG_WARNING(&Poco::Logger::get("LibraryBridge"), message);
+        LOG_WARNING(&Poco::Logger::get("LibraryBridge"), fmt::runtime(message));
     }
 
     std::shared_ptr<Block> parseColumns(std::string && column_string)
@@ -123,7 +123,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
             else
             {
-                LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call libNew instead");
+                LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call libNew instead", from_dictionary_id);
                 lib_new = true;
             }
         }
@@ -178,7 +178,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             catch (const Exception & ex)
             {
                 processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
-                LOG_WARNING(log, ex.getStackTraceString());
+                LOG_WARNING(log, fmt::runtime(ex.getStackTraceString()));
                 return;
             }
 
@@ -278,7 +278,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             catch (const Exception & ex)
             {
                 processError(response, "Invalid 'requested_block' parameter in request body '" + ex.message() + "'");
-                LOG_WARNING(log, ex.getStackTraceString());
+                LOG_WARNING(log, fmt::runtime(ex.getStackTraceString()));
                 return;
             }
 

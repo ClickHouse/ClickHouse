@@ -18,7 +18,7 @@ class ReadBuffer;
   * Fields can be listed in any order (including, in different lines there may be different order),
   *  and some fields may be missing.
   */
-class JSONEachRowRowInputFormat : public IRowInputFormat
+class JSONEachRowRowInputFormat final : public IRowInputFormat
 {
 public:
     JSONEachRowRowInputFormat(
@@ -91,7 +91,7 @@ public:
     JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings, const FormatSettings & format_settings);
 
 private:
-    std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypes() override;
+    NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
 
     bool json_strings;
     bool first_row = true;

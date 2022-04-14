@@ -30,7 +30,7 @@ There may be any number of space symbols between syntactical constructions (incl
 
 ClickHouse supports either SQL-style and C-style comments:
 
--   SQL-style comments start with `--` and continue to the end of the line, a space after `--` can be omitted.
+-   SQL-style comments start with `--`, `#!` or `# ` and continue to the end of the line, a space after `--` and `#!` can be omitted.
 -   C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
 
 ## Keywords {#syntax-keywords}
@@ -106,9 +106,9 @@ In queries, you can check `NULL` using the [IS NULL](../sql-reference/operators/
 
 ### Heredoc {#heredeoc}
 
-A [heredoc](https://en.wikipedia.org/wiki/Here_document) is a way to define a string (often multiline), while maintaining the original formatting. A heredoc is defined as a custom string literal, placed between two `$` symbols, for example `$heredoc$`. A value between two heredocs is processed "as-is". 
+A [heredoc](https://en.wikipedia.org/wiki/Here_document) is a way to define a string (often multiline), while maintaining the original formatting. A heredoc is defined as a custom string literal, placed between two `$` symbols, for example `$heredoc$`. A value between two heredocs is processed "as-is".
 
-You can use a heredoc to embed snippets of SQL, HTML, or XML code, etc. 
+You can use a heredoc to embed snippets of SQL, HTML, or XML code, etc.
 
 **Example**
 

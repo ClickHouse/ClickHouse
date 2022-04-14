@@ -38,7 +38,7 @@ Writing the docs is extremely useful for project's users and developers, and gro
 
 The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most actual. All other languages are supported as much as they can by contributors from different countries.
 
-At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, Chinese, Japanese, and Farsi. We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs).
+At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, Chinese, Japanese. We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs).
 
 Each language lays in the corresponding folder. Files that are not translated from English are the symbolic links to the English ones.
 

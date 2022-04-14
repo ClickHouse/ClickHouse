@@ -9,6 +9,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -124,6 +125,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_null{"NULL"};
     ParserKeyword s_not{"NOT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
+    ParserKeyword s_ephemeral{"EPHEMERAL"};
     ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
     ParserKeyword s_codec{"CODEC"};
@@ -171,6 +173,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (!s_default.checkWithoutMoving(pos, expected)
         && !s_materialized.checkWithoutMoving(pos, expected)
+        && !s_ephemeral.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
@@ -190,6 +193,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         /// should be followed by an expression
         if (!expr_parser.parse(pos, default_expression, expected))
             return false;
+    }
+    else if (s_ephemeral.ignore(pos, expected))
+    {
+        default_specifier = "EPHEMERAL";
+        if (!expr_parser.parse(pos, default_expression, expected) && type)
+            default_expression = std::make_shared<ASTLiteral>(Field());
     }
 
     if (require_type && !type && !default_expression)
@@ -276,7 +285,7 @@ protected:
 class ParserIndexDeclaration : public IParserBase
 {
 public:
-    ParserIndexDeclaration() {}
+    ParserIndexDeclaration() = default;
 
 protected:
     const char * getName() const override { return "index declaration"; }
@@ -336,7 +345,7 @@ protected:
 
 
 /**
-  * ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
+  * [ENGINE = name] [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
   */
 class ParserStorage : public IParserBase
 {
@@ -391,7 +400,7 @@ class ParserTableOverrideDeclaration : public IParserBase
 {
 public:
     const bool is_standalone;
-    ParserTableOverrideDeclaration(bool is_standalone_ = true) : is_standalone(is_standalone_) { }
+    explicit ParserTableOverrideDeclaration(bool is_standalone_ = true) : is_standalone(is_standalone_) { }
 
 protected:
     const char * getName() const override { return "table override declaration"; }

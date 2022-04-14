@@ -33,6 +33,10 @@
             </section>
         </div>
 
+        {% if page.meta.author %}
+        <section class="col-md-10 offset-md-1 my-5">Author: <em>{{ page.meta.author|adjust_markdown_html }}</em></section>
+        {% endif %}
+
         <section class="col-md-10 offset-md-1 my-5">
             <span title="{{ _('Published date') }}" class="d-inline-block bg-dark text-white p-2 mr-2">{{ page.meta.date }}</span>
             {% if page.meta.tags %}

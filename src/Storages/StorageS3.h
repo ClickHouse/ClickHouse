@@ -44,13 +44,24 @@ public:
             std::shared_ptr<Impl> pimpl;
     };
 
+    class KeysIterator
+    {
+        public:
+            explicit KeysIterator(const std::vector<String> & keys_);
+            String next();
+
+        private:
+            class Impl;
+            /// shared_ptr to have copy constructor
+            std::shared_ptr<Impl> pimpl;
+    };
+
     using IteratorWrapper = std::function<String()>;
 
-    static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column);
+    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     StorageS3Source(
-        bool need_path,
-        bool need_file,
+        const std::vector<NameAndTypePair> & requested_virtual_columns_,
         const String & format,
         String name_,
         const Block & sample_block,
@@ -59,10 +70,11 @@ public:
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
         UInt64 max_single_read_retries_,
-        const String compression_hint_,
+        String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
-        std::shared_ptr<IteratorWrapper> file_iterator_);
+        std::shared_ptr<IteratorWrapper> file_iterator_,
+        size_t download_thread_num);
 
     String getName() const override;
 
@@ -87,13 +99,18 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
-    bool initialized = false;
-    bool with_file_column = false;
-    bool with_path_column = false;
+    /// onCancel and generate can be called concurrently
+    std::mutex reader_mutex;
+    std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IteratorWrapper> file_iterator;
+    size_t download_thread_num = 1;
+
+    Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 
     /// Recreate ReadBuffer and BlockInputStream for each file.
     bool initialize();
+
+    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
 };
 
 /**
@@ -112,6 +129,8 @@ public:
         const String & format_name_,
         UInt64 max_single_read_retries_,
         UInt64 min_upload_part_size_,
+        UInt64 upload_part_size_multiply_factor_,
+        UInt64 upload_part_size_multiply_parts_count_threshold_,
         UInt64 max_single_part_upload_size_,
         UInt64 max_connections_,
         const ColumnsDescription & columns_,
@@ -130,7 +149,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -174,20 +193,25 @@ private:
     };
 
     ClientAuthentication client_auth;
+    std::vector<String> keys;
+    NamesAndTypesList virtual_columns;
 
     String format_name;
     UInt64 max_single_read_retries;
     size_t min_upload_part_size;
+    size_t upload_part_size_multiply_factor;
+    size_t upload_part_size_multiply_parts_count_threshold;
     size_t max_single_part_upload_size;
     String compression_method;
     String name;
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
+    bool is_key_with_globs = false;
 
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentication &);
 
-    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const ClientAuthentication & client_auth, bool distributed_processing, ContextPtr local_context);
+    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const ClientAuthentication & client_auth, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context);
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const String & format,
@@ -195,8 +219,11 @@ private:
         UInt64 max_single_read_retries,
         const String & compression_method,
         bool distributed_processing,
+        bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
+
+    bool isColumnOriented() const override;
 };
 
 }

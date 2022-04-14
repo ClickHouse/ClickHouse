@@ -28,6 +28,11 @@
     <query>SELECT quantile(d64), quantileExact(d64), quantileExactWeighted(d64, 2) FROM    (SELECT * FROM t LIMIT 1000000)</query>
     <query>SELECT quantile(d128), quantileExact(d128), quantileExactWeighted(d128, 2) FROM (SELECT * FROM t LIMIT 1000000)</query>
 
+    <query>SELECT quantilesExactLow(0.5)(d32) FROM   (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT quantilesExactHigh(0.5)(d32) FROM   (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT quantilesExactLow(0.1, 0.5, 0.9)(d32) FROM   (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT quantilesExactHigh(0.1, 0.5, 0.9)(d32) FROM   (SELECT * FROM t LIMIT 10000000)</query>
+
     <query>SELECT quantilesExact(0.1, 0.9)(d32), quantilesExactWeighted(0.1, 0.9)(d32, 2) FROM   (SELECT * FROM t LIMIT 10000000)</query>
     <query>SELECT quantilesExact(0.1, 0.9)(d64), quantilesExactWeighted(0.1, 0.9)(d64, 2) FROM   (SELECT * FROM t LIMIT 1000000)</query>
     <query>SELECT quantilesExact(0.1, 0.9)(d128), quantilesExactWeighted(0.1, 0.9)(d128, 2) FROM (SELECT * FROM t LIMIT 1000000)</query>

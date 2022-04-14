@@ -208,7 +208,7 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
 {
     const auto & user_name = user.getName();
     auto & granted_roles = user.granted_roles;
-    const auto local_role_names = mapExternalRolesNoLock(external_roles);
+    auto local_role_names = mapExternalRolesNoLock(external_roles);
 
     auto grant_role = [this, &user_name, &granted_roles] (const String & role_name, const bool common)
     {
@@ -481,7 +481,9 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
-    bool throw_if_user_not_exists) const
+    bool throw_if_user_not_exists,
+    bool /* allow_no_password */,
+    bool /* allow_plaintext_password */) const
 {
     std::scoped_lock lock(mutex);
     auto id = memory_storage.find<User>(credentials.getUserName());

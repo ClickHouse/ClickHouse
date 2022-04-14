@@ -138,6 +138,9 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         nested_interpreters.emplace_back(
             buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), require_full_header ? Names() : current_required_result_column_names));
+        // We need to propagate the uses_view_source flag from children to the (self) parent since, if one of the children uses
+        // a view source that means that the parent uses it too and can be cached globally
+        uses_view_source |= nested_interpreters.back()->usesViewSource();
     }
 
     /// Determine structure of the result.
@@ -205,8 +208,10 @@ Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr 
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
             .getSampleBlock();
-    else
+    else if (ast_ptr_->as<ASTSelectQuery>())
         return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
+    else
+        return InterpreterSelectIntersectExceptQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>

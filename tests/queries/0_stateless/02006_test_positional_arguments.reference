@@ -15,29 +15,23 @@ select x3, x2, x1 from test order by x3 desc;
 100	10	1
 10	1	10
 1	100	100
-insert into test values (1, 10, 200), (10, 1, 200), (100, 100, 1);
+insert into test values (1, 10, 100), (10, 1, 10), (100, 100, 1);
 select x3, x2 from test group by x3, x2;
-200	1
 10	1
-200	10
 1	100
 100	10
 select x3, x2 from test group by 1, 2;
-200	1
 10	1
-200	10
 1	100
 100	10
 select x1, x2, x3 from test order by x3 limit 1 by x3;
 100	100	1
 10	1	10
 1	10	100
-1	10	200
 select x1, x2, x3 from test order by 3 limit 1 by 3;
 100	100	1
 10	1	10
 1	10	100
-1	10	200
 select x1, x2, x3 from test order by x3 limit 1 by x1;
 100	100	1
 10	1	10
@@ -117,3 +111,9 @@ select substr('aaaaaaaaaaaaaa', 8) as a  group by a;
 aaaaaaa
 select substr('aaaaaaaaaaaaaa', 8) as a  group by substr('aaaaaaaaaaaaaa', 8);
 aaaaaaa
+select b from (select 5 as a, 'Hello' as b order by a);
+Hello
+select b from (select 5 as a, 'Hello' as b group by a);
+Hello
+select b from (select 5 as a, 'Hello' as b order by 1);
+Hello

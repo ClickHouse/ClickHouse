@@ -112,7 +112,7 @@ public:
             || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of function {], must be Date or DateTime.",
+                "Illegal column {} of function {}, must be Date or DateTime.",
                 arguments[1].column->getName(),
                 getName());
 
@@ -148,7 +148,7 @@ public:
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
         {
-            scale = times_data.getScale();
+            scale = times->getScale();
         }
 
         auto result_column = ColumnString::create();
