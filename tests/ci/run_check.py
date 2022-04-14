@@ -80,6 +80,7 @@ TRUSTED_CONTRIBUTORS = {
         "thomoco",  # ClickHouse
         "BoloniniD",  # Seasoned contributor, HSE
         "tonickkozlov",  # Cloudflare
+        "tylerhannan",  # ClickHouse Employee
     ]
 }
 
