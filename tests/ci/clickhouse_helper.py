@@ -52,8 +52,6 @@ class ClickHouseHelper:
 
     def _insert_json_str_info(self, db, table, json_str):
         self._insert_json_str_info_impl(self.url, self.auth, db, table, json_str)
-        if self.url2:
-            self._insert_json_str_info_impl(self.url2, self.auth2, db, table, json_str)
 
     def insert_event_into(self, db, table, event):
         event_str = json.dumps(event)
