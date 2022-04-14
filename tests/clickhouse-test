@@ -1176,6 +1176,9 @@ def check_server_started(args):
         except TimeoutError:
             print("\nConnection timeout, will not retry")
             break
+        except Exception as e:
+            print("\nUexpected exception, will not retry: ", str(e))
+            break
 
     print('\nAll connection tries failed')
     sys.stdout.flush()
