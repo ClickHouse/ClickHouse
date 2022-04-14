@@ -2,6 +2,8 @@
 
 from collections import namedtuple
 from typing import Any, Dict, List
+from threading import Thread
+from queue import Queue
 import json
 import time
 
@@ -23,6 +25,24 @@ API_URL = "https://api.github.com/repos/ClickHouse/ClickHouse"
 MAX_RETRY = 5
 
 DEBUG_INFO = {}  # type: Dict[str, Any]
+
+
+class Worker(Thread):
+    def __init__(self, request_queue: Queue, ignore_exception: bool = False):
+        Thread.__init__(self)
+        self.queue = request_queue
+        self.ignore_exception = ignore_exception
+        self.response = {}  # type: Dict
+
+    def run(self):
+        m = self.queue.get()
+        try:
+            self.response = _exec_get_with_retry(m)
+        except Exception as e:
+            if not self.ignore_exception:
+                raise
+            print(f"Exception occured, still continue: {e}")
+        self.queue.task_done()
 
 
 def get_installation_id(jwt_token):
@@ -157,20 +177,25 @@ def get_workflow_description_fallback(event_data) -> List[WorkflowDescription]:
     print("Get last 500 workflows from API to search related there")
     # Fallback for a case of an already deleted branch and no workflows received
     request_url = f"{API_URL}/actions/runs?per_page=100"
+    q = Queue()  # type: Queue
+    workers = []
     workflows_data = []
     i = 1
     for i in range(1, 6):
-        try:
-            workflows = _exec_get_with_retry(f"{request_url}&page={i}")
-        except Exception as e:
-            print(f"Exception occured, still continue: {e}")
+        q.put(f"{request_url}&page={i}")
+        worker = Worker(q, True)
+        worker.start()
+        workers.append(worker)
+
+    for worker in workers:
+        worker.join()
+        if not worker.response:
+            # We ignore get errors, so response can be empty
             continue
-        if not workflows["workflow_runs"]:
-            break
         # Prefilter workflows
         workflows_data += [
             wf
-            for wf in workflows["workflow_runs"]
+            for wf in worker.response["workflow_runs"]
             if wf["head_repository"] is not None
             and wf["head_repository"]["full_name"] == head_repo
             and wf["head_branch"] == head_branch
@@ -276,6 +301,9 @@ def main(event):
     elif action == "labeled" and "can be tested" in labels:
         print("PR marked with can be tested label, rerun workflow")
         workflow_descriptions = get_workflows_description_for_pull_request(pull_request)
+        workflow_descriptions = (
+            workflow_descriptions or get_workflow_description_fallback(event_data)
+        )
         if not workflow_descriptions:
             print("Not found any workflows")
             return
