@@ -63,7 +63,7 @@ $SCAN_WRAPPER ninja $NINJA_FLAGS clickhouse-bundle
 ls -la ./programs
 
 if [ -f "./programs/clickhouse-keeper-musl" ]; then
-    rm ./programs/clickhouse-keeper
+    rm -f ./programs/clickhouse-keeper
     mv ./programs/clickhouse-keeper-musl ./programs/clickhouse-keeper
 fi
 
