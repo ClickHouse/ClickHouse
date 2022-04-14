@@ -23,8 +23,7 @@ INSERT INTO t2
 
 -- SET join_algorithm = 'full_sorting_merge';
 
--- for block_size in [32001, 65505, 65536, range(32001, 65536) | random] %}
-{% for block_size in [32001] %}
+{% for block_size in [32001, 65505, 65536, range(32001, 65536) | random] %}
 
 SET max_block_size = {{ block_size }};
 
