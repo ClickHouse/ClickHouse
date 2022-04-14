@@ -36,3 +36,8 @@ with disabled format_protobuf_google_wrappers_special_treatment:
 ('')    1
 ('')    2
 ('str') 3
+
+Insert (0,1,2) and reinsert using Google wrappers into:
+Table (Nullable(Int32), Nullable(Int32), Int32):
+0       1       2
+0       1       2
