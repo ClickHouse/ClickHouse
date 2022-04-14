@@ -59,7 +59,14 @@ ColumnsDescription readSchemaFromFormat(
     if (FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format_name))
     {
         auto external_schema_reader = FormatFactory::instance().getExternalSchemaReader(format_name, context, format_settings);
-        names_and_types = external_schema_reader->readSchema();
+        try
+        {
+            names_and_types = external_schema_reader->readSchema();
+        }
+        catch (const DB::Exception & e)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}", format_name, e.message());
+        }
     }
     else if (FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
     {
