@@ -43,7 +43,7 @@ namespace
 
     void writeNode(const KeeperStorage::Node & node, SnapshotVersion version, WriteBuffer & out)
     {
-        writeBinary(node.data, out);
+        writeBinary(node.getData(), out);
 
         /// Serialize ACL
         writeBinary(node.acl_id, out);
@@ -71,7 +71,9 @@ namespace
 
     void readNode(KeeperStorage::Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
     {
-        readBinary(node.data, in);
+        String new_data;
+        readBinary(new_data, in);
+        node.setData(std::move(new_data));
 
         if (version >= SnapshotVersion::V1)
         {
@@ -281,7 +283,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         if (itr.key != "/")
         {
             auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.children.insert(getBaseName(path)); });
+            storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
         }
     }
 
@@ -337,8 +339,9 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t 
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
 {
-    snapshot_container_size = storage->container.snapshotSize();
-    storage->enableSnapshotMode(snapshot_container_size);
+    auto [size, ver] = storage->container.snapshotSizeWithVersion();
+    snapshot_container_size = size;
+    storage->enableSnapshotMode(ver);
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
@@ -351,8 +354,9 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, const Sna
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
 {
-    snapshot_container_size = storage->container.snapshotSize();
-    storage->enableSnapshotMode(snapshot_container_size);
+    auto [size, ver] = storage->container.snapshotSizeWithVersion();
+    snapshot_container_size = size;
+    storage->enableSnapshotMode(ver);
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();

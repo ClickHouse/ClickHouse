@@ -12,6 +12,9 @@ WITH _CAST(\'default\', \'Nullable(String)\') AS `id_2` SELECT `one`.`dummy`, ig
 optimize_skip_unused_shards_rewrite_in(0,)
 0	0
 WITH _CAST(\'default\', \'Nullable(String)\') AS `id_0` SELECT `one`.`dummy`, ignore(`id_0`) FROM `system`.`one` WHERE `dummy` IN tuple(0)
+signed column
+WITH _CAST(\'default\', \'Nullable(String)\') AS `key_signed` SELECT `key`, ignore(`key_signed`) FROM `default`.`data_01756_signed` WHERE `key` IN tuple(-1)
+WITH _CAST(\'default\', \'Nullable(String)\') AS `key_signed` SELECT `key`, ignore(`key_signed`) FROM `default`.`data_01756_signed` WHERE `key` IN tuple(-2)
 0
 0
 errors

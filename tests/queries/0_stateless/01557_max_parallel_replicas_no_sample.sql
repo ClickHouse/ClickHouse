@@ -1,5 +1,7 @@
 -- Tags: replica
 
+SET allow_experimental_parallel_reading_from_replicas=0;
+
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (x String) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t VALUES ('Hello');

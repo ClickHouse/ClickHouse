@@ -156,14 +156,6 @@ $ cd ClickHouse
 $ ./release
 ```
 
-## Faster builds for development
-
-Normally all tools of the ClickHouse bundle, such as `clickhouse-server`, `clickhouse-client` etc., are linked into a single static executable, `clickhouse`. This executable must be re-linked on every change, which might be slow. One common way to improve build time is to use the 'split' build configuration, which builds a separate binary for every tool, and further splits the code into several shared libraries. To enable this tweak, pass the following flags to `cmake`:
-
-```
--DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
-```
-
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
 
 ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
@@ -172,9 +164,9 @@ They are built for stable, prestable and testing releases as long as for every c
 
 To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green checkmark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.
 
-## Split build configuration {#split-build}
+## Faster builds for development: Split build configuration {#split-build}
 
-Normally ClickHouse is statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that on every change the entire binary is linked again, which is slow and may be inconvenient for development. There is an alternative configuration which creates dynamically loaded shared libraries instead, allowing faster incremental builds. To use it, add the following flags to your `cmake` invocation:
+Normally, ClickHouse is statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that on every change the entire binary needs to be linked, which is slow and may be inconvenient for development. There is an alternative configuration which instead creates dynamically loaded shared libraries and separate binaries `clickhouse-server`, `clickhouse-client` etc., allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
 ```
 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```

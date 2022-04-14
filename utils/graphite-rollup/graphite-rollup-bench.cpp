@@ -35,7 +35,7 @@ std::vector<StringRef> loadMetrics(const std::string & metrics_file)
         throw std::runtime_error(strerror(errno));
     }
 
-    while ((nread = getline(&line, &len, stream)) != -1)
+    while ((nread = getline(&line, &len, stream)) != -1) /// NOLINT
     {
         size_t l = strlen(line);
         if (l > 0)

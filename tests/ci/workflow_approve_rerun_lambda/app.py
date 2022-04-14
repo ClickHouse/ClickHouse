@@ -89,9 +89,11 @@ TRUSTED_CONTRIBUTORS = {
         "bharatnc",  # Newbie, but already with many contributions.
         "bobrik",  # Seasoned contributor, CloudFlare
         "BohuTANG",
+        "codyrobert",  # Flickerbox engineer
         "cwurm",  # Employee
         "damozhaeva",  # DOCSUP
         "den-crane",
+        "flickerbox-tom",  # Flickerbox
         "gyuton",  # DOCSUP
         "hagen1778",  # Roman Khavronenko, seasoned contributor
         "hczhcz",
@@ -120,7 +122,11 @@ TRUSTED_CONTRIBUTORS = {
         "vzakaznikov",
         "YiuRULE",
         "zlobober",  # Developer of YT
+        "ilejn",  # Arenadata, responsible for Kerberized Kafka
+        "thomoco",  # ClickHouse
         "BoloniniD",  # Seasoned contributor, HSE
+        "tonickkozlov",  # Cloudflare
+        "tylerhannan",  # ClickHouse Employee
     ]
 }
 
@@ -379,12 +385,16 @@ def check_need_to_rerun(workflow_description):
 
 def rerun_workflow(workflow_description, token):
     print("Going to rerun workflow")
-    _exec_post_with_retry(workflow_description.rerun_url, token)
+    try:
+        _exec_post_with_retry(f"{workflow_description.rerun_url}-failed-jobs", token)
+    except Exception:
+        _exec_post_with_retry(workflow_description.rerun_url, token)
 
 
 def main(event):
     token = get_token_from_aws()
     event_data = json.loads(event["body"])
+    print("The body received:", event_data)
     workflow_description = get_workflow_description_from_event(event_data)
 
     print("Got workflow description", workflow_description)

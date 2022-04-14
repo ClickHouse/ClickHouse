@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <Core/QueryProcessingStage.h>
+#include <Interpreters/Aggregator.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
@@ -105,6 +106,8 @@ public:
         QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, ContextPtr context_);
 
     Names getRequiredColumns() { return required_columns; }
+
+    bool supportsTransactions() const override { return true; }
 
 private:
     InterpreterSelectQuery(
@@ -211,6 +214,7 @@ private:
 
     Poco::Logger * log;
     StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
 
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
     PreparedSets prepared_sets;

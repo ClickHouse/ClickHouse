@@ -51,7 +51,6 @@ private:
     using LDAPCaches = std::map<String, LDAPCache>;               // server name -> cache
     using LDAPParams = std::map<String, LDAPClient::Params>;      // server name -> params
 
-private:
     mutable std::recursive_mutex mutex;
     LDAPParams ldap_client_params_blueprint;
     mutable LDAPCaches ldap_caches;

@@ -14,7 +14,7 @@ namespace mysqlxx
 class Transaction : private boost::noncopyable
 {
 public:
-    Transaction(Connection & conn_)
+    explicit Transaction(Connection & conn_)
         : conn(conn_), finished(false)
     {
         conn.query("START TRANSACTION").execute();

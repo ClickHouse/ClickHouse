@@ -17,6 +17,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <re2/re2.h>
 #include <Disks/IDiskRemote.h>
+#include <Common/FileCache_fwd.h>
 
 
 namespace DB
@@ -73,6 +74,7 @@ public:
         String bucket_,
         String s3_root_path_,
         DiskPtr metadata_disk_,
+        FileCachePtr cache_,
         ContextPtr context_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
@@ -86,11 +88,10 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode) override;
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
-    void removeFromRemoteFS(RemoteFSPathKeeperPtr keeper) override;
-
-    RemoteFSPathKeeperPtr createFSPathKeeper() const override;
+    void removeFromRemoteFS(const std::vector<String> & paths) override;
 
     void moveFile(const String & from_path, const String & to_path, bool send_metadata);
     void moveFile(const String & from_path, const String & to_path) override;
@@ -102,6 +103,8 @@ public:
     bool isRemote() const override { return true; }
 
     bool supportZeroCopyReplication() const override { return true; }
+
+    bool supportParallelWrite() const override { return true; }
 
     void shutdown() override;
 
