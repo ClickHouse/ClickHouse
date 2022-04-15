@@ -1,7 +1,22 @@
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTFunction.h>
+
+#include <Poco/Logger.h>
+#include <base/logger_useful.h>
+
+#include "Core/Field.h"
+#include "Interpreters/Context_fwd.h"
+#include "MergeTreeIndices.h"
+#include "KeyCondition.h"
+#include "Parsers/ASTIdentifier.h"
+#include "Parsers/ASTSelectQuery.h"
+#include "Parsers/IAST_fwd.h"
+#include "Storages/SelectQueryInfo.h"
+#include "base/types.h"
 
 
 namespace DB
@@ -10,8 +25,8 @@ namespace DB
 namespace Annoy
 {
 
-const int NUM_OF_TREES = 5;
-const int DIMENSION = 2;
+const int NUM_OF_TREES = 20;
+const int DIMENSION = 512;
 
 template<typename Dist>
 void AnnoyIndexSerialize<Dist>::serialize(WriteBuffer& ostr) const
@@ -111,7 +126,9 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy::getGranuleAndReset()
     }
 
     index_base->build(Annoy::NUM_OF_TREES);
-    return std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index_base);
+    auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index_base);
+    index_base = std::make_shared<AnnoyIndex>(Annoy::DIMENSION);
+    return granule;
 }
 
 void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, size_t limit)
@@ -129,24 +146,46 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
 
     auto index_column_name = index_sample_block.getByPosition(0).name;
     const auto & column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
-    const auto & columns = typeid_cast<const ColumnTuple*>(column_cut.get())->getColumns();
+    const auto & column_tuple = typeid_cast<const ColumnTuple*>(column_cut.get());
+    const auto & columns = column_tuple->getColumns();
 
-    for (const auto& x : columns) {
-        const auto& pod_array = typeid_cast<const ColumnFloat32*>(x.get())->getData();
-        std::vector<Float32> flatten(pod_array.begin(), pod_array.end());
-        index_base->add_item(index_base->get_n_items(), &flatten[0]);
+    std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
+    for (size_t j = 0; j < columns.size(); ++j) {
+        const auto& pod_array = typeid_cast<const ColumnFloat32*>(columns[j].get())->getData();
+        for (size_t i = 0; i < pod_array.size(); ++i) {
+            data[i].push_back(pod_array[i]);
+        }
+    }
+    for (const auto& item : data) {
+        index_base->add_item(index_base->get_n_items(), &item[0]);
     }
 
     *pos += rows_read;
 }
 
 
+MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
+    const IndexDescription & index,
+    const SelectQueryInfo & query,
+    ContextPtr context)
+    : index_data_types(index.data_types)
+{
+    RPN rpn = buildRPN(query, context);
+    matchRPN(rpn);
+}
+
+
 bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
+    // TODO: Change assert to the exception
+    assert(expression.has_value());
+
+    std::vector<float> target_vec = expression.value().target;
+    float min_distance = expression.value().distance;
+
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy>(idx_granule);
     auto annoy = std::dynamic_pointer_cast<Annoy::AnnoyIndexSerialize<>>(granule->index_base);
 
-    float zero[] = {0., 0.};
     std::vector<int32_t> items;
     std::vector<float> dist;
     items.reserve(1);
@@ -154,9 +193,200 @@ bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr i
 
     // 1 - num of nearest neighbour (NN)
     // next number - upper limit on the size of the internal queue; -1 means, that it is equal to num of trees * num of NN
-    annoy->get_nns_by_vector(&zero[0], 2, -1, &items, &dist);
-    const float max_dist = 1.;
-    return dist[0] < max_dist;
+    annoy->get_nns_by_vector(&target_vec[0], 1, 200, &items, &dist);
+    return dist[0] < min_distance;
+}
+
+bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
+{
+    return !expression.has_value();
+}
+
+MergeTreeIndexConditionAnnoy::RPN MergeTreeIndexConditionAnnoy::buildRPN(const SelectQueryInfo & query, ContextPtr context)
+{
+    RPN rpn;
+
+    // Get block_with_constants for the future usage from query
+    block_with_constants = KeyCondition::getBlockWithConstants(query.query, query.syntax_analyzer_result, context);
+
+    const auto & select = query.query->as<ASTSelectQuery &>();
+
+    // Sometimes our ANN expression in where can be placed in prewhere section
+    // In this case we populate RPN from both source, but it can be dangerous in case
+    // of some additional expressions in our query
+    // We can either check prewhere or where, either match independently where and
+    // prewhere
+    // TODO: Need to think
+    if (select.where()) 
+    {
+        traverseAST(select.where(), rpn);
+    }
+    if (select.prewhere())
+    {
+        traverseAST(select.prewhere(), rpn);
+    }
+
+    // Return prefix rpn, so reverse the result
+    std::reverse(rpn.begin(), rpn.end());
+    return rpn;
+}
+
+void MergeTreeIndexConditionAnnoy::traverseAST(const ASTPtr & node, RPN & rpn) 
+{
+    RPNElement element;
+
+    // We need to go deeper only if we have ASTFunction in this node
+    if (const auto * func = node->as<ASTFunction>()) 
+    {
+        const ASTs & args = func->arguments->children;
+
+        // Traverse children
+        for (const auto & arg : args) 
+        {
+            traverseAST(arg, rpn);
+        }
+    } 
+
+    // Extract information about current node and populate it in the element
+    if (!traverseAtomAST(node, element)) {
+        // If we cannot identify our node type
+        element.function = RPNElement::FUNCTION_UNKNOWN;
+    }
+
+    rpn.emplace_back(std::move(element)); 
+}
+
+bool MergeTreeIndexConditionAnnoy::traverseAtomAST(const ASTPtr & node, RPNElement & out) {
+    // Firstly check if we have contants behind the node
+    {
+        Field const_value;
+        DataTypePtr const_type;
+
+
+        if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
+        {
+            /// Check constant type (use Float64 because all Fields implementation contains Float64 (for Float32 too))
+            if (const_value.getType() == Field::Types::Float64)
+            {
+                out.function = RPNElement::FUNCTION_FLOAT_LITERAL;
+                out.literal.emplace(const_value.get<Float32>());
+
+                return true;
+            }
+        }
+    }
+
+    // Match function naming with a type
+    if (const auto * function = node->as<ASTFunction>())
+    {
+        // TODO: Add support for other metrics 
+        if (function->name == "L2Distance") 
+        {
+            out.function = RPNElement::FUNCTION_DISTANCE;
+        } 
+        else if (function->name == "tuple") 
+        {
+            out.function = RPNElement::FUNCTION_TUPLE;
+        } 
+        else if (function->name == "less") 
+        {
+            out.function = RPNElement::FUNCTION_LESS;
+        } 
+        else 
+        {
+            return false;
+        }
+
+        return true;
+    }
+    // Match identifier 
+    else if (const auto * identifier = node->as<ASTIdentifier>()) 
+    {
+        out.function = RPNElement::FUNCTION_IDENTIFIER;
+        out.identifier.emplace(identifier->name());
+
+        return true;
+    } 
+
+    return false;
+}
+
+bool MergeTreeIndexConditionAnnoy::matchRPN(const RPN & rpn) 
+{
+    // Can we place it outside the function? 
+    // Use for match the rpn
+    // Take care of matching tuples (because it can contains arbitary number of fields)
+    RPN prefix_template_rpn{
+        RPNElement{RPNElement::FUNCTION_LESS}, 
+        RPNElement{RPNElement::FUNCTION_FLOAT_LITERAL}, 
+        RPNElement{RPNElement::FUNCTION_DISTANCE}, 
+        RPNElement{RPNElement::FUNCTION_TUPLE}, 
+        RPNElement{RPNElement::FUNCTION_IDENTIFIER}, 
+    };
+
+    // Placeholders for the extracted data
+    Target target_vec;
+    float distance = 0;
+
+    size_t rpn_idx = 0;
+    size_t template_idx = 0;
+
+    // TODO: Should we check what we have the same size of RPNs?
+    // If we wand to support complex expressions, we will not check it
+    while (rpn_idx < rpn.size() && template_idx < prefix_template_rpn.size()) 
+    {
+        const auto & element = rpn[rpn_idx];
+        const auto & template_element = prefix_template_rpn[template_idx];
+
+        if (element.function != template_element.function) 
+        {
+            return false;
+        }
+
+        if (element.function == RPNElement::FUNCTION_FLOAT_LITERAL) 
+        {
+            assert(element.literal.has_value());
+            auto value = element.literal.value();
+
+            distance = value; 
+        }
+
+        if (element.function == RPNElement::FUNCTION_TUPLE) 
+        {
+            // TODO: Better tuple extraction
+            // Extract target vec
+            ++rpn_idx;
+            while (rpn_idx < rpn.size()) {
+                if (rpn[rpn_idx].function == RPNElement::FUNCTION_FLOAT_LITERAL) 
+                {
+                    // Extract tuple element
+                    assert(rpn[rpn_idx].literal.has_value());
+                    auto value = rpn[rpn_idx].literal.value();
+                    target_vec.push_back(value);
+                    ++rpn_idx;
+                } else {
+                    ++template_idx;
+                    break;
+                } 
+            }
+            continue;
+        }
+
+        if (element.function == RPNElement::FUNCTION_IDENTIFIER) 
+        {
+            // TODO: Check that we have the same columns
+        }
+
+        ++rpn_idx;
+        ++template_idx;
+    }
+
+    expression.emplace(ANNExpression{
+        .target = std::move(target_vec),
+        .distance = distance,
+    });
+
+    return true;
 }
 
 
@@ -171,9 +401,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
-    const SelectQueryInfo & /*query*/, ContextPtr /*context*/) const
+    const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionAnnoy>();
+    return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, context);
 };
 
 MergeTreeIndexFormat MergeTreeIndexAnnoy::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
