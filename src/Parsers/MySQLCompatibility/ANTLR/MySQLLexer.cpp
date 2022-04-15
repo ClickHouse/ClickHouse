@@ -2252,7 +2252,7 @@ std::vector<std::string> MySQLLexer::_modeNames = {
   "DEFAULT_MODE"
 };
 
-std::vector<std::string> MySQLLexer::_literalNames = std::vector<std::string>({
+std::vector<std::string> MySQLLexer::_literalNames = {
   "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
   "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
   "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
@@ -2300,9 +2300,9 @@ std::vector<std::string> MySQLLexer::_literalNames = std::vector<std::string>({
   "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
   "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
   "", "", "'<>'"
-});
+};
 
-std::vector<std::string> MySQLLexer::_symbolicNames = std::vector<std::string>({
+std::vector<std::string> MySQLLexer::_symbolicNames = {
   "", "ACCOUNT_SYMBOL", "ASCII_SYMBOL", "ALWAYS_SYMBOL", "BACKUP_SYMBOL", 
   "BEGIN_SYMBOL", "BYTE_SYMBOL", "CACHE_SYMBOL", "CHARSET_SYMBOL", 
   "CHECKSUM_SYMBOL", "CLOSE_SYMBOL", "COMMENT_SYMBOL", "COMMIT_SYMBOL", 
@@ -2510,7 +2510,7 @@ std::vector<std::string> MySQLLexer::_symbolicNames = std::vector<std::string>({
   "DOUBLE_QUOTED_TEXT", "SINGLE_QUOTED_TEXT", "VERSION_COMMENT_START", 
   "MYSQL_COMMENT_START", "VERSION_COMMENT_END", "BLOCK_COMMENT", "POUND_COMMENT", 
   "DASHDASH_COMMENT", "NOT_EQUAL2_OPERATOR"
-});
+};
 
 dfa::Vocabulary MySQLLexer::_vocabulary(_literalNames, _symbolicNames);
 

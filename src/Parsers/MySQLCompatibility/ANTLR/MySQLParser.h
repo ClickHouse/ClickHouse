@@ -441,11 +441,11 @@ public:
   };
 
   MySQLParser(antlr4::TokenStream *input);
-  ~MySQLParser() override;
+  ~MySQLParser();
 
   virtual std::string getGrammarFileName() const override;
-  virtual const antlr4::atn::ATN& getATN() const override { return _atn; }
-  virtual const std::vector<std::string>& getTokenNames() const override { return _tokenNames; } // deprecated: use vocabulary instead.
+  virtual const antlr4::atn::ATN& getATN() const override { return _atn; };
+  virtual const std::vector<std::string>& getTokenNames() const override { return _tokenNames; }; // deprecated: use vocabulary instead.
   virtual const std::vector<std::string>& getRuleNames() const override;
   virtual antlr4::dfa::Vocabulary& getVocabulary() const override;
 
@@ -2049,7 +2049,7 @@ public:
 
   class  CreateUdfContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     CreateUdfContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *FUNCTION_SYMBOL();
@@ -2101,8 +2101,8 @@ public:
 
   class  RoutineOptionContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *option = nullptr;
-    antlr4::Token *security = nullptr;
+    antlr4::Token *option = nullptr;;
+    antlr4::Token *security = nullptr;;
     RoutineOptionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     TextLiteralContext *textLiteral();
@@ -2127,7 +2127,7 @@ public:
 
   class  CreateIndexContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     CreateIndexContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     CreateIndexTargetContext *createIndexTarget();
@@ -2279,7 +2279,7 @@ public:
 
   class  ServerOptionContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *option = nullptr;
+    antlr4::Token *option = nullptr;;
     ServerOptionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     TextLiteralContext *textLiteral();
@@ -2604,7 +2604,7 @@ public:
 
   class  ViewAlgorithmContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *algorithm = nullptr;
+    antlr4::Token *algorithm = nullptr;;
     ViewAlgorithmContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *ALGORITHM_SYMBOL();
@@ -2638,8 +2638,8 @@ public:
 
   class  CreateTriggerContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *timing = nullptr;
-    antlr4::Token *event = nullptr;
+    antlr4::Token *timing = nullptr;;
+    antlr4::Token *event = nullptr;;
     CreateTriggerContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *TRIGGER_SYMBOL();
@@ -2667,7 +2667,7 @@ public:
 
   class  TriggerFollowsPrecedesClauseContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *ordering = nullptr;
+    antlr4::Token *ordering = nullptr;;
     TriggerFollowsPrecedesClauseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     TextOrIdentifierContext *textOrIdentifier();
@@ -2857,7 +2857,7 @@ public:
 
   class  DropIndexContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     DropIndexContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     IndexRefContext *indexRef();
@@ -2924,7 +2924,7 @@ public:
 
   class  DropTableContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     DropTableContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     TableRefListContext *tableRefList();
@@ -4321,7 +4321,7 @@ public:
 
   class  InnerJoinTypeContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     InnerJoinTypeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *JOIN_SYMBOL();
@@ -4338,7 +4338,7 @@ public:
 
   class  OuterJoinTypeContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     OuterJoinTypeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *JOIN_SYMBOL();
@@ -4975,7 +4975,7 @@ public:
 
   class  ResetOptionContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *option = nullptr;
+    antlr4::Token *option = nullptr;;
     ResetOptionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *MASTER_SYMBOL();
@@ -5405,7 +5405,7 @@ public:
 
   class  PreparedStatementContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     PreparedStatementContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     IdentifierContext *identifier();
@@ -5648,7 +5648,7 @@ public:
 
   class  RequireClauseContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *option = nullptr;
+    antlr4::Token *option = nullptr;;
     RequireClauseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *REQUIRE_SYMBOL();
@@ -5948,7 +5948,7 @@ public:
 
   class  RoleOrPrivilegeContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *object = nullptr;
+    antlr4::Token *object = nullptr;;
     RoleOrPrivilegeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     RoleIdentifierOrTextContext *roleIdentifierOrText();
@@ -6033,7 +6033,7 @@ public:
 
   class  RequireListElementContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *element = nullptr;
+    antlr4::Token *element = nullptr;;
     RequireListElementContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     TextStringContext *textString();
@@ -6050,7 +6050,7 @@ public:
 
   class  GrantOptionContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *option = nullptr;
+    antlr4::Token *option = nullptr;;
     GrantOptionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *OPTION_SYMBOL();
@@ -6123,7 +6123,7 @@ public:
 
   class  TableAdministrationStatementContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     TableAdministrationStatementContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *TABLE_SYMBOL();
@@ -6205,8 +6205,8 @@ public:
 
   class  InstallUninstallStatmentContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *action = nullptr;
-    antlr4::Token *type = nullptr;
+    antlr4::Token *action = nullptr;;
+    antlr4::Token *type = nullptr;;
     InstallUninstallStatmentContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     IdentifierContext *identifier();
@@ -6447,8 +6447,8 @@ public:
 
   class  ShowStatementContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *value = nullptr;
-    antlr4::Token *object = nullptr;
+    antlr4::Token *value = nullptr;;
+    antlr4::Token *object = nullptr;;
     ShowStatementContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *SHOW_SYMBOL();
@@ -6624,7 +6624,7 @@ public:
 
   class  OtherAdministrativeStatementContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     OtherAdministrativeStatementContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     TextLiteralContext *textLiteral();
@@ -6768,7 +6768,7 @@ public:
 
   class  FlushOptionContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *option = nullptr;
+    antlr4::Token *option = nullptr;;
     FlushOptionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *DES_KEY_FILE_SYMBOL();
@@ -7441,7 +7441,7 @@ public:
 
   class  BitExprContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *op = nullptr;
+    antlr4::Token *op = nullptr;;
     BitExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     SimpleExprContext *simpleExpr();
@@ -7797,7 +7797,7 @@ public:
 
   class  SumExprContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *name = nullptr;
+    antlr4::Token *name = nullptr;;
     SumExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *OPEN_PAR_SYMBOL();
@@ -8020,7 +8020,7 @@ public:
 
   class  RuntimeFunctionCallContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *name = nullptr;
+    antlr4::Token *name = nullptr;;
     RuntimeFunctionCallContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *OPEN_PAR_SYMBOL();
@@ -8114,7 +8114,7 @@ public:
 
   class  GeometryFunctionContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *name = nullptr;
+    antlr4::Token *name = nullptr;;
     GeometryFunctionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *OPEN_PAR_SYMBOL();
@@ -9405,7 +9405,7 @@ public:
 
   class  TableConstraintDefContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     TableConstraintDefContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     KeyListVariantsContext *keyListVariants();
@@ -9478,7 +9478,7 @@ public:
 
   class  ColumnAttributeContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *value = nullptr;
+    antlr4::Token *value = nullptr;;
     ColumnAttributeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     NullLiteralContext *nullLiteral();
@@ -9568,8 +9568,8 @@ public:
 
   class  ReferencesContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *match = nullptr;
-    antlr4::Token *option = nullptr;
+    antlr4::Token *match = nullptr;;
+    antlr4::Token *option = nullptr;;
     ReferencesContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *REFERENCES_SYMBOL();
@@ -9693,7 +9693,7 @@ public:
 
   class  IndexTypeContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *algorithm = nullptr;
+    antlr4::Token *algorithm = nullptr;;
     IndexTypeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *BTREE_SYMBOL();
@@ -9813,7 +9813,7 @@ public:
 
   class  DataTypeContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     DataTypeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *INT_SYMBOL();
@@ -9883,7 +9883,7 @@ public:
 
   class  NcharContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     NcharContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *NCHAR_SYMBOL();
@@ -9899,7 +9899,7 @@ public:
 
   class  RealTypeContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     RealTypeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *REAL_SYMBOL();
@@ -10085,9 +10085,9 @@ public:
 
   class  CreateTableOptionContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *option = nullptr;
-    antlr4::Token *format = nullptr;
-    antlr4::Token *method = nullptr;
+    antlr4::Token *option = nullptr;;
+    antlr4::Token *format = nullptr;;
+    antlr4::Token *method = nullptr;;
     CreateTableOptionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     EngineRefContext *engineRef();
@@ -10396,7 +10396,7 @@ public:
 
   class  PartitionOptionContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *option = nullptr;
+    antlr4::Token *option = nullptr;;
     PartitionOptionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     IdentifierContext *identifier();
@@ -10516,7 +10516,7 @@ public:
 
   class  ProcedureParameterContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *type = nullptr;
+    antlr4::Token *type = nullptr;;
     ProcedureParameterContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     FunctionParameterContext *functionParameter();
@@ -11781,7 +11781,7 @@ public:
 
   class  TextStringLiteralContext : public antlr4::ParserRuleContext {
   public:
-    antlr4::Token *value = nullptr;
+    antlr4::Token *value = nullptr;;
     TextStringLiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *SINGLE_QUOTED_TEXT();

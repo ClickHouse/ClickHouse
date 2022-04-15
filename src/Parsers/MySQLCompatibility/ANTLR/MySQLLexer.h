@@ -240,7 +240,7 @@ public:
   };
 
   MySQLLexer(antlr4::CharStream *input);
-  ~MySQLLexer() override;
+  ~MySQLLexer();
 
   virtual std::string getGrammarFileName() const override;
   virtual const std::vector<std::string>& getRuleNames() const override;
