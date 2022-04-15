@@ -1450,10 +1450,13 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
 {
     auto zookeeper = getZooKeeper();
 
+
     while (true)
     {
         Coordination::Requests ops;
         NameSet absent_part_paths_on_replicas;
+
+        lockSharedData(*part, false);
 
         /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
         checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, part->name, &absent_part_paths_on_replicas);
@@ -1493,7 +1496,10 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
                 LOG_INFO(log, "The part {} on a replica suddenly appeared, will recheck checksums", e.getPathForFirstFailedOp());
             }
             else
+            {
+                unlockSharedData(*part);
                 throw;
+            }
         }
     }
 }
@@ -7296,7 +7302,9 @@ void StorageReplicatedMergeTree::createTableSharedID()
 
 void StorageReplicatedMergeTree::lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const
 {
-    if (!disk || !disk->supportZeroCopyReplication())
+    auto settings = getSettings();
+
+    if (!disk || !disk->supportZeroCopyReplication() || !settings->allow_remote_fs_zero_copy_replication)
         return;
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
@@ -7320,7 +7328,9 @@ void StorageReplicatedMergeTree::lockSharedDataTemporary(const String & part_nam
 
 void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock) const
 {
-    if (!part.volume || !part.isStoredOnDisk())
+    auto settings = getSettings();
+
+    if (!part.volume || !part.isStoredOnDisk() || !settings->allow_remote_fs_zero_copy_replication)
         return;
 
     DiskPtr disk = part.volume->getDisk();
