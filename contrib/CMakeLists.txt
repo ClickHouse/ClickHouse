@@ -27,6 +27,7 @@ add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing)
 add_subdirectory (dragonbox-cmake)
+add_subdirectory (farsh-cmake)
 add_subdirectory (hyperscan-cmake)
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
@@ -77,10 +78,6 @@ endif ()
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
-endif ()
-
-if (USE_INTERNAL_FARSH_LIBRARY)
-    add_subdirectory (farsh-cmake)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
