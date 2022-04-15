@@ -935,7 +935,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         if (components.whole < 0 && components.fractional != 0)
         {
             const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
-            components.whole = components.whole + 1;
+            ++components.whole;
             components.fractional = scale_multiplier - components.fractional;
         }
     }
