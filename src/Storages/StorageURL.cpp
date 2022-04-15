@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -223,14 +224,12 @@ namespace
                 }
 
                 Chunk chunk;
+                std::lock_guard lock(reader_mutex);
                 if (reader->pull(chunk))
                     return chunk;
 
-                {
-                    std::lock_guard lock(reader_mutex);
-                    pipeline->reset();
-                    reader.reset();
-                }
+                pipeline->reset();
+                reader.reset();
             }
         }
 
@@ -346,39 +345,11 @@ namespace
                                     /* use_external_buffer */ false,
                                     /* skip_url_not_found_error */ skip_url_not_found_error);
 
-                                ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-                                    ? CurrentThread::get().getThreadGroup()
-                                    : MainThreadStatus::getInstance().getThreadGroup();
-
-                                ContextPtr query_context
-                                    = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
-
-                                auto worker_cleanup = [has_running_group = running_group == nullptr](ThreadStatus & thread_status)
-                                {
-                                    if (has_running_group)
-                                        thread_status.detachQuery(false);
-                                };
-
-                                auto worker_setup = [query_context = std::move(query_context),
-                                                     running_group = std::move(running_group)](ThreadStatus & thread_status)
-                                {
-                                    /// Save query context if any, because cache implementation needs it.
-                                    if (query_context)
-                                        thread_status.attachQueryContext(query_context);
-
-                                    /// To be able to pass ProfileEvents.
-                                    if (running_group)
-                                        thread_status.attachQuery(running_group);
-                                };
-
-
                                 return wrapReadBufferWithCompressionMethod(
                                     std::make_unique<ParallelReadBuffer>(
                                         std::move(read_buffer_factory),
-                                        &IOThreadPool::get(),
-                                        download_threads,
-                                        std::move(worker_setup),
-                                        std::move(worker_cleanup)),
+                                        threadPoolCallbackRunner(IOThreadPool::get()),
+                                        download_threads),
                                     chooseCompressionMethod(request_uri.getPath(), compression_method));
                             }
                         }
@@ -560,6 +531,8 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context)
 {
+    context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+
     Poco::Net::HTTPBasicCredentials credentials;
 
     std::vector<String> urls_to_check;
