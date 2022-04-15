@@ -41,6 +41,9 @@
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <IO/WriteBufferFromOStream.h>
 
+#include <Storages/MergeTree/IMergeTreeIndexReturnIdCondition.h>
+#include <Storages/MergeTree/MarkRangeSelective.h>
+
 namespace DB
 {
 
@@ -1545,6 +1548,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     MarkRanges res;
 
+    auto return_id_condition = dynamic_cast<MergeTreeIndexReturnIdConditionPtr>(condition);
+
     /// Some granules can cover two or more ranges,
     /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
@@ -1571,6 +1576,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             {
                 ++granules_dropped;
                 continue;
+            }
+
+            if (return_id_condition) {
+                res.push_back(MarkRangeSelected(data_range, return_id_condition->returnIdRecords(granule)));
             }
 
             if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
