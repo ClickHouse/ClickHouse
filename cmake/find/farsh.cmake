@@ -1,7 +1,3 @@
-if (NOT ENABLE_FARSH)
-    return()
-endif()
-
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/farsh/LICENSE")
     set (MISSING_INTERNAL_FARSH_LIBRARY 1)
     message (WARNING "submodule contrib/farsh is missing. to fix try run: \n git submodule update --init")
