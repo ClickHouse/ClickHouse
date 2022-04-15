@@ -28,6 +28,8 @@ namespace Annoy
 const int NUM_OF_TREES = 20;
 const int DIMENSION = 512;
 
+const int32_t LIMIT = 10;
+
 template<typename Dist>
 void AnnoyIndexSerialize<Dist>::serialize(WriteBuffer& ostr) const
 {
@@ -196,6 +198,27 @@ bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr i
     annoy->get_nns_by_vector(&target_vec[0], 1, 200, &items, &dist);
     return dist[0] < min_distance;
 }
+
+std::vector<int32_t> MergeTreeIndexConditionAnnoy::returnIdRecords(MergeTreeIndexGranulePtr idx_granule) const {
+    // TODO: Change assert to the exception
+    assert(expression.has_value());
+
+    std::vector<int32_t> items;
+    items.reserve(LIMIT);
+
+    std::vector<float> target_vec = expression.value().target;
+    float min_distance = expression.value().distance;
+
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy>(idx_granule);
+    auto annoy = std::dynamic_pointer_cast<Annoy::AnnoyIndexSerialize<>>(granule->index_base);
+
+
+    // 1 - num of nearest neighbour (NN)
+    // next number - upper limit on the size of the internal queue; -1 means, that it is equal to num of trees * num of NN
+    annoy->get_nns_by_vector(&target_vec[0], LIMIT, 200, &items, NULL);
+    return items;
+}
+
 
 bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 {
