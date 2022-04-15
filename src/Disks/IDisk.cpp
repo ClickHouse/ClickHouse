@@ -86,28 +86,4 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-std::unique_ptr<ReadBufferFromFileBase> IDisk::readMetaFile(
-    const String & path,
-    const ReadSettings & settings,
-    std::optional<size_t> size) const
-{
-    LOG_TRACE(&Poco::Logger::get("IDisk"), "Read local metafile: {}", path);
-    return readFile(path, settings, size);
-}
-
-std::unique_ptr<WriteBufferFromFileBase> IDisk::writeMetaFile(
-    const String & path,
-    size_t buf_size,
-    WriteMode mode)
-{
-    LOG_TRACE(&Poco::Logger::get("IDisk"), "Write local metafile: {}", path);
-    return writeFile(path, buf_size, mode);
-}
-
-void IDisk::removeMetaFileIfExists(const String & path)
-{
-    LOG_TRACE(&Poco::Logger::get("IDisk"), "Remove local metafile: {}", path);
-    removeFileIfExists(path);
-}
-
 }

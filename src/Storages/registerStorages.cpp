@@ -132,11 +132,11 @@ void registerStorages()
     registerStorageKafka(factory);
     #endif
 
-#if USE_FILELOG
+    #if USE_FILELOG
     registerStorageFileLog(factory);
-#endif
+    #endif
 
-#if USE_AMQPCPP
+    #if USE_AMQPCPP
     registerStorageRabbitMQ(factory);
     #endif
 

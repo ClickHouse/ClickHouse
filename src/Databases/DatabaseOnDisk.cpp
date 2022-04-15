@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -55,6 +56,9 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
 
+    if (ast_create_query.select && ast_create_query.isView())
+        ApplyWithSubqueryVisitor().visit(*ast_create_query.select);
+
     if (ast_create_query.as_table_function)
     {
         const auto & factory = TableFunctionFactory::instance();
@@ -77,6 +81,10 @@ std::pair<String, StoragePtr> createTableFromAST(
         /// - the code is simpler, since the query is already brought to a suitable form.
         if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
         {
+            if (!ast_create_query.storage || !ast_create_query.storage->engine)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid storage definition in metadata file: "
+                                                           "it's a bug or result of manual intervention in metadata files");
+
             if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(ast_create_query.storage->engine->name))
                 throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
             /// Leave columns empty.

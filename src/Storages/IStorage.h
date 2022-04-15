@@ -13,6 +13,7 @@
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
+#include <Storages/StorageSnapshot.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -71,7 +72,9 @@ class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::unique_ptr<IBackupEntry>>>;
-using RestoreDataTasks = std::vector<std::function<void()>>;
+class IRestoreTask;
+using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
+struct StorageRestoreSettings;
 
 struct ColumnSize
 {
@@ -158,6 +161,15 @@ public:
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
 
+    /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
+    /// Storage may throw an exception later if some query kind is not fully supported.
+    /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
+    virtual bool supportsTransactions() const { return false; }
+
+    /// Returns true if the storage supports storing of dynamic subcolumns.
+    /// For now it makes sense only for data type Object.
+    virtual bool supportsDynamicSubcolumns() const { return false; }
+
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
     virtual bool prefersLargeBlocks() const { return true; }
@@ -211,11 +223,14 @@ public:
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
+    /// Returns true if the backup is hollow, which means it doesn't contain any data.
+    virtual bool hasDataToBackup() const { return false; }
+
     /// Prepares entries to backup data of the storage.
-    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context);
+    virtual BackupEntries backupData(ContextPtr context, const ASTs & partitions);
 
     /// Extract data from the backup and put it to the storage.
-    virtual RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context);
+    virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings);
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
@@ -269,8 +284,7 @@ public:
       * QueryProcessingStage::Enum required for Distributed over Distributed,
       * since it cannot return Complete for intermediate queries never.
       */
-    virtual QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const
     {
         return QueryProcessingStage::FetchColumns;
     }
@@ -331,7 +345,7 @@ public:
       */
     virtual Pipe read(
         const Names & /*column_names*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
         SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -343,7 +357,7 @@ public:
     virtual void read(
         QueryPlan & query_plan,
         const Names & /*column_names*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
         SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -474,6 +488,16 @@ public:
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual void waitForMutation(const String & /*mutation_id*/)
+    {
+        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    virtual void setMutationCSN(const String & /*mutation_id*/, UInt64 /*csn*/)
+    {
+        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Cancel a part move to shard.
     virtual CancellationCode killPartMoveToShard(const UUID & /*task_uuid*/)
     {
@@ -544,11 +568,6 @@ public:
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 
-    /// Checks that Partition could be dropped right now
-    /// Otherwise - throws an exception with detailed information.
-    /// We do not use mutex because it is not very important that the size could change during the operation.
-    virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
-
     /// Returns true if Storage may store some data on disk.
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
@@ -561,6 +580,8 @@ public:
 
     /// Returns true if all disks of storage are read-only.
     virtual bool isStaticStorage() const;
+
+    virtual bool isColumnOriented() const { return false; }
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
@@ -598,9 +619,17 @@ public:
     /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
-    /// Should table->drop be called at once or with delay (in case of atomic database engine).
-    /// Needed for integration engines, when there must be no delay for calling drop() method.
-    virtual bool dropTableImmediately() { return false; }
+    /// Creates a storage snapshot from given metadata.
+    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
+    {
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+    }
+
+    /// Creates a storage snapshot from given metadata and columns, which are used in query.
+    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
+    {
+        return getStorageSnapshot(metadata_snapshot, query_context);
+    }
 
 private:
     /// Lock required for alter queries (lockForAlter).

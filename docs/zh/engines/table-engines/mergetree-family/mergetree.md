@@ -809,4 +809,13 @@ S3磁盘也可以设置冷热存储：
 
 指定了`cold`选项后，本地磁盘剩余空间如果小于`move_factor * disk_size`，或有TTL设置时，数据就会定时迁移至S3了。
 
+## 虚拟列 {#virtual-columns}
+
+-    `_part` - 分区名称。
+-    `_part_index` - 作为请求的结果，按顺序排列的分区数。
+-    `_partition_id` — 分区名称。
+-    `_part_uuid` - 唯一部分标识符（如果 MergeTree 设置`assign_part_uuids` 已启用）。
+-    `_partition_value` — `partition by` 表达式的值（元组）。
+-    `_sample_factor` - 采样因子（来自请求）。
+
 [原始文章](https://clickhouse.com/docs/en/operations/table_engines/mergetree/) <!--hide-->

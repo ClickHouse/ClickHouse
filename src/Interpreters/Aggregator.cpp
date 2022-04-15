@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <future>
+#include <numeric>
 #include <Poco/Util/Application.h>
 
 #include <base/sort.h>
@@ -15,6 +17,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
+#include <Common/LRUCache.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
@@ -27,12 +30,236 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Core/ProtocolDefines.h>
 
+#include <Parsers/ASTSelectQuery.h>
 
 namespace ProfileEvents
 {
-    extern const Event ExternalAggregationWritePart;
-    extern const Event ExternalAggregationCompressedBytes;
-    extern const Event ExternalAggregationUncompressedBytes;
+extern const Event ExternalAggregationWritePart;
+extern const Event ExternalAggregationCompressedBytes;
+extern const Event ExternalAggregationUncompressedBytes;
+extern const Event AggregationPreallocatedElementsInHashTables;
+extern const Event AggregationHashTablesInitializedAsTwoLevel;
+}
+
+namespace
+{
+/** Collects observed HashMap-s sizes to avoid redundant intermediate resizes.
+  */
+class HashTablesStatistics
+{
+public:
+    struct Entry
+    {
+        size_t sum_of_sizes; // used to determine if it's better to convert aggregation to two-level from the beginning
+        size_t median_size; // roughly the size we're going to preallocate on each thread
+    };
+
+    using Cache = DB::LRUCache<UInt64, Entry>;
+    using CachePtr = std::shared_ptr<Cache>;
+    using Params = DB::Aggregator::Params::StatsCollectingParams;
+
+    /// Collection and use of the statistics should be enabled.
+    std::optional<Entry> getSizeHint(const Params & params)
+    {
+        if (!params.isCollectionAndUseEnabled())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+
+        std::lock_guard lock(mutex);
+        const auto cache = getHashTableStatsCache(params, lock);
+        if (const auto hint = cache->get(params.key))
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("Aggregator"),
+                "An entry for key={} found in cache: sum_of_sizes={}, median_size={}",
+                params.key,
+                hint->sum_of_sizes,
+                hint->median_size);
+            return *hint;
+        }
+        return std::nullopt;
+    }
+
+    /// Collection and use of the statistics should be enabled.
+    void update(size_t sum_of_sizes, size_t median_size, const Params & params)
+    {
+        if (!params.isCollectionAndUseEnabled())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+
+        std::lock_guard lock(mutex);
+        const auto cache = getHashTableStatsCache(params, lock);
+        const auto hint = cache->get(params.key);
+        // We'll maintain the maximum among all the observed values until the next prediction turns out to be too wrong.
+        if (!hint || sum_of_sizes < hint->sum_of_sizes / 2 || hint->sum_of_sizes < sum_of_sizes || median_size < hint->median_size / 2
+            || hint->median_size < median_size)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("Aggregator"),
+                "Statistics updated for key={}: new sum_of_sizes={}, median_size={}",
+                params.key,
+                sum_of_sizes,
+                median_size);
+            cache->set(params.key, std::make_shared<Entry>(Entry{.sum_of_sizes = sum_of_sizes, .median_size = median_size}));
+        }
+    }
+
+    std::optional<DB::HashTablesCacheStatistics> getCacheStats() const
+    {
+        std::lock_guard lock(mutex);
+        if (hash_table_stats)
+        {
+            size_t hits = 0, misses = 0;
+            hash_table_stats->getStats(hits, misses);
+            return DB::HashTablesCacheStatistics{.entries = hash_table_stats->count(), .hits = hits, .misses = misses};
+        }
+        return std::nullopt;
+    }
+
+    static size_t calculateCacheKey(const DB::ASTPtr & select_query)
+    {
+        if (!select_query)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Query ptr cannot be null");
+
+        const auto & select = select_query->as<DB::ASTSelectQuery &>();
+
+        // It may happen in some corner cases like `select 1 as num group by num`.
+        if (!select.tables())
+            return 0;
+
+        SipHash hash;
+        hash.update(select.tables()->getTreeHash());
+        if (const auto where = select.where())
+            hash.update(where->getTreeHash());
+        if (const auto group_by = select.groupBy())
+            hash.update(group_by->getTreeHash());
+        return hash.get64();
+    }
+
+private:
+    CachePtr getHashTableStatsCache(const Params & params, const std::lock_guard<std::mutex> &)
+    {
+        if (!hash_table_stats || hash_table_stats->maxSize() != params.max_entries_for_hash_table_stats)
+            hash_table_stats = std::make_shared<Cache>(params.max_entries_for_hash_table_stats);
+        return hash_table_stats;
+    }
+
+    mutable std::mutex mutex;
+    CachePtr hash_table_stats;
+};
+
+HashTablesStatistics & getHashTablesStatistics()
+{
+    static HashTablesStatistics hash_tables_stats;
+    return hash_tables_stats;
+}
+
+bool worthConvertToTwoLevel(
+    size_t group_by_two_level_threshold, size_t result_size, size_t group_by_two_level_threshold_bytes, auto result_size_bytes)
+{
+    // params.group_by_two_level_threshold will be equal to 0 if we have only one thread to execute aggregation (refer to AggregatingStep::transformPipeline).
+    return (group_by_two_level_threshold && result_size >= group_by_two_level_threshold)
+        || (group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(group_by_two_level_threshold_bytes));
+}
+
+DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedDataVariants::Type type)
+{
+    using Type = DB::AggregatedDataVariants::Type;
+    switch (type)
+    {
+#define M(NAME) \
+    case Type::NAME: \
+        return Type::NAME##_two_level;
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+#undef M
+        default:
+            return type;
+    }
+    __builtin_unreachable();
+}
+
+void initDataVariantsWithSizeHint(
+    DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
+{
+    const auto & stats_collecting_params = params.stats_collecting_params;
+    if (stats_collecting_params.isCollectionAndUseEnabled())
+    {
+        if (auto hint = getHashTablesStatistics().getSizeHint(stats_collecting_params))
+        {
+            const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
+            const auto lower_limit = hint->sum_of_sizes / max_threads;
+            const auto upper_limit = stats_collecting_params.max_size_to_preallocate_for_aggregation / max_threads;
+            const auto adjusted = std::min(std::max(lower_limit, hint->median_size), upper_limit);
+            if (worthConvertToTwoLevel(
+                    params.group_by_two_level_threshold,
+                    hint->sum_of_sizes,
+                    /*group_by_two_level_threshold_bytes*/ 0,
+                    /*result_size_bytes*/ 0))
+                method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
+            result.init(method_chosen, adjusted);
+            ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
+            return;
+        }
+    }
+    result.init(method_chosen);
+}
+
+/// Collection and use of the statistics should be enabled.
+void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, const DB::Aggregator::Params::StatsCollectingParams & params)
+{
+    if (!params.isCollectionAndUseEnabled())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+
+    std::vector<size_t> sizes(data_variants.size());
+    for (size_t i = 0; i < data_variants.size(); ++i)
+        sizes[i] = data_variants[i]->size();
+    const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
+    std::nth_element(sizes.begin(), median_size, sizes.end());
+    const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
+    getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
+}
+
+// The std::is_constructible trait isn't suitable here because some classes have template constructors with semantics different from providing size hints.
+// Also string hash table variants are not supported due to the fact that both local perf tests and tests in CI showed slowdowns for them.
+template <typename...>
+struct HasConstructorOfNumberOfElements : std::false_type
+{
+};
+
+template <typename... Ts>
+struct HasConstructorOfNumberOfElements<HashMapTable<Ts...>> : std::true_type
+{
+};
+
+template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator, template <typename...> typename ImplTable>
+struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable>> : std::true_type
+{
+};
+
+template <typename... Ts>
+struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
+{
+};
+
+template <typename... Ts>
+struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Ts...>> : std::true_type
+{
+};
+
+template <template <typename> typename Method, typename Base>
+struct HasConstructorOfNumberOfElements<Method<Base>> : HasConstructorOfNumberOfElements<Base>
+{
+};
+
+template <typename Method>
+auto constructWithReserveIfPossible(size_t size_hint)
+{
+    if constexpr (HasConstructorOfNumberOfElements<typename Method::Data>::value)
+    {
+        ProfileEvents::increment(ProfileEvents::AggregationPreallocatedElementsInHashTables, size_hint);
+        return std::make_unique<Method>(size_hint);
+    }
+    else
+        return std::make_unique<Method>();
+}
 }
 
 namespace DB
@@ -64,6 +291,10 @@ AggregatedDataVariants::~AggregatedDataVariants()
     }
 }
 
+std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
+{
+    return getHashTablesStatistics().getCacheStats();
+}
 
 void AggregatedDataVariants::convertToTwoLevel()
 {
@@ -86,6 +317,47 @@ void AggregatedDataVariants::convertToTwoLevel()
         default:
             throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
     }
+}
+
+void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
+{
+    switch (type_)
+    {
+        case Type::EMPTY:
+            break;
+        case Type::without_key:
+            break;
+
+#define M(NAME, IS_TWO_LEVEL) \
+    case Type::NAME: \
+        if (size_hint) \
+            (NAME) = constructWithReserveIfPossible<decltype(NAME)::element_type>(*size_hint); \
+        else \
+            (NAME) = std::make_unique<decltype(NAME)::element_type>(); \
+        break;
+            APPLY_FOR_AGGREGATED_VARIANTS(M)
+#undef M
+    }
+
+    type = type_;
+}
+
+Aggregator::Params::StatsCollectingParams::StatsCollectingParams() = default;
+
+Aggregator::Params::StatsCollectingParams::StatsCollectingParams(
+    const ASTPtr & select_query_,
+    bool collect_hash_table_stats_during_aggregation_,
+    size_t max_entries_for_hash_table_stats_,
+    size_t max_size_to_preallocate_for_aggregation_)
+    : key(collect_hash_table_stats_during_aggregation_ ? HashTablesStatistics::calculateCacheKey(select_query_) : 0)
+    , max_entries_for_hash_table_stats(max_entries_for_hash_table_stats_)
+    , max_size_to_preallocate_for_aggregation(max_size_to_preallocate_for_aggregation_)
+{
+}
+
+bool Aggregator::Params::StatsCollectingParams::isCollectionAndUseEnabled() const
+{
+    return key != 0;
 }
 
 Block Aggregator::getHeader(bool final) const
@@ -237,8 +509,7 @@ public:
 
 #endif
 
-Aggregator::Aggregator(const Params & params_)
-    : params(params_)
+Aggregator::Aggregator(const Params & params_) : params(params_)
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -292,7 +563,6 @@ Aggregator::Aggregator(const Params & params_)
 #if USE_EMBEDDED_COMPILER
     compileAggregateFunctionsIfNeeded();
 #endif
-
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -855,12 +1125,18 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
 
 void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
-    AggregatedDataWithoutKey & res,
+    AggregatedDataVariants & data_variants,
     size_t row_begin,
     size_t row_end,
     AggregateFunctionInstruction * aggregate_instructions,
-    Arena * arena)
+    Arena * arena) const
 {
+    /// `data_variants` will destroy the states of aggregate functions in the destructor
+    data_variants.aggregator = this;
+    data_variants.init(AggregatedDataVariants::Type::without_key);
+
+    AggregatedDataWithoutKey & res = data_variants.without_key;
+
     /// Adding values
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
@@ -952,7 +1228,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     /// How to perform the aggregation?
     if (result.empty())
     {
-        result.init(method_chosen);
+        initDataVariantsWithSizeHint(result, method_chosen, params);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
         LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
@@ -1032,9 +1308,8 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     /// Here all the results in the sum are taken into account, from different threads.
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
 
-    bool worth_convert_to_two_level
-        = (params.group_by_two_level_threshold && result_size >= params.group_by_two_level_threshold)
-        || (params.group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(params.group_by_two_level_threshold_bytes));
+    bool worth_convert_to_two_level = worthConvertToTwoLevel(
+        params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
@@ -1321,10 +1596,7 @@ void Aggregator::convertToBlockImpl(
 
 
 template <typename Mapped>
-inline void Aggregator::insertAggregatesIntoColumns(
-    Mapped & mapped,
-    MutableColumns & final_aggregate_columns,
-    Arena * arena) const
+inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColumns & final_aggregate_columns, Arena * arena) const
 {
     /** Final values of aggregate functions are inserted to columns.
       * Then states of aggregate functions, that are not longer needed, are destroyed.
@@ -1623,15 +1895,32 @@ Block Aggregator::prepareBlockAndFill(
 }
 
 void Aggregator::addSingleKeyToAggregateColumns(
-    const AggregatedDataVariants & data_variants,
+    AggregatedDataVariants & data_variants,
     MutableColumns & aggregate_columns) const
 {
-    const auto & data = data_variants.without_key;
-    for (size_t i = 0; i < params.aggregates_size; ++i)
+    auto & data = data_variants.without_key;
+
+    size_t i = 0;
+    try
     {
-        auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
-        column_aggregate_func.getData().push_back(data + offsets_of_aggregate_states[i]);
+        for (i = 0; i < params.aggregates_size; ++i)
+        {
+            auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
+            column_aggregate_func.getData().push_back(data + offsets_of_aggregate_states[i]);
+        }
     }
+    catch (...)
+    {
+        /// Rollback
+        for (size_t rollback_i = 0; rollback_i < i; ++rollback_i)
+        {
+            auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[rollback_i]);
+            column_aggregate_func.getData().pop_back();
+        }
+        throw;
+    }
+
+    data = nullptr;
 }
 
 void Aggregator::addArenasToAggregateColumns(
@@ -2156,6 +2445,9 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
 
     LOG_TRACE(log, "Merging aggregated data");
 
+    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+        updateStatistics(data_variants, params.stats_collecting_params);
+
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());
     for (auto & data : data_variants)
@@ -2365,9 +2657,8 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
     /// Here all the results in the sum are taken into account, from different threads.
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
 
-    bool worth_convert_to_two_level
-        = (params.group_by_two_level_threshold && result_size >= params.group_by_two_level_threshold)
-        || (params.group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(params.group_by_two_level_threshold_bytes));
+    bool worth_convert_to_two_level = worthConvertToTwoLevel(
+        params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.

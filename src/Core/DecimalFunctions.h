@@ -303,13 +303,13 @@ inline auto binaryOpResult(const DecimalType<T> & tx, const DecimalType<U> & ty)
 }
 
 template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
-inline const DataTypeDecimalTrait<T> binaryOpResult(const DecimalType<T> & tx, const DataTypeNumber<U> &)
+inline DataTypeDecimalTrait<T> binaryOpResult(const DecimalType<T> & tx, const DataTypeNumber<U> &)
 {
     return DataTypeDecimalTrait<T>(DecimalUtils::max_precision<T>, tx.getScale());
 }
 
 template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
-inline const DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const DecimalType<U> & ty)
+inline DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const DecimalType<U> & ty)
 {
     return DataTypeDecimalTrait<U>(DecimalUtils::max_precision<U>, ty.getScale());
 }

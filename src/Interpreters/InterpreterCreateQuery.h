@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
+#include <Core/SettingsEnums.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
@@ -15,6 +16,7 @@ namespace DB
 class ASTCreateQuery;
 class ASTExpressionList;
 class ASTConstraintDeclaration;
+class ASTStorage;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 
@@ -81,6 +83,8 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
+    static String getTableEngineName(DefaultTableEngine default_table_engine);
+    static void setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
@@ -91,6 +95,10 @@ private:
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
+
+    /// Update create query with columns description from storage if query doesn't have it.
+    /// It's used to prevent automatic schema inference while table creation on each server startup.
+    void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
 
     ASTPtr query_ptr;
 

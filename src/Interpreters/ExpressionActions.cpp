@@ -159,8 +159,8 @@ static void setLazyExecutionInfo(
 
     const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
-    /// If node is used in result, we can't enable lazy execution.
-    if (node_info.used_in_result)
+    /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
+    if (node_info.used_in_result || node_info.parents.empty())
         lazy_execution_info.can_be_lazy_executed = false;
 
     /// To fill lazy execution info for current node we need to create it for all it's parents.
@@ -748,7 +748,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         if (execution_context.columns[pos].column)
             res.insert(execution_context.columns[pos]);
 
-    for (const auto & item : block)
+    for (auto && item : block)
         res.insert(std::move(item));
 
     block.swap(res);

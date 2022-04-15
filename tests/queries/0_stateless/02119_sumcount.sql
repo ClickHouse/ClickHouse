@@ -1,20 +1,150 @@
 -- Integer types are added as integers
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '9007199254740992'::UInt64 AS v UNION ALL SELECT '1'::UInt64 AS v UNION ALL SELECT '1'::UInt64 AS v);
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '9007199254740992'::Nullable(UInt64) AS v UNION ALL SELECT '1'::Nullable(UInt64) AS v UNION ALL SELECT '1'::Nullable(UInt64) AS v );
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '9007199254740992'::LowCardinality(UInt64) AS v UNION ALL SELECT '1'::LowCardinality(UInt64) AS v UNION ALL SELECT '1'::LowCardinality(UInt64) AS v );
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '9007199254740992'::LowCardinality(Nullable(UInt64)) AS v UNION ALL SELECT '1'::LowCardinality(Nullable(UInt64)) AS v UNION ALL SELECT '1'::LowCardinality(Nullable(UInt64)) AS v );
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '9007199254740992'::UInt64 AS v
+        UNION ALL
+        SELECT '1'::UInt64 AS v
+        UNION ALL SELECT '1'::UInt64 AS v
+    )
+    ORDER BY v
+);
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '9007199254740992'::Nullable(UInt64) AS v
+        UNION ALL
+        SELECT '1'::Nullable(UInt64) AS v
+        UNION ALL
+        SELECT '1'::Nullable(UInt64) AS v
+    )
+    ORDER BY v
+);
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+	(
+        SELECT '9007199254740992'::LowCardinality(UInt64) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(UInt64) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(UInt64) AS v
+    )
+    ORDER BY v
+);
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '9007199254740992'::LowCardinality(Nullable(UInt64)) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(Nullable(UInt64)) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(Nullable(UInt64)) AS v
+    )
+    ORDER BY v
+);
 
--- Float64 types are added as Float64
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '9007199254740992'::Float64 AS v UNION ALL SELECT '1'::Float64 AS v UNION ALL SELECT '1'::Float64 AS v );
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '9007199254740992'::Nullable(Float64) AS v UNION ALL SELECT '1'::Nullable(Float64) AS v UNION ALL SELECT '1'::Nullable(Float64) AS v );
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '9007199254740992'::LowCardinality(Float64) AS v UNION ALL SELECT '1'::LowCardinality(Float64) AS v UNION ALL SELECT '1'::LowCardinality(Float64) AS v);
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '9007199254740992'::LowCardinality(Nullable(Float64)) AS v UNION ALL SELECT '1'::LowCardinality(Nullable(Float64)) AS v UNION ALL SELECT '1'::LowCardinality(Nullable(Float64)) AS v );
+-- -- Float64 types are added as Float64
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '9007199254740992'::Float64 AS v
+        UNION ALL
+        SELECT '1'::Float64 AS v
+        UNION ALL SELECT '1'::Float64 AS v
+    )
+    ORDER BY v
+);
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '9007199254740992'::Nullable(Float64) AS v
+        UNION ALL
+        SELECT '1'::Nullable(Float64) AS v
+        UNION ALL
+        SELECT '1'::Nullable(Float64) AS v
+    )
+    ORDER BY v
+);
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '9007199254740992'::LowCardinality(Float64) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(Float64) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(Float64) AS v
+    )
+    ORDER BY v
+);
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '9007199254740992'::LowCardinality(Nullable(Float64)) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(Nullable(Float64)) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(Nullable(Float64)) AS v
+    )
+    ORDER BY v
+);
 
--- Float32 are added as Float64
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '16777216'::Float32 AS v UNION ALL SELECT '1'::Float32 AS v UNION ALL SELECT '1'::Float32 AS v );
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '16777216'::Nullable(Float32) AS v UNION ALL SELECT '1'::Nullable(Float32) AS v UNION ALL SELECT '1'::Nullable(Float32) AS v );
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '16777216'::LowCardinality(Float32) AS v UNION ALL SELECT '1'::LowCardinality(Float32) AS v UNION ALL SELECT '1'::LowCardinality(Float32) AS v );
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '16777216'::LowCardinality(Nullable(Float32)) AS v UNION ALL SELECT '1'::LowCardinality(Nullable(Float32)) AS v UNION ALL SELECT '1'::LowCardinality(Nullable(Float32)) AS v );
+-- -- Float32 are added as Float64
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '16777216'::Float32 AS v
+        UNION ALL
+        SELECT '1'::Float32 AS v
+        UNION ALL
+        SELECT '1'::Float32 AS v
+    )
+    ORDER BY v
+);
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '16777216'::Nullable(Float32) AS v
+        UNION ALL
+        SELECT '1'::Nullable(Float32) AS v
+        UNION ALL
+        SELECT '1'::Nullable(Float32) AS v
+    )
+    ORDER BY v
+);
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '16777216'::LowCardinality(Float32) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(Float32) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(Float32) AS v
+    )
+    ORDER BY v
+);
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM
+(
+    SELECT v FROM
+    (
+        SELECT '16777216'::LowCardinality(Nullable(Float32)) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(Nullable(Float32)) AS v
+        UNION ALL
+        SELECT '1'::LowCardinality(Nullable(Float32)) AS v
+    )
+    ORDER BY v
+);
 
 -- Small integer types use their sign/unsigned 64 byte supertype
 SELECT toTypeName(sumCount(number::Int8)), sumCount(number::Int8) FROM numbers(120);

@@ -57,17 +57,6 @@ bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplica(const Re
 }
 
 
-bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplicaShared(const ReplicatedMergeTreeLogEntryData & entry) const
-{
-    time_t threshold = remote_fs_execute_merges_on_single_replica_time_threshold;
-    return (
-        threshold > 0       /// feature turned on
-        && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS /// it is a merge log entry
-        && entry.create_time + threshold > time(nullptr)          /// not too much time waited
-    );
-}
-
-
 /// that will return the same replica name for ReplicatedMergeTreeLogEntry on all the replicas (if the replica set is the same).
 /// that way each replica knows who is responsible for doing a certain merge.
 

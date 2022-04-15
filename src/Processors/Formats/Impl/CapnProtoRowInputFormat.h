@@ -20,7 +20,7 @@ class ReadBuffer;
   * The schema in this case cannot be compiled in, so it uses a runtime schema parser.
   * See https://capnproto.org/cxx.html
   */
-class CapnProtoRowInputFormat : public IRowInputFormat
+class CapnProtoRowInputFormat final : public IRowInputFormat
 {
 public:
     CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_);

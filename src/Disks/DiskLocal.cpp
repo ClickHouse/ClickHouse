@@ -6,7 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
-#include <IO/createReadBufferFromFileBase.h>
+#include <Common/atomicRename.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -325,13 +326,14 @@ DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
-    fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
+    renameNoReplace(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
 }
 
 void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 {
     fs::path from_file = fs::path(disk_path) / from_path;
     fs::path to_file = fs::path(disk_path) / to_path;
+    fs::create_directories(to_file.parent_path());
     fs::rename(from_file, to_file);
 }
 
@@ -343,7 +345,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
@@ -539,14 +541,14 @@ catch (...)
 
 struct DiskWriteCheckData
 {
-    constexpr static size_t PAGE_SIZE = 4096;
-    char data[PAGE_SIZE]{};
+    constexpr static size_t PAGE_SIZE_IN_BYTES = 4096;
+    char data[PAGE_SIZE_IN_BYTES]{};
     DiskWriteCheckData()
     {
         static const char * magic_string = "ClickHouse disk local write check";
         static size_t magic_string_len = strlen(magic_string);
         memcpy(data, magic_string, magic_string_len);
-        memcpy(data + PAGE_SIZE - magic_string_len, magic_string, magic_string_len);
+        memcpy(data + PAGE_SIZE_IN_BYTES - magic_string_len, magic_string, magic_string_len);
     }
 };
 
@@ -557,7 +559,7 @@ try
     String tmp_template = fs::path(disk_path) / "";
     {
         auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
-        buf->write(data.data, data.PAGE_SIZE);
+        buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
         buf->sync();
     }
     return true;
@@ -622,7 +624,7 @@ bool DiskLocal::setup()
         pcg32_fast rng(randomSeed());
         UInt32 magic_number = rng();
         {
-            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
             writeIntBinary(magic_number, *buf);
         }
         disk_checker_magic_number = magic_number;
