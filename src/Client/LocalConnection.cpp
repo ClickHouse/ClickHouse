@@ -154,17 +154,17 @@ void LocalConnection::sendQuery(
     catch (const Exception & e)
     {
         state->io.onException();
-        state->exception.emplace(e);
+        state->exception.reset(e.clone());
     }
     catch (const std::exception & e)
     {
         state->io.onException();
-        state->exception.emplace(Exception::CreateFromSTDTag{}, e);
+        state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
     }
     catch (...)
     {
         state->io.onException();
-        state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 
@@ -260,17 +260,17 @@ bool LocalConnection::poll(size_t)
         catch (const Exception & e)
         {
             state->io.onException();
-            state->exception.emplace(e);
+            state->exception.reset(e.clone());
         }
         catch (const std::exception & e)
         {
             state->io.onException();
-            state->exception.emplace(Exception::CreateFromSTDTag{}, e);
+            state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
         }
         catch (...)
         {
             state->io.onException();
-            state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
     }
 
@@ -434,7 +434,7 @@ Packet LocalConnection::receivePacket()
         }
         case Protocol::Server::Exception:
         {
-            packet.exception = std::make_unique<Exception>(*state->exception);
+            packet.exception.reset(state->exception->clone());
             next_packet_type.reset();
             break;
         }

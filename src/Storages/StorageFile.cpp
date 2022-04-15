@@ -544,7 +544,6 @@ public:
             Chunk chunk;
             if (reader->pull(chunk))
             {
-                //Columns columns = res.getColumns();
                 UInt64 num_rows = chunk.getNumRows();
 
                 /// Enrich with virtual columns.
