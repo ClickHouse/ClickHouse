@@ -136,9 +136,16 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     reader(buf);
     std::optional<ParseResult> result;
 
+    /// Treat empty string as an empty object
+    /// for better CAST from String to Object.
+    if (!buf.empty())
     {
         auto parser = parsers_pool.get([] { return new Parser; });
         result = parser->parse(buf.data(), buf.size());
+    }
+    else
+    {
+        result = ParseResult{};
     }
 
     if (!result)

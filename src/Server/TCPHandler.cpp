@@ -110,7 +110,7 @@ void TCPHandler::runImpl()
     setThreadName("TCPHandler");
     ThreadStatus thread_status;
 
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP);
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP, socket().secure());
     extractConnectionSettingsFromContext(server.context());
 
     socket().setReceiveTimeout(receive_timeout);
@@ -728,6 +728,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             return;
 
         sendData({});
+        last_sent_snapshots.clear();
     }
 
     sendProgress();
