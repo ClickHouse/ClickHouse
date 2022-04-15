@@ -165,12 +165,11 @@ void addIndexColumn(const Columns & columns, ColumnUInt64 & indices, Chunk & res
 
 bool sameNext(const SortCursorImpl & impl)
 {
+    size_t pos = impl.getRow();
     for (size_t i = 0; i < impl.sort_columns_size; ++i)
     {
         const auto & col = *impl.sort_columns[i];
-        int cmp = nullableCompareAt<true, true>(
-            col, col, impl.getRow(), impl.getRow() + 1, 0);
-        if (cmp != 0)
+        if (auto cmp = col.compareAt(pos, pos + 1, col, impl.desc[i].nulls_direction); cmp != 0)
             return false;
     }
     return true;

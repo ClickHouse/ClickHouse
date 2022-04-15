@@ -1,576 +1,576 @@
 simple cases, block size = 1
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 2
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 3
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 4
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 5
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 6
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 7
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 8
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 9
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 10
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 11
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 12
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 13
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 14
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases, block size = 15
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	0	val9
-3	3	val10
-4	0	val12
-5	0	val11
-6	0	val7
-7	7	val14
-10	0	val3
-10	0	val8
-11	0	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	0	val6
+1	1	val5	0
+2	0	val9	1
+3	3	val10	0
+4	0	val12	1
+5	0	val11	1
+6	0	val7	1
+7	7	val14	0
+10	0	val3	1
+10	0	val8	1
+11	0	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	0	val6	1
 ANY RIGHT
-0	8	val2
-0	8	val4
-0	9	val5
-0	12	val0
-0	12	val11
-0	12	val3
-0	12	val9
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
+0	8	1	val2
+0	8	1	val4
+0	9	1	val5
+0	12	1	val0
+0	12	1	val11
+0	12	1	val3
+0	12	1	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
 simple cases: join_use_nulls
 ANY INNER
-1	1
-3	3
-7	7
-13	13
-14	14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
 ANY LEFT
-1	1	val5
-2	\N	val9
-3	3	val10
-4	\N	val12
-5	\N	val11
-6	\N	val7
-7	7	val14
-10	\N	val3
-10	\N	val8
-11	\N	val0
-13	13	val2
-14	14	val1
-14	14	val13
-14	14	val4
-15	\N	val6
+1	1	val5	0
+2	\N	val9	1
+3	3	val10	0
+4	\N	val12	1
+5	\N	val11	1
+6	\N	val7	1
+7	7	val14	0
+10	\N	val3	1
+10	\N	val8	1
+11	\N	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	1
 ANY RIGHT
-1	1	val6
-3	3	val10
-7	7	val8
-13	13	val1
-14	14	val7
-\N	8	val2
-\N	8	val4
-\N	9	val5
-\N	12	val0
-\N	12	val11
-\N	12	val3
-\N	12	val9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	1	val2
+\N	8	1	val4
+\N	9	1	val5
+\N	12	1	val0
+\N	12	1	val11
+\N	12	1	val3
+\N	12	1	val9
