@@ -305,22 +305,22 @@ bool MergeTreeIndexConditionDiskANN::mayBeTrueOnGranule(MergeTreeIndexGranulePtr
     // TODO: Change assert to the exception
     assert(expression.has_value());
 
-    [[maybe_unused]]  std::vector<float> target_vec = expression.value().target;
-    [[maybe_unused]] float min_distance = expression.value().distance;
+    std::vector<float> target_vec = expression.value().target;
+    float min_distance = expression.value().distance;
 
     // Number of target vectors
-    [[maybe_unused]]  size_t n = 5;
+    size_t n = 5;
 
     // Number of NN to search
-    [[maybe_unused]]  size_t k = n;
+    size_t k = n;
 
     // Will be populated by diskann
-    [[maybe_unused]] std::vector<float> distances(n);
-    [[maybe_unused]] std::vector<uint64_t> indicies(n); 
-    [[maybe_unused]] std::vector<unsigned> init_ids{};
+    std::vector<float> distances(n);
+    std::vector<uint64_t> indicies(n); 
+    std::vector<unsigned> init_ids{};
 
-    [[maybe_unused]] auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleDiskANN>(idx_granule);
-    [[maybe_unused]] auto disk_ann_index = std::dynamic_pointer_cast<DiskANNIndex>(granule->base_index);
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleDiskANN>(idx_granule);
+    auto disk_ann_index = std::dynamic_pointer_cast<DiskANNIndex>(granule->base_index);
 
     target_vec.resize(ROUND_UP(target_vec.size(), 8));
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Searching for vector of dim {}", target_vec.size());
