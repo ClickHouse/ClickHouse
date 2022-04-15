@@ -89,9 +89,11 @@ TRUSTED_CONTRIBUTORS = {
         "bharatnc",  # Newbie, but already with many contributions.
         "bobrik",  # Seasoned contributor, CloudFlare
         "BohuTANG",
+        "codyrobert",  # Flickerbox engineer
         "cwurm",  # Employee
         "damozhaeva",  # DOCSUP
         "den-crane",
+        "flickerbox-tom",  # Flickerbox
         "gyuton",  # DOCSUP
         "hagen1778",  # Roman Khavronenko, seasoned contributor
         "hczhcz",
@@ -120,7 +122,11 @@ TRUSTED_CONTRIBUTORS = {
         "vzakaznikov",
         "YiuRULE",
         "zlobober",  # Developer of YT
+        "ilejn",  # Arenadata, responsible for Kerberized Kafka
+        "thomoco",  # ClickHouse
         "BoloniniD",  # Seasoned contributor, HSE
+        "tonickkozlov",  # Cloudflare
+        "tylerhannan",  # ClickHouse Employee
     ]
 }
 
