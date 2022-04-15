@@ -3,7 +3,7 @@ sidebar_position: 66
 sidebar_label: ClickHouse Keeper
 ---
 
-# [pre-production] ClickHouse Keeper {#clickHouse-keeper}
+# ClickHouse Keeper {#clickHouse-keeper}
 
 ClickHouse server uses [ZooKeeper](https://zookeeper.apache.org/) coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is an alternative coordination system compatible with ZooKeeper.
 

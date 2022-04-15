@@ -57,6 +57,8 @@ struct ZooKeeperRequest : virtual Request
     bool restored_from_zookeeper_log = false;
 
     UInt64 request_created_time_ns = 0;
+    UInt64 thread_id = 0;
+    String query_id;
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
