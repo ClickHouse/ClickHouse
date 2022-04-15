@@ -39,7 +39,7 @@ static unsigned getCGroupLimitedCPUCores(unsigned default_cpu_count)
 }
 #endif
 
-unsigned getNumberOfPhysicalCPUCores()
+static unsigned getNumberOfPhysicalCPUCoresImpl()
 {
     unsigned cpu_count = 0; // start with an invalid num
 
@@ -71,4 +71,11 @@ unsigned getNumberOfPhysicalCPUCores()
 #endif
 
     return cpu_count;
+}
+
+unsigned getNumberOfPhysicalCPUCores()
+{
+    /// Calculate once.
+    static auto res = getNumberOfPhysicalCPUCoresImpl();
+    return res;
 }
