@@ -98,9 +98,7 @@ inline DecimalType decimalFromComponentsWithMultiplier(
 {
     using T = typename DecimalType::NativeType;
 
-    /// When DecimalType is DateTime64, fractional is always positive, even if whole is negative.
-    constexpr bool is_datetime64 = std::is_same_v<DecimalType, DateTime64>;
-    const auto fractional_sign = !is_datetime64 && whole < 0 ? -1 : 1;
+    const auto fractional_sign = whole < 0 ? -1 : 1;
     T whole_scaled = 0;
     if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
@@ -108,6 +106,7 @@ inline DecimalType decimalFromComponentsWithMultiplier(
     T value;
     if (common::addOverflow(whole_scaled, fractional_sign * (fractional % scale_multiplier), value))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+
     return DecimalType(value);
 }
 
@@ -155,20 +154,11 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
         typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
-    auto whole = decimal.value / scale_multiplier;
+    const auto whole = decimal.value / scale_multiplier;
     auto fractional = decimal.value % scale_multiplier;
     if (fractional < T(0))
-    {
-        if constexpr (std::is_same_v<DecimalType, DateTime64>)
-        {
-            whole -= T(1);
-            fractional += scale_multiplier;
-        }
-        else
-        {
-            fractional *= T(-1);
-        }
-    }
+        fractional *= T(-1);
+
     return {whole, fractional};
 }
 

@@ -929,6 +929,14 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         /// Ignore digits that are out of precision.
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
+        
+        /// Keep sign of fractional part the same with whole part
+        if (components.whole < 0 && components.fractional != 0)
+        {
+            const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
+            components.whole = components.whole + 1;
+            components.fractional = scale_multiplier - components.fractional;
+        }
     }
     /// 9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
     else if (whole >= 9908870400LL)
