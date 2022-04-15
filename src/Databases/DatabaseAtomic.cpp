@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Parsers/formatAST.h>
-#include <Common/renameat2.h>
+#include <Common/atomicRename.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -158,7 +158,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         return;
     }
 
-    if (exchange && !supportsRenameat2())
+    if (exchange && !supportsAtomicRename())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);

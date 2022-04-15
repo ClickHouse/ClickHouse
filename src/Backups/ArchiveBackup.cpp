@@ -42,6 +42,14 @@ void ArchiveBackup::openImpl(OpenMode open_mode_)
     /// mutex is already locked
     if (open_mode_ == OpenMode::WRITE)
     {
+        /// Create a directory to contain the archive.
+        auto dir_path = fs::path(path).parent_path();
+        if (disk)
+            disk->createDirectories(dir_path);
+        else
+            std::filesystem::create_directories(dir_path);
+
+        /// Start writing the archive.
         if (disk)
             writer = createArchiveWriter(path, disk->writeFile(path));
         else
@@ -65,7 +73,7 @@ void ArchiveBackup::openImpl(OpenMode open_mode_)
     }
 }
 
-void ArchiveBackup::closeImpl(bool writing_finalized_)
+void ArchiveBackup::closeImpl(const Strings &, bool writing_finalized_)
 {
     /// mutex is already locked
     if (writer && writer->isWritingFile())
