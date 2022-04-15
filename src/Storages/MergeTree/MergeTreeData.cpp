@@ -2663,8 +2663,6 @@ bool MergeTreeData::renameTempPartAndReplace(
     MergeTreePartInfo part_info = part->info;
     String part_name;
 
-    String old_part_name = part->name;
-
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.partition_id, lock))
     {
         if (part->partition.value != existing_part_in_partition->partition.value)
@@ -2785,9 +2783,6 @@ bool MergeTreeData::renameTempPartAndReplace(
         for (DataPartPtr & covered_part : covered_parts)
             out_covered_parts->emplace_back(std::move(covered_part));
     }
-
-    /// Cleanup shared locks made with old name
-    part->cleanupOldName(old_part_name);
 
     return true;
 }

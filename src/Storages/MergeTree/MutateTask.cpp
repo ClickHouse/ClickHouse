@@ -481,7 +481,6 @@ void finalizeMutatedPart(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), part_path));
     new_data_part->default_codec = codec;
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
-    new_data_part->storage.lockSharedData(*new_data_part);
 }
 
 }

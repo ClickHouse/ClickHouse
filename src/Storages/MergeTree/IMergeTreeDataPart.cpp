@@ -1514,8 +1514,6 @@ try
     SyncGuardPtr sync_guard;
     if (storage.getSettings()->fsync_part_directory)
         sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
-
-    storage.lockSharedData(*this);
 }
 catch (...)
 {
@@ -1528,14 +1526,6 @@ catch (...)
     }
     else
         throw;
-}
-
-void IMergeTreeDataPart::cleanupOldName(const String & old_part_name) const
-{
-    if (name == old_part_name)
-        return;
-
-    storage.unlockSharedData(*this, old_part_name);
 }
 
 std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
