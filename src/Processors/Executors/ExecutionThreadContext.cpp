@@ -54,8 +54,13 @@ static void executeJob(IProcessor * processor)
 
 bool ExecutionThreadContext::executeTask()
 {
+    std::optional<Stopwatch> execution_time_watch;
+
 #ifndef NDEBUG
-    Stopwatch execution_time_watch;
+    execution_time_watch.emplace();
+#else
+    if (profile_processors)
+        execution_time_watch.emplace();
 #endif
 
     try
@@ -69,8 +74,11 @@ bool ExecutionThreadContext::executeTask()
         node->exception = std::current_exception();
     }
 
+    if (profile_processors)
+        node->processor->elapsed_us += execution_time_watch->elapsedMicroseconds();
+
 #ifndef NDEBUG
-    execution_time_ns += execution_time_watch.elapsed();
+    execution_time_ns += execution_time_watch->elapsed();
 #endif
 
     return node->exception == nullptr;
