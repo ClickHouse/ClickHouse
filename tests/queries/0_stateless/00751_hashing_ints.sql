@@ -9,3 +9,5 @@ SELECT farmHash64(123456);
 SELECT metroHash64(123456);
 SELECT murmurHash2_32(123456);
 SELECT murmurHash2_64(123456);
+SELECT farshHash32(123456);
+SELECT farshHash32(123, 456);
