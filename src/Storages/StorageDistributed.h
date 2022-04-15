@@ -44,7 +44,7 @@ class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, p
     friend class StorageSystemDistributionQueue;
 
 public:
-    virtual ~StorageDistributed() override;
+    ~StorageDistributed() override;
 
     std::string getName() const override { return "Distributed"; }
 
@@ -69,9 +69,9 @@ public:
         ColumnsDescriptionByShardNum objects_by_shard;
     };
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
     StorageSnapshotPtr getStorageSnapshotForQuery(
-        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query) const override;
+        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;

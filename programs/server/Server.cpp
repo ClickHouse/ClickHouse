@@ -20,6 +20,7 @@
 #include <base/phdr_cache.h>
 #include <base/ErrorHandlers.h>
 #include <base/getMemoryAmount.h>
+#include <base/getAvailableMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
@@ -45,6 +46,7 @@
 #include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -80,6 +82,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/Elf.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -505,6 +508,101 @@ void checkForUsersNotInMainConfig(
     }
 }
 
+/// Unused in other builds
+#if defined(OS_LINUX)
+static String readString(const String & path)
+{
+    ReadBufferFromFile in(path);
+    String contents;
+    readStringUntilEOF(contents, in);
+    return contents;
+}
+
+static int readNumber(const String & path)
+{
+    ReadBufferFromFile in(path);
+    int result;
+    readText(result, in);
+    return result;
+}
+
+#endif
+
+static void sanityChecks(Server * server)
+{
+    std::string data_path = getCanonicalPath(server->config().getString("path", DBMS_DEFAULT_PATH));
+    std::string logs_path = server->config().getString("logger.log", "");
+
+#if defined(OS_LINUX)
+    try
+    {
+        if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
+            server->context()->addWarningMessage("Linux is not using fast TSC clock source. Performance can be degraded.");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
+            server->context()->addWarningMessage("Linux memory overcommit is disabled.");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
+            server->context()->addWarningMessage("Linux transparent hugepage are set to \"always\".");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readNumber("/proc/sys/kernel/pid_max") < 30000)
+            server->context()->addWarningMessage("Linux max PID is too low.");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readNumber("/proc/sys/kernel/threads-max") < 30000)
+            server->context()->addWarningMessage("Linux threads max count is too low.");
+    }
+    catch (...)
+    {
+    }
+
+    std::string dev_id = getBlockDeviceId(data_path);
+    if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
+        server->context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
+#endif
+
+    try
+    {
+        if (getAvailableMemoryAmount() < (2l << 30))
+            server->context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
+
+        if (!enoughSpaceInDirectory(data_path, 1ull << 30))
+            server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
+
+        if (!logs_path.empty())
+        {
+            if (!enoughSpaceInDirectory(fs::path(logs_path).parent_path(), 1ull << 30))
+                server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
+        }
+    }
+    catch (...)
+    {
+    }
+}
+
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
@@ -538,13 +636,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
 #endif
 
-if (ThreadFuzzer::instance().isEffective())
-    global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
+    if (ThreadFuzzer::instance().isEffective())
+        global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
+    sanityChecks(this);
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
@@ -763,6 +862,38 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, strerror(errno));
             else
                 LOG_DEBUG(log, "Set max number of file descriptors to {} (was {}).", rlim.rlim_cur, old);
+        }
+    }
+
+    /// Try to increase limit on number of threads.
+    {
+        rlimit rlim;
+        if (getrlimit(RLIMIT_NPROC, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+
+        if (rlim.rlim_cur == rlim.rlim_max)
+        {
+            LOG_DEBUG(log, "rlimit on number of threads is {}", rlim.rlim_cur);
+        }
+        else
+        {
+            rlim_t old = rlim.rlim_cur;
+            rlim.rlim_cur = rlim.rlim_max;
+            int rc = setrlimit(RLIMIT_NPROC, &rlim);
+            if (rc != 0)
+            {
+                LOG_WARNING(log, "Cannot set max number of threads to {}. error: {}", rlim.rlim_cur, strerror(errno));
+                rlim.rlim_cur = old;
+            }
+            else
+            {
+                LOG_DEBUG(log, "Set max number of threads to {} (was {}).", rlim.rlim_cur, old);
+            }
+        }
+
+        if (rlim.rlim_cur < 30000)
+        {
+            global_context->addWarningMessage("Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries.");
         }
     }
 
@@ -1372,7 +1503,8 @@ if (ThreadFuzzer::instance().isEffective())
     else
     {
         /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(global_context, config().getInt("dns_cache_update_period", 15));
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
     }
 
 #if defined(OS_LINUX)
@@ -1507,6 +1639,8 @@ if (ThreadFuzzer::instance().isEffective())
                 server.start();
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
+
+            global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
 

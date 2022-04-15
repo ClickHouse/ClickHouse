@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
@@ -118,7 +119,7 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
         return nullptr;
 
     if (field.isBool())
-        return makeNullable(std::make_shared<DataTypeUInt8>());
+        return DataTypeFactory::instance().get("Nullable(Bool)");
 
     if (field.isInt64() || field.isUInt64() || field.isDouble())
         return makeNullable(std::make_shared<DataTypeFloat64>());
@@ -254,6 +255,10 @@ struct JSONEachRowFieldsExtractor
     std::vector<Element> extract(const Element & element)
     {
         /// {..., "<column_name>" : <value>, ...}
+
+        if (!element.isObject())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Root JSON value is not an object");
+
         auto object = element.getObject();
         std::vector<Element> fields;
         fields.reserve(object.size());
@@ -270,13 +275,13 @@ struct JSONEachRowFieldsExtractor
     std::vector<String> column_names;
 };
 
-std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings)
+NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings)
 {
     JSONEachRowFieldsExtractor extractor;
     auto data_types = determineColumnDataTypesFromJSONEachRowDataImpl<JSONEachRowFieldsExtractor, '{', '}'>(in, json_strings, extractor);
-    std::unordered_map<String, DataTypePtr> result;
+    NamesAndTypesList result;
     for (size_t i = 0; i != extractor.column_names.size(); ++i)
-        result[extractor.column_names[i]] = data_types[i];
+        result.emplace_back(extractor.column_names[i], data_types[i]);
     return result;
 }
 
@@ -286,6 +291,9 @@ struct JSONCompactEachRowFieldsExtractor
     std::vector<Element> extract(const Element & element)
     {
         /// [..., <value>, ...]
+        if (!element.isArray())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Root JSON value is not an array");
+
         auto array = element.getArray();
         std::vector<Element> fields;
         fields.reserve(array.size());
