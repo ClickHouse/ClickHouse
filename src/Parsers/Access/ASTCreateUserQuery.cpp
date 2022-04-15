@@ -37,7 +37,6 @@ namespace
         String value_prefix;
         std::optional<String> value;
         std::optional<String> salt;
-        bool isSaltPresent = false;
         const boost::container::flat_set<String> * values = nullptr;
 
         if (show_password ||
@@ -60,7 +59,6 @@ namespace
                     value = auth_data.getPasswordHashHex();
                     if (!auth_data.getSalt().empty())
                     {
-                        isSaltPresent = true;
                         salt = auth_data.getSalt();
                     }
                     break;
@@ -114,7 +112,7 @@ namespace
         if (value)
         {
             settings.ostr << " " << quoteString(*value);
-            if (isSaltPresent)
+            if (salt)
                 settings.ostr << " " << quoteString(*salt);
         }
         else if (values)
