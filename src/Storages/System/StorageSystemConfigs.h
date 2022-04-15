@@ -3,6 +3,7 @@
 #include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeObject.h>
 
 
 namespace DB
@@ -31,12 +32,12 @@ public:
 
     bool isSystemStorage() const override { return true; }
 
-    static ColumnsDescription getColumnsDescription();
-
 protected:
     explicit StorageSystemConfigs(const StorageID & table_id_);
 
     inline static const NamesAndTypesList names_and_types_list = {
+        {"name", std::make_shared<DataTypeString>()},
+        // {"config", std::make_shared<DataTypeObject>("json", false)},
         {"config", std::make_shared<DataTypeString>()},
     };
 };

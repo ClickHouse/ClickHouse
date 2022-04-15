@@ -88,13 +88,13 @@ private:
 
 class JSONMap : public IItem
 {
+public:
     struct Pair
     {
         std::string key;
         ItemPtr value;
     };
 
-public:
     void add(std::string key, ItemPtr value) { values.emplace_back(Pair{.key = std::move(key), .value = std::move(value)}); } //-V1030
     void add(std::string key, std::string value) { add(std::move(key), std::make_unique<JSONString>(std::move(value))); }
     void add(std::string key, const char * value) { add(std::move(key), std::make_unique<JSONString>(value)); }
@@ -106,6 +106,12 @@ public:
     void add(std::string key, T value) { add(std::move(key), std::make_unique<JSONNumber<T>>(value)); }
 
     void format(const FormatSettings & settings, FormatContext & context) override;
+
+    void forEach(std::function<void(const Pair & pair)> callback) const
+    {
+        for (const auto & pair : values)
+            callback(pair);
+    }
 
 private:
     std::vector<Pair> values;

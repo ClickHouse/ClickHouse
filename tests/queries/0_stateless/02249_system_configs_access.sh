@@ -13,4 +13,4 @@ ${CLICKHOUSE_CLIENT} -q "REVOKE ALL ON *.* FROM user_test_02249"
 $CLICKHOUSE_CLIENT  --user=user_test_02249 --password=user_test_02249 --query "select * from system.configs" 2>&1 | grep -Fo "ACCESS_DENIED" | uniq
 
 $CLICKHOUSE_CLIENT --query "GRANT SYSTEM CONFIGS ON *.* TO user_test_02249;"
-$CLICKHOUSE_CLIENT  --user=user_test_02249 --password=user_test_02249 --query "select JSON_QUERY(config, '$.http_port'), JSON_QUERY(config, '$.tcp_port') from system.configs" 
+$CLICKHOUSE_CLIENT  --user=user_test_02249 --password=user_test_02249 --query "select config from system.configs where name in ('tcp_port', 'http_port')" 
