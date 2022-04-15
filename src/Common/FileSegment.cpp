@@ -163,7 +163,7 @@ bool FileSegment::isDownloader() const
     return getCallerId() == downloader_id;
 }
 
-bool FileSegment::isDownloaderImpl(std::lock_guard<std::mutex> & /* segment+_lock */) const
+bool FileSegment::isDownloaderImpl(std::lock_guard<std::mutex> & /* segment_lock */) const
 {
     return getCallerId() == downloader_id;
 }
