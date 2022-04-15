@@ -238,9 +238,6 @@ public:
     /// Return false if data is still used by another node
     bool unlockSharedData(const IMergeTreeDataPart & part) const override;
 
-    /// Remove lock with old name for shared data part after rename
-    bool unlockSharedData(const IMergeTreeDataPart & part, const String & name) const override;
-
     /// Unlock shared data part in zookeeper by part id
     /// Return true if data unlocked
     /// Return false if data is still used by another node

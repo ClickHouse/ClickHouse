@@ -331,6 +331,14 @@ public:
 
     mutable VersionMetadata version;
 
+    struct HardlinkedFiles
+    {
+        std::string source_part_name;
+        std::vector<std::string> hardlinks_from_source_part;
+    };
+
+    HardlinkedFiles hardlinked_files;
+
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -512,7 +520,7 @@ protected:
 
     String getRelativePathForDetachedPart(const String & prefix) const;
 
-    std::optional<bool> keepSharedDataInDecoupledStorage() const;
+    bool keepSharedDataInDecoupledStorage() const;
 
     void initializePartMetadataManager();
 
