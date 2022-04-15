@@ -1312,26 +1312,12 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_null{"NULL"};
-    ParserKeyword s_not{"NOT"};
-    std::optional<bool> null_modifier;
-    ParserLiteral literal_p;
-
     ASTPtr collation;
 
     if (!ParserIdentifier(true).parse(pos, collation, expected))
         return false;
-    if (s_not.ignore(pos, expected))
-    {
-        if (!s_null.ignore(pos, expected))
-            return false;
-        null_modifier.emplace(false);
-    }
-    else if (s_null.ignore(pos, expected))
-        null_modifier.emplace(true);
     auto collation_node = std::make_shared<ASTCollation>();
     collation_node->collation = collation;
-    collation_node->null_modifier = null_modifier;
     node = collation_node;
     return true;
 }

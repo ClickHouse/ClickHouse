@@ -9,8 +9,6 @@ class ASTCollation : public IAST
 {
 public:
     ASTPtr collation = nullptr;
-    std::optional<bool> null_modifier;
-
 
     String getID(char) const override { return "Collation"; }
 
