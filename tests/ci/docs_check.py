@@ -56,7 +56,7 @@ if __name__ == "__main__":
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
-    cmd = f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={test_output}:/output_path {docker_image} --out-dir /output_path"
+    cmd = f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={test_output}:/output_path {docker_image}"
 
     run_log_path = os.path.join(test_output, "runlog.log")
     logging.info("Running command: '%s'", cmd)
