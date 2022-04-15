@@ -13,11 +13,11 @@
             <port>9181</port>
         </node>
         <node index="4">
-            <host>node3</host>
+            <host>node4</host>
             <port>9181</port>
         </node>
         <node index="5">
-            <host>node3</host>
+            <host>node5</host>
             <port>9181</port>
         </node>
     </zookeeper>
