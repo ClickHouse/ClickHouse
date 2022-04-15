@@ -462,7 +462,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.collation && !context_->getSettingsRef().compatibility_ignore_collation_in_create_table)
         {
-            throw Exception{"Cannot support collation, please set compatibility_ignore_collation_in_create_table=true", ErrorCodes::LOGICAL_ERROR};
+            throw Exception("Cannot support collation, please set compatibility_ignore_collation_in_create_table=true", ErrorCodes::LOGICAL_ERROR);
         }
 
         DataTypePtr column_type = nullptr;

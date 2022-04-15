@@ -5,7 +5,6 @@ namespace DB
     ASTPtr ASTCollation::clone() const
     {
         auto res = std::make_shared<ASTCollation>(*this);
-        res->null_modifier = null_modifier;
         res->collation = collation;
         return res;
     }
@@ -15,11 +14,6 @@ namespace DB
         if (collation)
         {
             collation->formatImpl(s, state, frame);
-        }
-
-        if (!null_modifier)
-        {
-            s.ostr << " NOT NULL ";
         }
 
     }
