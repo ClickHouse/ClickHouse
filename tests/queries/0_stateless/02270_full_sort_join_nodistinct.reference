@@ -1,260 +1,980 @@
-simple cases, block size = 1
+block size = 1
 ANY INNER
-1	1
-2	2
-3	3
+1	1	4	5
+2	2	5	5
+3	3	4	4
 ANY LEFT
-1	1	val1
-2	2	val21
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-3	3	val3
+1	1	val1	5
+2	2	val21	5
+2	2	val22	5
+2	2	val23	5
+2	2	val24	5
+2	2	val25	5
+2	2	val26	5
+2	2	val27	5
+3	3	val3	4
 ANY RIGHT
-1	1	val11
-1	1	val12
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-2	2	val28
-3	3	val3
-simple cases, block size = 2
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val23
+2	2	5	val24
+2	2	5	val25
+2	2	5	val26
+2	2	5	val27
+2	2	5	val28
+3	3	4	val3
 ANY INNER
-1	1
-2	2
-3	3
+1	1	4	5
+3	3	4	4
 ANY LEFT
-1	1	val1
-2	2	val21
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-3	3	val3
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
 ANY RIGHT
-1	1	val11
-1	1	val12
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-2	2	val28
-3	3	val3
-simple cases, block size = 3
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
 ANY INNER
-1	1
-2	2
-3	3
+1	1	4	5
+3	3	4	4
 ANY LEFT
-1	1	val1
-2	2	val21
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-3	3	val3
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
 ANY RIGHT
-1	1	val11
-1	1	val12
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-2	2	val28
-3	3	val3
-simple cases, block size = 4
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
 ANY INNER
-1	1
-2	2
-3	3
+1	1	4	5
+3	3	4	4
 ANY LEFT
-1	1	val1
-2	2	val21
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-3	3	val3
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
 ANY RIGHT
-1	1	val11
-1	1	val12
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-2	2	val28
-3	3	val3
-simple cases, block size = 5
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+block size = 2
 ANY INNER
-1	1
-2	2
-3	3
+1	1	4	5
+2	2	5	5
+3	3	4	4
 ANY LEFT
-1	1	val1
-2	2	val21
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-3	3	val3
+1	1	val1	5
+2	2	val21	5
+2	2	val22	5
+2	2	val23	5
+2	2	val24	5
+2	2	val25	5
+2	2	val26	5
+2	2	val27	5
+3	3	val3	4
 ANY RIGHT
-1	1	val11
-1	1	val12
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-2	2	val28
-3	3	val3
-simple cases, block size = 6
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val23
+2	2	5	val24
+2	2	5	val25
+2	2	5	val26
+2	2	5	val27
+2	2	5	val28
+3	3	4	val3
 ANY INNER
-1	1
-2	2
-3	3
+1	1	4	5
+3	3	4	4
 ANY LEFT
-1	1	val1
-2	2	val21
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-3	3	val3
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
 ANY RIGHT
-1	1	val11
-1	1	val12
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-2	2	val28
-3	3	val3
-simple cases, block size = 7
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
 ANY INNER
-1	1
-2	2
-3	3
+1	1	4	5
+3	3	4	4
 ANY LEFT
-1	1	val1
-2	2	val21
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-3	3	val3
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
 ANY RIGHT
-1	1	val11
-1	1	val12
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-2	2	val28
-3	3	val3
-simple cases, block size = 8
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
 ANY INNER
-1	1
-2	2
-3	3
+1	1	4	5
+3	3	4	4
 ANY LEFT
-1	1	val1
-2	2	val21
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-3	3	val3
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
 ANY RIGHT
-1	1	val11
-1	1	val12
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-2	2	val28
-3	3	val3
-simple cases, block size = 9
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+block size = 3
 ANY INNER
-1	1
-2	2
-3	3
+1	1	4	5
+2	2	5	5
+3	3	4	4
 ANY LEFT
-1	1	val1
-2	2	val21
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-3	3	val3
+1	1	val1	5
+2	2	val21	5
+2	2	val22	5
+2	2	val23	5
+2	2	val24	5
+2	2	val25	5
+2	2	val26	5
+2	2	val27	5
+3	3	val3	4
 ANY RIGHT
-1	1	val11
-1	1	val12
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-2	2	val28
-3	3	val3
-simple cases, block size = 10
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val23
+2	2	5	val24
+2	2	5	val25
+2	2	5	val26
+2	2	5	val27
+2	2	5	val28
+3	3	4	val3
 ANY INNER
-1	1
-2	2
-3	3
+1	1	4	5
+3	3	4	4
 ANY LEFT
-1	1	val1
-2	2	val21
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-3	3	val3
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
 ANY RIGHT
-1	1	val11
-1	1	val12
-2	2	val22
-2	2	val23
-2	2	val24
-2	2	val25
-2	2	val26
-2	2	val27
-2	2	val28
-3	3	val3
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+block size = 4
+ANY INNER
+1	1	4	5
+2	2	5	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	2	val21	5
+2	2	val22	5
+2	2	val23	5
+2	2	val24	5
+2	2	val25	5
+2	2	val26	5
+2	2	val27	5
+3	3	val3	4
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val23
+2	2	5	val24
+2	2	5	val25
+2	2	5	val26
+2	2	5	val27
+2	2	5	val28
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+ANY RIGHT
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+block size = 5
+ANY INNER
+1	1	4	5
+2	2	5	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	2	val21	5
+2	2	val22	5
+2	2	val23	5
+2	2	val24	5
+2	2	val25	5
+2	2	val26	5
+2	2	val27	5
+3	3	val3	4
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val23
+2	2	5	val24
+2	2	5	val25
+2	2	5	val26
+2	2	5	val27
+2	2	5	val28
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+ANY RIGHT
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+block size = 6
+ANY INNER
+1	1	4	5
+2	2	5	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	2	val21	5
+2	2	val22	5
+2	2	val23	5
+2	2	val24	5
+2	2	val25	5
+2	2	val26	5
+2	2	val27	5
+3	3	val3	4
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val23
+2	2	5	val24
+2	2	5	val25
+2	2	5	val26
+2	2	5	val27
+2	2	5	val28
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+ANY RIGHT
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+block size = 7
+ANY INNER
+1	1	4	5
+2	2	5	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	2	val21	5
+2	2	val22	5
+2	2	val23	5
+2	2	val24	5
+2	2	val25	5
+2	2	val26	5
+2	2	val27	5
+3	3	val3	4
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val23
+2	2	5	val24
+2	2	5	val25
+2	2	5	val26
+2	2	5	val27
+2	2	5	val28
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+ANY RIGHT
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+block size = 8
+ANY INNER
+1	1	4	5
+2	2	5	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	2	val21	5
+2	2	val22	5
+2	2	val23	5
+2	2	val24	5
+2	2	val25	5
+2	2	val26	5
+2	2	val27	5
+3	3	val3	4
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val23
+2	2	5	val24
+2	2	5	val25
+2	2	5	val26
+2	2	5	val27
+2	2	5	val28
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+ANY RIGHT
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+block size = 9
+ANY INNER
+1	1	4	5
+2	2	5	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	2	val21	5
+2	2	val22	5
+2	2	val23	5
+2	2	val24	5
+2	2	val25	5
+2	2	val26	5
+2	2	val27	5
+3	3	val3	4
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val23
+2	2	5	val24
+2	2	5	val25
+2	2	5	val26
+2	2	5	val27
+2	2	5	val28
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+ANY RIGHT
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+block size = 10
+ANY INNER
+1	1	4	5
+2	2	5	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	2	val21	5
+2	2	val22	5
+2	2	val23	5
+2	2	val24	5
+2	2	val25	5
+2	2	val26	5
+2	2	val27	5
+3	3	val3	4
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val23
+2	2	5	val24
+2	2	5	val25
+2	2	5	val26
+2	2	5	val27
+2	2	5	val28
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+ANY RIGHT
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+ANY INNER
+1	1	4	5
+3	3	4	4
+ANY LEFT
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+ANY RIGHT
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28

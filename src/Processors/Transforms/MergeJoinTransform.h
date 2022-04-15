@@ -64,7 +64,7 @@ struct AnyJoinState : boost::noncopyable
             assert(this->row_key.size() == impl.sort_columns_size);
             for (size_t i = 0; i < impl.sort_columns_size; ++i)
             {
-                int cmp = this->row_key[i]->compareAt(0, impl.getRow(), *impl.sort_columns[i], 0);
+                int cmp = this->row_key[i]->compareAt(0, impl.getRow(), *impl.sort_columns[i], impl.desc[i].nulls_direction);
                 if (cmp != 0)
                     return false;
             }
