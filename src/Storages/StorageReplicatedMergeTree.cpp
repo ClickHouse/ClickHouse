@@ -75,6 +75,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include <algorithm>
 #include <ctime>
@@ -7345,7 +7346,16 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
     boost::replace_all(id, "/", "_");
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(
-        *getSettings(), disk->getType(), getTableSharedID(), part.name, zookeeper_path);
+        *getSettings(), disk->getType(), getTableSharedID(),
+        part.name, zookeeper_path);
+
+    String path_to_set;
+    if (!part.hardlinked_files.hardlinks_from_source_part.empty())
+    {
+        path_to_set = getZeroCopyPartPath(
+        *getSettings(), disk->getType(), getTableSharedID(),
+        part.hardlinked_files.source_part_name, zookeeper_path)[0];
+    }
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
@@ -7353,18 +7363,20 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
 
         LOG_TRACE(log, "Set zookeeper persistent lock {}", zookeeper_node);
 
-        createZeroCopyLockNode(zookeeper, zookeeper_node, zkutil::CreateMode::Persistent, replace_existing_lock);
+        createZeroCopyLockNode(
+            zookeeper, zookeeper_node, zkutil::CreateMode::Persistent,
+            replace_existing_lock, path_to_set, part.hardlinked_files.hardlinks_from_source_part);
     }
 }
 
-bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part) const
+std::pair<bool, std::vector<std::string>> StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part) const
 {
     if (!part.volume || !part.isStoredOnDisk())
-        return true;
+        return std::make_pair(true, std::vector<std::string>{});
 
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
-        return true;
+        return std::make_pair(true, std::vector<std::string>{});
 
     /// If part is temporary refcount file may be absent
     auto ref_count_path = fs::path(part.getFullRelativePath()) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;
@@ -7372,20 +7384,20 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
     {
         auto ref_count = disk->getRefCount(ref_count_path);
         if (ref_count > 0) /// Keep part shard info for frozen backups
-            return false;
+            return std::make_pair(false, std::vector<std::string>{});
     }
     else
     {
         /// Temporary part with some absent file cannot be locked in shared mode
-        return true;
+        return std::make_pair(true, std::vector<std::string>{});
     }
 
     return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, disk, getZooKeeper(), *getSettings(), log,
         zookeeper_path);
 }
 
-
-bool StorageReplicatedMergeTree::unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name,
+std::pair<bool, std::vector<std::string>> StorageReplicatedMergeTree::unlockSharedDataByID(
+        String part_id, const String & table_uuid, const String & part_name,
         const String & replica_name_, DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
         Poco::Logger * logger, const String & zookeeper_path_old)
 {
@@ -7394,9 +7406,13 @@ bool StorageReplicatedMergeTree::unlockSharedDataByID(String part_id, const Stri
     Strings zc_zookeeper_paths = getZeroCopyPartPath(settings, disk->getType(), table_uuid, part_name, zookeeper_path_old);
 
     bool part_has_no_more_locks = true;
+    std::vector<std::string> files_not_to_remove;
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
+        files_not_to_remove.clear();
+        auto content = zookeeper_ptr->get(zc_zookeeper_path);
+        boost::split(files_not_to_remove, content, boost::is_any_of("\n "));
         String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
 
         /// Delete our replica node for part from zookeeper (we are not interested in it anymore)
@@ -7442,7 +7458,7 @@ bool StorageReplicatedMergeTree::unlockSharedDataByID(String part_id, const Stri
         }
     }
 
-    return part_has_no_more_locks;
+    return std::make_pair(part_has_no_more_locks, files_not_to_remove);
 }
 
 
@@ -7832,7 +7848,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 }
 
 
-void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode, bool replace_existing_lock)
+void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode, bool replace_existing_lock, const std::string & path_to_set, const std::vector<std::string> & hardlinked_files)
 {
     /// In rare case other replica can remove path between createAncestors and createIfNotExists
     /// So we make up to 5 attempts
@@ -7852,6 +7868,11 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
                 Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_node, -1));
                 ops.emplace_back(zkutil::makeCreateRequest(zookeeper_node, "", mode));
+                if (!path_to_set.empty() && !hardlinked_files.empty())
+                {
+                    std::string data = boost::algorithm::join(hardlinked_files, "\n");
+                    ops.emplace_back(zkutil::makeSetRequest(path_to_set, data, -1));
+                }
                 Coordination::Responses responses;
                 auto error = zookeeper->tryMulti(ops, responses);
                 if (error == Coordination::Error::ZOK)
@@ -7859,7 +7880,16 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
             }
             else
             {
-                auto error = zookeeper->tryCreate(zookeeper_node, "", mode);
+                Coordination::Requests ops;
+                if (!path_to_set.empty() && !hardlinked_files.empty())
+                {
+                    std::string data = boost::algorithm::join(hardlinked_files, "\n");
+                    ops.emplace_back(zkutil::makeSetRequest(path_to_set, data, -1));
+                }
+                ops.emplace_back(zkutil::makeCreateRequest(zookeeper_node, "", mode));
+
+                Coordination::Responses responses;
+                auto error = zookeeper->tryMulti(ops, responses);
                 if (error == Coordination::Error::ZOK || error == Coordination::Error::ZNODEEXISTS)
                     break;
             }
@@ -8002,9 +8032,12 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
         if (disk->getRefCount(checksums) == 0)
         {
             String id = disk->getUniqueId(checksums);
-            keep_shared = !StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
+            bool can_remove = false;
+            std::tie(can_remove, std::ignore) = StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
                 detached_replica_name, disk, zookeeper, getContext()->getReplicatedMergeTreeSettings(), log,
                 detached_zookeeper_path);
+
+            keep_shared = !can_remove;
         }
         else
             keep_shared = true;

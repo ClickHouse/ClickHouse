@@ -520,7 +520,7 @@ protected:
 
     String getRelativePathForDetachedPart(const String & prefix) const;
 
-    bool keepSharedDataInDecoupledStorage() const;
+    std::pair<bool, std::vector<std::string>> canRemovePart() const;
 
     void initializePartMetadataManager();
 
