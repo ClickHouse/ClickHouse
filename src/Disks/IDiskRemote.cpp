@@ -154,7 +154,8 @@ IDiskRemote::Metadata::Metadata(
         const String & remote_fs_root_path_,
         DiskPtr metadata_disk_,
         const String & metadata_file_path_)
-    : RemoteMetadata(remote_fs_root_path_, metadata_file_path_)
+    : remote_fs_root_path(remote_fs_root_path_)
+    , metadata_file_path(metadata_file_path_)
     , metadata_disk(metadata_disk_)
     , total_size(0), ref_count(0)
 {
