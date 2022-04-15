@@ -109,7 +109,7 @@ static std::map<String, Object> configToObjects(const Poco::Util::AbstractConfig
     config.keys("", keys);
     if (keys.empty())
         return {};
-    
+
     std::map<String, Object> res;
     for (const auto & key : keys)
     {
