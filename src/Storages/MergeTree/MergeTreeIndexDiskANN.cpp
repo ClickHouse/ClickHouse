@@ -214,11 +214,11 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorDiskANN::getGranuleAndReset()
     auto base_index = detail::constructIndexFromDatapoints(dimensions.value(), accumulated_data);
 
     diskann::Parameters paras;
-    paras.Set<unsigned>("R", 60);
-    paras.Set<unsigned>("L", 75);
+    paras.Set<unsigned>("R", 100);
+    paras.Set<unsigned>("L", 150);
     paras.Set<unsigned>("C", 750);
     paras.Set<float>("alpha", 1.2);
-    paras.Set<bool>("saturate_graph", false);
+    paras.Set<bool>("saturate_graph", true);
     paras.Set<unsigned>("num_threads", 1);
 
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Index parameters set");
@@ -283,6 +283,7 @@ MergeTreeIndexConditionDiskANN::MergeTreeIndexConditionDiskANN(
     ContextPtr context)
     : index_data_types(index.data_types)
 {
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Building RPN");
     // Build Reverse Polish notation from the query
     RPN rpn = buildRPN(query, context); 
 
@@ -294,6 +295,8 @@ MergeTreeIndexConditionDiskANN::MergeTreeIndexConditionDiskANN(
 bool MergeTreeIndexConditionDiskANN::alwaysUnknownOrTrue() const
 {
     // In matchRPN() function we populate expession field in case of the success
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Is always unknown or true? {}", !expression.has_value());
+
     return !expression.has_value();
 }
 
@@ -302,33 +305,45 @@ bool MergeTreeIndexConditionDiskANN::mayBeTrueOnGranule(MergeTreeIndexGranulePtr
     // TODO: Change assert to the exception
     assert(expression.has_value());
 
-    std::vector<float> target_vec = expression.value().target;
-    float min_distance = expression.value().distance;
+    [[maybe_unused]]  std::vector<float> target_vec = expression.value().target;
+    [[maybe_unused]] float min_distance = expression.value().distance;
 
     // Number of target vectors
-    size_t n = 1;
+    [[maybe_unused]]  size_t n = 5;
 
     // Number of NN to search
-    size_t k = n;
+    [[maybe_unused]]  size_t k = n;
 
     // Will be populated by diskann
-    std::vector<float> distances(n);
-    std::vector<uint64_t> indecies(n); 
-    std::vector<unsigned> init_ids{};
+    [[maybe_unused]] std::vector<float> distances(n);
+    [[maybe_unused]] std::vector<uint64_t> indicies(n); 
+    [[maybe_unused]] std::vector<unsigned> init_ids{};
 
-    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleDiskANN>(idx_granule);
-    auto disk_ann_index = std::dynamic_pointer_cast<DiskANNIndex>(granule->base_index);
+    [[maybe_unused]] auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleDiskANN>(idx_granule);
+    [[maybe_unused]] auto disk_ann_index = std::dynamic_pointer_cast<DiskANNIndex>(granule->base_index);
 
-    // TODO: change depending on dim;
-    target_vec.resize(8);
+    target_vec.resize(ROUND_UP(target_vec.size(), 8));
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Searching for vector of dim {}", target_vec.size());
 
-    disk_ann_index->search(target_vec.data(), k, n, init_ids, indecies.data(), distances.data());
+    if (target_vec.empty()) {
+        return true;
+    }
+
+    disk_ann_index->search(target_vec.data(), k, n, init_ids, indicies.data(), distances.data());
 
     float distance = *std::min_element(distances.begin(), distances.end());
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Maybe true on granule distances: {} <? {}", distance, min_distance);
 
-    return distance < min_distance * 10000; // untrustworthy :((
+    /*
+    When using L2, DiskANN returns not the exact distance, but distance squared, that's why
+    we have to rise given distance to the power of 2. 
+    
+    Also, I don't know why, but DiskANN is not able to give precise answer to ANN task,
+    maybe it depends on hyperparameters and fine-tuning is needed. Nevertheless, temporary
+    ERROR_COEF is added to minimise the likelihood of false negative result
+    */
+    const static float ERROR_COEF = 10.f;
+    return distance < min_distance * min_distance * ERROR_COEF;
 }
 
 MergeTreeIndexConditionDiskANN::RPN MergeTreeIndexConditionDiskANN::buildRPN(const SelectQueryInfo & query, ContextPtr context)
@@ -442,6 +457,7 @@ bool MergeTreeIndexConditionDiskANN::traverseAtomAST(const ASTPtr & node, RPNEle
 
 bool MergeTreeIndexConditionDiskANN::matchRPN(const RPN & rpn) 
 {
+    
     // Can we place it outside the function? 
     // Use for match the rpn
     // Take care of matching tuples (because it can contains arbitary number of fields)
@@ -452,6 +468,8 @@ bool MergeTreeIndexConditionDiskANN::matchRPN(const RPN & rpn)
         RPNElement{RPNElement::FUNCTION_TUPLE}, 
         RPNElement{RPNElement::FUNCTION_IDENTIFIER}, 
     };
+
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Matching RPN");
 
     // Placeholders for the extracted data
     Target target_vec;
@@ -469,6 +487,8 @@ bool MergeTreeIndexConditionDiskANN::matchRPN(const RPN & rpn)
 
         if (element.function != template_element.function) 
         {
+            LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Bad RPN :(");
+            
             return false;
         }
 
@@ -514,6 +534,8 @@ bool MergeTreeIndexConditionDiskANN::matchRPN(const RPN & rpn)
         .target = std::move(target_vec),
         .distance = distance,
     });
+
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "RPN satisfied");
 
     return true;
 }
