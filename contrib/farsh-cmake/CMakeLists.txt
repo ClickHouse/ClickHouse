@@ -5,4 +5,4 @@ set(SRCS
         "${LIBRARY_DIR}/farsh.c"
         )
 
-add_library(farsh ${SRCS})
+add_library(ch_contrib::farsh ${SRCS})
