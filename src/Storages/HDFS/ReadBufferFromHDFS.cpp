@@ -137,7 +137,7 @@ std::optional<size_t> ReadBufferFromHDFS::getTotalSize()
 bool ReadBufferFromHDFS::nextImpl()
 {
     impl->position() = impl->buffer().begin() + offset();
-    auto result = impl->next();
+    auto result = impl->nextImpl();
 
     if (result)
         BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset); /// use the buffer returned by `impl`
