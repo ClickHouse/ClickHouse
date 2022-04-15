@@ -1070,6 +1070,7 @@ private:
         ctx->new_data_part->version.setCreationTID(tid, nullptr);
         ctx->new_data_part->storeVersionMetadata();
 
+        std::vector<std::string> hardlinked_files;
         /// Create hardlinks for unchanged files
         for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
         {
@@ -1083,10 +1084,12 @@ private:
             {
                 return rename_pair.first == file_name;
             });
+
             if (rename_it != ctx->files_to_rename.end())
             {
                 if (rename_it->second.empty())
                     continue;
+
                 destination += rename_it->second;
             }
             else
@@ -1094,8 +1097,13 @@ private:
                 destination += it->name();
             }
 
+
             if (!ctx->disk->isDirectory(it->path()))
+            {
                 ctx->disk->createHardLink(it->path(), destination);
+                hardlinked_files.push_back(it->name());
+            }
+
             else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
@@ -1104,9 +1112,13 @@ private:
                 {
                     String p_destination = fs::path(destination) / p_it->name();
                     ctx->disk->createHardLink(p_it->path(), p_destination);
+                    hardlinked_files.push_back(p_it->name());
                 }
             }
         }
+
+        ctx->new_data_part->hardlinked_files.source_part_name = ctx->source_part->name;
+        ctx->new_data_part->hardlinked_files.hardlinks_from_source_part = hardlinked_files;
 
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
