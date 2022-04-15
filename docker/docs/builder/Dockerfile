@@ -13,7 +13,8 @@ RUN git clone https://github.com/ClickHouse/clickhouse-docs.git \
 WORKDIR /opt/clickhouse-docs
 
 RUN yarn config set registry https://registry.npmjs.org \
-    && yarn install
+    && yarn install \
+    && yarn cache clean
 
 COPY run.sh /run.sh
 
