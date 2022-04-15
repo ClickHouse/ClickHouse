@@ -9,8 +9,8 @@ git pull
 
 for lang in en ru zh
 do
-  if [ ! -e "/opt/clickhouse-docs/docs/${lang}" ] && [ -d "/ClickHouse/docs/${lang}" ]; then
-    cp -r "/ClickHouse/docs/${lang}" "/opt/clickhouse-docs/docs/${lang}"
+  if [ -d "/ClickHouse/docs/${lang}" ]; then
+    cp -rf "/ClickHouse/docs/${lang}" "/opt/clickhouse-docs/docs/"
   fi
 done
 
