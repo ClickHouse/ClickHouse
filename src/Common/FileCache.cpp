@@ -3,6 +3,7 @@
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
+#include <Common/FileCacheSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -31,13 +32,11 @@ namespace
 
 IFileCache::IFileCache(
     const String & cache_base_path_,
-    size_t max_size_,
-    size_t max_element_size_,
-    size_t max_file_segment_size_)
+    const FileCacheSettings & cache_settings_)
     : cache_base_path(cache_base_path_)
-    , max_size(max_size_)
-    , max_element_size(max_element_size_)
-    , max_file_segment_size(max_file_segment_size_)
+    , max_size(cache_settings_.max_size)
+    , max_element_size(cache_settings_.max_elements)
+    , max_file_segment_size(cache_settings_.max_file_segment_size)
 {
 }
 
@@ -58,7 +57,7 @@ String IFileCache::getPathInLocalCache(const Key & key)
     return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
 }
 
-bool IFileCache::shouldBypassCache()
+bool IFileCache::isReadOnly()
 {
     return !CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()
@@ -71,8 +70,8 @@ void IFileCache::assertInitialized() const
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache not initialized");
 }
 
-LRUFileCache::LRUFileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_, size_t max_file_segment_size_)
-    : IFileCache(cache_base_path_, max_size_, max_element_size_, max_file_segment_size_)
+LRUFileCache::LRUFileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_)
+    : IFileCache(cache_base_path_, cache_settings_)
     , log(&Poco::Logger::get("LRUFileCache"))
 {
 }
@@ -205,8 +204,8 @@ FileSegments LRUFileCache::getImpl(
     return result;
 }
 
-FileSegments LRUFileCache::splitRangeIntoEmptyCells(
-    const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+FileSegments LRUFileCache::splitRangeIntoCells(
+    const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock)
 {
     assert(size > 0);
 
@@ -222,15 +221,98 @@ FileSegments LRUFileCache::splitRangeIntoEmptyCells(
         current_cell_size = std::min(remaining_size, max_file_segment_size);
         remaining_size -= current_cell_size;
 
-        auto * cell = addCell(key, current_pos, current_cell_size, FileSegment::State::EMPTY, cache_lock);
+        auto * cell = addCell(key, current_pos, current_cell_size, state, cache_lock);
         if (cell)
             file_segments.push_back(cell->file_segment);
+        assert(cell);
 
         current_pos += current_cell_size;
     }
 
     assert(file_segments.empty() || offset + size - 1 == file_segments.back()->range().right);
     return file_segments;
+}
+
+void LRUFileCache::fillHolesWithEmptyFileSegments(
+    FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, std::lock_guard<std::mutex> & cache_lock)
+{
+    /// There are segments [segment1, ..., segmentN]
+    /// (non-overlapping, non-empty, ascending-ordered) which (maybe partially)
+    /// intersect with given range.
+
+    /// It can have holes:
+    /// [____________________]         -- requested range
+    ///     [____]  [_]   [_________]  -- intersecting cache [segment1, ..., segmentN]
+    ///
+    /// For each such hole create a cell with file segment state EMPTY.
+
+    auto it = file_segments.begin();
+    auto segment_range = (*it)->range();
+
+    size_t current_pos;
+    if (segment_range.left < range.left)
+    {
+        ///    [_______     -- requested range
+        /// [_______
+        /// ^
+        /// segment1
+
+        current_pos = segment_range.right + 1;
+        ++it;
+    }
+    else
+        current_pos = range.left;
+
+    while (current_pos <= range.right && it != file_segments.end())
+    {
+        segment_range = (*it)->range();
+
+        if (current_pos == segment_range.left)
+        {
+            current_pos = segment_range.right + 1;
+            ++it;
+            continue;
+        }
+
+        assert(current_pos < segment_range.left);
+
+        auto hole_size = segment_range.left - current_pos;
+
+        if (fill_with_detached_file_segments)
+        {
+            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
+            file_segment->detached = true;
+            file_segments.insert(it, file_segment);
+        }
+        else
+        {
+            file_segments.splice(it, splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
+        }
+
+        current_pos = segment_range.right + 1;
+        ++it;
+    }
+
+    if (current_pos <= range.right)
+    {
+        ///   ________]     -- requested range
+        ///   _____]
+        ///        ^
+        /// segmentN
+
+        auto hole_size = range.right - current_pos + 1;
+
+        if (fill_with_detached_file_segments)
+        {
+            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
+            file_segment->detached = true;
+            file_segments.insert(file_segments.end(), file_segment);
+        }
+        else
+        {
+            file_segments.splice(file_segments.end(), splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
+        }
+    }
 }
 
 FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t size)
@@ -250,70 +332,43 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoEmptyCells(key, offset, size, cache_lock);
+        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, cache_lock);
     }
     else
     {
-        /// There are segments [segment1, ..., segmentN]
-        /// (non-overlapping, non-empty, ascending-ordered) which (maybe partially)
-        /// intersect with given range.
-
-        /// It can have holes:
-        /// [____________________]         -- requested range
-        ///     [____]  [_]   [_________]  -- intersecting cache [segment1, ..., segmentN]
-        ///
-        /// For each such hole create a cell with file segment state EMPTY.
-
-        auto it = file_segments.begin();
-        auto segment_range = (*it)->range();
-
-        size_t current_pos;
-        if (segment_range.left < range.left)
-        {
-            ///    [_______     -- requested range
-            /// [_______
-            /// ^
-            /// segment1
-
-            current_pos = segment_range.right + 1;
-            ++it;
-        }
-        else
-            current_pos = range.left;
-
-        while (current_pos <= range.right && it != file_segments.end())
-        {
-            segment_range = (*it)->range();
-
-            if (current_pos == segment_range.left)
-            {
-                current_pos = segment_range.right + 1;
-                ++it;
-                continue;
-            }
-
-            assert(current_pos < segment_range.left);
-
-            auto hole_size = segment_range.left - current_pos;
-            file_segments.splice(it, splitRangeIntoEmptyCells(key, current_pos, hole_size, cache_lock));
-
-            current_pos = segment_range.right + 1;
-            ++it;
-        }
-
-        if (current_pos <= range.right)
-        {
-            ///   ________]     -- requested range
-            ///   _____]
-            ///        ^
-            /// segmentN
-
-            auto hole_size = range.right - current_pos + 1;
-            file_segments.splice(file_segments.end(), splitRangeIntoEmptyCells(key, current_pos, hole_size, cache_lock));
-        }
+        fillHolesWithEmptyFileSegments(file_segments, key, range, false, cache_lock);
     }
 
     assert(!file_segments.empty());
+    return FileSegmentsHolder(std::move(file_segments));
+}
+
+FileSegmentsHolder LRUFileCache::get(const Key & key, size_t offset, size_t size)
+{
+    assertInitialized();
+
+    FileSegment::Range range(offset, offset + size - 1);
+
+    std::lock_guard cache_lock(mutex);
+
+#ifndef NDEBUG
+    assertCacheCorrectness(key, cache_lock);
+#endif
+
+    /// Get all segments which intersect with the given range.
+    auto file_segments = getImpl(key, range, cache_lock);
+
+    if (file_segments.empty())
+    {
+        auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::EMPTY);
+        file_segment->detached = true;
+        file_segments = { file_segment };
+    }
+    else
+    {
+        fillHolesWithEmptyFileSegments(file_segments, key, range, true, cache_lock);
+    }
+
     return FileSegmentsHolder(std::move(file_segments));
 }
 
@@ -354,6 +409,21 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     return &(it->second);
 }
 
+FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, size_t size)
+{
+    std::lock_guard cache_lock(mutex);
+
+    auto * cell = getCell(key, offset, cache_lock);
+    if (cell)
+        throw Exception(
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            "Cache cell already exists for key `{}` and offset {}",
+            keyToStr(key), offset);
+
+    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, cache_lock);
+    return FileSegmentsHolder(std::move(file_segments));
+}
+
 bool LRUFileCache::tryReserve(
     const Key & key_, size_t offset_, size_t size, std::lock_guard<std::mutex> & cache_lock)
 {
@@ -372,7 +442,8 @@ bool LRUFileCache::tryReserve(
 
     auto is_overflow = [&]
     {
-        return (current_size + size - removed_size > max_size)
+        /// max_size == 0 means unlimited cache size, max_element_size means unlimited number of cache elements.
+        return (max_size != 0 && current_size + size - removed_size > max_size)
             || (max_element_size != 0 && queue_size > max_element_size);
     };
 
@@ -482,6 +553,30 @@ void LRUFileCache::remove(const Key & key)
 
     if (fs::exists(key_path))
         fs::remove(key_path);
+}
+
+void LRUFileCache::tryRemoveAll()
+{
+    /// Try remove all cached files by cache_base_path.
+    /// Only releasable file segments are evicted.
+
+    std::lock_guard cache_lock(mutex);
+
+    for (auto it = queue.begin(); it != queue.end();)
+    {
+        auto & [key, offset] = *it++;
+
+        auto * cell = getCell(key, offset, cache_lock);
+        if (cell->releasable())
+        {
+            auto file_segment = cell->file_segment;
+            if (file_segment)
+            {
+                std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+            }
+        }
+    }
 }
 
 void LRUFileCache::remove(
@@ -668,6 +763,38 @@ bool LRUFileCache::isLastFileSegmentHolder(
     return cell->file_segment.use_count() == 2;
 }
 
+FileSegments LRUFileCache::getSnapshot() const
+{
+    std::lock_guard cache_lock(mutex);
+
+    FileSegments file_segments;
+
+    for (const auto & [key, cells_by_offset] : files)
+    {
+        for (const auto & [offset, cell] : cells_by_offset)
+            file_segments.push_back(FileSegment::getSnapshot(cell.file_segment, cache_lock));
+    }
+
+    return file_segments;
+}
+
+std::vector<String> LRUFileCache::tryGetCachePaths(const Key & key)
+{
+    std::lock_guard cache_lock(mutex);
+
+    std::vector<String> cache_paths;
+
+    const auto & cells_by_offset = files[key];
+
+    for (const auto & [offset, cell] : cells_by_offset)
+    {
+        if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
+            cache_paths.push_back(getPathInLocalCache(key, offset));
+    }
+
+    return cache_paths;
+}
+
 LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRUQueue & queue_)
     : file_segment(file_segment_)
 {
@@ -685,12 +812,13 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRU
             break;
         }
         case FileSegment::State::EMPTY:
+        case FileSegment::State::DOWNLOADING:
         {
             break;
         }
         default:
             throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                            "Can create cell with either DOWNLOADED or EMPTY state, got: {}",
+                            "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state, got: {}",
                             FileSegment::stateToString(file_segment->download_state));
     }
 }

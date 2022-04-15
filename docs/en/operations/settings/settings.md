@@ -519,6 +519,33 @@ Possible values:
 
 Default value: `1`.
 
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
+
+Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
+
+Example:
+
+```sql
+INSERT INTO FUNCTION null('foo String') SETTINGS max_threads=1 VALUES ('bar');
+```
+
+But the following query will work only with `allow_settings_after_format_in_insert`:
+
+```sql
+SET allow_settings_after_format_in_insert=1;
+INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
+```
+
+Possible values:
+
+-   0 — Disallow.
+-   1 — Allow.
+
+Default value: `0`.
+
+!!! note "Warning"
+    Use this setting only for backward compatibility if your use cases depend on old syntax.
+
 ## input_format_skip_unknown_fields {#settings-input-format-skip-unknown-fields}
 
 Enables or disables skipping insertion of extra data.
@@ -1061,6 +1088,15 @@ Result:
 │ QueryFinish │ SELECT 1; │
 └─────────────┴───────────┘
 ```
+
+## log_processors_profiles {#settings-log_processors_profiles}
+
+Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
+
+See also:
+
+-   [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
+-   [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
 
 ## max_insert_block_size {#settings-max_insert_block_size}
 
