@@ -117,18 +117,6 @@ TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPartDecimal128)
     testGetFractional<Decimal128>(GetParam());
 }
 
-/*
-struct DecimalUtilsSplitAndCombineForDateTime64TestParam
-{
-    const char * description;
-
-    DateTime64 decimal_value;
-    uint8_t scale;
-
-    DecimalUtils::DecimalComponents<DateTime64> components;
-};
-*/
-
 class DecimalUtilsSplitAndCombineForDateTime64Test : public ::testing::TestWithParam<DecimalUtilsSplitAndCombineTestParam>
 {};
 
