@@ -16,6 +16,8 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
+#include <sstream>
+#include <Common/config.h>
 #if USE_SSL
 #     include <openssl/crypto.h>
 #     include <openssl/rand.h>
@@ -37,7 +39,7 @@ namespace
     }
 
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, bool id_mode, AuthenticationData & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -109,11 +111,14 @@ namespace
                 ASTPtr ast;
                 if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
                     return false;
-
                 value = ast->as<const ASTLiteral &>().value.safeGet<String>();
-                if (ParserStringLiteral{}.parse(pos, ast, expected))
+
+                if (id_mode && expect_hash)
                 {
-                    parsed_salt = ast->as<const ASTLiteral &>().value.safeGet<String>();
+                    if (ParserStringLiteral{}.parse(pos, ast, expected))
+                    {
+                        parsed_salt = ast->as<const ASTLiteral &>().value.safeGet<String>();
+                    }
                 }
             }
             else if (expect_ldap_server_name)
@@ -157,15 +162,21 @@ namespace
                 }
                 else if (expect_password)
                 {
+#if USE_SSL
                     ///generate and add salt here
                     ///random generator FIPS complaint
                     uint8_t key[32];
-                    RAND_bytes(key, sizeof(key));
+                    std::stringstream ss;
                     String salt;
+                    RAND_bytes(key, sizeof(key));
                     for (size_t i=0; i< 32; ++i)
-                        salt.append(std::to_string(key[i]));
+                        ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(key[i]);
+                    salt = ss.str();
                     value.append(salt);
                     auth_data.setSalt(salt);
+#else
+                    ///if USE_SSL is not defined, Exception thrown later
+#endif
                 }
             }
             if (expect_password)
@@ -420,7 +431,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!auth_data)
         {
             AuthenticationData new_auth_data;
-            if (parseAuthenticationData(pos, expected, new_auth_data))
+            if (parseAuthenticationData(pos, expected, attach_mode, new_auth_data))
             {
                 auth_data = std::move(new_auth_data);
                 continue;
