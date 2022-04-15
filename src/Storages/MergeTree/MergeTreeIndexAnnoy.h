@@ -4,8 +4,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <Storages/MergeTree/IMergeTreeIndexReturnIdCondition.h>
-
 #include <annoylib.h>
 #include <kissrandom.h>
 
@@ -71,7 +69,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionAnnoy final : public IMergeTreeIndexReturnIdCondition
+class MergeTreeIndexConditionAnnoy final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionAnnoy(
@@ -82,8 +80,6 @@ public:
     bool alwaysUnknownOrTrue() const override;
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
-
-    std::vector<int32_t> returnIdRecords(MergeTreeIndexGranulePtr granule) const override;
 
     ~MergeTreeIndexConditionAnnoy() override = default;
 private:
