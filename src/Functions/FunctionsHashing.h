@@ -2,6 +2,7 @@
 
 #include <city.h>
 #include <farmhash.h>
+#include <farsh.h>
 #include <metrohash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
@@ -1369,6 +1370,19 @@ private:
     }
 };
 
+struct ImplFarshHash32
+{
+    static constexpr auto name = "farshHash32";
+    using ReturnType = UInt32;
+
+    static auto combineHashes(UInt32 h1, UInt32 h2) { return CityHash_v1_0_2::Hash64to32(UInt64_t(h1, h2)); }
+    static auto apply(const char * s, const size_t len, const UInt64 seed = 0)
+    {
+        return farsh(s, len, seed);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
@@ -1402,6 +1416,8 @@ using FunctionMurmurHash3_128 = FunctionAnyHash<MurmurHash3Impl128>;
 using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
 using FunctionJavaHashUTF16LE = FunctionAnyHash<JavaHashUTF16LEImpl>;
 using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
+
+using FunctionFarshHash32 = FunctionAnyHash<ImplFarshHash32>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
