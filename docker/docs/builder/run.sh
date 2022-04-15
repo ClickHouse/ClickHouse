@@ -14,6 +14,9 @@ do
   fi
 done
 
+# Force build error on wrong symlinks
+sed -i '/onBrokenMarkdownLinks:/ s/ignore/error/g' docusaurus.config.js
+
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
   exec yarn build "$@"
 fi
