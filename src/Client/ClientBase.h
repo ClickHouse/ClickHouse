@@ -80,7 +80,7 @@ protected:
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
-        std::optional<Exception> & current_exception);
+        std::unique_ptr<Exception> & current_exception);
 
     static void clearTerminal();
     void showClientVersion();

@@ -132,8 +132,15 @@ public:
     int getLineNumber() const { return line_number; }
     void setLineNumber(int line_number_) { line_number = line_number_;}
 
+    const String getFileName() const { return file_name; }
+    void setFileName(const String & file_name_) { file_name = file_name_; }
+
+    Exception * clone() const override { return new ParsingException(*this); }
+    void rethrow() const override { throw *this; }
+
 private:
     ssize_t line_number{-1};
+    String file_name;
     mutable std::string formatted_message;
 
     const char * name() const throw() override { return "DB::ParsingException"; }

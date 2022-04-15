@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
+#include <IO/WithFileName.h>
 #include <base/logger_useful.h>
 #include <base/sleep.h>
 #include <base/types.h>
@@ -85,7 +86,7 @@ public:
 namespace detail
 {
     template <typename UpdatableSessionPtr>
-    class ReadWriteBufferFromHTTPBase : public SeekableReadBufferWithSize
+    class ReadWriteBufferFromHTTPBase : public SeekableReadBufferWithSize, public WithFileName
     {
     public:
         using HTTPHeaderEntry = std::tuple<std::string, std::string>;
@@ -222,6 +223,8 @@ namespace detail
 
             return read_range.end;
         }
+
+        String getFileName() const override { return uri.toString(); }
 
         enum class InitializeError
         {
@@ -674,7 +677,7 @@ public:
     }
 };
 
-class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory
+class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
 {
     using OutStreamCallback = ReadWriteBufferFromHTTP::OutStreamCallback;
 
@@ -747,6 +750,8 @@ public:
     }
 
     std::optional<size_t> getTotalSize() override { return total_object_size; }
+
+    String getFileName() const override { return uri.toString(); }
 
 private:
     RangeGenerator range_generator;

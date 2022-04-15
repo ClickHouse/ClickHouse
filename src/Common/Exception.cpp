@@ -555,13 +555,14 @@ std::string ParsingException::displayText() const
 {
     try
     {
-        if (line_number == -1)
-            formatted_message = message();
-        else
-            formatted_message = message() + fmt::format(": (at row {})\n", line_number);
+        formatted_message = message();
+        if (!file_name.empty())
+            formatted_message += fmt::format(": (in file {})", file_name);
+        if (line_number != -1)
+            formatted_message += fmt::format(": (at row {})", line_number);
+        formatted_message += "\n";
     }
-    catch (...)
-    {}
+    catch (...) {}
 
     if (!formatted_message.empty())
     {
