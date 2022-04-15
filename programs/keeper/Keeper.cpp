@@ -62,6 +62,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int FAILED_TO_GETPWUID;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -239,7 +240,7 @@ std::string Keeper::getDefaultConfigFileName() const
     return "keeper_config.xml";
 }
 
-void Keeper::handleCustomArguments(const std::string & arg, const std::string & value)
+void Keeper::handleCustomArguments(const std::string & arg, [[maybe_unused]] const std::string & value) // NOLINT
 {
     if (arg == "force-recovery")
     {

@@ -365,7 +365,7 @@ void KeeperTCPHandler::runImpl()
     }
     else
     {
-        LOG_WARNING(log, "Ignoring user request, because the server is not acitve yet");
+        LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
         sendHandshake(false);
         return;
     }
