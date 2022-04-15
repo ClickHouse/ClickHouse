@@ -121,14 +121,10 @@ int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, const SortCursorImp
     return compareCursors(lhs, lhs.getRow(), rhs, rhs.getRow());
 }
 
-
 bool ALWAYS_INLINE totallyLess(SortCursorImpl & lhs, SortCursorImpl & rhs)
 {
-    if (!lhs.isValid() || !rhs.isValid())
-        return false;
-
     /// The last row of this cursor is no larger than the first row of the another cursor.
-    int cmp = compareCursors(lhs, lhs.rows - 1, rhs, 0);
+    int cmp = compareCursors(lhs, lhs.rows - 1, rhs, rhs.getRow());
     return cmp < 0;
 }
 
@@ -565,8 +561,7 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::mergeImpl()
         return Status({}, true);
     }
 
-
-    if (int cmp = totallyCompare(cursors[0]->getCurrent().cursor, cursors[1]->getCurrent().cursor); cmp == 6666)
+    if (int cmp = totallyCompare(cursors[0]->getCurrent().cursor, cursors[1]->getCurrent().cursor); cmp != 0)
     {
         if (cmp < 0)
         {
