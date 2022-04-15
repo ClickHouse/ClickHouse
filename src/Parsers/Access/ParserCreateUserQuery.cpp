@@ -16,8 +16,8 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
-#include <sstream>
 #include <Common/config.h>
+#include <Common/hex.h>
 #if USE_SSL
 #     include <openssl/crypto.h>
 #     include <openssl/rand.h>
@@ -154,7 +154,7 @@ namespace
             }
 
             auth_data = AuthenticationData{*type};
-            if (type == AuthenticationType::SHA256_PASSWORD)
+            if (auth_data.getType() == AuthenticationType::SHA256_PASSWORD)
             {
                 if (!parsed_salt.empty())
                 {
@@ -166,12 +166,15 @@ namespace
                     ///generate and add salt here
                     ///random generator FIPS complaint
                     uint8_t key[32];
-                    std::stringstream ss;
-                    String salt;
                     RAND_bytes(key, sizeof(key));
-                    for (size_t i=0; i< 32; ++i)
-                        ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(key[i]);
-                    salt = ss.str();
+                    String salt;
+                    salt.resize(sizeof(key) * 2);
+                    char * buf_pos = salt.data();
+                    for (size_t i = 0; i < sizeof(key); ++i)
+                    {
+                        writeHexByteUppercase(key[i], buf_pos);
+                        buf_pos += 2;
+                    }
                     value.append(salt);
                     auth_data.setSalt(salt);
 #else
