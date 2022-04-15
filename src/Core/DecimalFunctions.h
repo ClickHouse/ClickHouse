@@ -97,8 +97,8 @@ inline DecimalType decimalFromComponentsWithMultiplier(
         typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
-
     const auto fractional_sign = whole < 0 ? -1 : 1;
+
     T whole_scaled = 0;
     if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
@@ -200,7 +200,7 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
     T result = decimal.value % scale_multiplier;
     if constexpr (!keep_sign)
         if (result < T(0))
-            result *= T(-1);
+            result = -result;
 
     return result;
 }

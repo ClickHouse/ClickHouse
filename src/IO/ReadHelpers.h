@@ -930,7 +930,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
         
-        /// Keep sign of fractional part the same with whole part
+        /// Keep sign of fractional part the same with whole part if datetime64 is negative
+        /// 1965-12-12 12:12:12.123 => whole = -127914468, fraction = 123(sign>0) -> new whole = -127914467, new fraction = 877(sign<0)
         if (components.whole < 0 && components.fractional != 0)
         {
             const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);

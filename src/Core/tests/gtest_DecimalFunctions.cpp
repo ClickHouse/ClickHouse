@@ -204,8 +204,8 @@ INSTANTIATE_TEST_SUITE_P(Basic,
             DateTime64(-127943267877),
             3,
             {
-                -127943268,
-                123
+                -127943267,
+                877
             }
         },
         {
