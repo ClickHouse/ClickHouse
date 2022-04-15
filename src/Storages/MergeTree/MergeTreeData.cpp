@@ -1575,6 +1575,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     if (!lock.try_lock())
         return res;
 
+    bool need_remove_parts_in_order = supportsReplication() && getSettings()->allow_remote_fs_zero_copy_replication;
     time_t now = time(nullptr);
     std::vector<DataPartIteratorByStateAndInfo> parts_to_delete;
 
@@ -1588,13 +1589,22 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 
             /// Do not remove outdated part if it may be visible for some transaction
             if (!part->version.canBeRemoved())
+            {
+                if (need_remove_parts_in_order)
+                    break;
                 continue;
+            }
 
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
 
             /// Grab only parts that are not used by anyone (SELECTs for example).
             if (!part.unique())
+            {
+                if (need_remove_parts_in_order)
+                    break;
+
                 continue;
+            }
 
             if ((part_remove_time < now && now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds())
                 || force
@@ -1603,6 +1613,8 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             {
                 parts_to_delete.emplace_back(it);
             }
+            else if (need_remove_parts_in_order)
+                break;
         }
 
         res.reserve(parts_to_delete.size());
@@ -3328,7 +3340,6 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 
             /// We do not check allow_remote_fs_zero_copy_replication here because data may be shared
             /// when allow_remote_fs_zero_copy_replication turned on and off again
-
             original_active_part->force_keep_shared_data = false;
 
             if (original_active_part->volume->getDisk()->supportZeroCopyReplication() &&
@@ -5724,6 +5735,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     if (disk->exists(dst_part_path))
         throw Exception("Part in " + fullPath(disk, dst_part_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
+    auto dst_data_part = createPart(dst_part_name, dst_part_info, single_disk_volume, tmp_dst_part_name);
+
+
     /// If source part is in memory, flush it to disk and clone it already in on-disk format
     if (auto src_part_in_memory = asInMemoryPart(src_part))
     {
@@ -5732,14 +5747,22 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
         src_part_in_memory->flushToDisk(src_relative_data_path, flushed_part_path, metadata_snapshot);
         src_part_path = fs::path(src_relative_data_path) / flushed_part_path / "";
     }
+    else
+    {
+        dst_data_part->hardlinked_files.source_part_name = src_part->name;
+
+        for (auto it = disk->iterateDirectory(src_part_path); it->isValid(); it->next())
+        {
+            if (it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
+                dst_data_part->hardlinked_files.hardlinks_from_source_part.push_back(it->name());
+        }
+    }
 
     LOG_DEBUG(log, "Cloning part {} to {}", fullPath(disk, src_part_path), fullPath(disk, dst_part_path));
     localBackup(disk, src_part_path, dst_part_path, /* make_source_readonly */ false);
     disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
     disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-    auto dst_data_part = createPart(dst_part_name, dst_part_info, single_disk_volume, tmp_dst_part_name);
 
     /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
