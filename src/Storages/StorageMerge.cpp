@@ -201,7 +201,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                 stage_in_source_tables = std::max(
                     stage_in_source_tables,
                     table->getQueryProcessingStage(local_context, to_stage,
-                        table->getStorageSnapshot(table->getInMemoryMetadataPtr()), query_info));
+                        table->getStorageSnapshot(table->getInMemoryMetadataPtr(), local_context), query_info));
             }
 
             iterator->next();
@@ -338,7 +338,7 @@ Pipe StorageMerge::read(
         Aliases aliases;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto storage_columns = storage_metadata_snapshot->getColumns();
-        auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot);
+        auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot, local_context);
 
         auto modified_query_info = getModifiedQueryInfo(query_info, modified_context, storage->getStorageID(), storage->as<StorageMerge>());
         auto syntax_result = TreeRewriter(local_context).analyzeSelect(
@@ -377,7 +377,7 @@ Pipe StorageMerge::read(
             }
 
             syntax_result = TreeRewriter(local_context).analyze(
-                required_columns_expr_list, storage_columns.getAllPhysical(), storage, storage->getStorageSnapshot(storage_metadata_snapshot));
+                required_columns_expr_list, storage_columns.getAllPhysical(), storage, storage->getStorageSnapshot(storage_metadata_snapshot, local_context));
 
             auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, local_context).getActionsDAG(true);
 

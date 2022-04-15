@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from collections import namedtuple
+from typing import Any, Dict, List
 import json
 import time
 
@@ -10,7 +11,7 @@ import boto3  # type: ignore
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
     "PullRequestCI",
-    "Docs",
+    "DocsCheck",
     "DocsRelease",
     "BackportPR",
 }
@@ -20,6 +21,8 @@ NEED_RERUN_OR_CANCELL_WORKFLOWS = {
 API_URL = "https://api.github.com/repos/ClickHouse/ClickHouse"
 
 MAX_RETRY = 5
+
+DEBUG_INFO = {}  # type: Dict[str, Any]
 
 
 def get_installation_id(jwt_token):
@@ -90,7 +93,9 @@ WorkflowDescription = namedtuple(
 
 
 def get_workflows_description_for_pull_request(pull_request_event):
+    head_repo = pull_request_event["head"]["repo"]["full_name"]
     head_branch = pull_request_event["head"]["ref"]
+    head_sha = pull_request_event["head"]["sha"]
     print("PR", pull_request_event["number"], "has head ref", head_branch)
     workflows_data = []
     workflows = _exec_get_with_retry(
@@ -108,13 +113,23 @@ def get_workflows_description_for_pull_request(pull_request_event):
             print("Too many workflows found")
             break
 
+    DEBUG_INFO["workflows"] = []  # type: List[Dict[str, str]]
     workflow_descriptions = []
     for workflow in workflows_data:
+        # Some time workflow["head_repository"]["full_name"] is None
+        if workflow["head_repository"] is None:
+            continue
+        DEBUG_INFO["workflows"].append(
+            {
+                "full_name": workflow["head_repository"]["full_name"],
+                "name": workflow["name"],
+            }
+        )
         # unfortunately we cannot filter workflows from forks in request to API
         # so doing it manually
         if (
-            workflow["head_repository"]["full_name"]
-            == pull_request_event["head"]["repo"]["full_name"]
+            workflow["head_sha"] == head_sha
+            and workflow["head_repository"]["full_name"] == head_repo
             and workflow["name"] in NEED_RERUN_OR_CANCELL_WORKFLOWS
         ):
             workflow_descriptions.append(
@@ -162,6 +177,7 @@ def exec_workflow_url(urls_to_cancel, token):
 
 def main(event):
     token = get_token_from_aws()
+    DEBUG_INFO["event_body"] = event["body"]
     event_data = json.loads(event["body"])
 
     print("Got event for PR", event_data["number"])
@@ -210,4 +226,8 @@ def main(event):
 
 
 def handler(event, _):
-    main(event)
+    try:
+        main(event)
+    finally:
+        for name, value in DEBUG_INFO.items():
+            print(f"Value of {name}: ", value)
