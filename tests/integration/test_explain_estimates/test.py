@@ -25,7 +25,7 @@ def test_explain_estimates(start_cluster):
     # sum(marks) - 1 because EXPLAIN ESIMATES does not include final mark.
     system_parts_result = node1.query(
         """
-        with count() as parts, sum(rows) as rows, sum(marks)-1 as marks SELECT any(database), any(table), concat('{"selected_marks":', marks::String, ',"selected_parts":', parts::String, ',"selected_rows":', rows::String, '}') FROM system.parts WHERE database = 'default' AND table = 'test' and active = 1 GROUP BY (database, table)"
+        with count() as parts, sum(rows) as rows, sum(marks)-1 as marks SELECT any(database), any(table), concat('{"selected_marks":', marks::String, ',"selected_parts":', parts::String, ',"selected_rows":', rows::String, '}') FROM system.parts WHERE database = 'default' AND table = 'test' and active = 1 GROUP BY (database, table)
         """
     )
     explain_estimates_result = node1.query("EXPLAIN ESTIMATE SELECT * FROM test")
