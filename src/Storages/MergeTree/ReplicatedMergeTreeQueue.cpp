@@ -611,9 +611,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
     /// Multiple log entries that must be copied to the queue.
 
-    log_entries.erase(
-        std::remove_if(log_entries.begin(), log_entries.end(), [&min_log_entry](const String & entry) { return entry < min_log_entry; }),
-        log_entries.end());
+    std::erase_if(log_entries, [&min_log_entry](const String & entry) { return entry < min_log_entry; });
 
     if (!log_entries.empty())
     {

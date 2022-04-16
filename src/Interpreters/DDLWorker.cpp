@@ -221,7 +221,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
 
 static void filterAndSortQueueNodes(Strings & all_nodes)
 {
-    all_nodes.erase(std::remove_if(all_nodes.begin(), all_nodes.end(), [] (const String & s) { return !startsWith(s, "query-"); }), all_nodes.end());
+    std::erase_if(all_nodes, [] (const String & s) { return !startsWith(s, "query-"); });
     ::sort(all_nodes.begin(), all_nodes.end());
 }
 
