@@ -5,10 +5,12 @@ import re
 from typing import Tuple
 
 from github import Github
-from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
-from pr_info import PRInfo
-from get_robot_token import get_best_robot_token
+
 from commit_status_helper import get_commit, post_labels, remove_labels
+from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
 
 NAME = "Run Check (actions)"
 
@@ -24,69 +26,12 @@ DO_NOT_TEST_LABEL = "do not test"
 FORCE_TESTS_LABEL = "force tests"
 SUBMODULE_CHANGED_LABEL = "submodule changed"
 
-# Individual trusted contirbutors who are not in any trusted organization.
-# Can be changed in runtime: we will append users that we learned to be in
-# a trusted org, to save GitHub API calls.
-TRUSTED_CONTRIBUTORS = {
-    e.lower()
-    for e in [
-        "achimbab",
-        "adevyatova ",  # DOCSUP
-        "Algunenano",  # Raúl Marín, Tinybird
-        "amosbird",
-        "AnaUvarova",  # DOCSUP
-        "anauvarova",  # technical writer, Yandex
-        "annvsh",  # technical writer, Yandex
-        "atereh",  # DOCSUP
-        "azat",
-        "bharatnc",  # Newbie, but already with many contributions.
-        "bobrik",  # Seasoned contributor, CloudFlare
-        "BohuTANG",
-        "codyrobert",  # Flickerbox engineer
-        "cwurm",  # Employee
-        "damozhaeva",  # DOCSUP
-        "den-crane",
-        "flickerbox-tom",  # Flickerbox
-        "gyuton",  # technical writer, Yandex
-        "hagen1778",  # Roman Khavronenko, seasoned contributor
-        "hczhcz",
-        "hexiaoting",  # Seasoned contributor
-        "ildus",  # adjust, ex-pgpro
-        "javisantana",  # a Spanish ClickHouse enthusiast, ex-Carto
-        "ka1bi4",  # DOCSUP
-        "kirillikoff",  # DOCSUP
-        "kitaisreal",  # Seasoned contributor
-        "kreuzerkrieg",
-        "lehasm",  # DOCSUP
-        "michon470",  # DOCSUP
-        "MyroTk",  # Tester in Altinity
-        "myrrc",  # Michael Kot, Altinity
-        "nikvas0",
-        "nvartolomei",
-        "olgarev",  # DOCSUP
-        "otrazhenia",  # Yandex docs contractor
-        "pdv-ru",  # DOCSUP
-        "podshumok",  # cmake expert from QRator Labs
-        "s-mx",  # Maxim Sabyanin, former employee, present contributor
-        "sevirov",  # technical writer, Yandex
-        "spongedu",  # Seasoned contributor
-        "taiyang-li",
-        "ucasFL",  # Amos Bird's friend
-        "vdimir",  # Employee
-        "vzakaznikov",
-        "YiuRULE",
-        "zlobober",  # Developer of YT
-        "ilejn",  # Arenadata, responsible for Kerberized Kafka
-        "thomoco",  # ClickHouse
-        "BoloniniD",  # Seasoned contributor, HSE
-        "tonickkozlov",  # Cloudflare
-    ]
-}
 
 MAP_CATEGORY_TO_LABEL = {
     "New Feature": "pr-feature",
     "Bug Fix": "pr-bugfix",
-    "Bug Fix (user-visible misbehaviour in official stable or prestable release)": "pr-bugfix",
+    "Bug Fix (user-visible misbehaviour in official "
+    "stable or prestable release)": "pr-bugfix",
     "Improvement": "pr-improvement",
     "Performance Improvement": "pr-performance",
     "Backward Incompatible Change": "pr-backward-incompatible",
@@ -256,9 +201,7 @@ if __name__ == "__main__":
     elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
         pr_labels_to_remove.append(SUBMODULE_CHANGED_LABEL)
 
-    print(
-        "change labels: add {}, remove {}".format(pr_labels_to_add, pr_labels_to_remove)
-    )
+    print(f"change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
     if pr_labels_to_add:
         post_labels(gh, pr_info, pr_labels_to_add)
 
