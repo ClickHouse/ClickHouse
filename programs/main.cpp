@@ -93,8 +93,6 @@ int mainEntryClickHouseHashBinary(int, char **)
     return 0;
 }
 
-#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
-
 namespace
 {
 
@@ -201,7 +199,7 @@ auto instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
-#define ret(x) return std::make_tuple(STDERR_FILENO, x, ARRAY_SIZE(x) - 1)
+#define ret(x) return std::make_tuple(STDERR_FILENO, x, sizeof(x) - 1)
         case InstructionFail::NONE:
             ret("NONE");
         case InstructionFail::SSE3:
@@ -289,7 +287,7 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 #define writeError(data) do \
     { \
         static_assert(__builtin_constant_p(data)); \
-        if (!writeRetry(STDERR_FILENO, data, ARRAY_SIZE(data) - 1)) \
+        if (!writeRetry(STDERR_FILENO, data, sizeof(data) - 1)) \
             _Exit(1); \
     } while (false)
 
@@ -365,7 +363,7 @@ void setUserAndGroup()
             passwd entry{};
             passwd * result{};
 
-            if (0 != getpwnam_r(env_uid, &entry, buf, buf_size, &result))
+            if (0 != getpwnam_r(env_uid, &entry, buf.get(), buf_size, &result))
                 throwFromErrno(fmt::format("Cannot do 'getpwnam_r' to obtain uid from user name, specified in the CLICKHOUSE_SETUID environment variable ({})", env_uid), ErrorCodes::SYSTEM_ERROR);
 
             if (!result)
@@ -387,11 +385,10 @@ void setUserAndGroup()
         gid_t gid = 0;
         if (!tryParse(gid, env_gid))
         {
-            std::vector<char> buf(buf_size);
             group entry{};
             group * result{};
 
-            if (0 != getgrnam_r(env_gid, &entry, buf, buf_size, &result))
+            if (0 != getgrnam_r(env_gid, &entry, buf.get(), buf_size, &result))
                 throwFromErrno(fmt::format("Cannot do 'getgrnam_r' to obtain gid from group name, specified in the CLICKHOUSE_SETGID environment variable ({})", env_gid), ErrorCodes::SYSTEM_ERROR);
 
             if (!result)
