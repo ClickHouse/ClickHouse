@@ -26,13 +26,12 @@ public:
     AsynchronousReadBufferFromHDFS(
         AsynchronousReaderPtr reader_,
         const ReadSettings & settings_,
-        std::shared_ptr<ReadBufferFromHDFS> impl_,
-        size_t min_bytes_for_seek_ = DBMS_DEFAULT_BUFFER_SIZE);
+        std::shared_ptr<ReadBufferFromHDFS> impl_);
+        // size_t min_bytes_for_seek_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~AsynchronousReadBufferFromHDFS() override;
 
     off_t seek(off_t offset_, int whence) override;
-
 
     void prefetch() override;
 
@@ -62,7 +61,7 @@ private:
     Memory<> prefetch_buffer;
 
     size_t file_offset_of_buffer_end = 0;
-    size_t min_bytes_for_seek;
+    // size_t min_bytes_for_seek;
     size_t bytes_to_ignore = 0;
     std::optional<size_t> read_until_position;
 
