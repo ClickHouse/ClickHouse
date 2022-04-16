@@ -925,22 +925,8 @@ namespace
 
         if (!user.empty())
         {
-#if defined(OS_FREEBSD)
-            command = fmt::format("su -m '{}' -c '{}'", user, command);
-#else
-            bool may_need_sudo = geteuid() != 0;
-            if (may_need_sudo)
-            {
-                struct passwd *p = getpwuid(geteuid());
-                // Only use sudo when we are not the given user
-                if (p == nullptr || std::string(p->pw_name) != user)
-                    command = fmt::format("sudo -u '{}' {}", user, command);
-            }
-            else
-            {
-                command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
-            }
-#endif
+            if (0 != setenv("CLICKHOUSE_SETUID", user.c_str(), true))
+                throwFromErrno("Cannot set environment variable CLICKHOUSE_SETUID that is required to dropping privileges", ErrorCodes::SYSTEM_ERROR);
         }
 
         fmt::print("Will run {}\n", command);
