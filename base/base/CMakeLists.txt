@@ -19,6 +19,7 @@ set (SRCS
     errnoToString.cpp
     StringRef.cpp
     safeExit.cpp
+    throwError.cpp
 )
 
 if (ENABLE_REPLXX)
