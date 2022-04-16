@@ -286,9 +286,12 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
         }
 
         std::vector<std::future<Coordination::GetResponse>> futures;
-        futures.reserve(nodes.size());
-        for (const String & node : nodes)
-            futures.push_back(zookeeper->asyncTryGet(path_part + '/' + node));
+        futures.reserve(std::size(nodes));
+        std::transform(
+            std::begin(nodes),
+            std::end(nodes),
+            std::back_inserter(futures),
+            [&zookeeper, &path_part](const String & node) { return zookeeper->asyncTryGet(path_part + '/' + node); });
 
         for (size_t i = 0, size = nodes.size(); i < size; ++i)
         {
