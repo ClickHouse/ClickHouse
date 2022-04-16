@@ -358,7 +358,7 @@ void setUserAndGroup()
     {
         /// Is it numeric id or name?
         uid_t uid = 0;
-        if (!tryParse(uid, env_uid))
+        if (!tryParse(uid, env_uid) || uid == 0)
         {
             passwd entry{};
             passwd * result{};
@@ -383,7 +383,7 @@ void setUserAndGroup()
     if (env_gid && env_gid[0])
     {
         gid_t gid = 0;
-        if (!tryParse(gid, env_gid))
+        if (!tryParse(gid, env_gid) || gid == 0)
         {
             group entry{};
             group * result{};
@@ -426,7 +426,15 @@ int main(int argc_, char ** argv_)
     SCOPE_EXIT({ inside_main = false; });
 
     /// Drop privileges if needed.
-    setUserAndGroup();
+    try
+    {
+        setUserAndGroup();
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage() << '\n';
+        return 1;
+    }
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
