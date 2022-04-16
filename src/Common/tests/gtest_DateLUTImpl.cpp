@@ -90,10 +90,10 @@ TEST(DateLUTTest, makeDayNumTest)
 
 TEST(DateLUTTest, TimeValuesInMiddleOfRange)
 {
-    const DateLUTImpl & lut = DateLUT::instance("Asia/Istanbul");
+    const DateLUTImpl & lut = DateLUT::instance("Europe/Minsk");
     const time_t time = 1568650811; // 2019-09-16 19:20:11 (Monday)
 
-    EXPECT_EQ(lut.getTimeZone(), "Asia/Istanbul");
+    EXPECT_EQ(lut.getTimeZone(), "Europe/Minsk");
     EXPECT_EQ(lut.getOffsetAtStartOfEpoch(), 3600*3); // UTC-3
 
     EXPECT_EQ(lut.toDate(time), 1568581200);
@@ -538,3 +538,4 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year1970,
 //            {0, 0 + 11 * 3600 * 24 + 12, 11},
         }))
 );
+
