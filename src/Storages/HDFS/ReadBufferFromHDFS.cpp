@@ -185,7 +185,7 @@ ReadBufferFromHDFS::ReadResult ReadBufferFromHDFS::readInto(char * data, size_t 
 {
     set(data, size);
     seek(offset, SEEK_SET);
-    auto result = nextImpl();
+    auto result = next();
     if (result)
         return {working_buffer.size(), ignore};
     return {0, 0};

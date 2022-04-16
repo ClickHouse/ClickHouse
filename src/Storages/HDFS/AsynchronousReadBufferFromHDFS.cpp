@@ -36,13 +36,14 @@ namespace ErrorCodes
 }
 
 AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
-    AsynchronousReaderPtr reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_, size_t min_bytes_for_seek_)
+    AsynchronousReaderPtr reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
+    // size_t min_bytes_for_seek_)
     : BufferWithOwnMemory<SeekableReadBufferWithSize>(settings_.remote_fs_buffer_size)
     , reader(reader_)
     , priority(settings_.priority)
-    , impl(impl_)
+    , impl(std::move(impl_))
     , prefetch_buffer(settings_.remote_fs_buffer_size)
-    , min_bytes_for_seek(min_bytes_for_seek_)
+    // , min_bytes_for_seek(min_bytes_for_seek_)
     , read_until_position(impl->getTotalSize())
     , log(&Poco::Logger::get("AsynchronousReadBufferFromHDFS"))
 {
@@ -73,7 +74,6 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::readInt
     request.offset = file_offset_of_buffer_end;
     request.priority = priority;
     request.ignore = 0;
-
     if (bytes_to_ignore)
     {
         request.ignore = bytes_to_ignore;
@@ -201,24 +201,9 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
     /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();
 
-    /**
-    * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
-    * Note: we read in range [file_offset_of_buffer_end, read_until_position).
-    */
-
-    if (read_until_position && new_pos < *read_until_position && new_pos > file_offset_of_buffer_end
-        && new_pos < file_offset_of_buffer_end + min_bytes_for_seek)
-    {
-        ProfileEvents::increment(ProfileEvents::RemoteFSLazySeeks);
-        bytes_to_ignore = new_pos - file_offset_of_buffer_end;
-    }
-    else
-    {
-        ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
-        impl->seek(new_pos, SEEK_SET);
-        file_offset_of_buffer_end = new_pos;
-    }
-
+    ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
+    impl->seek(new_pos, SEEK_SET);
+    file_offset_of_buffer_end = new_pos;
     return new_pos;
 }
 
@@ -247,16 +232,6 @@ size_t AsynchronousReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
     return file_offset_of_buffer_end;
 }
 
-
-/*
-    static AsynchronousReaderPtr getThreadPoolReader()
-    {
-        constexpr size_t pool_size = 50;
-        constexpr size_t queue_size = 1000000;
-        static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader<ReadBufferFromHDFS>>(pool_size, queue_size);
-        return reader;
-    }
-*/
 }
 
 #endif

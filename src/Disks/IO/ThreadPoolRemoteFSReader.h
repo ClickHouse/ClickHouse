@@ -1,11 +1,9 @@
 #pragma once
 
 #include <IO/AsynchronousReader.h>
-#include <IO/SeekableReadBuffer.h>
 #include <Common/ThreadPool.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IDiskRemote.h>
-
+// #include <IO/SeekableReadBuffer.h>
+// #include <Disks/IDiskRemote.h>
 
 namespace DB
 {

@@ -19,6 +19,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -30,6 +31,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/HDFS/AsynchronousReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -99,6 +101,14 @@ public:
         return columns_description;
     }
 
+    static AsynchronousReaderPtr getThreadPoolReader()
+    {
+        constexpr size_t pool_size = 50;
+        constexpr size_t queue_size = 1000000;
+        static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader<ReadBufferFromHDFS>>(pool_size, queue_size);
+        return reader;
+    }
+
     StorageHiveSource(
         SourcesInfoPtr source_info_,
         String hdfs_namenode_url_,
@@ -119,6 +129,7 @@ public:
         , columns_description(getColumnsDescription(sample_block, source_info))
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
+        , read_settings(getContext()->getReadSettings())
     {
         to_read_block = sample_block;
 
@@ -162,8 +173,24 @@ public:
                 std::unique_ptr<ReadBuffer> raw_read_buf;
                 try
                 {
-                    raw_read_buf = std::make_unique<ReadBufferFromHDFS>(
-                        hdfs_namenode_url, current_path, getContext()->getGlobalContext()->getConfigRef());
+                    auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
+                    {
+                        auto buf = std::make_unique<ReadBufferFromHDFS>(
+                            hdfs_namenode_url, current_path, getContext()->getGlobalContext()->getConfigRef());
+
+                        bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+                        if (thread_pool_read)
+                        {
+                            std::cout << "read from thread pool" << std::endl;
+                            return std::make_unique<AsynchronousReadBufferFromHDFS>(getThreadPoolReader(), read_settings, std::move(buf));
+                        }
+                        else
+                        {
+                            return std::move(buf);
+                        }
+                    };
+
+                    raw_read_buf = get_raw_read_buf();
                 }
                 catch (Exception & e)
                 {
@@ -273,6 +300,7 @@ private:
     ColumnsDescription columns_description;
     const Names & text_input_field_names;
     FormatSettings format_settings;
+    ReadSettings read_settings;
 
     String current_path;
     size_t current_idx = 0;
