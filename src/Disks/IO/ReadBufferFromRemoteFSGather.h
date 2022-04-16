@@ -4,6 +4,7 @@
 #include <Disks/IDiskRemote.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
+#include <IO/AsynchronousReader.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <azure/storage/blobs.hpp>
@@ -36,12 +37,7 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    struct ReadResult
-    {
-        size_t size = 0;
-        size_t offset = 0;
-    };
-
+    using ReadResult = IAsynchronousReader::Result;
     ReadResult readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
     size_t getFileSize() const;

@@ -14,35 +14,59 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/AsynchronousReader.h>
 #include <IO/SeekableReadBuffer.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Interpreters/Context.h>
 
 namespace DB
 {
 
-class AsynchronousReadBufferFromHDFS : public SeekableReadBufferWithSize
+class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBufferWithSize>
 {
-class AsynchronousReadBufferFromHDFSImpl;
-
 public:
-    AsynchronousReadBufferFromHDFS(const String & hdfs_uri_, const String & hdfs_file_path_,
-                       const Poco::Util::AbstractConfiguration & config_,
-                       size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-                       size_t read_until_position_ = 0);
+    AsynchronousReadBufferFromHDFS(
+        AsynchronousReaderPtr reader_,
+        const ReadSettings & settings_,
+        std::shared_ptr<ReadBufferFromHDFS> impl_,
+        size_t min_bytes_for_seek_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~AsynchronousReadBufferFromHDFS() override;
 
-    bool nextImpl() override;
-
     off_t seek(off_t offset_, int whence) override;
 
-    off_t getPosition() override;
+
+    void prefetch() override;
 
     std::optional<size_t> getTotalSize() override;
 
+    off_t getPosition() override;
+
     size_t getFileOffsetOfBufferEnd() const override;
 
+    // void setReadUntilPosition(size_t position) override; /// [..., position).
+    // void setReadUntilEnd() override;
+    // String getInfoForLog() override;
+
 private:
-    std::unique_ptr<AsynchronousReadBufferFromHDFSImpl> impl;
+    bool nextImpl() override;
+
+    void finalize();
+
+    bool hasPendingDataToRead();
+
+    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
+
+    AsynchronousReaderPtr reader;
+    Int32 priority;
+    std::shared_ptr<ReadBufferFromHDFS> impl;
+    std::future<IAsynchronousReader::Result> prefetch_future;
+    Memory<> prefetch_buffer;
+
+    size_t file_offset_of_buffer_end = 0;
+    size_t min_bytes_for_seek;
+    size_t bytes_to_ignore = 0;
+    std::optional<size_t> read_until_position;
+
+    Poco::Logger * log;
 };
 
 }
