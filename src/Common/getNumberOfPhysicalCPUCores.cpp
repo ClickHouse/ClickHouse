@@ -5,9 +5,6 @@
 #    include <cmath>
 #    include <fstream>
 #endif
-#if USE_CPUID
-#    include <libcpuid/libcpuid.h>
-#endif
 
 #include <thread>
 
@@ -41,32 +38,21 @@ static unsigned getCGroupLimitedCPUCores(unsigned default_cpu_count)
 
 static unsigned getNumberOfPhysicalCPUCoresImpl()
 {
-    unsigned cpu_count = 0; // start with an invalid num
+    unsigned cpu_count = std::thread::hardware_concurrency();
 
-#if USE_CPUID
-    cpu_raw_data_t raw_data;
-    cpu_id_t data;
+    /// Most of x86_64 CPUs have 2-way Hyper-Threading
+    /// Aarch64 and RISC-V don't have SMT so far.
+    /// POWER has SMT and it can be multiple way (like 8-way), but we don't know how ClickHouse really behaves, so use all of them.
 
-    /// On Xen VMs, libcpuid returns wrong info (zero number of cores). Fallback to alternative method.
-    /// Also, libcpuid does not support some CPUs like AMD Hygon C86 7151.
-    /// Also, libcpuid gives strange result on Google Compute Engine VMs.
-    /// Example:
-    ///  num_cores = 12,            /// number of physical cores on current CPU socket
-    ///  total_logical_cpus = 1,    /// total number of logical cores on all sockets
-    ///  num_logical_cpus = 24.     /// number of logical cores on current CPU socket
-    /// It means two-way hyper-threading (24 / 12), but contradictory, 'total_logical_cpus' == 1.
-
-    if (0 == cpuid_get_raw_data(&raw_data) && 0 == cpu_identify(&raw_data, &data) && data.num_logical_cpus != 0)
-        cpu_count = data.num_cores * data.total_logical_cpus / data.num_logical_cpus;
+#if defined(__x86_64__)
+    /// Let's limit ourself to the number of physical cores.
+    /// But if the number of logical cores is small - maybe it is a small machine
+    /// or very limited cloud instance and it is reasonable to use all the cores.
+    if (cpu_count >= 8)
+        cpu_count /= 2;
 #endif
 
-    /// As a fallback (also for non-x86 architectures) assume there are no hyper-threading on the system.
-    /// (Actually, only Aarch64 is supported).
-    if (cpu_count == 0)
-        cpu_count = std::thread::hardware_concurrency();
-
 #if defined(OS_LINUX)
-    /// TODO: add a setting for disabling that, similar to UseContainerSupport in java
     cpu_count = getCGroupLimitedCPUCores(cpu_count);
 #endif
 
