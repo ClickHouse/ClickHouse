@@ -53,20 +53,20 @@ public:
 
     /// Checks if an entry with a specified name exists.
     virtual bool fileExists(const String & file_name) const = 0;
+    virtual bool fileExistsByChecksum(const UInt128 & checksum) const = 0;
 
     /// Returns the size of the entry's data.
     /// This function does the same as `read(file_name)->getSize()` but faster.
     virtual size_t getFileSize(const String & file_name) const = 0;
+    virtual size_t getFileSizeByChecksum(const UInt128 & checksum) const = 0;
 
     /// Returns the checksum of the entry's data.
     /// This function does the same as `read(file_name)->getCheckum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
-    /// Finds a file by its checksum, returns nullopt if not found.
-    virtual std::optional<String> findFileByChecksum(const UInt128 & checksum) const = 0;
-
     /// Reads an entry from the backup.
     virtual BackupEntryPtr readFile(const String & file_name) const = 0;
+    virtual BackupEntryPtr readFileByChecksum(const UInt128 & checksum) const = 0;
 
     /// Puts a new entry to the backup.
     virtual void writeFile(const String & file_name, BackupEntryPtr entry) = 0;

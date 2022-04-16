@@ -162,16 +162,12 @@ def test_incremental_backup_after_renaming_table():
 
     # Files in a base backup can be searched by checksum, so an incremental backup with a renamed table actually
     # contains only its changed metadata.
-    assert os.path.isdir(os.path.join(get_backup_dir(backup_name), "metadata")) == True
-    assert os.path.isdir(os.path.join(get_backup_dir(backup_name), "data")) == True
-    assert (
-        os.path.isdir(os.path.join(get_backup_dir(incremental_backup_name), "metadata"))
-        == True
-    )
-    assert (
-        os.path.isdir(os.path.join(get_backup_dir(incremental_backup_name), "data"))
-        == False
-    )
+    contents = os.listdir(get_backup_dir(incremental_backup_name))
+    assert '.backup' in contents
+    contents.remove('.backup')
+    assert len(contents) == 1
+    with open(os.path.join(get_backup_dir(incremental_backup_name), contents[0])) as table_def_in_backup:
+        assert table_def_in_backup.read().startswith('CREATE TABLE test.table2')
 
     instance.query("DROP TABLE test.table2")
     instance.query(f"RESTORE TABLE test.table2 FROM {incremental_backup_name}")
