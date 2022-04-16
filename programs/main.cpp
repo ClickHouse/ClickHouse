@@ -432,7 +432,7 @@ int main(int argc_, char ** argv_)
     }
     catch (...)
     {
-        std::cerr << DB::getCurrentExceptionMessage() << '\n';
+        std::cerr << DB::getCurrentExceptionMessage("setUserAndGroup") << '\n';
         return 1;
     }
 
