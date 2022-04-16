@@ -9,6 +9,8 @@
 #include <Common/CurrentThread.h>
 
 #include <IO/SeekableReadBuffer.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
 
 #include <future>
 #include <iostream>
@@ -28,7 +30,7 @@ namespace CurrentMetrics
 namespace DB
 {
 template <class Reader>
-IAsynchronousReader::Result RemoteFSFileDescriptor<Reader>::readInto(char * data, size_t size, size_t offset, size_t ignore)
+typename RemoteFSFileDescriptor<Reader>::ReadResult RemoteFSFileDescriptor<Reader>::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
     return reader->readInto(data, size, offset, ignore);
 }
@@ -71,7 +73,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader<Reader>::submi
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
-        ReadBufferFromRemoteFSGather::ReadResult result;
+        Result result;
         try
         {
             result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
@@ -100,4 +102,12 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader<Reader>::submi
 
     return future;
 }
+
+template class ThreadPoolRemoteFSReader<ReadBufferFromHDFS>;
+template class ThreadPoolRemoteFSReader<ReadBufferFromRemoteFSGather>;
+
+template class RemoteFSFileDescriptor<ReadBufferFromHDFS>;
+template class RemoteFSFileDescriptor<ReadBufferFromRemoteFSGather>;
+
+
 }

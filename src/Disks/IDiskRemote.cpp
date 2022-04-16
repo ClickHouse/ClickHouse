@@ -12,6 +12,7 @@
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Common/FileCache.h>
 
 

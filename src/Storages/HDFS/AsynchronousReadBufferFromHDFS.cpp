@@ -1,4 +1,5 @@
 #include "AsynchronousReadBufferFromHDFS.h"
+#include "base/logger_useful.h"
 
 #if USE_HDFS
 #include <mutex>
@@ -6,149 +7,248 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
-namespace ProfileEvents
-{
-    extern const Event AsynchronousReadWaitMicroseconds;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric AsynchronousReadWait;
 }
 
+namespace ProfileEvents
+{
+    extern const Event AsynchronousReadWaitMicroseconds;
+    extern const Event RemoteFSSeeks;
+    extern const Event RemoteFSPrefetches;
+    extern const Event RemoteFSCancelledPrefetches;
+    extern const Event RemoteFSUnusedPrefetches;
+    extern const Event RemoteFSPrefetchedReads;
+    extern const Event RemoteFSUnprefetchedReads;
+    extern const Event RemoteFSLazySeeks;
+    extern const Event RemoteFSBuffers;
+}
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NETWORK_ERROR;
-    extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
 }
 
-AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS() = default;
-
-class AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
+AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
+    AsynchronousReaderPtr reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_, size_t min_bytes_for_seek_)
+    : BufferWithOwnMemory<SeekableReadBufferWithSize>(settings_.remote_fs_buffer_size)
+    , reader(reader_)
+    , priority(settings_.priority)
+    , impl(impl_)
+    , prefetch_buffer(settings_.remote_fs_buffer_size)
+    , min_bytes_for_seek(min_bytes_for_seek_)
+    , read_until_position(impl->getTotalSize())
+    , log(&Poco::Logger::get("AsynchronousReadBufferFromHDFS"))
 {
-public:
-    explicit AsynchronousReadBufferFromHDFSImpl(
-        std::shared_ptr<ReadBufferFromHDFS> in_,
-        const std::string & hdfs_uri_,
-        const std::string & hdfs_file_path_,
-        const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_, size_t read_until_position_)
-        : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
-        , in(in_)
-        , hdfs_uri(hdfs_uri_)
-        , hdfs_file_path(hdfs_file_path_)
-        , builder(createHDFSBuilder(hdfs_uri_, config_))
-        , read_until_position(read_until_position_)
+    ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
+}
+
+bool AsynchronousReadBufferFromHDFS::hasPendingDataToRead()
+{
+    if (read_until_position)
     {
-        fs = createHDFSFS(builder.get());
-        fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
-
-        if (fin == nullptr)
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
-                "Unable to open HDFS file: {}. Error: {}",
-                hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
-    }
-
-    ~AsynchronousReadBufferFromHDFSImpl() override
-    {
-        hdfsCloseFile(fs.get(), fin);
-    }
-
-    std::optional<size_t> getTotalSize() const
-    {
-        auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
-        if (!file_info)
-            return std::nullopt;
-        return file_info->mSize;
-    }
-
-    bool nextImpl() override
-    {
-        if (prefetch_future.valid())
-        {
-            /// Read request already in flight. Wait for its completion.
-            size_t size = 0;
-            size_t offset = 0;
-            {
-                Stopwatch watch;
-                CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
-                auto result = prefetch_future.get();
-                size = result.size;
-                offset = result.offset;
-                assert(offset < size || size == 0);
-                ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
-            }
-            prefetch_future = {};
-
-            if (size)
-            {
-                prefetch_buffer.swap(memory);
-                /// Adjust the working buffer so that it ignores `offset` bytes.
-                setWithBytesToIgnore(memory.data(), size, offset);
-                return true;
-            }
+        /// Everything is already read.
+        if (file_offset_of_buffer_end == *read_until_position)
             return false;
-        }
-        else
-        {
-            /// No pending request. Do synchronous read.
-            auto [size, offset] = readInto(memory.data(), memory.size()).get();
-            file_offset_of_buffer_end += size;
 
-            if (size)
+        if (file_offset_of_buffer_end > *read_until_position)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {}, info: {})",
+                            file_offset_of_buffer_end, *read_until_position, impl->getInfoForLog());
+    }
+    return true;
+}
+
+std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::readInto(char * data, size_t size)
+{
+    IAsynchronousReader::Request request;
+    request.descriptor = std::make_shared<RemoteFSFileDescriptor<ReadBufferFromHDFS>>(impl);
+    request.buf = data;
+    request.size = size;
+    request.offset = file_offset_of_buffer_end;
+    request.priority = priority;
+    request.ignore = 0;
+
+    if (bytes_to_ignore)
+    {
+        request.ignore = bytes_to_ignore;
+        bytes_to_ignore = 0;
+    }
+    return reader->submit(request);
+}
+
+void AsynchronousReadBufferFromHDFS::prefetch()
+{
+    if (prefetch_future.valid())
+        return;
+
+    if (!hasPendingDataToRead())
+        return;
+
+    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
+    ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
+}
+
+
+std::optional<size_t> AsynchronousReadBufferFromHDFS::getTotalSize()
+{
+    return impl->getTotalSize();
+}
+
+
+bool AsynchronousReadBufferFromHDFS::nextImpl()
+{
+    if (!hasPendingDataToRead())
+        return false;
+
+    size_t size = 0;
+    if (prefetch_future.valid())
+    {
+        ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
+
+        size_t offset = 0;
+        {
+            Stopwatch watch;
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
+            auto result = prefetch_future.get();
+            size = result.size;
+            offset = result.offset;
+            LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
+
+            /// If prefetch_future is valid, size should always be greater than zero.
+            assert(offset < size);
+            ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
+        }
+
+        prefetch_buffer.swap(memory);
+        /// Adjust the working buffer so that it ignores `offset` bytes.
+        setWithBytesToIgnore(memory.data(), size, offset);
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
+
+        auto result = readInto(memory.data(), memory.size()).get();
+        size = result.size;
+        auto offset = result.offset;
+
+        LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
+        assert(offset < size);
+
+        if (size)
+        {
+            /// Adjust the working buffer so that it ignores `offset` bytes.
+            setWithBytesToIgnore(memory.data(), size, offset);
+        }
+    }
+
+    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    prefetch_future = {};
+    return size;
+}
+
+off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
+{
+    ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
+
+    if (whence != SEEK_SET)
+        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+    if (offset < 0)
+        throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+
+    size_t new_pos = offset;
+
+    /// Position is unchanged.
+    if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
+        return new_pos;
+
+    bool read_from_prefetch = false;
+    while (true)
+    {
+        if (file_offset_of_buffer_end - working_buffer.size() <= new_pos && new_pos <= file_offset_of_buffer_end)
+        {
+            /// Position is still inside the buffer.
+            /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
+            pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
+            assert(pos >= working_buffer.begin());
+            assert(pos <= working_buffer.end());
+            return new_pos;
+        }
+        else if (prefetch_future.valid())
+        {
+            /// Read from prefetch buffer and recheck if the new position is valid inside.
+            if (nextImpl())
             {
-                /// Adjust the working buffer so that it ignores `offset` bytes.
-                setWithBytesToIgnore(memory.data(), size, offset);
-                return true;
+                read_from_prefetch = true;
+                continue;
             }
-
-            return false;
         }
+
+        /// Prefetch is cancelled because of seek.
+        if (read_from_prefetch)
+            ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
+        break;
     }
 
-    off_t seek(off_t file_offset_, int whence) override
+    assert(!prefetch_future.valid());
+
+    /// First reset the buffer so the next read will fetch new data to the buffer.
+    resetWorkingBuffer();
+
+    /**
+    * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
+    * Note: we read in range [file_offset_of_buffer_end, read_until_position).
+    */
+
+    if (read_until_position && new_pos < *read_until_position && new_pos > file_offset_of_buffer_end
+        && new_pos < file_offset_of_buffer_end + min_bytes_for_seek)
     {
-        if (whence != SEEK_SET)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Only SEEK_SET is supported");
-
-        file_offset_of_buffer_end = file_offset_;
-        int seek_status = hdfsSeek(fs.get(), fin, file_offset_of_buffer_end);
-        if (seek_status != 0)
-            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
-        return file_offset_of_buffer_end;
+        ProfileEvents::increment(ProfileEvents::RemoteFSLazySeeks);
+        bytes_to_ignore = new_pos - file_offset_of_buffer_end;
     }
-
-    off_t getPosition() override
+    else
     {
-        return file_offset_of_buffer_end;
+        ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
+        impl->seek(new_pos, SEEK_SET);
+        file_offset_of_buffer_end = new_pos;
     }
 
-    void prefetch() override
+    return new_pos;
+}
+
+void AsynchronousReadBufferFromHDFS::finalize()
+{
+    if (prefetch_future.valid())
     {
-        if (prefetch_future.valid())
-            return;
-
-        /// Will request the same amount of data that is read in nextImpl.
-        prefetch_buffer.resize(internal_buffer.size());
-        prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
+        ProfileEvents::increment(ProfileEvents::RemoteFSUnusedPrefetches);
+        prefetch_future.wait();
+        prefetch_future = {};
     }
+}
 
-    void finalize()
-    {
-        if (prefetch_future.valid())
-        {
-            prefetch_future.wait();
-            prefetch_future = {};
-        }
-    }
+AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
+{
+    finalize();
+}
 
+off_t AsynchronousReadBufferFromHDFS::getPosition()
+{
+    return file_offset_of_buffer_end - available();
+}
+
+size_t AsynchronousReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
+{
+    return file_offset_of_buffer_end;
+}
+
+
+/*
     static AsynchronousReaderPtr getThreadPoolReader()
     {
         constexpr size_t pool_size = 50;
@@ -156,88 +256,7 @@ public:
         static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader<ReadBufferFromHDFS>>(pool_size, queue_size);
         return reader;
     }
-
-private:
-    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size)
-    {
-        IAsynchronousReader::Request request;
-        request.descriptor = std::make_shared<RemoteFSFileDescriptor<ReadBufferFromHDFS>>(in);
-        request.buf = data;
-        request.size = size;
-        request.offset = file_offset_of_buffer_end;
-        request.priority = priority;
-        request.ignore = 0;
-        return getThreadPoolReader()->submit(request);
-    }
-
-    std::shared_ptr<ReadBufferFromHDFS> in;
-    Int32 priority;
-    Memory<> prefetch_buffer;
-    std::future<IAsynchronousReader::Result> prefetch_future;
-};
-
-AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
-        const String & hdfs_uri_,
-        const String & hdfs_file_path_,
-        const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_, size_t read_until_position_)
-    : SeekableReadBufferWithSize(nullptr, 0)
-    , impl(std::make_unique<AsynchronousReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_, read_until_position_))
-{
-}
-
-std::optional<size_t> AsynchronousReadBufferFromHDFS::getTotalSize()
-{
-    return impl->getTotalSize();
-}
-
-bool AsynchronousReadBufferFromHDFS::nextImpl()
-{
-    impl->position() = impl->buffer().begin() + offset();
-    auto result = impl->next();
-
-    if (result)
-        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
-
-    return result;
-}
-
-
-off_t AsynchronousReadBufferFromHDFS::seek(off_t offset_, int whence)
-{
-    if (whence != SEEK_SET)
-        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-
-    if (offset_ < 0)
-        throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
-
-    if (!working_buffer.empty()
-        && size_t(offset_) >= impl->getPosition() - working_buffer.size()
-        && offset_ < impl->getPosition())
-    {
-        pos = working_buffer.end() - (impl->getPosition() - offset_);
-        assert(pos >= working_buffer.begin());
-        assert(pos <= working_buffer.end());
-
-        return getPosition();
-    }
-
-    resetWorkingBuffer();
-    impl->seek(offset_, whence);
-    return impl->getPosition();
-}
-
-
-off_t AsynchronousReadBufferFromHDFS::getPosition()
-{
-    return impl->getPosition() - available();
-}
-
-size_t AsynchronousReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
-{
-    return impl->getPosition();
-}
-
+*/
 }
 
 #endif
