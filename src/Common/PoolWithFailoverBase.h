@@ -296,11 +296,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 "All connection tries failed. Log: \n\n" + fail_messages + "\n",
                 DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
 
-    try_results.erase(
-            std::remove_if(
-                    try_results.begin(), try_results.end(),
-                    [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; }),
-            try_results.end());
+    std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
 
     /// Sort so that preferred items are near the beginning.
     std::stable_sort(
