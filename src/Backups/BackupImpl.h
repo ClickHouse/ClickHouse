@@ -33,10 +33,12 @@ public:
     UUID getUUID() const override { return uuid; }
     Strings listFiles(const String & prefix, const String & terminator) const override;
     bool fileExists(const String & file_name) const override;
+    bool fileExistsByChecksum(const UInt128 & checksum) const override;
     size_t getFileSize(const String & file_name) const override;
+    size_t getFileSizeByChecksum(const UInt128 & checksum) const override;
     UInt128 getFileChecksum(const String & file_name) const override;
-    std::optional<String> findFileByChecksum(const UInt128 & checksum) const override;
     BackupEntryPtr readFile(const String & file_name) const override;
+    BackupEntryPtr readFileByChecksum(const UInt128 & checksum) const override;
     void writeFile(const String & file_name, BackupEntryPtr entry) override;
     void finalizeWriting() override;
 
@@ -65,6 +67,8 @@ private:
 
     struct FileInfo
     {
+        String file_name;
+
         UInt64 size = 0;
         UInt128 checksum{0, 0};
 
@@ -73,7 +77,21 @@ private:
         UInt128 base_checksum{0, 0};
     };
 
+    class IFileInfos
+    {
+    public:
+        virtual ~IFileInfos() {}
+        virtual void add(FileInfo && file_info, bool & is_new_checksum) = 0;
+        void add(FileInfo && file_info) { bool dummy; add(std::move(file_info), dummy); }
+        virtual std::vector<FileInfo> getAllFileInfos() = 0;
+        virtual Strings listFiles(const String & prefix, const String & terminator) = 0;
+        virtual std::optional<UInt128> getChecksumByFileName(const String & file_name) = 0;
+        virtual std::optional<FileInfo> getFileInfoByChecksum(const UInt128 & checksum) = 0;
+        virtual std::optional<FileInfo> getFileInfoByFileName(const String & file_name) = 0;
+    };
+
     class BackupEntryFromBackupImpl;
+    class LocalFileInfos;
 
     const String backup_name;
     ContextPtr context;
@@ -81,12 +99,11 @@ private:
     OpenMode open_mode = OpenMode::NONE;
     UUID uuid = {};
     time_t timestamp = 0;
+    UInt64 version = 1;
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::optional<UUID> base_backup_uuid;
-    std::map<String, FileInfo> file_infos; /// Should be ordered alphabetically, see listFiles().
-    std::unordered_map<UInt128, String> file_checksums;
-    Strings written_files;
+    std::unique_ptr<IFileInfos> file_infos;
     bool writing_finalized = false;
 };
 
