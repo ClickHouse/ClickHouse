@@ -113,7 +113,10 @@ if __name__ == "__main__":
     cache_path = os.path.join(caches_path, "fasttest")
 
     logging.info("Will try to fetch cache for our build")
-    get_ccache_if_not_exists(cache_path, s3_helper, pr_info.number, temp_path)
+    ccache_for_pr = get_ccache_if_not_exists(
+        cache_path, s3_helper, pr_info.number, temp_path
+    )
+    upload_master_ccache = ccache_for_pr in (-1, 0)
 
     if not os.path.exists(cache_path):
         logging.info("cache was not fetched, will create empty dir")
@@ -179,6 +182,9 @@ if __name__ == "__main__":
 
     logging.info("Will upload cache")
     upload_ccache(cache_path, s3_helper, pr_info.number, temp_path)
+    if upload_master_ccache:
+        logging.info("Will upload a fallback cache for master")
+        upload_ccache(cache_path, s3_helper, 0, temp_path)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, NAME, test_results)
