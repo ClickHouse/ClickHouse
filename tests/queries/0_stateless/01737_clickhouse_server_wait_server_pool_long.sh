@@ -29,7 +29,8 @@ function cleanup()
     echo "Test failed. Server log:"
     cat clickhouse-server.log
     rm -f clickhouse-server.log
-
+    rm -fr $CUR_DIR/01737_clickhouse
+    
     exit 1
 }
 
@@ -83,5 +84,6 @@ if [ $return_code != 0 ]; then
     cat clickhouse-server.log
 fi
 rm -f clickhouse-server.log
+rm -fr $CUR_DIR/01737_clickhouse
 
 exit $return_code

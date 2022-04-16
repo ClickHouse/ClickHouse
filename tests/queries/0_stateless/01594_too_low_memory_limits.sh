@@ -44,6 +44,7 @@ function cleanup()
     cat clickhouse-server.stderr
     rm -f clickhouse-server.log
     rm -f clickhouse-server.stderr
+    rm -fr $CURDIR/01594_clickhouse
 
     exit 1
 }
@@ -107,5 +108,6 @@ if [ $return_code != 0 ]; then
 fi
 rm -f clickhouse-server.log
 rm -f clickhouse-server.stderr
+rm -fr $CURDIR/01594_clickhouse
 
 exit $return_code
