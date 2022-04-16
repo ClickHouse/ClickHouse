@@ -3,8 +3,6 @@ FROM ubuntu:20.04
 # see https://github.com/moby/moby/issues/4032#issuecomment-192327844
 ARG DEBIAN_FRONTEND=noninteractive
 
-COPY su-exec.c /su-exec.c
-
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
@@ -18,13 +16,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
         gnupg \
         locales \
         wget \
-        tzdata \
-    && apt-get install -y --no-install-recommends tcc libc-dev && \
-        tcc /su-exec.c -o /bin/su-exec && \
-        chown root:root /bin/su-exec && \
-        chmod 0755 /bin/su-exec && \
-        rm /su-exec.c && \
-        apt-get purge -y --auto-remove tcc libc-dev libc-dev-bin libc6-dev linux-libc-dev \
+        tzdata
     && apt-get clean
 
 ARG REPO_CHANNEL="stable"
