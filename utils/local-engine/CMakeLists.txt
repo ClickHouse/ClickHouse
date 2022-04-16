@@ -51,11 +51,11 @@ target_link_libraries(${LOCALENGINE_SHARED_LIB} PUBLIC
         substrait
         loggers
         )
-if (USE_LIBCXX)
+# if (USE_LIBCXX)
     target_compile_options(unwind PRIVATE -fPIC)
     target_compile_options(cxxabi PRIVATE -fPIC)
     target_compile_options(cxx PRIVATE -fPIC)
-endif()
+# endif()
 target_compile_options(_ssl PRIVATE -fPIC)
 target_compile_options(_crypto PRIVATE -fPIC)
 target_compile_options(_libpq PRIVATE -fPIC)

@@ -11,8 +11,8 @@ ENDFOREACH()
 
 add_custom_target(
         generate_substrait
-        COMMAND  protobuf::protoc -I${CMAKE_CURRENT_SOURCE_DIR} -I${ClickHouse_SOURCE_DIR}/contrib/protobuf/src --cpp_out=${CMAKE_CURRENT_BINARY_DIR}/ ${protobuf_files}
-        DEPENDS protobuf::protoc
+        COMMAND ${CMAKE_CURRENT_BINARY_DIR}/../../../contrib/protobuf-cmake/protoc -I${CMAKE_CURRENT_SOURCE_DIR} -I${ClickHouse_SOURCE_DIR}/contrib/protobuf/src --cpp_out=${CMAKE_CURRENT_BINARY_DIR}/ ${protobuf_files}
+        DEPENDS protoc
         COMMENT "Running cpp protocol buffer compiler"
         VERBATIM )
 set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
@@ -23,6 +23,7 @@ set_source_files_properties(${SUBSTRAIT_SRCS} PROPERTIES GENERATED TRUE)
 add_library(substrait ${SUBSTRAIT_SRCS})
 target_compile_options(substrait PUBLIC
         -Wno-error
+        -fPIC
         )
 add_dependencies(substrait generate_substrait)
 target_include_directories(substrait PRIVATE ${PROTOBUF_INCLUDE_DIR})

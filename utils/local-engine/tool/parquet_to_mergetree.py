@@ -13,12 +13,12 @@ def get_transform_command(data_path,
                           parquet_file,
                           schema):
     return f"""
-    clickhouse-local --no-system-tables  --path {data_path} --file "{parquet_file}" --input-format=Parquet \\
+    /home/saber/CLionProjects/ClickHouse-2/build/programs/clickhouse-local --no-system-tables  --path {data_path} --file "{parquet_file}" --input-format=Parquet \\
     -S "{schema}" \\
     --query " \\
     CREATE TABLE m1 ({schema}) ENGINE = MergeTree() order by tuple(); \\
     insert into m1 SELECT * FROM table;\\
-    OPTIMIZE table m1;
+    OPTIMIZE table m1 FINAL;
     "
     """
 
@@ -50,7 +50,7 @@ def transform(data_path, source, schema, dst):
 
 
 """
-python3 parquet_to_mergetree.py --path=/root/data/tmp --source=/home/ubuntu/tpch-data-sf100/lineitem --dst=/root/data/mergetree
+python3 parquet_to_mergetree.py --path=/tmp/merge --source=/home/saber/Documents/data/lineitem --dst=/home/saber/Documents/data/mergetree_new
 """
 if __name__ == '__main__':
     args = parser.parse_args()
