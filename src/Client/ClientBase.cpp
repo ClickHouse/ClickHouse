@@ -1649,7 +1649,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 catch (...)
                 {
                     // Surprisingly, this is a client error. A server error would
-                    // have been reported w/o throwing (see onReceiveSeverException()).
+                    // have been reported without throwing (see onReceiveSeverException()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
@@ -1692,7 +1692,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     if (!test_hint.clientError() && !test_hint.serverError())
                     {
                         // No error was expected but it still occurred. This is the
-                        // default case w/o test hint, doesn't need additional
+                        // default case without test hint, doesn't need additional
                         // diagnostics.
                         error_matches_hint = false;
                     }
