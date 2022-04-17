@@ -8,7 +8,7 @@ from build_download_helper import get_with_retries
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
-    GITHUB_RUN_ID,
+    GITHUB_RUN_URL,
     GITHUB_EVENT_PATH,
 )
 
@@ -111,7 +111,7 @@ class PRInfo:
                 self.sha = github_event["pull_request"]["head"]["sha"]
 
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
+            self.task_url = GITHUB_RUN_URL
 
             self.repo_full_name = GITHUB_REPOSITORY
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
@@ -142,7 +142,7 @@ class PRInfo:
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
+            self.task_url = GITHUB_RUN_URL
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
             if pull_request is None or pull_request["state"] == "closed":
@@ -180,7 +180,7 @@ class PRInfo:
             self.number = 0
             self.labels = {}
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
+            self.task_url = GITHUB_RUN_URL
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
             self.pr_html_url = f"{repo_prefix}/commits/{ref}"
@@ -233,6 +233,15 @@ class PRInfo:
             if (
                 ext in DIFF_IN_DOCUMENTATION_EXT and (path_in_docs or path_in_website)
             ) or "docker/docs" in f:
+                return True
+        return False
+
+    def has_changes_in_submodules(self):
+        if self.changed_files is None or not self.changed_files:
+            return True
+
+        for f in self.changed_files:
+            if "contrib" in f:
                 return True
         return False
 

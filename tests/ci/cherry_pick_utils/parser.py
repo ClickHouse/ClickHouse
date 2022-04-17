@@ -20,8 +20,6 @@ class Description:
 
     def __init__(self, pull_request):
         self.label_name = str()
-        self.legal = False
-
         self._parse(pull_request["bodyText"])
 
     def _parse(self, text):
@@ -38,12 +36,6 @@ class Description:
             if next_category:
                 category = stripped
                 next_category = False
-
-            if (
-                stripped
-                == "I hereby agree to the terms of the CLA available at: https://yandex.ru/legal/cla/?lang=en"
-            ):
-                self.legal = True
 
             category_headers = (
                 "Category (leave one):",

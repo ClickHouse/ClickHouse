@@ -222,6 +222,12 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
+option(ENABLE_CURL_BUILD "Enable curl, azure, sentry build on by default except MacOS." ON)
+if (OS_DARWIN)
+    # Disable the curl, azure, senry build on MacOS
+    set (ENABLE_CURL_BUILD OFF)
+endif ()
+
 # Ignored if `lld` is used
 option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
@@ -261,12 +267,12 @@ endif ()
 # Add a section with the hash of the compiled machine code for integrity checks.
 # Only for official builds, because adding a section can be time consuming (rewrite of several GB).
 # And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
-if (OBJCOPY_PATH AND YANDEX_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE))
-    set (USE_BINARY_HASH 1)
+if (OBJCOPY_PATH AND CLICKHOUSE_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE OR CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64.cmake$"))
+    set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
 endif ()
 
 # Allows to build stripped binary in a separate directory
-if (OBJCOPY_PATH AND READELF_PATH)
+if (OBJCOPY_PATH AND STRIP_PATH)
     option(INSTALL_STRIPPED_BINARIES "Build stripped binaries with debug info in separate directory" OFF)
     if (INSTALL_STRIPPED_BINARIES)
         set(STRIPPED_BINARIES_OUTPUT "stripped" CACHE STRING "A separate directory for stripped information")
@@ -294,14 +300,19 @@ include(cmake/cpu_features.cmake)
 # Enable it explicitly.
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
 
-# Reproducible builds
-# If turned `ON`, remap file source paths in debug info, predefined preprocessor macros and __builtin_FILE().
-option(ENABLE_BUILD_PATH_MAPPING "Enable remap file source paths in debug info, predefined preprocessor macros and __builtin_FILE(). It's to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ON)
+# Reproducible builds.
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT OFF)
+else ()
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+endif ()
+
+option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
     set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
-endif()
+endif ()
 
 if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
     # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
