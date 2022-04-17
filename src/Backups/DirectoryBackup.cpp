@@ -56,7 +56,7 @@ void DirectoryBackup::closeImpl(const Strings & written_files_, bool writing_fin
     }
 }
 
-std::unique_ptr<ReadBuffer> DirectoryBackup::readFileImpl(const String & file_name) const
+std::unique_ptr<SeekableReadBuffer> DirectoryBackup::readFileImpl(const String & file_name) const
 {
     auto file_path = path / file_name;
     return disk->readFile(file_path);

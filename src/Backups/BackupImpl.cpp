@@ -5,7 +5,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/hex.h>
 #include <Common/quoteString.h>
-#include <IO/ConcatReadBuffer.h>
+#include <IO/ConcatSeekableReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -63,13 +63,14 @@ public:
     {
     }
 
-    std::unique_ptr<ReadBuffer> getReadBuffer() const override
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override
     {
         auto read_buffer = backup->readFileImpl(data_file_name);
         if (base_backup_entry)
         {
-            auto base_backup_read_buffer = base_backup_entry->getReadBuffer();
-            read_buffer = std::make_unique<ConcatReadBuffer>(std::move(base_backup_read_buffer), std::move(read_buffer));
+            size_t base_size = base_backup_entry->getSize();
+            read_buffer = std::make_unique<ConcatSeekableReadBuffer>(
+                base_backup_entry->getReadBuffer(), base_size, std::move(read_buffer), size - base_size);
         }
         return read_buffer;
     }
@@ -522,7 +523,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         base_checksum = base_backup->getFileChecksum(file_name);
     }
 
-    std::unique_ptr<ReadBuffer> read_buffer; /// We'll set that later.
+    std::unique_ptr<SeekableReadBuffer> read_buffer; /// We'll set that later.
     std::optional<HashingReadBuffer> hashing_read_buffer;
     UInt64 hashing_pos = 0; /// Current position in `hashing_read_buffer`.
 
@@ -608,16 +609,9 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     auto copy_pos = use_base ? base_size : 0;
 
     /// Move the current read position to the start position to copy data.
-    /// If `read_buffer` is seekable it's easier, otherwise we can use ignore().
-    if (auto * seekable_buffer = dynamic_cast<SeekableReadBuffer *>(read_buffer.get()))
-    {
-        seekable_buffer->seek(copy_pos, SEEK_SET);
-    }
-    else
-    {
+    if (!read_buffer)
         read_buffer = entry->getReadBuffer();
-        read_buffer->ignore(copy_pos);
-    }
+    read_buffer->seek(copy_pos, SEEK_SET);
 
     /// Copy the entry's data after `copy_pos`.
     auto out = writeFileImpl(getHexUIntLowercase(*checksum));

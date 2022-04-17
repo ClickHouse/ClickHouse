@@ -11,6 +11,7 @@ namespace DB
 {
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
+class SeekableReadBuffer;
 
 /// Base implementation of IBackup.
 /// Along with passed files it also stores backup metadata - a single file named ".backup" in XML format
@@ -53,7 +54,7 @@ protected:
 
     /// Read a file from the backup.
     /// Low level: the function doesn't check base backup or checksums.
-    virtual std::unique_ptr<ReadBuffer> readFileImpl(const String & file_name) const = 0;
+    virtual std::unique_ptr<SeekableReadBuffer> readFileImpl(const String & file_name) const = 0;
 
     /// Add a file to the backup.
     /// Low level: the function doesn't check base backup or checksums.

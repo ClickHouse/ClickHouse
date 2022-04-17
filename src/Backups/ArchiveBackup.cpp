@@ -86,7 +86,7 @@ void ArchiveBackup::closeImpl(const Strings &, bool writing_finalized_)
         fs::remove(path);
 }
 
-std::unique_ptr<ReadBuffer> ArchiveBackup::readFileImpl(const String & file_name) const
+std::unique_ptr<SeekableReadBuffer> ArchiveBackup::readFileImpl(const String & file_name) const
 {
     /// mutex is already locked
     return reader->readFile(file_name);
