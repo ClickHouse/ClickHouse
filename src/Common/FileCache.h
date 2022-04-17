@@ -72,6 +72,17 @@ public:
      */
     virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) = 0;
 
+    /**
+     * Segments in returned list are ordered in ascending order and represent a full contiguous
+     * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
+     *
+     * If file segment has state EMPTY, then it is also marked as "detached". E.g. it is "detached"
+     * from cache (not owned by cache), and as a result will never change it's state and will be destructed
+     * with the destruction of the holder, while in getOrSet() EMPTY file segments can eventually change
+     * it's state (and become DOWNLOADED).
+     */
+    virtual FileSegmentsHolder get(const Key & key, size_t offset, size_t size) = 0;
+
     virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) = 0;
 
     virtual FileSegments getSnapshot() const = 0;
@@ -123,6 +134,8 @@ public:
         const FileCacheSettings & cache_settings_);
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
+
+    FileSegmentsHolder get(const Key & key, size_t offset, size_t size) override;
 
     FileSegments getSnapshot() const override;
 
@@ -212,6 +225,9 @@ private:
         const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
 
     String dumpStructureImpl(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
+
+    void fillHolesWithEmptyFileSegments(
+        FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, std::lock_guard<std::mutex> & cache_lock);
 
 public:
     struct Stat
