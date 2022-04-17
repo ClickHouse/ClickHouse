@@ -27,6 +27,7 @@ namespace DB
         static std::string name();
         static NamesAndTypesList getNamesAndTypes();
         static NamesAndAliases getNamesAndAliases();
+        static const char * getCustomColumnList();
         void appendToBlock(MutableColumns & columns) const;
     };
     */
