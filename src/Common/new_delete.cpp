@@ -43,8 +43,8 @@ static struct InitializeJemallocZoneAllocatorForOSX
 
 
 /// Replace default new/delete with memory tracking versions.
-/// @sa https://en.cppreference.com/w/cpp/memory/new/operator_new
-///     https://en.cppreference.com/w/cpp/memory/new/operator_delete
+/// @sa https://en.cppreference.com/w/cpp/memory/newithoutperator_new
+///     https://en.cppreference.com/w/cpp/memory/newithoutperator_delete
 
 /// new
 
