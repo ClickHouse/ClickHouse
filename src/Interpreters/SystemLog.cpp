@@ -153,7 +153,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
         String ttl = config.getString(config_prefix + ".ttl", "");
         if (!ttl.empty())
             engine += " TTL " + ttl;
-        engine += " ORDER BY (event_date, event_time)";
+
+        engine += " ORDER BY " + TSystemLog::getDefaultOrderBy();
     }
 
     // Validate engine definition grammatically to prevent some configuration errors
