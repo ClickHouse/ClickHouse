@@ -1379,7 +1379,7 @@ struct ImplAquaHash128 {
             __m128i m128;
             UInt128 u128;
         };
-        m128 = AquaHash::Hash(s, len);
+        m128 = AquaHash::Hash(reinterpret_cast<const UInt8*>(s), len);
         return u128;
     }
 
