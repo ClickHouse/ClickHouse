@@ -336,8 +336,9 @@ struct Checker
 
 void checkHarmfulEnvironmentVariables()
 {
-    /// The list is a selection from "man ld-linux":
-    for (auto var : {"LD_PRELOAD", "LD_LIBRARY_PATH", "LD_ORIGIN_PATH", "LD_AUDIT", "LD_DYNAMIC_WEAK"})
+    /// The list is a selection from "man ld-linux". And one variable that is Mac OS X specific.
+    /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
+    for (auto var : {"LD_PRELOAD", "LD_LIBRARY_PATH", "LD_ORIGIN_PATH", "LD_AUDIT", "LD_DYNAMIC_WEAK", "DYLD_INSERT_LIBRARIES"})
     {
         if (const char * value = getenv(var); value && value[0])
         {
