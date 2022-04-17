@@ -5,6 +5,7 @@
 #include <metrohash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
+#include <aquahash.h>
 
 #include "config_functions.h"
 #include "config_core.h"
@@ -1369,6 +1370,27 @@ private:
     }
 };
 
+struct ImplAquaHash128 {
+    static constexpr auto name = "aquaHash128";
+    using ReturnType = UInt128;
+
+    static UInt128 apply(const char *s, const size_t len) {
+        __m128i hash = AquaHash::Hash(static_cast<UInt8*>(s), len);
+        return static_cast<UInt128>(hash);
+    }
+
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2) {
+        union {
+            UInt128 u128[2];
+            UInt8 u8[32];
+        };
+        u128 = {h1, h2};
+        return apply(u8, 32);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
@@ -1405,5 +1427,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+
+using FunctionAquaHash128 = FunctionAnyHash<ImplAquaHash128>;
 
 }

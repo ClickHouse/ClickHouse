@@ -1,0 +1,4 @@
+set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aquahash")
+add_library(aquahash ${LIBRARY_DIR}/aquahash.h)
+target_include_directories(aquahash BEFORE PUBLIC ${LIBRARY_DIR})
+add_library(ch_contrib::aquahash ALIAS aquahash)
