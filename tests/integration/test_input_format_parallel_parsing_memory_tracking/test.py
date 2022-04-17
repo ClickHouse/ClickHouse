@@ -30,7 +30,9 @@ def start_cluster():
 # correctly, only total is not (it is set via conf.xml)
 def test_memory_tracking_total():
     if instance.is_built_with_thread_sanitizer():
-        pytest.skip("Memory tracking does not make sense to check under Thread Sanitizer")
+        pytest.skip(
+            "Memory tracking does not make sense to check under Thread Sanitizer"
+        )
 
     instance.query("CREATE TABLE null (row String) ENGINE=Null")
 
