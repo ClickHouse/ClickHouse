@@ -51,7 +51,8 @@ public:
 
     void addValues(const AsynchronousMetricValues &);
 
-    static const char * getDefaultOrderBy() { return "(event_date, event_time)"; }
+    /// This table is usually queried for fixed metric name.
+    static const char * getDefaultOrderBy() { return "(metric, event_date, event_time)"; }
 };
 
 }
