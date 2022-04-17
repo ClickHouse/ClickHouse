@@ -106,18 +106,25 @@ void CommonCondition::traverseAST(const ASTPtr & node, RPN & rpn) {
         // Set the name
         out.func_name = function->name;
 
-        // TODO: Add support for other metrics 
-        if (function->name == "L2Distance") 
+        // TODO: Add support for LpDistance
+        if (function->name == "L1Distance" || 
+            function->name == "L2Distance" ||
+            function->name == "LinfDistance" || 
+            function->name == "cosineDistance" ||
+            function->name == "dotProduct") 
         {
             out.function = RPNElement::FUNCTION_DISTANCE;
-        } 
+        }
         else if (function->name == "tuple") 
         {
             out.function = RPNElement::FUNCTION_TUPLE;
         } 
-        else if (function->name == "less") 
+        else if (function->name == "less" || 
+                 function->name == "greater" ||
+                 function->name == "lessOrEquals" ||
+                 function->name == "greaterOrEquals") 
         {
-            out.function = RPNElement::FUNCTION_LESS;
+            out.function = RPNElement::FUNCTION_COMPARISON;
         } 
         else 
         {
@@ -169,7 +176,7 @@ bool CommonCondition::matchRPNWhere(RPN & rpn, ANNExpression & expr) {
     auto iter = rpn.begin();
 
     // Query starts from operator less
-    if (iter->function != RPNElement::FUNCTION_LESS) {
+    if (iter->function != RPNElement::FUNCTION_COMPARISON) {
         return false;
     }
 

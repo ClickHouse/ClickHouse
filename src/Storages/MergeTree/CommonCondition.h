@@ -48,8 +48,8 @@ private:
             //tuple(10, 15)
             FUNCTION_TUPLE,
 
-            // Operator <
-            FUNCTION_LESS,
+            // Operator <, >
+            FUNCTION_COMPARISON,
 
             // Numeric float value
             FUNCTION_FLOAT_LITERAL,
