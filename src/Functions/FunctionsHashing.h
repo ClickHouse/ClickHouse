@@ -1375,7 +1375,7 @@ struct ImplAquaHash128 {
     using ReturnType = UInt128;
 
     static UInt128 apply(const char *s, const size_t len) {
-        __m128i hash = AquaHash::Hash(static_cast<UInt8*>(s), len);
+        __m128i hash = AquaHash::Hash(s, len);
         return static_cast<UInt128>(hash);
     }
 
@@ -1384,7 +1384,8 @@ struct ImplAquaHash128 {
             UInt128 u128[2];
             UInt8 u8[32];
         };
-        u128 = {h1, h2};
+        u128[0] = h1;
+        u128[1] = h2;
         return apply(u8, 32);
     }
 
