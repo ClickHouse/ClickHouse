@@ -1375,18 +1375,22 @@ struct ImplAquaHash128 {
     using ReturnType = UInt128;
 
     static UInt128 apply(const char *s, const size_t len) {
-        __m128i hash = AquaHash::Hash(s, len);
-        return static_cast<UInt128>(hash);
+        union {
+            __m128i m128;
+            UInt128 u128;
+        };
+        m128 = AquaHash::Hash(s, len);
+        return u128;
     }
 
     static UInt128 combineHashes(UInt128 h1, UInt128 h2) {
         union {
             UInt128 u128[2];
-            UInt8 u8[32];
+            char chars[32];
         };
         u128[0] = h1;
         u128[1] = h2;
-        return apply(u8, 32);
+        return apply(chars, 32);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
