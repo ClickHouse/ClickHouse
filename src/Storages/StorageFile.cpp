@@ -264,12 +264,12 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context)
 {
+    if (paths.empty())
+        throw Exception(
+            "Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
+
     if (format == "Distributed")
     {
-        if (paths.empty())
-            throw Exception(
-                "Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
-
         auto source = StorageDistributedDirectoryMonitor::createSourceFromFile(paths[0]);
         return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
     }
