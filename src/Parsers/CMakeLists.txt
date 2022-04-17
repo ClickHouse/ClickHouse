@@ -3,12 +3,15 @@ include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_parsers .)
 add_headers_and_sources(clickhouse_parsers ./Access)
 add_headers_and_sources(clickhouse_parsers ./MySQL)
-add_headers_and_sources(clickhouse_parsers ./MySQLCompatibility)
-add_headers_and_sources(clickhouse_parsers ./MySQLCompatibility/ANTLR)
-
+add_headers_and_sources(mysql_compatibility ./MySQLCompatibility)
+add_headers_and_sources(mysql_compatibility ./MySQLCompatibility/ANTLR)
 
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})
-target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access antlr4-runtime)
+add_library(mysql_compatibility ${mysql_compatibility_headers} ${mysql_compatibility_sources})
+
+target_link_libraries(mysql_compatibility PUBLIC antlr4-runtime)
+target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access mysql_compatibility)
+
 
 if (USE_DEBUG_HELPERS)
     # CMake generator expression will do insane quoting when it encounters special character like quotes, spaces, etc.
