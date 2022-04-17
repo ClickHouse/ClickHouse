@@ -526,7 +526,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     if (const char * custom_column_list = LogElement::getCustomColumnList())
     {
         ParserColumnDeclarationList parser;
-        const Settings & settings = getContext().getSettingsRef();
+        const Settings & settings = getContext()->getSettingsRef();
 
         ASTPtr columns_list_raw = parseQuery(parser, custom_column_list, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
         new_columns_list->set(new_columns_list->columns, columns_list_raw);
