@@ -1,12 +1,12 @@
-#include <Core/SortDescription.h>
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
 {
 
-void dumpSortDescription(const SortDescription & description, const Block & header, WriteBuffer & out)
+void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
 {
     bool first = true;
 
@@ -16,17 +16,7 @@ void dumpSortDescription(const SortDescription & description, const Block & head
             out << ", ";
         first = false;
 
-        if (!desc.column_name.empty())
-            out << desc.column_name;
-        else
-        {
-            if (desc.column_number < header.columns())
-                out << header.getByPosition(desc.column_number).name;
-            else
-                out << "?";
-
-            out << " (pos " << desc.column_number << ")";
-        }
+        out << desc.column_name;
 
         if (desc.direction > 0)
             out << " ASC";
@@ -38,18 +28,9 @@ void dumpSortDescription(const SortDescription & description, const Block & head
     }
 }
 
-void SortColumnDescription::explain(JSONBuilder::JSONMap & map, const Block & header) const
+void SortColumnDescription::explain(JSONBuilder::JSONMap & map) const
 {
-    if (!column_name.empty())
-        map.add("Column", column_name);
-    else
-    {
-        if (column_number < header.columns())
-            map.add("Column", header.getByPosition(column_number).name);
-
-        map.add("Position", column_number);
-    }
-
+    map.add("Column", column_name);
     map.add("Ascending", direction > 0);
     map.add("With Fill", with_fill);
 }
@@ -57,17 +38,17 @@ void SortColumnDescription::explain(JSONBuilder::JSONMap & map, const Block & he
 std::string dumpSortDescription(const SortDescription & description)
 {
     WriteBufferFromOwnString wb;
-    dumpSortDescription(description, Block{}, wb);
+    dumpSortDescription(description, wb);
     return wb.str();
 }
 
-JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description, const Block & header)
+JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
 {
     auto json_array = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & descr : description)
     {
         auto json_map = std::make_unique<JSONBuilder::JSONMap>();
-        descr.explain(*json_map, header);
+        descr.explain(*json_map);
         json_array->add(std::move(json_map));
     }
 

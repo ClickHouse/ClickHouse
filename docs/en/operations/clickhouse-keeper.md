@@ -3,12 +3,9 @@ toc_priority: 66
 toc_title: ClickHouse Keeper
 ---
 
-# [pre-production] ClickHouse Keeper {#clickHouse-keeper}
+# ClickHouse Keeper {#clickHouse-keeper}
 
 ClickHouse server uses [ZooKeeper](https://zookeeper.apache.org/) coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is an alternative coordination system compatible with ZooKeeper.
-
-!!! warning "Warning"
-    This feature is currently in the pre-production stage. We test it in our CI and on small internal installations.
 
 ## Implementation details {#implementation-details}
 

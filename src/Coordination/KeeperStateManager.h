@@ -84,7 +84,7 @@ public:
     bool shouldStartAsFollower() const
     {
         std::lock_guard lock(configuration_wrapper_mutex);
-        return configuration_wrapper.servers_start_as_followers.count(my_server_id);
+        return configuration_wrapper.servers_start_as_followers.contains(my_server_id);
     }
 
     bool isSecure() const

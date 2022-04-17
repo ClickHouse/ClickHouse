@@ -50,11 +50,8 @@ public:
         res0_indexes.resize(cell_count);
         getRes0Cells(res0_indexes.data());
 
-        auto res = ColumnArray::create(ColumnUInt64::create());
-
         Array res_indexes;
         res_indexes.insert(res_indexes.end(), res0_indexes.begin(), res0_indexes.end());
-        res->insert(res_indexes);
 
         return result_type->createColumnConst(input_rows_count, res_indexes);
     }
