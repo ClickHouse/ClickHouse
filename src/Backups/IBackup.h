@@ -16,7 +16,6 @@ using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
 class IBackup : public std::enable_shared_from_this<IBackup>
 {
 public:
-    IBackup() = default;
     virtual ~IBackup() = default;
 
     /// Name of the backup.
@@ -24,17 +23,12 @@ public:
 
     enum class OpenMode
     {
-        NONE,
         READ,
         WRITE,
     };
 
-    /// Opens the backup and start its reading or writing depending on `open_mode`.
-    virtual void open(OpenMode open_mode) = 0;
+    /// Returns whether the backup was opened for reading or writing.
     virtual OpenMode getOpenMode() const = 0;
-
-    /// Closes the backup and ends its reading or writing.
-    virtual void close() = 0;
 
     /// Returns the time point when this backup was created.
     virtual time_t getTimestamp() const = 0;

@@ -1,6 +1,7 @@
 #include <Backups/BackupFactory.h>
-#include <Backups/DirectoryBackup.h>
-#include <Backups/ArchiveBackup.h>
+#include <Backups/BackupIO_Disk.h>
+#include <Backups/BackupIO_File.h>
+#include <Backups/BackupImpl.h>
 #include <Common/quoteString.h>
 #include <Disks/IDisk.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
@@ -145,18 +146,38 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected backup engine '{}'", engine_name);
 
+        BackupImpl::ArchiveParams archive_params;
         if (hasRegisteredArchiveFileExtension(path))
         {
-            auto archive_backup = std::make_unique<ArchiveBackup>(backup_name, disk, path, params.context, params.base_backup_info);
-            archive_backup->setCompression(params.compression_method, params.compression_level);
-            archive_backup->setPassword(params.password);
-            return archive_backup;
+            archive_params.archive_name = path.filename();
+            path = path.parent_path();
+            archive_params.compression_method = params.compression_method;
+            archive_params.compression_level = params.compression_level;
+            archive_params.password = params.password;
         }
         else
         {
             if (!params.password.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
-            return std::make_unique<DirectoryBackup>(backup_name, disk, path, params.context, params.base_backup_info);
+        }
+
+        if (params.open_mode == IBackup::OpenMode::READ)
+        {
+            std::shared_ptr<IBackupReader> reader;
+            if (engine_name == "File")
+                reader = std::make_shared<BackupReaderFile>(path);
+            else
+                reader = std::make_shared<BackupReaderDisk>(disk, path);
+            return std::make_unique<BackupImpl>(backup_name, archive_params, params.base_backup_info, reader, params.context);
+        }
+        else
+        {
+            std::shared_ptr<IBackupWriter> writer;
+            if (engine_name == "File")
+                writer = std::make_shared<BackupWriterFile>(path);
+            else
+                writer = std::make_shared<BackupWriterDisk>(disk, path);
+            return std::make_unique<BackupImpl>(backup_name, archive_params, params.base_backup_info, writer, nullptr, false, params.context);
         }
     };
 
