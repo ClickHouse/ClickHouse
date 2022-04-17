@@ -678,7 +678,7 @@ public:
 
         if (!func_name.empty())
         {
-            // Round brackets can mean priority operator together with function tuple()
+            // Round brackets can mean priority operator as well as function tuple()
             if (func_name == "tuple" && res.size() == 1)
                 op = std::move(res[0]);
             else
@@ -763,6 +763,35 @@ public:
         pushResult(res);
 
         return empty();
+    }
+
+    bool parseLambda()
+    {
+        // 0. If empty - create function tuple with 0 args
+        if (empty())
+        {
+            auto func = makeASTFunction("tuple");
+            pushOperand(func);
+            return true;
+        }
+
+        if (!wrapLayer())
+            return false;
+
+        /// 1. If there is already tuple do nothing
+        if (tryGetFunctionName(result.back()).value_or("") == "tuple")
+        {
+            pushOperand(result.back());
+            result.pop_back();
+        }
+        /// 2. Put all result in a single tuple
+        else
+        {
+            auto func = makeASTFunction("tuple", result);
+            result.clear();
+            pushOperand(func);
+        }
+        return true;
     }
 
 protected:
@@ -1759,6 +1788,13 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
                 storage.back()->pushOperator(Operator("CAST", 50, 2));
                 storage.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
+            }
+            else if (parseOperator(pos, "->", expected))
+            {
+                if (!storage.back()->parseLambda())
+                    return false;
+
+                storage.back()->pushOperator(Operator("lambda", 50, 2));
             }
             else if (pos->type == TokenType::Comma)
             {
