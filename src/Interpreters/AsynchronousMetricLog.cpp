@@ -39,10 +39,15 @@ void AsynchronousMetricLog::addValues(const AsynchronousMetricValues & values)
     element.event_time = time(nullptr);
     element.event_date = DateLUT::instance().toDayNum(element.event_time);
 
+    /// We will round the values to make them compress better in the table.
+    /// Note: as an alternative we can also use fixed point Decimal data type,
+    /// but we need to store up to UINT64_MAX sometimes.
+    static constexpr double precision = 1000.0;
+
     for (const auto & [key, value] : values)
     {
         element.metric_name = key;
-        element.value = value;
+        element.value = round(value * precision) / precision;
 
         add(element);
     }
