@@ -154,7 +154,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
         if (!ttl.empty())
             engine += " TTL " + ttl;
 
-        engine += " ORDER BY " + TSystemLog::getDefaultOrderBy();
+        engine += " ORDER BY ";
+        engine += TSystemLog::getDefaultOrderBy();
     }
 
     // Validate engine definition grammatically to prevent some configuration errors
