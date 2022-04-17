@@ -448,7 +448,7 @@ private:
         });
     }
 
-    std::unique_ptr<ReadBuffer> getReadBuffer(size_t index) override
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer(size_t index) override
     {
         initialize();
         return createReadBufferFromFileBase(file_paths[index], {});
