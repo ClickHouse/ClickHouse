@@ -40,6 +40,8 @@ public:
     using SystemLog<AsynchronousMetricLogElement>::SystemLog;
 
     void addValues(const AsynchronousMetricValues &);
+
+    static const char * getDefaultOrderBy() { return "(event_date, event_time)"; }
 };
 
 }

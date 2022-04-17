@@ -23,7 +23,6 @@ NamesAndTypesList AsynchronousMetricLogElement::getNamesAndTypes()
     };
 }
 
-
 void AsynchronousMetricLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_idx = 0;
