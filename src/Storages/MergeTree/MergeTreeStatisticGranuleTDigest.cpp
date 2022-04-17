@@ -70,7 +70,9 @@ void MergeTreeGranuleDistributionStatisticTDigest::merge(const IStatisticPtr & o
     }
     else
     {
-        throw Exception("Unknown distribution sketch type", ErrorCodes::LOGICAL_ERROR);
+        // Just ignore unknown sketches.
+        // We can get wrong sketch during MODIFY/DROP+ADD/... mutation.
+        //throw Exception("Unknown distribution sketch type", ErrorCodes::LOGICAL_ERROR);
     }
 }
 

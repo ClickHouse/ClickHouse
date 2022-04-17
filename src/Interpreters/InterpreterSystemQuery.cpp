@@ -366,6 +366,13 @@ BlockIO InterpreterSystemQuery::execute()
             throw Exception("SYSTEM RELOAD SYMBOLS is not supported on current platform", ErrorCodes::NOT_IMPLEMENTED);
 #endif
         }
+        case Type::RELOAD_STATISTICS:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_STATISTICS);
+            const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+            table_ptr->reloadStatistics();
+            break;
+        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -789,6 +796,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_SYMBOLS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
+            break;
+        }
+        case Type::RELOAD_STATISTICS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_STATISTICS);
             break;
         }
         case Type::STOP_MERGES: [[fallthrough]];

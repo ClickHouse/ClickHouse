@@ -38,7 +38,7 @@ struct MutationCommand
         MATERIALIZE_TTL,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
-        //DROP_STATISTIC,
+        DROP_STATISTIC,
         MATERIALIZE_STATISTIC,
     };
 

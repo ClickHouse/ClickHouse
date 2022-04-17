@@ -158,6 +158,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
+        case Type::RELOAD_STATISTICS:
+        {
+            parseQueryWithOnCluster(res, pos, expected);
+
+            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
+                return false;
+            break;
+        }
         case Type::DROP_REPLICA:
         {
             parseQueryWithOnCluster(res, pos, expected);

@@ -12,10 +12,10 @@ CREATE TABLE prewhere
     d FLOAT,
     heavy String,
     heavy2 String,
-    STAT st (a, b, c, d) TYPE tdigest
+    STATISTIC st (a, b, c, d) TYPE tdigest
 )
 ENGINE=MergeTree() ORDER BY a
-SETTINGS experimantal_stats_update_period = 500;
+SETTINGS experimantal_stats_update_period = 100000;
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
@@ -29,7 +29,7 @@ INSERT INTO prewhere SELECT
 FROM system.numbers
 LIMIT 1000000;
 
-SELECT sleep(1);
+SYSTEM RELOAD STATISTICS prewhere;
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d < 100 AND b < 100;
@@ -51,10 +51,10 @@ CREATE TABLE prewhere
     d FLOAT,
     heavy String,
     heavy2 String,
-    STAT st (a, b, c, d)
+    STATISTIC st (a, b, c, d)
 )
 ENGINE=MergeTree() ORDER BY a
-SETTINGS experimantal_stats_update_period = 500;
+SETTINGS experimantal_stats_update_period = 100000;
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
@@ -68,7 +68,7 @@ INSERT INTO prewhere SELECT
 FROM system.numbers
 LIMIT 1000000;
 
-SELECT sleep(1);
+SYSTEM RELOAD STATISTICS prewhere;
 
 -- test simple selectivity
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;

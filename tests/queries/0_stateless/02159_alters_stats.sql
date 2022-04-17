@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS prewhere SYNC;
 
 SET optimize_move_to_prewhere = 1;
 SET allow_experimental_stats_for_prewhere_optimization = 1;
+SET mutations_sync = 1;
 
 -- SIMPLE tdigest stat
 CREATE TABLE alters_stats
@@ -12,14 +13,10 @@ CREATE TABLE alters_stats
     d FLOAT,
     k Int,
     heavy String,
-    heavy2 String,
-    STAT st1 (a, b, c) TYPE tdigest,
-    STAT st2 (d)
+    heavy2 String
 )
 ENGINE=MergeTree() ORDER BY a
-SETTINGS experimantal_stats_update_period = 500;
-
-SYSTEM STOP MERGES alters_stats;
+SETTINGS experimantal_stats_update_period = 100000;
 
 INSERT INTO alters_stats SELECT
     number AS a,
@@ -31,6 +28,13 @@ INSERT INTO alters_stats SELECT
     format('text {} tafst{}afsd', toString(cityHash64(number)), toString(cityHash64(number))) AS heavy2
 FROM system.numbers
 LIMIT 1000000;
+
+OPTIMIZE TABLE alters_stats FINAL;
+
+ALTER TABLE alters_stats ADD STATISTIC st1 (a, b, c) TYPE tdigest;
+ALTER TABLE alters_stats ADD STATISTIC st2 (d);
+
+SYSTEM RELOAD STATISTICS alters_stats;
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
@@ -50,20 +54,20 @@ EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 
 ALTER TABLE alters_stats MATERIALIZE STATISTIC st1;
 ALTER TABLE alters_stats MATERIALIZE STATISTIC st3;
 
-SELECT sleep(1);
+SYSTEM RELOAD STATISTICS alters_stats;
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
 ALTER TABLE alters_stats DROP STATISTIC st3;
 
-SELECT sleep(1);
+SYSTEM RELOAD STATISTICS alters_stats;
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 3 AND d == 100;
 
-ALTER TABLE alters_stats DROP STATISTIC st1;
+ALTER TABLE alters_stats CLEAR STATISTIC st1;
 SHOW CREATE TABLE alters_stats;
 
-SELECT sleep(1);
+SYSTEM RELOAD STATISTICS alters_stats;
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 3 AND d == 100;
 

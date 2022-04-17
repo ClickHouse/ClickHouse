@@ -28,6 +28,8 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
+#include "Common/Exception.h"
+#include "Storages/ColumnDependency.h"
 
 
 namespace DB
@@ -631,11 +633,11 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             materialized_indices.erase(command.index_name);
         }
-        /*else if (command.type == MutationCommand::DROP_STATISTIC)
+        else if (command.type == MutationCommand::DROP_STATISTIC)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             materialized_statistics.erase(command.statistic_name);
-        }*/
+        }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
@@ -685,7 +687,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
                 for (const auto & dependency : new_dependencies)
                 {
-                    if (dependency.kind == ColumnDependency::SKIP_INDEX || dependency.kind == ColumnDependency::PROJECTION)
+                    if (dependency.kind == ColumnDependency::SKIP_INDEX
+                        || dependency.kind == ColumnDependency::STATISTIC
+                        || dependency.kind == ColumnDependency::PROJECTION)
                         dependencies.insert(dependency);
                 }
             }
@@ -751,7 +755,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     stages_copy.back().output_columns = stage.output_columns;
                     stages_copy.back().filters = stage.filters;
                 }
-
+                Poco::Logger::get("PREPARE111").information(std::to_string(stages_copy.size()));
                 const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
                 InterpreterSelectQuery interpreter{
                     select_query, context, storage, metadata_snapshot,
@@ -765,7 +769,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 updated_header = std::make_unique<Block>(pipeline->getHeader());
             }
 
-            /// Special step to recalculate affected indices, projections and TTL expressions.
+            /// Special step to recalculate affected indices, statistics, projections and TTL expressions.
             stages.emplace_back(context);
             for (const auto & column : unchanged_columns)
                 stages.back().column_to_updated.emplace(
@@ -774,7 +778,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     }
 
     is_prepared = true;
-
+    Poco::Logger::get("PREPARE222").information(std::to_string(stages.size()));
     return prepareInterpreterSelectQuery(stages, dry_run);
 }
 
@@ -804,6 +808,9 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 
     /// Now, calculate `expressions_chain` for each stage except the first.
     /// Do it backwards to propagate information about columns required as input for a stage to the previous stage.
+    if (prepared_stages.empty()) {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: prepared_stages is empty");
+    }
     for (size_t i = prepared_stages.size() - 1; i > 0; --i)
     {
         auto & stage = prepared_stages[i];
@@ -1017,7 +1024,7 @@ QueryPipeline MutationsInterpreter::execute()
 
 Block MutationsInterpreter::getUpdatedHeader() const
 {
-    // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
+    // If it's an index/statistic/projection materialization, we don't write any data columns, thus empty header is used
     return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION ? Block{} : *updated_header;
 }
 

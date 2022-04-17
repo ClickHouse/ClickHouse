@@ -44,6 +44,7 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_SYMBOLS,
+        RELOAD_STATISTICS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,

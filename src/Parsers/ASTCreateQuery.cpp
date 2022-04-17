@@ -163,7 +163,7 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
         for (const auto & stat : stats->children)
         {
             auto elem = std::make_shared<ASTColumnsElement>();
-            elem->prefix = "STAT";
+            elem->prefix = "STATISTIC";
             elem->set(elem->elem, stat->clone());
             list.children.push_back(elem);
         }

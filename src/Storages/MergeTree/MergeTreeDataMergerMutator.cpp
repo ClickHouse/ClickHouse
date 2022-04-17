@@ -594,7 +594,9 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
                 if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
                     mutated_columns.emplace(command.column_name);
             }
-            else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
+            else if (command.type == MutationCommand::Type::DROP_INDEX
+                || command.type == MutationCommand::Type::DROP_STATISTIC
+                || command.type == MutationCommand::Type::DROP_PROJECTION)
             {
                 for_file_renames.push_back(command);
             }
@@ -639,7 +641,9 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
             {
                 for_interpreter.push_back(command);
             }
-            else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
+            else if (command.type == MutationCommand::Type::DROP_INDEX
+                || command.type == MutationCommand::Type::DROP_STATISTIC
+                || command.type == MutationCommand::Type::DROP_PROJECTION)
             {
                 for_file_renames.push_back(command);
             }

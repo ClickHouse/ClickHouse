@@ -7,7 +7,6 @@ SELECT
     heavy2
 FROM prewhere
 WHERE (a = 10) AND (b = 100) AND (c = 0) AND (d = 100)
-0
 SELECT
     a,
     b,
@@ -67,7 +66,6 @@ SELECT
     heavy2
 FROM prewhere
 WHERE (a = 10) AND (b = 100) AND (c = 0) AND (d = 100)
-0
 SELECT
     a,
     b,

@@ -906,6 +906,8 @@ public:
     /// Mutex for currently_submerging_parts and currently_emerging_parts
     mutable std::mutex currently_submerging_emerging_mutex;
 
+    void reloadStatistics() override;
+
 protected:
     /// Get Statistics for prewhere planning
     MergeTreeStatisticsPtr getStatisticsByPartitionPredicateImpl(

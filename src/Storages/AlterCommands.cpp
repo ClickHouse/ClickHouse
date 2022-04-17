@@ -30,6 +30,7 @@
 #include <Common/randomSeed.h>
 #include "Functions/DateTimeTransforms.h"
 #include "Parsers/ASTStatisticDeclaration.h"
+#include "Storages/MutationCommands.h"
 #include "Storages/StatisticsDescription.h"
 #include "base/logger_useful.h"
 
@@ -902,8 +903,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
-    // todo: || type == DROP_STATISTIC
-    if (type == DROP_COLUMN || type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
+    if (type == DROP_COLUMN || type == DROP_INDEX || type == DROP_STATISTIC || type == DROP_PROJECTION || type == RENAME_COLUMN)
         return true;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
@@ -992,7 +992,16 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
             result.clear = true;
         if (partition)
             result.partition = partition;
-
+        result.predicate = nullptr;
+    }
+    else if (type == DROP_STATISTIC)
+    {
+        result.type = MutationCommand::Type::DROP_STATISTIC;
+        result.column_name = statistic_name;
+        if (clear)
+            result.clear = true;
+        if (partition)
+            result.partition = partition;
         result.predicate = nullptr;
     }
     else if (type == DROP_PROJECTION)

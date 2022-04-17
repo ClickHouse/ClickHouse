@@ -919,6 +919,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             {
                 if (command.type != MutationCommand::Type::DROP_COLUMN
                     && command.type != MutationCommand::Type::DROP_INDEX
+                    && command.type != MutationCommand::Type::DROP_STATISTIC
                     && command.type != MutationCommand::Type::DROP_PROJECTION
                     && command.type != MutationCommand::Type::RENAME_COLUMN)
                 {

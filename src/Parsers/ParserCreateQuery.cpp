@@ -249,7 +249,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_index("INDEX");
-    ParserKeyword s_stat("STAT");
+    ParserKeyword s_stat("STATISTIC");
     ParserKeyword s_constraint("CONSTRAINT");
     ParserKeyword s_projection("PROJECTION");
     ParserKeyword s_primary_key("PRIMARY KEY");

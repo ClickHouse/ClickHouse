@@ -577,6 +577,8 @@ public:
     /// Returns set of merged statistics for provided partitions.
     virtual IStatisticsPtr getStatisticsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const { return nullptr; }
 
+    virtual void reloadStatistics() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reload Statistics is not implemented for this storage."); }
+
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)
     /// - disk (compressed)

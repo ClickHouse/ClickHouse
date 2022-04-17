@@ -987,6 +987,11 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
     return res;
 }
 
+void MergeTreeData::reloadStatistics()
+{
+    updateStatisticsByPartition();
+}
+
 void MergeTreeData::updateStatisticsByPartition()
 {
     LOG_DEBUG(log, "Update stats by partitions");

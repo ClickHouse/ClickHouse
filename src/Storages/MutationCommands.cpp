@@ -137,18 +137,18 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             res.clear = true;
         return res;
     }
-    /*else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_STATISTIC)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_STATISTIC)
     {
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_STATISTIC;
-        res.column_name = command->index->as<ASTIdentifier &>().name();
+        res.column_name = command->statistic->as<ASTIdentifier &>().name();
         if (command->partition)
             res.partition = command->partition;
         if (command->clear_statistic)
             res.clear = true;
         return res;
-    }*/
+    }
     else if (parse_alter_commands && command->type == ASTAlterCommand::RENAME_COLUMN)
     {
         MutationCommand res;
