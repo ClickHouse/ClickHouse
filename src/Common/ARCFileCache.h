@@ -19,6 +19,7 @@
 namespace DB
 {
 
+/// ARCFileCache
 /// The ARC algorithm implemented according to LRUFileCache, which can effectively 
 /// avoid the problem of cache pool pollution caused by one-time large-scale cache flushing.
 class ARCFileCache final : public IFileCache
