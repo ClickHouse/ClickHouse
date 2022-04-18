@@ -1034,7 +1034,9 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (merge_entry)
     {
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
-        assignee.scheduleMergeMutateTask(task);
+        bool scheduled = assignee.scheduleMergeMutateTask(task);
+        if (!scheduled && isTTLMergeType(merge_entry->future_part->merge_type))
+            getContext()->getMergeList().cancelMergeWithTTL();
         return true;
     }
     if (mutate_entry)
