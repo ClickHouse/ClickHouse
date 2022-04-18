@@ -779,7 +779,6 @@ ARCFileCache::Stat ARCFileCache::getStat()
                 break;
         }
     }
-
     for (const auto & [key, offset] : high_queue.queue())
     {
         const auto * cell = getCell(key, offset, cache_lock);
