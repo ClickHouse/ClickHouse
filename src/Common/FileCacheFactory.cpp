@@ -62,22 +62,28 @@ FileCachePtr FileCacheFactory::getOrCreate(const std::string & cache_base_path, 
 
     if (file_cache_settings.cache_method == "ARC")
     {
-        auto cache = std::make_shared<ARCFileCache>(cache_base_path, file_cache_settings);
-        caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
-        return cache;
+        cache = std::make_shared<ARCFileCache>(
+            cache_base_path,
+            file_cache_settings.max_size,
+            0.2,
+            4,
+            file_cache_settings.max_elements_size,
+            file_cache_settings.max_file_segment_size);
     }
     else if (file_cache_settings.cache_method == "LRU")
     {
-        auto cache = std::make_shared<LRUFileCache>(cache_base_path, file_cache_settings);
-        caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
-        return cache;
+        cache = std::make_shared<LRUFileCache>(
+            cache_base_path,
+            file_cache_settings.max_size,
+            file_cache_settings.max_elements_size,
+            file_cache_settings.max_file_segment_size);
     }
-    else /// set default with ARC
+    else
     {
-        auto cache = std::make_shared<LRUFileCache>(cache_base_path, file_cache_settings);
-        caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
-        return cache;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknow cache method `{}`", cache_method);
     }
+    caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
+    return cache;
 }
 
 }
