@@ -17,7 +17,7 @@ configure_file(
         ${ClickHouse_SOURCE_DIR}/utils/local-engine/tests/testConfig.h.in
         ${ClickHouse_SOURCE_DIR}/utils/local-engine/tests/testConfig.h
 )
-
+set(HAVE_POSIX_REGEX 1)
 include(FetchContent)
 FetchContent_Declare(googlebenchmark GIT_REPOSITORY https://github.com/google/benchmark GIT_TAG master)
 FetchContent_MakeAvailable(googlebenchmark)
