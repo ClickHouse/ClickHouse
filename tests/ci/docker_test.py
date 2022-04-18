@@ -25,7 +25,6 @@ class TestDockerImageCheck(unittest.TestCase):
         pr_info.changed_files = {
             "docker/test/stateless",
             "docker/test/base",
-            "docker/docs/builder",
         }
         images = sorted(
             list(
@@ -38,7 +37,6 @@ class TestDockerImageCheck(unittest.TestCase):
         expected = sorted(
             [
                 di.DockerImage("docker/test/base", "clickhouse/test-base", False),
-                di.DockerImage("docker/docs/builder", "clickhouse/docs-builder", True),
                 di.DockerImage(
                     "docker/test/stateless",
                     "clickhouse/stateless-test",
@@ -62,18 +60,6 @@ class TestDockerImageCheck(unittest.TestCase):
                     "clickhouse/keeper-jepsen-test",
                     False,
                     "clickhouse/test-base",
-                ),
-                di.DockerImage(
-                    "docker/docs/check",
-                    "clickhouse/docs-check",
-                    False,
-                    "clickhouse/docs-builder",
-                ),
-                di.DockerImage(
-                    "docker/docs/release",
-                    "clickhouse/docs-release",
-                    False,
-                    "clickhouse/docs-builder",
                 ),
                 di.DockerImage(
                     "docker/test/stateful",
