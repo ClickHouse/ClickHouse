@@ -193,7 +193,10 @@ void ClientInfo::setInitialQuery()
 {
     query_kind = QueryKind::INITIAL_QUERY;
     fillOSUserHostNameAndVersionInfo();
-    client_name = (DBMS_NAME " ") + client_name;
+    if (client_name.empty())
+        client_name = DBMS_NAME;
+    else
+        client_name = (DBMS_NAME " ") + client_name;
 }
 
 
