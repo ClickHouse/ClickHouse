@@ -200,10 +200,7 @@ public:
     void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 
     /// Add a part to the queue of parts whose data you want to check in the background thread.
-    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0)
-    {
-        part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
-    }
+    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 

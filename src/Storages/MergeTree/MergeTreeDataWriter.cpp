@@ -180,7 +180,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     {
         Row partition(partition_columns.size());
         for (size_t i = 0; i < partition_columns.size(); ++i)
-            partition[i] = Field((*partition_columns[i])[partition_num_to_first_row[num]]);
+            partition[i] = (*partition_columns[i])[partition_num_to_first_row[num]];
         return partition;
     };
 
