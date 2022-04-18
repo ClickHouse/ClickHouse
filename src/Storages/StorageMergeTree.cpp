@@ -1092,7 +1092,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             {
                 /// Shall not create a new part, but will do that later if mutation with higher version appear.
                 /// This is needed in order to not produce excessive mutations of non-related parts.
-                auto block_range = std::make_pair(part->info.min_block, part->info.max_block);
+                auto block_range = std::pair(part->info.min_block, part->info.max_block);
                 updated_version_by_block_range[block_range] = last_mutation_to_apply->first;
                 were_some_mutations_for_some_parts_skipped = true;
                 continue;
@@ -1216,7 +1216,7 @@ Int64 StorageMergeTree::getUpdatedDataVersion(
     const DataPartPtr & part,
     std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
 {
-    auto it = updated_version_by_block_range.find(std::make_pair(part->info.min_block, part->info.max_block));
+    auto it = updated_version_by_block_range.find({part->info.min_block, part->info.max_block});
     if (it != updated_version_by_block_range.end())
         return std::max(part->info.getDataVersion(), static_cast<Int64>(it->second));
     else

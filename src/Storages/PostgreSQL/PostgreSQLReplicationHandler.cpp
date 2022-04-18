@@ -128,12 +128,12 @@ std::pair<String, String> PostgreSQLReplicationHandler::getSchemaAndTableName(co
     /// separated by dot and with no quotes. We add double quotes in this case.
 
     if (!postgres_schema.empty())
-        return std::make_pair(postgres_schema, table_name);
+        return {postgres_schema, table_name};
 
     if (auto pos = table_name.find('.'); schema_as_a_part_of_table_name && pos != std::string::npos)
-        return std::make_pair(table_name.substr(0, pos), table_name.substr(pos + 1));
+        return {table_name.substr(0, pos), table_name.substr(pos + 1)};
 
-    return std::make_pair("", table_name);
+    return {"", table_name};
 }
 
 

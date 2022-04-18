@@ -829,7 +829,7 @@ int main(int argc, char ** argv)
 
         for (size_t i = 0; i < num_threads; ++i)
             for (auto it = local_maps[i].begin(); it != local_maps[i].end(); ++it)
-                global_map.insert(std::make_pair(it->first, 0)).first->second += it->second;
+                global_map.insert(std::pair(it->first, 0)).first->second += it->second;
 
         pool.wait();
 

@@ -139,7 +139,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
 
     DataTypeCustomNamePtr custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, argument_types, params_row);
 
-    return std::make_pair(storage_type, std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr));
+    return {storage_type, std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr)};
 }
 
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)

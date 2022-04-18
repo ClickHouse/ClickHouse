@@ -150,7 +150,7 @@ public:
         {
             /// Cell contains element return it and put to the end of lru list
             lru_list.splice(lru_list.end(), lru_list, lru_list.iterator_to(*it));
-            return std::make_pair(it, false);
+            return {it, false};
         }
 
         if (size() == max_size)
@@ -181,7 +181,7 @@ public:
         /// Put cell to the end of lru list
         lru_list.insert(lru_list.end(), *it);
 
-        return std::make_pair(it, true);
+        return {it, true};
     }
 
     LookupResult ALWAYS_INLINE find(const Key & key)

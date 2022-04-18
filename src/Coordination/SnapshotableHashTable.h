@@ -140,10 +140,10 @@ public:
 
             it->getMapped() = itr;
             updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
-            return std::make_pair(it, true);
+            return {it, true};
         }
 
-        return std::make_pair(it, false);
+        return {it, false};
     }
 
     void insertOrReplace(const std::string & key, const V & value)
@@ -311,7 +311,7 @@ public:
 
     std::pair<size_t, size_t> snapshotSizeWithVersion() const
     {
-        return std::make_pair(list.size(), current_version);
+        return {list.size(), current_version};
     }
 
     uint64_t getApproximateDataSize() const

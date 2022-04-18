@@ -23,7 +23,7 @@ bool ParserDeclareOptionImpl<recursive>::parseImpl(Pos & pos, ASTPtr & node, Exp
     {
         auto iterator = usage_parsers_cached.find(usage_name);
         if (iterator == usage_parsers_cached.end())
-            iterator = usage_parsers_cached.insert(std::make_pair(usage_name, std::make_shared<ParserKeyword>(usage_name))).first;
+            iterator = usage_parsers_cached.insert({usage_name, std::make_shared<ParserKeyword>(usage_name)}).first;
 
         return iterator->second;
     };
@@ -39,7 +39,7 @@ bool ParserDeclareOptionImpl<recursive>::parseImpl(Pos & pos, ASTPtr & node, Exp
                 if (option_describe.value_parser->parse(pos, value, expected))
                 {
                     found = true;
-                    changes.insert(std::make_pair(option_describe.option_name, value));
+                    changes.insert({option_describe.option_name, value});
                     break;
                 }
             }
@@ -51,7 +51,7 @@ bool ParserDeclareOptionImpl<recursive>::parseImpl(Pos & pos, ASTPtr & node, Exp
                     return false;
 
                 found = true;
-                changes.insert(std::make_pair(option_describe.option_name, value));
+                changes.insert({option_describe.option_name, value});
                 break;
             }
         }
@@ -78,7 +78,7 @@ ASTPtr ASTDeclareOptions::clone() const
     res->changes.clear();
 
     for (const auto & [name, value] : this->changes)
-        res->changes.insert(std::make_pair(name, value->clone()));
+        res->changes.insert({name, value->clone()});
 
     return res;
 }

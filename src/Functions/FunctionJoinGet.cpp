@@ -66,7 +66,7 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
         throw Exception(
             "Illegal type " + arguments[1].type->getName() + " of second argument of function joinGet, expected a const string.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    return std::make_pair(storage_join, attr_name);
+    return {storage_join, attr_name};
 }
 
 template <bool or_null>

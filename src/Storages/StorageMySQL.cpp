@@ -247,7 +247,7 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
     {
         auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
         configuration.set(common_configuration);
-        configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+        configuration.addresses = {std::pair(configuration.host, configuration.port)};
         storage_settings.applyChanges(settings_changes);
 
         for (const auto & [arg_name, arg_value] : storage_specific_args)

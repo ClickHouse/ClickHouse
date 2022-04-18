@@ -43,7 +43,7 @@ auto eventTime()
 {
     const auto finish_time = std::chrono::system_clock::now();
 
-    return std::make_pair(time_in_seconds(finish_time), time_in_microseconds(finish_time));
+    return std::pair(time_in_seconds(finish_time), time_in_microseconds(finish_time));
 }
 
 using AuthType = AuthenticationType;
@@ -85,7 +85,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             {"Logout",                 static_cast<Int8>(SESSION_LOGOUT)}
         });
 
-#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(AuthenticationTypeInfo::get(v).raw_name, static_cast<Int8>(v))
+#define AUTH_TYPE_NAME_AND_VALUE(v) std::pair(AuthenticationTypeInfo::get(v).raw_name, static_cast<Int8>(v))
     auto identified_with_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {

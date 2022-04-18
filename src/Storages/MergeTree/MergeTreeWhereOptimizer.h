@@ -58,7 +58,7 @@ private:
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, columns_size, identifiers.size());
+            return std::tuple(!viable, !good, columns_size, identifiers.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
