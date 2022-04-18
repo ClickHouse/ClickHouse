@@ -135,9 +135,7 @@ private:
     Segment current_segment;
 
     size_t max_working_readers;
-    size_t active_working_reader{0};
-    // Triggered when all reader workers are done
-    std::condition_variable readers_done;
+    std::atomic_size_t active_working_reader{0};
 
     CallbackRunner schedule;
 
