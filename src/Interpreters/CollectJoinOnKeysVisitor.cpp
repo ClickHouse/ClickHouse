@@ -168,7 +168,7 @@ JoinIdentifierPosPair CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr & l
     auto left_idents_table = getTableForIdentifiers(left_ast, true, data);
     auto right_idents_table = getTableForIdentifiers(right_ast, true, data);
 
-    return std::make_pair(left_idents_table, right_idents_table);
+    return {left_idents_table, right_idents_table};
 }
 
 const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases)

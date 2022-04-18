@@ -273,7 +273,7 @@ namespace MultiRegexps
         if (known_regexps.storage.end() == it)
         {
             it = known_regexps.storage
-                     .emplace(std::piecewise_construct, std::make_tuple(std::move(str_patterns), edit_distance), std::make_tuple())
+                     .emplace(std::piecewise_construct, std::tuple(std::move(str_patterns), edit_distance), std::tuple())
                      .first;
             it->second.setConstructor([&str_patterns = it->first.first, edit_distance]()
             {

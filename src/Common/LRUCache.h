@@ -95,7 +95,7 @@ public:
             if (val)
             {
                 ++hits;
-                return std::make_pair(val, false);
+                return {val, false};
             }
 
             auto & token = insert_tokens[key];
@@ -115,7 +115,7 @@ public:
         {
             /// Another thread already produced the value while we waited for token->mutex.
             ++hits;
-            return std::make_pair(token->value, false);
+            return {token->value, false};
         }
 
         ++misses;
@@ -136,7 +136,7 @@ public:
         if (!token->cleaned_up)
             token_holder.cleanup(token_lock, cache_lock);
 
-        return std::make_pair(token->value, result);
+        return {token->value, result};
     }
 
     void getStats(size_t & out_hits, size_t & out_misses) const

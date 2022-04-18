@@ -39,7 +39,7 @@ std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
     }
 
     auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), n);
-    return std::make_pair(std::move(sparse), std::move(full));
+    return {std::move(sparse), std::move(full)};
 }
 
 bool checkEquals(const IColumn & lhs, const IColumn & rhs)

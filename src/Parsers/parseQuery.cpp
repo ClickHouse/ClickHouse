@@ -422,7 +422,7 @@ std::pair<const char *, bool> splitMultipartQuery(
             ++pos;
     }
 
-    return std::make_pair(begin, pos == end);
+    return {begin, pos == end};
 }
 
 

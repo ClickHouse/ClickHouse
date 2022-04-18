@@ -440,7 +440,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         auto status = elem.second.get();
         if (status.error != Coordination::Error::ZNONODE)
         {
-            cached_block_stats.emplace(elem.first, std::make_pair(status.stat.ctime, status.stat.version));
+            cached_block_stats.emplace(elem.first, std::pair(status.stat.ctime, status.stat.version));
             timed_blocks.emplace_back(elem.first, status.stat.ctime, status.stat.version);
         }
     }

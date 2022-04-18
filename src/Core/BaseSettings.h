@@ -529,7 +529,7 @@ SettingFieldCustom & BaseSettings<TTraits>::getCustomSetting(const std::string_v
         if (it == custom_settings_map.end())
         {
             auto new_name = std::make_shared<String>(name);
-            it = custom_settings_map.emplace(*new_name, std::make_pair(new_name, SettingFieldCustom{})).first;
+            it = custom_settings_map.emplace(*new_name, std::pair(new_name, SettingFieldCustom{})).first;
         }
         return it->second.second;
     }

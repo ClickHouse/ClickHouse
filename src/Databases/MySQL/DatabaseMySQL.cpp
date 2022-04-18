@@ -234,7 +234,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
             local_tables_cache.erase(iterator);
         }
 
-        local_tables_cache[table_name] = std::make_pair(
+        local_tables_cache[table_name] = std::pair(
             table_modification_time,
             std::make_shared<StorageMySQL>(
                 StorageID(database_name, table_name),

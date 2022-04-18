@@ -104,7 +104,7 @@ void WriteBufferToRabbitMQProducer::countRow()
         reinitializeChunks();
 
         ++payload_counter;
-        if (!payloads.push(std::make_pair(payload_counter, payload)))
+        if (!payloads.push({payload_counter, payload}))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
     }
 }
