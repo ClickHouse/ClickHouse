@@ -136,8 +136,11 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
             }
             else if (Tuple tuple; literal->value.tryGet(tuple))
             {
-                for (auto element : tuple)
-                    res.emplace_back(element.safeGet<String>(), ZkPathType::Exact);
+                std::transform(
+                    std::begin(tuple),
+                    std::end(tuple),
+                    std::back_inserter(res),
+                    [](auto element) { return std::make_pair(element.template safeGet<String>(), ZkPathType::Exact); });
             }
             else
                 return false;
