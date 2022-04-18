@@ -38,7 +38,7 @@ struct AsynchronousMetricLogElement
     static const char * getCustomColumnList()
     {
         return "event_date Date CODEC(Delta, ZSTD), "
-               "event_time` DateTime CODEC(Delta, ZSTD), "
+               "event_time DateTime CODEC(Delta, ZSTD), "
                "metric LowCardinality(String) CODEC(ZSTD), "
                "value Float64 CODEC(Gorilla, ZSTD(3))";
     }
