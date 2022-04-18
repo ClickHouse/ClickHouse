@@ -9,8 +9,6 @@ options {
 @header {
 #include "SqlMode.h"
 #include "MySQLBaseParser.h"
-  // import { MySQLBaseParser } from './MySQLBaseParser'
-  // import { SqlMode } from './common'
 }
 
 //----------------------------------------------------------------------------------------------------------------------
