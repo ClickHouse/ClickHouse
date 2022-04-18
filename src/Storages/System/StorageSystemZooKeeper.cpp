@@ -83,11 +83,11 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
 
     if (function->name == "and")
     {
-        for (const auto & child : function->arguments->children)
-            if (extractPathImpl(*child, res, context, allow_unrestricted))
-                return true;
-
-        return false;
+        const auto & children = function->arguments->children;
+        return std::any_of(
+            std::begin(children),
+            std::end(children),
+            [&](const auto & child) { return extractPathImpl(*child, res, context, allow_unrestricted); });
     }
 
     const auto & args = function->arguments->as<ASTExpressionList &>();
