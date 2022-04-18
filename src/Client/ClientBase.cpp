@@ -1058,7 +1058,13 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     /// Process the query that requires transferring data blocks to the server.
     const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
-        throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+    {
+        const auto & settings = global_context->getSettingsRef();
+        if (settings.throw_if_no_data_to_insert)
+            throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+        else
+            return;
+    }
 
     connection->sendQuery(
         connection_parameters.timeouts,
@@ -1649,7 +1655,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 catch (...)
                 {
                     // Surprisingly, this is a client error. A server error would
-                    // have been reported w/o throwing (see onReceiveSeverException()).
+                    // have been reported without throwing (see onReceiveSeverException()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
@@ -1692,7 +1698,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     if (!test_hint.clientError() && !test_hint.serverError())
                     {
                         // No error was expected but it still occurred. This is the
-                        // default case w/o test hint, doesn't need additional
+                        // default case without test hint, doesn't need additional
                         // diagnostics.
                         error_matches_hint = false;
                     }

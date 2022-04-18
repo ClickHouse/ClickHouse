@@ -1716,6 +1716,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     return Application::EXIT_OK;
 }
 
+
 void Server::createServers(
     Poco::Util::AbstractConfiguration & config,
     const std::vector<std::string> & listen_hosts,
