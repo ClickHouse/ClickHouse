@@ -139,7 +139,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    void removeSharedRecursive(const String &, bool) override
+    void removeSharedRecursive(const String &, bool, const NameSet &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }

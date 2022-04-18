@@ -334,7 +334,7 @@ public:
     struct HardlinkedFiles
     {
         std::string source_part_name;
-        std::vector<std::string> hardlinks_from_source_part;
+        NameSet hardlinks_from_source_part;
     };
 
     HardlinkedFiles hardlinked_files;
@@ -520,7 +520,7 @@ protected:
 
     String getRelativePathForDetachedPart(const String & prefix) const;
 
-    std::pair<bool, std::vector<std::string>> canRemovePart() const;
+    std::pair<bool, NameSet> canRemovePart() const;
 
     void initializePartMetadataManager();
 

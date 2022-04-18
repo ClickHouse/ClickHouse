@@ -159,10 +159,23 @@ public:
         delegate->removeSharedFile(wrapped_path, flag);
     }
 
-    void removeSharedRecursive(const String & path, bool flag) override
+    void removeSharedRecursive(const String & path, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only) override
     {
         auto wrapped_path = wrappedPath(path);
-        delegate->removeSharedRecursive(wrapped_path, flag);
+        delegate->removeSharedRecursive(wrapped_path, keep_all_batch_metadata, file_names_remove_metadata_only);
+    }
+
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only) override
+    {
+        for (const auto & file : files)
+        {
+            auto wrapped_path = wrappedPath(file.path);
+            bool keep = keep_all_batch_metadata || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
+            if (file.if_exists)
+                delegate->removeSharedFileIfExists(wrapped_path, keep);
+            else
+                delegate->removeSharedFile(wrapped_path, keep);
+        }
     }
 
     void removeSharedFileIfExists(const String & path, bool flag) override

@@ -943,7 +943,7 @@ public:
 
     /// Unlock shared data part in zookeeper
     /// Overridden in StorageReplicatedMergeTree
-    virtual std::pair<bool, std::vector<std::string>> unlockSharedData(const IMergeTreeDataPart &) const { return std::make_pair(true, std::vector<std::string>{}); }
+    virtual std::pair<bool, NameSet> unlockSharedData(const IMergeTreeDataPart &) const { return std::make_pair(true, NameSet{}); }
 
     /// Fetch part only if some replica has it on shared storage like S3
     /// Overridden in StorageReplicatedMergeTree

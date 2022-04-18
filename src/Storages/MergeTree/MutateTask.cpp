@@ -1070,7 +1070,7 @@ private:
         ctx->new_data_part->version.setCreationTID(tid, nullptr);
         ctx->new_data_part->storeVersionMetadata();
 
-        std::vector<std::string> hardlinked_files;
+        NameSet hardlinked_files;
         /// Create hardlinks for unchanged files
         for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
         {
@@ -1101,7 +1101,7 @@ private:
             if (!ctx->disk->isDirectory(it->path()))
             {
                 ctx->disk->createHardLink(it->path(), destination);
-                hardlinked_files.push_back(it->name());
+                hardlinked_files.insert(it->name());
             }
 
             else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
@@ -1112,7 +1112,7 @@ private:
                 {
                     String p_destination = fs::path(destination) / p_it->name();
                     ctx->disk->createHardLink(p_it->path(), p_destination);
-                    hardlinked_files.push_back(p_it->name());
+                    hardlinked_files.insert(p_it->name());
                 }
             }
         }

@@ -826,7 +826,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
                 /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
                 /// performing a poll with a not very large timeout.
                 /// And now we check it only between read chunks (in the `copyData` function).
-                disk->removeSharedRecursive(part_download_path, true);
+                disk->removeSharedRecursive(part_download_path, true, {});
                 throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
             }
 

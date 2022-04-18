@@ -764,7 +764,7 @@ void DiskS3::restore()
         bool cleanup_s3 = information.source_bucket != bucket || information.source_path != remote_fs_root_path;
         for (const auto & root : data_roots)
             if (exists(root))
-                removeSharedRecursive(root + '/', !cleanup_s3);
+                removeSharedRecursive(root + '/', !cleanup_s3, {});
 
         restoreFiles(information);
         restoreFileOperations(information);

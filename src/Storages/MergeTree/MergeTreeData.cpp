@@ -5762,7 +5762,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
         for (auto it = disk->iterateDirectory(src_part_path); it->isValid(); it->next())
         {
             if (it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
-                dst_data_part->hardlinked_files.hardlinks_from_source_part.push_back(it->name());
+                dst_data_part->hardlinked_files.hardlinks_from_source_part.insert(it->name());
         }
     }
 
