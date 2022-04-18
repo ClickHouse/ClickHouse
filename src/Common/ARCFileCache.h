@@ -20,9 +20,9 @@
 namespace DB
 {
 
-/// 
+///
 /// ARCFileCache
-/// The ARC algorithm implemented according to LRUFileCache, which can effectively 
+/// The ARC algorithm implemented according to LRUFileCache, which can effectively
 /// avoid the problem of cache pool pollution caused by one-time large-scale cache flushing.
 ///
 class ARCFileCache final : public IFileCache
@@ -41,6 +41,16 @@ public:
     void initialize() override;
 
     void remove(const Key & key) override;
+
+    void tryRemoveAll() override;
+
+    std::vector<String> tryGetCachePaths(const Key & key) override;
+
+    FileSegmentsHolder get(const Key & key, size_t offset, size_t size) override;
+
+    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
+
+    FileSegments getSnapshot() const override;
 
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
@@ -158,6 +168,13 @@ private:
     bool canMoveCellToHighQueue(const FileSegmentCell & cell);
 
     bool tryMoveLowToHigh(const FileSegmentCell & cell, std::lock_guard<std::mutex> & cache_lock);
+
+    void fillHolesWithEmptyFileSegments(
+        FileSegments & file_segments,
+        const Key & key,
+        const FileSegment::Range & range,
+        bool fill_with_detached_file_segments,
+        std::lock_guard<std::mutex> & cache_lock);
 
 public:
     struct Stat
