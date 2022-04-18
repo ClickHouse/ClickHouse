@@ -17,6 +17,8 @@
 #include <tuple>
 #include <utility> /// pair
 
+#include <fmt/format.h>
+
 #include "config_tools.h"
 
 #include <Common/StringUtils/StringUtils.h>
@@ -405,6 +407,21 @@ void setUserAndGroup()
     }
 }
 
+
+void checkHarmfulEnvironmentVariables()
+{
+    /// The list is a selection from "man ld-linux". And one variable that is Mac OS X specific.
+    /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
+    for (const auto * var : {"LD_PRELOAD", "LD_LIBRARY_PATH", "LD_ORIGIN_PATH", "LD_AUDIT", "LD_DYNAMIC_WEAK", "DYLD_INSERT_LIBRARIES"})
+    {
+        if (const char * value = getenv(var); value && value[0])
+        {
+            std::cerr << fmt::format("Environment variable {} is set to {}. It can compromise security.\n", var, value);
+            _exit(1);
+        }
+    }
+}
+
 }
 
 
@@ -435,6 +452,9 @@ int main(int argc_, char ** argv_)
         std::cerr << DB::getCurrentExceptionMessage("setUserAndGroup", false) << '\n';
         return 1;
     }
+
+    checkHarmfulEnvironmentVariables();
+
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
