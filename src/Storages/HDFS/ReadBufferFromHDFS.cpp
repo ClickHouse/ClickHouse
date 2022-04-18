@@ -106,10 +106,11 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         if (whence != SEEK_SET)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Only SEEK_SET is supported");
 
-        file_offset = file_offset_;
-        int seek_status = hdfsSeek(fs.get(), fin, file_offset);
+        int seek_status = hdfsSeek(fs.get(), fin, file_offset_);
         if (seek_status != 0)
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
+        file_offset = file_offset_;
+        resetWorkingBuffer();
         return file_offset;
     }
 
@@ -137,7 +138,7 @@ std::optional<size_t> ReadBufferFromHDFS::getTotalSize()
 bool ReadBufferFromHDFS::nextImpl()
 {
     impl->position() = impl->buffer().begin() + offset();
-    auto result = impl->nextImpl();
+    auto result = impl->next();
 
     if (result)
         BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
