@@ -15,37 +15,32 @@
 #include <base/logger_useful.h>
 #include <Common/FileSegment.h>
 #include "FileCache.h"
-#include "FileCacheSettings.h"
 #include "FileCache_fwd.h"
 
 namespace DB
 {
 
-///
+/// 
 /// ARCFileCache
-/// The ARC algorithm implemented according to LRUFileCache, which can effectively
+/// The ARC algorithm implemented according to LRUFileCache, which can effectively 
 /// avoid the problem of cache pool pollution caused by one-time large-scale cache flushing.
 ///
 class ARCFileCache final : public IFileCache
 {
 public:
-    ARCFileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
+    ARCFileCache(
+        const String & cache_base_path_,
+        size_t max_size_,
+        double size_ratio_ = 0.20,
+        int move_threshold_ = 4,
+        size_t max_element_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS,
+        size_t max_file_segment_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE);
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
 
     void initialize() override;
 
     void remove(const Key & key) override;
-
-    void tryRemoveAll() override;
-
-    std::vector<String> tryGetCachePaths(const Key & key) override;
-
-    FileSegmentsHolder get(const Key & key, size_t offset, size_t size) override;
-
-    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
-
-    FileSegments getSnapshot() const override;
 
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
@@ -122,6 +117,8 @@ private:
 
     CachedFiles files;
 
+    double size_ratio;
+    size_t min_low_space_size;
     size_t max_high_space_size;
     size_t max_high_elem_size;
     size_t move_threshold;
@@ -142,7 +139,7 @@ private:
 
     bool tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock) override;
 
-    bool tryReserve(LRUQueueDescriptor & desc, const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
+    bool tryReserve(LRUQueueDescriptor & queue, const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 
     void remove(Key key, size_t offset, std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock) override;
 
@@ -156,19 +153,11 @@ private:
 
     void loadCacheInfoIntoMemory();
 
-    FileSegments
-    splitRangeIntoCells(const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
+    FileSegments splitRangeIntoEmptyCells(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 
-    bool canMoveCellToHighQueue(const FileSegmentCell & cell) const;
+    bool canMoveCellToHighQueue(const FileSegmentCell & cell);
 
     bool tryMoveLowToHigh(const FileSegmentCell & cell, std::lock_guard<std::mutex> & cache_lock);
-
-    void fillHolesWithEmptyFileSegments(
-        FileSegments & file_segments,
-        const Key & key,
-        const FileSegment::Range & range,
-        bool fill_with_detached_file_segments,
-        std::lock_guard<std::mutex> & cache_lock);
 
 public:
     struct Stat
@@ -192,8 +181,6 @@ public:
     Stat getStat();
 
     String dumpStructure(const Key & key_) override;
-
-    void assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock);
 };
 
 }
