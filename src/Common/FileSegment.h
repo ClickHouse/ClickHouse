@@ -1,12 +1,15 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
-#include <IO/WriteBufferFromFile.h>
+#include <list>
 #include <Core/Types.h>
 #include <IO/SeekableReadBuffer.h>
-#include <list>
+#include <IO/WriteBufferFromFile.h>
+#include <boost/noncopyable.hpp>
 
-namespace Poco { class Logger; }
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -20,8 +23,9 @@ using FileSegments = std::list<FileSegmentPtr>;
 
 class FileSegment : boost::noncopyable
 {
-friend class LRUFileCache;
-friend struct FileSegmentsHolder;
+    friend class LRUFileCache;
+    friend class ARCFileCache;
+    friend struct FileSegmentsHolder;
 
 public:
     using Key = UInt128;
@@ -62,9 +66,7 @@ public:
         SKIP_CACHE,
     };
 
-    FileSegment(
-        size_t offset_, size_t size_, const Key & key_,
-        IFileCache * cache_, State download_state_);
+    FileSegment(size_t offset_, size_t size_, const Key & key_, IFileCache * cache_, State download_state_);
 
     State state() const;
 
@@ -76,7 +78,7 @@ public:
         size_t left;
         size_t right;
 
-        Range(size_t left_, size_t right_) : left(left_), right(right_) {}
+        Range(size_t left_, size_t right_) : left(left_), right(right_) { }
 
         bool operator==(const Range & other) const { return left == other.left && right == other.right; }
 
@@ -165,8 +167,8 @@ private:
 
 struct FileSegmentsHolder : private boost::noncopyable
 {
-    explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
-    FileSegmentsHolder(FileSegmentsHolder && other) : file_segments(std::move(other.file_segments)) {}
+    explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) { }
+    FileSegmentsHolder(FileSegmentsHolder && other) : file_segments(std::move(other.file_segments)) { }
 
     ~FileSegmentsHolder()
     {
