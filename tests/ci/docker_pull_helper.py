@@ -76,4 +76,5 @@ def get_images_with_versions(
 
 
 def get_image_with_version(reports_path, image, pull=True, version=None):
+    logging.info("Looking for images file in %s", reports_path)
     return get_images_with_versions(reports_path, [image], pull, version=version)[0]
