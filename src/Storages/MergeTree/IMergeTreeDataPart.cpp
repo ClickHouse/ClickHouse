@@ -1526,11 +1526,11 @@ catch (...)
         throw;
 }
 
-std::pair<bool, std::vector<std::string>> IMergeTreeDataPart::canRemovePart() const
+std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
 {
     /// NOTE: It's needed for zero-copy replication
     if (force_keep_shared_data)
-        return std::make_pair(false, std::vector<std::string>{});
+        return std::make_pair(false, NameSet{});
 
     return storage.unlockSharedData(*this);
 }
@@ -1595,7 +1595,7 @@ void IMergeTreeDataPart::remove() const
         LOG_WARNING(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
         try
         {
-            disk->removeSharedRecursive(fs::path(to) / "", !can_remove);
+            disk->removeSharedRecursive(fs::path(to) / "", !can_remove, files_not_to_remove);
         }
         catch (...)
         {
@@ -1630,7 +1630,7 @@ void IMergeTreeDataPart::remove() const
     if (checksums.empty())
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(to) / "", !can_remove);
+        disk->removeSharedRecursive(fs::path(to) / "", !can_remove, files_not_to_remove);
     }
     else
     {
@@ -1659,7 +1659,7 @@ void IMergeTreeDataPart::remove() const
             request.emplace_back(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, true);
             request.emplace_back(fs::path(to) / TXN_VERSION_METADATA_FILE_NAME, true);
 
-            disk->removeSharedFiles(request, !can_remove);
+            disk->removeSharedFiles(request, !can_remove, files_not_to_remove);
             disk->removeDirectory(to);
         }
         catch (...)
@@ -1668,7 +1668,7 @@ void IMergeTreeDataPart::remove() const
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(fs::path(to) / "", !can_remove);
+            disk->removeSharedRecursive(fs::path(to) / "", !can_remove, files_not_to_remove);
         }
     }
 }
@@ -1689,7 +1689,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
             "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
             fullPath(disk, to));
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
+        disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data, {});
     }
     else
     {
@@ -1713,8 +1713,8 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
             request.emplace_back(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, true);
             request.emplace_back(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, true);
 
-            disk->removeSharedFiles(request, keep_shared_data);
-            disk->removeSharedRecursive(to, keep_shared_data);
+            disk->removeSharedFiles(request, keep_shared_data, {});
+            disk->removeSharedRecursive(to, keep_shared_data, {});
         }
         catch (...)
         {
@@ -1722,7 +1722,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
+            disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data, {});
          }
      }
  }

@@ -236,12 +236,12 @@ public:
     /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    std::pair<bool, std::vector<std::string>> unlockSharedData(const IMergeTreeDataPart & part) const override;
+    std::pair<bool, NameSet> unlockSharedData(const IMergeTreeDataPart & part) const override;
 
     /// Unlock shared data part in zookeeper by part id
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    static std::pair<bool, std::vector<std::string>> unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
+    static std::pair<bool, NameSet> unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
         DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
         const String & zookeeper_path_old);
 
@@ -756,7 +756,7 @@ private:
     static Strings getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
         const String & part_name, const String & zookeeper_path_old);
 
-    static void createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false, const std::string & path_to_set = "", const std::vector<std::string> & hardlinked_files = {});
+    static void createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false, const std::string & path_to_set = "", const NameSet & hardlinked_files = {});
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed) override;
 

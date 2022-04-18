@@ -107,15 +107,16 @@ public:
 
     void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
 
-    void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
+    void removeRecursive(const String & path) override { removeSharedRecursive(path, false, {}); }
+
 
     void removeSharedFile(const String & path, bool delete_metadata_only) override;
 
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedFiles(const RemoveBatchRequest & files, bool delete_metadata_only) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only) override;
 
-    void removeSharedRecursive(const String & path, bool delete_metadata_only) override;
+    void removeSharedRecursive(const String & path, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
@@ -170,9 +171,9 @@ protected:
     FileCachePtr cache;
 
 private:
-    void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
+    void removeMetadata(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
 
-    void removeMetadataRecursive(const String & path, std::vector<String> & paths_to_remove);
+    void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
 
     bool tryReserve(UInt64 bytes);
 

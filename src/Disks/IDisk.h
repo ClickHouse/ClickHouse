@@ -197,7 +197,7 @@ public:
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     /// Differs from removeRecursive for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedRecursive(const String & path, bool) { removeRecursive(path); }
+    virtual void removeSharedRecursive(const String & path, bool, const NameSet &) { removeRecursive(path); }
 
     /// Remove file or directory if it exists.
     /// Differs from removeFileIfExists for S3/HDFS disks
@@ -237,14 +237,15 @@ public:
 
     /// Batch request to remove multiple files.
     /// May be much faster for blob storage.
-    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only)
     {
         for (const auto & file : files)
         {
+            bool keep_file = keep_all_batch_metadata || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
             if (file.if_exists)
-                removeSharedFileIfExists(file.path, keep_in_remote_fs);
+                removeSharedFileIfExists(file.path, keep_file);
             else
-                removeSharedFile(file.path, keep_in_remote_fs);
+                removeSharedFile(file.path, keep_file);
         }
     }
 

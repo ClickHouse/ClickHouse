@@ -7369,14 +7369,14 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
     }
 }
 
-std::pair<bool, std::vector<std::string>> StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part) const
+std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part) const
 {
     if (!part.volume || !part.isStoredOnDisk())
-        return std::make_pair(true, std::vector<std::string>{});
+        return std::make_pair(true, NameSet{});
 
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
-        return std::make_pair(true, std::vector<std::string>{});
+        return std::make_pair(true, NameSet{});
 
     /// If part is temporary refcount file may be absent
     auto ref_count_path = fs::path(part.getFullRelativePath()) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;
@@ -7384,19 +7384,19 @@ std::pair<bool, std::vector<std::string>> StorageReplicatedMergeTree::unlockShar
     {
         auto ref_count = disk->getRefCount(ref_count_path);
         if (ref_count > 0) /// Keep part shard info for frozen backups
-            return std::make_pair(false, std::vector<std::string>{});
+            return std::make_pair(false, NameSet{});
     }
     else
     {
         /// Temporary part with some absent file cannot be locked in shared mode
-        return std::make_pair(true, std::vector<std::string>{});
+        return std::make_pair(true, NameSet{});
     }
 
     return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, disk, getZooKeeper(), *getSettings(), log,
         zookeeper_path);
 }
 
-std::pair<bool, std::vector<std::string>> StorageReplicatedMergeTree::unlockSharedDataByID(
+std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         String part_id, const String & table_uuid, const String & part_name,
         const String & replica_name_, DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
         Poco::Logger * logger, const String & zookeeper_path_old)
@@ -7406,13 +7406,14 @@ std::pair<bool, std::vector<std::string>> StorageReplicatedMergeTree::unlockShar
     Strings zc_zookeeper_paths = getZeroCopyPartPath(settings, disk->getType(), table_uuid, part_name, zookeeper_path_old);
 
     bool part_has_no_more_locks = true;
-    std::vector<std::string> files_not_to_remove;
+    NameSet files_not_to_remove;
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
         files_not_to_remove.clear();
-        auto content = zookeeper_ptr->get(zc_zookeeper_path);
-        boost::split(files_not_to_remove, content, boost::is_any_of("\n "));
+        auto files_not_to_remove_str = zookeeper_ptr->get(zc_zookeeper_path);
+        boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
+
         String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
 
         /// Delete our replica node for part from zookeeper (we are not interested in it anymore)
@@ -7848,7 +7849,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 }
 
 
-void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode, bool replace_existing_lock, const std::string & path_to_set, const std::vector<std::string> & hardlinked_files)
+void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode, bool replace_existing_lock, const std::string & path_to_set, const NameSet & hardlinked_files)
 {
     /// In rare case other replica can remove path between createAncestors and createIfNotExists
     /// So we make up to 5 attempts
@@ -8025,6 +8026,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
     bool keep_shared = false;
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+    NameSet files_not_to_remove;
 
     fs::path checksums = fs::path(path) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;
     if (disk->exists(checksums))
@@ -8033,7 +8035,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
         {
             String id = disk->getUniqueId(checksums);
             bool can_remove = false;
-            std::tie(can_remove, std::ignore) = StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
+            std::tie(can_remove, files_not_to_remove) = StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
                 detached_replica_name, disk, zookeeper, getContext()->getReplicatedMergeTreeSettings(), log,
                 detached_zookeeper_path);
 
@@ -8043,7 +8045,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
             keep_shared = true;
     }
 
-    disk->removeSharedRecursive(path, keep_shared);
+    disk->removeSharedRecursive(path, keep_shared, files_not_to_remove);
 
     return keep_shared;
 }

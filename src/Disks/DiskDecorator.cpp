@@ -151,14 +151,14 @@ void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
     delegate->removeSharedFile(path, keep_s3);
 }
 
-void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only)
 {
-    delegate->removeSharedFiles(files, keep_in_remote_fs);
+    delegate->removeSharedFiles(files, keep_all_batch_metadata, file_names_remove_metadata_only);
 }
 
-void DiskDecorator::removeSharedRecursive(const String & path, bool keep_s3)
+void DiskDecorator::removeSharedRecursive(const String & path, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only)
 {
-    delegate->removeSharedRecursive(path, keep_s3);
+    delegate->removeSharedRecursive(path, keep_all_batch_metadata, file_names_remove_metadata_only);
 }
 
 void DiskDecorator::setLastModified(const String & path, const Poco::Timestamp & timestamp)
