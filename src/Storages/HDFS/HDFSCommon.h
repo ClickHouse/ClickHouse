@@ -76,7 +76,7 @@ private:
     // hdfs builder relies on an external config data storage
     std::pair<String, String>& keep(const String & k, const String & v)
     {
-        return config_stor.emplace_back(std::make_pair(k, v));
+        return config_stor.emplace_back(std::pair(k, v));
     }
 
     hdfsBuilder * hdfs_builder;

@@ -782,10 +782,10 @@ static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPt
     auto [field, type] = evaluateConstantExpression(node, context);
 
     if (const auto * type_interval = typeid_cast<const DataTypeInterval *>(type.get()))
-        return std::make_pair(std::move(field), type_interval->getKind());
+        return {std::move(field), type_interval->getKind()};
 
     if (isColumnedAsNumber(type))
-        return std::make_pair(std::move(field), std::nullopt);
+        return {std::move(field), std::nullopt};
 
     throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 }

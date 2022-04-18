@@ -44,7 +44,7 @@ public:
 
 
             Value value(std::forward<Args>(args)...);
-            auto node = std::make_pair(key, std::move(value));
+            auto node = std::pair(key, std::move(value));
 
             list.push_back(std::move(node));
 
@@ -52,7 +52,7 @@ public:
 
             hash_map[key] = inserted_iterator;
 
-            return std::make_pair(&inserted_iterator->second, true);
+            return std::pair(&inserted_iterator->second, true);
         }
         else
         {
@@ -61,7 +61,7 @@ public:
             list.splice(list.end(), list, iterator_in_list_to_update);
             iterator_in_list_to_update = --list.end();
 
-            return std::make_pair(&iterator_in_list_to_update->second, false);
+            return std::pair(&iterator_in_list_to_update->second, false);
         }
     }
 

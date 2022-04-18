@@ -541,7 +541,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
     if (!keeper_dispatcher->putRequest(request, session_id))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
-    return std::make_pair(opnum, xid);
+    return {opnum, xid};
 }
 
 void KeeperTCPHandler::packageSent()

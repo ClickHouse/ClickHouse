@@ -34,7 +34,7 @@ namespace ErrorCodes
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
-        return std::make_pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
+        return {literal->value, applyVisitor(FieldToDataType(), literal->value)};
 
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();
@@ -69,7 +69,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Element of set in IN, VALUES or LIMIT or aggregate function parameter is not a constant expression (result column is not const): {}", name);
 
-    return std::make_pair(result_column[0], result.type);
+    return {result_column[0], result.type};
 }
 
 

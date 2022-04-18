@@ -1255,7 +1255,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     continue;
 
                 if (!startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
-                    disk_parts.emplace_back(std::make_pair(it->name(), disk_ptr));
+                    disk_parts.emplace_back(std::pair(it->name(), disk_ptr));
                 else if (it->name() == MergeTreeWriteAheadLog::DEFAULT_WAL_FILE_NAME && settings->in_memory_parts_enable_wal)
                 {
                     std::unique_lock lock(wal_init_lock);
@@ -1814,7 +1814,7 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
 
     auto is_range_on_disk = [&block_numbers_on_disk](Int64 min_block, Int64 max_block)
     {
-        auto lower = std::lower_bound(block_numbers_on_disk.begin(), block_numbers_on_disk.end(), std::make_pair(min_block, Int64(-1L)));
+        auto lower = std::lower_bound(block_numbers_on_disk.begin(), block_numbers_on_disk.end(), std::pair(min_block, Int64(-1L)));
         if (lower != block_numbers_on_disk.end() && min_block >= lower->first && max_block <= lower->second)
             return true;
 

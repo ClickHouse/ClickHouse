@@ -702,15 +702,15 @@ private:
                 continue;
 
             if (unlikely(now > cell.deadline + max_lifetime_seconds))
-                return std::make_pair(KeyState::not_found, cell_place_value);
+                return {KeyState::not_found, cell_place_value};
 
             if (unlikely(now > cell.deadline))
-                return std::make_pair(KeyState::expired, cell_place_value);
+                return {KeyState::expired, cell_place_value};
 
-            return std::make_pair(KeyState::found, cell_place_value);
+            return {KeyState::found, cell_place_value};
         }
 
-        return std::make_pair(KeyState::not_found, place_value & size_overlap_mask);
+        return {KeyState::not_found, place_value & size_overlap_mask};
     }
 
     inline size_t getCellIndexForInsert(const KeyType & key) const

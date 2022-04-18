@@ -305,7 +305,7 @@ namespace detail
 
             if (iter == http_header_entries.end())
             {
-                http_header_entries.emplace_back(std::make_pair("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING)));
+                http_header_entries.emplace_back(std::pair("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING)));
             }
 
             if (!delay_initialization)

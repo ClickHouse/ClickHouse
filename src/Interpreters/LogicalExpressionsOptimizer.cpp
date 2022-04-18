@@ -149,7 +149,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
         {
             if (from_node != nullptr)
             {
-                auto res = or_parent_map.insert(std::make_pair(function, ParentNodes{from_node}));
+                auto res = or_parent_map.insert({function, ParentNodes{from_node}});
                 if (!res.second)
                     throw Exception("LogicalExpressionsOptimizer: parent node information is corrupted",
                         ErrorCodes::LOGICAL_ERROR);

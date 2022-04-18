@@ -267,7 +267,7 @@ MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(const String & filename)
         return {};
     }
 
-    return std::make_pair(min_block, max_block);
+    return std::pair(min_block, max_block);
 }
 
 String MergeTreeWriteAheadLog::ActionMetadata::toJSON() const

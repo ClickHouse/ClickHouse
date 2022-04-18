@@ -95,7 +95,7 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
     auto table_id = table->getStorageID();
     assertDetachedTableNotInUse(table_id.uuid);
     DatabaseOrdinary::attachTableUnlocked(name, table, lock);
-    table_name_to_path.emplace(std::make_pair(name, relative_table_path));
+    table_name_to_path.emplace(std::pair(name, relative_table_path));
 }
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)

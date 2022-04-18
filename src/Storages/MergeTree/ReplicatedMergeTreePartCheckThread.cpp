@@ -279,7 +279,7 @@ std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLo
     if (!part)
         part = storage.getActiveContainingPart(part_name);
 
-    return std::make_pair(exists_in_zookeeper, part);
+    return {exists_in_zookeeper, part};
 }
 
 CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)

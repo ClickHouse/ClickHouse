@@ -176,7 +176,7 @@ private:
             }
             else if (event_idx == 0)
             {
-                events_timestamp[0] = std::make_pair(timestamp, timestamp);
+                events_timestamp[0] = std::pair(timestamp, timestamp);
                 first_event = true;
             }
             else if (strict_deduplication && events_timestamp[event_idx].has_value())
@@ -199,7 +199,7 @@ private:
                     time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
                 if (time_matched)
                 {
-                    events_timestamp[event_idx] = std::make_pair(first_timestamp, timestamp);
+                    events_timestamp[event_idx] = std::pair(first_timestamp, timestamp);
                     if (event_idx + 1 == events_size)
                         return events_size;
                 }

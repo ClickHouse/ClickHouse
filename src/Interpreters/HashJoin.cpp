@@ -1146,7 +1146,7 @@ void addFoundRowAll(
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            if (!known_rows.isKnown(std::make_pair(it->block, it->row_num)))
+            if (!known_rows.isKnown(std::pair(it->block, it->row_num)))
             {
                 added.appendFromBlock<false>(*it->block, it->row_num);
                 ++current_offset;
@@ -1154,7 +1154,7 @@ void addFoundRowAll(
                 {
                     new_known_rows_ptr = std::make_unique<std::vector<KnownRowsHolder<true>::Type>>();
                 }
-                new_known_rows_ptr->push_back(std::make_pair(it->block, it->row_num));
+                new_known_rows_ptr->push_back({it->block, it->row_num});
                 if (used_flags)
                 {
                     used_flags->JoinStuff::JoinUsedFlags::setUsedOnce<true, multiple_disjuncts>(

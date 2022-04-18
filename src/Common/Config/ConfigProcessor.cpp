@@ -104,7 +104,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
             subst_name_pos != ConfigProcessor::SUBSTITUTION_ATTRS.end())
             continue;
         std::string value = node->nodeValue();
-        attrs_kv.push_back(std::make_pair(name, value));
+        attrs_kv.push_back({name, value});
     }
     ::sort(attrs_kv.begin(), attrs_kv.end());
 
