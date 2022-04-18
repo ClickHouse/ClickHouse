@@ -14,6 +14,7 @@ cmake_push_check_state ()
 option (ENABLE_SSSE3 "Use SSSE3 instructions on x86_64" 1)
 option (ENABLE_SSE41 "Use SSE4.1 instructions on x86_64" 1)
 option (ENABLE_SSE42 "Use SSE4.2 instructions on x86_64" 1)
+option (ENABLE_AES "Use AES instructions on x86_64" 1)
 option (ENABLE_PCLMULQDQ "Use pclmulqdq instructions on x86_64" 1)
 option (ENABLE_POPCNT "Use popcnt instructions on x86_64" 1)
 option (ENABLE_AVX "Use AVX instructions on x86_64" 0)
@@ -163,6 +164,20 @@ else ()
         }
     " HAVE_BMI)
     if (HAVE_BMI AND ENABLE_BMI)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    endif ()
+
+    set (TEST_FLAG "-maes")
+    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+    check_cxx_source_compiles("
+        #include <wmmintrin.h>
+        int main() {
+            auto a = _mm_aesenc_si128(__m128i(), __m128i());
+            (void)a;
+            return 0;
+        }
+    " HAVE_AES)
+    if (HAVE_AES AND ENABLE_AES)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
 
