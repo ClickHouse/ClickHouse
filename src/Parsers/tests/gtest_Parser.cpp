@@ -53,7 +53,7 @@ TEST_P(ParserTest, parseQuery)
         {
             EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
         }
-        else 
+        else
         {
             ASTPtr ast;
             ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
