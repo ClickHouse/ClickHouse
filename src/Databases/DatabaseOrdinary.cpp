@@ -12,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -106,6 +107,7 @@ void DatabaseOrdinary::loadStoredObjects(
         const auto & name = name_with_path_and_query.first;
         const auto & path = name_with_path_and_query.second.path;
         const auto & ast = name_with_path_and_query.second.ast;
+        FunctionNameNormalizer().visit(ast.get());
         const auto & create_query = ast->as<const ASTCreateQuery &>();
 
         if (create_query.is_dictionary)
@@ -128,6 +130,7 @@ void DatabaseOrdinary::loadStoredObjects(
         const auto & name = name_with_path_and_query.first;
         const auto & path = name_with_path_and_query.second.path;
         const auto & ast = name_with_path_and_query.second.ast;
+        FunctionNameNormalizer().visit(ast.get());
         const auto & create_query = ast->as<const ASTCreateQuery &>();
 
         if (!create_query.is_dictionary)
@@ -167,6 +170,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
             auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
+                FunctionNameNormalizer().visit(ast.get());
                 auto * create_query = ast->as<ASTCreateQuery>();
                 create_query->setDatabase(database_name);
 
@@ -220,6 +224,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore)
 {
     assert(name.database == database_name);
+    FunctionNameNormalizer().visit(ast.get());
     const auto & create_query = ast->as<const ASTCreateQuery &>();
 
     tryAttachTable(
