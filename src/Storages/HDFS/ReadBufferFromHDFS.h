@@ -42,7 +42,30 @@ public:
     size_t getFileOffsetOfBufferEnd() const override;
 
 private:
+    class StatusGuard
+    {
+    public:
+        StatusGuard(ReadBufferFromHDFS * buf_, const String & action_)
+            : buf(buf_)
+            , action(action_)
+        {
+            std::cout << "before " << buf->getStatus(action) << std::endl;
+        }
+
+        ~StatusGuard()
+        {
+            std::cout << "after " << buf->getStatus(action) << std::endl;
+        }
+    private:
+        ReadBufferFromHDFS * buf;
+        String action;
+    };
+
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
+
+    String getId() const { return std::to_string(reinterpret_cast<std::uintptr_t>(this)); }
+    String getStatus(const String & action);
+    std::mutex mutex;
 };
 }
 

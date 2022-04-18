@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
 ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
@@ -110,6 +111,8 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         int seek_status = hdfsSeek(fs.get(), fin, file_offset);
         if (seek_status != 0)
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
+        
+        resetWorkingBuffer();
         return file_offset;
     }
 
@@ -119,6 +122,25 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     }
 };
 
+String ReadBufferFromHDFS::getStatus(const String & action)
+{
+    String res;
+    res += "action:" + action;
+    res += ",";
+    res += "obj:" + getId();
+    res += ",";
+    res += "path:" + impl->hdfs_file_path;
+    res += ",";
+    res += "impl_offset:" + std::to_string(impl->offset());
+    res += ",";
+    res += "impl_working_buffer_size:" + std::to_string(impl->buffer().size());
+    res += ",";
+    res += "offset:" + std::to_string(offset());
+    res += ",";
+    res += "working_buffer_size:" + std::to_string(buffer().size());
+    return res;
+}
+
 ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_uri_,
         const String & hdfs_file_path_,
@@ -127,15 +149,19 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
     : SeekableReadBufferWithSize(nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_, read_until_position_))
 {
+    std::cout << getStatus(__FUNCTION__) << std::endl;
 }
 
 std::optional<size_t> ReadBufferFromHDFS::getTotalSize()
 {
+    std::cout << getStatus(__FUNCTION__) << std::endl;
     return impl->getTotalSize();
 }
 
 bool ReadBufferFromHDFS::nextImpl()
 {
+    std::lock_guard lock(mutex);
+    StatusGuard guard{this, __FUNCTION__};
     impl->position() = impl->buffer().begin() + offset();
     auto result = impl->next();
 
@@ -148,6 +174,8 @@ bool ReadBufferFromHDFS::nextImpl()
 
 off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
 {
+    std::lock_guard lock(mutex);
+    StatusGuard guard{this, __FUNCTION__};
     if (whence != SEEK_SET)
         throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
@@ -173,6 +201,7 @@ off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
 
 off_t ReadBufferFromHDFS::getPosition()
 {
+    std::cout << getStatus(__FUNCTION__) << std::endl;
     return impl->getPosition() - available();
 }
 
