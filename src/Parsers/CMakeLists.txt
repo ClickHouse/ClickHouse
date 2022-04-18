@@ -9,6 +9,8 @@ add_headers_and_sources(mysql_compatibility ./MySQLCompatibility/ANTLR)
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})
 add_library(mysql_compatibility ${mysql_compatibility_headers} ${mysql_compatibility_sources})
 
+target_compile_options(mysql_compatibility PRIVATE -Wno-everything)
+
 target_link_libraries(mysql_compatibility PUBLIC antlr4-runtime)
 target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access mysql_compatibility)
 
