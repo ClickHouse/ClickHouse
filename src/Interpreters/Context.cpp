@@ -437,7 +437,7 @@ struct ContextSharedPart
 #endif
         }
 
-        /// Can be removed w/o context lock
+        /// Can be removed without context lock
         delete_system_logs.reset();
         delete_embedded_dictionaries.reset();
         delete_external_dictionaries_loader.reset();
