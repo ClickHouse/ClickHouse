@@ -13,6 +13,7 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/CpuId.h>
 #include <xxhash.h>
 
 #ifdef __AES__
