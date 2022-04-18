@@ -159,8 +159,8 @@ void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, 
     {
         if (size)
         {
-            key_column.cut(0, offsets.back());
-            value_column.cut(0, offsets.back());
+            nested_tuple.getColumnPtr(0) = key_column.cut(0, offsets.back());
+            nested_tuple.getColumnPtr(1) = value_column.cut(0, offsets.back());
         }
         throw;
     }
