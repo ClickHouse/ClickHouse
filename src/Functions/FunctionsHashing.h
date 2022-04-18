@@ -5,7 +5,7 @@
 #include <metrohash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
-#include <aquahash.h>
+
 
 #include "config_functions.h"
 #include "config_core.h"
@@ -14,6 +14,10 @@
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <xxhash.h>
+
+#ifdef __AES__
+#    include <aquahash.h>
+#endif
 
 #if USE_SSL
 #    include <openssl/md4.h>
@@ -1370,11 +1374,17 @@ private:
     }
 };
 
+#ifdef __AES__
 struct ImplAquaHash128 {
     static constexpr auto name = "aquaHash128";
     using ReturnType = UInt128;
 
     static UInt128 apply(const char *s, const size_t len) {
+
+        if (!DB::Cpu::CpuFlagsCache::have_AES) {
+            throw Exception("Aquahash is not available in system without AES", ErrorCodes::NOT_IMPLEMENTED);
+        }
+
         union {
             __m128i m128;
             UInt128 u128;
@@ -1395,7 +1405,7 @@ struct ImplAquaHash128 {
 
     static constexpr bool use_int_hash_for_pods = false;
 };
-
+#endif
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
@@ -1433,6 +1443,8 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 
+#ifdef __AES__
 using FunctionAquaHash128 = FunctionAnyHash<ImplAquaHash128>;
+#endif
 
 }

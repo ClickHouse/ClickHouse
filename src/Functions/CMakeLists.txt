@@ -34,6 +34,10 @@ if (TARGET OpenSSL::Crypto)
     target_link_libraries(clickhouse_functions PUBLIC OpenSSL::Crypto)
 endif()
 
+if (TARGET ch_contrib::aquahash)
+    target_link_libraries(clickhouse_functions PUBLIC ch_contrib::aquahash)
+endif()
+
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
     OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
     OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")

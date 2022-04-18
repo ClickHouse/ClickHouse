@@ -1,3 +1,7 @@
+if (NOT HAVE_AES)
+    return()
+endif ()
+
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aquahash")
 
 add_library(aquahash ${LIBRARY_DIR}/aquahash.h)
