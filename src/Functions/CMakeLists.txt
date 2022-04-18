@@ -33,7 +33,7 @@ if (TARGET OpenSSL::Crypto)
     target_link_libraries(clickhouse_functions PUBLIC OpenSSL::Crypto)
 endif()
 
-if (TARGET ch_contrib::aquahash)
+if (USE_AQUAHASH)
     target_link_libraries(clickhouse_functions PUBLIC ch_contrib::aquahash)
 endif()
 

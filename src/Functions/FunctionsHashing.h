@@ -16,7 +16,7 @@
 #include <Common/CpuId.h>
 #include <xxhash.h>
 
-#ifdef __AES__
+#if USE_AQUAHASH
 #    include <aquahash.h>
 #endif
 
@@ -1375,7 +1375,7 @@ private:
     }
 };
 
-#ifdef __AES__
+#if USE_AQUAHASH
 struct ImplAquaHash128 {
     static constexpr auto name = "aquaHash128";
     using ReturnType = UInt128;
@@ -1444,7 +1444,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 
-#ifdef __AES__
+#if USE_AQUAHASH
 using FunctionAquaHash128 = FunctionAnyHash<ImplAquaHash128>;
 #endif
 
