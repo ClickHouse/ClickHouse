@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 
@@ -359,7 +360,16 @@ void IDiskRemote::getRemotePathsRecursive(const String & local_path, std::vector
 {
     if (metadata_disk->isFile(local_path))
     {
-        paths_map.emplace_back(local_path, getRemotePaths(local_path));
+        try
+        {
+            paths_map.emplace_back(local_path, getRemotePaths(local_path));
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+                return;
+            throw;
+        }
     }
     else
     {
