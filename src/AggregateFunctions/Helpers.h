@@ -4,32 +4,32 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #define FOR_BASIC_NUMERIC_TYPES(M, ...) \
-    M(UInt8, ##__VA_ARGS__) \
-    M(UInt16, ##__VA_ARGS__) \
-    M(UInt32, ##__VA_ARGS__) \
-    M(UInt64, ##__VA_ARGS__) \
-    M(Int8, ##__VA_ARGS__) \
-    M(Int16, ##__VA_ARGS__) \
-    M(Int32, ##__VA_ARGS__) \
-    M(Int64, ##__VA_ARGS__) \
-    M(Float32, ##__VA_ARGS__) \
-    M(Float64, ##__VA_ARGS__)
+    M(UInt8 __VA_OPT__(, ) __VA_ARGS__) \
+    M(UInt16 __VA_OPT__(, ) __VA_ARGS__) \
+    M(UInt32 __VA_OPT__(, ) __VA_ARGS__) \
+    M(UInt64 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Int8 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Int16 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Int32 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Int64 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Float32 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Float64 __VA_OPT__(, ) __VA_ARGS__)
 
 #define FOR_NUMERIC_TYPES(M, ...) \
-    M(UInt8, ##__VA_ARGS__) \
-    M(UInt16, ##__VA_ARGS__) \
-    M(UInt32, ##__VA_ARGS__) \
-    M(UInt64, ##__VA_ARGS__) \
-    M(UInt128, ##__VA_ARGS__) \
-    M(UInt256, ##__VA_ARGS__) \
-    M(Int8, ##__VA_ARGS__) \
-    M(Int16, ##__VA_ARGS__) \
-    M(Int32, ##__VA_ARGS__) \
-    M(Int64, ##__VA_ARGS__) \
-    M(Int128, ##__VA_ARGS__) \
-    M(Int256, ##__VA_ARGS__) \
-    M(Float32, ##__VA_ARGS__) \
-    M(Float64, ##__VA_ARGS__)
+    M(UInt8 __VA_OPT__(, ) __VA_ARGS__) \
+    M(UInt16 __VA_OPT__(, ) __VA_ARGS__) \
+    M(UInt32 __VA_OPT__(, ) __VA_ARGS__) \
+    M(UInt64 __VA_OPT__(, ) __VA_ARGS__) \
+    M(UInt128 __VA_OPT__(, ) __VA_ARGS__) \
+    M(UInt256 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Int8 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Int16 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Int32 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Int64 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Int128 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Int256 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Float32 __VA_OPT__(, ) __VA_ARGS__) \
+    M(Float64 __VA_OPT__(, ) __VA_ARGS__)
 
 namespace DB
 {

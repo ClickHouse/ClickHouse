@@ -12,8 +12,6 @@
 #include "base/types.h"
 
 
-#define AGGREGATE_FUNCTION_GRAPH_MAX_SIZE 0xFFFFF
-
 namespace DB
 {
 

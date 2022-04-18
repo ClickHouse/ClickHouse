@@ -2,7 +2,6 @@
 
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/registerGraphAggregateFunctions.h>
 
 namespace DB
 {
@@ -14,7 +13,7 @@ void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory &);
-void registerAggregateFunctionGraphDiameter(AggregateFunctionFactory &);
+void registerGraphAggregateFunctions(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);

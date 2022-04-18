@@ -67,8 +67,8 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception("Parameter for aggregate function " + name + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
 
-        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
-            (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() <= 0)
+            || (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
             throw Exception("Parameter for aggregate function " + name + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
 
         limit_size = true;
@@ -99,8 +99,8 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception("Parameter for aggregate function " + name + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
 
-        if ((type == Field::Types::Int64 && parameters[i].get<Int64>() < 0) ||
-                (type == Field::Types::UInt64 && parameters[i].get<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[i].get<Int64>() <= 0)
+            || (type == Field::Types::UInt64 && parameters[i].get<UInt64>() == 0))
             throw Exception("Parameter for aggregate function " + name + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
 
         return parameters[i].get<UInt64>();
