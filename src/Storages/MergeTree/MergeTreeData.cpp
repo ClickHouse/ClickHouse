@@ -3227,9 +3227,10 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr query_context) const
 {
     const auto settings = getSettings();
+    const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getPartsCount();
     if (parts_count_in_total >= settings->max_parts_in_total)
     {
@@ -3252,8 +3253,11 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
         }
         k_inactive = ssize_t(inactive_parts_count_in_partition) - ssize_t(settings->inactive_parts_to_delay_insert);
     }
+              
+    auto parts_to_delay_insert = query_settings.parts_to_delay_insert.changed ? query_settings.parts_to_delay_insert : settings->parts_to_delay_insert;
+    auto parts_to_throw_insert = query_settings.parts_to_throw_insert.changed ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
 
-    if (parts_count_in_partition >= settings->parts_to_throw_insert)
+    if (parts_count_in_partition >= parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception(
@@ -3262,15 +3266,15 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
             parts_count_in_partition);
     }
 
-    if (k_inactive < 0 && parts_count_in_partition < settings->parts_to_delay_insert)
+    if (k_inactive < 0 && parts_count_in_partition < parts_to_delay_insert)
         return;
 
-    const ssize_t k_active = ssize_t(parts_count_in_partition) - ssize_t(settings->parts_to_delay_insert);
+    const ssize_t k_active = ssize_t(parts_count_in_partition) - ssize_t(parts_to_delay_insert);
     size_t max_k;
     size_t k;
     if (k_active > k_inactive)
     {
-        max_k = settings->parts_to_throw_insert - settings->parts_to_delay_insert;
+        max_k = parts_to_throw_insert - parts_to_delay_insert;
         k = k_active + 1;
     }
     else
