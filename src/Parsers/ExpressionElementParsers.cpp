@@ -1887,7 +1887,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             }
         }
 
-        std::optional<String> column_name_prefix;
+        std::optional<String> rename_format;
         if (with_open_round_bracket && pos->type == TokenType::Comma)
         {
             ++pos;
@@ -1897,7 +1897,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             if (!parser_string_literal.parse(pos, ast_prefix_name, expected))
                 return false;
 
-            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.get<const String &>();
+            rename_format = ast_prefix_name->as<ASTLiteral &>().value.get<const String &>();
         }
 
         if (with_open_round_bracket)
@@ -1918,7 +1918,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             res->func_name = getIdentifierName(func_name);
             res->parameters = expr_list_args;
         }
-        res->column_name_prefix = column_name_prefix;
+        res->rename_format = rename_format;
         node = std::move(res);
         return true;
     }

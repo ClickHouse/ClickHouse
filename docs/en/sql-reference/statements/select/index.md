@@ -172,7 +172,7 @@ You can use the following modifiers in `SELECT` queries.
 
 ### APPLY {#apply-modifier}
 
-Allows you to invoke some function for each row returned by an outer table expression of a query. An optional string argument can be used to change the output names of each column. The result name is a concatenation of the input string and the original column name before applying the function.
+Allows you to invoke some function for each row returned by an outer table expression of a query. An optional string argument can be used to change the output names of each column similar to format pattern, in which `{0}` denotes the original column name, while `{1}` denotes the ordinal index of each column.
 
 **Syntax:**
 
@@ -195,7 +195,7 @@ SELECT * APPLY(sum) FROM columns_transformers;
 ```
 
 ``` sql
-SELECT * APPLY(sum, '') FROM columns_transformers;
+SELECT * APPLY(sum, '{}') FROM columns_transformers;
 ```
 
 ```

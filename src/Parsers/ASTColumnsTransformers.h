@@ -39,7 +39,8 @@ public:
     ASTPtr lambda;
     String lambda_arg;
 
-    std::optional<String> column_name_prefix;
+    // Case 3 APPLY (x -> quantile(0.9)(x), {}_p90)
+    std::optional<String> rename_format;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

@@ -31,7 +31,7 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " ";
 
-    if (column_name_prefix)
+    if (rename_format)
         settings.ostr << "(";
 
     if (lambda)
@@ -46,16 +46,25 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
             parameters->formatImpl(settings, state, frame);
     }
 
-    if (column_name_prefix)
-        settings.ostr << ", '" << *column_name_prefix << "')";
+    if (rename_format)
+        settings.ostr << ", '" << *rename_format << "')";
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 {
+    Format::IndexPositions index_positions;
+    std::vector<String> substrings;
+    if (rename_format)
+        Format::init(*rename_format, 2, {}, index_positions, substrings);
+    std::vector<String> column_names;
+    size_t num_pos = index_positions.size();
+
+    size_t idx = 0;
     for (auto & column : nodes)
     {
         String name;
         auto alias = column->tryGetAlias();
+
         if (!alias.empty())
             name = alias;
         else
@@ -65,6 +74,7 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
             else
                 name = column->getColumnName();
         }
+
         if (lambda)
         {
             auto body = lambda->as<const ASTFunction &>().arguments->children.at(1)->clone();
@@ -92,8 +102,19 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
             function->parameters = parameters;
             column = function;
         }
-        if (column_name_prefix)
-            column->setAlias(*column_name_prefix + name);
+
+        if (rename_format)
+        {
+            std::vector<String> args = {name, std::to_string(idx++)};
+            WriteBufferFromOwnString out;
+            writeString(substrings.front(), out);
+            for (auto i = 0ul; i < num_pos; ++i)
+            {
+                writeString(args[index_positions[i]], out);
+                writeString(substrings[i + 1], out);
+            }
+            column->setAlias(out.str());
+        }
     }
 }
 

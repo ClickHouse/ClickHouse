@@ -53,15 +53,15 @@ EXPLAIN SYNTAX SELECT i, j, COLUMNS(i, j, k) APPLY(toFloat64), COLUMNS(i, j) EXC
 SELECT COLUMNS(i, j, k) APPLY(quantiles(0.5)) from columns_transformers;
 EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(quantiles(0.5)) from columns_transformers;
 
--- APPLY with naming prefix
-EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, '') from columns_transformers;
-EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, 'sum_') from columns_transformers;
+-- APPLY with format string
+EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, '{}') from columns_transformers;
+EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, 'sum_{}') from columns_transformers;
 
 -- RENAME
-EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, '') APPLY(x->x-1, '') RENAME 'sum_{}_minus_one' from columns_transformers;
-EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, '') APPLY(x->x-1, '') RENAME 'sum_{0}_minus_one' from columns_transformers;
-EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, '') APPLY(x->x-1, '') RENAME 'sum_{2}_minus_one' from columns_transformers; -- { serverError 36 }
-EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, '') APPLY(x->x-1, '') RENAME 'sum_{}{}{}_minus_one' from columns_transformers; -- { serverError 36 }
+EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, '{}') APPLY(x->x-1, '{}') RENAME 'sum_{}_minus_one' from columns_transformers;
+EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, '{}') APPLY(x->x-1, '{}') RENAME 'sum_{0}_minus_one' from columns_transformers;
+EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, '{}') APPLY(x->x-1, '{}') RENAME 'sum_{2}_minus_one' from columns_transformers; -- { serverError 36 }
+EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum, '{}') APPLY(x->x-1, '{}') RENAME 'sum_{}{}{}_minus_one' from columns_transformers; -- { serverError 36 }
 
 EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) EXCEPT j RENAME 'col_{0}_{1}' from columns_transformers;
 EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) RENAME 'col_{0}_{1}' EXCEPT j from columns_transformers;  -- { clientError 62 }
