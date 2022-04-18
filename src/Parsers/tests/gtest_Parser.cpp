@@ -49,24 +49,31 @@ TEST_P(ParserTest, parseQuery)
 
     if (expected_ast)
     {
-        ASTPtr ast;
-        ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
-
-        if (std::string("CREATE USER or ALTER USER query").compare(parser->getName())
-                && std::string("ATTACH access entity query").compare(parser->getName()))
+        if (std::string(expected_ast).starts_with("throws"))
         {
-            EXPECT_EQ(expected_ast, serializeAST(*ast->clone(), false));
+            EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
         }
-        else
+        else 
         {
-            if (input_text.starts_with("ATTACH"))
+            ASTPtr ast;
+            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
+
+            if (std::string("CREATE USER or ALTER USER query").compare(parser->getName())
+                    && std::string("ATTACH access entity query").compare(parser->getName()))
             {
-                auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt();
-                EXPECT_TRUE(std::regex_match(salt, std::regex(expected_ast)));
+                EXPECT_EQ(expected_ast, serializeAST(*ast->clone(), false));
             }
             else
             {
-                EXPECT_TRUE(std::regex_match(serializeAST(*ast->clone(), false), std::regex(expected_ast)));
+                if (input_text.starts_with("ATTACH"))
+                {
+                    auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt();
+                    EXPECT_TRUE(std::regex_match(salt, std::regex(expected_ast)));
+                }
+                else
+                {
+                    EXPECT_TRUE(std::regex_match(serializeAST(*ast->clone(), false), std::regex(expected_ast)));
+                }
             }
         }
     }
@@ -251,11 +258,27 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'",
-            "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '[A-Za-z0-9]{64}' '[A-Za-z0-9]{64}'"
+            "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '[A-Za-z0-9]{64}' SALT '[A-Za-z0-9]{64}'"
         },
         {
             "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'",
-            "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '[A-Za-z0-9]{64}' '[A-Za-z0-9]{64}'"
+            "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '[A-Za-z0-9]{64}' SALT '[A-Za-z0-9]{64}'"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
+            "throws Syntax error"
+        },
+        {
+            "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
+            "throws Syntax error"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH sha256_hash BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
+            "throws Syntax error"
+        },
+        {
+            "ALTER USER user1 IDENTIFIED WITH sha256_hash BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
+            "throws Syntax error"
         }
 })));
 
@@ -264,7 +287,7 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         ::testing::Values(std::make_shared<ParserAttachAccessEntity>()),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
         {
-            "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF' 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264';",
+            "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264';",
             "^[A-Za-z0-9]{64}$"
         },
         {
