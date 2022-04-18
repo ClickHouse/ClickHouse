@@ -113,7 +113,7 @@ namespace
         {
             settings.ostr << " " << quoteString(*value);
             if (salt)
-                settings.ostr << " " << quoteString(*salt);
+                settings.ostr << " SALT " << quoteString(*salt);
         }
         else if (values)
         {

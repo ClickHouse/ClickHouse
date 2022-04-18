@@ -115,7 +115,7 @@ namespace
 
                 if (id_mode && expect_hash)
                 {
-                    if (ParserStringLiteral{}.parse(pos, ast, expected))
+                    if (ParserKeyword{"SALT"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
                     {
                         parsed_salt = ast->as<const ASTLiteral &>().value.safeGet<String>();
                     }
