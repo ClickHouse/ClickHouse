@@ -29,12 +29,12 @@ namespace
 {
 using namespace DB;
 
-static inline DateTime64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+inline DateTime64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
 }
 
-static inline time_t time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+inline time_t time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
