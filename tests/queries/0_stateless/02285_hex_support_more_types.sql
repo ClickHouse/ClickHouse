@@ -9,3 +9,4 @@ SELECT hex(toInt256(100000000000)) AS res;
 SELECT hex(toInt128(-100000000000)) AS res;
 
 SELECT hex(toInt256(-100000000000)) AS res;
+
