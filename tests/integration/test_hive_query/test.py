@@ -407,6 +407,6 @@ def test_explain_estimate(started_cluster):
     )
     assert (
         result
-        == """default	bigolive_showeruid_fake_share_orc_file_index	{"files_after_prune":1,"files_before_prune":1,"partitions_after_prune":1,"partitions_before_prune":4}
+        == """default	demo_explain_estimate	{"files_after_prune":1,"files_before_prune":1,"partitions_after_prune":1,"partitions_before_prune":4}
 """
     )
