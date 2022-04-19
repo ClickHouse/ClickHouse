@@ -102,13 +102,19 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     return True, "No special conditions apply", "pending"
 
 
-def check_pr_description(pr_info):
-    description = pr_info.body
-
+def check_pr_description(pr_info) -> Tuple[str, str]:
     lines = list(
-        map(lambda x: x.strip(), description.split("\n") if description else [])
+        map(lambda x: x.strip(), pr_info.body.split("\n") if pr_info.body else [])
     )
     lines = [re.sub(r"\s+", " ", line) for line in lines]
+
+    # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
+    if [
+        True
+        for line in lines
+        if re.match(rf"\AReverts {GITHUB_REPOSITORY}#[\d]+\Z", line)
+    ]:
+        return "", LABELS["pr-not-for-changelog"][0]
 
     category = ""
     entry = ""
