@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <type_traits>
 
 
 /** Allows to make std::shared_ptr from T with protected constructor.
@@ -11,25 +12,33 @@
 template <typename T>
 struct shared_ptr_helper
 {
+private:
+    // https://stackoverflow.com/a/25069711
+    struct make_shared_enabler : T
+    {
+        template <typename... TArgs>
+        make_shared_enabler(TArgs &&... args)
+            : T{std::forward<TArgs>(args)...}
+        {
+        }
+    };
+
+public:
     template <typename... TArgs>
     static std::shared_ptr<T> create(TArgs &&... args)
     {
-        return std::shared_ptr<T>(new T(std::forward<TArgs>(args)...));
+        return std::make_shared<make_shared_enabler>(std::forward<TArgs>(args)...);
     }
 };
 
-
 template <typename T>
-struct is_shared_ptr
+struct is_shared_ptr : std::false_type
 {
-    static constexpr bool value = false;
 };
 
-
 template <typename T>
-struct is_shared_ptr<std::shared_ptr<T>>
+struct is_shared_ptr<std::shared_ptr<T>> : std::true_type
 {
-    static constexpr bool value = true;
 };
 
 template <typename T>
