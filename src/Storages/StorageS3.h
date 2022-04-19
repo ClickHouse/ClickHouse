@@ -164,8 +164,6 @@ public:
 
     bool supportsPartitionBy() const override;
 
-    static StorageS3Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
-
     static ColumnsDescription getTableStructureFromData(
         const String & format,
         const S3::URI & uri,
@@ -177,6 +175,31 @@ public:
         bool distributed_processing,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
+
+    struct Configuration : StorageConfiguration
+    {
+        String access_key_id;
+        String secret_access_key;
+        String url;
+    };
+
+    static Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
+    static Configuration parseConfigurationFromNamedCollection(ConfigurationFromNamedCollection & configuration_from_config);
+
+    static NamedConfiguration getConfigKeys()
+    {
+        static const NamedConfiguration config_keys =
+        {
+            {"url", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
+            {"filename", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
+            {"access_key_id", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
+            {"secret_access_key", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
+            {"format", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String), .default_value = "auto" }},
+            {"compression_method", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String), .default_value = "auto" }},
+            {"structure", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String), .default_value = "auto" }},
+        };
+        return config_keys;
+    }
 
 private:
     friend class StorageS3Cluster;

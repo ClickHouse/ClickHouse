@@ -2,8 +2,6 @@
 
 #if USE_AWS_S3
 
-#include <Storages/StorageS3Cluster.h>
-
 #include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <IO/S3Common.h>
@@ -75,8 +73,8 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
     clipped_args.reserve(args.size());
     std::copy(args.begin() + 1, args.end(), std::back_inserter(clipped_args));
 
-    /// StorageS3ClusterConfiguration inherints from StorageS3Configuration, so it is safe to upcast it.
-    TableFunctionS3::parseArgumentsImpl(message, clipped_args, context, static_cast<StorageS3Configuration & >(configuration));
+    /// StorageS3Cluster::Configuration inherints from StorageS3::Configuration, so it is safe to upcast it.
+    TableFunctionS3::parseArgumentsImpl(message, clipped_args, context, static_cast<StorageS3::Configuration & >(configuration));
 }
 
 

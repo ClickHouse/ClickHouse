@@ -192,7 +192,7 @@ std::string PostgreSQLDictionarySource::toString() const
 
 #endif
 
-static void getOverridenResultForNamedCollection(const String & key, String & value, Configuration & overriding_configuration, Configuration & configuration)
+static void getOverridenResultForNamedCollection(const String & key, String & value, ConfigurationFromNamedCollection & overriding_configuration, ConfigurationFromNamedCollection & configuration)
 {
     String overriding_value, config_value;
     if (overriding_configuration.contains(key))
@@ -204,7 +204,7 @@ static void getOverridenResultForNamedCollection(const String & key, String & va
     value = overriding_value.empty() ? config_value : overriding_value;
 }
 
-static void getOverridenResultForNamedCollection(const String & key, UInt64 & value, Configuration & overriding_configuration, Configuration & configuration)
+static void getOverridenResultForNamedCollection(const String & key, UInt64 & value, ConfigurationFromNamedCollection & overriding_configuration, ConfigurationFromNamedCollection & configuration)
 {
     UInt64 overriding_value = 0, config_value = 0;
     if (overriding_configuration.contains(key))
@@ -251,7 +251,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             if (database.empty())
                 database = root_configuration["db"].safeGet<String>();
 
-            auto configurations = replicas_configurations.empty() ? std::vector<Configuration>{ root_configuration } : replicas_configurations;
+            auto configurations = replicas_configurations.empty() ? std::vector<ConfigurationFromNamedCollection>{ root_configuration } : replicas_configurations;
             for (auto & replica_configuration : configurations)
             {
                 getOverridenResultForNamedCollection("user", username, overriding_configuration, replica_configuration);

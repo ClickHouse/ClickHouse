@@ -9,7 +9,6 @@
 #include <TableFunctions/TableFunctionS3.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/StorageS3.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <filesystem>
@@ -25,24 +24,17 @@ namespace ErrorCodes
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & s3_configuration)
+void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration)
 {
-    if (auto named_collection = getURLBasedDataSourceConfiguration(args, context))
-    {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
-        s3_configuration.set(common_configuration);
+    const auto & config = context->getConfigRef();
 
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
-        {
-            if (arg_name == "access_key_id")
-                s3_configuration.access_key_id = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else if (arg_name == "secret_access_key")
-                s3_configuration.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else if (arg_name == "filename")
-                s3_configuration.url = std::filesystem::path(s3_configuration.url) / arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
-        }
+    if (isNamedCollection(args, config))
+    {
+        const auto & config_keys = StorageS3::getConfigKeys();
+        auto collection_name = getCollectionName(args);
+        auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
+        overrideConfigurationFromNamedCollectionWithAST(args, configuration_from_config, config_keys, context);
+        s3_configuration = StorageS3::parseConfigurationFromNamedCollection(configuration_from_config);
     }
     else
     {

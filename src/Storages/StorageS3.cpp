@@ -876,28 +876,50 @@ void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAut
 }
 
 
-StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+StorageS3::Configuration StorageS3::parseConfigurationFromNamedCollection(ConfigurationFromNamedCollection & configuration_from_config)
 {
-    StorageS3Configuration configuration;
+    StorageS3::Configuration configuration;
 
-    if (auto named_collection = getURLBasedDataSourceConfiguration(engine_args, local_context))
+    if (configuration_from_config.contains("url"))
+        configuration.url = configuration_from_config["url"].safeGet<String>();
+
+    if (configuration_from_config.contains("filename"))
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
-        configuration.set(common_configuration);
+        auto filename = configuration_from_config["filename"].safeGet<String>();
+        if (!filename.empty())
+            configuration.url = fs::path(configuration.url) / filename;
+    }
 
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
-        {
-            if (arg_name == "access_key_id")
-                configuration.access_key_id = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else if (arg_name == "secret_access_key")
-                configuration.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else if (arg_name == "filename")
-                configuration.url = std::filesystem::path(configuration.url) / arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
-                    arg_name);
-        }
+    if (configuration_from_config.contains("access_key_id"))
+        configuration.access_key_id = configuration_from_config["access_key_id"].safeGet<String>();
+
+    if (configuration_from_config.contains("secret_access_key"))
+        configuration.secret_access_key = configuration_from_config["secret_access_key"].safeGet<String>();
+
+    if (configuration_from_config.contains("structure"))
+        configuration.structure = configuration_from_config["structure"].safeGet<String>();
+
+    if (configuration_from_config.contains("format"))
+        configuration.format = configuration_from_config["format"].safeGet<String>();
+
+    if (configuration_from_config.contains("compression_method"))
+        configuration.compression_method = configuration_from_config["compression_method"].safeGet<String>();
+
+    return configuration;
+}
+
+StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+{
+    StorageS3::Configuration configuration;
+    const auto & config = local_context->getConfigRef();
+
+    if (isNamedCollection(engine_args, config))
+    {
+        const auto & config_keys = getConfigKeys();
+        auto collection_name = getCollectionName(engine_args);
+        auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
+        overrideConfigurationFromNamedCollectionWithAST(engine_args, configuration_from_config, config_keys, local_context);
+        configuration = parseConfigurationFromNamedCollection(configuration_from_config);
     }
     else
     {

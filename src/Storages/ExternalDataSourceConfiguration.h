@@ -80,12 +80,12 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<T> & settings = {});
 
 
-bool isNamedCollection(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix);
-
-String getCollectionName(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix);
-
-using Configuration = std::unordered_map<String, Field>;
-using Configurations = std::vector<Configuration>;
+struct StorageConfiguration
+{
+    String format;
+    String compression_method;
+    String structure;
+};
 
 struct ConfigKeyInfo
 {
@@ -93,27 +93,63 @@ struct ConfigKeyInfo
     std::optional<Field> default_value;
 };
 
-struct ListedConfiguration
-{
-    Configuration root_configuration;
-    Configurations listed_configurations;
-};
+using NamedConfiguration = std::unordered_map<String, ConfigKeyInfo>;
+
+bool isNamedCollection(const ASTs & args, const Poco::Util::AbstractConfiguration & config);
+bool isNamedCollection(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+String getCollectionName(const ASTs & args);
+String getCollectionName(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+using ConfigurationFromNamedCollection = std::unordered_map<String, Field>;
+using ConfigurationsFromNamedCollection = std::vector<ConfigurationFromNamedCollection>;
+
+/**
+ * Get configuration from config by collection name.
+ * Configuration is listed like:
+ * <named_collections>
+ *     <collection_name>
+ *     </collection_name>
+ * </named_collections>
+ */
+ConfigurationFromNamedCollection getConfigurationFromNamedCollection(
+    const String & collection_name,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::unordered_map<String, ConfigKeyInfo> & keys);
+
+/**
+ * Configuration can be defined as (collection_name, key1=value1, key2=value2, ...).
+ * In this case key-value arguments override config values from named collection.
+ */
+void overrideConfigurationFromNamedCollectionWithAST(
+    ASTs & args,
+    ConfigurationFromNamedCollection & configuration,
+    const std::unordered_map<String, ConfigKeyInfo> & keys,
+    ContextPtr context);
 
 /**
  * Get configuration represented as root configuration and some listed configuration.
  * Root configuration can be common to all listed configurations, listed configuration
  * overrides common configuration. Listed configuration is defined by enumerate_by_key prefix.
  */
-ListedConfiguration getListedConfigurationFromNamedCollection(
+struct ListedConfigurationFromNamedCollection
+{
+    ConfigurationFromNamedCollection root_configuration;
+    ConfigurationsFromNamedCollection listed_configurations;
+};
+
+ListedConfigurationFromNamedCollection getListedConfigurationFromNamedCollection(
     const String & collection_name,
     const Poco::Util::AbstractConfiguration & config,
     const std::unordered_map<String, ConfigKeyInfo> & keys,
     const String & enumerate_by_key);
 
+String toString(const ConfigurationFromNamedCollection & configuration);
+
 /**
  * Given a list of keys and config prefix, get a list of key-value pairs for each key in `keys`.
  */
-Configuration parseConfigKeys(
+ConfigurationFromNamedCollection parseConfigKeys(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     const std::unordered_map<String, ConfigKeyInfo> & keys);
@@ -132,18 +168,6 @@ struct URLBasedDataSourceConfiguration
     String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);
-};
-
-struct StorageS3Configuration : URLBasedDataSourceConfiguration
-{
-    String access_key_id;
-    String secret_access_key;
-};
-
-
-struct StorageS3ClusterConfiguration : StorageS3Configuration
-{
-    String cluster_name;
 };
 
 struct URLBasedDataSourceConfig

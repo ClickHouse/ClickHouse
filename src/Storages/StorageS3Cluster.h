@@ -33,6 +33,11 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    struct Configuration : StorageS3::Configuration
+    {
+        String cluster_name;
+    };
+
 protected:
     StorageS3Cluster(
         const String & filename_,
