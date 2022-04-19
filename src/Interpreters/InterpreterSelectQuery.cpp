@@ -617,7 +617,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    if (auto query_result = cache.get({query_ptr, source_header});
+    if (auto query_result = cache.get({query_ptr, source_header, context->getSettingsRef()});
         query_result && context->getSettingsRef().query_cache_passive_usage)
     {
         const auto &header= query_result->first;

@@ -38,6 +38,8 @@ struct CacheKey
 {
     ASTPtr ast;
     Block header;
+    const Settings & settings;
+
     bool operator==(const CacheKey & other) const
     {
         return ast->getTreeHash() == other.ast->getTreeHash() && header == other.header;
@@ -49,7 +51,18 @@ struct CacheKeyHasher
     {
         auto ast_info = k.ast->getTreeHash();
         auto header_info = k.header.getNamesAndTypesList().toString();
-        return ast_info.first + ast_info.second * 9273 + std::hash<String>{}(header_info) * 9273 * 9273;
+        auto settings_info = settingsHash(k.settings);
+        return ast_info.first + ast_info.second * 9273 + std::hash<String>{}(header_info) * 9273 * 9273 + settings_info * 9273 * 9273 * 9273;
+    }
+private:
+    static size_t settingsHash(const Settings & settings) {
+        size_t hash = 0;
+        size_t coefficient = 1;
+        for (const auto & s : settings) {
+            hash += std::hash<String>{}(s.getValueString()) * coefficient;
+            coefficient *= 53;
+        }
+        return hash;
     }
 };
 
