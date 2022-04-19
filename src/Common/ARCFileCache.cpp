@@ -38,14 +38,6 @@ ARCFileCache::ARCFileCache(const String & cache_base_path_, const FileCacheSetti
     , high_queue(0, cache_settings_.max_elements)
     , log(&Poco::Logger::get("ARCFileCache"))
 {
-    LOG_TEST(log, "[CreateARCFileCache][max_size:{}][ratio:{}][move_threshold:{}]", max_size, size_ratio, move_threshold);
-    LOG_TEST(
-        log,
-        "[CreateARCFileCache][min_low_size:{}/{}][max_high_size:{}/{}]",
-        min_low_space_size,
-        low_queue.max_space_bytes(),
-        high_queue.max_space_bytes(),
-        max_high_space_size);
 }
 
 void ARCFileCache::initialize()
