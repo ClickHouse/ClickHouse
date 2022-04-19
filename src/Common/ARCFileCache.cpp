@@ -59,8 +59,6 @@ void ARCFileCache::useCell(const FileSegmentCell & cell, FileSegments & result, 
             "Cannot have zero size downloaded file segments. Current file segment: {}",
             file_segment->range().toString());
 
-    cell.hit_count++;
-
     result.push_back(cell.file_segment);
 
     /**
@@ -81,6 +79,7 @@ void ARCFileCache::useCell(const FileSegmentCell & cell, FileSegments & result, 
                     low_queue.queue().splice(low_queue.queue().end(), low_queue.queue(), *cell.queue_iterator);
             }
             else
+            {
                 /// Still in low queue.
                 /// Move to the end of the low queue. The iterator remains valid.
                 low_queue.queue().splice(low_queue.queue().end(), low_queue.queue(), *cell.queue_iterator);
@@ -842,7 +841,7 @@ bool ARCFileCache::isLastFileSegmentHolder(
     return cell->file_segment.use_count() == 2;
 }
 
-bool ARCFileCache::canMoveCellToHighQueue(const FileSegmentCell & cell)
+bool ARCFileCache::canMoveCellToHighQueue(const FileSegmentCell & cell) const
 {
     if (cell.hit_count >= move_threshold)
         return true;
