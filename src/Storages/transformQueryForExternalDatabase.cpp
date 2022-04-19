@@ -9,6 +9,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -20,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -105,9 +107,9 @@ void dropAliases(ASTPtr & node)
 }
 
 
-bool isCompatible(const IAST & node)
+bool isCompatible(IAST & node)
 {
-    if (const auto * function = node.as<ASTFunction>())
+    if (auto * function = node.as<ASTFunction>())
     {
         if (function->parameters)   /// Parametric aggregate functions
             return false;
@@ -130,13 +132,21 @@ bool isCompatible(const IAST & node)
             || name == "notLike"
             || name == "in"
             || name == "notIn"
+            || name == "isNull"
+            || name == "isNotNull"
             || name == "tuple"))
             return false;
 
         /// A tuple with zero or one elements is represented by a function tuple(x) and is not compatible,
         /// but a normal tuple with more than one element is represented as a parenthesized expression (x, y) and is perfectly compatible.
-        if (name == "tuple" && function->arguments->children.size() <= 1)
-            return false;
+        /// So to support tuple with zero or one elements we can clear function name to get (x) instead of tuple(x)
+        if (name == "tuple")
+        {
+            if (function->arguments->children.size() <= 1)
+            {
+                function->name.clear();
+            }
+        }
 
         /// If the right hand side of IN is a table identifier (example: x IN table), then it's not compatible.
         if ((name == "in" || name == "notIn")
@@ -242,6 +252,7 @@ String transformQueryForExternalDatabase(
 {
     auto clone_query = query_info.query->clone();
     const Names used_columns = query_info.syntax_analyzer_result->requiredSourceColumns();
+    bool strict = context->getSettingsRef().external_table_strict_query;
 
     auto select = std::make_shared<ASTSelectQuery>();
 
@@ -269,6 +280,10 @@ String transformQueryForExternalDatabase(
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
         }
+        else if (strict)
+        {
+            throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
+        }
         else if (const auto * function = original_where->as<ASTFunction>())
         {
             if (function->name == "and")
@@ -285,6 +300,22 @@ String transformQueryForExternalDatabase(
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));
             }
         }
+    }
+    else if (strict && original_where)
+    {
+        throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
+    }
+
+    auto * literal_expr = typeid_cast<ASTLiteral *>(original_where.get());
+    UInt64 value;
+    if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
+    {
+        /// WHERE 1 -> WHERE 1=1, WHERE 0 -> WHERE 1=0.
+        if (value)
+            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
+        else
+            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
     }
 
     ASTPtr select_ptr = select;

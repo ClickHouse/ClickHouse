@@ -3,9 +3,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
-#include <Core/TypeListNumber.h>
-
-
 namespace DB
 {
 struct Settings;

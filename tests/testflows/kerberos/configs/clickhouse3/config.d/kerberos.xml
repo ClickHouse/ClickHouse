@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf8'?>
-<yandex>
+<clickhouse>
     <kerberos>
         <realm>EXAMPLE.COM</realm>
     </kerberos>
-</yandex>
+</clickhouse>

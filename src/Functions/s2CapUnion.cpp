@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_S2_GEOMETRY
 
@@ -11,7 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #include "s2_fwd.h"
 
@@ -22,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -52,6 +51,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (size_t index = 0; index < getNumberOfArguments(); ++index)
@@ -81,10 +82,49 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_center1 = arguments[0].column.get();
-        const auto * col_radius1 = arguments[1].column.get();
-        const auto * col_center2 = arguments[2].column.get();
-        const auto * col_radius2 = arguments[3].column.get();
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_center1 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (!col_center1)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[0].type->getName(),
+                1,
+                getName());
+        const auto & data_center1 = col_center1->getData();
+
+        const auto * col_radius1 = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
+        if (!col_radius1)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be Float64",
+                arguments[1].type->getName(),
+                2,
+                getName());
+        const auto & data_radius1 = col_radius1->getData();
+
+        const auto * col_center2 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[2].column.get());
+        if (!col_center2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[2].type->getName(),
+                3,
+                getName());
+        const auto & data_center2 = col_center2->getData();
+
+        const auto * col_radius2 = checkAndGetColumn<ColumnFloat64>(non_const_arguments[3].column.get());
+        if (!col_radius2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be Float64",
+                arguments[3].type->getName(),
+                4,
+                getName());
+        const auto & data_radius2 = col_radius2->getData();
 
         auto col_res_center = ColumnUInt64::create();
         auto col_res_radius = ColumnFloat64::create();
@@ -95,12 +135,12 @@ public:
         auto & vec_res_radius = col_res_radius->getData();
         vec_res_radius.reserve(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 first_center = col_center1->getUInt(row);
-            const Float64 first_radius = col_radius1->getFloat64(row);
-            const UInt64 second_center = col_center2->getUInt(row);
-            const Float64 second_radius = col_radius2->getFloat64(row);
+            const UInt64 first_center = data_center1[row];
+            const Float64 first_radius = data_radius1[row];
+            const UInt64 second_center = data_center2[row];
+            const Float64 second_radius = data_radius2[row];
 
             if (isNaN(first_radius) || isNaN(second_radius))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan");
@@ -125,7 +165,6 @@ public:
 
         return ColumnTuple::create(Columns{std::move(col_res_center), std::move(col_res_radius)});
     }
-
 };
 
 }
@@ -134,7 +173,6 @@ void registerFunctionS2CapUnion(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionS2CapUnion>();
 }
-
 
 }
 

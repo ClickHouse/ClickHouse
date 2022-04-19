@@ -82,4 +82,4 @@ example01-{01..02}-{1|2}
 
 `remoteSecure` -同じように `remote` but with secured connection. Default port — [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 設定または9440から。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/table_functions/remote/) <!--hide-->

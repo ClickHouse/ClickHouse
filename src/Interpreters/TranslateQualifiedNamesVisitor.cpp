@@ -303,7 +303,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 }
 
 /// 'select * from a join b using id' should result one 'id' column
-void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, Data & data)
+void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(ASTPtr ast, Data & data)
 {
     const auto & table_join = ast->as<ASTTableJoin &>();
 
@@ -334,7 +334,7 @@ void RestoreQualifiedNamesMatcher::Data::changeTable(ASTIdentifier & identifier)
     {
         case IdentifierSemantic::ColumnMatch::AliasedTableName:
         case IdentifierSemantic::ColumnMatch::TableName:
-        case IdentifierSemantic::ColumnMatch::DbAndTable:
+        case IdentifierSemantic::ColumnMatch::DBAndTable:
             IdentifierSemantic::setColumnLongName(identifier, remote_table);
             break;
         default:
@@ -363,8 +363,7 @@ void RestoreQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, D
         if (IdentifierSemantic::getMembership(identifier))
         {
             identifier.restoreTable();  // TODO(ilezhankin): should restore qualified name here - why exactly here?
-            if (data.rename)
-                data.changeTable(identifier);
+            data.changeTable(identifier);
         }
     }
 }

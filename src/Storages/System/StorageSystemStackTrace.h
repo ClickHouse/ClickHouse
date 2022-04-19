@@ -3,7 +3,7 @@
 #ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
 
 #include <mutex>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace Poco
@@ -27,7 +27,7 @@ public:
     String getName() const override { return "SystemStackTrace"; }
     static NamesAndTypesList getNamesAndTypes();
 
-    StorageSystemStackTrace(const StorageID & table_id_);
+    explicit StorageSystemStackTrace(const StorageID & table_id_);
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

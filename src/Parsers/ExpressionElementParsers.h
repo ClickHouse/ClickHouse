@@ -171,6 +171,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+// Allows to make queries like SELECT SUM(<expr>) FILTER(WHERE <cond>) FROM ...
+class ParserFilterClause : public IParserBase
+{
+    const char * getName() const override { return "filter"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 // Window reference (the thing that goes after OVER) for window function.
 // Can be either window name or window definition.
 class ParserWindowReference : public IParserBase
@@ -221,63 +228,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast);
-class ParserCastAsExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "CAST AS expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserSubstringExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "SUBSTRING expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserTrimExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "TRIM expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserLeftExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "LEFT expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserRightExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "RIGHT expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserExtractExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "EXTRACT expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserDateAddExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "DATE_ADD expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserDateDiffExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "DATE_DIFF expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 /** NULL literal.
   */
 class ParserNull : public IParserBase
@@ -287,6 +237,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** Bool literal.
+  */
+class ParserBool : public IParserBase
+{
+protected:
+    const char * getName() const override { return "Bool"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** Numeric literal.
   */
@@ -508,5 +466,7 @@ protected:
     const char * getName() const  override{ return "column assignment"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
+
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast);
 
 }

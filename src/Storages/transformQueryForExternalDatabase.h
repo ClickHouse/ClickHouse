@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Storages/SelectQueryInfo.h>
@@ -22,6 +22,9 @@ class IAST;
   * that contain only compatible expressions.
   *
   * Compatible expressions are comparisons of identifiers, constants, and logical operations on them.
+  *
+  * Throws INCORRECT_QUERY if external_table_strict_query (from context settings)
+  * is set and some expression from WHERE is not compatible.
   */
 String transformQueryForExternalDatabase(
     const SelectQueryInfo & query_info,

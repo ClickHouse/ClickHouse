@@ -2,7 +2,12 @@
 toc_priority: 65
 toc_title: Сборка на Mac OS X
 ---
+
 # Как собрать ClickHouse на Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
+
+!!! info "Вам не нужно собирать ClickHouse самостоятельно"
+     Вы можете установить предварительно собранный ClickHouse, как описано в [Быстром старте](https://clickhouse.com/#quick-start).
+     Следуйте инструкциям по установке для `macOS (Intel)` или `macOS (Apple Silicon)`.
 
 Сборка должна запускаться с x86_64 (Intel) на macOS версии 10.15 (Catalina) и выше в последней версии компилятора Xcode's native AppleClang, Homebrew's vanilla Clang или в GCC-компиляторах.
 
@@ -14,7 +19,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 ## Установка Xcode и инструментов командной строки {#install-xcode-and-command-line-tools}
 
-  1. Установите из App Store последнюю версию [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12). 
+  1. Установите из App Store последнюю версию [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12).
 
   2. Запустите ее, чтобы принять лицензионное соглашение. Необходимые компоненты установятся автоматически.
 
@@ -74,7 +79,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
   $ rm -rf build
   $ mkdir build
   $ cd build
-  $ cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-10 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-10 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
+  $ cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-11 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-11 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
   $ cmake --build . --config RelWithDebInfo
   $ cd ..
   ```
@@ -122,4 +127,4 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 4. Чтобы проверить, как это работает, выполните команду `ulimit -n`.
 
-[Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->

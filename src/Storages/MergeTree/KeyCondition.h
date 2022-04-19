@@ -5,14 +5,13 @@
 #include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
 {
 
+class ASTFunction;
 class Context;
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
@@ -32,7 +31,7 @@ struct FieldRef : public Field
 
     /// Create as explicit field without block.
     template <typename T>
-    FieldRef(T && value) : Field(std::forward<T>(value)) {}
+    FieldRef(T && value) : Field(std::forward<T>(value)) {} /// NOLINT
 
     /// Create as reference to field in block.
     FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
@@ -55,16 +54,16 @@ private:
     static bool less(const Field & lhs, const Field & rhs);
 
 public:
-    FieldRef left = NegativeInfinity{};   /// the left border
-    FieldRef right = PositiveInfinity{};  /// the right border
+    FieldRef left = NEGATIVE_INFINITY;   /// the left border
+    FieldRef right = POSITIVE_INFINITY;  /// the right border
     bool left_included = false;           /// includes the left border
     bool right_included = false;          /// includes the right border
 
     /// The whole universe (not null).
-    Range() {}
+    Range() {} /// NOLINT
 
     /// One point.
-    Range(const FieldRef & point)
+    Range(const FieldRef & point) /// NOLINT
         : left(point), right(point), left_included(true), right_included(true) {}
 
     /// A bounded two-sided range.
@@ -185,9 +184,9 @@ public:
     {
         std::swap(left, right);
         if (left.isPositiveInfinity())
-            left = NegativeInfinity{};
+            left = NEGATIVE_INFINITY;
         if (right.isNegativeInfinity())
-            right = PositiveInfinity{};
+            right = POSITIVE_INFINITY;
         std::swap(left_included, right_included);
     }
 
@@ -314,8 +313,8 @@ private:
             ALWAYS_TRUE,
         };
 
-        RPNElement() {}
-        RPNElement(Function function_) : function(function_) {}
+        RPNElement() = default;
+        RPNElement(Function function_) : function(function_) {} /// NOLINT
         RPNElement(Function function_, size_t key_column_) : function(function_), key_column(key_column_) {}
         RPNElement(Function function_, size_t key_column_, const Range & range_)
             : function(function_), range(range_), key_column(key_column_) {}
@@ -374,6 +373,14 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         std::vector<const ASTFunction *> & out_functions_chain);
+
+    bool transformConstantWithValidFunctions(
+        const String & expr_name,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type,
+        std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const ASTPtr & node,

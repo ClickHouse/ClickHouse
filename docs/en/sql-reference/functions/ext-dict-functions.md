@@ -53,7 +53,7 @@ The first column is `id`, the second column is `c1`.
 Configure the external dictionary:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-test</name>
         <source>
@@ -77,7 +77,7 @@ Configure the external dictionary:
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Perform the query:
@@ -113,7 +113,7 @@ The first column is `id`, the second is `c1`, the third is `c2`.
 Configure the external dictionary:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-mult</name>
         <source>
@@ -142,7 +142,7 @@ Configure the external dictionary:
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Perform the query:
@@ -217,8 +217,8 @@ Result:
 ``` text
 (0,'2019-05-20')        0       \N      \N      (NULL,NULL)
 (1,'2019-05-20')        1       First   First   ('First','First')
-(2,'2019-05-20')        0       \N      \N      (NULL,NULL)
-(3,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(2,'2019-05-20')        1       Second  \N      ('Second',NULL)
+(3,'2019-05-20')        1       Third   Third   ('Third','Third')
 (4,'2019-05-20')        0       \N      \N      (NULL,NULL)
 ```
 

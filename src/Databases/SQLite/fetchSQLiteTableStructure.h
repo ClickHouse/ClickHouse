@@ -1,13 +1,11 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_SQLITE
 
 #include <Storages/StorageSQLite.h>
-#include <sqlite3.h> // Y_IGNORE
+#include <sqlite3.h>
 
 
 namespace DB

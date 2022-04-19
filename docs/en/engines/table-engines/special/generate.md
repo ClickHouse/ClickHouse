@@ -56,4 +56,4 @@ SELECT * FROM generate_engine_table LIMIT 3
     -   Indices
     -   Replication
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/generate/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/generate/) <!--hide-->

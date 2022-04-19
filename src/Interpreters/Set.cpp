@@ -24,8 +24,10 @@
 
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <common/range.h>
+#include <base/range.h>
+#include <base/sort.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
 
 namespace DB
 {
@@ -99,14 +101,14 @@ void NO_INLINE Set::insertFromBlockImplCase(
 }
 
 
-void Set::setHeader(const Block & header)
+void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
     std::unique_lock lock(rwlock);
 
     if (!data.empty())
         return;
 
-    keys_size = header.columns();
+    keys_size = header.size();
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
     data_types.reserve(keys_size);
@@ -118,10 +120,10 @@ void Set::setHeader(const Block & header)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(header.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        materialized_columns.emplace_back(header.at(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
-        data_types.emplace_back(header.safeGetByPosition(i).type);
-        set_elements_types.emplace_back(header.safeGetByPosition(i).type);
+        data_types.emplace_back(header.at(i).type);
+        set_elements_types.emplace_back(header.at(i).type);
 
         /// Convert low cardinality column to full.
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
@@ -161,9 +163,9 @@ void Set::setHeader(const Block & header)
 }
 
 
-bool Set::insertFromBlock(const Block & block)
+bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard<std::shared_mutex> lock(rwlock);
 
     if (data.empty())
         throw Exception("Method Set::setHeader must be called before Set::insertFromBlock", ErrorCodes::LOGICAL_ERROR);
@@ -177,11 +179,11 @@ bool Set::insertFromBlock(const Block & block)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        materialized_columns.emplace_back(columns.at(i).column->convertToFullIfNeeded());
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    size_t rows = block.rows();
+    size_t rows = columns.at(0).column->size();
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -192,7 +194,7 @@ bool Set::insertFromBlock(const Block & block)
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
     if (fill_set_elements)
-        filter = ColumnUInt8::create(block.rows());
+        filter = ColumnUInt8::create(rows);
 
     switch (data.type)
     {
@@ -224,16 +226,16 @@ bool Set::insertFromBlock(const Block & block)
 }
 
 
-ColumnPtr Set::execute(const Block & block, bool negative) const
+ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
-    size_t num_key_columns = block.columns();
+    size_t num_key_columns = columns.size();
 
     if (0 == num_key_columns)
         throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();
-    vec_res.resize(block.safeGetByPosition(0).column->size());
+    vec_res.resize(columns.at(0).column->size());
 
     if (vec_res.empty())
         return res;
@@ -264,7 +266,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     {
         ColumnPtr result;
 
-        const auto & column_before_cast = block.safeGetByPosition(i);
+        const auto & column_before_cast = columns.at(i);
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
@@ -402,10 +404,10 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         + data_types[set_type_idx]->getName() + " on the right", ErrorCodes::TYPE_MISMATCH);
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_)
-    : indexes_mapping(std::move(index_mapping_))
+MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
+    : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
-    std::sort(indexes_mapping.begin(), indexes_mapping.end(),
+    ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
             return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
@@ -428,7 +430,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     SortDescription sort_description;
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        block_to_sort.insert({ ordered_set[i], nullptr, "" });
+        block_to_sort.insert({ ordered_set[i], nullptr, "_" + toString(i) });
         sort_description.emplace_back(i, 1, 1);
     }
 
@@ -443,7 +445,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 
@@ -466,7 +468,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
-            data_types[indexes_mapping[i].key_index]);
+            data_types[indexes_mapping[i].key_index],
+            single_point);
 
         if (!new_range)
             return {true, true};
@@ -548,11 +551,11 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             break;
         }
     }
-    if (one_element_range)
+    if (one_element_range && has_all_keys)
     {
         /// Here we know that there is one element in range.
         /// The main difference with the normal case is that we can definitely say that
-        /// condition in this range always TRUE (can_be_false = 0) xor always FALSE (can_be_true = 0).
+        /// condition in this range is always TRUE (can_be_false = 0) or always FALSE (can_be_true = 0).
 
         /// Check if it's an empty range
         if (!left_included || !right_included)

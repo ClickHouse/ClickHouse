@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS codecs;
 
 CREATE TABLE codecs (id UInt32, val UInt32, s String) 

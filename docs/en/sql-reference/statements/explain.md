@@ -10,7 +10,12 @@ Shows the execution plan of a statement.
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | PLAN | PIPELINE] [setting = value, ...] SELECT ... [FORMAT ...]
+EXPLAIN [AST | SYNTAX | PLAN | PIPELINE | TABLE OVERRIDE] [setting = value, ...]
+    [
+      SELECT ... |
+      tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
+    ]
+    [FORMAT ...]
 ```
 
 Example:
@@ -240,7 +245,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
   }
 ]
 ```
-  
+
 With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `MinMax`, `Partition`, `PrimaryKey` or `Skip`) and optional keys:
 
 -   `Name` — An index name (for now, is used only for `Skip` index).
@@ -384,5 +389,65 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersMt × 2 0 → 1
 ```
+### EXPLAIN ESTIMATE {#explain-estimate}
 
-[Оriginal article](https://clickhouse.tech/docs/en/sql-reference/statements/explain/) <!--hide-->
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family. 
+
+**Example**
+
+Creating a table:
+
+```sql
+CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
+INSERT INTO ttt SELECT number FROM numbers(128);
+OPTIMIZE TABLE ttt;
+```
+
+Query:
+
+```sql
+EXPLAIN ESTIMATE SELECT * FROM ttt;
+```
+
+Result:
+
+```text
+┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
+│ default  │ ttt   │     1 │  128 │     8 │
+└──────────┴───────┴───────┴──────┴───────┘
+```
+
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
+
+Shows the result of a table override on a table schema accessed through a table function.
+Also does some validation, throwing an exception if the override would have caused some kind of failure.
+
+**Example**
+
+Assume you have a remote MySQL table like this:
+
+```sql
+CREATE TABLE db.tbl (
+    id INT PRIMARY KEY,
+    created DATETIME DEFAULT now()
+)
+```
+
+```sql
+EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
+PARTITION BY toYYYYMM(assumeNotNull(created))
+```
+
+Result:
+
+```text
+┌─explain─────────────────────────────────────────────────┐
+│ PARTITION BY uses columns: `created` Nullable(DateTime) │
+└─────────────────────────────────────────────────────────┘
+```
+
+!!! note "Note"
+    The validation is not complete, so a successfull query does not guarantee that the override would
+    not cause issues.
+
+[Оriginal article](https://clickhouse.com/docs/en/sql-reference/statements/explain/) <!--hide-->

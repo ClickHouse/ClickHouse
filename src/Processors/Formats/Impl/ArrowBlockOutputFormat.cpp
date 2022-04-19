@@ -50,7 +50,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
             "Error while writing a table: {}", status.ToString());
 }
 
-void ArrowBlockOutputFormat::finalize()
+void ArrowBlockOutputFormat::finalizeImpl()
 {
     if (!writer)
     {
@@ -82,9 +82,9 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     writer = *writer_status;
 }
 
-void registerOutputFormatProcessorArrow(FormatFactory & factory)
+void registerOutputFormatArrow(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor(
+    factory.registerOutputFormat(
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
@@ -93,8 +93,9 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
         });
+    factory.markFormatHasNoAppendSupport("Arrow");
 
-    factory.registerOutputFormatProcessor(
+    factory.registerOutputFormat(
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
@@ -103,6 +104,7 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
         });
+    factory.markFormatHasNoAppendSupport("ArrowStream");
 }
 
 }
@@ -112,7 +114,7 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatProcessorArrow(FormatFactory &)
+void registerOutputFormatArrow(FormatFactory &)
 {
 }
 }

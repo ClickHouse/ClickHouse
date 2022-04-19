@@ -9,7 +9,6 @@ set(BENCHMARK_ENABLE_TESTING OFF)
 enable_testing()
 include(CTest)
 
-include (${PROJECT_SOURCE_DIR}/cmake/find/gtest.cmake)
 include_directories(${GTEST_INCLUDE_DIRS})
 
 set(TEST_DATA_DIR "${ClickHouse_SOURCE_DIR}/utils/local-engine/tests")
@@ -18,7 +17,7 @@ configure_file(
         ${ClickHouse_SOURCE_DIR}/utils/local-engine/tests/testConfig.h.in
         ${ClickHouse_SOURCE_DIR}/utils/local-engine/tests/testConfig.h
 )
-
+set(HAVE_POSIX_REGEX 1)
 include(FetchContent)
 FetchContent_Declare(googlebenchmark GIT_REPOSITORY https://github.com/google/benchmark GIT_TAG master)
 FetchContent_MakeAvailable(googlebenchmark)
@@ -50,5 +49,5 @@ target_include_directories(unit_tests_local_engine PRIVATE
         )
 include_directories(benchmark_local_engine SYSTEM PUBLIC ${FETCH_CONTENT_SOURCE_DIR_GOOGLEBENCHMARK}/include)
 
-target_link_libraries(unit_tests_local_engine PRIVATE ${LOCALENGINE_SHARED_LIB} ${GTEST_BOTH_LIBRARIES})
+target_link_libraries(unit_tests_local_engine PRIVATE ${LOCALENGINE_SHARED_LIB} _gtest_all)
 target_link_libraries(benchmark_local_engine PRIVATE ${LOCALENGINE_SHARED_LIB} benchmark::benchmark)

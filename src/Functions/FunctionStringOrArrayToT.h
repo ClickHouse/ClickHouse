@@ -9,6 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -21,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-template <typename Impl, typename Name, typename ResultType>
+template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true>
 class FunctionStringOrArrayToT : public IFunction
 {
 public:
@@ -39,6 +40,11 @@ public:
     size_t getNumberOfArguments() const override
     {
         return 1;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return is_suitable_for_short_circuit_arguments_execution;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

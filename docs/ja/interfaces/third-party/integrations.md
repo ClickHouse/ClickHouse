@@ -8,7 +8,7 @@ toc_title: "\u7D71\u5408"
 # サードパーティ開発者からの統合ライブラリ {#integration-libraries-from-third-party-developers}
 
 !!! warning "免責事項"
-    Yandexのは **ない** 以下のツールとライブラリを維持し、その品質を確保するための広範なテストを行っていません。
+    ClickHouse, Inc.のは **ない** 以下のツールとライブラリを維持し、その品質を確保するための広範なテストを行っていません。
 
 ## インフラ製品 {#infrastructure-products}
 
@@ -44,8 +44,8 @@ toc_title: "\u7D71\u5408"
         -   [mfedotov/クリックハウス](https://forge.puppet.com/mfedotov/clickhouse)
 -   監視
     -   [黒鉛](https://graphiteapp.org)
-        -   [グラファウス](https://github.com/yandex/graphouse)
-        -   [カーボンクリックハウス](https://github.com/lomik/carbon-clickhouse) +
+        -   [グラファウス](https://github.com/ClickHouse/graphouse)
+        -   [カーボンクリックハウス](https://github.com/lomik/carbon-clickhouse)
         -   [グラファイト-クリック](https://github.com/lomik/graphite-clickhouse)
         -   [黒鉛-ch-オプティマイザー](https://github.com/innogames/graphite-ch-optimizer) -staled仕切りを最大限に活用する [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) からのルールの場合 [ロールアップ構成](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) 応用できます
     -   [グラファナ](https://grafana.com/)
@@ -103,8 +103,8 @@ toc_title: "\u7D71\u5408"
 -   Ruby
     -   [Ruby on rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)
-        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord) 
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->

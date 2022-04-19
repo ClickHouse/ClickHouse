@@ -19,9 +19,10 @@ public:
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
         CompressionCodecPtr default_codec_,
+        bool reset_columns_ = false,
         bool blocks_are_granules_size = false);
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
     /// If the data is pre-sorted.
     void write(const Block & block) override;
@@ -31,12 +32,33 @@ public:
       */
     void writeWithPermutation(const Block & block, const IColumn::Permutation * permutation);
 
-    void writeSuffix() override;
+    /// Finalizer is a structure which is returned from by finalizePart().
+    /// Files from part may be written asynchronously, e.g. for blob storages.
+    /// You should call finish() to wait until all data is written.
+    struct Finalizer
+    {
+        struct Impl;
+        std::unique_ptr<Impl> impl;
 
-    /// Finilize writing part and fill inner structures
-    void writeSuffixAndFinalizePart(
+        explicit Finalizer(std::unique_ptr<Impl> impl_);
+        ~Finalizer();
+        Finalizer(Finalizer &&) noexcept;
+        Finalizer & operator=(Finalizer &&) noexcept;
+
+        void finish();
+    };
+
+    /// Finalize writing part and fill inner structures
+    /// If part is new and contains projections, they should be added before invoking this method.
+    Finalizer finalizePartAsync(
             MergeTreeData::MutableDataPartPtr & new_part,
-            bool sync = false,
+            bool sync,
+            const NamesAndTypesList * total_columns_list = nullptr,
+            MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+
+    void finalizePart(
+            MergeTreeData::MutableDataPartPtr & new_part,
+            bool sync,
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
@@ -46,17 +68,17 @@ private:
       */
     void writeImpl(const Block & block, const IColumn::Permutation * permutation);
 
-    void finalizePartOnDisk(
-            const MergeTreeData::MutableDataPartPtr & new_part,
-            NamesAndTypesList & part_columns,
-            MergeTreeData::DataPart::Checksums & checksums,
-            bool sync);
+    using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
+    WrittenFiles finalizePartOnDisk(
+            const MergeTreeData::DataPartPtr & new_part,
+            MergeTreeData::DataPart::Checksums & checksums);
 
-private:
     NamesAndTypesList columns_list;
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
 };
+
+using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;
 
 }

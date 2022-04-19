@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static constexpr auto max_events = 32;
+static constexpr size_t max_events = 32;
 
 template <typename T>
 struct AggregateFunctionWindowFunnelData
@@ -137,8 +137,8 @@ class AggregateFunctionWindowFunnel final
 private:
     UInt64 window;
     UInt8 events_size;
-    /// When the 'strict' is set, it applies conditions only for the not repeating values.
-    bool strict;
+    /// When the 'strict_deduplication' is set, it applies conditions only for the not repeating values.
+    bool strict_deduplication;
 
     /// When the 'strict_order' is set, it doesn't allow interventions of other events.
     /// In the case of 'A->B->D->C', it stops finding 'A->B->C' at the 'D' and the max event level is 2.
@@ -150,7 +150,7 @@ private:
     /// Loop through the entire events_list, update the event timestamp value
     /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     /// If found, returns the max event level, else return 0.
-    /// The Algorithm complexity is O(n).
+    /// The algorithm works in O(n) time, but the overall function works in O(n * log(n)) due to sorting.
     UInt8 getEventLevel(Data & data) const
     {
         if (data.size() == 0)
@@ -163,10 +163,10 @@ private:
         /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
         std::vector<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
         bool first_event = false;
-        for (const auto & pair : data.events_list)
+        for (size_t i = 0; i < data.events_list.size(); ++i)
         {
-            const T & timestamp = pair.first;
-            const auto & event_idx = pair.second - 1;
+            const T & timestamp = data.events_list[i].first;
+            const auto & event_idx = data.events_list[i].second - 1;
             if (strict_order && event_idx == -1)
             {
                 if (first_event)
@@ -179,9 +179,9 @@ private:
                 events_timestamp[0] = std::make_pair(timestamp, timestamp);
                 first_event = true;
             }
-            else if (strict && events_timestamp[event_idx].has_value())
+            else if (strict_deduplication && events_timestamp[event_idx].has_value())
             {
-                return event_idx + 1;
+                return data.events_list[i - 1].second;
             }
             else if (strict_order && first_event && !events_timestamp[event_idx - 1].has_value())
             {
@@ -226,18 +226,20 @@ public:
         events_size = arguments.size() - 1;
         window = params.at(0).safeGet<UInt64>();
 
-        strict = false;
+        strict_deduplication = false;
         strict_order = false;
         strict_increase = false;
         for (size_t i = 1; i < params.size(); ++i)
         {
             String option = params.at(i).safeGet<String>();
-            if (option == "strict")
-                strict = true;
+            if (option == "strict_deduplication")
+                strict_deduplication = true;
             else if (option == "strict_order")
                 strict_order = true;
             else if (option == "strict_increase")
                 strict_increase = true;
+            else if (option == "strict")
+                throw Exception{"strict is replaced with strict_deduplication in Aggregate function " + getName(), ErrorCodes::BAD_ARGUMENTS};
             else
                 throw Exception{"Aggregate function " + getName() + " doesn't support a parameter: " + option, ErrorCodes::BAD_ARGUMENTS};
         }
@@ -281,12 +283,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

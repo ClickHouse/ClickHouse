@@ -6,8 +6,6 @@
 #include <memory>
 #include <chrono>
 #include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
-
 
 namespace CurrentMetrics
 {

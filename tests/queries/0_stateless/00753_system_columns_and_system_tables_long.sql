@@ -1,3 +1,5 @@
+-- Tags: long, no-s3-storage
+
 DROP TABLE IF EXISTS check_system_tables;
 
 -- Check MergeTree declaration in new format

@@ -29,7 +29,7 @@ private:
     void fillMaps();
 
 public:
-    EnumValues(const Values & values_);
+    explicit EnumValues(const Values & values_);
 
     const Values & getValues() const { return values; }
 
@@ -80,6 +80,10 @@ public:
     }
 
     Names getAllRegisteredNames() const override;
+
+    std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
+
+    std::unordered_set<T> getSetOfAllValues() const;
 };
 
 }

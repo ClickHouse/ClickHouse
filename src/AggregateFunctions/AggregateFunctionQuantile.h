@@ -67,10 +67,10 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
     AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
 {
 private:
-    using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
+    using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static_assert(!IsDecimalNumber<Value> || !returns_float);
+    static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
 
@@ -105,6 +105,11 @@ public:
             return res;
     }
 
+    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    {
+        return getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
+    }
+
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -131,13 +136,13 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like compactization) before serializing.
         this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }
@@ -232,5 +237,7 @@ struct NameQuantilesTDigestWeighted { static constexpr auto name = "quantilesTDi
 
 struct NameQuantileBFloat16 { static constexpr auto name = "quantileBFloat16"; };
 struct NameQuantilesBFloat16 { static constexpr auto name = "quantilesBFloat16"; };
+struct NameQuantileBFloat16Weighted { static constexpr auto name = "quantileBFloat16Weighted"; };
+struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBFloat16Weighted"; };
 
 }

@@ -20,7 +20,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/MergeTreeTool.h>
 #include <Common/Logger.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Functions/FunctionFactory.h>
 #include <Shuffle/ShuffleSplitter.h>
@@ -82,22 +82,23 @@ static void BM_MergeTreeRead(benchmark::State& state) {
     auto int32_type = std::make_shared<DB::DataTypeInt32>();
     auto double_type = std::make_shared<DB::DataTypeFloat64>();
     const auto * type_string = "columns format version: 1\n"
-                         "15 columns:\n"
-                               "`l_partkey` Int64\n"
-                               "`l_suppkey` Int64\n"
-                               "`l_linenumber` Int32\n"
+                         "4 columns:\n"
+                            //    "`l_partkey` Int64\n"
+                            //    "`l_suppkey` Int64\n"
+                            //    "`l_linenumber` Int32\n"
                          "`l_quantity` Float64\n"
                                "`l_extendedprice` Float64\n"
                                "`l_discount` Float64\n"
-                               "`l_tax` Float64\n"
-                               "`l_returnflag` String\n"
-                         "`l_linestatus` String\n"
+                            //    "`l_tax` Float64\n"
+                        //        "`l_returnflag` String\n"
+                        //  "`l_linestatus` String\n"
                                "`l_shipdate` Date\n"
-                               "`l_commitdate` Date\n"
-                               "`l_receiptdate` Date\n"
-                               "`l_shipinstruct` String\n"
-                               "`l_shipmode` String\n"
-                               "`l_comment` String\n";
+                            //    "`l_commitdate` Date\n"
+                            //    "`l_receiptdate` Date\n"
+                            //    "`l_shipinstruct` String\n"
+                            //    "`l_shipmode` String\n"
+                            //    "`l_comment` String\n"
+                               ;
     auto names_and_types_list = NamesAndTypesList::parse(type_string);
     metadata = local_engine::buildMetaData(names_and_types_list, global_context);
     auto param = DB::MergeTreeData::MergingParams();
@@ -111,6 +112,7 @@ static void BM_MergeTreeRead(benchmark::State& state) {
                                                            "",
                                                            param,
                                                            std::move(settings));
+    auto snapshot = std::make_shared<StorageSnapshot>(custom_merge_tree, metadata);
     custom_merge_tree.loadDataParts(false);
     for (auto _: state)
     {
@@ -124,17 +126,17 @@ static void BM_MergeTreeRead(benchmark::State& state) {
                        [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
         auto query = custom_merge_tree.reader.readFromParts(selected_parts,
                                                             names_and_types_list.getNames(),
-                                                            metadata,
-                                                            metadata,
+                                                            snapshot,
                                                             *query_info,
                                                             global_context,
                                                             10000,
                                                             1);
         QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
-        QueryPipeline query_pipeline;
+        QueryPipelineBuilder query_pipeline;
         query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
         state.ResumeTiming();
-        auto executor = PullingPipelineExecutor(query_pipeline);
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(query_pipeline));
+        auto executor = PullingPipelineExecutor(pipeline);
         Chunk chunk;
         int sum =0;
         while(executor.pull(chunk))
@@ -181,6 +183,7 @@ static void BM_ShuffleSplitter(benchmark::State& state) {
                                                            param,
                                                            std::move(settings));
     custom_merge_tree.loadDataParts(false);
+    auto snapshot = std::make_shared<StorageSnapshot>(custom_merge_tree, metadata);
     for (auto _: state)
     {
         state.PauseTiming();
@@ -193,17 +196,17 @@ static void BM_ShuffleSplitter(benchmark::State& state) {
                      [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
         auto query = custom_merge_tree.reader.readFromParts(selected_parts,
                                                             names_and_types_list.getNames(),
-                                                            metadata,
-                                                            metadata,
+                                                            snapshot,
                                                             *query_info,
                                                             global_context,
                                                             10000,
                                                             1);
         QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
-        QueryPipeline query_pipeline;
+        QueryPipelineBuilder query_pipeline;
         query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(query_pipeline));
         state.ResumeTiming();
-        auto executor = PullingPipelineExecutor(query_pipeline);
+        auto executor = PullingPipelineExecutor(pipeline);
         Block chunk = executor.getHeader();
         int sum =0;
         auto root = "/tmp/test_shuffle/"+local_engine::ShuffleSplitter::compress_methods[state.range(1)];
@@ -264,6 +267,8 @@ static void BM_HashShuffleSplitter(benchmark::State& state) {
                                                            param,
                                                            std::move(settings));
     custom_merge_tree.loadDataParts(false);
+    auto snapshot = std::make_shared<StorageSnapshot>(custom_merge_tree, metadata);
+
     for (auto _: state)
     {
         state.PauseTiming();
@@ -276,17 +281,17 @@ static void BM_HashShuffleSplitter(benchmark::State& state) {
                      [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
         auto query = custom_merge_tree.reader.readFromParts(selected_parts,
                                                             names_and_types_list.getNames(),
-                                                            metadata,
-                                                            metadata,
+                                                            snapshot,
                                                             *query_info,
                                                             global_context,
                                                             10000,
                                                             1);
         QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
-        QueryPipeline query_pipeline;
+        QueryPipelineBuilder query_pipeline;
         query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(query_pipeline));
         state.ResumeTiming();
-        auto executor = PullingPipelineExecutor(query_pipeline);
+        auto executor = PullingPipelineExecutor(pipeline);
         Block chunk = executor.getHeader();
         int sum =0;
         auto root = "/tmp/test_shuffle/"+local_engine::ShuffleSplitter::compress_methods[state.range(1)];
@@ -459,7 +464,7 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
                                                                                                                                                                                                                       }),
                                                                                                                                                                                             dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literalDate(8766)})
                                                                                                                                                                                         }),
-                                                                                                                                                              scalarFunction(LESS_THAN, {selection(3), literalDate(9131.0)})
+                                                                                                                                                              scalarFunction(LESS_THAN, {selection(3), literalDate(9131)})
                                                                                                                                                           }),
                                                                                                                                 scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})
                                                                                                                             }),
@@ -972,10 +977,189 @@ double quantile(const vector<double>&x)
     return (1.0 - h) * qs + h * x[hi];
 }
 
+// compress benchmark
+#include <string.h>
+#include <optional>
+#include <base/types.h>
+
+#include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/MMapReadBufferFromFileDescriptor.h>
+#include <IO/HashingWriteBuffer.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <Compression/CompressionInfo.h>
+#include <IO/WriteHelpers.h>
+#include <Compression/LZ4_decompress_faster.h>
+#include <IO/copyData.h>
+#include <Common/PODArray.h>
+#include <Common/Stopwatch.h>
+#include <Common/formatReadable.h>
+#include <Common/memcpySmall.h>
+#include <base/unaligned.h>
+namespace DB 
+{
+class FasterCompressedReadBufferBase
+{
+protected:
+    ReadBuffer * compressed_in;
+
+    /// If 'compressed_in' buffer has whole compressed block - then use it. Otherwise copy parts of data to 'own_compressed_buffer'.
+    PODArray<char> own_compressed_buffer;
+    /// Points to memory, holding compressed block.
+    char * compressed_buffer = nullptr;
+
+    ssize_t variant;
+
+    /// Variant for reference implementation of LZ4.
+    static constexpr ssize_t LZ4_REFERENCE = -3;
+
+    LZ4::StreamStatistics stream_stat;
+    LZ4::PerformanceStatistics perf_stat;
+
+    size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum)
+    {
+        if (compressed_in->eof())
+            return 0;
+
+        CityHash_v1_0_2::uint128 checksum;
+        compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
+
+        own_compressed_buffer.resize(COMPRESSED_BLOCK_HEADER_SIZE);
+        compressed_in->readStrict(&own_compressed_buffer[0], COMPRESSED_BLOCK_HEADER_SIZE);
+
+        UInt8 method = own_compressed_buffer[0];    /// See CompressedWriteBuffer.h
+
+        size_t & size_compressed = size_compressed_without_checksum;
+
+        if (method == static_cast<UInt8>(CompressionMethodByte::LZ4) ||
+            method == static_cast<UInt8>(CompressionMethodByte::ZSTD) ||
+            method == static_cast<UInt8>(CompressionMethodByte::NONE))
+        {
+            size_compressed = unalignedLoad<UInt32>(&own_compressed_buffer[1]);
+            size_decompressed = unalignedLoad<UInt32>(&own_compressed_buffer[5]);
+        }
+        else
+            throw runtime_error("Unknown compression method: " + toString(method));
+
+        if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
+            throw runtime_error("Too large size_compressed. Most likely corrupted data.");
+
+        /// Is whole compressed block located in 'compressed_in' buffer?
+        if (compressed_in->offset() >= COMPRESSED_BLOCK_HEADER_SIZE &&
+            compressed_in->position() + size_compressed - COMPRESSED_BLOCK_HEADER_SIZE <= compressed_in->buffer().end())
+        {
+            compressed_in->position() -= COMPRESSED_BLOCK_HEADER_SIZE;
+            compressed_buffer = compressed_in->position();
+            compressed_in->position() += size_compressed;
+        }
+        else
+        {
+            own_compressed_buffer.resize(size_compressed + (variant == LZ4_REFERENCE ? 0 : LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER));
+            compressed_buffer = &own_compressed_buffer[0];
+            compressed_in->readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
+        }
+
+        return size_compressed + sizeof(checksum);
+    }
+
+    void decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
+    {
+        UInt8 method = compressed_buffer[0];    /// See CompressedWriteBuffer.h
+
+        if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
+        {
+            //LZ4::statistics(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed, stat);
+            LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed, perf_stat);
+        }
+        else
+            throw runtime_error("Unknown compression method: " + toString(method));
+    }
+
+public:
+    /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
+    FasterCompressedReadBufferBase(ReadBuffer * in, ssize_t variant_)
+        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant_), perf_stat(variant)
+    {
+    }
+    LZ4::StreamStatistics getStreamStatistics() const { return stream_stat; }
+    LZ4::PerformanceStatistics getPerformanceStatistics() const { return perf_stat; }
+};
+
+
+class FasterCompressedReadBuffer : public FasterCompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
+{
+private:
+    size_t size_compressed = 0;
+
+    bool nextImpl() override
+    {
+        size_t size_decompressed;
+        size_t size_compressed_without_checksum;
+        size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum);
+        if (!size_compressed)
+            return false;
+
+        memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+        working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
+
+        decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
+
+        return true;
+    }
+
+public:
+    FasterCompressedReadBuffer(ReadBuffer & in_, ssize_t method)
+        : FasterCompressedReadBufferBase(&in_, method), BufferWithOwnMemory<ReadBuffer>(0)
+    {
+    }
+};
+
+}
+
+
+
+static void BM_TestDecompress(benchmark::State& state) 
+{
+    std::vector<String> files = {
+        "/home/saber/Documents/data/mergetree/all_1_1_0/l_discount.bin",
+        "/home/saber/Documents/data/mergetree/all_1_1_0/l_extendedprice.bin",
+        "/home/saber/Documents/data/mergetree/all_1_1_0/l_quantity.bin",
+        "/home/saber/Documents/data/mergetree/all_1_1_0/l_shipdate.bin",
+
+        "/home/saber/Documents/data/mergetree/all_2_2_0/l_discount.bin",
+        "/home/saber/Documents/data/mergetree/all_2_2_0/l_extendedprice.bin",
+        "/home/saber/Documents/data/mergetree/all_2_2_0/l_quantity.bin",
+        "/home/saber/Documents/data/mergetree/all_2_2_0/l_shipdate.bin",
+
+        "/home/saber/Documents/data/mergetree/all_3_3_0/l_discount.bin",
+        "/home/saber/Documents/data/mergetree/all_3_3_0/l_extendedprice.bin",
+        "/home/saber/Documents/data/mergetree/all_3_3_0/l_quantity.bin",
+        "/home/saber/Documents/data/mergetree/all_3_3_0/l_shipdate.bin"
+    };
+    for (auto _ : state)
+    {
+        for (auto file : files)
+        {
+            ReadBufferFromFile in(file);
+            FasterCompressedReadBuffer decompressing_in(in, state.range(0));
+            while (!decompressing_in.eof())
+            {
+                decompressing_in.position() = decompressing_in.buffer().end();
+                decompressing_in.next();
+            }
+            // std::cout << "call count:" << std::to_string(decompressing_in.getPerformanceStatistics().data[state.range(0)].count) << "\n";
+            // std::cout << "false count:" << std::to_string(decompressing_in.false_count) << "\n";
+            // decompressing_in.getStreamStatistics().print();
+        }
+
+    }
+}
+// BENCHMARK(BM_TestDecompress)->Arg(0)->Arg(1)->Arg(2)->Arg(3)->Unit(benchmark::kMillisecond)->Iterations(50)->Repetitions(6)->ComputeStatistics("80%", quantile);
 
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Unit(benchmark::kMillisecond)->Iterations(40);
-//BENCHMARK(BM_MergeTreeRead)->Arg(2)->Unit(benchmark::kMillisecond)->Iterations(40);
+// BENCHMARK(BM_MergeTreeRead)->Arg(2)->Unit(benchmark::kMillisecond)->Iterations(50)->Repetitions(6)->ComputeStatistics("80%", quantile);
 //BENCHMARK(BM_ShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
 //BENCHMARK(BM_HashShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
 //BENCHMARK(BM_ShuffleReader)->Unit(benchmark::kMillisecond)->Iterations(10);
@@ -983,8 +1167,8 @@ double quantile(const vector<double>&x)
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_TPCH_Q6)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100);
-BENCHMARK(BM_MERGE_TREE_TPCH_Q6_NEW)->Unit(benchmark::kMillisecond)->Iterations(100);
+BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(50)->Repetitions(6)->ComputeStatistics("80%", quantile);
+//BENCHMARK(BM_MERGE_TREE_TPCH_Q6_NEW)->Unit(benchmark::kMillisecond)->Iterations(100);
 
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);

@@ -5,7 +5,7 @@
 #include <mutex>
 #include <optional>
 #include <vector>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace Poco::Util
 {

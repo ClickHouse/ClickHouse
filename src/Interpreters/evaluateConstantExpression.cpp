@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
@@ -18,6 +19,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <unordered_map>
 
 namespace DB
 {
@@ -31,6 +33,9 @@ namespace ErrorCodes
 
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context)
 {
+    if (ASTLiteral * literal = node->as<ASTLiteral>())
+        return std::make_pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
+
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
@@ -39,7 +44,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     if (context->getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
-    String name = ast->getColumnName(context->getSettingsRef());
+    String name = ast->getColumnName();
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
@@ -103,23 +108,6 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr
     return res;
 }
 
-std::tuple<bool, ASTPtr> evaluateDatabaseNameForMergeEngine(const ASTPtr & node, ContextPtr context)
-{
-    if (const auto * func = node->as<ASTFunction>(); func && func->name == "REGEXP")
-    {
-        if (func->arguments->children.size() != 1)
-            throw Exception("Arguments for REGEXP in Merge ENGINE should be 1", ErrorCodes::BAD_ARGUMENTS);
-
-        auto * literal = func->arguments->children[0]->as<ASTLiteral>();
-        if (!literal || literal->value.safeGet<String>().empty())
-            throw Exception("Argument for REGEXP in Merge ENGINE should be a non empty String Literal", ErrorCodes::BAD_ARGUMENTS);
-
-        return std::tuple{true, func->arguments->children[0]};
-    }
-
-    auto ast = evaluateConstantExpressionForDatabaseName(node, context);
-    return std::tuple{false, ast};
-}
 
 namespace
 {
@@ -213,7 +201,7 @@ namespace
 
             Disjunction result;
 
-            auto add_dnf = [&](const auto &dnf)
+            auto add_dnf = [&](const auto & dnf)
             {
                 if (dnf.size() > limit)
                 {
@@ -338,6 +326,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
 
     if (const auto * fn = node->as<ASTFunction>())
     {
+        std::unordered_map<std::string, bool> always_false_map;
         const auto dnf = analyzeFunction(fn, target_expr, limit);
 
         if (dnf.empty() || !limit)
@@ -368,7 +357,41 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
 
         for (const auto & conjunct : dnf)
         {
-            Block block(conjunct);
+            Block block;
+
+            for (const auto & elem : conjunct)
+            {
+                if (!block.has(elem.name))
+                {
+                    block.insert(elem);
+                }
+                else
+                {
+                    /// Conjunction of condition on column equality to distinct values can never be satisfied.
+
+                    const ColumnWithTypeAndName & prev = block.getByName(elem.name);
+
+                    if (isColumnConst(*prev.column) && isColumnConst(*elem.column))
+                    {
+                        Field prev_value = assert_cast<const ColumnConst &>(*prev.column).getField();
+                        Field curr_value = assert_cast<const ColumnConst &>(*elem.column).getField();
+
+                        if (!always_false_map.count(elem.name))
+                        {
+                            always_false_map[elem.name] = prev_value != curr_value;
+                        }
+                        else
+                        {
+                            auto & always_false = always_false_map[elem.name];
+                            /// If at least one of conjunct is not always false, we should preserve this.
+                            if (always_false)
+                            {
+                                always_false = prev_value != curr_value;
+                            }
+                        }
+                    }
+                }
+            }
 
             // Block should contain all required columns from `target_expr`
             if (!has_required_columns(block))
@@ -393,6 +416,11 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
                 return {};
             }
         }
+
+        bool any_always_false = std::any_of(always_false_map.begin(), always_false_map.end(), [](const auto & v) { return v.second; });
+        if (any_always_false)
+            return Blocks{};
+
     }
     else if (const auto * literal = node->as<ASTLiteral>())
     {

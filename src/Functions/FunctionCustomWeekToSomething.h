@@ -7,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -30,6 +31,7 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -129,20 +131,17 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        IFunction::Monotonicity is_monotonic{true};
-        IFunction::Monotonicity is_not_monotonic;
+        if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
-        if (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
-        {
-            is_monotonic.is_always_monotonic = true;
-            return is_monotonic;
-        }
+        const IFunction::Monotonicity is_monotonic = { .is_monotonic = true };
+        const IFunction::Monotonicity is_not_monotonic;
 
         /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
         const DateLUTImpl & date_lut = DateLUT::instance();
 
         if (left.isNull() || right.isNull())
-            return is_not_monotonic;
+            return {};
 
         /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 

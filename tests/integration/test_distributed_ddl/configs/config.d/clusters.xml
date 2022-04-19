@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
 <remote_servers>
 
     <!-- Main cluster -->
@@ -90,4 +90,4 @@
     </cluster_no_replicas>
 
 </remote_servers>
-</yandex>
+</clickhouse>

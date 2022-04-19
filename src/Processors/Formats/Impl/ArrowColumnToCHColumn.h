@@ -5,6 +5,8 @@
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
 #include <DataTypes/IDataType.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Core/Block.h>
 #include <arrow/table.h>
 
 
@@ -17,19 +19,34 @@ class Chunk;
 class ArrowColumnToCHColumn
 {
 public:
-    ArrowColumnToCHColumn(const Block & header_, std::shared_ptr<arrow::Schema> schema_, const std::string & format_name_);
+    using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::ChunkedArray>>;
+
+    ArrowColumnToCHColumn(
+        const Block & header_,
+        const std::string & format_name_,
+        bool import_nested_,
+        bool allow_missing_columns_);
 
     void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
 
+    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr);
+
+    /// Get missing columns that exists in header but not in arrow::Schema
+    std::vector<size_t> getMissingColumns(const arrow::Schema & schema) const;
+
+    static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name);
+
 private:
     const Block & header;
-    std::unordered_map<std::string, DataTypePtr> name_to_internal_type;
     const std::string format_name;
+    bool import_nested;
+    /// If false, throw exception if some columns in header not exists in arrow table.
+    bool allow_missing_columns;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
-    std::unordered_map<std::string, ColumnPtr> dictionary_values;
+    std::unordered_map<std::string, std::shared_ptr<ColumnWithTypeAndName>> dictionary_values;
 };
 
 }

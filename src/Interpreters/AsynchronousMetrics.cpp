@@ -19,9 +19,7 @@
 #include <chrono>
 
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
@@ -71,12 +69,11 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 AsynchronousMetrics::AsynchronousMetrics(
     ContextPtr global_context_,
     int update_period_seconds,
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables_,
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
     , update_period(update_period_seconds)
-    , servers_to_start_before_tables(servers_to_start_before_tables_)
-    , servers(servers_)
+    , protocol_server_metrics_func(protocol_server_metrics_func_)
+    , log(&Poco::Logger::get("AsynchronousMetrics"))
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/meminfo", meminfo);
@@ -86,6 +83,20 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/uptime", uptime);
     openFileIfExists("/proc/net/dev", net_dev);
+
+    openSensors();
+    openBlockDevices();
+    openEDAC();
+    openSensorsChips();
+#endif
+}
+
+#if defined(OS_LINUX)
+void AsynchronousMetrics::openSensors()
+{
+    LOG_TRACE(log, "Scanning /sys/class/thermal");
+
+    thermal.clear();
 
     for (size_t thermal_device_index = 0;; ++thermal_device_index)
     {
@@ -98,8 +109,90 @@ AsynchronousMetrics::AsynchronousMetrics(
             else
                 break;
         }
+
+        file->rewind();
+        Int64 temperature = 0;
+        try
+        {
+            readText(temperature, *file);
+        }
+        catch (const ErrnoException & e)
+        {
+            LOG_WARNING(
+                &Poco::Logger::get("AsynchronousMetrics"),
+                "Thermal monitor '{}' exists but could not be read, error {}.",
+                thermal_device_index,
+                e.getErrno());
+            continue;
+        }
+
         thermal.emplace_back(std::move(file));
     }
+}
+
+void AsynchronousMetrics::openBlockDevices()
+{
+    LOG_TRACE(log, "Scanning /sys/block");
+
+    if (!std::filesystem::exists("/sys/block"))
+        return;
+
+    block_devices_rescan_delay.restart();
+
+    block_devs.clear();
+
+    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
+    {
+        String device_name = device_dir.path().filename();
+
+        /// We are not interested in loopback devices.
+        if (device_name.starts_with("loop"))
+            continue;
+
+        std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(device_dir.path() / "stat");
+        if (!file)
+            continue;
+
+        block_devs[device_name] = std::move(file);
+    }
+}
+
+void AsynchronousMetrics::openEDAC()
+{
+    LOG_TRACE(log, "Scanning /sys/devices/system/edac");
+
+    edac.clear();
+
+    for (size_t edac_index = 0;; ++edac_index)
+    {
+        String edac_correctable_file = fmt::format("/sys/devices/system/edac/mc/mc{}/ce_count", edac_index);
+        String edac_uncorrectable_file = fmt::format("/sys/devices/system/edac/mc/mc{}/ue_count", edac_index);
+
+        bool edac_correctable_file_exists = std::filesystem::exists(edac_correctable_file);
+        bool edac_uncorrectable_file_exists = std::filesystem::exists(edac_uncorrectable_file);
+
+        if (!edac_correctable_file_exists && !edac_uncorrectable_file_exists)
+        {
+            if (edac_index == 0)
+                continue;
+            else
+                break;
+        }
+
+        edac.emplace_back();
+
+        if (edac_correctable_file_exists)
+            edac.back().first = openFileIfExists(edac_correctable_file);
+        if (edac_uncorrectable_file_exists)
+            edac.back().second = openFileIfExists(edac_uncorrectable_file);
+    }
+}
+
+void AsynchronousMetrics::openSensorsChips()
+{
+    LOG_TRACE(log, "Scanning /sys/class/hwmon");
+
+    hwmon_devices.clear();
 
     for (size_t hwmon_index = 0;; ++hwmon_index)
     {
@@ -146,53 +239,28 @@ AsynchronousMetrics::AsynchronousMetrics(
                 std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
             }
 
+            file->rewind();
+            Int64 temperature = 0;
+            try
+            {
+                readText(temperature, *file);
+            }
+            catch (const ErrnoException & e)
+            {
+                LOG_WARNING(
+                    &Poco::Logger::get("AsynchronousMetrics"),
+                    "Hardware monitor '{}', sensor '{}' exists but could not be read, error {}.",
+                    hwmon_name,
+                    sensor_name,
+                    e.getErrno());
+                continue;
+            }
+
             hwmon_devices[hwmon_name][sensor_name] = std::move(file);
         }
     }
-
-    for (size_t edac_index = 0;; ++edac_index)
-    {
-        String edac_correctable_file = fmt::format("/sys/devices/system/edac/mc/mc{}/ce_count", edac_index);
-        String edac_uncorrectable_file = fmt::format("/sys/devices/system/edac/mc/mc{}/ue_count", edac_index);
-
-        bool edac_correctable_file_exists = std::filesystem::exists(edac_correctable_file);
-        bool edac_uncorrectable_file_exists = std::filesystem::exists(edac_uncorrectable_file);
-
-        if (!edac_correctable_file_exists && !edac_uncorrectable_file_exists)
-        {
-            if (edac_index == 0)
-                continue;
-            else
-                break;
-        }
-
-        edac.emplace_back();
-
-        if (edac_correctable_file_exists)
-            edac.back().first = openFileIfExists(edac_correctable_file);
-        if (edac_uncorrectable_file_exists)
-            edac.back().second = openFileIfExists(edac_uncorrectable_file);
-    }
-
-    if (std::filesystem::exists("/sys/block"))
-    {
-        for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
-        {
-            String device_name = device_dir.path().filename();
-
-            /// We are not interested in loopback devices.
-            if (device_name.starts_with("loop"))
-                continue;
-
-            std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(device_dir.path() / "stat");
-            if (!file)
-                continue;
-
-            block_devs[device_name] = std::move(file);
-        }
-    }
-#endif
 }
+#endif
 
 void AsynchronousMetrics::start()
 {
@@ -202,7 +270,7 @@ void AsynchronousMetrics::start()
     thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
 }
 
-AsynchronousMetrics::~AsynchronousMetrics()
+void AsynchronousMetrics::stop()
 {
     try
     {
@@ -213,12 +281,20 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
         wait_cond.notify_one();
         if (thread)
+        {
             thread->join();
+            thread.reset();
+        }
     }
     catch (...)
     {
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+AsynchronousMetrics::~AsynchronousMetrics()
+{
+    stop();
 }
 
 
@@ -297,7 +373,7 @@ static void calculateMaxAndSum(Max & max, Sum & sum, T x)
         max = x;
 }
 
-#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+#if USE_JEMALLOC
 uint64_t updateJemallocEpoch()
 {
     uint64_t value = 0;
@@ -509,6 +585,22 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
 
     {
+        if (auto index_mark_cache = getContext()->getIndexMarkCache())
+        {
+            new_values["IndexMarkCacheBytes"] = index_mark_cache->weight();
+            new_values["IndexMarkCacheFiles"] = index_mark_cache->count();
+        }
+    }
+
+    {
+        if (auto index_uncompressed_cache = getContext()->getIndexUncompressedCache())
+        {
+            new_values["IndexUncompressedCacheBytes"] = index_uncompressed_cache->weight();
+            new_values["IndexUncompressedCacheCells"] = index_uncompressed_cache->count();
+        }
+    }
+
+    {
         if (auto mmap_cache = getContext()->getMMappedFileCache())
         {
             new_values["MMapCacheCells"] = mmap_cache->count();
@@ -528,13 +620,15 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     new_values["Uptime"] = getContext()->getUptimeSeconds();
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
         MemoryStatisticsOS::Data data = memory_stat.get();
 
         new_values["MemoryVirtual"] = data.virt;
         new_values["MemoryResident"] = data.resident;
+#if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = data.shared;
+#endif
         new_values["MemoryCode"] = data.code;
         new_values["MemoryDataAndStack"] = data.data_and_stack;
 
@@ -550,7 +644,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
             /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
             if (difference >= 1048576 || difference <= -1048576)
-                LOG_TRACE(&Poco::Logger::get("AsynchronousMetrics"),
+                LOG_TRACE(log,
                     "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
                     ReadableSize(amount),
                     ReadableSize(peak),
@@ -561,7 +655,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
         }
     }
+#endif
 
+#if defined(OS_LINUX)
     if (loadavg)
     {
         try
@@ -765,43 +861,60 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
                 uint64_t kb = 0;
                 readText(kb, *meminfo);
-                if (kb)
+
+                if (!kb)
                 {
-                    skipWhitespaceIfAny(*meminfo, true);
-                    assertString("kB", *meminfo);
+                    skipToNextLineOrEOF(*meminfo);
+                    continue;
+                }
 
-                    uint64_t bytes = kb * 1024;
+                skipWhitespaceIfAny(*meminfo, true);
 
-                    if (name == "MemTotal:")
-                    {
-                        new_values["OSMemoryTotal"] = bytes;
-                    }
-                    else if (name == "MemFree:")
-                    {
-                        /// We cannot simply name this metric "Free", because it confuses users.
-                        /// See https://www.linuxatemyram.com/
-                        /// For convenience we also provide OSMemoryFreePlusCached, that should be somewhat similar to OSMemoryAvailable.
+                /**
+                 * Not all entries in /proc/meminfo contain the kB suffix, e.g.
+                 * HugePages_Total:       0
+                 * HugePages_Free:        0
+                 * We simply skip such entries as they're not needed
+                 */
+                if (*meminfo->position() == '\n')
+                {
+                    skipToNextLineOrEOF(*meminfo);
+                    continue;
+                }
 
-                        free_plus_cached_bytes += bytes;
-                        new_values["OSMemoryFreeWithoutCached"] = bytes;
-                    }
-                    else if (name == "MemAvailable:")
-                    {
-                        new_values["OSMemoryAvailable"] = bytes;
-                    }
-                    else if (name == "Buffers:")
-                    {
-                        new_values["OSMemoryBuffers"] = bytes;
-                    }
-                    else if (name == "Cached:")
-                    {
-                        free_plus_cached_bytes += bytes;
-                        new_values["OSMemoryCached"] = bytes;
-                    }
-                    else if (name == "SwapCached:")
-                    {
-                        new_values["OSMemorySwapCached"] = bytes;
-                    }
+                assertString("kB", *meminfo);
+
+                uint64_t bytes = kb * 1024;
+
+                if (name == "MemTotal:")
+                {
+                    new_values["OSMemoryTotal"] = bytes;
+                }
+                else if (name == "MemFree:")
+                {
+                    /// We cannot simply name this metric "Free", because it confuses users.
+                    /// See https://www.linuxatemyram.com/
+                    /// For convenience we also provide OSMemoryFreePlusCached, that should be somewhat similar to OSMemoryAvailable.
+
+                    free_plus_cached_bytes += bytes;
+                    new_values["OSMemoryFreeWithoutCached"] = bytes;
+                }
+                else if (name == "MemAvailable:")
+                {
+                    new_values["OSMemoryAvailable"] = bytes;
+                }
+                else if (name == "Buffers:")
+                {
+                    new_values["OSMemoryBuffers"] = bytes;
+                }
+                else if (name == "Cached:")
+                {
+                    free_plus_cached_bytes += bytes;
+                    new_values["OSMemoryCached"] = bytes;
+                }
+                else if (name == "SwapCached:")
+                {
+                    new_values["OSMemorySwapCached"] = bytes;
                 }
 
                 skipToNextLineOrEOF(*meminfo);
@@ -877,9 +990,14 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
-    for (auto & [name, device] : block_devs)
+    /// Update list of block devices periodically
+    /// (i.e. someone may add new disk to RAID array)
+    if (block_devices_rescan_delay.elapsedSeconds() >= 300)
+        openBlockDevices();
+
+    try
     {
-        try
+        for (auto & [name, device] : block_devs)
         {
             device->rewind();
 
@@ -927,6 +1045,17 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 new_values["BlockActiveTimePerOp_" + name] = delta_values.io_ticks * time_multiplier / delta_values.in_flight_ios;
                 new_values["BlockQueueTimePerOp_" + name] = delta_values.time_in_queue * time_multiplier / delta_values.in_flight_ios;
             }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /// Try to reopen block devices in case of error
+        /// (i.e. ENOENT means that some disk had been replaced, and it may apperas with a new name)
+        try
+        {
+            openBlockDevices();
         }
         catch (...)
         {
@@ -1020,9 +1149,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
-    for (size_t i = 0, size = thermal.size(); i < size; ++i)
+    try
     {
-        try
+        for (size_t i = 0, size = thermal.size(); i < size; ++i)
         {
             ReadBufferFromFilePRead & in = *thermal[i];
 
@@ -1031,21 +1160,39 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             readText(temperature, in);
             new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
         }
+    }
+    catch (...)
+    {
+        if (errno != ENODATA)   /// Ok for thermal sensors.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /// Files maybe re-created on module load/unload
+        try
+        {
+            openSensors();
+        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
-    for (const auto & [hwmon_name, sensors] : hwmon_devices)
+    try
     {
-        try
+        for (const auto & [hwmon_name, sensors] : hwmon_devices)
         {
             for (const auto & [sensor_name, sensor_file] : sensors)
             {
                 sensor_file->rewind();
                 Int64 temperature = 0;
-                readText(temperature, *sensor_file);
+                try
+                {
+                    readText(temperature, *sensor_file);
+                }
+                catch (const ErrnoException & e)
+                {
+                    LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"), "Hardware monitor '{}', sensor '{}' exists but could not be read, error {}.", hwmon_name, sensor_name, e.getErrno());
+                }
 
                 if (sensor_name.empty())
                     new_values[fmt::format("Temperature_{}", hwmon_name)] = temperature * 0.001;
@@ -1053,19 +1200,33 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                     new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = temperature * 0.001;
             }
         }
+    }
+    catch (...)
+    {
+        if (errno != ENODATA)   /// Ok for thermal sensors.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /// Files can be re-created on:
+        /// - module load/unload
+        /// - suspend/resume cycle
+        /// So file descriptors should be reopened.
+        try
+        {
+            openSensorsChips();
+        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
-    for (size_t i = 0, size = edac.size(); i < size; ++i)
+    try
     {
-        /// NOTE maybe we need to take difference with previous values.
-        /// But these metrics should be exceptionally rare, so it's ok to keep them accumulated.
-
-        try
+        for (size_t i = 0, size = edac.size(); i < size; ++i)
         {
+            /// NOTE maybe we need to take difference with previous values.
+            /// But these metrics should be exceptionally rare, so it's ok to keep them accumulated.
+
             if (edac[i].first)
             {
                 ReadBufferFromFilePRead & in = *edac[i].first;
@@ -1084,6 +1245,16 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 new_values[fmt::format("EDAC{}_Uncorrectable", i)] = errors;
             }
         }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /// EDAC files can be re-created on module load/unload
+        try
+        {
+            openEDAC();
+        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -1095,9 +1266,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     {
         auto stat = getStatVFS(getContext()->getPath());
 
-        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
-        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_bsize;
-        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_bsize;
+        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
+        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
+        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
         new_values["FilesystemMainPathTotalINodes"] = stat.f_files;
         new_values["FilesystemMainPathAvailableINodes"] = stat.f_favail;
         new_values["FilesystemMainPathUsedINodes"] = stat.f_files - stat.f_favail;
@@ -1107,9 +1278,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         /// Current working directory of the server is the directory with logs.
         auto stat = getStatVFS(".");
 
-        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
-        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_bsize;
-        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_bsize;
+        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
+        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
+        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
         new_values["FilesystemLogsPathTotalINodes"] = stat.f_files;
         new_values["FilesystemLogsPathAvailableINodes"] = stat.f_favail;
         new_values["FilesystemLogsPathUsedINodes"] = stat.f_files - stat.f_favail;
@@ -1254,26 +1425,15 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 return it->second;
         };
 
-        if (servers_to_start_before_tables)
+        const auto server_metrics = protocol_server_metrics_func();
+        for (const auto & server_metric : server_metrics)
         {
-            for (const auto & server : *servers_to_start_before_tables)
-            {
-                if (const auto * name = get_metric_name(server.getPortName()))
-                    new_values[name] = server.currentThreads();
-            }
-        }
-
-        if (servers)
-        {
-            for (const auto & server : *servers)
-            {
-                if (const auto * name = get_metric_name(server.getPortName()))
-                    new_values[name] = server.currentThreads();
-            }
+            if (const auto * name = get_metric_name(server_metric.port_name))
+                new_values[name] = server_metric.current_threads;
         }
     }
 
-#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+#if USE_JEMALLOC
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
@@ -1303,9 +1463,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     new_values["AsynchronousMetricsCalculationTimeSpent"] = watch.elapsedSeconds();
 
     /// Log the new metrics.
-    if (auto log = getContext()->getAsynchronousMetricLog())
+    if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog())
     {
-        log->addValues(new_values);
+        asynchronous_metric_log->addValues(new_values);
     }
 
     first_run = false;

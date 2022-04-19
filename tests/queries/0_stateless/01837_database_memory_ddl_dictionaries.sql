@@ -1,3 +1,5 @@
+-- Tags: no-parallel, no-fasttest
+
 DROP DATABASE IF EXISTS 01837_db;
 CREATE DATABASE 01837_db ENGINE = Memory;
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <memory>
 #include <boost/noncopyable.hpp>
+#include <base/sort.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/SmallTable.h>
@@ -44,7 +45,7 @@ private:
 
     void toLarge()
     {
-        rb = std::make_unique<RoaringBitmap>();
+        rb = std::make_shared<RoaringBitmap>();
         for (const auto & x : small)
             rb->add(static_cast<Value>(x.getValue()));
         small.clear();
@@ -114,7 +115,7 @@ public:
             readVarUInt(size, in);
             std::unique_ptr<char[]> buf(new char[size]);
             in.readStrict(buf.get(), size);
-            rb = std::make_unique<RoaringBitmap>(RoaringBitmap::read(buf.get()));
+            rb = std::make_shared<RoaringBitmap>(RoaringBitmap::read(buf.get()));
         }
     }
 
@@ -141,7 +142,7 @@ public:
      */
     std::shared_ptr<RoaringBitmap> getNewRoaringBitmapFromSmall() const
     {
-        std::shared_ptr<RoaringBitmap> ret = std::make_unique<RoaringBitmap>();
+        std::shared_ptr<RoaringBitmap> ret = std::make_shared<RoaringBitmap>();
         for (const auto & x : small)
             ret->add(static_cast<Value>(x.getValue()));
         return ret;
@@ -150,7 +151,7 @@ public:
     /**
      * Computes the intersection between two bitmaps
      */
-    void rb_and(const RoaringBitmapWithSmallSet & r1)
+    void rb_and(const RoaringBitmapWithSmallSet & r1) /// NOLINT
     {
         ValueBuffer buffer;
         if (isSmall() && r1.isSmall())
@@ -194,12 +195,12 @@ public:
     /**
      * Computes the union between two bitmaps.
      */
-    void rb_or(const RoaringBitmapWithSmallSet & r1) { merge(r1); }
+    void rb_or(const RoaringBitmapWithSmallSet & r1) { merge(r1); } /// NOLINT
 
     /**
      * Computes the symmetric difference (xor) between two bitmaps.
      */
-    void rb_xor(const RoaringBitmapWithSmallSet & r1)
+    void rb_xor(const RoaringBitmapWithSmallSet & r1) /// NOLINT
     {
         if (isSmall())
             toLarge();
@@ -211,7 +212,7 @@ public:
     /**
      * Computes the difference (andnot) between two bitmaps
      */
-    void rb_andnot(const RoaringBitmapWithSmallSet & r1)
+    void rb_andnot(const RoaringBitmapWithSmallSet & r1) /// NOLINT
     {
         ValueBuffer buffer;
         if (isSmall() && r1.isSmall())
@@ -255,7 +256,7 @@ public:
     /**
      * Computes the cardinality of the intersection between two bitmaps.
      */
-    UInt64 rb_and_cardinality(const RoaringBitmapWithSmallSet & r1) const
+    UInt64 rb_and_cardinality(const RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
         UInt64 ret = 0;
         if (isSmall() && r1.isSmall())
@@ -282,8 +283,8 @@ public:
 
     /**
      * Computes the cardinality of the union between two bitmaps.
-    */
-    UInt64 rb_or_cardinality(const RoaringBitmapWithSmallSet & r1) const
+     */
+    UInt64 rb_or_cardinality(const RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
         UInt64 c1 = size();
         UInt64 c2 = r1.size();
@@ -293,8 +294,8 @@ public:
 
     /**
      * Computes the cardinality of the symmetric difference (andnot) between two bitmaps.
-    */
-    UInt64 rb_xor_cardinality(const RoaringBitmapWithSmallSet & r1) const
+     */
+    UInt64 rb_xor_cardinality(const RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
         UInt64 c1 = size();
         UInt64 c2 = r1.size();
@@ -305,7 +306,7 @@ public:
     /**
      * Computes the cardinality of the difference (andnot) between two bitmaps.
      */
-    UInt64 rb_andnot_cardinality(const RoaringBitmapWithSmallSet & r1) const
+    UInt64 rb_andnot_cardinality(const RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
         UInt64 c1 = size();
         UInt64 inter = rb_and_cardinality(r1);
@@ -315,7 +316,7 @@ public:
     /**
      * Return 1 if the two bitmaps contain the same elements.
      */
-    UInt8 rb_equals(const RoaringBitmapWithSmallSet & r1)
+    UInt8 rb_equals(const RoaringBitmapWithSmallSet & r1) /// NOLINT
     {
         if (isSmall())
             toLarge();
@@ -328,7 +329,7 @@ public:
      * Check whether two bitmaps intersect.
      * Intersection with an empty set is always 0 (consistent with hasAny).
      */
-    UInt8 rb_intersect(const RoaringBitmapWithSmallSet & r1) const
+    UInt8 rb_intersect(const RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
         if (isSmall())
         {
@@ -369,7 +370,7 @@ public:
      * Empty set is a subset of any other set (consistent with hasAll).
      * It's used in subset and currently only support comparing same type
      */
-    UInt8 rb_is_subset(const RoaringBitmapWithSmallSet & r1) const
+    UInt8 rb_is_subset(const RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
         if (isSmall())
         {
@@ -419,8 +420,11 @@ public:
     /**
      * Check whether this bitmap contains the argument.
      */
-    UInt8 rb_contains(UInt64 x) const
+    UInt8 rb_contains(UInt64 x) const /// NOLINT
     {
+        if (!std::is_same_v<T, UInt64> && x > rb_max())
+            return 0;
+
         if (isSmall())
             return small.find(x) != small.end();
         else
@@ -430,8 +434,11 @@ public:
     /**
      * Remove value
      */
-    void rb_remove(UInt64 x)
+    void rb_remove(UInt64 x) /// NOLINT
     {
+        if (!std::is_same_v<T, UInt64> && x > rb_max())
+            return;
+
         if (isSmall())
             toLarge();
 
@@ -444,7 +451,7 @@ public:
      * range_end - range_start.
      * Areas outside the range are passed through unchanged.
      */
-    void rb_flip(UInt64 begin, UInt64 end)
+    void rb_flip(UInt64 begin, UInt64 end) /// NOLINT
     {
         if (isSmall())
             toLarge();
@@ -455,7 +462,7 @@ public:
     /**
      * returns the number of integers that are smaller or equal to offsetid.
      */
-    UInt64 rb_rank(UInt64 x)
+    UInt64 rb_rank(UInt64 x) /// NOLINT
     {
         if (isSmall())
             toLarge();
@@ -467,7 +474,7 @@ public:
      * Convert elements to integer array, return number of elements
      */
     template <typename Element>
-    UInt64 rb_to_array(PaddedPODArray<Element> & res) const
+    UInt64 rb_to_array(PaddedPODArray<Element> & res) const /// NOLINT
     {
         UInt64 count = 0;
         if (isSmall())
@@ -493,7 +500,7 @@ public:
      * Return new set with specified range (not include the range_end)
      * It's used in subset and currently only support UInt32
      */
-    UInt64 rb_range(UInt64 range_start, UInt64 range_end, RoaringBitmapWithSmallSet & r1) const
+    UInt64 rb_range(UInt64 range_start, UInt64 range_end, RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
         UInt64 count = 0;
         if (range_start >= range_end)
@@ -533,7 +540,7 @@ public:
      * Return new set of the smallest `limit` values in set which is no less than `range_start`.
      * It's used in subset and currently only support UInt32
      */
-    UInt64 rb_limit(UInt64 range_start, UInt64 limit, RoaringBitmapWithSmallSet & r1) const
+    UInt64 rb_limit(UInt64 range_start, UInt64 limit, RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
         if (limit == 0)
             return 0;
@@ -551,7 +558,7 @@ public:
             }
             if (limit < answer.size())
             {
-                std::nth_element(answer.begin(), answer.begin() + limit, answer.end());
+                ::nth_element(answer.begin(), answer.begin() + limit, answer.end());
                 answer.resize(limit);
             }
 
@@ -579,7 +586,38 @@ public:
         }
     }
 
-    UInt64 rb_min() const
+    UInt64 rb_offset_limit(UInt64 offset, UInt64 limit, RoaringBitmapWithSmallSet & r1) const /// NOLINT
+    {
+        if (limit == 0 || offset >= size())
+            return 0;
+
+        if (isSmall())
+        {
+            UInt64 count = 0;
+            UInt64 offset_count = 0;
+            auto it = small.begin();
+            for (;it != small.end() && offset_count < offset; ++it)
+                ++offset_count;
+
+            for (;it != small.end() && count < limit; ++it, ++count)
+                r1.add(it->getValue());
+            return count;
+        }
+        else
+        {
+            UInt64 count = 0;
+            UInt64 offset_count = 0;
+            auto it = rb->begin();
+            for (;it != rb->end() && offset_count < offset; ++it)
+                ++offset_count;
+
+            for (;it != rb->end() && count < limit; ++it, ++count)
+                r1.add(*it);
+            return count;
+        }
+    }
+
+    UInt64 rb_min() const /// NOLINT
     {
         if (isSmall())
         {
@@ -598,7 +636,7 @@ public:
             return rb->minimum();
     }
 
-    UInt64 rb_max() const
+    UInt64 rb_max() const /// NOLINT
     {
         if (isSmall())
         {
@@ -621,7 +659,7 @@ public:
      * Replace value.
      * It's used in transform and currently can only support UInt32
      */
-    void rb_replace(const UInt64 * from_vals, const UInt64 * to_vals, size_t num)
+    void rb_replace(const UInt64 * from_vals, const UInt64 * to_vals, size_t num) /// NOLINT
     {
         if (isSmall())
             toLarge();

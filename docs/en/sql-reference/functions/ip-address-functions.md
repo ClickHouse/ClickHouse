@@ -13,9 +13,17 @@ Alias: `INET_NTOA`.
 
 ## IPv4StringToNum(s) {#ipv4stringtonums}
 
-The reverse function of IPv4NumToString. If the IPv4 address has an invalid format, it returns 0.
+The reverse function of IPv4NumToString. If the IPv4 address has an invalid format, it throws exception.
 
 Alias: `INET_ATON`.
+
+## IPv4StringToNumOrDefault(s) {#ipv4stringtonums}
+
+Same as `IPv4StringToNum`, but if the IPv4 address has an invalid format, it returns 0.
+
+## IPv4StringToNumOrNull(s) {#ipv4stringtonums}
+
+Same as `IPv4StringToNum`, but if the IPv4 address has an invalid format, it returns null.
 
 ## IPv4NumToStringClassC(num) {#ipv4numtostringclasscnum}
 
@@ -53,7 +61,7 @@ Since using ‘xxx’ is highly unusual, this may be changed in the future. We r
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
-IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. 
+IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44.
 
 Alias: `INET6_NTOA`.
 
@@ -123,7 +131,7 @@ LIMIT 10
 
 ## IPv6StringToNum {#ipv6stringtonums}
 
-The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it returns a string of null bytes. 
+The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it throws exception.
 
 If the input string contains a valid IPv4 address, returns its IPv6 equivalent.
 HEX can be uppercase or lowercase.
@@ -136,13 +144,13 @@ Alias: `INET6_ATON`.
 IPv6StringToNum(string)
 ```
 
-**Argument** 
+**Argument**
 
 -   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   IPv6 address in binary format. 
+-   IPv6 address in binary format.
 
 Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
@@ -167,6 +175,14 @@ Result:
 **See Also**
 
 -   [cutIPv6](#cutipv6x-bytestocutforipv6-bytestocutforipv4).
+
+## IPv6StringToNumOrDefault(s) {#ipv6stringtonums}
+
+Same as `IPv6StringToNum`, but if the IPv6 address has an invalid format, it returns 0.
+
+## IPv6StringToNumOrNull(s) {#ipv6stringtonums}
+
+Same as `IPv6StringToNum`, but if the IPv6 address has an invalid format, it returns null.
 
 ## IPv4ToIPv6(x) {#ipv4toipv6x}
 
@@ -261,6 +277,14 @@ SELECT
 └───────────────────────────────────┴──────────────────────────┘
 ```
 
+## toIPv4OrDefault(string) {#toipv4ordefaultstring}
+
+Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns 0.
+
+## toIPv4OrNull(string) {#toipv4ornullstring}
+
+Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns null.
+
 ## toIPv6 {#toipv6string}
 
 Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/domains/ipv6.md) type. If the IPv6 address has an invalid format, returns an empty value.
@@ -280,7 +304,7 @@ toIPv6(string)
 
 **Returned value**
 
--   IP address. 
+-   IP address.
 
 Type: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
 
@@ -316,6 +340,14 @@ Result:
 │ ::ffff:127.0.0.1    │
 └─────────────────────┘
 ```
+
+## IPv6StringToNumOrDefault(s) {#toipv6ordefaultstring}
+
+Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns 0.
+
+## IPv6StringToNumOrNull(s) {#toipv6ornullstring}
+
+Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns null.
 
 ## isIPv4String {#isipv4string}
 

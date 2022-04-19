@@ -1,8 +1,10 @@
+#include "Core/Protocol.h"
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context.h>
 
 namespace ProfileEvents
 {
@@ -21,13 +23,14 @@ namespace ErrorCodes
 
 HedgedConnections::HedgedConnections(
     const ConnectionPoolWithFailoverPtr & pool_,
-    const Settings & settings_,
+    ContextPtr context_,
     const ConnectionTimeouts & timeouts_,
     const ThrottlerPtr & throttler_,
     PoolMode pool_mode,
     std::shared_ptr<QualifiedTableName> table_to_check_)
-    : hedged_connections_factory(pool_, &settings_, timeouts_, table_to_check_)
-    , settings(settings_)
+    : hedged_connections_factory(pool_, &context_->getSettingsRef(), timeouts_, table_to_check_)
+    , context(std::move(context_))
+    , settings(context->getSettingsRef())
     , drain_timeout(settings.drain_timeout)
     , allow_changing_replica_until_first_data_packet(settings.allow_changing_replica_until_first_data_packet)
     , throttler(throttler_)
@@ -129,7 +132,7 @@ void HedgedConnections::sendQuery(
     const String & query,
     const String & query_id,
     UInt64 stage,
-    const ClientInfo & client_info,
+    ClientInfo & client_info,
     bool with_pending_data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -168,7 +171,9 @@ void HedgedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        if (offset_states.size() > 1)
+        const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.allow_experimental_parallel_reading_from_replicas;
+
+        if (offset_states.size() > 1 && enable_sample_offset_parallel_processing)
         {
             modified_settings.parallel_replicas_count = offset_states.size();
             modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
@@ -233,12 +238,12 @@ void HedgedConnections::sendCancel()
     if (!sent_query || cancelled)
         throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
 
+    cancelled = true;
+
     for (auto & offset_status : offset_states)
         for (auto & replica : offset_status.replicas)
             if (replica.connection)
                 replica.connection->sendCancel();
-
-    cancelled = true;
 }
 
 Packet HedgedConnections::drain()
@@ -358,7 +363,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
     else if (std::holds_alternative<std::exception_ptr>(res))
     {
         finishProcessReplica(replica_state, true);
-        std::rethrow_exception(std::move(std::get<std::exception_ptr>(res)));
+        std::rethrow_exception(std::get<std::exception_ptr>(res));
     }
 
     return false;
@@ -410,6 +415,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
+        case Protocol::Server::ProfileEvents:
             replica_with_last_received_packet = replica_location;
             break;
 

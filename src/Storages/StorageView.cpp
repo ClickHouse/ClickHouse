@@ -1,11 +1,14 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -13,8 +16,9 @@
 
 #include <Common/typeid_cast.h>
 
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -29,6 +33,56 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+bool isNullableOrLcNullable(DataTypePtr type)
+{
+    if (type->isNullable())
+        return true;
+
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return lc_type->getDictionaryType()->isNullable();
+
+    return false;
+}
+
+/// Returns `true` if there are nullable column in src but corresponding column in dst is not
+bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block)
+{
+    std::unordered_map<String, bool> src_nullable;
+    for (const auto & col : src_block)
+        src_nullable[col.name] = isNullableOrLcNullable(col.type);
+
+    for (const auto & col : dst_block)
+    {
+        if (!isNullableOrLcNullable(col.type) && src_nullable[col.name])
+            return true;
+    }
+    return false;
+}
+
+bool hasJoin(const ASTSelectQuery & select)
+{
+    const auto & tables = select.tables();
+    if (!tables || tables->children.size() < 2)
+        return false;
+
+    const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
+    return joined_table.table_join != nullptr;
+}
+
+bool hasJoin(const ASTSelectWithUnionQuery & ast)
+{
+    for (const auto & child : ast.list_of_selects->children)
+    {
+        if (const auto * select = child->as<ASTSelectQuery>(); select && hasJoin(*select))
+            return true;
+    }
+    return false;
+}
+
+}
 
 StorageView::StorageView(
     const StorageID & table_id_,
@@ -53,7 +107,7 @@ StorageView::StorageView(
 
 Pipe StorageView::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -61,7 +115,7 @@ Pipe StorageView::read(
     const unsigned num_streams)
 {
     QueryPlan plan;
-    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    read(plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     return plan.convertToPipe(
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
@@ -70,14 +124,14 @@ Pipe StorageView::read(
 void StorageView::read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         const size_t /*max_block_size*/,
         const unsigned /*num_streams*/)
 {
-    ASTPtr current_inner_query = metadata_snapshot->getSelectQuery().inner_query;
+    ASTPtr current_inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
 
     if (query_info.view_query)
     {
@@ -86,12 +140,8 @@ void StorageView::read(
         current_inner_query = query_info.view_query->clone();
     }
 
-    auto modified_context = Context::createCopy(context);
-    /// Use settings from global context,
-    /// because difference between settings set on VIEW creation and query execution can break queries
-    modified_context->setSettings(context->getGlobalContext()->getSettingsRef());
-
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, modified_context, {}, column_names);
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, options, column_names);
     interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.
@@ -104,10 +154,22 @@ void StorageView::read(
     query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
-    auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);
+    const auto & header = query_plan.getCurrentDataStream().header;
+
+    const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
+    if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(header, expected_header))
+    {
+        throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Query from view {} returned Nullable column having not Nullable type in structure. "
+                            "If query from view has JOIN, it may be cause by different values of 'join_use_nulls' setting. "
+                            "You may explicitly specify 'join_use_nulls' in 'CREATE VIEW' query to avoid this error",
+                            getStorageID().getFullTableName());
+    }
+
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
             header.getColumnsWithTypeAndName(),
+            expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);

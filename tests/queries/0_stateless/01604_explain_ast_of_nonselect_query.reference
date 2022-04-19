@@ -1,8 +1,20 @@
-AlterQuery  t1 (children 1)
+AlterQuery  t1 (children 2)
  ExpressionList (children 1)
-  AlterCommand 31 (children 1)
+  AlterCommand DELETE (children 1)
    Function equals (children 1)
     ExpressionList (children 2)
      Identifier date
      Function today (children 1)
       ExpressionList
+ Identifier t1
+CreateFunctionQuery double (children 2)
+ Identifier double
+ Function lambda (children 1)
+  ExpressionList (children 2)
+   Function tuple (children 1)
+    ExpressionList (children 1)
+     Identifier n
+   Function multiply (children 1)
+    ExpressionList (children 2)
+     Literal UInt64_2
+     Identifier n

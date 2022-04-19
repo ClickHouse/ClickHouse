@@ -477,3 +477,74 @@ Result:
 └──────────┘
 ```
 
+## degrees(x) {#degreesx}
+
+Converts the input value in radians to degrees.
+
+**Syntax**
+
+``` sql
+degrees(x)
+```
+
+**Arguments**
+
+-   `x` — Input in radians. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   Value in degrees.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT degrees(3.141592653589793);
+```
+
+Result:
+
+``` text
+┌─degrees(3.141592653589793)─┐
+│                        180 │
+└────────────────────────────┘
+```
+
+## radians(x) {#radiansx}
+
+Converts the input value in degrees to radians.
+
+**Syntax**
+
+``` sql
+radians(x)
+```
+
+**Arguments**
+
+-   `x` — Input in degrees. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   Value in radians.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT radians(180);
+```
+
+Result:
+
+``` text
+┌──────radians(180)─┐
+│ 3.141592653589793 │
+└───────────────────┘
+```

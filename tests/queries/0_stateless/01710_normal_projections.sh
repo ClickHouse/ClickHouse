@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-s3-storage
+
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -76,5 +78,8 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order b
 echo "optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order by x FORMAT JSON
                        SETTINGS optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1" | grep rows_read
+
+$CLICKHOUSE_CLIENT -q "ALTER TABLE test_sort_proj DELETE WHERE x % 2 = 0 SETTINGS mutations_sync=2;"
+$CLICKHOUSE_CLIENT -q "SELECT count() from test_sort_proj;"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_sort_proj"

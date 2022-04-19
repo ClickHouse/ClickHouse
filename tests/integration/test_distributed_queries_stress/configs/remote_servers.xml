@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <max_concurrent_queries>1000</max_concurrent_queries>
 
     <remote_servers>
@@ -39,4 +39,4 @@
             </shard>
         </two_shards>
     </remote_servers>
-</yandex>
+</clickhouse>

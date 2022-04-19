@@ -1,17 +1,16 @@
 #include <Columns/ColumnTuple.h>
 
+#include <base/sort.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <common/sort.h>
-#include <common/map.h>
-#include <common/range.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 
 namespace DB
@@ -100,17 +99,30 @@ MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
 
 Field ColumnTuple::operator[](size_t n) const
 {
-    return collections::map<Tuple>(columns, [n] (const auto & column) { return (*column)[n]; });
+    Field res;
+    get(n, res);
+    return res;
 }
 
 void ColumnTuple::get(size_t n, Field & res) const
 {
     const size_t tuple_size = columns.size();
-    Tuple tuple(tuple_size);
-    for (const auto i : collections::range(0, tuple_size))
-        columns[i]->get(n, tuple[i]);
 
-    res = tuple;
+    res = Tuple();
+    Tuple & res_tuple = DB::get<Tuple &>(res);
+    res_tuple.reserve(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        res_tuple.push_back((*columns[i])[n]);
+}
+
+bool ColumnTuple::isDefaultAt(size_t n) const
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        if (!columns[i]->isDefaultAt(n))
+            return false;
+    return true;
 }
 
 StringRef ColumnTuple::getDataAt(size_t) const
@@ -230,6 +242,12 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
         new_columns[i] = columns[i]->filter(filt, result_size_hint);
 
     return ColumnTuple::create(new_columns);
+}
+
+void ColumnTuple::expand(const Filter & mask, bool inverted)
+{
+    for (auto & column : columns)
+        column->expand(mask, inverted);
 }
 
 ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
@@ -355,8 +373,8 @@ struct ColumnTuple::Less
     }
 };
 
-template <typename LessOperator>
-void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperator less) const
+void ColumnTuple::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator) const
 {
     size_t rows = size();
     res.resize(rows);
@@ -366,56 +384,52 @@ void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperat
     if (limit >= rows)
         limit = 0;
 
-    if (limit)
-        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-    else
-        std::sort(res.begin(), res.end(), less);
+    EqualRanges ranges;
+    ranges.emplace_back(0, rows);
+    updatePermutationImpl(direction, stability, limit, nan_direction_hint, res, ranges, collator);
 }
 
-void ColumnTuple::updatePermutationImpl(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const
+void ColumnTuple::updatePermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const
 {
     if (equal_ranges.empty())
         return;
 
     for (const auto & column : columns)
     {
-        if (collator && column->isCollationSupported())
-            column->updatePermutationWithCollation(*collator, reverse, limit, nan_direction_hint, res, equal_ranges);
-        else
-            column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
-
-        while (limit && !equal_ranges.empty() && limit <= equal_ranges.back().first)
+        while (!equal_ranges.empty() && limit && limit <= equal_ranges.back().first)
             equal_ranges.pop_back();
+
+        if (collator && column->isCollationSupported())
+            column->updatePermutationWithCollation(*collator, direction, stability, limit, nan_direction_hint, res, equal_ranges);
+        else
+            column->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
 
         if (equal_ranges.empty())
             break;
     }
 }
 
-void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnTuple::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    if (reverse)
-        getPermutationImpl(limit, res, Less<false>(columns, nan_direction_hint));
-    else
-        getPermutationImpl(limit, res, Less<true>(columns, nan_direction_hint));
+    getPermutationImpl(direction, stability, limit, nan_direction_hint, res, nullptr);
 }
 
-void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+void ColumnTuple::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    updatePermutationImpl(reverse, limit, nan_direction_hint, res, equal_ranges);
+    updatePermutationImpl(direction, stability, limit, nan_direction_hint, res, equal_ranges);
 }
 
-void ColumnTuple::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnTuple::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    if (reverse)
-        getPermutationImpl(limit, res, Less<false>(columns, nan_direction_hint, &collator));
-    else
-        getPermutationImpl(limit, res, Less<true>(columns, nan_direction_hint, &collator));
+    getPermutationImpl(direction, stability, limit, nan_direction_hint, res, &collator);
 }
 
-void ColumnTuple::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
+void ColumnTuple::updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
-    updatePermutationImpl(reverse, limit, nan_direction_hint, res, equal_ranges, &collator);
+    updatePermutationImpl(direction, stability, limit, nan_direction_hint, res, equal_ranges, &collator);
 }
 
 void ColumnTuple::gather(ColumnGathererStream & gatherer)
@@ -428,6 +442,13 @@ void ColumnTuple::reserve(size_t n)
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         getColumn(i).reserve(n);
+}
+
+void ColumnTuple::ensureOwnership()
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        getColumn(i).ensureOwnership();
 }
 
 size_t ColumnTuple::byteSize() const
@@ -467,7 +488,7 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     Tuple min_tuple(tuple_size);
     Tuple max_tuple(tuple_size);
 
-    for (const auto i : collections::range(0, tuple_size))
+    for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->getExtremes(min_tuple[i], max_tuple[i]);
 
     min = min_tuple;
@@ -488,7 +509,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
         if (tuple_size != rhs_tuple->columns.size())
             return false;
 
-        for (const auto i : collections::range(0, tuple_size))
+        for (size_t i = 0; i < tuple_size; ++i)
             if (!columns[i]->structureEquals(*rhs_tuple->columns[i]))
                 return false;
 
@@ -528,6 +549,27 @@ ColumnPtr ColumnTuple::compress() const
                 column = column->decompress();
             return ColumnTuple::create(compressed);
         });
+}
+
+double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
+{
+    return getRatioOfDefaultRowsImpl<ColumnTuple>(sample_ratio);
+}
+
+void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
+}
+
+SerializationInfoPtr ColumnTuple::getSerializationInfo() const
+{
+    MutableSerializationInfos infos;
+    infos.reserve(columns.size());
+
+    for (const auto & column : columns)
+        infos.push_back(const_pointer_cast<SerializationInfo>(column->getSerializationInfo()));
+
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), SerializationInfo::Settings{});
 }
 
 }

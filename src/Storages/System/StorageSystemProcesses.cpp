@@ -48,6 +48,7 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"forwarded_for", std::make_shared<DataTypeString>()},
 
         {"quota_key", std::make_shared<DataTypeString>()},
+        {"distributed_depth", std::make_shared<DataTypeUInt64>()},
 
         {"elapsed", std::make_shared<DataTypeFloat64>()},
         {"is_cancelled", std::make_shared<DataTypeUInt8>()},
@@ -73,7 +74,9 @@ NamesAndAliases StorageSystemProcesses::getNamesAndAliases()
     return
     {
         {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
-        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}
+        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"},
+        {"Settings.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(Settings)" },
+        {"Settings.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapValues(Settings)"}
     };
 }
 
@@ -113,6 +116,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.client_info.forwarded_for);
 
         res_columns[i++]->insert(process.client_info.quota_key);
+        res_columns[i++]->insert(process.client_info.distributed_depth);
 
         res_columns[i++]->insert(process.elapsed_seconds);
         res_columns[i++]->insert(process.is_cancelled);

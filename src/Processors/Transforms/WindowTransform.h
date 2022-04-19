@@ -30,7 +30,7 @@ struct WindowFunctionWorkspace
     std::vector<size_t> argument_column_indices;
 
     // Will not be initialized for a pure window function.
-    AlignedBuffer aggregate_function_state;
+    mutable AlignedBuffer aggregate_function_state;
 
     // Argument columns. Be careful, this is a per-block cache.
     std::vector<const IColumn *> argument_columns;
@@ -39,6 +39,7 @@ struct WindowFunctionWorkspace
 
 struct WindowTransformBlock
 {
+    Columns original_input_columns;
     Columns input_columns;
     MutableColumns output_columns;
 
@@ -80,8 +81,10 @@ struct RowNumber
  * the order of input data. This property also trivially holds for the ROWS and
  * GROUPS frames. For the RANGE frame, the proof requires the additional fact
  * that the ranges are specified in terms of (the single) ORDER BY column.
+ *
+ * `final` is so that the isCancelled() is devirtualized, we call it every row.
  */
-class WindowTransform : public IProcessor /* public ISimpleTransform */
+class WindowTransform final : public IProcessor
 {
 public:
     WindowTransform(
@@ -216,8 +219,8 @@ public:
 #endif
     }
 
-    auto moveRowNumber(const RowNumber & _x, int offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & _x, int offset) const;
+    auto moveRowNumber(const RowNumber & _x, int64_t offset) const;
+    auto moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const;
 
     void assertValid(const RowNumber & x) const
     {
@@ -242,7 +245,6 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
-public:
     /*
      * Data (formerly) inherited from ISimpleTransform, needed for the
      * implementation of the IProcessor interface.
@@ -346,10 +348,10 @@ public:
 template <>
 struct fmt::formatter<DB::RowNumber>
 {
-    constexpr auto parse(format_parse_context & ctx)
+    static constexpr auto parse(format_parse_context & ctx)
     {
-        auto it = ctx.begin();
-        auto end = ctx.end();
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
 
         /// Only support {}.
         if (it != end && *it != '}')

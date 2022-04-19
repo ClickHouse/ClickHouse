@@ -1,13 +1,12 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/NullBlockOutputStream.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -24,7 +23,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo &,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
@@ -32,7 +31,7 @@ public:
         unsigned) override
     {
         return Pipe(
-            std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+            std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
     }
 
     bool supportsParallelInsert() const override { return true; }
@@ -44,7 +43,7 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override
     {
@@ -62,11 +61,11 @@ protected:
         const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
         : IStorage(table_id_)
     {
-        StorageInMemoryMetadata metadata_;
-        metadata_.setColumns(columns_description_);
-        metadata_.setConstraints(constraints_);
-        metadata_.setComment(comment);
-        setInMemoryMetadata(metadata_);
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(columns_description_);
+        storage_metadata.setConstraints(constraints_);
+        storage_metadata.setComment(comment);
+        setInMemoryMetadata(storage_metadata);
     }
 };
 

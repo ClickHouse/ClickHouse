@@ -1,12 +1,11 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_SSL
 #include <Disks/IDisk.h>
 #include <Disks/DiskDecorator.h>
+#include <Common/MultiVersion.h>
 
 
 namespace DB
@@ -15,19 +14,23 @@ class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 namespace FileEncryption { enum class Algorithm; }
 
+struct DiskEncryptedSettings
+{
+    DiskPtr wrapped_disk;
+    String disk_path;
+    std::unordered_map<UInt64, String> keys;
+    UInt64 current_key_id;
+    FileEncryption::Algorithm current_algorithm;
+};
+
 /// Encrypted disk ciphers all written files on the fly and writes the encrypted files to an underlying (normal) disk.
 /// And when we read files from an encrypted disk it deciphers them automatically,
 /// so we can work with a encrypted disk like it's a normal disk.
 class DiskEncrypted : public DiskDecorator
 {
 public:
-    DiskEncrypted(
-        const String & name_,
-        DiskPtr wrapped_disk_,
-        const String & path_on_wrapped_disk_,
-        const std::unordered_map<UInt64, String> & keys_,
-        UInt64 current_key_id_,
-        FileEncryption::Algorithm current_algorithm_);
+    DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
+    DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_);
 
     const String & getName() const override { return name; }
     const String & getPath() const override { return disk_absolute_path; }
@@ -116,11 +119,9 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size,
-        size_t estimated_size,
-        size_t aio_threshold,
-        size_t mmap_threshold,
-        MMappedFileCache * mmap_cache) const override;
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -210,13 +211,12 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
-    DiskType::Type getType() const override { return DiskType::Type::Encrypted; }
+    DiskType getType() const override { return DiskType::Encrypted; }
+    bool isRemote() const override { return delegate->isRemote(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
 private:
-    void initialize();
-
     String wrappedPath(const String & path) const
     {
         // if path starts_with disk_path -> got already wrapped path
@@ -225,14 +225,10 @@ private:
         return disk_path + path;
     }
 
-    String getKey(UInt64 key_id) const;
-
-    String name;
-    String disk_path;
-    String disk_absolute_path;
-    std::unordered_map<UInt64, String> keys;
-    UInt64 current_key_id;
-    FileEncryption::Algorithm current_algorithm;
+    const String name;
+    const String disk_path;
+    const String disk_absolute_path;
+    MultiVersion<DiskEncryptedSettings> current_settings;
 };
 
 }

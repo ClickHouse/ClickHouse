@@ -1,4 +1,4 @@
-#include <common/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 
 #include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
@@ -57,6 +57,8 @@ public:
     String getName() const override { return name; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
@@ -146,7 +148,7 @@ public:
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
         {
-            scale = times_data.getScale();
+            scale = times->getScale();
         }
 
         auto result_column = ColumnString::create();

@@ -8,27 +8,27 @@
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 
 
 static_assert(is_signed_v<Int128>);
 static_assert(!is_unsigned_v<Int128>);
-static_assert(is_integer_v<Int128>);
+static_assert(is_integer<Int128>);
 static_assert(sizeof(Int128) == 16);
 
 static_assert(is_signed_v<Int256>);
 static_assert(!is_unsigned_v<Int256>);
-static_assert(is_integer_v<Int256>);
+static_assert(is_integer<Int256>);
 static_assert(sizeof(Int256) == 32);
 
 static_assert(!is_signed_v<UInt128>);
 static_assert(is_unsigned_v<UInt128>);
-static_assert(is_integer_v<UInt128>);
+static_assert(is_integer<UInt128>);
 static_assert(sizeof(UInt128) == 16);
 
 static_assert(!is_signed_v<UInt256>);
 static_assert(is_unsigned_v<UInt256>);
-static_assert(is_integer_v<UInt256>);
+static_assert(is_integer<UInt256>);
 static_assert(sizeof(UInt256) == 32);
 
 
@@ -277,5 +277,4 @@ GTEST_TEST(WideInteger, DecimalFormatting)
     Int128 fractional = DecimalUtils::getFractionalPart(x, 2);
 
     EXPECT_EQ(fractional, 40);
-    EXPECT_EQ(decimalFractional(fractional, 2), "40");
 }

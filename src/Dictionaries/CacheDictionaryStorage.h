@@ -8,10 +8,11 @@
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ArenaUtils.h>
 #include <Common/HashTable/LRUHashMap.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
-#include <Dictionaries/DictionaryHelpers.h>
+
 
 namespace DB
 {
@@ -41,8 +42,7 @@ class CacheDictionaryStorage final : public ICacheDictionaryStorage
     static constexpr size_t max_collision_length = 10;
 
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionaryStorage");
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     explicit CacheDictionaryStorage(
         const DictionaryStructure & dictionary_structure,
@@ -62,19 +62,19 @@ public:
 
     String getName() const override
     {
-        if (dictionary_key_type == DictionaryKeyType::simple)
+        if (dictionary_key_type == DictionaryKeyType::Simple)
             return "Cache";
         else
             return "ComplexKeyCache";
     }
 
-    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::simple; }
+    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
         const DictionaryStorageFetchRequest & fetch_request) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for complex key storage");
@@ -82,7 +82,7 @@ public:
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             insertColumnsForKeysImpl(keys, columns);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
@@ -90,7 +90,7 @@ public:
 
     void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             insertDefaultKeysImpl(keys);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
@@ -98,19 +98,19 @@ public:
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return getCachedKeysImpl();
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
     }
 
-    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::complex; }
+    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
         const DictionaryStorageFetchRequest & column_fetch_requests) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, column_fetch_requests);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
@@ -118,7 +118,7 @@ public:
 
     void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertColumnsForKeysImpl(keys, columns);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for simple key storage");
@@ -126,7 +126,7 @@ public:
 
     void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertDefaultKeysImpl(keys);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
@@ -134,7 +134,7 @@ public:
 
     PaddedPODArray<StringRef> getCachedComplexKeys() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return getCachedKeysImpl();
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedComplexKeys is not supported for simple key storage");
@@ -309,7 +309,7 @@ private:
             if (was_inserted)
             {
                 if constexpr (std::is_same_v<KeyType, StringRef>)
-                    cell.key = copyStringInArena(key);
+                    cell.key = copyStringInArena(arena, key);
                 else
                     cell.key = key;
 
@@ -333,8 +333,7 @@ private:
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
                             const String & string_value = column_value.get<String>();
-                            StringRef string_value_ref = StringRef {string_value.data(), string_value.size()};
-                            StringRef inserted_value = copyStringInArena(string_value_ref);
+                            StringRef inserted_value = copyStringInArena(arena, string_value);
                             container.back() = inserted_value;
                         }
                         else
@@ -354,7 +353,7 @@ private:
                     {
                         char * data = const_cast<char *>(cell.key.data);
                         arena.free(data, cell.key.size);
-                        cell.key = copyStringInArena(key);
+                        cell.key = copyStringInArena(arena, key);
                     }
                     else
                         cell.key = key;
@@ -380,8 +379,7 @@ private:
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
                             const String & string_value = column_value.get<String>();
-                            StringRef string_ref_value = StringRef {string_value.data(), string_value.size()};
-                            StringRef inserted_value = copyStringInArena(string_ref_value);
+                            StringRef inserted_value = copyStringInArena(arena, string_value);
 
                             if (!cell_was_default)
                             {
@@ -424,7 +422,7 @@ private:
             if (was_inserted)
             {
                 if constexpr (std::is_same_v<KeyType, StringRef>)
-                    cell.key = copyStringInArena(key);
+                    cell.key = copyStringInArena(arena, key);
                 else
                     cell.key = key;
 
@@ -464,7 +462,7 @@ private:
                     {
                         char * data = const_cast<char *>(cell.key.data);
                         arena.free(data, cell.key.size);
-                        cell.key = copyStringInArena(key);
+                        cell.key = copyStringInArena(arena, key);
                     }
                     else
                         cell.key = key;
@@ -527,16 +525,6 @@ private:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->template getAttributeContainer(attribute_index, std::forward<GetContainerFunc>(func));
     }
 
-    StringRef copyStringInArena(StringRef value_to_copy)
-    {
-        size_t value_to_copy_size = value_to_copy.size;
-        char * place_for_key = arena.alloc(value_to_copy_size);
-        memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(value_to_copy.data), value_to_copy_size);
-        StringRef updated_value{place_for_key, value_to_copy_size};
-
-        return updated_value;
-    }
-
     template<typename ValueType>
     using ContainerType = std::conditional_t<
         std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array>,
@@ -565,6 +553,7 @@ private:
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
+            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,

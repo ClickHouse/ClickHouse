@@ -1,5 +1,5 @@
 #include <Access/SettingsProfilesCache.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Common/quoteString.h>
@@ -12,8 +12,8 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_PROFILE;
 }
 
-SettingsProfilesCache::SettingsProfilesCache(const AccessControlManager & manager_)
-    : manager(manager_) {}
+SettingsProfilesCache::SettingsProfilesCache(const AccessControl & access_control_)
+    : access_control(access_control_) {}
 
 SettingsProfilesCache::~SettingsProfilesCache() = default;
 
@@ -25,7 +25,7 @@ void SettingsProfilesCache::ensureAllProfilesRead()
         return;
     all_profiles_read = true;
 
-    subscription = manager.subscribeForChanges<SettingsProfile>(
+    subscription = access_control.subscribeForChanges<SettingsProfile>(
         [&](const UUID & id, const AccessEntityPtr & entity)
         {
             if (entity)
@@ -34,9 +34,9 @@ void SettingsProfilesCache::ensureAllProfilesRead()
                 profileRemoved(id);
         });
 
-    for (const UUID & id : manager.findAll<SettingsProfile>())
+    for (const UUID & id : access_control.findAll<SettingsProfile>())
     {
-        auto profile = manager.tryRead<SettingsProfile>(id);
+        auto profile = access_control.tryRead<SettingsProfile>(id);
         if (profile)
         {
             all_profiles.emplace(id, profile);
@@ -138,11 +138,11 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
     merged_settings.merge(enabled.params.settings_from_enabled_roles);
     merged_settings.merge(enabled.params.settings_from_user);
 
-    auto info = std::make_shared<SettingsProfilesInfo>(manager);
+    auto info = std::make_shared<SettingsProfilesInfo>(access_control);
     info->profiles = enabled.params.settings_from_user.toProfileIDs();
     substituteProfiles(merged_settings, info->profiles_with_implicit, info->names_of_profiles);
     info->settings = merged_settings.toSettingsChanges();
-    info->constraints = merged_settings.toSettingsConstraints(manager);
+    info->constraints = merged_settings.toSettingsConstraints(access_control);
 
     enabled.setInfo(std::move(info));
 }
@@ -225,13 +225,13 @@ std::shared_ptr<const SettingsProfilesInfo> SettingsProfilesCache::getSettingsPr
 
     SettingsProfileElements elements = all_profiles[profile_id]->elements;
 
-    auto info = std::make_shared<SettingsProfilesInfo>(manager);
+    auto info = std::make_shared<SettingsProfilesInfo>(access_control);
 
     info->profiles.push_back(profile_id);
     info->profiles_with_implicit.push_back(profile_id);
     substituteProfiles(elements, info->profiles_with_implicit, info->names_of_profiles);
     info->settings = elements.toSettingsChanges();
-    info->constraints.merge(elements.toSettingsConstraints(manager));
+    info->constraints.merge(elements.toSettingsConstraints(access_control));
 
     profile_infos_cache.add(profile_id, info);
     return info;

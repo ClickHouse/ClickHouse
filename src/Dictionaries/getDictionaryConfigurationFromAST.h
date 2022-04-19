@@ -6,6 +6,7 @@
 
 namespace DB
 {
+
 using DictionaryConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 /// Convert dictionary AST to Poco::AbstractConfiguration
@@ -13,4 +14,14 @@ using DictionaryConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfigurati
 /// Can throw exception if query is ill-formed
 DictionaryConfigurationPtr
 getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_ = "");
+
+struct ClickHouseDictionarySourceInfo
+{
+    QualifiedTableName table_name;
+    bool is_local = false;
+};
+
+std::optional<ClickHouseDictionarySourceInfo>
+getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, ContextPtr global_context);
+
 }

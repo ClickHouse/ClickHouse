@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -23,7 +23,7 @@ struct StoragesInfo
     bool need_inactive_parts = false;
     MergeTreeData * data = nullptr;
 
-    operator bool() const { return storage != nullptr; }
+    operator bool() const { return storage != nullptr; } /// NOLINT
     MergeTreeData::DataPartsVector
     getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts = false) const;
 };
@@ -58,7 +58,7 @@ class StorageSystemPartsBase : public IStorage
 public:
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -67,8 +67,10 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    bool isSystemStorage() const override { return true; }
+
 private:
-    bool hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const;
+    bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const;
 
 protected:
     const FormatSettings format_settings;

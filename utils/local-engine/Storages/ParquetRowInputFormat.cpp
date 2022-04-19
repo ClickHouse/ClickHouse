@@ -2,7 +2,7 @@
 
 
 #include <Columns/ColumnString.h>
-#include <common/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 
 local_engine::ParquetRowInputFormat::ParquetRowInputFormat(ReadBuffer & in_, Block header_) : IInputFormat(std::move(header_), in_)
 {
@@ -11,7 +11,7 @@ std::unique_ptr<local_engine::InputStreamFileSystem> local_engine::ParquetRowInp
 void local_engine::ParquetRowInputFormat::prepareReader()
 {
     if (!reader)
-        reader = std::make_unique<duckdb::ParquetReader>(this->allocator, inputStreamFileSystem->openStream(in));
+        reader = std::make_unique<duckdb::ParquetReader>(this->allocator, inputStreamFileSystem->openStream(*in));
     int index = 0;
     int cols = this->getPort().getHeader().columns();
     column_indices.reserve(cols);

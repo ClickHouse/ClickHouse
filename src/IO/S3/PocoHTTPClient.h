@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
@@ -10,10 +8,10 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/SessionAwareIOStream.h>
-#include <aws/core/client/ClientConfiguration.h> // Y_IGNORE
-#include <aws/core/http/HttpClient.h> // Y_IGNORE
-#include <aws/core/http/HttpRequest.h> // Y_IGNORE
-#include <aws/core/http/standard/StandardHttpResponse.h> // Y_IGNORE
+#include <aws/core/client/ClientConfiguration.h>
+#include <aws/core/http/HttpClient.h>
+#include <aws/core/http/HttpRequest.h>
+#include <aws/core/http/standard/StandardHttpResponse.h>
 
 namespace Aws::Http::Standard
 {
@@ -37,6 +35,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 
     void updateSchemeAndRegion();
 
+    std::function<void(const Aws::Client::ClientConfigurationPerRequest &)> error_report;
+
 private:
     PocoHTTPClientConfiguration(const String & force_region_, const RemoteHostFilter & remote_host_filter_, unsigned int s3_max_redirects_);
 
@@ -49,13 +49,13 @@ class PocoHTTPResponse : public Aws::Http::Standard::StandardHttpResponse
 public:
     using SessionPtr = HTTPSessionPtr;
 
-    PocoHTTPResponse(const std::shared_ptr<const Aws::Http::HttpRequest> request)
+    explicit PocoHTTPResponse(const std::shared_ptr<const Aws::Http::HttpRequest> request)
         : Aws::Http::Standard::StandardHttpResponse(request)
         , body_stream(request->GetResponseStreamFactory())
     {
     }
 
-    void SetResponseBody(Aws::IStream & incoming_stream, SessionPtr & session_)
+    void SetResponseBody(Aws::IStream & incoming_stream, SessionPtr & session_) /// NOLINT
     {
         body_stream = Aws::Utils::Stream::ResponseStream(
             Aws::New<SessionAwareIOStream<SessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf())
@@ -95,6 +95,7 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
     std::function<Aws::Client::ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
+    std::function<void(const Aws::Client::ClientConfigurationPerRequest &)> error_report;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;

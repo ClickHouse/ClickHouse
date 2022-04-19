@@ -18,7 +18,7 @@ def get_transform_command(data_path,
     --query " \\
     CREATE TABLE m1 ({schema}) ENGINE = MergeTree() order by tuple(); \\
     insert into m1 SELECT * FROM table;\\
-    OPTIMIZE table m1;
+    OPTIMIZE table m1 FINAL;
     "
     """
 

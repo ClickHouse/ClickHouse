@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Core/SettingsEnums.h>
 
 #include <cstddef>
 
@@ -24,6 +25,8 @@ struct ExpressionActionsSettings
     size_t max_temporary_non_const_columns = 0;
 
     CompileExpressions compile_expressions = CompileExpressions::no;
+
+    ShortCircuitFunctionEvaluation short_circuit_function_evaluation = ShortCircuitFunctionEvaluation::DISABLE;
 
     static ExpressionActionsSettings fromSettings(const Settings & from, CompileExpressions compile_expressions = CompileExpressions::no);
     static ExpressionActionsSettings fromContext(ContextPtr from, CompileExpressions compile_expressions = CompileExpressions::no);

@@ -30,7 +30,7 @@ There may be any number of space symbols between syntactical constructions (incl
 
 ClickHouse supports either SQL-style and C-style comments:
 
--   SQL-style comments start with `--` and continue to the end of the line, a space after `--` can be omitted.
+-   SQL-style comments start with `--`, `#!` or `# ` and continue to the end of the line, a space after `--` and `#!` can be omitted.
 -   C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
 
 ## Keywords {#syntax-keywords}
@@ -103,6 +103,28 @@ Depending on the data format (input or output), `NULL` may have a different repr
 There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
 
 In queries, you can check `NULL` using the [IS NULL](../sql-reference/operators/index.md#operator-is-null) and [IS NOT NULL](../sql-reference/operators/index.md) operators and the related functions `isNull` and `isNotNull`.
+
+### Heredoc {#heredeoc}
+
+A [heredoc](https://en.wikipedia.org/wiki/Here_document) is a way to define a string (often multiline), while maintaining the original formatting. A heredoc is defined as a custom string literal, placed between two `$` symbols, for example `$heredoc$`. A value between two heredocs is processed "as-is".
+
+You can use a heredoc to embed snippets of SQL, HTML, or XML code, etc.
+
+**Example**
+
+Query:
+
+```sql
+SELECT $smth$SHOW CREATE VIEW my_view$smth$;
+```
+
+Result:
+
+```text
+┌─'SHOW CREATE VIEW my_view'─┐
+│ SHOW CREATE VIEW my_view   │
+└────────────────────────────┘
+```
 
 ## Functions {#functions}
 
@@ -183,4 +205,4 @@ An expression is a function, identifier, literal, application of an operator, ex
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
 
-[Original article](https://clickhouse.tech/docs/en/sql_reference/syntax/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql_reference/syntax/) <!--hide-->

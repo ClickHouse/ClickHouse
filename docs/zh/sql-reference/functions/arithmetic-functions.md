@@ -80,4 +80,4 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 返回数值的最小公倍数。
 除以零或将最小负数除以-1时抛出异常。
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

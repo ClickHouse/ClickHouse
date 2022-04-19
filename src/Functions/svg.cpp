@@ -44,6 +44,8 @@ public:
         return 2;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() > 2)
@@ -77,7 +79,7 @@ public:
 
             auto figures = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
-            for (size_t i = 0; i < input_rows_count; i++)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 boost::geometry::correct(figures[i]);
@@ -100,6 +102,7 @@ public:
 void registerFunctionSvg(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSvg>();
+    factory.registerAlias("SVG", "svg");
 }
 
 }

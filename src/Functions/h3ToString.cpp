@@ -1,10 +1,9 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_H3
 
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -19,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -37,6 +37,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * arg = arguments[0].get();
@@ -51,7 +53,21 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * column = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (!column)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                arguments[0].type->getName(),
+                1,
+                getName());
+
+        const auto & data = column->getData();
+
 
         auto col_res = ColumnString::create();
         auto & vec_res = col_res->getChars();
@@ -63,9 +79,9 @@ public:
         char * begin = reinterpret_cast<char *>(vec_res.data());
         char * pos = begin;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 hindex = col_hindex->getUInt(i);
+            const UInt64 hindex = data[row];
 
             if (!isValidCell(hindex))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid H3 index: {}", hindex);
@@ -76,7 +92,7 @@ public:
             while (*pos != '\0')
                 pos++;
 
-            vec_offsets[i] = ++pos - begin;
+            vec_offsets[row] = ++pos - begin;
         }
         vec_res.resize(pos - begin);
         return col_res;

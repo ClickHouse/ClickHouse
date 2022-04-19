@@ -67,6 +67,29 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     task->schedule();
 }
 
+void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
+{
+    /// Wait for running tasks to finish and temporarily stop checking
+    stop();
+    SCOPE_EXIT({ start(); });
+    {
+        std::lock_guard lock(parts_mutex);
+        for (auto it = parts_queue.begin(); it != parts_queue.end();)
+        {
+            if (drop_range_info.contains(MergeTreePartInfo::fromPartName(it->first, storage.format_version)))
+            {
+                /// Remove part from the queue to avoid part resurrection
+                /// if we will check it and enqueue fetch after DROP/REPLACE execution.
+                parts_set.erase(it->first);
+                it = parts_queue.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+}
 
 size_t ReplicatedMergeTreePartCheckThread::size() const
 {
@@ -111,6 +134,18 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
     bool found_part_with_the_same_max_block = false;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
+    /// Move our replica to the end of replicas
+    for (auto it = replicas.begin(); it != replicas.end(); ++it)
+    {
+        String replica_path = storage.zookeeper_path + "/replicas/" + *it;
+        if (replica_path == storage.replica_path)
+        {
+            std::iter_swap(it, replicas.rbegin());
+            break;
+        }
+    }
+
+    /// Check all replicas and our replica must be this last one
     for (const String & replica : replicas)
     {
         String replica_path = storage.zookeeper_path + "/replicas/" + replica;
@@ -145,7 +180,8 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
 
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
                 {
-                    LOG_WARNING(log, "Found parts with the same min block and with the same max block as the missing part {}. Hoping that it will eventually appear as a result of a merge.", part_name);
+                    /// FIXME It may never appear
+                    LOG_WARNING(log, "Found parts with the same min block and with the same max block as the missing part {} on replica {}. Hoping that it will eventually appear as a result of a merge.", part_name, replica);
                     return MissingPartSearchResult::FoundAndDontNeedFetch;
                 }
             }
@@ -191,7 +227,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
     if (missing_part_search_result == MissingPartSearchResult::LostForever)
     {
         auto lost_part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
-        if (lost_part_info.level != 0)
+        if (lost_part_info.level != 0 || lost_part_info.mutation != 0)
         {
             Strings source_parts;
             bool part_in_queue = storage.queue.checkPartInQueueAndGetSourceParts(part_name, source_parts);
@@ -236,10 +272,10 @@ std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLo
     /// but checker thread will remove part from zookeeper and queue fetch.
     bool exists_in_zookeeper = zookeeper->exists(part_path);
 
-    /// If the part is still in the PreCommitted -> Committed transition, it is not lost
+    /// If the part is still in the PreActive -> Active transition, it is not lost
     /// and there is no need to go searching for it on other replicas. To definitely find the needed part
-    /// if it exists (or a part containing it) we first search among the PreCommitted parts.
-    auto part = storage.getPartIfExists(part_name, {MergeTreeDataPartState::PreCommitted});
+    /// if it exists (or a part containing it) we first search among the PreActive parts.
+    auto part = storage.getPartIfExists(part_name, {MergeTreeDataPartState::PreActive});
     if (!part)
         part = storage.getActiveContainingPart(part_name);
 
@@ -279,7 +315,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
         if (zookeeper->tryGet(part_path, part_znode))
         {
-            LOG_WARNING(log, "Checking data of part {}.", part_name);
+            LOG_INFO(log, "Checking data of part {}.", part_name);
 
             try
             {
@@ -323,7 +359,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
                 String message = "Part " + part_name + " looks broken. Removing it and will try to fetch.";
-                LOG_ERROR(log, message);
+                LOG_ERROR(log, fmt::runtime(message));
 
                 /// Delete part locally.
                 storage.forgetPartAndMoveToDetached(part, "broken");
@@ -342,7 +378,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
             ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
             String message = "Unexpected part " + part_name + " in filesystem. Removing.";
-            LOG_ERROR(log, message);
+            LOG_ERROR(log, fmt::runtime(message));
             storage.forgetPartAndMoveToDetached(part, "unexpected");
             return {part_name, false, message};
         }
@@ -429,6 +465,8 @@ void ReplicatedMergeTreePartCheckThread::run()
                 parts_queue.erase(selected);
             }
         }
+
+        storage.checkBrokenDisks();
 
         task->schedule();
     }

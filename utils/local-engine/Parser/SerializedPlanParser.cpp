@@ -15,7 +15,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Formats/Impl/ArrowBlockOutputFormat.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -27,8 +27,9 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/StorageMergeTreeFactory.h>
+#include <Storages/ParquetRowInputFormat.h>
 #include <Poco/Util/MapConfiguration.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 bool local_engine::SerializedPlanParser::isReadRelFromJava(const substrait::ReadRel& rel) {
     assert(rel.has_local_files());
@@ -98,6 +99,7 @@ DB::QueryPlanPtr local_engine::SerializedPlanParser::parseMergeTreeTable(const s
                 custom_storage_merge_tree->loadDataParts(false);
                 return custom_storage_merge_tree;
            });
+    query_context.storage_snapshot = std::make_shared<StorageSnapshot>(*storage, metadata);
     auto t_storage =  watch.elapsedMicroseconds() - t_metadata;
     query_context.custom_storage_merge_tree = storage;
     auto query_info = local_engine::buildQueryInfo(names_and_types_list);
@@ -114,8 +116,7 @@ DB::QueryPlanPtr local_engine::SerializedPlanParser::parseMergeTreeTable(const s
     }
     auto query = query_context.custom_storage_merge_tree->reader.readFromParts(selected_parts,
                                                         names_and_types_list.getNames(),
-                                                        query_context.metadata,
-                                                        query_context.metadata,
+                                                        query_context.storage_snapshot,
                                                         *query_info,
                                                         this->context,
                                                         4096 * 2,
@@ -359,6 +360,7 @@ DB::QueryPlanStepPtr local_engine::SerializedPlanParser::parseAggregate(DB::Quer
         1000000,
         1,
         1,
+        1,
         false,
         nullptr,
         DB::SortDescription());
@@ -564,12 +566,13 @@ DB::Chunk local_engine::BatchParquetFileSource::generate()
 
 
             read_buf = std::move(nested_buffer);
-//            ProcessorPtr format = std::make_shared<local_engine::ParquetRowInputFormat>(*read_buf, header);
-            auto format = DB::ParquetBlockInputFormat::getParquetFormat(*read_buf, header);
-            pipeline = std::make_unique<QueryPipeline>();
-            pipeline->init(Pipe(format));
+            ProcessorPtr format = std::make_shared<local_engine::ParquetRowInputFormat>(*read_buf, header);
+//            auto format = DB::ParquetBlockInputFormat::getParquetFormat(*read_buf, header);
+            QueryPipelineBuilder builder;
+            builder.init(Pipe(format));
+            pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
-            reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+            reader = std::make_unique<PullingPipelineExecutor>(pipeline);
         }
 
         Chunk chunk;
@@ -597,14 +600,15 @@ void local_engine::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
     Stopwatch stopwatch;
     stopwatch.start();
     QueryPlanOptimizationSettings optimization_settings{.optimize_plan = true};
-    this->query_pipeline = query_plan->buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings{
+    auto pipeline_builder = query_plan->buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings{
                                                                                      .actions_settings = ExpressionActionsSettings{
                                                                                          .can_compile_expressions = true,
                                                                                          .min_count_to_compile_expression = 3,
                                                                                      .compile_expressions = CompileExpressions::no
                                                                                     }});
+    this->query_pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
     auto t_pipeline = stopwatch.elapsedMicroseconds();
-    this->executor = std::make_unique<DB::PullingPipelineExecutor>(*query_pipeline);
+    this->executor = std::make_unique<DB::PullingPipelineExecutor>(query_pipeline);
     auto t_executor = stopwatch.elapsedMicroseconds() - t_pipeline;
     stopwatch.stop();
     LOG_INFO(&Poco::Logger::get("SerializedPlanParser"),

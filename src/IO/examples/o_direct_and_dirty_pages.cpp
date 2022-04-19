@@ -2,8 +2,8 @@
 
 #include <iostream>
 
-#include <common/types.h>
-#include <common/getPageSize.h>
+#include <base/types.h>
+#include <base/getPageSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>

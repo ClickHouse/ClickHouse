@@ -40,7 +40,7 @@ FORMAT Vertical
 ``` text
 Row 1:
 ──────
-name:           example01-08-1.yandex.ru
+name:           example01-08-1
 value:
 czxid:          932998691229
 mzxid:          932998691229
@@ -57,7 +57,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 Row 2:
 ──────
-name:           example01-08-2.yandex.ru
+name:           example01-08-2
 value:
 czxid:          933002738135
 mzxid:          933002738135
@@ -72,4 +72,4 @@ numChildren:    7
 pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/zookeeper) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/zookeeper) <!--hide-->

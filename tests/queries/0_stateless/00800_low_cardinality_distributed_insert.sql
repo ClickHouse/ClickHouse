@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 SET insert_distributed_sync = 1;
 
 DROP TABLE IF EXISTS low_cardinality;

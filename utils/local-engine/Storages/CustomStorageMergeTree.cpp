@@ -64,7 +64,7 @@ std::vector<MergeTreeMutationStatus> local_engine::CustomStorageMergeTree::getMu
 {
     throw std::runtime_error("not implement");
 }
-bool local_engine::CustomStorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & executor)
+bool local_engine::CustomStorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & executor)
 {
     throw std::runtime_error("not implement");
 }

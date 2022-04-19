@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <common/types.h>
+#include <base/types.h>
 #include <type_traits>
 #include <Core/MultiEnum.h>
 

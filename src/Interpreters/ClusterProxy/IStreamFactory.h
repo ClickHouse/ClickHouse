@@ -37,7 +37,9 @@ public:
         Block header;
 
         size_t shard_num = 0;
+        size_t num_replicas = 0;
         ConnectionPoolWithFailoverPtr pool;
+        ConnectionPoolPtrs per_replica_pools;
 
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).
@@ -54,7 +56,8 @@ public:
             const ASTPtr & table_func_ptr,
             ContextPtr context,
             std::vector<QueryPlanPtr> & local_plans,
-            Shards & remote_shards) = 0;
+            Shards & remote_shards,
+            UInt32 shard_count) = 0;
 };
 
 }

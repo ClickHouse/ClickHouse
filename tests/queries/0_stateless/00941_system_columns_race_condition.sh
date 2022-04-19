@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: race
 
 # Test fix for issue #5066
 

@@ -1,8 +1,5 @@
 set (CLICKHOUSE_CLIENT_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/Client.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ConnectionParameters.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/QueryFuzzer.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/Suggest.cpp
+    Client.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK

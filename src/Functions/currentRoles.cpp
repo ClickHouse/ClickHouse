@@ -1,7 +1,8 @@
+#include <base/sort.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/User.h>
 #include <Columns/ColumnArray.h>
@@ -30,6 +31,8 @@ namespace
         static constexpr auto name = (kind == Kind::CURRENT_ROLES) ? "currentRoles" : ((kind == Kind::ENABLED_ROLES) ? "enabledRoles" : "defaultRoles");
         static FunctionPtr create(const ContextPtr & context) { return std::make_shared<FunctionCurrentRoles>(context); }
 
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         String getName() const override { return name; }
 
         explicit FunctionCurrentRoles(const ContextPtr & context)
@@ -45,13 +48,13 @@ namespace
             else
             {
                 static_assert(kind == Kind::DEFAULT_ROLES);
-                const auto & manager = context->getAccessControlManager();
+                const auto & manager = context->getAccessControl();
                 if (auto user = context->getUser())
                     role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
             }
 
             /// We sort the names because the result of the function should not depend on the order of UUIDs.
-            std::sort(role_names.begin(), role_names.end());
+            ::sort(role_names.begin(), role_names.end());
         }
 
         size_t getNumberOfArguments() const override { return 0; }

@@ -71,4 +71,4 @@ deb包中的错误配置可能导致未经授权使用数据库。
 
 作者：英国国家网络安全中心（NCSC）
 
-{## [Original article](https://clickhouse.tech/docs/en/security_changelog/) ##}
+{## [Original article](https://clickhouse.com/docs/en/security_changelog/) ##}

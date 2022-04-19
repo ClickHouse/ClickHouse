@@ -163,7 +163,7 @@ void writeValue(
     }
     else
     {
-        throw std::runtime_error("doesn't support type " + std::string(getTypeName(nested_col->getDataType())));
+        throw std::runtime_error("doesn't support type " + String(magic_enum::enum_name(nested_col->getDataType())));
     }
 }
 

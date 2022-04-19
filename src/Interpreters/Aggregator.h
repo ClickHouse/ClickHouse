@@ -4,9 +4,9 @@
 #include <memory>
 #include <functional>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
@@ -19,8 +19,7 @@
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>
 
@@ -43,8 +42,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
 }
-
-class IBlockOutputStream;
 
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
@@ -187,7 +184,9 @@ struct AggregationMethodOneNumber
     AggregationMethodOneNumber() = default;
 
     template <typename Other>
-    AggregationMethodOneNumber(const Other & other) : data(other.data) {}
+    explicit AggregationMethodOneNumber(const Other & other) : data(other.data)
+    {
+    }
 
     /// To use one `Method` in different threads, use different `State`.
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
@@ -222,7 +221,9 @@ struct AggregationMethodString
     AggregationMethodString() = default;
 
     template <typename Other>
-    AggregationMethodString(const Other & other) : data(other.data) {}
+    explicit AggregationMethodString(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped>;
 
@@ -250,7 +251,9 @@ struct AggregationMethodStringNoCache
     AggregationMethodStringNoCache() = default;
 
     template <typename Other>
-    AggregationMethodStringNoCache(const Other & other) : data(other.data) {}
+    explicit AggregationMethodStringNoCache(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false>;
 
@@ -278,7 +281,9 @@ struct AggregationMethodFixedString
     AggregationMethodFixedString() = default;
 
     template <typename Other>
-    AggregationMethodFixedString(const Other & other) : data(other.data) {}
+    explicit AggregationMethodFixedString(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped>;
 
@@ -305,7 +310,9 @@ struct AggregationMethodFixedStringNoCache
     AggregationMethodFixedStringNoCache() = default;
 
     template <typename Other>
-    AggregationMethodFixedStringNoCache(const Other & other) : data(other.data) {}
+    explicit AggregationMethodFixedStringNoCache(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false>;
 
@@ -376,7 +383,9 @@ struct AggregationMethodKeysFixed
     AggregationMethodKeysFixed() = default;
 
     template <typename Other>
-    AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
+    explicit AggregationMethodKeysFixed(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodKeysFixed<
         typename Data::value_type,
@@ -465,7 +474,9 @@ struct AggregationMethodSerialized
     AggregationMethodSerialized() = default;
 
     template <typename Other>
-    AggregationMethodSerialized(const Other & other) : data(other.data) {}
+    explicit AggregationMethodSerialized(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped>;
 
@@ -506,7 +517,7 @@ struct AggregatedDataVariants : private boost::noncopyable
       * But this can hardly be done simply because it is planned to put variable-length strings into the same pool.
       * In this case, the pool will not be able to know with what offsets objects are stored.
       */
-    Aggregator * aggregator = nullptr;
+    const Aggregator * aggregator = nullptr;
 
     size_t keys_size{};  /// Number of keys. NOTE do we need this field?
     Sizes key_sizes;     /// Dimensions of keys, if keys of fixed length
@@ -649,7 +660,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::without_key: break;
 
         #define M(NAME, IS_TWO_LEVEL) \
-            case Type::NAME: NAME = std::make_unique<decltype(NAME)::element_type>(); break;
+            case Type::NAME: (NAME) = std::make_unique<decltype(NAME)::element_type>(); break;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
         }
@@ -666,7 +677,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::without_key: return 1;
 
         #define M(NAME, IS_TWO_LEVEL) \
-            case Type::NAME: return NAME->data.size() + (without_key != nullptr);
+            case Type::NAME: return (NAME)->data.size() + (without_key != nullptr);
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
         }
@@ -683,7 +694,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::without_key: return 1;
 
             #define M(NAME, IS_TWO_LEVEL) \
-            case Type::NAME: return NAME->data.size();
+            case Type::NAME: return (NAME)->data.size();
             APPLY_FOR_AGGREGATED_VARIANTS(M)
             #undef M
         }
@@ -742,6 +753,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key_string) \
         M(low_cardinality_key_fixed_string) \
 
+    /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key8)             \
         M(key16)            \
@@ -755,6 +767,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key8) \
         M(low_cardinality_key16) \
 
+    /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_SINGLE_LEVEL(M) \
         APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
@@ -776,6 +789,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
     void convertToTwoLevel();
 
+    /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_TWO_LEVEL(M) \
         M(key32_two_level)            \
         M(key64_two_level)            \
@@ -853,6 +867,7 @@ using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
 class CompiledAggregateFunctionsHolder;
+class NativeWriter;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -975,11 +990,14 @@ public:
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block, AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
-        bool & no_more_keys);
+        bool & no_more_keys) const;
 
     bool executeOnBlock(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
-        bool & no_more_keys);
+        bool & no_more_keys) const;
+
+    /// Used for aggregate projection.
+    bool mergeOnBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys) const;
 
     /** Convert the aggregation data structure into a block.
       * If overflow_row = true, then aggregates for rows that are not included in max_rows_to_group_by are put in the first block.
@@ -996,8 +1014,6 @@ public:
     /// Merge partially aggregated blocks separated to buckets into one data structure.
     void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads);
 
-    bool mergeBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys);
-
     /// Merge several partially aggregated blocks into one.
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.
     /// (either all blocks are from overflow data or none blocks are).
@@ -1007,11 +1023,11 @@ public:
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
       * This is needed to simplify merging of that data with other results, that are already two-level.
       */
-    std::vector<Block> convertBlockToTwoLevel(const Block & block);
+    std::vector<Block> convertBlockToTwoLevel(const Block & block) const;
 
     /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path);
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants);
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path) const;
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants) const;
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
@@ -1063,6 +1079,7 @@ private:
         const IAggregateFunction * batch_that{};
         const IColumn ** batch_arguments{};
         const UInt64 * offsets{};
+        bool has_sparse_arguments = false;
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
@@ -1083,7 +1100,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("Aggregator");
 
     /// For external aggregation.
-    TemporaryFiles temporary_files;
+    mutable TemporaryFiles temporary_files;
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledAggregateFunctionsHolder> compiled_aggregate_functions_holder;
@@ -1106,7 +1123,7 @@ private:
     /** Call `destroy` methods for states of aggregate functions.
       * Used in the exception handler for aggregation, since RAII in this case is not applicable.
       */
-    void destroyAllAggregateStates(AggregatedDataVariants & result);
+    void destroyAllAggregateStates(AggregatedDataVariants & result) const;
 
 
     /// Process one data block, aggregate the data into a hash table.
@@ -1121,7 +1138,7 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool no_more_keys, bool use_compiled_expressions, typename Method>
+    template <bool no_more_keys, bool use_compiled_functions, typename Method>
     void executeImplBatch(
         Method & method,
         typename Method::State & state,
@@ -1131,24 +1148,25 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// For case when there are no keys (all aggregate into one row).
-    static void executeWithoutKeyImpl(
+    template <bool use_compiled_functions>
+    void executeWithoutKeyImpl(
         AggregatedDataWithoutKey & res,
         size_t rows,
         AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena);
+        Arena * arena) const;
 
-    static void executeOnIntervalWithoutKeyImpl(
-        AggregatedDataWithoutKey & res,
+    void executeOnIntervalWithoutKeyImpl(
+        AggregatedDataVariants & data_variants,
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena);
+        Arena * arena) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        IBlockOutputStream & out);
+        NativeWriter & out) const;
 
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
@@ -1303,10 +1321,10 @@ private:
         AggregateColumns & aggregate_columns,
         Columns & materialized_columns,
         AggregateFunctionInstructions & instructions,
-        NestedColumnsHolder & nested_columns_holder);
+        NestedColumnsHolder & nested_columns_holder) const;
 
     void addSingleKeyToAggregateColumns(
-        const AggregatedDataVariants & data_variants,
+        AggregatedDataVariants & data_variants,
         MutableColumns & aggregate_columns) const;
 
     void addArenasToAggregateColumns(
@@ -1317,6 +1335,8 @@ private:
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
         MutableColumns & final_key_columns) const;
+
+    static bool hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions);
 };
 
 
@@ -1324,7 +1344,7 @@ private:
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
 
 #define M(NAME, IS_TWO_LEVEL) \
-    template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; }
+    template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; } /// NOLINT
 
 APPLY_FOR_AGGREGATED_VARIANTS(M)
 

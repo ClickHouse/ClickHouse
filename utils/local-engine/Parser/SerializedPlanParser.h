@@ -8,7 +8,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <arrow/ipc/writer.h>
@@ -44,7 +44,7 @@ protected:
 private:
     FilesInfoPtr files_info;
     std::unique_ptr<ReadBuffer> read_buf;
-    std::unique_ptr<QueryPipeline> pipeline;
+    QueryPipeline pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     bool finished_generate = false;
     std::string current_path;
@@ -78,6 +78,7 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
 static const std::set<std::string> FUNCTION_NEED_KEEP_ARGUMENTS = {"alias"};
 
 struct QueryContext {
+    StorageSnapshotPtr storage_snapshot;
     std::shared_ptr<DB::StorageInMemoryMetadata> metadata;
     std::shared_ptr<local_engine::CustomStorageMergeTree> custom_storage_merge_tree;
 };
@@ -186,7 +187,7 @@ public:
 private:
     QueryContext query_context;
     std::unique_ptr<local_engine::SparkRowInfo> writeBlockToSparkRow(DB::Block & block);
-    QueryPipelinePtr query_pipeline;
+    QueryPipeline query_pipeline;
     std::unique_ptr<PullingPipelineExecutor> executor;
     Block header;
     std::unique_ptr<local_engine::CHColumnToSparkRow> ch_column_to_spark_row;

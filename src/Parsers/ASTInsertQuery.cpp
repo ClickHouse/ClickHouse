@@ -1,6 +1,8 @@
 #include <iomanip>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -14,6 +16,35 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
 }
 
+String ASTInsertQuery::getDatabase() const
+{
+    String name;
+    tryGetIdentifierNameInto(database, name);
+    return name;
+}
+
+String ASTInsertQuery::getTable() const
+{
+    String name;
+    tryGetIdentifierNameInto(table, name);
+    return name;
+}
+
+void ASTInsertQuery::setDatabase(const String & name)
+{
+    if (name.empty())
+        database.reset();
+    else
+        database = std::make_shared<ASTIdentifier>(name);
+}
+
+void ASTInsertQuery::setTable(const String & name)
+{
+    if (name.empty())
+        table.reset();
+    else
+        table = std::make_shared<ASTIdentifier>(name);
+}
 
 void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
@@ -24,16 +55,35 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "FUNCTION ";
         table_function->formatImpl(settings, state, frame);
+        if (partition_by)
+        {
+            settings.ostr << " PARTITION BY ";
+            partition_by->formatImpl(settings, state, frame);
+        }
     }
-    else
+    else if (table_id)
+    {
         settings.ostr << (settings.hilite ? hilite_none : "")
                       << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
+    }
+    else
+    {
+        settings.ostr << (settings.hilite ? hilite_none : "")
+                      << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    }
 
     if (columns)
     {
         settings.ostr << " (";
         columns->formatImpl(settings, state, frame);
         settings.ostr << ")";
+    }
+
+    if (infile)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM INFILE " << (settings.hilite ? hilite_none : "") << infile->as<ASTLiteral &>().value.safeGet<std::string>();
+        if (compression)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " COMPRESSION " << (settings.hilite ? hilite_none : "") << compression->as<ASTLiteral &>().value.safeGet<std::string>();
     }
 
     if (select)
@@ -52,7 +102,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FORMAT " << (settings.hilite ? hilite_none : "") << format;
         }
-        else
+        else if (!infile)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " VALUES" << (settings.hilite ? hilite_none : "");
         }
@@ -63,6 +113,15 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
         settings_ast->formatImpl(settings, state, frame);
     }
+}
+
+void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(table_id.database_name);
+    hash_state.update(table_id.table_name);
+    hash_state.update(table_id.uuid);
+    hash_state.update(format);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 

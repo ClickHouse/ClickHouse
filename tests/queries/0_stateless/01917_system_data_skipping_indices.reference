@@ -1,8 +1,8 @@
-default	data_01917	d1_idx	minmax	d1	1
-default	data_01917	d1_null_idx	minmax	assumeNotNull(d1_null)	1
-default	data_01917_2	memory	set	frequency * length(name)	5
-default	data_01917_2	sample_index1	minmax	length(name), name	4
-default	data_01917_2	sample_index2	ngrambf_v1	lower(name), name	4
+default	data_01917	d1_idx	minmax	d1	1	0	0	0
+default	data_01917	d1_null_idx	minmax	assumeNotNull(d1_null)	1	0	0	0
+default	data_01917_2	memory	set	frequency * length(name)	5	0	0	0
+default	data_01917_2	sample_index1	minmax	length(name), name	4	0	0	0
+default	data_01917_2	sample_index2	ngrambf_v1	lower(name), name	4	0	0	0
 2
 3
 d1_idx

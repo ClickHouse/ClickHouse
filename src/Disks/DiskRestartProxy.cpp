@@ -20,6 +20,29 @@ public:
     RestartAwareReadBuffer(const DiskRestartProxy & disk, std::unique_ptr<ReadBufferFromFileBase> impl_)
         : ReadBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
 
+    void prefetch() override
+    {
+        swap(*impl);
+        impl->prefetch();
+        swap(*impl);
+    }
+
+    void setReadUntilPosition(size_t position) override
+    {
+        swap(*impl);
+        impl->setReadUntilPosition(position);
+        swap(*impl);
+    }
+
+    void setReadUntilEnd() override
+    {
+        swap(*impl);
+        impl->setReadUntilEnd();
+        swap(*impl);
+    }
+
+    String getInfoForLog() override { return impl->getInfoForLog(); }
+
 private:
     ReadLock lock;
 };
@@ -35,7 +58,7 @@ public:
     {
         try
         {
-            RestartAwareWriteBuffer::finalize();
+            finalize();
         }
         catch (...)
         {
@@ -43,12 +66,9 @@ public:
         }
     }
 
-    void finalize() override
+    void finalizeImpl() override
     {
-        if (finalized)
-            return;
-
-        WriteBufferFromFileDecorator::finalize();
+        WriteBufferFromFileDecorator::finalizeImpl();
 
         lock.unlock();
     }
@@ -187,11 +207,10 @@ void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskRestartProxy::readFile(
-    const String & path, size_t buf_size, size_t estimated_size, size_t direct_io_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache)
-    const
+    const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
     ReadLock lock (mutex);
-    auto impl = DiskDecorator::readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
+    auto impl = DiskDecorator::readFile(path, settings, read_hint, file_size);
     return std::make_unique<RestartAwareReadBuffer>(*this, std::move(impl));
 }
 
@@ -230,6 +249,12 @@ void DiskRestartProxy::removeSharedFile(const String & path, bool keep_s3)
 {
     ReadLock lock (mutex);
     DiskDecorator::removeSharedFile(path, keep_s3);
+}
+
+void DiskRestartProxy::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+{
+    ReadLock lock (mutex);
+    DiskDecorator::removeSharedFiles(files, keep_in_remote_fs);
 }
 
 void DiskRestartProxy::removeSharedRecursive(const String & path, bool keep_s3)

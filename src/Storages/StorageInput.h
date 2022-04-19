@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <common/shared_ptr_helper.h>
-#include <Processors/Pipe.h>
+#include <base/shared_ptr_helper.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -20,7 +20,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,

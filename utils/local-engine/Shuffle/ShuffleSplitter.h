@@ -3,7 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/PODArray.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <Formats/NativeWriter.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Functions/IFunction.h>
 
@@ -82,7 +82,7 @@ protected:
     bool stopped = false;
     std::vector<DB::IColumn::ColumnIndex> partition_ids;
     std::vector<ColumnsBuffer> partition_buffer;
-    std::vector<std::unique_ptr<DB::NativeBlockOutputStream>> partition_outputs;
+    std::vector<std::unique_ptr<DB::NativeWriter>> partition_outputs;
     std::vector<std::unique_ptr<DB::WriteBuffer>> partition_write_buffers;
     std::vector<std::unique_ptr<DB::WriteBuffer>> partition_cached_write_buffers;
     SplitOptions options;

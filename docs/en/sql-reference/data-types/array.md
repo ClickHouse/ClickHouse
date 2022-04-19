@@ -5,7 +5,7 @@ toc_title: Array(T)
 
 # Array(t) {#data-type-array}
 
-An array of `T`-type items. `T` can be any data type, including an array.
+An array of `T`-type items, with the starting array index as 1. `T` can be any data type, including an array.
 
 ## Creating an Array {#creating-an-array}
 
@@ -45,7 +45,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 
 ## Working with Data Types {#working-with-data-types}
 
-The maximum size of an array is limited to one million elements. 
+The maximum size of an array is limited to one million elements.
 
 When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) or literal [NULL](../../sql-reference/syntax.md#null-literal) values, the type of an array element also becomes [Nullable](../../sql-reference/data-types/nullable.md).
 

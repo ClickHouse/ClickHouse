@@ -36,6 +36,7 @@ public:
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -127,10 +128,9 @@ private:
             dst_data[i] = outOfDigits<T>(src_data[i], precision);
     }
 
-    template <typename T>
+    template <is_decimal T>
     static bool outOfDigits(T dec, UInt32 precision)
     {
-        static_assert(IsDecimalNumber<T>);
         using NativeT = typename T::NativeType;
 
         if (precision > DecimalUtils::max_precision<T>)
