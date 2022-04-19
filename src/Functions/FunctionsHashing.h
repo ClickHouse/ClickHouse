@@ -1381,9 +1381,11 @@ struct ImplAquaHash128
     static constexpr auto name = "aquaHash128";
     using ReturnType = UInt128;
 
-    static UInt128 apply(const char *s, const size_t len) {
+    static UInt128 apply(const char *s, const size_t len)
+    {
 
-        if (!DB::Cpu::CpuFlagsCache::have_AES) {
+        if (!DB::Cpu::CpuFlagsCache::have_AES)
+        {
             throw Exception("Aquahash is not available in system without AES", ErrorCodes::NOT_IMPLEMENTED);
         }
 
@@ -1395,7 +1397,8 @@ struct ImplAquaHash128
         return u128;
     }
 
-    static UInt128 combineHashes(UInt128 h1, UInt128 h2) {
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
+    {
         union {
             UInt128 u128[2];
             char chars[32];
