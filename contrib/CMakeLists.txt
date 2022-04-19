@@ -135,6 +135,7 @@ add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf, krb5
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
+add_contrib (madlib-cmake madlib)
 add_contrib (libpq-cmake libpq)
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
