@@ -1,9 +1,9 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -13,9 +13,8 @@ namespace DB
 class Context;
 
 
-class StorageSystemMerges final : public shared_ptr_helper<StorageSystemMerges>, public IStorageSystemOneBlock<StorageSystemMerges>
+class StorageSystemMerges final : public IStorageSystemOneBlock<StorageSystemMerges>, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemMerges>;
 public:
     std::string getName() const override { return "SystemMerges"; }
 

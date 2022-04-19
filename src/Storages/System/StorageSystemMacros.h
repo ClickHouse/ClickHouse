@@ -1,7 +1,7 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeString.h>
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -13,9 +13,8 @@ class Context;
 
 /** Information about macros for introspection.
   */
-class StorageSystemMacros final : public shared_ptr_helper<StorageSystemMacros>, public IStorageSystemOneBlock<StorageSystemMacros>
+class StorageSystemMacros final : public IStorageSystemOneBlock<StorageSystemMacros>, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemMacros>;
 public:
     std::string getName() const override { return "SystemMacros"; }
 

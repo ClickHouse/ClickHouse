@@ -3,8 +3,8 @@
 #include <Common/config.h>
 
 #if USE_MINIZIP
+#include <boost/noncopyable.hpp>
 #include <IO/Archives/IArchiveWriter.h>
-#include <base/shared_ptr_helper.h>
 #include <mutex>
 
 
@@ -14,9 +14,15 @@ class WriteBuffer;
 class WriteBufferFromFileBase;
 
 /// Implementation of IArchiveWriter for writing zip archives.
-class ZipArchiveWriter : public shared_ptr_helper<ZipArchiveWriter>, public IArchiveWriter
+class ZipArchiveWriter : public IArchiveWriter, boost::noncopyable
 {
 public:
+    /// Constructs an archive that will be written as a file in the local filesystem.
+    explicit ZipArchiveWriter(const String & path_to_archive_);
+
+    /// Constructs an archive that will be written by using a specified `archive_write_buffer_`.
+    ZipArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_);
+
     /// Destructors finalizes writing the archive.
     ~ZipArchiveWriter() override;
 
@@ -63,13 +69,6 @@ public:
     static void checkEncryptionIsEnabled();
 
 private:
-    /// Constructs an archive that will be written as a file in the local filesystem.
-    explicit ZipArchiveWriter(const String & path_to_archive_);
-
-    /// Constructs an archive that will be written by using a specified `archive_write_buffer_`.
-    ZipArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_);
-
-    friend struct shared_ptr_helper<ZipArchiveWriter>;
     class WriteBufferFromZipArchive;
     class HandleHolder;
     using RawHandle = void *;

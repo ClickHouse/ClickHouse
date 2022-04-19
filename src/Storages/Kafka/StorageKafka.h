@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/Buffer_fwd.h>
@@ -7,7 +8,6 @@
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
-#include <base/shared_ptr_helper.h>
 
 #include <mutex>
 #include <list>
@@ -28,12 +28,18 @@ struct StorageKafkaInterceptors;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public shared_ptr_helper<StorageKafka>, public IStorage, WithContext
+class StorageKafka final : public IStorage, WithContext, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageKafka>;
     friend struct StorageKafkaInterceptors;
 
 public:
+    StorageKafka(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ColumnsDescription & columns_,
+        std::unique_ptr<KafkaSettings> kafka_settings_,
+        const String & collection_name_);
+
     std::string getName() const override { return "Kafka"; }
 
     bool noPushingToViews() const override { return true; }
@@ -66,13 +72,6 @@ public:
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
     HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
-protected:
-    StorageKafka(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ColumnsDescription & columns_,
-        std::unique_ptr<KafkaSettings> kafka_settings_,
-        const String & collection_name_);
 
 private:
     // Configuration and state
@@ -117,7 +116,7 @@ private:
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
     /// Handle error mode
-    HandleKafkaErrorMode handle_error_mode;
+    // HandleKafkaErrorMode handle_error_mode; // NOLINT -- actually not used, needs checing
 
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(size_t consumer_number);

@@ -39,7 +39,7 @@ StorageMongoDB::StorageMongoDB(
     const String & comment)
     : IStorage(table_id_)
     , host(host_)
-    , port(port_)
+    // , port(port_)
     , database_name(database_name_)
     , collection_name(collection_name_)
     , username(username_)
@@ -168,7 +168,7 @@ void registerStorageMongoDB(StorageFactory & factory)
     {
         auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
 
-        return StorageMongoDB::create(
+        return std::make_shared<StorageMongoDB>(
             args.table_id,
             configuration.host,
             configuration.port,

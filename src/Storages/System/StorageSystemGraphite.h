@@ -1,19 +1,18 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <base/shared_ptr_helper.h>
 
 namespace DB
 {
 
 /// Provides information about Graphite configuration.
-class StorageSystemGraphite final : public shared_ptr_helper<StorageSystemGraphite>, public IStorageSystemOneBlock<StorageSystemGraphite>
+class StorageSystemGraphite final : public IStorageSystemOneBlock<StorageSystemGraphite>, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemGraphite>;
 public:
     std::string getName() const override { return "SystemGraphite"; }
 

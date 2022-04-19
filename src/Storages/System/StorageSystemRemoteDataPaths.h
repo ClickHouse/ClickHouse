@@ -1,15 +1,16 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
 
-class StorageSystemRemoteDataPaths : public shared_ptr_helper<StorageSystemRemoteDataPaths>, public IStorage
+class StorageSystemRemoteDataPaths : public IStorage, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemRemoteDataPaths>;
 public:
+    explicit StorageSystemRemoteDataPaths(const StorageID & table_id_);
+
     std::string getName() const override { return "SystemRemoteDataPaths"; }
 
     bool isSystemStorage() const override { return true; }
@@ -22,9 +23,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-protected:
-    explicit StorageSystemRemoteDataPaths(const StorageID & table_id_);
 };
 
 }

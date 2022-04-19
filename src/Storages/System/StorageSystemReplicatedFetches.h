@@ -1,7 +1,7 @@
 #pragma once
 
 
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,9 +11,8 @@ namespace DB
 class Context;
 
 /// system.replicated_fetches table. Takes data from context.getReplicatedFetchList()
-class StorageSystemReplicatedFetches final : public shared_ptr_helper<StorageSystemReplicatedFetches>, public IStorageSystemOneBlock<StorageSystemReplicatedFetches>
+class StorageSystemReplicatedFetches final : public IStorageSystemOneBlock<StorageSystemReplicatedFetches>, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemReplicatedFetches>;
 public:
     std::string getName() const override { return "SystemReplicatedFetches"; }
 

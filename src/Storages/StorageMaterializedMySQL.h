@@ -4,6 +4,7 @@
 
 #if USE_MYSQL
 
+#include <boost/noncopyable.hpp>
 #include <Storages/StorageProxy.h>
 
 namespace DB
@@ -14,13 +15,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class StorageMaterializedMySQL final : public shared_ptr_helper<StorageMaterializedMySQL>, public StorageProxy
+class StorageMaterializedMySQL final : public StorageProxy, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageMaterializedMySQL>;
 public:
-    String getName() const override { return "MaterializedMySQL"; }
-
     StorageMaterializedMySQL(const StoragePtr & nested_storage_, const IDatabase * database_);
+
+    String getName() const override { return "MaterializedMySQL"; }
 
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 

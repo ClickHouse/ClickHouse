@@ -3,6 +3,7 @@
 #include <memory>
 #include <utility>
 
+#include <boost/noncopyable.hpp>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
@@ -14,7 +15,7 @@
 namespace DB
 {
 
-class MergeFromLogEntryTask : public shared_ptr_helper<MergeFromLogEntryTask>, public ReplicatedMergeMutateTaskBase
+class MergeFromLogEntryTask : public ReplicatedMergeMutateTaskBase, boost::noncopyable
 {
 public:
     template <class Callback>

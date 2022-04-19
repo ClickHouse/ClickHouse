@@ -2,11 +2,9 @@
 
 #include <Poco/MongoDB/Connection.h>
 
-#include <base/shared_ptr_helper.h>
-
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-
 
 namespace DB
 {
@@ -15,9 +13,8 @@ namespace DB
  * Read only.
  */
 
-class StorageMongoDB final : public shared_ptr_helper<StorageMongoDB>, public IStorage
+class StorageMongoDB final : public IStorage, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageMongoDB>;
 public:
     StorageMongoDB(
         const StorageID & table_id_,
@@ -49,7 +46,7 @@ private:
     void connectIfNotConnected();
 
     const std::string host;
-    const uint16_t port; /// NOLINT
+    // const uint16_t port; /// NOLINT -- actually not used, needs checking
     const std::string database_name;
     const std::string collection_name;
     const std::string username;

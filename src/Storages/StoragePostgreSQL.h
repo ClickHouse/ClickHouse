@@ -3,7 +3,7 @@
 #include "config_core.h"
 
 #if USE_LIBPQXX
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
@@ -17,9 +17,8 @@ class Logger;
 namespace DB
 {
 
-class StoragePostgreSQL final : public shared_ptr_helper<StoragePostgreSQL>, public IStorage
+class StoragePostgreSQL final : public IStorage, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StoragePostgreSQL>;
 public:
     StoragePostgreSQL(
         const StorageID & table_id_,

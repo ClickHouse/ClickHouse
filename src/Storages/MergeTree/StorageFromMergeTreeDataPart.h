@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -9,17 +10,31 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Defines.h>
 
-#include <base/shared_ptr_helper.h>
-
 
 namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromMergeTreeDataPart final : public shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
+class StorageFromMergeTreeDataPart final : public IStorage, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageFromMergeTreeDataPart>;
 public:
+    /// Used in part mutation.
+    explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
+        : IStorage(getIDFromPart(part_))
+        , parts({part_})
+        , storage(part_->storage)
+        , partition_id(part_->info.partition_id)
+    {
+        setInMemoryMetadata(storage.getInMemoryMetadata());
+    }
+
+    /// Used in queries with projection.
+    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr_)
+        : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
+    {
+        setInMemoryMetadata(storage.getInMemoryMetadata());
+    }
+
     String getName() const override { return "FromMergeTreeDataPart"; }
 
     Pipe read(
@@ -75,24 +90,6 @@ public:
     bool materializeTTLRecalculateOnly() const
     {
         return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
-    }
-
-protected:
-    /// Used in part mutation.
-    explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(getIDFromPart(part_))
-        , parts({part_})
-        , storage(part_->storage)
-        , partition_id(part_->info.partition_id)
-    {
-        setInMemoryMetadata(storage.getInMemoryMetadata());
-    }
-
-    /// Used in queries with projection.
-    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr_)
-        : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
-    {
-        setInMemoryMetadata(storage.getInMemoryMetadata());
     }
 
 private:
