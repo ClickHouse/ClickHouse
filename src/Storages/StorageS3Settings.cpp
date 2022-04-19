@@ -124,7 +124,7 @@ void S3Settings::ReadWriteSettings::updateFromSettingsIfEmpty(const Settings & s
         upload_part_size_multiply_factor = settings.s3_upload_part_size_multiply_factor;
     if (!upload_part_size_multiply_parts_count_threshold)
         upload_part_size_multiply_parts_count_threshold = settings.s3_upload_part_size_multiply_parts_count_threshold;
-    if (max_single_part_upload_size)
+    if (!max_single_part_upload_size)
         max_single_part_upload_size = settings.s3_max_single_part_upload_size;
     if (!max_connections)
         max_connections = settings.s3_max_connections;
