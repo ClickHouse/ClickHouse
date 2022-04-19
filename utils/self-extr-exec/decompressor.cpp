@@ -331,7 +331,7 @@ int main(int argc, char* argv[])
     /// Decompress all files
     if (0 != decompressFiles(input_fd, argv, have_compressed_analoge))
     {
-        printf("Error happend");
+        printf("Error happened");
         if (0 != close(input_fd))
             perror(nullptr);
         return 1;
