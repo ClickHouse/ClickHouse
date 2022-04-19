@@ -987,7 +987,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
         };
 
-        size_t num_threads = std::min(size_t(num_streams), parts.size());
+        size_t num_threads = std::min<size_t>(num_streams, parts.size());
 
         if (num_threads <= 1)
         {
