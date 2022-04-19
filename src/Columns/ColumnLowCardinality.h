@@ -179,7 +179,7 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (auto rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
+        if (const auto * rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
             return idx.getPositions()->structureEquals(*rhs_low_cardinality->idx.getPositions())
                 && dictionary.getColumnUnique().structureEquals(rhs_low_cardinality->dictionary.getColumnUnique());
         return false;

@@ -204,6 +204,8 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
 
 void ColumnAggregateFunction::ensureOwnership()
 {
+    force_data_ownership = true;
+
     if (src)
     {
         /// We must copy all data from src and take ownership.
@@ -269,7 +271,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
                 + ").",
             ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-    if (!empty() && src.get() != &from_concrete)
+    if (force_data_ownership || (!empty() && src.get() != &from_concrete))
     {
         /// Must create new states of aggregate function and take ownership of it,
         ///  because ownership of states of aggregate function cannot be shared for individual rows,
@@ -295,7 +297,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 {
     size_t size = data.size();
     if (size != filter.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter.size(), size);
 
     if (size == 0)
         return cloneEmpty();

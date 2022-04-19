@@ -6,6 +6,10 @@
 #include <arrow/io/interfaces.h>
 #include <optional>
 
+#define ORC_MAGIC_BYTES "ORC"
+#define PARQUET_MAGIC_BYTES "PAR1"
+#define ARROW_MAGIC_BYTES "ARROW1"
+
 namespace DB
 {
 
@@ -44,7 +48,7 @@ class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFil
 public:
     RandomAccessFileFromSeekableReadBuffer(SeekableReadBuffer & in_, off_t file_size_);
 
-    RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_);
+    explicit RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_);
 
     arrow::Result<int64_t> GetSize() override;
 
@@ -86,7 +90,12 @@ private:
     ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowInputStreamFromReadBuffer);
 };
 
-std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in, const FormatSettings & settings, std::atomic<int> & is_cancelled);
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
+    ReadBuffer & in,
+    const FormatSettings & settings,
+    std::atomic<int> & is_cancelled,
+    const std::string & format_name,
+    const std::string & magic_bytes);
 
 }
 

@@ -13,7 +13,7 @@ struct SettingChange
     String name;
     Field value;
 
-    SettingChange() {}
+    SettingChange() = default;
     SettingChange(const std::string_view & name_, const Field & value_) : name(name_), value(value_) {}
     SettingChange(const std::string_view & name_, Field && value_) : name(name_), value(std::move(value_)) {}
 
