@@ -56,7 +56,7 @@ private:
     /// The name of the nested function, including combinators (i.e. *If)
     ///
     /// getName() from the nested_function cannot be used because in case of *If combinator
-    /// with Nullable argument nested_function will point to the function w/o combinator.
+    /// with Nullable argument nested_function will point to the function without combinator.
     /// (I.e. sumIf(Nullable, 1) -> sum()), and distributed query processing will fail.
     ///
     /// And nested_function cannot point to the function with *If since
