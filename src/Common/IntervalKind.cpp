@@ -13,9 +13,9 @@ Int32 IntervalKind::toAvgSeconds() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond: return 0;    /// fractional parts of seconds have 0 seconds
-        case IntervalKind::Microsecond: return 0;
-        case IntervalKind::Millisecond: return 0;
+        case IntervalKind::Nanosecond:
+        case IntervalKind::Microsecond:
+        case IntervalKind::Millisecond: return 0; /// fractional parts of seconds have 0 seconds
         case IntervalKind::Second: return 1;
         case IntervalKind::Minute: return 60;
         case IntervalKind::Hour: return 3600;
