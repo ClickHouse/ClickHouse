@@ -5,6 +5,7 @@
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
 #include <Coordination/KeeperStorage.h>
+#include <libnuraft/raft_params.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -28,6 +29,7 @@ private:
     nuraft::ptr<KeeperRaftServer> raft_instance;
     nuraft::ptr<nuraft::asio_service> asio_service;
     nuraft::ptr<nuraft::rpc_listener> asio_listener;
+    mutable std::mutex server_mutex;
 
     std::mutex initialized_mutex;
     std::atomic<bool> initialized_flag = false;
@@ -49,6 +51,8 @@ private:
     void shutdownRaftServer();
 
     void loadLatestConfig();
+
+    void recoveryMode(nuraft::raft_params & params);
 
     std::atomic_bool is_recovering = false;
 

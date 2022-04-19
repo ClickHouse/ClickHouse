@@ -547,6 +547,13 @@ void KeeperDispatcher::updateConfigurationThread()
                 continue;
             }
 
+            if (server->isRecovering())
+            {
+                LOG_INFO(log, "Server is recovering, will not apply configuration until recovery is finished");
+                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+                continue;
+            }
+
             ConfigUpdateAction action;
             if (!update_configuration_queue.pop(action))
                 break;
@@ -556,6 +563,9 @@ void KeeperDispatcher::updateConfigurationThread()
             bool done = false;
             while (!done)
             {
+                if (server->isRecovering())
+                    break;
+
                 if (shutdown_called)
                     return;
 

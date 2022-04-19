@@ -29,24 +29,25 @@ def create_and_start_cluster(cluster_size):
     quorum_size = get_quorum_size(cluster_size)
 
     nodes = []
-    for i in range(1, cluster_size + quorum_size + 1):
+    for i in range(cluster_size):
         nodes.append(
             cluster.add_instance(
-                f"node{i}",
+                f"node{i+1}",
                 main_configs=[
-                    f"{config_dir}/enable_keeper{i}.xml",
+                    f"{config_dir}/enable_keeper{i+1}.xml",
                     f"{config_dir}/use_keeper.xml",
                 ],
                 stay_alive=True,
             )
         )
 
+    for i in range(cluster_size, cluster_size + quorum_size):
+        nodes.append(
+            cluster.add_instance(f"node{i+1}", main_configs=[], stay_alive=True)
+        )
+
     cluster.start()
     return cluster, nodes
-
-
-def smaller_exception(ex):
-    return "\n".join(str(ex).split("\n")[0:2])
 
 
 def wait_node(cluster, node):
@@ -123,8 +124,8 @@ NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving request
 
 
 @pytest.mark.parametrize("cluster_size", [3, 5])
-def test_three_node_recovery(cluster_size):
-    cluster, nodes = create_and_start_cluster(3)
+def test_cluster_recovery(cluster_size):
+    cluster, nodes = create_and_start_cluster(cluster_size)
     quorum_size = get_quorum_size(cluster_size)
     node_zks = []
     try:
@@ -160,6 +161,8 @@ def test_three_node_recovery(cluster_size):
             wait_and_assert_data(node_zk, "/test_force_recovery_extra", "somedataextra")
 
         nodes[0].start_clickhouse()
+        wait_node(cluster, nodes[0])
+        node_zks[0] = get_fake_zk(cluster, nodes[0].name)
         wait_and_assert_data(node_zks[0], "/test_force_recovery_extra", "somedataextra")
 
         # stop last quorum size nodes
@@ -199,8 +202,16 @@ def test_three_node_recovery(cluster_size):
         )
 
         # add one node to restore the quorum
+        nodes[cluster_size].copy_file_to_container(
+            os.path.join(
+                BASE_DIR,
+                get_config_dir(cluster_size),
+                f"enable_keeper{cluster_size+1}.xml",
+            ),
+            f"/etc/clickhouse-server/config.d/enable_keeper{cluster_size+1}.xml",
+        )
+
         nodes[cluster_size].start_clickhouse()
-        wait_node(cluster, nodes[cluster_size])
         wait_until_connected(cluster, nodes[cluster_size].name)
 
         # node1 should have quorum now and accept requests
@@ -209,9 +220,15 @@ def test_three_node_recovery(cluster_size):
         node_zks.append(get_fake_zk(cluster, nodes[cluster_size].name))
 
         # add rest of the nodes
-        for node in nodes[cluster_size + 1 :]:
+        for i in range(cluster_size + 1, len(nodes)):
+            node = nodes[i]
+            node.copy_file_to_container(
+                os.path.join(
+                    BASE_DIR, get_config_dir(cluster_size), f"enable_keeper{i+1}.xml"
+                ),
+                f"/etc/clickhouse-server/config.d/enable_keeper{i+1}.xml",
+            )
             node.start_clickhouse()
-            wait_node(cluster, node)
             wait_until_connected(cluster, node.name)
             node_zks.append(get_fake_zk(cluster, node.name))
 
@@ -225,6 +242,7 @@ def test_three_node_recovery(cluster_size):
         wait_and_assert_data(node_zks[-1], "/test_force_recovery_last", "somedatalast")
 
         nodes[0].start_clickhouse()
+        node_zks[0] = get_fake_zk(cluster, nodes[0].name)
         for zk in node_zks[:nodes_left]:
             assert_all_data(zk)
     finally:
