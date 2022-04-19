@@ -324,7 +324,6 @@ void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
     switch (type_)
     {
         case Type::EMPTY:
-            break;
         case Type::without_key:
             break;
 
