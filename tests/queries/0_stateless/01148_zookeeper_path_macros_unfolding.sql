@@ -20,6 +20,7 @@ DETACH TABLE rmt;
 ATTACH TABLE rmt;
 SHOW CREATE TABLE rmt;
 
+SET distributed_ddl_output_mode='none';
 DROP DATABASE IF EXISTS test_01148_atomic;
 CREATE DATABASE test_01148_atomic ENGINE=Atomic;
 CREATE TABLE test_01148_atomic.rmt2 ON CLUSTER test_shard_localhost (n int, PRIMARY KEY n) ENGINE=ReplicatedMergeTree;
