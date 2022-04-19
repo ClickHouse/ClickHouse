@@ -1576,6 +1576,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         return res;
 
     bool need_remove_parts_in_order = supportsReplication() && getSettings()->allow_remote_fs_zero_copy_replication;
+
     time_t now = time(nullptr);
     std::vector<DataPartIteratorByStateAndInfo> parts_to_delete;
 
@@ -1592,6 +1593,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             {
                 if (need_remove_parts_in_order)
                     break;
+
                 continue;
             }
 
@@ -1614,7 +1616,9 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
                 parts_to_delete.emplace_back(it);
             }
             else if (need_remove_parts_in_order)
+            {
                 break;
+            }
         }
 
         res.reserve(parts_to_delete.size());
