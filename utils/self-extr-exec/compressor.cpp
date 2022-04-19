@@ -68,7 +68,7 @@ int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offse
 int compress(int in_fd, int out_fd, int level, off_t& pointer, const struct stat& info_in)
 {
     /// As experiments showed, size of compressed file is 4 times less than clickhouse executable
-    /// Get a little bit more memory to prevent errors with size. 
+    /// Get a little bit more memory to prevent errors with size.
     /// For compression this difference will not be huge
     if (0 != ftruncate(out_fd, pointer + info_in.st_size / 3))
     {
@@ -201,7 +201,7 @@ int saveMetaData(char* filenames[], int count, int output_fd, const MetaData& me
 int compressFiles(char* filenames[], int count, int output_fd, int level, const struct stat& info_out)
 {
     /// TODO: check that compression can be done (?)
-    /// It is difficult to predict compressed size and 
+    /// It is difficult to predict compressed size and
     /// the upper estimate of memory (size + 1/3 sum_of_files_size)
     /// is very rude and can fail even if compression can be successfully done
 
@@ -295,7 +295,7 @@ int main(int argc, char* argv[])
 
     int start_of_files = 1;
 
-    /// Set compression level 
+    /// Set compression level
     int level = 5;
     if (0 == memcmp(argv[1], "--level=", 8))
     {
@@ -323,7 +323,7 @@ int main(int argc, char* argv[])
     {
         std::cout << "Compression was not successful." << std::endl;
 
-        /// Cancel changes. Reset the file to its original state 
+        /// Cancel changes. Reset the file to its original state
         if (0 != ftruncate(output_fd, info_out.st_size))
         {
             perror(nullptr);
