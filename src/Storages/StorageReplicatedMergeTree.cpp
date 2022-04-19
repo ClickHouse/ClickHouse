@@ -1447,7 +1447,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
 }
 
 MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAndCommit(Transaction & transaction,
-    const DataPartPtr & part)
+    const DataPartPtr & part, std::optional<MergeTreeData::HardlinkedFiles> hardlinked_files)
 {
     auto zookeeper = getZooKeeper();
 
@@ -1457,7 +1457,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         Coordination::Requests ops;
         NameSet absent_part_paths_on_replicas;
 
-        lockSharedData(*part, false);
+        lockSharedData(*part, false, hardlinked_files);
 
         /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
         checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, part->name, &absent_part_paths_on_replicas);
@@ -1992,6 +1992,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
         /// A replica that will be used to fetch part
         String replica;
+
+        MergeTreeData::HardlinkedFiles hardlinked_files;
     };
 
     using PartDescriptionPtr = std::shared_ptr<PartDescription>;
@@ -2197,6 +2199,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     static const String TMP_PREFIX = "tmp_replace_from_";
 
+    std::vector<MergeTreeData::HardlinkedFiles> hardlinked_files_for_parts;
     auto obtain_part = [&] (PartDescriptionPtr & part_desc)
     {
         if (part_desc->src_table_part)
@@ -2206,7 +2209,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 throw Exception("Checksums of " + part_desc->src_table_part->name + " is suddenly changed", ErrorCodes::UNFINISHED);
 
             part_desc->res_part = cloneAndLoadDataPartOnSameDisk(
-                part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info, metadata_snapshot, NO_TRANSACTION_PTR);
+                part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info, metadata_snapshot, NO_TRANSACTION_PTR, &part_desc->hardlinked_files);
         }
         else if (!part_desc->replica.empty())
         {
@@ -2253,7 +2256,10 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         {
             renameTempPartAndReplace(part_desc->res_part, NO_TRANSACTION_RAW, nullptr, &transaction);
             getCommitPartOps(ops, part_desc->res_part);
+
+            lockSharedData(*part_desc->res_part, false, part_desc->hardlinked_files);
         }
+
 
         if (!ops.empty())
             zookeeper->multi(ops);
@@ -2281,6 +2287,10 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     catch (...)
     {
         PartLog::addNewParts(getContext(), res_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+
+        for (const auto & res_part : res_parts)
+            unlockSharedData(*res_part);
+
         throw;
     }
 
@@ -3933,12 +3943,13 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     InterserverCredentialsPtr credentials;
     std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
+    MergeTreeData::HardlinkedFiles hardlinked_files;
 
     if (part_to_clone)
     {
         get_part = [&, part_to_clone]()
         {
-            return cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info, metadata_snapshot, NO_TRANSACTION_PTR);
+            return cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files);
         };
     }
     else
@@ -3984,7 +3995,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             Transaction transaction(*this, NO_TRANSACTION_RAW);
             renameTempPartAndReplace(part, NO_TRANSACTION_RAW, nullptr, &transaction);
 
-            replaced_parts = checkPartChecksumsAndCommit(transaction, part);
+            replaced_parts = checkPartChecksumsAndCommit(transaction, part, hardlinked_files);
 
             /** If a quorum is tracked for this part, you must update it.
               * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
@@ -6381,6 +6392,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         assert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
 
         String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
+        std::vector<MergeTreeData::HardlinkedFiles> hardlinked_files_for_parts;
 
         for (const auto & src_part : src_all_parts)
         {
@@ -6411,13 +6423,16 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
             UInt64 index = lock->getNumber();
             MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-            auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot, NO_TRANSACTION_PTR);
+            MergeTreeData::HardlinkedFiles hardlinked_files;
+
+            auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files);
 
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
             ephemeral_locks.emplace_back(std::move(*lock));
             block_id_paths.emplace_back(block_id_path);
             part_checksums.emplace_back(hash_hex);
+            hardlinked_files_for_parts.emplace_back(hardlinked_files);
         }
 
         ReplicatedMergeTreeLogEntryData entry;
@@ -6475,6 +6490,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                     renameTempPartAndReplace(part, query_context->getCurrentTransaction().get(), nullptr, &transaction, data_parts_lock);
             }
 
+            for (size_t i = 0; i < dst_parts.size(); ++i)
+                lockSharedData(*dst_parts[i], false, hardlinked_files_for_parts[i]);
+
             Coordination::Error code = zookeeper->tryMulti(ops, op_results);
             if (code == Coordination::Error::ZOK)
                 delimiting_block_lock->assumeUnlocked();
@@ -6502,6 +6520,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         catch (...)
         {
             PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+            for (const auto & dst_part : dst_parts)
+                unlockSharedData(*dst_part);
+
             throw;
         }
 
@@ -6603,6 +6624,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         String dest_alter_partition_version_path = dest_table_storage->zookeeper_path + "/alter_partition_version";
         Coordination::Stat dest_alter_partition_version_stat;
         zookeeper->get(dest_alter_partition_version_path, &dest_alter_partition_version_stat);
+        std::vector<MergeTreeData::HardlinkedFiles> hardlinked_files_for_parts;
+
         for (const auto & src_part : src_all_parts)
         {
             if (!dest_table_storage->canReplacePartition(src_part))
@@ -6622,13 +6645,16 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
             UInt64 index = lock->getNumber();
             MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-            auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, NO_TRANSACTION_PTR);
+
+            MergeTreeData::HardlinkedFiles hardlinked_files;
+            auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files);
 
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
             ephemeral_locks.emplace_back(std::move(*lock));
             block_id_paths.emplace_back(block_id_path);
             part_checksums.emplace_back(hash_hex);
+            hardlinked_files_for_parts.emplace_back(hardlinked_files);
         }
 
         ReplicatedMergeTreeLogEntryData entry_delete;
@@ -6695,6 +6721,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 for (MutableDataPartPtr & part : dst_parts)
                     dest_table_storage->renameTempPartAndReplace(part, query_context->getCurrentTransaction().get(), nullptr, &transaction, lock);
 
+                for (size_t i = 0; i < dst_parts.size(); ++i)
+                    lockSharedData(*dst_parts[i], false, hardlinked_files_for_parts[i]);
+
                 Coordination::Error code = zookeeper->tryMulti(ops, op_results);
                 if (code == Coordination::Error::ZBADVERSION)
                     continue;
@@ -6710,6 +6739,10 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         catch (...)
         {
             PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+
+            for (const auto & dst_part : dst_parts)
+                unlockSharedData(*dst_part);
+
             throw;
         }
 
@@ -7327,7 +7360,7 @@ void StorageReplicatedMergeTree::lockSharedDataTemporary(const String & part_nam
     }
 }
 
-void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock) const
+void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock, std::optional<HardlinkedFiles> hardlinked_files) const
 {
     auto settings = getSettings();
 
@@ -7350,11 +7383,16 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
         part.name, zookeeper_path);
 
     String path_to_set_hardlinked_files;
-    if (!part.hardlinked_files.hardlinks_from_source_part.empty())
+    NameSet hardlinks;
+
+    if (hardlinked_files.has_value() && !hardlinked_files->hardlinks_from_source_part.empty())
     {
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "ADDING SOME HARDLINKS {}", fmt::join(hardlinked_files->hardlinks_from_source_part, ", "));
         path_to_set_hardlinked_files = getZeroCopyPartPath(
             *getSettings(), disk->getType(), getTableSharedID(),
-            part.hardlinked_files.source_part_name, zookeeper_path)[0];
+            hardlinked_files->source_part_name, zookeeper_path)[0];
+
+        hardlinks = hardlinked_files->hardlinks_from_source_part;
     }
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
@@ -7365,7 +7403,7 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
 
         createZeroCopyLockNode(
             zookeeper, zookeeper_node, zkutil::CreateMode::Persistent,
-            replace_existing_lock, path_to_set_hardlinked_files, part.hardlinked_files.hardlinks_from_source_part);
+            replace_existing_lock, path_to_set_hardlinked_files, hardlinks);
     }
 }
 

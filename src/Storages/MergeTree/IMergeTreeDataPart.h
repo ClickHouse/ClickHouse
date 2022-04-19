@@ -331,21 +331,6 @@ public:
 
     mutable VersionMetadata version;
 
-    ///
-    struct HardlinkedFiles
-    {
-        /// Hardlinked from part
-        std::string source_part_name;
-        /// Hardlinked files list
-        NameSet hardlinks_from_source_part;
-    };
-
-    /// Files hardlinked from source part during mutation/backup
-    /// Need only for zero-copy replication implementation.
-    /// Don't use, it's only in memory and don't survive a server restart or table
-    /// DETACH/ATTACH.
-    HardlinkedFiles hardlinked_files;
-
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
