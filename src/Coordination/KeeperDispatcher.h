@@ -118,11 +118,6 @@ public:
 
     bool isServerActive() const;
 
-    bool serverIsRecovering() const
-    {
-        return server->isRecovering();
-    }
-
     /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
