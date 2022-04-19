@@ -100,9 +100,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
-            if (pos->type != TokenType::Number)
-                return false;
-            ++pos;
+            if (pos->type == TokenType::Number)
+                ++pos;
             if (pos->type != TokenType::ClosingRoundBracket)
                return false;
             ++pos;
