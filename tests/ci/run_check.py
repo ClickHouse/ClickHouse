@@ -26,26 +26,33 @@ DO_NOT_TEST_LABEL = "do not test"
 FORCE_TESTS_LABEL = "force tests"
 SUBMODULE_CHANGED_LABEL = "submodule changed"
 
-
-MAP_CATEGORY_TO_LABEL = {
-    "New Feature": "pr-feature",
-    "Bug Fix": "pr-bugfix",
-    "Bug Fix (user-visible misbehaviour in official "
-    "stable or prestable release)": "pr-bugfix",
-    "Improvement": "pr-improvement",
-    "Performance Improvement": "pr-performance",
-    "Backward Incompatible Change": "pr-backward-incompatible",
-    "Build/Testing/Packaging Improvement": "pr-build",
-    "Build Improvement": "pr-build",
-    "Build/Testing Improvement": "pr-build",
-    "Build": "pr-build",
-    "Packaging Improvement": "pr-build",
-    "Not for changelog (changelog entry is not required)": "pr-not-for-changelog",
-    "Not for changelog": "pr-not-for-changelog",
-    "Documentation (changelog entry is not required)": "pr-documentation",
-    "Documentation": "pr-documentation",
-    # 'Other': doesn't match anything
+LABELS = {
+    "pr-backward-incompatible": ["Backward Incompatible Change"],
+    "pr-bugfix": [
+        "Bug Fix",
+        "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
+    ],
+    "pr-build": [
+        "Build/Testing/Packaging Improvement",
+        "Build Improvement",
+        "Build/Testing Improvement",
+        "Build",
+        "Packaging Improvement",
+    ],
+    "pr-documentation": [
+        "Documentation (changelog entry is not required)",
+        "Documentation",
+    ],
+    "pr-feature": ["New Feature"],
+    "pr-improvement": ["Improvement"],
+    "pr-not-for-changelog": [
+        "Not for changelog (changelog entry is not required)",
+        "Not for changelog",
+    ],
+    "pr-performance": ["Performance Improvement"],
 }
+
+CATEGORY_TO_LABEL = {c: lb for lb, categories in LABELS.items() for c in categories}
 
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
@@ -179,20 +186,20 @@ if __name__ == "__main__":
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
-    description_report, category = check_pr_description(pr_info)
+    description_error, category = check_pr_description(pr_info)
     pr_labels_to_add = []
     pr_labels_to_remove = []
     if (
-        category in MAP_CATEGORY_TO_LABEL
-        and MAP_CATEGORY_TO_LABEL[category] not in pr_info.labels
+        category in CATEGORY_TO_LABEL
+        and CATEGORY_TO_LABEL[category] not in pr_info.labels
     ):
-        pr_labels_to_add.append(MAP_CATEGORY_TO_LABEL[category])
+        pr_labels_to_add.append(CATEGORY_TO_LABEL[category])
 
     for label in pr_info.labels:
         if (
-            label in MAP_CATEGORY_TO_LABEL.values()
-            and category in MAP_CATEGORY_TO_LABEL
-            and label != MAP_CATEGORY_TO_LABEL[category]
+            label in CATEGORY_TO_LABEL.values()
+            and category in CATEGORY_TO_LABEL
+            and label != CATEGORY_TO_LABEL[category]
         ):
             pr_labels_to_remove.append(label)
 
@@ -208,15 +215,15 @@ if __name__ == "__main__":
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    if description_report:
+    if description_error:
         print(
             "::error ::Cannot run, PR description does not match the template: "
-            f"{description_report}"
+            f"{description_error}"
         )
         logging.info(
             "PR body doesn't match the template: (start)\n%s\n(end)\n" "Reason: %s",
             pr_info.body,
-            description_report,
+            description_error,
         )
         url = (
             f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
@@ -224,7 +231,7 @@ if __name__ == "__main__":
         )
         commit.create_status(
             context=NAME,
-            description=description_report[:139],
+            description=description_error[:139],
             state="failure",
             target_url=url,
         )
