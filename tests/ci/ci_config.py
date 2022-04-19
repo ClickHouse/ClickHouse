@@ -282,6 +282,7 @@ CI_CONFIG = {
         },
         "Stateless tests (release, s3 storage, actions)": {
             "required_build": "package_release",
+            "force_tests": True,
         },
         "Stateless tests (debug, s3 storage, actions)": {
             "required_build": "package_debug",
