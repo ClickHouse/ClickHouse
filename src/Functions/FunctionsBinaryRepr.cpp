@@ -311,6 +311,10 @@ public:
             tryExecuteUIntOrInt<UInt64>(column, res_column) ||
             tryExecuteUIntOrInt<UInt128>(column, res_column) ||
             tryExecuteUIntOrInt<UInt256>(column, res_column) ||
+            tryExecuteUIntOrInt<Int8>(column, res_column) ||
+            tryExecuteUIntOrInt<Int16>(column, res_column) ||
+            tryExecuteUIntOrInt<Int32>(column, res_column) ||
+            tryExecuteUIntOrInt<Int64>(column, res_column) ||
             tryExecuteUIntOrInt<Int128>(column, res_column) ||
             tryExecuteUIntOrInt<Int256>(column, res_column) ||
             tryExecuteString(column, res_column) ||
