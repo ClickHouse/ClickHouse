@@ -182,24 +182,21 @@ String StorageS3Source::DisclosedGlobIterator::next()
 class StorageS3Source::KeysIterator::Impl
 {
 public:
-    explicit Impl(const std::vector<String> & keys_) : keys(keys_), keys_iter(keys.begin())
+    explicit Impl(const std::vector<String> & keys_) : keys(keys_)
     {
     }
 
     String next()
     {
-        std::lock_guard lock(mutex);
-        if (keys_iter == keys.end())
+        size_t current_index = index.fetch_add(1);
+        if (current_index >= keys.size())
             return "";
-        auto key = *keys_iter;
-        ++keys_iter;
-        return key;
+        return keys[current_index];
     }
 
 private:
-    std::mutex mutex;
     Strings keys;
-    Strings::iterator keys_iter;
+    std::atomic_size_t index = 0;
 };
 
 StorageS3Source::KeysIterator::KeysIterator(const std::vector<String> & keys_) : pimpl(std::make_shared<StorageS3Source::KeysIterator::Impl>(keys_))
@@ -207,6 +204,39 @@ StorageS3Source::KeysIterator::KeysIterator(const std::vector<String> & keys_) :
 }
 
 String StorageS3Source::KeysIterator::next()
+{
+    return pimpl->next();
+}
+
+class StorageS3Source::ReadTasksIterator::Impl
+{
+public:
+    explicit Impl(const std::vector<String> & read_tasks_, const ReadTaskCallback & new_read_tasks_callback_)
+        : read_tasks(read_tasks_), new_read_tasks_callback(new_read_tasks_callback_)
+    {
+    }
+
+    String next()
+    {
+        size_t current_index = index.fetch_add(1);
+        if (current_index >= read_tasks.size())
+            return new_read_tasks_callback();
+        return read_tasks[current_index];
+    }
+
+private:
+    std::atomic_size_t index = 0;
+    std::vector<String> read_tasks;
+    ReadTaskCallback new_read_tasks_callback;
+};
+
+StorageS3Source::ReadTasksIterator::ReadTasksIterator(
+    const std::vector<String> & read_tasks_, const ReadTaskCallback & new_read_tasks_callback_)
+    : pimpl(std::make_shared<StorageS3Source::ReadTasksIterator::Impl>(read_tasks_, new_read_tasks_callback_))
+{
+}
+
+String StorageS3Source::ReadTasksIterator::next()
 {
     return pimpl->next();
 }
@@ -611,7 +641,16 @@ StorageS3::StorageS3(
     updateClientAndAuthSettings(context_, client_auth);
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromDataImpl(format_name, client_auth, max_single_read_retries_, compression_method, distributed_processing_, is_key_with_globs, format_settings, context_);
+        auto columns = getTableStructureFromDataImpl(
+            format_name,
+            client_auth,
+            max_single_read_retries_,
+            compression_method,
+            distributed_processing_,
+            is_key_with_globs,
+            format_settings,
+            context_,
+            &read_tasks_used_in_schema_inference);
         storage_metadata.setColumns(columns);
     }
     else
@@ -629,13 +668,20 @@ StorageS3::StorageS3(
     virtual_columns = getVirtualsForStorage(columns, default_virtuals);
 }
 
-std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(const ClientAuthentication & client_auth, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context)
+std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
+    const ClientAuthentication & client_auth,
+    const std::vector<String> & keys,
+    bool is_key_with_globs,
+    bool distributed_processing,
+    const ContextPtr & local_context,
+    const std::vector<String> & read_tasks)
 {
     if (distributed_processing)
     {
         return std::make_shared<StorageS3Source::IteratorWrapper>(
-            [callback = local_context->getReadTaskCallback()]() -> String {
-                return callback();
+            [read_tasks_iterator = std::make_shared<StorageS3Source::ReadTasksIterator>(read_tasks, local_context->getReadTaskCallback())]() -> String
+        {
+                return read_tasks_iterator->next();
         });
     }
     else if (is_key_with_globs)
@@ -684,7 +730,7 @@ Pipe StorageS3::read(
             requested_virtual_columns.push_back(virtual_column);
     }
 
-    std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, local_context);
+    std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, local_context, read_tasks_used_in_schema_inference);
 
     ColumnsDescription columns_description;
     Block block_for_format;
@@ -959,7 +1005,8 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     bool distributed_processing,
     bool is_key_with_globs,
     const std::optional<FormatSettings> & format_settings,
-    ContextPtr ctx)
+    ContextPtr ctx,
+    std::vector<String> * read_keys_in_distributed_processing)
 {
     std::vector<String> keys = {client_auth.uri.key};
     auto file_iterator = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, ctx);
@@ -970,6 +1017,9 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     do
     {
         current_key = (*file_iterator)();
+        if (!current_key.empty() && distributed_processing && read_keys_in_distributed_processing)
+            read_keys_in_distributed_processing->push_back(current_key);
+
         auto read_buffer_creator = [&]()
         {
             read_buffer_creator_was_used = true;
