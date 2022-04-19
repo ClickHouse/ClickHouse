@@ -154,6 +154,7 @@ private:
 
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
+    bool isDownloaderImpl(std::lock_guard<std::mutex> & segment_lock) const;
 
     void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
 
