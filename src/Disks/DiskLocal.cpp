@@ -173,8 +173,8 @@ class DiskLocalDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
     DiskLocalDirectoryIterator() = default;
-    DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
-        : dir_path(dir_path_), entry(fs::path(disk_path_) / dir_path_)
+    DiskLocalDirectoryIterator(fs::directory_iterator && entry_, const String & dir_path_)
+        : dir_path(dir_path_), entry(std::move(entry_))
     {
     }
 
@@ -319,9 +319,21 @@ DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
     fs::path meta_path = fs::path(disk_path) / path;
     if (!broken && fs::exists(meta_path) && fs::is_directory(meta_path))
-        return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
-    else
-        return std::make_unique<DiskLocalDirectoryIterator>();
+    {
+        try
+        {
+            fs::directory_iterator entry(fs::path(disk_path) / path);
+            return std::make_unique<DiskLocalDirectoryIterator>(std::move(entry), path);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+                return std::make_unique<DiskLocalDirectoryIterator>();
+            throw;
+        }
+    }
+
+    return std::make_unique<DiskLocalDirectoryIterator>();
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
