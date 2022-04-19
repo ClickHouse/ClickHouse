@@ -207,13 +207,13 @@ constexpr auto * SERVER_NOT_ACTIVE_MSG = "This instance is not currently serving
 
 String MonitorCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     const auto & state_machine = keeper_dispatcher.getStateMachine();
-
-    if (!keeper_dispatcher.isServerActive())
-        return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer ret;
     print(ret, "version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
