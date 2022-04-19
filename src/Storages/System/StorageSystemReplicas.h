@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -12,10 +12,11 @@ class Context;
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.
   */
-class StorageSystemReplicas final : public shared_ptr_helper<StorageSystemReplicas>, public IStorage
+class StorageSystemReplicas final : public IStorage, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemReplicas>;
 public:
+    explicit StorageSystemReplicas(const StorageID & table_id_);
+
     std::string getName() const override { return "SystemReplicas"; }
 
     Pipe read(
@@ -28,9 +29,6 @@ public:
         unsigned num_streams) override;
 
     bool isSystemStorage() const override { return true; }
-
-protected:
-    explicit StorageSystemReplicas(const StorageID & table_id_);
 };
 
 }

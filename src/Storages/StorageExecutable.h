@@ -1,7 +1,7 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Common/logger_useful.h>
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Storages/ExecutableSettings.h>
@@ -15,11 +15,16 @@ namespace DB
  * Executable storage that will start process for read.
  * ExecutablePool storage maintain pool of processes and take process from pool for read.
  */
-class StorageExecutable final : public shared_ptr_helper<StorageExecutable>, public IStorage
+class StorageExecutable final : public IStorage, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageExecutable>;
-
 public:
+    StorageExecutable(
+        const StorageID & table_id,
+        const String & format,
+        const ExecutableSettings & settings,
+        const std::vector<ASTPtr> & input_queries,
+        const ColumnsDescription & columns,
+        const ConstraintsDescription & constraints);
 
     String getName() const override
     {
@@ -37,16 +42,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned threads) override;
-
-protected:
-
-    StorageExecutable(
-        const StorageID & table_id,
-        const String & format,
-        const ExecutableSettings & settings,
-        const std::vector<ASTPtr> & input_queries,
-        const ColumnsDescription & columns,
-        const ConstraintsDescription & constraints);
 
 private:
     ExecutableSettings settings;

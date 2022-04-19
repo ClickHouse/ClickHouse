@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -14,10 +14,11 @@ class Context;
 
 /** Implements the system table `disks`, which allows you to get information about all disks.
 */
-class StorageSystemDisks final : public shared_ptr_helper<StorageSystemDisks>, public IStorage
+class StorageSystemDisks final : public IStorage, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemDisks>;
 public:
+    explicit StorageSystemDisks(const StorageID & table_id_);
+
     std::string getName() const override { return "SystemDisks"; }
 
     Pipe read(
@@ -30,9 +31,6 @@ public:
         unsigned num_streams) override;
 
     bool isSystemStorage() const override { return true; }
-
-protected:
-    explicit StorageSystemDisks(const StorageID & table_id_);
 };
 
 }

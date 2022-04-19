@@ -10,8 +10,8 @@
 #include <iostream>
 
 #include <boost/circular_buffer.hpp>
+#include <boost/noncopyable.hpp>
 
-#include <base/shared_ptr_helper.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
@@ -156,7 +156,7 @@ private:
  *  So, when a Storage want to shutdown, it must wait until all its background operaions are finished.
  */
 template <class Queue>
-class MergeTreeBackgroundExecutor final : public shared_ptr_helper<MergeTreeBackgroundExecutor<Queue>>
+class MergeTreeBackgroundExecutor final : boost::noncopyable
 {
 public:
     MergeTreeBackgroundExecutor(

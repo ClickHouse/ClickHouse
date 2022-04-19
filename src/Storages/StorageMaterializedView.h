@@ -1,9 +1,8 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Parsers/IAST_fwd.h>
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -11,10 +10,17 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public shared_ptr_helper<StorageMaterializedView>, public IStorage, WithMutableContext
+class StorageMaterializedView final : public IStorage, WithMutableContext, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageMaterializedView>;
 public:
+    StorageMaterializedView(
+        const StorageID & table_id_,
+        ContextPtr local_context,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns_,
+        bool attach_,
+        const String & comment);
+
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
 
@@ -109,15 +115,6 @@ private:
     bool has_inner_table = false;
 
     void checkStatementCanBeForwarded() const;
-
-protected:
-    StorageMaterializedView(
-        const StorageID & table_id_,
-        ContextPtr local_context,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns_,
-        bool attach_,
-        const String & comment);
 };
 
 }

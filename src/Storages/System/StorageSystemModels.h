@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -10,9 +10,8 @@ namespace DB
 class Context;
 
 
-class StorageSystemModels final : public shared_ptr_helper<StorageSystemModels>, public IStorageSystemOneBlock<StorageSystemModels>
+class StorageSystemModels final : public IStorageSystemOneBlock<StorageSystemModels>, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemModels>;
 public:
     std::string getName() const override { return "SystemModels"; }
 

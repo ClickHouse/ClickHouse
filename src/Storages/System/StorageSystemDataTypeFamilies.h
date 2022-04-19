@@ -1,15 +1,13 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
 
-class StorageSystemDataTypeFamilies final : public shared_ptr_helper<StorageSystemDataTypeFamilies>,
-                                      public IStorageSystemOneBlock<StorageSystemDataTypeFamilies>
+class StorageSystemDataTypeFamilies final : public IStorageSystemOneBlock<StorageSystemDataTypeFamilies>, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemDataTypeFamilies>;
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 

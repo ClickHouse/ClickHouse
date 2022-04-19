@@ -2,7 +2,7 @@
 
 #include "config_core.h"
 
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -16,10 +16,8 @@ struct ExternalDataSourceConfiguration;
 /// A query to external database is passed to one replica on each shard, the result is united.
 /// Replicas on each shard have the same priority, traversed replicas are moved to the end of the queue.
 /// Similar approach is used for URL storage.
-class StorageExternalDistributed final : public shared_ptr_helper<StorageExternalDistributed>, public DB::IStorage
+class StorageExternalDistributed final : public DB::IStorage, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageExternalDistributed>;
-
 public:
     enum class ExternalStorageEngine
     {
@@ -28,18 +26,6 @@ public:
         URL
     };
 
-    std::string getName() const override { return "ExternalDistributed"; }
-
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
-protected:
     StorageExternalDistributed(
         const StorageID & table_id_,
         ExternalStorageEngine table_engine,
@@ -59,6 +45,17 @@ protected:
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         ContextPtr context);
+
+    std::string getName() const override { return "ExternalDistributed"; }
+
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
 
 private:
     using Shards = std::unordered_set<StoragePtr>;

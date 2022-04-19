@@ -92,7 +92,7 @@ TemporaryTableHolder::TemporaryTableHolder(
         context_,
         [&](const StorageID & table_id)
         {
-            auto storage = StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
+            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
 
             if (create_for_global_subquery)
                 storage->delayReadForGlobalSubqueries();
@@ -250,7 +250,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
         if (!context_->isInternalQuery() && db_and_table.first->getEngineName() == "MaterializedMySQL")
         {
-            db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+            db_and_table.second = StorageMaterializedMySQL::create(std::move(db_and_table.second), db_and_table.first.get());
         }
 #endif
         return db_and_table;

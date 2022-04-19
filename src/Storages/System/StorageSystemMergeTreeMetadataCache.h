@@ -3,7 +3,7 @@
 #include "config_core.h"
 
 #if USE_ROCKSDB
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -13,10 +13,8 @@ class Context;
 
 
 /// Implements `merge_tree_metadata_cache` system table, which allows you to view the metadata cache data in rocksdb for testing purposes.
-class StorageSystemMergeTreeMetadataCache : public shared_ptr_helper<StorageSystemMergeTreeMetadataCache>, public IStorageSystemOneBlock<StorageSystemMergeTreeMetadataCache>
+class StorageSystemMergeTreeMetadataCache : public IStorageSystemOneBlock<StorageSystemMergeTreeMetadataCache>, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemMergeTreeMetadataCache>;
-
 public:
     std::string getName() const override { return "SystemMergeTreeMetadataCache"; }
 

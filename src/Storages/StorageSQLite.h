@@ -3,7 +3,7 @@
 #include "config_core.h"
 
 #if USE_SQLITE
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 #include <sqlite3.h>
@@ -16,10 +16,8 @@ class Logger;
 namespace DB
 {
 
-class StorageSQLite final : public shared_ptr_helper<StorageSQLite>, public IStorage, public WithContext
+class StorageSQLite final : public IStorage, public WithContext, boost::noncopyable
 {
-friend struct shared_ptr_helper<StorageSQLite>;
-
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
 

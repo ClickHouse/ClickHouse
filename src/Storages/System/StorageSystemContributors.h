@@ -1,8 +1,7 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
-#include <base/shared_ptr_helper.h>
-
 
 namespace DB
 {
@@ -11,10 +10,8 @@ class Context;
 
 /** System table "contributors" with list of clickhouse contributors
   */
-class StorageSystemContributors final : public shared_ptr_helper<StorageSystemContributors>,
-                                  public IStorageSystemOneBlock<StorageSystemContributors>
+class StorageSystemContributors final : public IStorageSystemOneBlock<StorageSystemContributors>, boost::noncopyable
 {
-    friend struct shared_ptr_helper<StorageSystemContributors>;
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
