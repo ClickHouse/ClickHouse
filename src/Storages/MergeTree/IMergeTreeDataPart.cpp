@@ -475,10 +475,10 @@ void IMergeTreeDataPart::removeIfNeeded()
 
         if (is_temp)
         {
-            String file_name = fileName(relative_path);
+            String file_name = fileName(data_part_storage->getRelativePath());
 
             if (file_name.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set", relative_path, name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set", data_part_storage->getRelativePath(), name);
 
             if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj"))
             {
@@ -491,15 +491,7 @@ void IMergeTreeDataPart::removeIfNeeded()
             }
         }
 
-        if (parent_part)
-        {
-            std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
-            if (!keep_shared_data.has_value())
-                return;
-            projectionRemove(parent_part->getFullRelativePath(), *keep_shared_data);
-        }
-        else
-            remove();
+        remove();
 
         if (state == State::DeleteOnDestroy)
         {
@@ -1305,174 +1297,28 @@ void IMergeTreeDataPart::remove() const
     if (!isStoredOnDisk())
         return;
 
-    if (relative_path.empty())
-        throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
-
     if (isProjectionPart())
     {
-        LOG_WARNING(storage.log, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
-        projectionRemove(parent_part->getFullRelativePath(), *keep_shared_data);
-        return;
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Projection part {} should be removed by its parent {}.", 
+            name, parent_part->name);
     }
 
     metadata_manager->deleteAll(false);
     metadata_manager->assertAllDeleted(false);
 
-    /** Atomic directory removal:
-      * - rename directory to temporary name;
-      * - remove it recursive.
-      *
-      * For temporary name we use "delete_tmp_" prefix.
-      *
-      * NOTE: We cannot use "tmp_delete_" prefix, because there is a second thread,
-      *  that calls "clearOldTemporaryDirectories" and removes all directories, that begin with "tmp_" and are old enough.
-      * But when we removing data part, it can be old enough. And rename doesn't change mtime.
-      * And a race condition can happen that will lead to "File not found" error here.
-      */
+    std::list<IDataPartStorage::ProjectionChecksums> projection_checksums;
 
-    /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
-    /// when we try to remove two parts with the same name, but different relative paths,
-    /// for example all_1_2_1 (in Deleting state) and tmp_merge_all_1_2_1 (in Temporary state).
-    fs::path from = fs::path(storage.relative_data_path) / relative_path;
-    fs::path to = fs::path(storage.relative_data_path) / ("delete_tmp_" + relative_path);
-    // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
-
-    auto disk = volume->getDisk();
-    if (disk->exists(to))
-    {
-        LOG_WARNING(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
-        try
-        {
-            disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
-        }
-        catch (...)
-        {
-            LOG_ERROR(storage.log, "Cannot recursively remove directory {}. Exception: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
-            throw;
-        }
-    }
-
-    try
-    {
-        disk->moveDirectory(from, to);
-    }
-    catch (const fs::filesystem_error & e)
-    {
-        if (e.code() == std::errc::no_such_file_or_directory)
-        {
-            LOG_ERROR(storage.log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, to));
-            return;
-        }
-        throw;
-    }
-
-    // Record existing projection directories so we don't remove them twice
-    std::unordered_set<String> projection_directories;
     for (const auto & [p_name, projection_part] : projection_parts)
     {
-        projection_part->projectionRemove(to, *keep_shared_data);
-        projection_directories.emplace(p_name + ".proj");
+        projection_part->metadata_manager->deleteAll(false);
+        projection_part->metadata_manager->assertAllDeleted(false);
+        projection_checksums.emplace_back(p_name, projection_part->checksums);
     }
 
-
-    if (checksums.empty())
-    {
-        /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
-    }
-    else
-    {
-        try
-        {
-            /// Remove each expected file in directory, then remove directory itself.
-            IDisk::RemoveBatchRequest request;
-
-    #if !defined(__clang__)
-    #    pragma GCC diagnostic push
-    #    pragma GCC diagnostic ignored "-Wunused-variable"
-    #endif
-            for (const auto & [file, _] : checksums.files)
-            {
-                if (projection_directories.find(file) == projection_directories.end())
-                    request.emplace_back(fs::path(to) / file);
-            }
-    #if !defined(__clang__)
-    #    pragma GCC diagnostic pop
-    #endif
-
-            for (const auto & file : {"checksums.txt", "columns.txt"})
-                request.emplace_back(fs::path(to) / file);
-
-            request.emplace_back(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, true);
-            request.emplace_back(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, true);
-
-            disk->removeSharedFiles(request, *keep_shared_data);
-            disk->removeDirectory(to);
-        }
-        catch (...)
-        {
-            /// Recursive directory removal does many excessive "stat" syscalls under the hood.
-
-            LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
-
-            disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
-        }
-    }
+    data_part_storage->remove(*keep_shared_data, checksums, projection_checksums, storage.log);
 }
-
-
-void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_shared_data) const
-{
-    metadata_manager->deleteAll(false);
-    metadata_manager->assertAllDeleted(false);
-
-    String to = fs::path(parent_to) / relative_path;
-    auto disk = volume->getDisk();
-    if (checksums.empty())
-    {
-
-        LOG_ERROR(
-            storage.log,
-            "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
-            fullPath(disk, to));
-        /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
-    }
-    else
-    {
-        try
-        {
-            /// Remove each expected file in directory, then remove directory itself.
-            IDisk::RemoveBatchRequest request;
-
-    #if !defined(__clang__)
-    #    pragma GCC diagnostic push
-    #    pragma GCC diagnostic ignored "-Wunused-variable"
-    #endif
-            for (const auto & [file, _] : checksums.files)
-                request.emplace_back(fs::path(to) / file);
-    #if !defined(__clang__)
-    #    pragma GCC diagnostic pop
-    #endif
-
-            for (const auto & file : {"checksums.txt", "columns.txt"})
-                request.emplace_back(fs::path(to) / file);
-            request.emplace_back(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, true);
-            request.emplace_back(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, true);
-
-            disk->removeSharedFiles(request, keep_shared_data);
-            disk->removeSharedRecursive(to, keep_shared_data);
-        }
-        catch (...)
-        {
-            /// Recursive directory removal does many excessive "stat" syscalls under the hood.
-
-            LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
-
-            disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
-         }
-     }
- }
 
 String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached) const
 {
@@ -1484,25 +1330,10 @@ String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool 
         * No more than 10 attempts are made so that there are not too many junk directories left.
         */
 
-    auto full_relative_path = fs::path(storage.relative_data_path);
-    if (detached)
-        full_relative_path /= "detached";
     if (detached && parent_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot detach projection");
-    else if (parent_part)
-        full_relative_path /= parent_part->relative_path;
 
-    for (int try_no = 0; try_no < 10; ++try_no)
-    {
-        res = (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
-
-        if (!volume->getDisk()->exists(full_relative_path / res))
-            return res;
-
-        LOG_WARNING(storage.log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
-    }
-
-    return res;
+    return data_part_storage->getRelativePathForPrefix(storage.log, prefix, detached);
 }
 
 String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
@@ -1522,36 +1353,24 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
-    String destination_path = fs::path(storage.relative_data_path) / getRelativePathForDetachedPart(prefix);
-    localBackup(volume->getDisk(), getFullRelativePath(), destination_path);
-    volume->getDisk()->removeFileIfExists(fs::path(destination_path) / DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    data_part_storage->freeze(storage.relative_data_path, getRelativePathForDetachedPart(prefix), {});
 }
 
 void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
 {
     assertOnDisk();
 
-    if (disk->getName() == volume->getDisk()->getName())
-        throw Exception("Can not clone data part " + name + " to same disk " + volume->getDisk()->getName(), ErrorCodes::LOGICAL_ERROR);
+    if (disk->getName() == data_part_storage->getName())
+        throw Exception("Can not clone data part " + name + " to same disk " + data_part_storage->getName(), ErrorCodes::LOGICAL_ERROR);
     if (directory_name.empty())
         throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-
-    if (disk->exists(fs::path(path_to_clone) / relative_path))
-    {
-        LOG_WARNING(storage.log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone + relative_path));
-        disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
-    }
-    disk->createDirectories(path_to_clone);
-    volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
-    volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    data_part_storage->clone(path_to_clone, data_part_storage->getRelativePath(), storage.log);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const
 {
-    String path = getFullRelativePath();
-
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
@@ -1585,33 +1404,37 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             }
         }
 
-        checksums.checkSizes(volume->getDisk(), path);
+        data_part_storage->checkConsistency(checksums);
     }
     else
     {
-        auto check_file_not_empty = [&path](const DiskPtr & disk_, const String & file_path)
+        auto check_file_not_empty = [this](const String & file_path)
         {
             UInt64 file_size;
-            if (!disk_->exists(file_path) || (file_size = disk_->getFileSize(file_path)) == 0)
-                throw Exception("Part " + fullPath(disk_, path) + " is broken: " + fullPath(disk_, file_path) + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+            if (!data_part_storage->exists(file_path) || (file_size = data_part_storage->getFileSize(file_path)) == 0)
+                throw Exception(
+                    ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                    "Part {} is broken: {} is empty",
+                    data_part_storage->getFullPath(),
+                    std::string(fs::path(data_part_storage->getFullPath()) / file_path));
             return file_size;
         };
 
         /// Check that the primary key index is not empty.
         if (!pk.column_names.empty())
-            check_file_not_empty(volume->getDisk(), fs::path(path) / "primary.idx");
+            check_file_not_empty("primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
-            check_file_not_empty(volume->getDisk(), fs::path(path) / "count.txt");
+            check_file_not_empty("count.txt");
 
             if (metadata_snapshot->hasPartitionKey())
-                check_file_not_empty(volume->getDisk(), fs::path(path) / "partition.dat");
+                check_file_not_empty("partition.dat");
 
             if (!parent_part)
             {
                 for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
-                    check_file_not_empty(volume->getDisk(), fs::path(path) / ("minmax_" + escapeForFileName(col_name) + ".idx"));
+                    check_file_not_empty("minmax_" + escapeForFileName(col_name) + ".idx");
             }
         }
     }
@@ -1741,11 +1564,7 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
 
 String IMergeTreeDataPart::getUniqueId() const
 {
-    auto disk = volume->getDisk();
-    if (!disk->supportZeroCopyReplication())
-        throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
-
-    return disk->getUniqueId(fs::path(getFullRelativePath()) / FILE_FOR_REFERENCES_CHECK);
+    return data_part_storage->getUniqueId();
 }
 
 String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
@@ -1785,11 +1604,11 @@ IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const St
         return it->second.file_hash;
     }
 
-    if (!volume->getDisk()->exists(file_path))
+    if (!data_part_storage->exists(file_path))
     {
         return {};
     }
-    std::unique_ptr<ReadBufferFromFileBase> in_file = volume->getDisk()->readFile(file_path);
+    std::unique_ptr<ReadBufferFromFileBase> in_file = data_part_storage->readFile(file_path, {}, std::nullopt, std::nullopt);
     HashingReadBuffer in_hash(*in_file);
 
     String value;

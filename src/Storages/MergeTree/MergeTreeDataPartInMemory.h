@@ -34,7 +34,7 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
     MergeTreeWriterPtr getWriter(
-        DataPartStorageBuilderPtr,
+        DataPartStorageBuilderPtr data_part_storage_builder_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -49,12 +49,13 @@ public:
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const override;
     void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;
 
-    void flushToDisk(const String & base_path, const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const;
+    DataPartStoragePtr flushToDisk(const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Returns hash of parts's block
     Checksum calculateBlockChecksum() const;
 
     mutable Block block;
+    mutable DataPartStorageBuilderPtr data_part_storage_builder;
 
 private:
     mutable std::condition_variable is_merged;

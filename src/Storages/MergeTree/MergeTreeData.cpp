@@ -1585,11 +1585,9 @@ void MergeTreeData::flushAllInMemoryPartsIfNeeded()
     {
         if (auto part_in_memory = asInMemoryPart(part))
         {
-            const auto & storage_relative_path = part_in_memory->storage.relative_data_path;
-            part_in_memory->flushToDisk(storage_relative_path, part_in_memory->data_part_storage->getRelativePath(), metadata_snapshot);
+            part_in_memory->flushToDisk(part_in_memory->data_part_storage->getRelativePath(), metadata_snapshot);
         }
     }
-
 }
 
 size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
@@ -3663,36 +3661,7 @@ BackupEntries MergeTreeData::backupDataParts(const DataPartsVector & data_parts)
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
 
     for (const auto & part : data_parts)
-    {
-        auto disk = part->volume->getDisk();
-
-        auto temp_dir_it = temp_dirs.find(disk);
-        if (temp_dir_it == temp_dirs.end())
-            temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_")).first;
-        auto temp_dir_owner = temp_dir_it->second;
-        fs::path temp_dir = temp_dir_owner->getPath();
-
-        fs::path part_dir = part->getFullRelativePath();
-        fs::path temp_part_dir = temp_dir / part->relative_path;
-        disk->createDirectories(temp_part_dir);
-
-        for (const auto & [filepath, checksum] : part->checksums.files)
-        {
-            String relative_filepath = fs::path(part->relative_path) / filepath;
-            String hardlink_filepath = temp_part_dir / filepath;
-            disk->createHardLink(part_dir / filepath, hardlink_filepath);
-            UInt128 file_hash{checksum.file_hash.first, checksum.file_hash.second};
-            backup_entries.emplace_back(
-                relative_filepath,
-                std::make_unique<BackupEntryFromImmutableFile>(disk, hardlink_filepath, checksum.file_size, file_hash, temp_dir_owner));
-        }
-
-        for (const auto & filepath : part->getFileNamesWithoutChecksums())
-        {
-            String relative_filepath = fs::path(part->relative_path) / filepath;
-            backup_entries.emplace_back(relative_filepath, std::make_unique<BackupEntryFromSmallFile>(disk, part_dir / filepath));
-        }
-    }
+        part->data_part_storage->backup(temp_dirs, part->checksums, part->getFileNamesWithoutChecksums(), backup_entries);
 
     return backup_entries;
 }
@@ -4200,7 +4169,7 @@ ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, SpacePtr space)
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
-ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, const DataPartStorageBuilderPtr & data_part_storage_builder) const
+ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, const DataPartStorageBuilderPtr & data_part_storage_builder)
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
     return data_part_storage_builder->reserve(expected_size);
@@ -4322,11 +4291,11 @@ bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMe
     if (ttl.destination_type == DataDestinationType::VOLUME)
     {
         for (const auto & disk : policy->getVolumeByName(ttl.destination_name)->getDisks())
-            if (disk->getName() == part.volume->getDisk()->getName())
+            if (disk->getName() == part.data_part_storage->getName())
                 return true;
     }
     else if (ttl.destination_type == DataDestinationType::DISK)
-        return policy->getDiskByName(ttl.destination_name)->getName() == part.volume->getDisk()->getName();
+        return policy->getDiskByName(ttl.destination_name)->getName() == part.data_part_storage->getName();
     return false;
 }
 
@@ -5323,7 +5292,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     bool does_storage_policy_allow_same_disk = false;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
-        if (disk->getName() == src_part->volume->getDisk()->getName())
+        if (disk->getName() == src_part->data_part_storage->getName())
         {
             does_storage_policy_allow_same_disk = true;
             break;
@@ -5331,41 +5300,36 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     }
     if (!does_storage_policy_allow_same_disk)
         throw Exception(
-            "Could not clone and load part " + quoteString(src_part->getFullPath()) + " because disk does not belong to storage policy",
-            ErrorCodes::BAD_ARGUMENTS);
+            ErrorCodes::BAD_ARGUMENTS,
+            "Could not clone and load part {} because disk does not belong to storage policy",
+            quoteString(src_part->data_part_storage->getFullPath()));
 
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto reservation = reserveSpace(src_part->getBytesOnDisk(), src_part->volume->getDisk());
-    auto disk = reservation->getDisk();
-    String src_part_path = src_part->getFullRelativePath();
-    String dst_part_path = relative_data_path + tmp_dst_part_name;
+    /// Why it is needed if we only hardlink files?
+    auto reservation = src_part->data_part_storage->reserve(src_part->getBytesOnDisk()); //reserveSpace(src_part->getBytesOnDisk(), src_part->volume->getDisk());
 
-    if (disk->exists(dst_part_path))
-        throw Exception("Part in " + fullPath(disk, dst_part_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    auto src_part_storage = src_part->data_part_storage;
 
     /// If source part is in memory, flush it to disk and clone it already in on-disk format
     if (auto src_part_in_memory = asInMemoryPart(src_part))
     {
-        const auto & src_relative_data_path = src_part_in_memory->storage.relative_data_path;
         auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
-        src_part_in_memory->flushToDisk(src_relative_data_path, flushed_part_path, metadata_snapshot);
-        src_part_path = fs::path(src_relative_data_path) / flushed_part_path / "";
+        src_part_storage = src_part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
     }
 
-    LOG_DEBUG(log, "Cloning part {} to {}", fullPath(disk, src_part_path), fullPath(disk, dst_part_path));
-    localBackup(disk, src_part_path, dst_part_path);
-    disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    LOG_DEBUG(log, "Cloning part {} to {}", 
+        src_part_storage->getFullPath(), 
+        std::string(fs::path(src_part_storage->getFullRootPath()) / tmp_dst_part_name));
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, tmp_dst_part_name);
-    auto dst_data_part = createPart(dst_part_name, dst_part_info, data_part_storage);
+    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, {});
 
+    auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
     dst_data_part->is_temp = true;
 
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
-    dst_data_part->modification_time = disk->getLastModified(dst_part_path).epochTime();
+    dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
     return dst_data_part;
 }
 
@@ -5407,14 +5371,13 @@ Strings MergeTreeData::getDataPaths() const
 
 void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const
 {
-    if (data_part->volume && data_part->volume->getDisk()->isBroken())
+    if (data_part->data_part_storage && data_part->data_part_storage->isBroken())
     {
-        auto disk = data_part->volume->getDisk();
         auto parts = getDataParts();
-        LOG_WARNING(log, "Scanning parts to recover on broken disk {}.", disk->getName() + "@" + disk->getPath());
+        LOG_WARNING(log, "Scanning parts to recover on broken disk {}@{}.", data_part->data_part_storage->getName(), data_part->data_part_storage->getDiskPathForLogs());
         for (const auto & part : parts)
         {
-            if (part->volume && part->volume->getDisk()->getName() == disk->getName())
+            if (part->data_part_storage && part->data_part_storage->getName() == data_part->data_part_storage->getName())
                 broken_part_callback(part->name);
         }
     }
@@ -5503,33 +5466,34 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
-        auto disk = part->volume->getDisk();
+        //auto disk = part->volume->getDisk();
 
-        disk->createDirectories(backup_path);
 
-        String src_part_path = part->getFullRelativePath();
-        String backup_part_path = fs::path(backup_path) / relative_data_path / part->relative_path;
+        String src_part_path = part->data_part_storage->getFullRelativePath();
+        String backup_part_path = fs::path(backup_path) / relative_data_path;
         if (auto part_in_memory = asInMemoryPart(part))
         {
             auto flushed_part_path = part_in_memory->getRelativePathForPrefix("tmp_freeze");
-            part_in_memory->flushToDisk(relative_data_path, flushed_part_path, metadata_snapshot);
-            src_part_path = fs::path(relative_data_path) / flushed_part_path / "";
+            src_part_path = part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot)->getFullRelativePath();
         }
 
-        localBackup(disk, src_part_path, backup_part_path);
+        auto new_storage = part->data_part_storage->freeze(
+            backup_part_path, 
+            part->data_part_storage->getRelativePath(), 
+            [this, &part, &backup_part_path](const DiskPtr & disk)
+        {
 
-        // Store metadata for replicated table.
-        // Do nothing for non-replocated.
-        createAndStoreFreezeMetadata(disk, part, backup_part_path);
-
-        disk->removeFileIfExists(fs::path(backup_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+            // Store metadata for replicated table.
+            // Do nothing for non-replocated.
+            createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->data_part_storage->getRelativePath());
+        });
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
             .partition_id = part->info.partition_id,
             .part_name = part->name,
-            .backup_path = fs::path(disk->getPath()) / backup_path,
-            .part_backup_path = fs::path(disk->getPath()) / backup_part_path,
+            .backup_path = new_storage->getFullRootPath(),
+            .part_backup_path = new_storage->getFullPath(),
             .backup_name = backup_name,
         });
         ++parts_processed;
@@ -5667,8 +5631,8 @@ try
 
     if (result_part)
     {
-        part_log_elem.disk_name = result_part->volume->getDisk()->getName();
-        part_log_elem.path_on_disk = result_part->getFullPath();
+        part_log_elem.disk_name = result_part->data_part_storage->getName();
+        part_log_elem.path_on_disk = result_part->data_part_storage->getFullPath();
         part_log_elem.bytes_compressed_on_disk = result_part->getBytesOnDisk();
         part_log_elem.rows = result_part->rows_count;
     }
@@ -6084,7 +6048,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                 if (part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod
                     && part_info.partition_id == part->info.partition_id)
                 {
-                    auto name = part->volume->getDisk()->getName();
+                    auto name = part->data_part_storage->getName();
                     auto it = disk_occupation.find(name);
                     if (it != disk_occupation.end())
                     {
