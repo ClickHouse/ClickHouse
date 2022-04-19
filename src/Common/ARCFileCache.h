@@ -14,6 +14,7 @@
 #include <base/logger_useful.h>
 #include <Common/FileSegment.h>
 #include "FileCache.h"
+#include "FileCacheSettings.h"
 #include "FileCache_fwd.h"
 
 namespace DB
@@ -27,13 +28,7 @@ namespace DB
 class ARCFileCache final : public IFileCache
 {
 public:
-    ARCFileCache(
-        const String & cache_base_path_,
-        size_t max_size_,
-        double size_ratio_ = 0.20,
-        int move_threshold_ = 4,
-        size_t max_element_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS,
-        size_t max_file_segment_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE);
+    ARCFileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
 
@@ -159,7 +154,8 @@ private:
 
     void loadCacheInfoIntoMemory();
 
-    FileSegments splitRangeIntoEmptyCells(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
+    FileSegments
+    splitRangeIntoCells(const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
 
     bool canMoveCellToHighQueue(const FileSegmentCell & cell);
 
@@ -184,6 +180,8 @@ public:
     Stat getStat();
 
     String dumpStructure(const Key & key_) override;
+
+    void assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock);
 };
 
 }

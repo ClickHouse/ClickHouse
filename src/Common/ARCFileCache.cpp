@@ -28,20 +28,14 @@ namespace
     String keyToStr(const IFileCache::Key & key) { return getHexUIntLowercase(key); }
 }
 
-ARCFileCache::ARCFileCache(
-    const String & cache_base_path_,
-    size_t max_size_,
-    double size_ratio_,
-    int move_threshold_,
-    size_t max_element_size_,
-    size_t max_file_segment_size_)
-    : IFileCache(cache_base_path_, max_size_, max_element_size_, max_file_segment_size_)
-    , size_ratio(size_ratio_)
-    , min_low_space_size(size_ratio_ * max_size_)
-    , max_high_space_size((1.0 - size_ratio_) * max_size_)
-    , move_threshold(move_threshold_)
-    , low_queue(max_size, max_element_size)
-    , high_queue(0, max_element_size)
+ARCFileCache::ARCFileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_)
+    : IFileCache(cache_base_path_, cache_settings_)
+    , size_ratio(cache_settings_.size_ratio)
+    , min_low_space_size(cache_settings_.size_ratio * cache_settings_.max_size)
+    , max_high_space_size((1.0 - cache_settings_.size_ratio) * cache_settings_.max_size)
+    , move_threshold(cache_settings_.move_threshold)
+    , low_queue(cache_settings_.max_size, cache_settings_.max_elements)
+    , high_queue(0, cache_settings_.max_elements)
     , log(&Poco::Logger::get("ARCFileCache"))
 {
     LOG_TEST(log, "[CreateARCFileCache][max_size:{}][ratio:{}][move_threshold:{}]", max_size, size_ratio, move_threshold);
@@ -197,7 +191,8 @@ FileSegments ARCFileCache::getImpl(const Key & key, const FileSegment::Range & r
     return result;
 }
 
-FileSegments ARCFileCache::splitRangeIntoEmptyCells(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+FileSegments ARCFileCache::splitRangeIntoCells(
+    const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock)
 {
     assert(size > 0);
 
@@ -213,9 +208,10 @@ FileSegments ARCFileCache::splitRangeIntoEmptyCells(const Key & key, size_t offs
         current_cell_size = std::min(remaining_size, max_file_segment_size);
         remaining_size -= current_cell_size;
 
-        auto * cell = addCell(key, current_pos, current_cell_size, FileSegment::State::EMPTY, cache_lock);
+        auto * cell = addCell(key, current_pos, current_cell_size, state, cache_lock);
         if (cell)
             file_segments.push_back(cell->file_segment);
+        assert(cell);
 
         current_pos += current_cell_size;
     }
@@ -224,7 +220,122 @@ FileSegments ARCFileCache::splitRangeIntoEmptyCells(const Key & key, size_t offs
     return file_segments;
 }
 
+void ARCFileCache::fillHolesWithEmptyFileSegments(
+    FileSegments & file_segments,
+    const Key & key,
+    const FileSegment::Range & range,
+    bool fill_with_detached_file_segments,
+    std::lock_guard<std::mutex> & cache_lock)
+{
+    /// There are segments [segment1, ..., segmentN]
+    /// (non-overlapping, non-empty, ascending-ordered) which (maybe partially)
+    /// intersect with given range.
+
+    /// It can have holes:
+    /// [____________________]         -- requested range
+    ///     [____]  [_]   [_________]  -- intersecting cache [segment1, ..., segmentN]
+    ///
+    /// For each such hole create a cell with file segment state EMPTY.
+
+    auto it = file_segments.begin();
+    auto segment_range = (*it)->range();
+
+    size_t current_pos;
+    if (segment_range.left < range.left)
+    {
+        ///    [_______     -- requested range
+        /// [_______
+        /// ^
+        /// segment1
+
+        current_pos = segment_range.right + 1;
+        ++it;
+    }
+    else
+        current_pos = range.left;
+
+    while (current_pos <= range.right && it != file_segments.end())
+    {
+        segment_range = (*it)->range();
+
+        if (current_pos == segment_range.left)
+        {
+            current_pos = segment_range.right + 1;
+            ++it;
+            continue;
+        }
+
+        assert(current_pos < segment_range.left);
+
+        auto hole_size = segment_range.left - current_pos;
+
+        if (fill_with_detached_file_segments)
+        {
+            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
+            file_segment->detached = true;
+            file_segments.insert(it, file_segment);
+        }
+        else
+        {
+            file_segments.splice(it, splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
+        }
+
+        current_pos = segment_range.right + 1;
+        ++it;
+    }
+
+    if (current_pos <= range.right)
+    {
+        ///   ________]     -- requested range
+        ///   _____]
+        ///        ^
+        /// segmentN
+
+        auto hole_size = range.right - current_pos + 1;
+
+        if (fill_with_detached_file_segments)
+        {
+            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
+            file_segment->detached = true;
+            file_segments.insert(file_segments.end(), file_segment);
+        }
+        else
+        {
+            file_segments.splice(
+                file_segments.end(), splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
+        }
+    }
+}
+
 FileSegmentsHolder ARCFileCache::getOrSet(const Key & key, size_t offset, size_t size)
+{
+    assertInitialized();
+
+    FileSegment::Range range(offset, offset + size - 1);
+
+    std::lock_guard cache_lock(mutex);
+
+#ifndef NDEBUG
+    assertCacheCorrectness(key, cache_lock);
+#endif
+
+    /// Get all segments which intersect with the given range.
+    auto file_segments = getImpl(key, range, cache_lock);
+
+    if (file_segments.empty())
+    {
+        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, cache_lock);
+    }
+    else
+    {
+        fillHolesWithEmptyFileSegments(file_segments, key, range, false, cache_lock);
+    }
+
+    assert(!file_segments.empty());
+    return FileSegmentsHolder(std::move(file_segments));
+}
+
+FileSegmentsHolder ARCFileCache::get(const Key & key, size_t offset, size_t size)
 {
     assertInitialized();
 
@@ -237,70 +348,15 @@ FileSegmentsHolder ARCFileCache::getOrSet(const Key & key, size_t offset, size_t
 
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoEmptyCells(key, offset, size, cache_lock);
+        auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::EMPTY);
+        file_segment->detached = true;
+        file_segments = {file_segment};
     }
     else
     {
-        /// There are segments [segment1, ..., segmentN]
-        /// (non-overlapping, non-empty, ascending-ordered) which (maybe partially)
-        /// intersect with given range.
-
-        /// It can have holes:
-        /// [____________________]         -- requested range
-        ///     [____]  [_]   [_________]  -- intersecting cache [segment1, ..., segmentN]
-        ///
-        /// For each such hole create a cell with file segment state EMPTY.
-
-        auto it = file_segments.begin();
-        auto segment_range = (*it)->range();
-
-        size_t current_pos;
-        if (segment_range.left < range.left)
-        {
-            ///    [_______     -- requested range
-            /// [_______
-            /// ^
-            /// segment1
-
-            current_pos = segment_range.right + 1;
-            ++it;
-        }
-        else
-            current_pos = range.left;
-
-        while (current_pos <= range.right && it != file_segments.end())
-        {
-            segment_range = (*it)->range();
-
-            if (current_pos == segment_range.left)
-            {
-                current_pos = segment_range.right + 1;
-                ++it;
-                continue;
-            }
-
-            assert(current_pos < segment_range.left);
-
-            auto hole_size = segment_range.left - current_pos;
-            file_segments.splice(it, splitRangeIntoEmptyCells(key, current_pos, hole_size, cache_lock));
-
-            current_pos = segment_range.right + 1;
-            ++it;
-        }
-
-        if (current_pos <= range.right)
-        {
-            ///   ________]     -- requested range
-            ///   _____]
-            ///        ^
-            /// segmentN
-
-            auto hole_size = range.right - current_pos + 1;
-            file_segments.splice(file_segments.end(), splitRangeIntoEmptyCells(key, current_pos, hole_size, cache_lock));
-        }
+        fillHolesWithEmptyFileSegments(file_segments, key, range, true, cache_lock);
     }
 
-    assert(!file_segments.empty());
     return FileSegmentsHolder(std::move(file_segments));
 }
 
@@ -340,9 +396,22 @@ ARCFileCache::addCell(const Key & key, size_t offset, size_t size, FileSegment::
     return &(it->second);
 }
 
-/// Using LRU method to insert cache segment.
+FileSegmentsHolder ARCFileCache::setDownloading(const Key & key, size_t offset, size_t size)
+{
+    std::lock_guard cache_lock(mutex);
+
+    auto * cell = getCell(key, offset, cache_lock);
+    if (cell)
+        throw Exception(
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache cell already exists for key `{}` and offset {}", keyToStr(key), offset);
+
+    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, cache_lock);
+    return FileSegmentsHolder(std::move(file_segments));
+}
+
 bool ARCFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, std::lock_guard<std::mutex> & cache_lock)
 {
+    /// Always reserve in low queue.
     return tryReserve(low_queue, key_, offset_, size, cache_lock);
 }
 
@@ -539,7 +608,22 @@ void ARCFileCache::tryRemoveAll()
     /// Only releasable file segments are evicted.
     std::lock_guard cache_lock(mutex);
 
-    for (auto it = queue.begin(); it != queue.end();)
+    for (auto it = low_queue.queue().begin(); it != low_queue.queue().end();)
+    {
+        auto & [key, offset] = *it++;
+
+        auto * cell = getCell(key, offset, cache_lock);
+        if (cell->releasable())
+        {
+            auto file_segment = cell->file_segment;
+            if (file_segment)
+            {
+                std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+            }
+        }
+    }
+    for (auto it = high_queue.queue().begin(); it != high_queue.queue().end();)
     {
         auto & [key, offset] = *it++;
 
@@ -571,44 +655,6 @@ std::vector<String> ARCFileCache::tryGetCachePaths(const Key & key)
     }
 
     return cache_paths;
-}
-
-FileSegmentsHolder ARCFileCache::get(const Key & key, size_t offset, size_t size)
-{
-    assertInitialized();
-
-    FileSegment::Range range(offset, offset + size - 1);
-
-    std::lock_guard cache_lock(mutex);
-
-    /// Get all segments which intersect with the given range.
-    auto file_segments = getImpl(key, range, cache_lock);
-
-    if (file_segments.empty())
-    {
-        auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::EMPTY);
-        file_segment->detached = true;
-        file_segments = {file_segment};
-    }
-    else
-    {
-        fillHolesWithEmptyFileSegments(file_segments, key, range, true, cache_lock);
-    }
-
-    return FileSegmentsHolder(std::move(file_segments));
-}
-
-FileSegmentsHolder ARCFileCache::setDownloading(const Key & key, size_t offset, size_t size)
-{
-    std::lock_guard cache_lock(mutex);
-
-    auto * cell = getCell(key, offset, cache_lock);
-    if (cell)
-        throw Exception(
-            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache cell already exists for key `{}` and offset {}", keyToStr(key), offset);
-
-    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, cache_lock);
-    return FileSegmentsHolder(std::move(file_segments));
 }
 
 FileSegments ARCFileCache::getSnapshot() const
@@ -815,6 +861,7 @@ bool ARCFileCache::tryMoveLowToHigh(const FileSegmentCell & cell, std::lock_guar
     }
     else
     {
+        /// rollback
         high_queue.increase_max_space_bytes(0 - increase_size);
         low_queue.increase_max_space_bytes(increase_size);
         return false;
@@ -835,101 +882,15 @@ ARCFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRU
             queue_iterator = queue_.insert(queue_.end(), getKeyAndOffset());
             break;
         }
-        case FileSegment::State::EMPTY: {
+        case FileSegment::State::EMPTY:
+        case FileSegment::State::DOWNLOADING: {
             break;
         }
         default:
             throw Exception(
                 ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                "Can create cell with either DOWNLOADED or EMPTY state, got: {}",
+                "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state, got: {}",
                 FileSegment::stateToString(file_segment->download_state));
-    }
-}
-
-void ARCFileCache::fillHolesWithEmptyFileSegments(
-    FileSegments & file_segments,
-    const Key & key,
-    const FileSegment::Range & range,
-    bool fill_with_detached_file_segments,
-    std::lock_guard<std::mutex> & cache_lock)
-{
-    /// There are segments [segment1, ..., segmentN]
-    /// (non-overlapping, non-empty, ascending-ordered) which (maybe partially)
-    /// intersect with given range.
-
-    /// It can have holes:
-    /// [____________________]         -- requested range
-    ///     [____]  [_]   [_________]  -- intersecting cache [segment1, ..., segmentN]
-    ///
-    /// For each such hole create a cell with file segment state EMPTY.
-
-    auto it = file_segments.begin();
-    auto segment_range = (*it)->range();
-
-    size_t current_pos;
-    if (segment_range.left < range.left)
-    {
-        ///    [_______     -- requested range
-        /// [_______
-        /// ^
-        /// segment1
-
-        current_pos = segment_range.right + 1;
-        ++it;
-    }
-    else
-        current_pos = range.left;
-
-    while (current_pos <= range.right && it != file_segments.end())
-    {
-        segment_range = (*it)->range();
-
-        if (current_pos == segment_range.left)
-        {
-            current_pos = segment_range.right + 1;
-            ++it;
-            continue;
-        }
-
-        assert(current_pos < segment_range.left);
-
-        auto hole_size = segment_range.left - current_pos;
-
-        if (fill_with_detached_file_segments)
-        {
-            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
-            file_segment->detached = true;
-            file_segments.insert(it, file_segment);
-        }
-        else
-        {
-            file_segments.splice(it, splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
-        }
-
-        current_pos = segment_range.right + 1;
-        ++it;
-    }
-
-    if (current_pos <= range.right)
-    {
-        ///   ________]     -- requested range
-        ///   _____]
-        ///        ^
-        /// segmentN
-
-        auto hole_size = range.right - current_pos + 1;
-
-        if (fill_with_detached_file_segments)
-        {
-            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
-            file_segment->detached = true;
-            file_segments.insert(file_segments.end(), file_segment);
-        }
-        else
-        {
-            file_segments.splice(
-                file_segments.end(), splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
-        }
     }
 }
 
@@ -961,5 +922,15 @@ String ARCFileCache::dumpStructure(const Key & key_)
     return result.str();
 }
 
+void ARCFileCache::assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */)
+{
+    const auto & cells_by_offset = files[key];
+
+    for (const auto & [_, cell] : cells_by_offset)
+    {
+        const auto & file_segment = cell.file_segment;
+        file_segment->assertCorrectness();
+    }
+}
 
 }
