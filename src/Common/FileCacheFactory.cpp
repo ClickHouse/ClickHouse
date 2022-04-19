@@ -62,28 +62,20 @@ FileCachePtr FileCacheFactory::getOrCreate(const std::string & cache_base_path, 
 
     if (file_cache_settings.cache_method == "ARC")
     {
-        cache = std::make_shared<ARCFileCache>(
-            cache_base_path,
-            file_cache_settings.max_size,
-            0.2,
-            4,
-            file_cache_settings.max_elements_size,
-            file_cache_settings.max_file_segment_size);
+        auto cache = std::make_shared<ARCFileCache>(cache_base_path, file_cache_settings);
+        caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
+        return cache;
     }
     else if (file_cache_settings.cache_method == "LRU")
     {
-        cache = std::make_shared<LRUFileCache>(
-            cache_base_path,
-            file_cache_settings.max_size,
-            file_cache_settings.max_elements_size,
-            file_cache_settings.max_file_segment_size);
+        auto cache = std::make_shared<LRUFileCache>(cache_base_path, file_cache_settings);
+        caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
+        return cache;
     }
     else /// No relevant cache algorithm was found.
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No cache method found by : {}", file_cache_settings.cache_method);
     }
-    caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
-    return cache;
 }
 
 }
