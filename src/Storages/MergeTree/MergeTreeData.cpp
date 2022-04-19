@@ -1576,6 +1576,19 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         return res;
 
     bool need_remove_parts_in_order = supportsReplication() && getSettings()->allow_remote_fs_zero_copy_replication;
+    if (need_remove_parts_in_order)
+    {
+        bool has_zero_copy_disk = false;
+        for (const auto & disk : getDisks())
+        {
+            if (disk->supportZeroCopyReplication())
+            {
+                has_zero_copy_disk = true;
+                break;
+            }
+        }
+        need_remove_parts_in_order = has_zero_copy_disk;
+    }
 
     time_t now = time(nullptr);
     std::vector<DataPartIteratorByStateAndInfo> parts_to_delete;
@@ -3363,6 +3376,10 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
             increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
+
+            /// Move parts are non replicated operations, so we take lock here.
+            /// All other locks are taken in StorageReplicatedMergeTree
+            lockSharedData(*part_copy);
 
             auto disk = original_active_part->volume->getDisk();
             String marker_path = fs::path(original_active_part->getFullRelativePath()) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
