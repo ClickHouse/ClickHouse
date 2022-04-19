@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import subprocess
 import os
@@ -21,6 +22,18 @@ from tee_popen import TeePopen
 NAME = "Docs Check (actions)"
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Script to check the docs integrity",
+    )
+    parser.add_argument(
+        "--docs-branch",
+        required=True,
+        default="",
+        help="a branch to get from docs repository",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -56,7 +69,11 @@ if __name__ == "__main__":
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
-    cmd = f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={test_output}:/output_path {docker_image}"
+    cmd = (
+        f"docker run --cap-add=SYS_PTRACE -e GIT_DOCS_BRANCH={args.docs_branch} "
+        f"--volume={repo_path}:/ClickHouse --volume={test_output}:/output_path "
+        f"{docker_image}"
+    )
 
     run_log_path = os.path.join(test_output, "runlog.log")
     logging.info("Running command: '%s'", cmd)
