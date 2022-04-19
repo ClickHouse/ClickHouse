@@ -1,4 +1,5 @@
 #include <Parsers/ASTBackupQuery.h>
+#include <Backups/Common/rewriteBackupQueryWithoutOnCluster.h>
 #include <IO/Operators.h>
 #include <Common/quoteString.h>
 
@@ -135,7 +136,6 @@ namespace
                 format.ostr << ", ";
             settings->format(format);
         }
-
     }
 }
 
@@ -157,6 +157,7 @@ void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, Fo
                 << (format.hilite ? hilite_none : "");
 
     formatElements(elements, kind, format);
+    formatOnCluster(format);
 
     format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (format.hilite ? hilite_none : "");
     backup_name->format(format);
@@ -164,5 +165,14 @@ void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, Fo
     if (settings || base_backup_name)
         formatSettings(settings, base_backup_name, format);
 }
+
+ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
+{
+    if (kind == ASTBackupQuery::Kind::BACKUP)
+        return rewriteBackupQueryWithoutOnCluster(*this, params);
+    else
+        return rewriteRestoreQueryWithoutOnCluster(*this, params);
+}
+
 
 }

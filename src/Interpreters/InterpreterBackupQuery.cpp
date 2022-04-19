@@ -1,27 +1,30 @@
 #include <Interpreters/InterpreterBackupQuery.h>
+#include <Backups/Common/BackupSettings.h>
+#include <Backups/Common/RestoreSettings.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreTask.h>
 #include <Backups/BackupFactory.h>
-#include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/BackupsWorker.h>
-#include <Backups/RestoreSettings.h>
 #include <Backups/RestoreUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
 {
 namespace
 {
-    BackupMutablePtr createBackup(const BackupInfo & backup_info, const BackupSettings & backup_settings, const ContextPtr & context)
+    BackupMutablePtr createBackup(const UUID & backup_uuid, const BackupInfo & backup_info, const BackupSettings & backup_settings, const ContextPtr & context)
     {
         BackupFactory::CreateParams params;
         params.open_mode = IBackup::OpenMode::WRITE;
@@ -31,6 +34,9 @@ namespace
         params.compression_method = backup_settings.compression_method;
         params.compression_level = backup_settings.compression_level;
         params.password = backup_settings.password;
+        params.backup_uuid = backup_uuid;
+        params.is_internal_backup = backup_settings.internal;
+        params.coordination_zk_path = backup_settings.coordination_zk_path;
         return BackupFactory::instance().createBackup(params);
     }
 
@@ -45,84 +51,157 @@ namespace
         return BackupFactory::instance().createBackup(params);
     }
 
-    void executeBackupSync(UInt64 task_id, const ContextPtr & context, const BackupInfo & backup_info, const ASTBackupQuery::Elements & backup_elements, const BackupSettings & backup_settings, bool no_throw = false)
+    void executeBackupSync(const ASTBackupQuery & query, UInt64 task_id, const ContextPtr & context, const BackupInfo & backup_info, const BackupSettings & backup_settings, bool no_throw = false)
     {
         auto & worker = BackupsWorker::instance();
+        bool is_internal_backup = backup_settings.internal;
+
         try
         {
-            BackupMutablePtr backup = createBackup(backup_info, backup_settings, context);
-            worker.update(task_id, BackupStatus::PREPARING);
-            auto backup_entries = makeBackupEntries(context, backup_elements, backup_settings);
-            worker.update(task_id, BackupStatus::MAKING_BACKUP);
-            writeBackupEntries(backup, std::move(backup_entries), context->getSettingsRef().max_backup_threads);
-            worker.update(task_id, BackupStatus::BACKUP_COMPLETE);
+            UUID backup_uuid = UUIDHelpers::generateV4();
+
+            auto new_backup_settings = backup_settings;
+            if (!query.cluster.empty() && backup_settings.coordination_zk_path.empty())
+                new_backup_settings.coordination_zk_path = query.cluster.empty() ? "" : ("/clickhouse/backups/backup-" + toString(backup_uuid));
+            std::shared_ptr<ASTBackupQuery> new_query = std::static_pointer_cast<ASTBackupQuery>(query.clone());
+            new_backup_settings.copySettingsToBackupQuery(*new_query);
+
+            BackupMutablePtr backup = createBackup(backup_uuid, backup_info, new_backup_settings, context);
+
+            if (!query.cluster.empty())
+            {
+                if (!is_internal_backup)
+                    worker.update(task_id, BackupStatus::MAKING_BACKUP);
+
+                DDLQueryOnClusterParams params;
+                params.shard_index = new_backup_settings.shard;
+                params.replica_index = new_backup_settings.replica;
+                params.allow_multiple_replicas = new_backup_settings.allow_storing_multiple_replicas;
+                auto res = executeDDLQueryOnCluster(new_query, context, params);
+
+                PullingPipelineExecutor executor(res.pipeline);
+                Block block;
+                while (executor.pull(block));
+
+                backup->finalizeWriting();
+            }
+            else
+            {
+                auto backup_entries = makeBackupEntries(context, new_query->elements, new_backup_settings);
+
+                if (!is_internal_backup)
+                    worker.update(task_id, BackupStatus::MAKING_BACKUP);
+
+                writeBackupEntries(backup, std::move(backup_entries), context->getSettingsRef().max_backup_threads);
+            }
+
+            if (!is_internal_backup)
+                worker.update(task_id, BackupStatus::BACKUP_COMPLETE);
         }
         catch (...)
         {
-            worker.update(task_id, BackupStatus::FAILED_TO_BACKUP, getCurrentExceptionMessage(false));
+            if (!is_internal_backup)
+                worker.update(task_id, BackupStatus::FAILED_TO_BACKUP, getCurrentExceptionMessage(false));
             if (!no_throw)
                 throw;
         }
     }
 
-    void executeRestoreSync(UInt64 task_id, ContextMutablePtr context, const BackupInfo & backup_info, const ASTBackupQuery::Elements & restore_elements, const RestoreSettings & restore_settings, bool no_throw = false)
+    void executeRestoreSync(const ASTBackupQuery & query, UInt64 task_id, ContextMutablePtr context, const BackupInfo & backup_info, const RestoreSettings & restore_settings, bool no_throw = false)
     {
         auto & worker = BackupsWorker::instance();
+        bool is_internal_restore = restore_settings.internal;
+
         try
         {
             BackupPtr backup = openBackup(backup_info, restore_settings, context);
-            worker.update(task_id, BackupStatus::RESTORING);
-            auto restore_tasks = makeRestoreTasks(context, backup, restore_elements, restore_settings);
-            executeRestoreTasks(std::move(restore_tasks), context->getSettingsRef().max_backup_threads);
-            worker.update(task_id, BackupStatus::RESTORED);
+
+            auto new_restore_settings = restore_settings;
+            if (!query.cluster.empty() && new_restore_settings.coordination_zk_path.empty())
+            {
+                UUID restore_uuid = UUIDHelpers::generateV4();
+                new_restore_settings.coordination_zk_path
+                    = query.cluster.empty() ? "" : ("/clickhouse/backups/restore-" + toString(restore_uuid));
+            }
+            std::shared_ptr<ASTBackupQuery> new_query = std::static_pointer_cast<ASTBackupQuery>(query.clone());
+            new_restore_settings.copySettingsToRestoreQuery(*new_query);
+
+            if (!query.cluster.empty())
+            {
+                DDLQueryOnClusterParams params;
+                params.shard_index = new_restore_settings.shard;
+                params.replica_index = new_restore_settings.replica;
+                auto res = executeDDLQueryOnCluster(new_query, context, params);
+
+                PullingPipelineExecutor executor(res.pipeline);
+                Block block;
+                while (executor.pull(block));
+            }
+            else
+            {
+                auto restore_tasks = makeRestoreTasks(context, backup, new_query->elements, new_restore_settings);
+                executeRestoreTasks(std::move(restore_tasks), context->getSettingsRef().max_backup_threads);
+            }
+
+            if (!is_internal_restore)
+                worker.update(task_id, BackupStatus::RESTORED);
         }
         catch (...)
         {
-            worker.update(task_id, BackupStatus::FAILED_TO_RESTORE, getCurrentExceptionMessage(false));
+            if (!is_internal_restore)
+                worker.update(task_id, BackupStatus::FAILED_TO_RESTORE, getCurrentExceptionMessage(false));
             if (!no_throw)
                 throw;
         }
     }
 
-    UInt64 executeBackup(const ContextPtr & context, const ASTBackupQuery & query)
+    UInt64 executeBackup(const ASTBackupQuery & query, const ContextPtr & context)
     {
         const auto backup_info = BackupInfo::fromAST(*query.backup_name);
-        auto task_id = BackupsWorker::instance().add(backup_info.toString(), BackupStatus::PREPARING);
         const auto backup_settings = BackupSettings::fromBackupQuery(query);
+
+        size_t task_id = 0;
+        if (!backup_settings.internal)
+            task_id = BackupsWorker::instance().add(backup_info.toString(), BackupStatus::PREPARING);
 
         if (backup_settings.async)
         {
             ThreadFromGlobalPool thread{
-                &executeBackupSync, task_id, context, backup_info, query.elements, backup_settings, /* no_throw = */ true};
+                &executeBackupSync, query, task_id, context, backup_info, backup_settings, /* no_throw = */ true};
             thread.detach(); /// TODO: Remove this !!! Move that thread to BackupsWorker instead
         }
         else
         {
-            executeBackupSync(task_id, context, backup_info, query.elements, backup_settings, /* no_throw = */ false);
+            executeBackupSync(query, task_id, context, backup_info, backup_settings, /* no_throw = */ false);
         }
         return task_id;
     }
 
-    UInt64 executeRestore(ContextMutablePtr context, const ASTBackupQuery & query)
+    UInt64 executeRestore(const ASTBackupQuery & query, ContextMutablePtr context)
     {
         const auto backup_info = BackupInfo::fromAST(*query.backup_name);
         const auto restore_settings = RestoreSettings::fromRestoreQuery(query);
-        auto task_id = BackupsWorker::instance().add(backup_info.toString(), BackupStatus::RESTORING);
+
+        size_t task_id = 0;
+        if (!restore_settings.internal)
+            task_id = BackupsWorker::instance().add(backup_info.toString(), BackupStatus::RESTORING);
 
         if (restore_settings.async)
         {
-            ThreadFromGlobalPool thread{&executeRestoreSync, task_id, context, backup_info, query.elements, restore_settings, /* no_throw = */ true};
+            ThreadFromGlobalPool thread{&executeRestoreSync, query, task_id, context, backup_info, restore_settings, /* no_throw = */ true};
             thread.detach(); /// TODO: Remove this !!! Move that thread to BackupsWorker instead
         }
         else
         {
-            executeRestoreSync(task_id, context, backup_info, query.elements, restore_settings, /* no_throw = */ false);
+            executeRestoreSync(query, task_id, context, backup_info, restore_settings, /* no_throw = */ false);
         }
         return task_id;
     }
 
     Block getResultRow(UInt64 task_id)
     {
+        if (!task_id)
+            return {};
         auto entry = BackupsWorker::instance().getEntry(task_id);
 
         Block res_columns;
@@ -146,11 +225,12 @@ namespace
 BlockIO InterpreterBackupQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTBackupQuery &>();
+
     UInt64 task_id;
     if (query.kind == ASTBackupQuery::BACKUP)
-        task_id = executeBackup(context, query);
+        task_id = executeBackup(query, context);
     else
-        task_id = executeRestore(context, query);
+        task_id = executeRestore(query, context);
 
     BlockIO res_io;
     res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(task_id)));

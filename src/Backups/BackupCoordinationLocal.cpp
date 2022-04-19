@@ -1,4 +1,4 @@
-#include <Backups/LocalBackupCoordination.h>
+#include <Backups/BackupCoordinationLocal.h>
 #include <fmt/format.h>
 
 
@@ -7,10 +7,10 @@ namespace DB
 using SizeAndChecksum = IBackupCoordination::SizeAndChecksum;
 using FileInfo = IBackupCoordination::FileInfo;
 
-LocalBackupCoordination::LocalBackupCoordination() = default;
-LocalBackupCoordination::~LocalBackupCoordination() = default;
+BackupCoordinationLocal::BackupCoordinationLocal() = default;
+BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void LocalBackupCoordination::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
+void BackupCoordinationLocal::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {
     std::lock_guard lock{mutex};
     file_names.emplace(file_info.file_name, std::pair{file_info.size, file_info.checksum});
@@ -23,7 +23,7 @@ void LocalBackupCoordination::addFileInfo(const FileInfo & file_info, bool & is_
     is_data_file_required = inserted_file_info && (file_info.size > file_info.base_size);
 }
 
-void LocalBackupCoordination::updateFileInfo(const FileInfo & file_info)
+void BackupCoordinationLocal::updateFileInfo(const FileInfo & file_info)
 {
     if (!file_info.size)
         return; /// we don't keep FileInfos for empty files, nothing to update
@@ -33,7 +33,7 @@ void LocalBackupCoordination::updateFileInfo(const FileInfo & file_info)
     dest.archive_suffix = file_info.archive_suffix;
 }
 
-std::vector<FileInfo> LocalBackupCoordination::getAllFileInfos()
+std::vector<FileInfo> BackupCoordinationLocal::getAllFileInfos() const
 {
     std::lock_guard lock{mutex};
     std::vector<FileInfo> res;
@@ -49,7 +49,7 @@ std::vector<FileInfo> LocalBackupCoordination::getAllFileInfos()
     return res;
 }
 
-Strings LocalBackupCoordination::listFiles(const String & prefix, const String & terminator)
+Strings BackupCoordinationLocal::listFiles(const String & prefix, const String & terminator) const
 {
     std::lock_guard lock{mutex};
     Strings elements;
@@ -70,7 +70,7 @@ Strings LocalBackupCoordination::listFiles(const String & prefix, const String &
     return elements;
 }
 
-std::optional<FileInfo> LocalBackupCoordination::getFileInfo(const String & file_name)
+std::optional<FileInfo> BackupCoordinationLocal::getFileInfo(const String & file_name) const
 {
     std::lock_guard lock{mutex};
     auto it = file_names.find(file_name);
@@ -85,7 +85,7 @@ std::optional<FileInfo> LocalBackupCoordination::getFileInfo(const String & file
     return info;
 }
 
-std::optional<FileInfo> LocalBackupCoordination::getFileInfo(const SizeAndChecksum & size_and_checksum)
+std::optional<FileInfo> BackupCoordinationLocal::getFileInfo(const SizeAndChecksum & size_and_checksum) const
 {
     std::lock_guard lock{mutex};
     auto it = file_infos.find(size_and_checksum);
@@ -94,7 +94,7 @@ std::optional<FileInfo> LocalBackupCoordination::getFileInfo(const SizeAndChecks
     return it->second;
 }
 
-std::optional<SizeAndChecksum> LocalBackupCoordination::getFileSizeAndChecksum(const String & file_name)
+std::optional<SizeAndChecksum> BackupCoordinationLocal::getFileSizeAndChecksum(const String & file_name) const
 {
     std::lock_guard lock{mutex};
     auto it = file_names.find(file_name);
@@ -103,7 +103,7 @@ std::optional<SizeAndChecksum> LocalBackupCoordination::getFileSizeAndChecksum(c
     return it->second;
 }
 
-String LocalBackupCoordination::getNextArchiveSuffix()
+String BackupCoordinationLocal::getNextArchiveSuffix()
 {
     std::lock_guard lock{mutex};
     String new_archive_suffix = fmt::format("{:03}", ++current_archive_suffix); /// Outputs 001, 002, 003, ...
@@ -111,7 +111,7 @@ String LocalBackupCoordination::getNextArchiveSuffix()
     return new_archive_suffix;
 }
 
-Strings LocalBackupCoordination::getAllArchiveSuffixes()
+Strings BackupCoordinationLocal::getAllArchiveSuffixes() const
 {
     std::lock_guard lock{mutex};
     return archive_suffixes;

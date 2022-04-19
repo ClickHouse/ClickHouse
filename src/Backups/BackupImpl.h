@@ -38,24 +38,25 @@ public:
         const String & backup_name_,
         const ArchiveParams & archive_params_,
         const std::optional<BackupInfo> & base_backup_info_,
-        std::shared_ptr<IBackupWriter> writer_,
-        std::shared_ptr<IBackupCoordination> coordination_,
-        bool is_helper_backup_,
+        std::shared_ptr<IBackupReader> reader_,
         const ContextPtr & context_);
 
     BackupImpl(
         const String & backup_name_,
         const ArchiveParams & archive_params_,
         const std::optional<BackupInfo> & base_backup_info_,
-        std::shared_ptr<IBackupReader> reader_,
-        const ContextPtr & context_);
+        std::shared_ptr<IBackupWriter> writer_,
+        const ContextPtr & context_,
+        const std::optional<UUID> & backup_uuid_ = {},
+        bool is_internal_backup_ = false,
+        const String & coordination_zk_path_ = {});
 
     ~BackupImpl() override;
 
     const String & getName() const override { return backup_name; }
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override;
-    UUID getUUID() const override { return uuid; }
+    UUID getUUID() const override { return *uuid; }
     Strings listFiles(const String & prefix, const String & terminator) const override;
     bool fileExists(const String & file_name) const override;
     bool fileExists(const SizeAndChecksum & size_and_checksum) const override;
@@ -84,24 +85,22 @@ private:
     const String backup_name;
     const ArchiveParams archive_params;
     const bool use_archives;
-    const std::optional<BackupInfo> base_backup_info_initial;
     const OpenMode open_mode;
     std::shared_ptr<IBackupWriter> writer;
     std::shared_ptr<IBackupReader> reader;
+    const bool is_internal_backup;
     std::shared_ptr<IBackupCoordination> coordination;
-    const bool is_helper_backup;
     ContextPtr context;
 
     mutable std::mutex mutex;
-    UUID uuid = {};
+    std::optional<UUID> uuid;
     time_t timestamp = 0;
     UInt64 version;
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::optional<UUID> base_backup_uuid;
     mutable std::unordered_map<String /* archive_suffix */, std::shared_ptr<IArchiveReader>> archive_readers;
-    std::shared_ptr<IArchiveWriter> archive_writer_with_empty_suffix;
-    std::shared_ptr<IArchiveWriter> current_archive_writer;
+    std::pair<String, std::shared_ptr<IArchiveWriter>> archive_writers[2];
     String current_archive_suffix;
     bool writing_finalized = false;
 };

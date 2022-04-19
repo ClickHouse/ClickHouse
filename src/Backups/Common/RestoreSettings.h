@@ -58,9 +58,36 @@ struct RestoreSettings : public StorageRestoreSettings
     /// Set `allow_different_database_def` to true to skip this check.
     bool allow_different_database_def = false;
 
+    /// Whether RESTORE command must return immediately without waiting until the backup is completed.
     bool async = false;
 
+    /// 1-based shard index to restore from the backup. 0 means all shards.
+    /// Can only be used with RESTORE ON CLUSTER.
+    size_t shard = 0;
+
+    /// 1-based replica index to restore from the backup. 0 means all replicas.
+    /// Can only be used with RESTORE ON CLUSTER.
+    size_t replica = 0;
+
+    /// 1-based index of a shard stored in the backup to get data from.
+    /// By default it's 0: if the backup contains only one shard it means the index of that shard
+    ///                    else it means the same as `shard`.
+    size_t shard_in_backup = 0;
+
+    /// 1-based index of a replica stored in the backup to get data from.
+    /// By default it's 0: if the backup contains only one replica for the current shard it means the index of that replica
+    ///                    else it means the same as `replica`.
+    size_t replica_in_backup = 0;
+
+    /// Internal, should not be specified by user.
+    bool internal = false;
+
+    /// Internal, should not be specified by user.
+    /// Path in Zookeeper used to coordinate restoring process while executing by RESTORE ON CLUSTER.
+    String coordination_zk_path;
+
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
+    void copySettingsToRestoreQuery(ASTBackupQuery & query) const;
 };
 
 }
