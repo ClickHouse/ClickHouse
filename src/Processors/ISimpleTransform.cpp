@@ -1,5 +1,6 @@
 #include <Processors/ISimpleTransform.h>
-
+#include <Common/Stopwatch.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -52,6 +53,9 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     {
         if (input.isFinished())
         {
+            LOG_DEBUG(&Poco::Logger::get(getName()),
+                      "Processor {} used {} ms\n",
+                      getName(), time/ 1000000UL);
             output.finish();
             return Status::Finished;
         }
@@ -86,7 +90,11 @@ void ISimpleTransform::work()
 
     try
     {
+        Stopwatch watch;
+        watch.start();
         transform(input_data.chunk, output_data.chunk);
+        time += watch.elapsedNanoseconds();
+        watch.stop();
     }
     catch (DB::Exception &)
     {

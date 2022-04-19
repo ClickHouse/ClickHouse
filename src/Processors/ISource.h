@@ -14,6 +14,7 @@ protected:
     bool finished = false;
     bool got_exception = false;
     Port::Data current_chunk;
+    UInt64 time = 0;
 
     virtual Chunk generate();
     virtual std::optional<Chunk> tryGenerate();

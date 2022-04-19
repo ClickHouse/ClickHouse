@@ -26,6 +26,7 @@ protected:
     bool has_output = false;
     bool no_more_data_needed = false;
     const bool skip_empty_chunks;
+    UInt64 time = 0;
 
     /// Set input port NotNeeded after chunk was pulled.
     /// Input port will become needed again only after data was transformed.
