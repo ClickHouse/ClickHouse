@@ -340,7 +340,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
 
     size_t num_streams = left->getNumStreams() < max_streams ? max_streams : left->getNumStreams();
     left->resize(num_streams);
-    num_streams = left->getNumStreams();
 
     if (join->supportParallelJoin() && !right->hasTotals())
     {
@@ -361,7 +360,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     }
     else
     {
-        LOG_TRACE(&Poco::Logger::get("QueryPipelineBuilder"), "run in single thread on right loading");
         right->resize(1);
 
         auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);

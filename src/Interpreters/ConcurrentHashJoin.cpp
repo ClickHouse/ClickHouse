@@ -123,10 +123,7 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
     size_t i = 0;
     for (auto & name_and_type : names_and_types)
     {
-        ColumnPtr col_ptr = std::move(mutable_final_columns[i]);
-        mutable_final_columns[i] = nullptr;
-        ColumnWithTypeAndName col(col_ptr, name_and_type.type, name_and_type.name);
-        final_columns.emplace_back(col);
+        final_columns.emplace_back(ColumnWithTypeAndName(std::move(mutable_final_columns[i]), name_and_type.type, name_and_type.name));
         i += 1;
     }
     block = Block(final_columns);
