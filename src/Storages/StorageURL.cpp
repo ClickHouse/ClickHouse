@@ -552,8 +552,11 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     }
 
 
-    auto read_buffer_creator = [&](std::vector<String>::const_iterator & it)
+    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()]() mutable -> std::unique_ptr<ReadBuffer>
     {
+        if (it == urls_to_check.cend())
+            return nullptr;
+
         return StorageURLSource::getFirstAvailableURLReadBuffer(
             it,
             urls_to_check.cend(),
@@ -570,8 +573,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
             context->getSettingsRef().max_download_threads);
     };
 
-    ReadBufferListIterator read_buffer_iterator(urls_to_check.cbegin(), urls_to_check.cend(), read_buffer_creator);
-    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, context);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
 }
 
 bool IStorageURLBase::isColumnOriented() const

@@ -237,7 +237,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     /// in case of file descriptor we have a stream of data and we cannot
     /// start reading data from the beginning after reading some data for
     /// schema inference.
-    auto read_buffer_creator = [&]()
+    ReadBufferIterator read_buffer_iterator = [&]()
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
@@ -247,8 +247,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
         return read_buf;
     };
 
-    ReadBufferSingleIterator read_buffer_iterator(read_buffer_creator);
-    auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, context, peekable_read_buffer_from_fd);
+    auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, false, context, peekable_read_buffer_from_fd);
     if (peekable_read_buffer_from_fd)
     {
         /// If we have created read buffer in readSchemaFromFormat we should rollback to checkpoint.
@@ -282,13 +281,15 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
             "table structure manually",
             format);
 
-    auto read_buffer_creator = [&](std::vector<String>::const_iterator & it)
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()]() mutable -> std::unique_ptr<ReadBuffer>
     {
-        return createReadBuffer(*it, false, "File", -1, compression_method, context);
+        if (it == paths.end())
+            return nullptr;
+
+        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
     };
 
-    ReadBufferListIterator read_buffer_iterator(paths.begin(), paths.end(), read_buffer_creator);
-    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, context);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
 }
 
 bool StorageFile::isColumnOriented() const

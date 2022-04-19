@@ -6,64 +6,7 @@
 namespace DB
 {
 
-class ReadBufferIterator
-{
-public:
-    virtual std::unique_ptr<ReadBuffer> next() = 0;
-    virtual bool isSingle() const = 0;
-    virtual ~ReadBufferIterator() = default;
-};
-
-template <class ListIterator, class BufferCreator>
-class ReadBufferListIterator : public ReadBufferIterator
-{
-public:
-    ReadBufferListIterator(ListIterator begin_, ListIterator end_, BufferCreator buffer_creator_)
-        : it(begin_), end(end_), buffer_creator(buffer_creator_), is_single(std::distance(begin_, end_) == 1)
-    {
-    }
-
-    std::unique_ptr<ReadBuffer> next() override
-    {
-        if (it == end)
-            return nullptr;
-
-        auto res = buffer_creator(it);
-        ++it;
-        return res;
-    }
-
-    bool isSingle() const override { return is_single; }
-
-private:
-    ListIterator it;
-    ListIterator end;
-    BufferCreator buffer_creator;
-    bool is_single;
-};
-
-template <class BufferCreator>
-class ReadBufferSingleIterator : public ReadBufferIterator
-{
-public:
-    ReadBufferSingleIterator(BufferCreator buffer_creator_) : buffer_creator(buffer_creator_)
-    {
-    }
-
-    std::unique_ptr<ReadBuffer> next() override
-    {
-        if (done)
-            return nullptr;
-        done = true;
-        return buffer_creator();
-    }
-
-    bool isSingle() const override { return true; }
-
-private:
-    BufferCreator buffer_creator;
-    bool done = false;
-};
+using ReadBufferIterator = std::function<std::unique_ptr<ReadBuffer>()>;
 
 /// Try to determine the schema of the data in specifying format.
 /// For formats that have an external schema reader, it will
@@ -79,6 +22,7 @@ ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     ReadBufferIterator & read_buffer_iterator,
+    bool retry,
     ContextPtr & context);
 
 /// If ReadBuffer is created, it will be written to buf_out.
@@ -86,6 +30,7 @@ ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     ReadBufferIterator & read_buffer_iterator,
+    bool retry,
     ContextPtr & context,
     std::unique_ptr<ReadBuffer> & buf_out);
 

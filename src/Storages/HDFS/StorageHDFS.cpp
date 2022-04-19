@@ -189,14 +189,15 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
             "specify table structure manually",
             format);
 
-    auto read_buffer_creator = [&, uri_without_path = uri_without_path](std::vector<String>::const_iterator & it) -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, uri_without_path = uri_without_path, it = paths.begin()]() mutable -> std::unique_ptr<ReadBuffer>
     {
+        if (it == paths.end())
+            return nullptr;
         auto compression = chooseCompressionMethod(*it, compression_method);
         return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it, ctx->getGlobalContext()->getConfigRef()), compression);
+            std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef()), compression);
     };
-    ReadBufferListIterator read_buffer_iterator(paths.cbegin(), paths.cend(), read_buffer_creator);
-    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, ctx);
+    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
 }
 
 class HDFSSource::DisclosedGlobIterator::Impl

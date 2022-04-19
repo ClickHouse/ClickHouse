@@ -52,6 +52,7 @@ ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     ReadBufferIterator & read_buffer_iterator,
+    bool retry,
     ContextPtr & context,
     std::unique_ptr<ReadBuffer> & buf_out)
 {
@@ -59,20 +60,27 @@ ColumnsDescription readSchemaFromFormat(
     if (FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format_name))
     {
         auto external_schema_reader = FormatFactory::instance().getExternalSchemaReader(format_name, context, format_settings);
-        names_and_types = external_schema_reader->readSchema();
+        try
+        {
+            names_and_types = external_schema_reader->readSchema();
+        }
+        catch (const DB::Exception & e)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}", format_name, e.message());
+        }
     }
     else if (FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
     {
         std::string exception_messages;
         SchemaReaderPtr schema_reader;
         std::unique_ptr<ReadBuffer> buf;
-        while ((buf = read_buffer_iterator.next()))
+        while ((buf = read_buffer_iterator()))
         {
             if (buf->eof())
             {
                 auto exception_message = fmt::format("Cannot extract table structure from {} format file, file is empty\n", format_name);
 
-                if (read_buffer_iterator.isSingle())
+                if (!retry)
                     throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, exception_message);
 
                 exception_messages += "\n" + exception_message;
@@ -90,7 +98,7 @@ ColumnsDescription readSchemaFromFormat(
             {
                 auto exception_message = getCurrentExceptionMessage(false);
 
-                if (read_buffer_iterator.isSingle() || !isRetryableSchemaInferenceError(getCurrentExceptionCode()))
+                if (!retry || !isRetryableSchemaInferenceError(getCurrentExceptionCode()))
                     throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}", format_name, exception_message);
 
                 exception_messages += "\n" + exception_message;
@@ -122,10 +130,10 @@ ColumnsDescription readSchemaFromFormat(
     return ColumnsDescription(names_and_types);
 }
 
-ColumnsDescription readSchemaFromFormat(const String & format_name, const std::optional<FormatSettings> & format_settings, ReadBufferIterator & read_buffer_iterator, ContextPtr & context)
+ColumnsDescription readSchemaFromFormat(const String & format_name, const std::optional<FormatSettings> & format_settings, ReadBufferIterator & read_buffer_iterator, bool retry, ContextPtr & context)
 {
     std::unique_ptr<ReadBuffer> buf_out;
-    return readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, context, buf_out);
+    return readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, retry, context, buf_out);
 }
 
 DataTypePtr makeNullableRecursivelyAndCheckForNothing(DataTypePtr type)

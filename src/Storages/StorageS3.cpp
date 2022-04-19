@@ -962,30 +962,29 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     ContextPtr ctx)
 {
     auto file_iterator = createFileIterator(client_auth, {client_auth.uri.key}, is_key_with_globs, distributed_processing, ctx);
-    std::vector<String> keys;
-    String key = (*file_iterator)();
-    while (!key.empty())
-    {
-        keys.push_back(key);
-        key = (*file_iterator)();
-    }
 
-    if (keys.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
-        throw Exception(
-            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-            "Cannot extract table structure from {} format file, because there are no files with provided path in S3. You must specify "
-            "table structure manually",
-            format);
-
-    auto read_buffer_creator = [&](std::vector<String>::iterator & it)
+    ReadBufferIterator read_buffer_iterator = [&, first = false]() mutable -> std::unique_ptr<ReadBuffer>
     {
+        auto key = (*file_iterator)();
+        if (key.empty())
+        {
+            if (first)
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file, because there are no files with provided path in S3. You must specify "
+                    "table structure manually",
+                    format);
+            return nullptr;
+        }
+
+        first = false;
         return wrapReadBufferWithCompressionMethod(
             std::make_unique<ReadBufferFromS3>(
-                client_auth.client, client_auth.uri.bucket, *it, max_single_read_retries, ctx->getReadSettings()),
-            chooseCompressionMethod(*it, compression_method));
+                client_auth.client, client_auth.uri.bucket, key, max_single_read_retries, ctx->getReadSettings()),
+            chooseCompressionMethod(key, compression_method));
     };
-    ReadBufferListIterator read_buffer_iterator(keys.begin(), keys.end(), read_buffer_creator);
-    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, ctx);
+
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, is_key_with_globs, ctx);
 }
 
 
