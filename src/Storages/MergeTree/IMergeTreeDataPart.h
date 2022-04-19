@@ -146,8 +146,6 @@ public:
 
     void remove() const;
 
-    void projectionRemove(const String & parent_to, bool keep_shared_data = false) const;
-
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
