@@ -16,7 +16,8 @@ public:
         const DataStream & left_stream_,
         const DataStream & right_stream_,
         JoinPtr join_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        size_t max_streams_ = 0);
 
     String getName() const override { return "Join"; }
 
@@ -29,6 +30,7 @@ public:
 private:
     JoinPtr join;
     size_t max_block_size;
+    size_t max_streams;
     Processors processors;
 };
 

@@ -1269,7 +1269,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         query_plan.getCurrentDataStream(),
                         joined_plan->getCurrentDataStream(),
                         expressions.join,
-                        settings.max_block_size);
+                        settings.max_block_size,
+                        max_streams);
 
                     join_step->setStepDescription("JOIN");
                     std::vector<QueryPlanPtr> plans;
