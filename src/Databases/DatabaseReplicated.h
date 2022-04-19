@@ -55,6 +55,8 @@ public:
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
+    const String & getZooKeeperPath() const { return zookeeper_path; }
+
     /// Returns cluster consisting of database replicas
     ClusterPtr getCluster() const;
 

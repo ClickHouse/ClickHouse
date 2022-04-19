@@ -1,15 +1,17 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/BackupEntryFromMemory.h>
-#include <Backups/BackupSettings.h>
+#include <Backups/Common/BackupSettings.h>
 #include <Backups/DDLCompareUtils.h>
 #include <Backups/DDLRenamingVisitor.h>
 #include <Backups/IBackup.h>
 #include <Backups/formatTableNameOrTemporaryTableName.h>
+#include <Backups/replaceTableUUIDWithMacroInReplicatedTableDef.h>
 #include <Common/escapeForFileName.h>
 #include <Access/Common/AccessFlags.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
 
@@ -26,6 +28,67 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Helper to calculate paths inside a backup.
+    class PathsInBackup
+    {
+    public:
+        /// Returns the path to metadata in backup.
+        static String getMetadataPath(const DatabaseAndTableName & table_name, size_t shard_index, size_t replica_index)
+        {
+            if (table_name.first.empty() || table_name.second.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name and table name must not be empty");
+            return getPathForShardAndReplica(shard_index, replica_index) + String{"metadata/"} + escapeForFileName(table_name.first) + "/"
+                + escapeForFileName(table_name.second) + ".sql";
+        }
+
+        static String getMetadataPath(const String & database_name, size_t shard_index, size_t replica_index)
+        {
+            if (database_name.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name must not be empty");
+            return getPathForShardAndReplica(shard_index, replica_index) + String{"metadata/"} + escapeForFileName(database_name) + ".sql";
+        }
+
+        static String getMetadataPath(const IAST & create_query, size_t shard_index, size_t replica_index)
+        {
+            const auto & create = create_query.as<const ASTCreateQuery &>();
+            if (!create.table)
+                return getMetadataPath(create.getDatabase(), shard_index, replica_index);
+            if (create.temporary)
+                return getMetadataPath({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()}, shard_index, replica_index);
+            return getMetadataPath({create.getDatabase(), create.getTable()}, shard_index, replica_index);
+        }
+
+        /// Returns the path to table's data in backup.
+        static String getDataPath(const DatabaseAndTableName & table_name, size_t shard_index, size_t replica_index)
+        {
+            if (table_name.first.empty() || table_name.second.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name and table name must not be empty");
+            assert(!table_name.first.empty() && !table_name.second.empty());
+            return getPathForShardAndReplica(shard_index, replica_index) + String{"data/"} + escapeForFileName(table_name.first) + "/"
+                + escapeForFileName(table_name.second) + "/";
+        }
+
+        static String getDataPath(const IAST & create_query, size_t shard_index, size_t replica_index)
+        {
+            const auto & create = create_query.as<const ASTCreateQuery &>();
+            if (!create.table)
+                return {};
+            if (create.temporary)
+                return getDataPath({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()}, shard_index, replica_index);
+            return getDataPath({create.getDatabase(), create.getTable()}, shard_index, replica_index);
+        }
+
+    private:
+        static String getPathForShardAndReplica(size_t shard_index, size_t replica_index)
+        {
+            if (shard_index || replica_index)
+                return fmt::format("shard{}/replica{}/", shard_index, replica_index);
+            else
+                return "";
+        }
+    };
+
+
     using Kind = ASTBackupQuery::Kind;
     using Element = ASTBackupQuery::Element;
     using Elements = ASTBackupQuery::Elements;
@@ -92,7 +155,7 @@ namespace
                     auto data_backup = info.storage->backupData(context, info.partitions);
                     if (!data_backup.empty())
                     {
-                        String data_path = getDataPathInBackup(*info.create_query);
+                        String data_path = PathsInBackup::getDataPath(*info.create_query, backup_settings.shard, backup_settings.replica);
                         for (auto & [path_in_backup, backup_entry] : data_backup)
                             res.emplace_back(data_path + path_in_backup, std::move(backup_entry));
                     }
@@ -209,6 +272,7 @@ namespace
             ASTPtr query = ast;
             ::DB::renameInCreateQuery(query, context, renaming_settings);
             auto create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(query);
+            replaceTableUUIDWithMacroInReplicatedTableDef(*create_query, create_query->uuid);
             create_query->uuid = UUIDHelpers::Nil;
             create_query->to_inner_uuid = UUIDHelpers::Nil;
             return create_query;
@@ -219,10 +283,10 @@ namespace
             return (database_name == DatabaseCatalog::SYSTEM_DATABASE) || (database_name == DatabaseCatalog::TEMPORARY_DATABASE);
         }
 
-        static std::pair<String, BackupEntryPtr> makeBackupEntryForMetadata(const IAST & create_query)
+        std::pair<String, BackupEntryPtr> makeBackupEntryForMetadata(const IAST & create_query) const
         {
             auto metadata_entry = std::make_unique<BackupEntryFromMemory>(serializeAST(create_query));
-            String metadata_path = getMetadataPathInBackup(create_query);
+            String metadata_path = PathsInBackup::getMetadataPath(create_query, backup_settings.shard, backup_settings.replica);
             return {metadata_path, std::move(metadata_entry)};
         }
 
@@ -317,49 +381,6 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
     }
 
     backup->finalizeWriting();
-}
-
-
-String getDataPathInBackup(const DatabaseAndTableName & table_name)
-{
-    if (table_name.first.empty() || table_name.second.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name and table name must not be empty");
-    assert(!table_name.first.empty() && !table_name.second.empty());
-    return String{"data/"} + escapeForFileName(table_name.first) + "/" + escapeForFileName(table_name.second) + "/";
-}
-
-String getDataPathInBackup(const IAST & create_query)
-{
-    const auto & create = create_query.as<const ASTCreateQuery &>();
-    if (!create.table)
-        return {};
-    if (create.temporary)
-        return getDataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
-    return getDataPathInBackup({create.getDatabase(), create.getTable()});
-}
-
-String getMetadataPathInBackup(const DatabaseAndTableName & table_name)
-{
-    if (table_name.first.empty() || table_name.second.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name and table name must not be empty");
-    return String{"metadata/"} + escapeForFileName(table_name.first) + "/" + escapeForFileName(table_name.second) + ".sql";
-}
-
-String getMetadataPathInBackup(const String & database_name)
-{
-    if (database_name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name must not be empty");
-    return String{"metadata/"} + escapeForFileName(database_name) + ".sql";
-}
-
-String getMetadataPathInBackup(const IAST & create_query)
-{
-    const auto & create = create_query.as<const ASTCreateQuery &>();
-    if (!create.table)
-        return getMetadataPathInBackup(create.getDatabase());
-    if (create.temporary)
-        return getMetadataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
-    return getMetadataPathInBackup({create.getDatabase(), create.getTable()});
 }
 
 }

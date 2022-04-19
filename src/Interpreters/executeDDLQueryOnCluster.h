@@ -27,7 +27,7 @@ struct DDLQueryOnClusterParams
     /// 1-bases index of a shard to execute a query on, 0 means all shards.
     size_t shard_index = 0;
 
-    /// 1-bases index of a replica to execute a query on, 0 means all replicas (see also allow_multiple_replicas).
+    /// 1-bases index of a replica to execute a query on, 0 means all replicas (see also allow_storing_multiple_replicas).
     size_t replica_index = 0;
 
     /// Allows executing a query on multiple replicas.

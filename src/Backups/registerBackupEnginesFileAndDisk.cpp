@@ -5,7 +5,6 @@
 #include <Common/quoteString.h>
 #include <Disks/IDisk.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
-#include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 
@@ -177,7 +176,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
                 writer = std::make_shared<BackupWriterFile>(path);
             else
                 writer = std::make_shared<BackupWriterDisk>(disk, path);
-            return std::make_unique<BackupImpl>(backup_name, archive_params, params.base_backup_info, writer, nullptr, false, params.context);
+            return std::make_unique<BackupImpl>(backup_name, archive_params, params.base_backup_info, writer, params.context, params.backup_uuid, params.is_internal_backup, params.coordination_zk_path);
         }
     };
 

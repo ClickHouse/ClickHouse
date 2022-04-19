@@ -1,4 +1,4 @@
-#include <Backups/DistributedBackupCoordination.h>
+#include <Backups/BackupCoordinationDistributed.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -78,15 +78,15 @@ namespace
     constexpr size_t NUM_ATTEMPTS = 10;
 }
 
-DistributedBackupCoordination::DistributedBackupCoordination(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
+BackupCoordinationDistributed::BackupCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
     : zookeeper_path(zookeeper_path_), get_zookeeper(get_zookeeper_)
 {
     createRootNodes();
 }
 
-DistributedBackupCoordination::~DistributedBackupCoordination() = default;
+BackupCoordinationDistributed::~BackupCoordinationDistributed() = default;
 
-void DistributedBackupCoordination::createRootNodes()
+void BackupCoordinationDistributed::createRootNodes()
 {
     auto zookeeper = get_zookeeper();
     zookeeper->createAncestors(zookeeper_path);
@@ -97,13 +97,13 @@ void DistributedBackupCoordination::createRootNodes()
     zookeeper->createIfNotExists(zookeeper_path + "/current_archive_suffix", "0");
 }
 
-void DistributedBackupCoordination::removeAllNodes()
+void BackupCoordinationDistributed::removeAllNodes()
 {
     auto zookeeper = get_zookeeper();
     zookeeper->removeRecursive(zookeeper_path);
 }
 
-void DistributedBackupCoordination::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
+void BackupCoordinationDistributed::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {
     auto zookeeper = get_zookeeper();
 
@@ -125,7 +125,7 @@ void DistributedBackupCoordination::addFileInfo(const FileInfo & file_info, bool
     is_data_file_required = (code == Coordination::Error::ZOK) && (file_info.size > file_info.base_size);
 }
 
-void DistributedBackupCoordination::updateFileInfo(const FileInfo & file_info)
+void BackupCoordinationDistributed::updateFileInfo(const FileInfo & file_info)
 {
     if (!file_info.size)
         return; /// we don't keep FileInfos for empty files, nothing to update
@@ -147,7 +147,7 @@ void DistributedBackupCoordination::updateFileInfo(const FileInfo & file_info)
     }
 }
 
-std::vector<FileInfo> DistributedBackupCoordination::getAllFileInfos()
+std::vector<FileInfo> BackupCoordinationDistributed::getAllFileInfos() const
 {
     auto zookeeper = get_zookeeper();
     std::vector<FileInfo> file_infos;
@@ -165,7 +165,7 @@ std::vector<FileInfo> DistributedBackupCoordination::getAllFileInfos()
     return file_infos;
 }
 
-Strings DistributedBackupCoordination::listFiles(const String & prefix, const String & terminator)
+Strings BackupCoordinationDistributed::listFiles(const String & prefix, const String & terminator) const
 {
     auto zookeeper = get_zookeeper();
     Strings escaped_names = zookeeper->getChildren(zookeeper_path + "/file_names");
@@ -190,7 +190,7 @@ Strings DistributedBackupCoordination::listFiles(const String & prefix, const St
     return elements;
 }
 
-std::optional<FileInfo> DistributedBackupCoordination::getFileInfo(const String & file_name)
+std::optional<FileInfo> BackupCoordinationDistributed::getFileInfo(const String & file_name) const
 {
     auto zookeeper = get_zookeeper();
     String size_and_checksum;
@@ -204,7 +204,7 @@ std::optional<FileInfo> DistributedBackupCoordination::getFileInfo(const String 
     return file_info;
 }
 
-std::optional<FileInfo> DistributedBackupCoordination::getFileInfo(const SizeAndChecksum & size_and_checksum)
+std::optional<FileInfo> BackupCoordinationDistributed::getFileInfo(const SizeAndChecksum & size_and_checksum) const
 {
     auto zookeeper = get_zookeeper();
     String file_info_str;
@@ -213,7 +213,7 @@ std::optional<FileInfo> DistributedBackupCoordination::getFileInfo(const SizeAnd
     return deserializeFileInfo(file_info_str);
 }
 
-std::optional<SizeAndChecksum> DistributedBackupCoordination::getFileSizeAndChecksum(const String & file_name)
+std::optional<SizeAndChecksum> BackupCoordinationDistributed::getFileSizeAndChecksum(const String & file_name) const
 {
     auto zookeeper = get_zookeeper();
     String size_and_checksum;
@@ -222,7 +222,7 @@ std::optional<SizeAndChecksum> DistributedBackupCoordination::getFileSizeAndChec
     return deserializeSizeAndChecksum(size_and_checksum);
 }
 
-String DistributedBackupCoordination::getNextArchiveSuffix()
+String BackupCoordinationDistributed::getNextArchiveSuffix()
 {
     auto zookeeper = get_zookeeper();
     for (size_t attempt = 0; attempt != NUM_ATTEMPTS; ++attempt)
@@ -245,13 +245,13 @@ String DistributedBackupCoordination::getNextArchiveSuffix()
     __builtin_unreachable();
 }
 
-Strings DistributedBackupCoordination::getAllArchiveSuffixes()
+Strings BackupCoordinationDistributed::getAllArchiveSuffixes() const
 {
     auto zookeeper = get_zookeeper();
     return zookeeper->getChildren(zookeeper_path + "/archive_suffixes");
 }
 
-void DistributedBackupCoordination::drop()
+void BackupCoordinationDistributed::drop()
 {
     removeAllNodes();
 }

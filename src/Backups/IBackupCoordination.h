@@ -31,7 +31,7 @@ public:
         UInt64 pos_in_archive = static_cast<UInt64>(-1);
     };
 
-    virtual ~IBackupCoordination() { }
+    virtual ~IBackupCoordination() = default;
 
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
@@ -46,20 +46,20 @@ public:
     /// Updates some fields (currently only `archive_suffix`) of a stored file's information.
     virtual void updateFileInfo(const FileInfo & file_info) = 0;
 
-    virtual std::vector<FileInfo> getAllFileInfos() = 0;
-    virtual Strings listFiles(const String & prefix, const String & terminator) = 0;
+    virtual std::vector<FileInfo> getAllFileInfos() const = 0;
+    virtual Strings listFiles(const String & prefix, const String & terminator) const = 0;
 
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
 
-    virtual std::optional<FileInfo> getFileInfo(const String & file_name) = 0;
-    virtual std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) = 0;
-    virtual std::optional<SizeAndChecksum> getFileSizeAndChecksum(const String & file_name) = 0;
+    virtual std::optional<FileInfo> getFileInfo(const String & file_name) const = 0;
+    virtual std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const = 0;
+    virtual std::optional<SizeAndChecksum> getFileSizeAndChecksum(const String & file_name) const = 0;
 
     /// Generates a new archive suffix, e.g. "001", "002", "003", ...
     virtual String getNextArchiveSuffix() = 0;
 
     /// Returns the list of all the archive suffixes which were generated.
-    virtual Strings getAllArchiveSuffixes() = 0;
+    virtual Strings getAllArchiveSuffixes() const = 0;
 
     /// Removes remotely stored information.
     virtual void drop() {}

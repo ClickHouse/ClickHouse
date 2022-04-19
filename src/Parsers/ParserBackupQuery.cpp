@@ -284,6 +284,14 @@ namespace
             return true;
         });
     }
+
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+        });
+    }
 }
 
 
@@ -300,6 +308,9 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     std::vector<Element> elements;
     if (!parseElements(pos, expected, elements))
         return false;
+
+    String cluster;
+    parseOnCluster(pos, expected, cluster);
 
     if (!ParserKeyword{(kind == Kind::BACKUP) ? "TO" : "FROM"}.ignore(pos, expected))
         return false;
@@ -320,6 +331,7 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->backup_name = std::move(backup_name);
     query->base_backup_name = std::move(base_backup_name);
     query->settings = std::move(settings);
+    query->cluster = std::move(cluster);
 
     return true;
 }

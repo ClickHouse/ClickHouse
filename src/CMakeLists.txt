@@ -215,6 +215,7 @@ if (TARGET ch_contrib::jemalloc)
 endif()
 
 add_subdirectory(Access/Common)
+add_subdirectory(Backups/Common)
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
 
