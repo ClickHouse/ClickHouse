@@ -78,7 +78,7 @@ ColumnsDescription readSchemaFromFormat(
         {
             if (buf->eof())
             {
-                auto exception_message = fmt::format("Cannot extract table structure from {} format file, file is empty\n", format_name);
+                auto exception_message = fmt::format("Cannot extract table structure from {} format file, file is emptyg", format_name);
 
                 if (!retry)
                     throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, exception_message);
