@@ -57,6 +57,8 @@ void ASTColumnsMatcher::setPattern(String pattern)
 
 bool ASTColumnsMatcher::isColumnMatching(const String & column_name) const
 {
+    if (!column_matcher)
+        throw Exception("Logical error in ASTColumnsMatcher: the regular expression is not set", ErrorCodes::LOGICAL_ERROR);
     return RE2::PartialMatch(column_name, *column_matcher);
 }
 

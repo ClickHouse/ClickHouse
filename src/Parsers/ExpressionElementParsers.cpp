@@ -1787,26 +1787,15 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     ++pos;
 
-    ASTPtr column_list;
     ASTPtr regex_node;
-    if (!columns_p.parse(pos, column_list, expected) && !regex.parse(pos, regex_node, expected))
-        return false;
 
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
 
     auto res = std::make_shared<ASTColumnsMatcher>();
-    if (column_list)
-    {
-        res->column_list = column_list;
-        res->children.push_back(res->column_list);
-    }
-    else
-    {
-        res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
-        res->children.push_back(regex_node);
-    }
+    res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+    res->children.push_back(regex_node);
 
     ParserColumnsTransformers transformers_p(allowed_transformers);
     ASTPtr transformer;
