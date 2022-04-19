@@ -557,7 +557,7 @@ std::string ParsingException::displayText() const
     {
         formatted_message = message();
         if (!file_name.empty())
-            formatted_message += fmt::format(": (in file {})", file_name);
+            formatted_message += fmt::format(": (in file/uri {})", file_name);
         if (line_number != -1)
             formatted_message += fmt::format(": (at row {})", line_number);
         formatted_message += "\n";
