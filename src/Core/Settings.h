@@ -582,7 +582,7 @@ class IColumn;
     M(Bool, allow_experimental_object_type, false, "Allow Object and JSON data types", 0) \
     M(String, insert_deduplication_token, "", "If not empty, used for duplicate detection instead of data digest", 0) \
     M(Bool, throw_on_unsupported_query_inside_transaction, true, "Throw exception if unsupported query is used inside transaction", 0) \
-    M(Bool, throw_if_no_data_to_insert, true, "Enables or disables empty INSERTs, disable by default", 0) \
+    M(Bool, throw_if_no_data_to_insert, true, "Enables or disables empty INSERTs, enabled by default", 0) \
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
 
