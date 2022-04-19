@@ -98,7 +98,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -108,7 +108,7 @@ public:
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -200,10 +200,7 @@ public:
     void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 
     /// Add a part to the queue of parts whose data you want to check in the background thread.
-    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0)
-    {
-        part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
-    }
+    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
@@ -214,7 +211,8 @@ public:
 
     /** Remove a specific replica from zookeeper.
      */
-    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
+    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
+                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
@@ -491,8 +489,9 @@ private:
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
                                   NameSet * parts_should_be_retried = nullptr);
 
-    bool tryRemovePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries = 5);
-    bool tryRemovePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries = 5);
+    /// Remove parts from ZooKeeper, throw exception if unable to do so after max_retries.
+    void removePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries = 5);
+    void removePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries = 5);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
@@ -519,7 +518,7 @@ private:
     /// NOTE: Attention! First of all tries to find covering part on other replica
     /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
     /// If fetch was not successful, clears entry.actual_new_part_name.
-    bool executeFetch(LogEntry & entry);
+    bool executeFetch(LogEntry & entry, bool need_to_check_missing_part=true);
 
     bool executeReplaceRange(const LogEntry & entry);
     void executeClonePartFromShard(const LogEntry & entry);

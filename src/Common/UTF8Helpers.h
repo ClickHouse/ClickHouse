@@ -75,7 +75,8 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
 }
 
 
-template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+template <typename CharT>
+requires (sizeof(CharT) == 1)
 size_t convertCodePointToUTF8(int code_point, CharT * out_bytes, size_t out_length)
 {
     static const Poco::UTF8Encoding utf8;
@@ -84,7 +85,8 @@ size_t convertCodePointToUTF8(int code_point, CharT * out_bytes, size_t out_leng
     return res;
 }
 
-template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+template <typename CharT>
+requires (sizeof(CharT) == 1)
 std::optional<uint32_t> convertUTF8ToCodePoint(const CharT * in_bytes, size_t in_length)
 {
     static const Poco::UTF8Encoding utf8;
