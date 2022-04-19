@@ -283,7 +283,7 @@ void IDiskRemote::removeMetadata(const String & path, std::vector<String> & path
 
     try
     {
-        auto metadata_updater = [&paths_to_remove, path, this] (Metadata & metadata)
+        auto metadata_updater = [&paths_to_remove, this] (Metadata & metadata)
         {
             if (metadata.ref_count == 0)
             {
