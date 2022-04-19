@@ -271,7 +271,7 @@ std::unordered_map<String, String> IDiskRemote::getSerializedMetadata(const std:
     return metadatas;
 }
 
-void IDiskRemote::removeMetadata(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove)
+void IDiskRemote::removeMetadata(const String & path, std::vector<String> & paths_to_remove)
 {
     LOG_TRACE(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
 
@@ -289,7 +289,7 @@ void IDiskRemote::removeMetadata(const String & path, std::unordered_map<String,
             {
                 for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
                 {
-                    paths_to_remove[path].push_back(remote_fs_root_path + remote_fs_object_path);
+                    paths_to_remove.push_back(remote_fs_root_path + remote_fs_object_path);
 
                     if (cache)
                     {
@@ -334,7 +334,7 @@ void IDiskRemote::removeMetadataRecursive(const String & path, std::unordered_ma
 
     if (metadata_disk->isFile(path))
     {
-        removeMetadata(path, paths_to_remove);
+        removeMetadata(path, paths_to_remove[path]);
     }
     else
     {
@@ -483,21 +483,21 @@ void IDiskRemote::replaceFile(const String & from_path, const String & to_path)
 
 void IDiskRemote::removeSharedFile(const String & path, bool delete_metadata_only)
 {
-    std::unordered_map<String, std::vector<String>> paths_to_remove;
+    std::vector<String> paths_to_remove;
     removeMetadata(path, paths_to_remove);
 
     if (!delete_metadata_only)
-        removeFromRemoteFS(paths_to_remove[path]);
+        removeFromRemoteFS(paths_to_remove);
 }
 
 void IDiskRemote::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
 {
-    std::unordered_map<String, std::vector<String>> paths_to_remove;
+    std::vector<String> paths_to_remove;
     if (metadata_disk->exists(path))
     {
         removeMetadata(path, paths_to_remove);
         if (!delete_metadata_only)
-            removeFromRemoteFS(paths_to_remove[path]);
+            removeFromRemoteFS(paths_to_remove);
     }
 }
 
@@ -508,7 +508,7 @@ void IDiskRemote::removeSharedFiles(const RemoveBatchRequest & files, bool keep_
     {
         bool skip = file.if_exists && !metadata_disk->exists(file.path);
         if (!skip)
-            removeMetadata(file.path, paths_to_remove);
+            removeMetadata(file.path, paths_to_remove[file.path]);
     }
 
     if (!keep_all_batch_data)
