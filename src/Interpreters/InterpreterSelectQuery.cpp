@@ -617,7 +617,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    if (auto query_result = cache.get({query_ptr, source_header, context->getSettingsRef()});
+    auto query_cache_key = CacheKey{query_ptr, source_header, context->getSettingsRef()};
+    if (context->getSettingsRef().share_query_cache) {
+        query_cache_key.username = context->getUserName();
+    }
+    if (auto query_result = cache.get(query_cache_key);
         query_result && context->getSettingsRef().query_cache_passive_usage)
     {
         const auto &header= query_result->first;

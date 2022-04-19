@@ -585,6 +585,7 @@ class IColumn;
     M(Bool, query_cache_active_usage, true, "Put query result in cache after execution", 0) \
     M(Bool, query_cache_passive_usage, true, "If query result is in cache, use it", 0) \
     M(UInt64, max_items_count_query_cache, 100, "Max number of records to be stores in query cache", 0) \
+    M(Bool, share_query_cache, true, "Enable sharing query cache with other users", 0) \
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
 

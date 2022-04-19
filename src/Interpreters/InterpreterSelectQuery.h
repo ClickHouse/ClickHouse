@@ -36,14 +36,15 @@ using Data = std::pair<Block, Chunks>;
 
 struct CacheKey
 {
-    ASTPtr ast;
-    Block header;
-    const Settings & settings;
-
     bool operator==(const CacheKey & other) const
     {
         return ast->getTreeHash() == other.ast->getTreeHash() && header == other.header;
     }
+
+    ASTPtr ast;
+    Block header;
+    const Settings & settings;
+    std::optional<String> username;
 };
 struct CacheKeyHasher
 {
@@ -52,7 +53,10 @@ struct CacheKeyHasher
         auto ast_info = k.ast->getTreeHash();
         auto header_info = k.header.getNamesAndTypesList().toString();
         auto settings_info = settingsHash(k.settings);
-        return ast_info.first + ast_info.second * 9273 + std::hash<String>{}(header_info) * 9273 * 9273 + settings_info * 9273 * 9273 * 9273;
+        auto username_info = std::hash<std::optional<String>>{}(k.username);
+
+        return ast_info.first + ast_info.second * 9273 + std::hash<String>{}(header_info) * 9273 * 9273
+            + settings_info * 9273 * 9273 * 9273 + username_info * 9273 * 9273 * 9273 * 9273;
     }
 private:
     static size_t settingsHash(const Settings & settings) {
@@ -247,7 +251,7 @@ private:
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
     PreparedSets prepared_sets;
 
-    static LRUCache<CacheKey, Data, CacheKeyHasher> cache{/* settings.max_items_count_query_cache */};
+    static LRUCache<CacheKey, Data, CacheKeyHasher> cache;
 };
 
 }
