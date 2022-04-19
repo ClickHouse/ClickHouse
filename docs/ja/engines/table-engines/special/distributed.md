@@ -130,7 +130,7 @@ SELECT queries are sent to all the shards and work regardless of how data is dis
 次の場合は、シャーディングスキームについて心配する必要があります:
 
 -   特定のキーによるデータの結合(INまたはJOIN)を必要とするクエリが使用されます。 このキーによってデータがシャードされる場合は、GLOBAL INまたはGLOBAL JOINの代わりにlocal INまたはJOINを使用できます。
--   多数のサーバーが、多数の小さなクエリ（個々のクライアント-ウェブサイト、広告主、またはパートナーのクエリ）で使用されます（数百以上）。 小さなクエリがクラスタ全体に影響を与えないようにするには、単一のシャード上の単一のクライアントのデータを検索することが理にかなってい また、我々はYandexのでやったように。Metricaでは、biレベルのシャーディングを設定できます：クラスタ全体を次のように分割します “layers” ここで、レイヤーは複数のシャードで構成されます。 単一のクライアントのデータは単一のレイヤー上にありますが、必要に応じてシャードをレイヤーに追加することができ、データはランダムに分散されます。 分散テーブルはレイヤごとに作成され、グローバルクエリ用に単一の共有分散テーブルが作成されます。
+-   多数のサーバーが、多数の小さなクエリ（個々のクライアント-ウェブサイト、広告主、またはパートナーのクエリ）で使用されます（数百以上）。 小さなクエリがクラスタ全体に影響を与えないようにするには、単一のシャード上の単一のクライアントのデータを検索することが理にかなってい また レベルのシャーディングを設定できます：クラスタ全体を次のように分割します “layers” ここで、レイヤーは複数のシャードで構成されます。 単一のクライアントのデータは単一のレイヤー上にありますが、必要に応じてシャードをレイヤーに追加することができ、データはランダムに分散されます。 分散テーブルはレイヤごとに作成され、グローバルクエリ用に単一の共有分散テーブルが作成されます。
 
 データは非同期に書き込まれます。 テーブルに挿入すると、データブロックはローカルファイルシステムに書き込まれます。 データはできるだけ早くバックグラウンドでリモートサーバーに送信されます。 データを送信するための期間は、 [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms) と [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms) 設定。 その `Distributed` エンジンは、挿入されたデータを含む各ファイルを別々に送信しますが、 [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts) 設定。 この設定の改善にクラスターの性能をより一層の活用地域のサーバやネットワーク資源です。 を確認しておきましょうか否かのデータが正常に送信されるチェックリストファイル(データまたは間に-をはさんだ)はテーブルディレクトリ: `/var/lib/clickhouse/data/database/table/`.
 

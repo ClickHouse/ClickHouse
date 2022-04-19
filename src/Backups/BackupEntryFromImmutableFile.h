@@ -16,7 +16,7 @@ class BackupEntryFromImmutableFile : public IBackupEntry
 {
 public:
     /// The constructor is allowed to not set `file_size_` or `checksum_`, in that case it will be calculated from the data.
-    BackupEntryFromImmutableFile(
+    explicit BackupEntryFromImmutableFile(
         const String & file_path_,
         const std::optional<UInt64> & file_size_ = {},
         const std::optional<UInt128> & checksum_ = {},
