@@ -234,7 +234,7 @@ private:
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
     PreparedSets prepared_sets;
 
-    static LRUCache<CacheKey, Data, CacheKeyHasher> cache;
+    static LRUCache<CacheKey, Data, CacheKeyHasher> cache{/* settings.max_items_count_query_cache */};
 };
 
 }

@@ -584,6 +584,7 @@ class IColumn;
     M(Bool, throw_on_unsupported_query_inside_transaction, true, "Throw exception if unsupported query is used inside transaction", 0) \
     M(Bool, query_cache_active_usage, true, "Put query result in cache after execution", 0) \
     M(Bool, query_cache_passive_usage, true, "If query result is in cache, use it", 0) \
+    M(UInt64, max_items_count_query_cache, 100, "Max number of records to be stores in query cache", 0) \
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
 
