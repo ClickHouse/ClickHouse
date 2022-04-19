@@ -45,7 +45,7 @@ public:
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
      * resetParser() which allow to reset the state of parser to continue reading of
-     * source stream w/o recreating that.
+     * source stream without recreating that.
      * That should be called after current buffer was fully read.
      */
     virtual void resetParser();
