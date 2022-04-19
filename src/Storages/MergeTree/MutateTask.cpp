@@ -1119,7 +1119,7 @@ private:
             }
         }
 
-        /// Traking of hardlinked files required for zero-copy replication.
+        /// Tracking of hardlinked files required for zero-copy replication.
         /// We don't remove them when we delete last copy of source part because
         /// new part can use them.
         ctx->hardlinked_files.source_part_name = ctx->source_part->name;
