@@ -28,7 +28,7 @@ struct ParsedTemplateFormatString
     /// For diagnostic info
     Strings column_names;
 
-    typedef std::function<std::optional<size_t>(const String &)> ColumnIdxGetter;
+    using ColumnIdxGetter = std::function<std::optional<size_t>(const String &)>;
 
     ParsedTemplateFormatString() = default;
     ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name, bool allow_indexes = true);
