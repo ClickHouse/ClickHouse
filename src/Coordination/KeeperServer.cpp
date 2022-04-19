@@ -441,29 +441,40 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 {
     if (is_recovering)
     {
-        if (type == nuraft::cb_func::HeartBeat && raft_instance->isClusterHealthy())
+        switch (type)
         {
-            auto new_params = raft_instance->get_current_params();
-            new_params.custom_commit_quorum_size_ = 0;
-            new_params.custom_election_quorum_size_ = 0;
-            raft_instance->update_params(new_params);
+            case nuraft::cb_func::HeartBeat:
+            {
+                if (raft_instance->isClusterHealthy())
+                {
+                    auto new_params = raft_instance->get_current_params();
+                    new_params.custom_commit_quorum_size_ = 0;
+                    new_params.custom_election_quorum_size_ = 0;
+                    raft_instance->update_params(new_params);
 
-            LOG_INFO(log, "Recovery is done. You can continue using cluster normally.");
-            is_recovering = false;
-            return nuraft::cb_func::ReturnCode::Ok;
-        }
-
-        if (type == nuraft::cb_func::NewConfig)
-        {
-            // Apply the manually set config when in recovery mode
-            // NuRaft will commit but skip the reconfigure if the current
-            // config is the same as the committed one
-            // Because we manually set the config to commit
-            // we need to call the reconfigure also
-            uint64_t log_idx = *static_cast<uint64_t*>(param->ctx);
-            if (log_idx == state_manager->load_config()->get_log_idx())
-                raft_instance->forceReconfigure(state_manager->load_config());
-            return nuraft::cb_func::ReturnCode::Ok;
+                    LOG_INFO(log, "Recovery is done. You can continue using cluster normally.");
+                    is_recovering = false;
+                }
+                break;
+            }
+            case nuraft::cb_func::NewConfig:
+            {
+                // Apply the manually set config when in recovery mode
+                // NuRaft will commit but skip the reconfigure if the current
+                // config is the same as the committed one
+                // Because we manually set the config to commit
+                // we need to call the reconfigure also
+                uint64_t log_idx = *static_cast<uint64_t*>(param->ctx);
+                if (log_idx == state_manager->load_config()->get_log_idx())
+                    raft_instance->forceReconfigure(state_manager->load_config());
+                break;
+            }
+            case nuraft::cb_func::ProcessReq:
+                // we don't accept requests from our peers or clients
+                // while in recovery mode
+                return nuraft::cb_func::ReturnCode::ReturnNull;
+            default:
+                break;
         }
     }
 
