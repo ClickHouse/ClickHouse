@@ -21,6 +21,9 @@ public:
         UInt64 base_size = 0;
         UInt128 base_checksum{0};
 
+        /// Name of the data file.
+        String data_file_name;
+
         /// Suffix of an archive if the backup is stored as a series of archives.
         String archive_suffix;
 
@@ -31,13 +34,13 @@ public:
     virtual ~IBackupCoordination() { }
 
     /// Adds file information.
-    /// If a specified checksum is new for this IBackupContentsInfo the function sets `is_new_checksum`.
-    virtual void addFileInfo(const FileInfo & file_info, bool & is_new_checksum) = 0;
+    /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
+    virtual void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) = 0;
 
     void addFileInfo(const FileInfo & file_info)
     {
-        bool is_new_checksum;
-        addFileInfo(file_info, is_new_checksum);
+        bool is_data_file_required;
+        addFileInfo(file_info, is_data_file_required);
     }
 
     /// Updates some fields (currently only `archive_suffix`) of a stored file's information.
@@ -46,9 +49,11 @@ public:
     virtual std::vector<FileInfo> getAllFileInfos() = 0;
     virtual Strings listFiles(const String & prefix, const String & terminator) = 0;
 
-    virtual std::optional<UInt128> getChecksumByFileName(const String & file_name) = 0;
-    virtual std::optional<FileInfo> getFileInfoByChecksum(const UInt128 & checksum) = 0;
-    virtual std::optional<FileInfo> getFileInfoByFileName(const String & file_name) = 0;
+    using SizeAndChecksum = std::pair<UInt64, UInt128>;
+
+    virtual std::optional<FileInfo> getFileInfo(const String & file_name) = 0;
+    virtual std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) = 0;
+    virtual std::optional<SizeAndChecksum> getFileSizeAndChecksum(const String & file_name) = 0;
 
     /// Generates a new archive suffix, e.g. "001", "002", "003", ...
     virtual String getNextArchiveSuffix() = 0;

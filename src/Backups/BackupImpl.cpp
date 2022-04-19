@@ -20,7 +20,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <boost/range/adaptor/map.hpp>
 
 
 namespace DB
@@ -42,22 +41,28 @@ namespace ErrorCodes
 namespace
 {
     const UInt64 INITIAL_BACKUP_VERSION = 1;
-    const UInt64 CURRENT_BACKUP_VERSION = 2;
-    const UInt64 BACKUP_VERSION_USE_CHECKSUMS_AS_DATA_FILE_NAMES = 2;
+    const UInt64 CURRENT_BACKUP_VERSION = 1;
+
+    using SizeAndChecksum = IBackup::SizeAndChecksum;
+    using FileInfo = IBackupCoordination::FileInfo;
 
     String hexChecksum(UInt128 checksum)
     {
-            return getHexUIntLowercase(checksum);
+        return getHexUIntLowercase(checksum);
     }
 
     UInt128 unhexChecksum(const String & checksum)
     {
-        if (checksum.size() != sizeof(UInt128) * 2)
-            throw Exception(ErrorCodes::BACKUP_DAMAGED, "Unexpected size of checksum: {}, must be {}", checksum.size(), sizeof(UInt128) * 2);
+        constexpr size_t num_chars_in_checksum = sizeof(UInt128) * 2;
+        if (checksum.size() != num_chars_in_checksum)
+            throw Exception(ErrorCodes::BACKUP_DAMAGED, "Unexpected size of checksum: {}, must be {}", checksum.size(), num_chars_in_checksum);
         return unhexUInt<UInt128>(checksum.data());
     }
 
-    using FileInfo = IBackupCoordination::FileInfo;
+    String formatSizeAndChecksum(const SizeAndChecksum & size_and_checksum)
+    {
+        return hexChecksum(size_and_checksum.second) + std::to_string(size_and_checksum.first);
+    }
 }
 
 
@@ -122,6 +127,7 @@ BackupImpl::BackupImpl(
     , coordination(coordination_ ? coordination_ : std::make_shared<LocalBackupCoordination>())
     , is_helper_backup(is_helper_backup_)
     , context(context_)
+    , version(CURRENT_BACKUP_VERSION)
 {
     open();
 }
@@ -142,6 +148,7 @@ BackupImpl::BackupImpl(
     , coordination(std::make_shared<LocalBackupCoordination>())
     , is_helper_backup(false)
     , context(context_)
+    , version(INITIAL_BACKUP_VERSION)
 {
     open();
 }
@@ -253,10 +260,10 @@ void BackupImpl::writeBackupMetadata()
     for (const auto & info : coordination->getAllFileInfos())
     {
         String prefix = index ? "contents.file[" + std::to_string(index) + "]." : "contents.file.";
-        config->setString(prefix + "name", info.file_name);
         config->setUInt(prefix + "size", info.size);
         if (info.size)
         {
+            config->setString(prefix + "name", info.file_name);
             config->setString(prefix + "checksum", hexChecksum(info.checksum));
             if (info.base_size)
             {
@@ -267,8 +274,12 @@ void BackupImpl::writeBackupMetadata()
                     config->setString(prefix + "base_checksum", hexChecksum(info.base_checksum));
                 }
             }
+            if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
+                config->setString(prefix + "data_file", info.data_file_name);
             if (!info.archive_suffix.empty())
                 config->setString(prefix + "archive_suffix", info.archive_suffix);
+            if (info.pos_in_archive != static_cast<size_t>(-1))
+                config->setUInt64(prefix + "pos_in_archive", info.pos_in_archive);
         }
         ++index;
     }
@@ -322,22 +333,33 @@ void BackupImpl::readBackupMetadata()
             FileInfo info;
             info.file_name = config->getString(prefix + "name");
             info.size = config->getUInt(prefix + "size");
-            info.checksum = info.size ? unhexChecksum(config->getString(prefix + "checksum")) : UInt128{0};
-
-            bool use_base = config->getBool(prefix + "use_base", false);
-            info.base_size = config->getUInt(prefix + "base_size", use_base ? info.size : 0);
-            if (info.base_size)
-                use_base = true;
-
-            if (use_base)
+            if (info.size)
             {
-                if (info.base_size == info.size)
-                    info.base_checksum = info.checksum;
-                else
-                    info.base_checksum = unhexChecksum(config->getString(prefix + "base_checksum"));
-            }
+                info.checksum = unhexChecksum(config->getString(prefix + "checksum"));
 
-            info.archive_suffix = config->getString(prefix + "archive_suffix", "");
+                bool use_base = config->getBool(prefix + "use_base", false);
+                info.base_size = config->getUInt(prefix + "base_size", use_base ? info.size : 0);
+                if (info.base_size)
+                    use_base = true;
+
+                if (info.base_size > info.size)
+                    throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Base size must not be greater than the size of entry {}", getName(), quoteString(info.file_name));
+
+                if (use_base)
+                {
+                    if (info.base_size == info.size)
+                        info.base_checksum = info.checksum;
+                    else
+                        info.base_checksum = unhexChecksum(config->getString(prefix + "base_checksum"));
+                }
+
+                if (info.size > info.base_size)
+                {
+                    info.data_file_name = config->getString(prefix + "data_file", info.file_name);
+                    info.archive_suffix = config->getString(prefix + "archive_suffix", "");
+                    info.pos_in_archive = config->getUInt64(prefix + "pos_in_archive", static_cast<UInt64>(-1));
+                }
+            }
 
             coordination->addFileInfo(info);
         }
@@ -355,60 +377,60 @@ Strings BackupImpl::listFiles(const String & prefix, const String & terminator) 
 bool BackupImpl::fileExists(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    return coordination->getChecksumByFileName(file_name).has_value();
+    return coordination->getFileInfo(file_name).has_value();
 }
 
-bool BackupImpl::fileExistsByChecksum(const UInt128 & checksum) const
+bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
 {
     std::lock_guard lock{mutex};
-    return coordination->getFileInfoByChecksum(checksum).has_value();
+    return coordination->getFileInfo(size_and_checksum).has_value();
 }
 
-size_t BackupImpl::getFileSize(const String & file_name) const
+UInt64 BackupImpl::getFileSize(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    auto info = coordination->getFileInfoByFileName(file_name);
+    auto info = coordination->getFileInfo(file_name);
     if (!info)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), quoteString(file_name));
-    return info->size;
-}
-
-size_t BackupImpl::getFileSizeByChecksum(const UInt128 & checksum) const
-{
-    std::lock_guard lock{mutex};
-    auto info = coordination->getFileInfoByChecksum(checksum);
-    if (!info)
-        throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), hexChecksum(checksum));
     return info->size;
 }
 
 UInt128 BackupImpl::getFileChecksum(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    auto info = coordination->getFileInfoByFileName(file_name);
+    auto info = coordination->getFileInfo(file_name);
     if (!info)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), quoteString(file_name));
     return info->checksum;
 }
 
-BackupEntryPtr BackupImpl::readFile(const String & file_name) const
+SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) const
 {
-    return readFileByChecksum(getFileChecksum(file_name));
+    std::lock_guard lock{mutex};
+    auto info = coordination->getFileInfo(file_name);
+    if (!info)
+        throw Exception(
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), quoteString(file_name));
+    return std::pair(info->size, info->checksum);
 }
 
-BackupEntryPtr BackupImpl::readFileByChecksum(const UInt128 & checksum) const
+BackupEntryPtr BackupImpl::readFile(const String & file_name) const
+{
+    return readFile(getFileSizeAndChecksum(file_name));
+}
+
+BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) const
 {
     std::lock_guard lock{mutex};
     if (open_mode != OpenMode::READ)
         throw Exception("Backup is not opened for reading", ErrorCodes::LOGICAL_ERROR);
 
-    auto info_opt = coordination->getFileInfoByChecksum(checksum);
+    auto info_opt = coordination->getFileInfo(size_and_checksum);
     if (!info_opt)
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), hexChecksum(checksum));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), formatSizeAndChecksum(size_and_checksum));
 
     const auto & info = *info_opt;
     if (!info.size)
@@ -420,18 +442,8 @@ BackupEntryPtr BackupImpl::readFileByChecksum(const UInt128 & checksum) const
     if (!info.base_size)
     {
         /// Data goes completely from this backup, the base backup isn't used.
-        String data_file_name = (version >= BACKUP_VERSION_USE_CHECKSUMS_AS_DATA_FILE_NAMES) ? hexChecksum(checksum) : info.file_name;
         return std::make_unique<BackupEntryFromBackupImpl>(
-            std::static_pointer_cast<const BackupImpl>(shared_from_this()), info.archive_suffix, data_file_name, info.size, info.checksum);
-    }
-
-    if (info.size < info.base_size)
-    {
-        throw Exception(
-            ErrorCodes::BACKUP_DAMAGED,
-            "Backup {}: Entry {} has its data size less than in the base backup {}: {} < {}",
-            getName(),
-            hexChecksum(checksum), base_backup->getName(), info.size, info.base_size);
+            std::static_pointer_cast<const BackupImpl>(shared_from_this()), info.archive_suffix, info.data_file_name, info.size, info.checksum);
     }
 
     if (!base_backup)
@@ -439,26 +451,18 @@ BackupEntryPtr BackupImpl::readFileByChecksum(const UInt128 & checksum) const
         throw Exception(
             ErrorCodes::NO_BASE_BACKUP,
             "Backup {}: Entry {} is marked to be read from a base backup, but there is no base backup specified",
-            getName(), hexChecksum(checksum));
+            getName(), formatSizeAndChecksum(size_and_checksum));
     }
 
-    if (!base_backup->fileExistsByChecksum(info.base_checksum))
+    if (!base_backup->fileExists(std::pair(info.base_size, info.base_checksum)))
     {
         throw Exception(
             ErrorCodes::WRONG_BASE_BACKUP,
             "Backup {}: Entry {} is marked to be read from a base backup, but doesn't exist there",
-            getName(), hexChecksum(checksum));
+            getName(), formatSizeAndChecksum(size_and_checksum));
     }
 
-    auto base_entry = base_backup->readFileByChecksum(info.base_checksum);
-    auto base_size = base_entry->getSize();
-    if (base_size != info.base_size)
-    {
-        throw Exception(
-            ErrorCodes::WRONG_BASE_BACKUP,
-            "Backup {}: Entry {} has unexpected size in the base backup {}: {} (expected size: {})",
-            getName(), hexChecksum(checksum), base_backup->getName(), base_size, info.base_size);
-    }
+    auto base_entry = base_backup->readFile(std::pair{info.base_size, info.base_checksum});
 
     if (info.size == info.base_size)
     {
@@ -469,9 +473,8 @@ BackupEntryPtr BackupImpl::readFileByChecksum(const UInt128 & checksum) const
     {
         /// The beginning of the data goes from the base backup,
         /// and the ending goes from this backup.
-        String data_file_name = (version >= BACKUP_VERSION_USE_CHECKSUMS_AS_DATA_FILE_NAMES) ? hexChecksum(checksum) : info.file_name;
         return std::make_unique<BackupEntryFromBackupImpl>(
-            static_pointer_cast<const BackupImpl>(shared_from_this()), info.archive_suffix, data_file_name, info.size, info.checksum, std::move(base_entry));
+            static_pointer_cast<const BackupImpl>(shared_from_this()), info.archive_suffix, info.data_file_name, info.size, info.checksum, std::move(base_entry));
     }
 }
 
@@ -482,7 +485,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     if (open_mode != OpenMode::WRITE)
         throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
 
-    if (coordination->getChecksumByFileName(file_name))
+    if (coordination->getFileInfo(file_name))
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", getName(), quoteString(file_name));
 
@@ -500,7 +503,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     /// Maybe we have a copy of this file in the backup already.
     std::optional<UInt128> checksum = entry->getChecksum();
-    if (checksum && coordination->getFileInfoByChecksum(*checksum))
+    if (checksum && coordination->getFileInfo(std::pair{size, *checksum}))
     {
         info.checksum = *checksum;
         coordination->addFileInfo(info);
@@ -561,14 +564,14 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     info.checksum = *checksum;
 
     /// Maybe we have a copy of this file in the backup already.
-    if (coordination->getFileInfoByChecksum(*checksum))
+    if (coordination->getFileInfo(std::pair{size, *checksum}))
     {
         coordination->addFileInfo(info);
         return;
     }
 
     /// Check if a entry with the same checksum exists in the base backup.
-    if (base_backup && !use_base && base_backup->fileExistsByChecksum(*checksum))
+    if (base_backup && !use_base && base_backup->fileExists(std::pair{size, *checksum}))
     {
         /// The entry's data has not changed since the base backup,
         /// but the entry itself has been moved or renamed.
@@ -590,10 +593,11 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         return;
     }
 
-    bool is_new_checksum;
-    coordination->addFileInfo(info, is_new_checksum);
-    if (!is_new_checksum)
-        return; /// We copy data only if it's a new checksum.
+    bool is_data_file_required;
+    info.data_file_name = info.file_name;
+    coordination->addFileInfo(info, is_data_file_required);
+    if (!is_data_file_required)
+        return; /// We copy data only if it's a new combination of size & checksum.
 
     /// Either the entry wasn't exist in the base backup
     /// or the entry has data appended to the end of the data from the base backup.
@@ -608,8 +612,6 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     read_buffer->seek(copy_pos, SEEK_SET);
 
     /// Copy the entry's data after `copy_pos`.
-    String data_file_name = hexChecksum(*checksum);
-
     std::unique_ptr<WriteBuffer> out;
     if (use_archives)
     {
@@ -627,11 +629,11 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
             info.archive_suffix = archive_suffix;
             coordination->updateFileInfo(info);
         }
-        out = getArchiveWriter(info.archive_suffix)->writeFile(data_file_name);
+        out = getArchiveWriter(info.archive_suffix)->writeFile(info.data_file_name);
     }
     else
     {
-        out = writer->writeFile(data_file_name);
+        out = writer->writeFile(info.data_file_name);
     }
 
     copyData(*read_buffer, *out);
@@ -686,7 +688,6 @@ std::shared_ptr<IArchiveWriter> BackupImpl::getArchiveWriter(const String & suff
     return new_archive_writer;
 }
 
-
 void BackupImpl::removeAllFilesAfterFailure()
 {
     Strings files_to_remove;
@@ -703,10 +704,7 @@ void BackupImpl::removeAllFilesAfterFailure()
     {
         files_to_remove.push_back(".backup");
         for (const auto & file_info : coordination->getAllFileInfos())
-        {
-            String data_file_name = hexChecksum(file_info.checksum);
-            files_to_remove.push_back(std::move(data_file_name));
-        }
+            files_to_remove.push_back(file_info.data_file_name);
     }
 
     writer->removeFilesAfterFailure(files_to_remove);
