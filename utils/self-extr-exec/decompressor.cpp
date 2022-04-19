@@ -341,10 +341,10 @@ int main(int argc, char* argv[])
         perror(nullptr);
 
     /// According to documentation `mv` will rename file if it
-    /// doesn't move to other directory. 
-    /// Sometimes `rename` doesn't exist by default and 
-    /// `rename.ul` is set instead. It will lead to errors 
-    /// that can be easily avoided with help of `mv` 
+    /// doesn't move to other directory.
+    /// Sometimes `rename` doesn't exist by default and
+    /// `rename.ul` is set instead. It will lead to errors
+    /// that can be easily avoided with help of `mv`
 
     if (!have_compressed_analoge)
     {
