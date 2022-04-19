@@ -72,9 +72,11 @@ FileCachePtr FileCacheFactory::getOrCreate(const std::string & cache_base_path, 
         caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
         return cache;
     }
-    else
+    else /// set default with ARC
     {
-        return nullptr;
+        auto cache = std::make_shared<LRUFileCache>(cache_base_path, file_cache_settings);
+        caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
+        return cache;
     }
 }
 
