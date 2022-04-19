@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Parsers/formatAST.h>
-#include <Common/renameat2.h>
+#include <Common/atomicRename.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -110,18 +110,19 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
-    auto storage = tryGetTable(table_name, local_context);
+    auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
-    if (storage)
-        storage->dropInnerTableIfAny(no_delay, local_context);
+    if (table)
+        table->dropInnerTableIfAny(no_delay, local_context);
+    else
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
+                        backQuote(database_name), backQuote(table_name));
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
-    StoragePtr table;
     {
         std::unique_lock lock(mutex);
-        table = getTableUnlocked(table_name, lock);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
@@ -158,7 +159,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         return;
     }
 
-    if (exchange && !supportsRenameat2())
+    if (exchange && !supportsAtomicRename())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);

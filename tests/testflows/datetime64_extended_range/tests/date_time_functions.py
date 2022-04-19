@@ -15,8 +15,7 @@ from datetime64_extended_range.tests.common import *
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toTimeZone("1.0")
 )
 def to_time_zone(self):
-    """Check the toTimeZone() function with DateTime64 extended range.
-    """
+    """Check the toTimeZone() function with DateTime64 extended range."""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
@@ -40,8 +39,7 @@ def to_time_zone(self):
 
 @TestOutline
 def to_date_part(self, py_func, ch_func):
-    """Check the toYear/toMonth/toQuarter functions with DateTime64 extended range.
-    """
+    """Check the toYear/toMonth/toQuarter functions with DateTime64 extended range."""
     stress = self.context.stress
 
     for year in years_range(stress):
@@ -56,9 +54,13 @@ def to_date_part(self, py_func, ch_func):
                         with Given("I compute expected output using pytz"):
                             with By(f"localizing {dt} using {tz1} timezone"):
                                 time_tz1 = pytz.timezone(tz1).localize(dt)
-                            with And(f"converting {tz1} local datetime {dt} to {tz2} timezone"):
+                            with And(
+                                f"converting {tz1} local datetime {dt} to {tz2} timezone"
+                            ):
                                 time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
-                            with And(f"calling the '{py_func}' method of the datetime object to get expected result"):
+                            with And(
+                                f"calling the '{py_func}' method of the datetime object to get expected result"
+                            ):
                                 result = eval(f"(time_tz2.{py_func}")
                             expected = f"{result}"
                         with And(f"Forming a {ch_func} ClickHouse query"):
@@ -71,7 +73,7 @@ def to_date_part(self, py_func, ch_func):
 @TestScenario
 @Requirements(
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toYear("1.0"),
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeYearNum("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeYearNum("1.0"),
 )
 def to_year(self):
     """Check the toYear() and toRelativeYearNum() [which is just an alias for toYear]
@@ -81,12 +83,9 @@ def to_year(self):
 
 
 @TestScenario
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toMonth("1.0")
-)
+@Requirements(RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toMonth("1.0"))
 def to_month(self):
-    """Check the toMonth() function with DateTime64 extended range.
-    """
+    """Check the toMonth() function with DateTime64 extended range."""
     to_date_part(py_func="month)", ch_func="toMonth")
 
 
@@ -106,8 +105,7 @@ def to_quarter(self):
 
 @TestOutline
 def to_day_of(self, py_func, ch_func):
-    """Check the toDayOf....() functions with DateTime64 extended range.
-    """
+    """Check the toDayOf....() functions with DateTime64 extended range."""
     stress = self.context.stress
 
     for year in years_range(stress):
@@ -138,8 +136,7 @@ def to_day_of(self, py_func, ch_func):
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toDayOfYear("1.0")
 )
 def to_day_of_year(self):
-    """Check toDayOfYear() function with DateTime64 extended range date time.
-    """
+    """Check toDayOfYear() function with DateTime64 extended range date time."""
     to_day_of(py_func="tm_yday", ch_func="toDayOfYear")
 
 
@@ -148,8 +145,7 @@ def to_day_of_year(self):
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toDayOfMonth("1.0")
 )
 def to_day_of_month(self):
-    """Check toDayOfMonth() function with DateTime64 extended range date time.
-    """
+    """Check toDayOfMonth() function with DateTime64 extended range date time."""
     to_day_of(py_func="tm_mday", ch_func="toDayOfMonth")
 
 
@@ -158,15 +154,13 @@ def to_day_of_month(self):
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toDayOfWeek("1.0")
 )
 def to_day_of_week(self):
-    """Check toDayOfWeek() function with DateTime64 extended range date time.
-    """
+    """Check toDayOfWeek() function with DateTime64 extended range date time."""
     to_day_of(py_func="tm_wday", ch_func="toDayOfWeek")
 
 
 @TestOutline
 def to_time_part(self, py_func, ch_func):
-    """Check the functions like toHour/toMinute/toSecond with DateTime64 extended range.
-    """
+    """Check the functions like toHour/toMinute/toSecond with DateTime64 extended range."""
     stress = self.context.stress
 
     for year in years_range(stress):
@@ -191,12 +185,9 @@ def to_time_part(self, py_func, ch_func):
 
 
 @TestScenario
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toHour("1.0")
-)
+@Requirements(RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toHour("1.0"))
 def to_hour(self):
-    """Check toHour() function with DateTime64 extended range date time.
-    """
+    """Check toHour() function with DateTime64 extended range date time."""
     to_time_part(py_func="hour", ch_func="toHour")
 
 
@@ -205,8 +196,7 @@ def to_hour(self):
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toMinute("1.0")
 )
 def to_minute(self):
-    """Check toMinute() function with DateTime64 extended range date time.
-    """
+    """Check toMinute() function with DateTime64 extended range date time."""
     to_time_part(py_func="minute", ch_func="toMinute")
 
 
@@ -215,8 +205,7 @@ def to_minute(self):
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toSecond("1.0")
 )
 def to_second(self):
-    """Check toSecond() function with DateTime64 extended range date time.
-    """
+    """Check toSecond() function with DateTime64 extended range date time."""
     to_time_part(py_func="second", ch_func="toSecond")
 
 
@@ -225,8 +214,7 @@ def to_second(self):
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toUnixTimestamp("1.0")
 )
 def to_unix_timestamp(self):
-    """Check the toUnixTimestamp() function with DateTime64 extended range
-    """
+    """Check the toUnixTimestamp() function with DateTime64 extended range"""
     stress = self.context.stress
 
     for year in years_range(stress):
@@ -277,7 +265,7 @@ def to_start_of_year(self):
 
 def iso_year_start(dt):
     """Helper to find the beginning of iso year."""
-    dt_s = datetime.datetime(dt.year-1, 12, 23, 0, 0, 0)
+    dt_s = datetime.datetime(dt.year - 1, 12, 23, 0, 0, 0)
     while dt_s.isocalendar()[0] != dt.year:
         dt_s += datetime.timedelta(days=1)
     return dt_s
@@ -306,7 +294,10 @@ def to_start_of_iso_year(self):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                             query = f"SELECT toStartOfISOYear(toDateTime64('{dt_str}', 0, '{tz}'))"
                         with Then("I execute toStartOfISOYear query"):
-                            exec_query(request=query, expected=f"{expected.strftime('%Y-%m-%d')}")
+                            exec_query(
+                                request=query,
+                                expected=f"{expected.strftime('%Y-%m-%d')}",
+                            )
 
 
 @TestScenario
@@ -331,7 +322,9 @@ def to_start_of_quarter(self):
                         with By("computing expected result with python"):
                             time_tz1 = pytz.timezone(tz1).localize(dt)
                             time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
-                            expected = f"{year}-{str(time_tz2.month//3 * 3 + 1).zfill(2)}-01"
+                            expected = (
+                                f"{year}-{str(time_tz2.month//3 * 3 + 1).zfill(2)}-01"
+                            )
                         with And("forming ClickHouse query"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                             query = f"SELECT toStartOfQuarter(toDateTime64('{dt_str}', 0, '{tz1}'), '{tz2}')"
@@ -391,7 +384,13 @@ def to_monday(self):
                         with By("computing expected result with python"):
                             time_tz1 = pytz.timezone(tz1).localize(dt)
                             time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
-                            expected_date = time_tz2 + datetime.timedelta(days=(-dt.weekday() if dt.weekday() <= 3 else 7 - dt.weekday()))
+                            expected_date = time_tz2 + datetime.timedelta(
+                                days=(
+                                    -dt.weekday()
+                                    if dt.weekday() <= 3
+                                    else 7 - dt.weekday()
+                                )
+                            )
                             expected = f"{expected_date.strftime('%Y-%m-%d')}"
                         with And("forming ClickHouse query"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -416,13 +415,21 @@ def to_start_of_week(self):
         with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
-                    for mode in (0, 1):   # mode - week beginning, either 0 (Sunday) or 1 (Monday)
+                    for mode in (
+                        0,
+                        1,
+                    ):  # mode - week beginning, either 0 (Sunday) or 1 (Monday)
                         with Step(f"{dt} {tz1} -> {tz2}"):
                             with By("computing expected result with python"):
                                 time_tz1 = pytz.timezone(tz1).localize(dt)
                                 time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
                                 expected_date = time_tz2 + datetime.timedelta(
-                                        days=(mode - dt.weekday() if dt.weekday() <= (3+mode) else (mode + 7) - dt.weekday()))
+                                    days=(
+                                        mode - dt.weekday()
+                                        if dt.weekday() <= (3 + mode)
+                                        else (mode + 7) - dt.weekday()
+                                    )
+                                )
                                 expected = f"{expected_date.strftime('%Y-%m-%d')}"
                             with And("forming ClickHouse query"):
                                 dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -520,7 +527,9 @@ def to_start_of_second(self):
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
@@ -543,7 +552,9 @@ def to_start_of_minutes_interval(self, interval, func):
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
@@ -551,17 +562,23 @@ def to_start_of_minutes_interval(self, interval, func):
                     with Step(f"{dt} {tz}"):
                         with By("Computing expected result using python"):
                             mins = dt.minute // interval * interval
-                            expected = f"{dt.strftime('%Y-%m-%d %H:')}{str(mins).zfill(2)}:00"
+                            expected = (
+                                f"{dt.strftime('%Y-%m-%d %H:')}{str(mins).zfill(2)}:00"
+                            )
                         with And(f"Forming a {func} query to ClickHouse"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-                            query = f"SELECT {func}(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            query = (
+                                f"SELECT {func}(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            )
                         with Then(f"I execute {func} query"):
                             exec_query(request=query, expected=f"{expected}")
 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfFiveMinute("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfFiveMinute(
+        "1.0"
+    )
 )
 def to_start_of_five_minute(self):
     """Check the toStartOfFiveMinute with DateTime64 extended range."""
@@ -570,7 +587,9 @@ def to_start_of_five_minute(self):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfTenMinutes("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfTenMinutes(
+        "1.0"
+    )
 )
 def to_start_of_ten_minutes(self):
     """Check the toStartOfTenMinutes with DateTime64 extended range."""
@@ -579,7 +598,9 @@ def to_start_of_ten_minutes(self):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfFifteenMinutes("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfFifteenMinutes(
+        "1.0"
+    )
 )
 def to_start_of_fifteen_minutes(self):
     """Check the toStartOfFifteenMinutes with DateTime64 extended range."""
@@ -602,13 +623,21 @@ def to_start_of_interval_helper(dt: datetime.datetime, interval_type, interval_v
     :param interval_type: interval type selector, String
     :param interval_value: interval size, int
     """
-    intervals_in_seconds = {"SECOND": 1, "MINUTE": 60, "HOUR": 3600, "DAY": 68400, "WEEK": 604800}
+    intervals_in_seconds = {
+        "SECOND": 1,
+        "MINUTE": 60,
+        "HOUR": 3600,
+        "DAY": 68400,
+        "WEEK": 604800,
+    }
     zero_datetime = datetime.datetime(1970, 1, 1, 0, 0, 0)
     delta = dt - zero_datetime
 
     if interval_type in intervals_in_seconds.keys():
         divisor = interval_value * intervals_in_seconds[interval_type]
-        retval = (zero_datetime + datetime.timedelta(seconds=(delta.seconds // divisor * divisor)))
+        retval = zero_datetime + datetime.timedelta(
+            seconds=(delta.seconds // divisor * divisor)
+        )
         if interval_type == "WEEK":
             return retval.strftime("%Y-%m-%d")
         return retval.strftime("%Y-%m-%d %H:%M:%S")
@@ -616,16 +645,24 @@ def to_start_of_interval_helper(dt: datetime.datetime, interval_type, interval_v
     elif interval_type == "MONTH":
         diff = (dt.year - zero_datetime.year) * 12 + (dt.month - zero_datetime.month)
         result_diff = diff // interval_value * interval_value
-        return (zero_datetime + rd.relativedelta(months=result_diff)).strftime("%Y-%m-%d")
+        return (zero_datetime + rd.relativedelta(months=result_diff)).strftime(
+            "%Y-%m-%d"
+        )
 
     elif interval_type == "QUARTER":
-        diff = (dt.year - zero_datetime.year) * 4 + (dt.month // 4 - zero_datetime.month // 4)
+        diff = (dt.year - zero_datetime.year) * 4 + (
+            dt.month // 4 - zero_datetime.month // 4
+        )
         result_diff = diff // interval_value * interval_value
-        return (zero_datetime + rd.relativedelta(months=result_diff*4)).strftime("%Y-%m-%d")
+        return (zero_datetime + rd.relativedelta(months=result_diff * 4)).strftime(
+            "%Y-%m-%d"
+        )
 
     elif interval_type == "YEAR":
         result_diff = (dt.year - zero_datetime.year) // interval_value * interval_value
-        return (zero_datetime + rd.relativedelta(years=result_diff)).strftime("%Y-%m-%d")
+        return (zero_datetime + rd.relativedelta(years=result_diff)).strftime(
+            "%Y-%m-%d"
+        )
 
 
 @TestScenario
@@ -633,13 +670,20 @@ def to_start_of_interval_helper(dt: datetime.datetime, interval_type, interval_v
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfInterval("1.0")
 )
 def to_start_of_interval(self):
-    """Check the toStartOfInterval with DateTime64 extended range.
-    """
+    """Check the toStartOfInterval with DateTime64 extended range."""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
-    intervals_testing_ranges = {"SECOND": range(1, 15), "MINUTE": range(1, 15), "HOUR": range(1, 10), "DAY": (1, 5, 10),
-                                "WEEK": range(1, 5), "MONTH": range(1, 6), "QUARTER": range(1, 4), "YEAR": range(1, 5)}
+    intervals_testing_ranges = {
+        "SECOND": range(1, 15),
+        "MINUTE": range(1, 15),
+        "HOUR": range(1, 10),
+        "DAY": (1, 5, 10),
+        "WEEK": range(1, 5),
+        "MONTH": range(1, 6),
+        "QUARTER": range(1, 4),
+        "YEAR": range(1, 5),
+    }
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
@@ -652,8 +696,12 @@ def to_start_of_interval(self):
                         for value in intervals_testing_ranges[interval]:
                             with Step(f"{dt} {tz} {interval}: {value}"):
                                 with By("Computing expected result using python"):
-                                    expected = to_start_of_interval_helper(dt, interval, value)
-                                with And(f"Forming a toStartOfInterval() query to ClickHouse"):
+                                    expected = to_start_of_interval_helper(
+                                        dt, interval, value
+                                    )
+                                with And(
+                                    f"Forming a toStartOfInterval() query to ClickHouse"
+                                ):
                                     dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                                     query = f"SELECT toStartOfInterval(toDateTime64('{dt_str}', 0, '{tz}'), INTERVAL {value} {interval})"
                                 with Then(f"I execute toStartOfInterval() query"):
@@ -668,7 +716,9 @@ def to_iso(self, func, isocalendar_pos):
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
@@ -678,7 +728,9 @@ def to_iso(self, func, isocalendar_pos):
                             expected = f"{dt.isocalendar()[isocalendar_pos]}"
                         with And("forming ClickHouse query"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-                            query = f"SELECT {func}(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            query = (
+                                f"SELECT {func}(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            )
                         with Then("I execute query"):
                             exec_query(request=query, expected=f"{expected}")
 
@@ -702,9 +754,7 @@ def to_iso_week(self):
 
 
 @TestScenario
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toTime("1.0")
-)
+@Requirements(RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toTime("1.0"))
 def to_time(self):
     """Check the toTime function with DateTime64 extended range."""
     stress = self.context.stress
@@ -712,7 +762,9 @@ def to_time(self):
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
@@ -722,14 +774,18 @@ def to_time(self):
                             expected = f"1970-01-02 {dt.strftime('%H:%M:%S')}"
                         with And("forming ClickHouse query"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-                            query = f"SELECT toTime(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            query = (
+                                f"SELECT toTime(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            )
                         with Then("I execute query"):
                             exec_query(request=query, expected=f"{expected}")
 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeQuarterNum("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeQuarterNum(
+        "1.0"
+    )
 )
 def to_relative_quarter_num(self):
     """Check the toRelativeQuarterNum function with DateTime64 extended range."""
@@ -738,7 +794,9 @@ def to_relative_quarter_num(self):
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
@@ -764,14 +822,23 @@ def to_relative_week_num(self):
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with When(f"{dt} {tz}"):
                         with By("computing expected result using python"):
-                            week_num = ((dt + datetime.timedelta(days=8) - datetime.timedelta(days=dt.weekday())) - datetime.datetime(1970, 1, 1, 0, 0, 0)).days // 7
+                            week_num = (
+                                (
+                                    dt
+                                    + datetime.timedelta(days=8)
+                                    - datetime.timedelta(days=dt.weekday())
+                                )
+                                - datetime.datetime(1970, 1, 1, 0, 0, 0)
+                            ).days // 7
                             expected = f"{week_num}"
                         with And("forming ClickHouse query"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -791,7 +858,9 @@ def to_relative_month_num(self):
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
@@ -818,7 +887,9 @@ def to_relative_day_num(self):
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
@@ -844,18 +915,24 @@ def to_relative_time(self, divisor, func):
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         with When(f"I check each of the datetimes in {year}"):
             for dt in datetimes:
                 for tz in timezones:
                     with When(f"{dt} {tz}"):
                         with By("Computing the expected result using python"):
-                            result = (dt - datetime.datetime(1970, 1, 1, 0, 0, 0)).total_seconds() // divisor
+                            result = (
+                                dt - datetime.datetime(1970, 1, 1, 0, 0, 0)
+                            ).total_seconds() // divisor
                             expected = f"{result}"
                         with And(f"Forming a {func} query to ClickHouse"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-                            query = f"SELECT {func}(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            query = (
+                                f"SELECT {func}(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            )
                         with Then(f"I execute {func} query"):
                             exec_query(request=query, expected=f"{expected}")
 
@@ -873,7 +950,9 @@ def to_relative_hour_num(self):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeMinuteNum("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeMinuteNum(
+        "1.0"
+    )
 )
 def to_relative_minute_num(self):
     """Check the toRelativeMinuteNum function
@@ -884,7 +963,9 @@ def to_relative_minute_num(self):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeSecondNum("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeSecondNum(
+        "1.0"
+    )
 )
 def to_relative_second_num(self):
     """Check the toRelativeSecondNum function
@@ -904,72 +985,114 @@ def to_week_compute_expected(dt: datetime.datetime, mode: int, ret_year=False):
 
     while ex.weekday() != 0:
         ex += datetime.timedelta(days=1)
-    first_monday = ex.day-1
+    first_monday = ex.day - 1
 
     ex = datetime.datetime(year, 1, 1)
     while ex.weekday() != 6:
         ex += datetime.timedelta(days=1)
-    first_sunday = ex.day-1
+    first_sunday = ex.day - 1
 
     if mode == 0:
         # First day of week: Sunday, Week 1 is the first week with Sunday, range 0-53
-        expected = (dt - datetime.datetime(year, 1, 1) - datetime.timedelta(days=first_sunday)).days // 7 + 1
+        expected = (
+            dt - datetime.datetime(year, 1, 1) - datetime.timedelta(days=first_sunday)
+        ).days // 7 + 1
 
     elif mode == 1:
         # First day of week: Monday, Week 1 is the first week containing 4 or more days, range 0-53
         if j1_weekday <= 3:
-            expected = (dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=7+j1_weekday)).days // 7
+            expected = (
+                dt
+                - datetime.datetime(year, 1, 1)
+                + datetime.timedelta(days=7 + j1_weekday)
+            ).days // 7
         else:
-            expected = (dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=j1_weekday)).days // 7
+            expected = (
+                dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=j1_weekday)
+            ).days // 7
 
     elif mode == 2:
         # First day of week: Sunday, Week 1 is the first week with Sunday, range 1-53
-        expected = (dt - datetime.datetime(year, 1, 1) - datetime.timedelta(days=first_sunday)).days // 7 + 1
+        expected = (
+            dt - datetime.datetime(year, 1, 1) - datetime.timedelta(days=first_sunday)
+        ).days // 7 + 1
         if expected == 0:
-            return to_week_compute_expected(datetime.datetime(dt.year-1, 12, 31), 2)
+            return to_week_compute_expected(datetime.datetime(dt.year - 1, 12, 31), 2)
 
     elif mode == 3:
         # First day of week: Monday, Week 1 is the first week containing 4 or more days, range 1-53
         if j1_weekday <= 3:
-            expected = (dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=7+j1_weekday)).days // 7
+            expected = (
+                dt
+                - datetime.datetime(year, 1, 1)
+                + datetime.timedelta(days=7 + j1_weekday)
+            ).days // 7
         else:
-            expected = (dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=j1_weekday)).days // 7
+            expected = (
+                dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=j1_weekday)
+            ).days // 7
         if expected == 0:
-            return to_week_compute_expected(datetime.datetime(dt.year-1, 12, 31), 3)
+            return to_week_compute_expected(datetime.datetime(dt.year - 1, 12, 31), 3)
 
     elif mode == 4:
         # First day of week: Sunday, Week 1 is the first week containing 4 or more days, range 0-53
         if j1_weekday <= 3:
-            expected = (dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=8+j1_weekday)).days // 7
+            expected = (
+                dt
+                - datetime.datetime(year, 1, 1)
+                + datetime.timedelta(days=8 + j1_weekday)
+            ).days // 7
         else:
-            expected = (dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=j1_weekday+1)).days // 7
+            expected = (
+                dt
+                - datetime.datetime(year, 1, 1)
+                + datetime.timedelta(days=j1_weekday + 1)
+            ).days // 7
 
     elif mode == 5:
         # First day of week: Monday, Week 1 is the first week with a Monday, range 0-53
-        expected = (dt - datetime.datetime(year, 1, 1) - datetime.timedelta(days=first_monday)).days // 7 + 1
+        expected = (
+            dt - datetime.datetime(year, 1, 1) - datetime.timedelta(days=first_monday)
+        ).days // 7 + 1
 
     elif mode == 6:
         # First day of week: Sunday, Week 1 is the first week containing 4 or more days, range 1-53
         if j1_weekday <= 3:
-            expected = (dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=8+j1_weekday)).days // 7
+            expected = (
+                dt
+                - datetime.datetime(year, 1, 1)
+                + datetime.timedelta(days=8 + j1_weekday)
+            ).days // 7
         else:
-            expected = (dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=j1_weekday+1)).days // 7
+            expected = (
+                dt
+                - datetime.datetime(year, 1, 1)
+                + datetime.timedelta(days=j1_weekday + 1)
+            ).days // 7
         if expected == 0:
-            return to_week_compute_expected(datetime.datetime(dt.year-1, 12, 31), 6)
+            return to_week_compute_expected(datetime.datetime(dt.year - 1, 12, 31), 6)
 
     elif mode == 7:
         # First day of week: Monday, Week 1 is the first week with a Monday, range 1-53
-        expected = (dt - datetime.datetime(year, 1, 1) - datetime.timedelta(days=first_monday)).days // 7 + 1
+        expected = (
+            dt - datetime.datetime(year, 1, 1) - datetime.timedelta(days=first_monday)
+        ).days // 7 + 1
         if expected == 0:
-            return to_week_compute_expected(datetime.datetime(dt.year-1, 12, 31), 7)
+            return to_week_compute_expected(datetime.datetime(dt.year - 1, 12, 31), 7)
 
     elif mode == 8:
         # First day of week: Sunday, Week 1 is the week containing January 1, range 1-53
-        expected = (dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=(j1_weekday+1)%7)).days // 7 + 1
+        expected = (
+            dt
+            - datetime.datetime(year, 1, 1)
+            + datetime.timedelta(days=(j1_weekday + 1) % 7)
+        ).days // 7 + 1
 
     elif mode == 9:
         # First day of week: Monday, Week 1 is the week containing January 1, range 1-53
-        expected = (dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=j1_weekday%7)).days // 7 + 1
+        expected = (
+            dt - datetime.datetime(year, 1, 1) + datetime.timedelta(days=j1_weekday % 7)
+        ).days // 7 + 1
 
     return f"{dt.year}{str(expected).zfill(2)}" if ret_year else f"{expected}"
 
@@ -996,7 +1119,9 @@ def to_week_year_week(self, clh_func, ret_year):
                     for mode in range(0, 10):
                         with When(f"{dt} {tz}, mode={mode}"):
                             with By("Computing expected output using python"):
-                                expected = to_week_compute_expected(dt=dt, mode=mode, ret_year=ret_year)
+                                expected = to_week_compute_expected(
+                                    dt=dt, mode=mode, ret_year=ret_year
+                                )
                             with And(f"Forming a {clh_func} query"):
                                 dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                                 query = f"SELECT {clh_func}(toDateTime64('{dt_str}', 0, '{tz}'), {mode})"
@@ -1005,9 +1130,7 @@ def to_week_year_week(self, clh_func, ret_year):
 
 
 @TestScenario
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toWeek("1.0")
-)
+@Requirements(RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toWeek("1.0"))
 def to_week(self):
     """Check the toWeek function with DateTime64 extended range."""
     to_week_year_week(clh_func="toWeek", ret_year=False)
@@ -1045,7 +1168,9 @@ def to_yyyymm(self):
                             expected = f"{dt.strftime('%Y%m')}"
                         with And("forming ClickHouse query"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-                            query = f"SELECT toYYYYMM(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            query = (
+                                f"SELECT toYYYYMM(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            )
                         with Then("I execute query"):
                             exec_query(request=query, expected=f"{expected}")
 
@@ -1074,7 +1199,11 @@ def to_yyyymmdd(self):
                         with And("forming ClickHouse query"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                             query = f"SELECT toYYYYMMDD(toDateTime64('{dt_str}', 0, '{tz}'))"
-                        with Then("I execute query", description=f"expected {expected}", flags=TE):
+                        with Then(
+                            "I execute query",
+                            description=f"expected {expected}",
+                            flags=TE,
+                        ):
                             exec_query(request=query, expected=f"{expected}")
 
 
@@ -1107,9 +1236,7 @@ def to_yyyymmddhhmmss(self):
 
 
 @TestScenario
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_now("1.0")
-)
+@Requirements(RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_now("1.0"))
 def now(self):
     """Check the now() conversion to DateTime64 extended range.
     In this test, we cannot assure that pytz now() and ClickHouse now() will be executed at the same time, so we need
@@ -1127,9 +1254,13 @@ def now(self):
             with When("I execute query and format its result to string"):
                 r = self.context.node.query(f"SELECT toDateTime64(now(), 0, '{tz}')")
                 query_result = r.output
-                received_dt = datetime.datetime.strptime(query_result, '%Y-%m-%d %H:%M:%S')
+                received_dt = datetime.datetime.strptime(
+                    query_result, "%Y-%m-%d %H:%M:%S"
+                )
 
-            with Then("I compute the difference between ClickHouse query result and pytz result"):
+            with Then(
+                "I compute the difference between ClickHouse query result and pytz result"
+            ):
                 dt = dt.replace(tzinfo=None)
                 if dt < received_dt:
                     diff = (received_dt - dt).total_seconds()
@@ -1141,12 +1272,9 @@ def now(self):
 
 
 @TestScenario
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_today("1.0")
-)
+@Requirements(RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_today("1.0"))
 def today(self):
-    """Check the today() conversion to DateTime64 extended range.
-    """
+    """Check the today() conversion to DateTime64 extended range."""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
@@ -1159,9 +1287,13 @@ def today(self):
             with When("I execute query and format its result to string"):
                 r = self.context.node.query(f"SELECT toDateTime64(today(), 0, '{tz}')")
                 query_result = r.output
-                received_dt = datetime.datetime.strptime(query_result, '%Y-%m-%d %H:%M:%S')
+                received_dt = datetime.datetime.strptime(
+                    query_result, "%Y-%m-%d %H:%M:%S"
+                )
 
-            with Then("I compute the difference between ClickHouse query result and pytz result"):
+            with Then(
+                "I compute the difference between ClickHouse query result and pytz result"
+            ):
                 dt = dt.replace(tzinfo=None)
                 if dt < received_dt:
                     diff = (received_dt - dt).total_seconds()
@@ -1177,8 +1309,7 @@ def today(self):
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_yesterday("1.0")
 )
 def yesterday(self):
-    """Check the yesterday() conversion to DateTime64 extended range.
-    """
+    """Check the yesterday() conversion to DateTime64 extended range."""
 
     stress = self.context.stress
     timezones = timezones_range(stress)
@@ -1190,11 +1321,17 @@ def yesterday(self):
 
         with Step(f"{dt} {tz}"):
             with When("I execute query and format its result to string"):
-                r = self.context.node.query(f"SELECT toDateTime64(yesterday(), 0, '{tz}')")
+                r = self.context.node.query(
+                    f"SELECT toDateTime64(yesterday(), 0, '{tz}')"
+                )
                 query_result = r.output
-                received_dt = datetime.datetime.strptime(query_result, '%Y-%m-%d %H:%M:%S')
+                received_dt = datetime.datetime.strptime(
+                    query_result, "%Y-%m-%d %H:%M:%S"
+                )
 
-            with Then("I compute the difference between ClickHouse query result and pytz result"):
+            with Then(
+                "I compute the difference between ClickHouse query result and pytz result"
+            ):
                 dt = dt.replace(tzinfo=None)
                 dt -= datetime.timedelta(days=1)
                 if dt < received_dt:
@@ -1207,7 +1344,9 @@ def yesterday(self):
 
 
 @TestOutline
-def add_subtract_functions(self, clh_func, py_key, test_range, years_padding=(1, 1), modifier=1, mult=1):
+def add_subtract_functions(
+    self, clh_func, py_key, test_range, years_padding=(1, 1), modifier=1, mult=1
+):
     """Check the addYears/addMonths/addWeeks/addDays/addHours/addMinutes/addSeconds with DateTime64 extended range.
     Calculating expected result using eval() to avoid writing 9000+ comparisons and just parse string as object field name.
     :param self: self
@@ -1233,7 +1372,9 @@ def add_subtract_functions(self, clh_func, py_key, test_range, years_padding=(1,
                             with By("converting datetime to string"):
                                 dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                             with And("computing the expected result using pytz"):
-                                dt_new = dt + rd.relativedelta(**{py_key: mult*incr*modifier})
+                                dt_new = dt + rd.relativedelta(
+                                    **{py_key: mult * incr * modifier}
+                                )
                                 tzone = pytz.timezone(tz)
                                 dt_norm = tzone.normalize(tzone.localize(dt_new))
                                 expected = f"{dt_norm.strftime('%Y-%m-%d %H:%M:%S')}"
@@ -1249,7 +1390,9 @@ def add_subtract_functions(self, clh_func, py_key, test_range, years_padding=(1,
 )
 def add_years(self):
     """Check the addYears function with DateTime64 extended range."""
-    add_subtract_functions(clh_func="addYears", py_key="years", test_range=(0, 1), years_padding=(0, 1))
+    add_subtract_functions(
+        clh_func="addYears", py_key="years", test_range=(0, 1), years_padding=(0, 1)
+    )
 
 
 @TestScenario
@@ -1258,7 +1401,13 @@ def add_years(self):
 )
 def subtract_years(self):
     """Check the subtractYears function with DateTime64 extended range."""
-    add_subtract_functions(clh_func="subtractYears", py_key="years", test_range=(0, 1), years_padding=(1, 0), mult=-1)
+    add_subtract_functions(
+        clh_func="subtractYears",
+        py_key="years",
+        test_range=(0, 1),
+        years_padding=(1, 0),
+        mult=-1,
+    )
 
 
 @TestScenario
@@ -1267,7 +1416,13 @@ def subtract_years(self):
 )
 def add_quarters(self):
     """Check the addQuarters function with DateTime64 extended range."""
-    add_subtract_functions(clh_func="addQuarters", py_key="months", test_range=range(1, 5), years_padding=(0, 1), modifier=3)
+    add_subtract_functions(
+        clh_func="addQuarters",
+        py_key="months",
+        test_range=range(1, 5),
+        years_padding=(0, 1),
+        modifier=3,
+    )
 
 
 @TestScenario
@@ -1276,7 +1431,14 @@ def add_quarters(self):
 )
 def subtract_quarters(self):
     """Check the subtractQuarters function with DateTime64 extended range."""
-    add_subtract_functions(clh_func="subtractQuarters", py_key="months", test_range=range(1, 5), years_padding=(1, 0), modifier=3, mult=-1)
+    add_subtract_functions(
+        clh_func="subtractQuarters",
+        py_key="months",
+        test_range=range(1, 5),
+        years_padding=(1, 0),
+        modifier=3,
+        mult=-1,
+    )
 
 
 @TestScenario
@@ -1285,7 +1447,12 @@ def subtract_quarters(self):
 )
 def add_months(self):
     """Check the addMonths function with DateTime64 extended range."""
-    add_subtract_functions(clh_func="addMonths", py_key="months", test_range=range(1, 13), years_padding=(0, 1))
+    add_subtract_functions(
+        clh_func="addMonths",
+        py_key="months",
+        test_range=range(1, 13),
+        years_padding=(0, 1),
+    )
 
 
 @TestScenario
@@ -1294,7 +1461,13 @@ def add_months(self):
 )
 def subtract_months(self):
     """Check the subtractMonths function with DateTime64 extended range."""
-    add_subtract_functions(clh_func="subtractMonths", py_key="months", test_range=range(1, 13), years_padding=(1, 0), mult=-1)
+    add_subtract_functions(
+        clh_func="subtractMonths",
+        py_key="months",
+        test_range=range(1, 13),
+        years_padding=(1, 0),
+        mult=-1,
+    )
 
 
 @TestScenario
@@ -1303,7 +1476,13 @@ def subtract_months(self):
 )
 def add_weeks(self):
     """Check the addWeeks function with DateTime64 extended range."""
-    add_subtract_functions(clh_func="addWeeks", py_key="days", test_range=range(6), years_padding=(0, 1), modifier=7)
+    add_subtract_functions(
+        clh_func="addWeeks",
+        py_key="days",
+        test_range=range(6),
+        years_padding=(0, 1),
+        modifier=7,
+    )
 
 
 @TestScenario
@@ -1312,14 +1491,18 @@ def add_weeks(self):
 )
 def subtract_weeks(self):
     """Check the subtractWeeks function with DateTime64 extended range."""
-    add_subtract_functions(clh_func="subtractWeeks", py_key="days", test_range=range(6), years_padding=(1, 0), modifier=7, mult=-1)
-
+    add_subtract_functions(
+        clh_func="subtractWeeks",
+        py_key="days",
+        test_range=range(6),
+        years_padding=(1, 0),
+        modifier=7,
+        mult=-1,
+    )
 
 
 @TestScenario
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_addDays("1.0")
-)
+@Requirements(RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_addDays("1.0"))
 def add_days(self):
     """Check the addDays function work with DateTime64 extended range"""
     add_subtract_functions(clh_func="addDays", py_key="days", test_range=range(50))
@@ -1331,7 +1514,9 @@ def add_days(self):
 )
 def subtract_days(self):
     """Check the subtractDays function work with DateTime64 extended range"""
-    add_subtract_functions(clh_func="subtractDays", py_key="days", test_range=range(50), mult=-1)
+    add_subtract_functions(
+        clh_func="subtractDays", py_key="days", test_range=range(50), mult=-1
+    )
 
 
 @TestScenario
@@ -1349,7 +1534,9 @@ def add_hours(self):
 )
 def subtract_hours(self):
     """Check the subtractHours function work with DateTime64 extended range"""
-    add_subtract_functions(clh_func="subtractHours", py_key="hours", test_range=range(25), mult=-1)
+    add_subtract_functions(
+        clh_func="subtractHours", py_key="hours", test_range=range(25), mult=-1
+    )
 
 
 @TestScenario
@@ -1358,7 +1545,9 @@ def subtract_hours(self):
 )
 def add_minutes(self):
     """Check the addMinutes function work with DateTime64 extended range"""
-    add_subtract_functions(clh_func="addMinutes", py_key="minutes", test_range=range(60))
+    add_subtract_functions(
+        clh_func="addMinutes", py_key="minutes", test_range=range(60)
+    )
 
 
 @TestScenario
@@ -1367,7 +1556,9 @@ def add_minutes(self):
 )
 def subtract_minutes(self):
     """Check the subtractMinutes function work with DateTime64 extended range"""
-    add_subtract_functions(clh_func="subtractMinutes", py_key="minutes", test_range=range(60), mult=-1)
+    add_subtract_functions(
+        clh_func="subtractMinutes", py_key="minutes", test_range=range(60), mult=-1
+    )
 
 
 @TestScenario
@@ -1376,7 +1567,9 @@ def subtract_minutes(self):
 )
 def add_seconds(self):
     """Check the addSeconds function work with DateTime64 extended range"""
-    add_subtract_functions(clh_func="addSeconds", py_key="seconds", test_range=range(60))
+    add_subtract_functions(
+        clh_func="addSeconds", py_key="seconds", test_range=range(60)
+    )
 
 
 @TestScenario
@@ -1385,12 +1578,13 @@ def add_seconds(self):
 )
 def subtract_seconds(self):
     """Check the subtractSeconds function work with DateTime64 extended range"""
-    add_subtract_functions(clh_func="subtractSeconds", py_key="seconds", test_range=range(60), mult=-1)
+    add_subtract_functions(
+        clh_func="subtractSeconds", py_key="seconds", test_range=range(60), mult=-1
+    )
 
 
 def date_diff_helper(dt1, dt2: datetime.datetime, unit: str):
-    """Helper for computing dateDiff expected result using Python.
-    """
+    """Helper for computing dateDiff expected result using Python."""
     delta = dt2 - dt1
     if unit == "second":
         return delta.total_seconds()
@@ -1415,10 +1609,18 @@ def date_diff_helper(dt1, dt2: datetime.datetime, unit: str):
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_dateDiff("1.0")
 )
 def date_diff(self):
-    """Check how dateDiff works with DateTime64 extended range.
-    """
+    """Check how dateDiff works with DateTime64 extended range."""
     stress = self.context.stress
-    compare_units = ("second", "minute", "hour", "day", "week", "month", "quarter", "year")
+    compare_units = (
+        "second",
+        "minute",
+        "hour",
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year",
+    )
     timezones = timezones_range(stress=stress)
 
     with Background("I select a set of datetimes to be compared"):
@@ -1448,13 +1650,37 @@ def date_diff(self):
 )
 def format_date_time(self):
     """Test formatDateTime() when DateTime64 is out of normal range.
-     This function formats DateTime according to a given Format string.
-     """
+    This function formats DateTime according to a given Format string.
+    """
     stress = self.context.stress
     timezones = timezones_range(stress)
 
-    modes = ('C', 'd', 'D', 'e', 'F', 'G', 'g', 'H', 'I', 'j', 'm', 'M', 'n',
-             'p', 'R', 'S', 't', 'T', 'u', 'V', 'w', 'y', 'Y', '%')
+    modes = (
+        "C",
+        "d",
+        "D",
+        "e",
+        "F",
+        "G",
+        "g",
+        "H",
+        "I",
+        "j",
+        "m",
+        "M",
+        "n",
+        "p",
+        "R",
+        "S",
+        "t",
+        "T",
+        "u",
+        "V",
+        "w",
+        "y",
+        "Y",
+        "%",
+    )
 
     for year in years_range(stress=stress):
         with Given(f"I choose datetimes in {year}"):
@@ -1476,11 +1702,17 @@ def format_date_time(self):
 
 
 def time_slots_get_expected(dt: datetime.datetime, duration, size=1800):
-    """Helper to compute expected array for timeSlots().
-    """
+    """Helper to compute expected array for timeSlots()."""
     zero_time = datetime.datetime(1970, 1, 1, 0, 0, 0)
 
-    result = [(zero_time + datetime.timedelta(seconds=((dt - zero_time).total_seconds() // size * size))).strftime("%Y-%m-%d %H:%M:%S")]
+    result = [
+        (
+            zero_time
+            + datetime.timedelta(
+                seconds=((dt - zero_time).total_seconds() // size * size)
+            )
+        ).strftime("%Y-%m-%d %H:%M:%S")
+    ]
 
     s = 1
     while s <= duration:
@@ -1516,24 +1748,26 @@ def time_slots(self):
                     for size in range(1, 50, 3):
                         with Step(f"{dt}, dur={duration}, size={size}"):
                             with By("getting an expected array using python"):
-                                expected = time_slots_get_expected(dt=dt, duration=duration, size=size)
+                                expected = time_slots_get_expected(
+                                    dt=dt, duration=duration, size=size
+                                )
                             with And("forming a ClickHouse query"):
                                 dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                                 query = f"SELECT timeSlots(toDateTime64('{dt_str}', 0, 'UTC'), toUInt32({duration}), {size})"
                             with Then("I execute query"):
                                 try:
-                                    assert eval(self.context.node.query(query).output) == expected, error()
+                                    assert (
+                                        eval(self.context.node.query(query).output)
+                                        == expected
+                                    ), error()
                                 except SyntaxError:
                                     assert False
 
 
 @TestFeature
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions("1.0")
-)
+@Requirements(RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions("1.0"))
 def date_time_funcs(self, node="clickhouse1"):
-    """Check the basic operations with DateTime64
-    """
+    """Check the basic operations with DateTime64"""
     self.context.node = self.context.cluster.node(node)
 
     with Pool(4) as pool:

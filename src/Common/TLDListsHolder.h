@@ -20,7 +20,7 @@ class TLDList
 public:
     using Container = StringHashSet<>;
 
-    TLDList(size_t size);
+    explicit TLDList(size_t size);
 
     /// Return true if the tld_container does not contains such element.
     bool insert(const StringRef & host);
