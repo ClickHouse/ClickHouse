@@ -382,7 +382,6 @@ class SettingsRandomizer:
         "group_by_two_level_threshold_bytes": lambda: 1 if random.random() < 0.1 else 2 ** 60 if random.random() < 0.11 else 50000000,
         "distributed_aggregation_memory_efficient": lambda: random.randint(0, 1),
         "fsync_metadata": lambda: random.randint(0, 1),
-        "priority": lambda: min(3, int(abs(random.gauss(0, 2)))),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
         "input_format_parallel_parsing": lambda: random.randint(0, 1),
         "min_chunk_bytes_for_parallel_parsing": lambda: max(1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))),
