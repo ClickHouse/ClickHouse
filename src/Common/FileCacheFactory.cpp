@@ -74,7 +74,7 @@ FileCachePtr FileCacheFactory::getOrCreate(const std::string & cache_base_path, 
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknow cache method `{}`", file_cache_settings.cache_method);
+        return nullptr;
     }
 }
 
