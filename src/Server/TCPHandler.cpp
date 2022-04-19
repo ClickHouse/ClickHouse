@@ -371,7 +371,7 @@ void TCPHandler::runImpl()
                 /// Send final progress
                 ///
                 /// NOTE: we cannot send Progress for regular INSERT (w/ VALUES)
-                /// w/o breaking protocol compatibility, but it can be done
+                /// without breaking protocol compatibility, but it can be done
                 /// by increasing revision.
                 sendProgress();
             }
@@ -728,6 +728,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             return;
 
         sendData({});
+        last_sent_snapshots.clear();
     }
 
     sendProgress();
@@ -1239,7 +1240,7 @@ void TCPHandler::receiveQuery()
 
     /// In interserer mode,
     /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
-    /// (i.e. when the INSERT is done with the global context w/o user),
+    /// (i.e. when the INSERT is done with the global context without user),
     /// so it is better to reset session to avoid using old user.
     if (is_interserver_mode)
     {
