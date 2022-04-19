@@ -138,7 +138,7 @@ private:
 
     bool tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock) override;
 
-    bool tryReserve(LRUQueueDescriptor & queue, const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
+    bool tryReserve(LRUQueueDescriptor & desc, const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 
     void remove(Key key, size_t offset, std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock) override;
 
@@ -155,7 +155,7 @@ private:
     FileSegments
     splitRangeIntoCells(const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
 
-    bool canMoveCellToHighQueue(const FileSegmentCell & cell);
+    bool canMoveCellToHighQueue(const FileSegmentCell & cell) const;
 
     bool tryMoveLowToHigh(const FileSegmentCell & cell, std::lock_guard<std::mutex> & cache_lock);
 
