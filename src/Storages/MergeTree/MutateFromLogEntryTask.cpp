@@ -175,7 +175,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 
     try
     {
-        storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part);
+        storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, mutate_task->getHardlinkedFiles());
     }
     catch (const Exception & e)
     {
