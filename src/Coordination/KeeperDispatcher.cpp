@@ -121,7 +121,7 @@ void KeeperDispatcher::requestThread()
                         current_batch.clear();
                     }
 
-                    prev_batch = current_batch;
+                    prev_batch = std::move(current_batch);
                     prev_result = result;
                 }
 

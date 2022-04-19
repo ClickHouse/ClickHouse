@@ -30,7 +30,7 @@ class IStorageURLBase : public IStorage
 public:
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -80,7 +80,7 @@ protected:
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
@@ -97,7 +97,7 @@ protected:
     bool isColumnOriented() const override;
 
 private:
-    virtual Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const = 0;
+    virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
 
 class StorageURLSink : public SinkToStorage
@@ -145,9 +145,9 @@ public:
         return "URL";
     }
 
-    Block getHeaderBlock(const Names & /*column_names*/, const StorageMetadataPtr & metadata_snapshot) const override
+    Block getHeaderBlock(const Names & /*column_names*/, const StorageSnapshotPtr & storage_snapshot) const override
     {
-        return metadata_snapshot->getSampleBlock();
+        return storage_snapshot->metadata->getSampleBlock();
     }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
@@ -172,7 +172,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
