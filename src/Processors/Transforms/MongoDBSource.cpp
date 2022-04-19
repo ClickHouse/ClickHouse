@@ -156,14 +156,11 @@ MongoDBSource::MongoDBSource(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,
     std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
     const Block & sample_block,
-    UInt64 max_block_size_,
-    bool strict_check_names_)
+    UInt64 max_block_size_)
     : SourceWithProgress(sample_block.cloneEmpty())
     , connection(connection_)
     , cursor{std::move(cursor_)}
     , max_block_size{max_block_size_}
-    , strict_check_names(strict_check_names_)
-
 {
     description.init(sample_block);
 }
@@ -342,10 +339,13 @@ Chunk MongoDBSource::generate()
             for (const auto idx : collections::range(0, size))
             {
                 const auto & name = description.sample_block.getByPosition(idx).name;
-                bool is_nullable = description.types[idx].second;
 
-                if (!is_nullable && strict_check_names && !document->exists(name))
-                    throw Exception(fmt::format("Column {} is absent in MongoDB collection", backQuote(name)), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                bool exists_in_current_document = document->exists(name);
+                if (!exists_in_current_document)
+                {
+                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
+                    continue;
+                }
 
                 const Poco::MongoDB::Element::Ptr value = document->get(name);
 
@@ -355,6 +355,7 @@ Chunk MongoDBSource::generate()
                 }
                 else
                 {
+                    bool is_nullable = description.types[idx].second;
                     if (is_nullable)
                     {
                         ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
