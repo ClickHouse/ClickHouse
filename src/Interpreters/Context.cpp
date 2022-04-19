@@ -3220,16 +3220,16 @@ void Context::initializeBackgroundExecutorsIfNeeded()
 
     /// This is done for backward compatibility. All these setting could be specified in the top level config or in the default profile's config.
     /// TODO: Remove these settings from default profile's config in the future.
-    auto background_pool_size_top_level = getConfigRef().has("background_pool_size") ? getConfigRef()->getInt("background_pool_size", 16) : 0;
-    auto concurrency_ratio_top_level = getConfigRef().has("background_merges_mutations_concurrency_ratio") ? getConfigRef()->getInt("background_merges_mutations_concurrency_ratio", 2) : 0;
-    auto background_move_pool_size_top_level = getConfigRef().has("background_move_pool_size") ? getConfigRef()->getInt("background_move_pool_size", 8) : 0;
-    auto background_fetches_pool_size_top_level = getConfigRef().has("background_fetches_pool_size") ? getConfigRef()->getInt("background_fetches_pool_size", 8) : 0;
-    auto background_common_pool_size_top_level = getConfigRef().has("background_common_pool_size") ? getConfigRef()->getInt("background_common_pool_size", 8) : 0;
+    size_t background_pool_size_top_level = getConfigRef().has("background_pool_size") ? getConfigRef().getUInt("background_pool_size", 16) : 0;
+    size_t concurrency_ratio_top_level = getConfigRef().has("background_merges_mutations_concurrency_ratio") ? getConfigRef().getUInt("background_merges_mutations_concurrency_ratio", 2) : 0;
+    size_t background_move_pool_size_top_level = getConfigRef().has("background_move_pool_size") ? getConfigRef().getUInt("background_move_pool_size", 8) : 0;
+    size_t background_fetches_pool_size_top_level = getConfigRef().has("background_fetches_pool_size") ? getConfigRef().getUInt("background_fetches_pool_size", 8) : 0;
+    size_t background_common_pool_size_top_level = getConfigRef().has("background_common_pool_size") ? getConfigRef().getUInt("background_common_pool_size", 8) : 0;
 
 
-    const auto merges_and_mutations_threads_count = std::max(background_pool_size_top_level, getSettingsRef().background_pool_size);
-    const auto max_merges_and_mutations = merges_and_mutations_threads_count *
-        std::max(concurrency_ratio_top_level, getSettingsRef().background_merges_mutations_concurrency_ratio);
+    const size_t merges_and_mutations_threads_count = std::max<size_t>(background_pool_size_top_level, getSettingsRef().background_pool_size);
+    const size_t max_merges_and_mutations = merges_and_mutations_threads_count *
+        std::max<size_t>(concurrency_ratio_top_level, getSettingsRef().background_merges_mutations_concurrency_ratio);
 
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = MergeMutateBackgroundExecutor::create
@@ -3242,7 +3242,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
         merges_and_mutations_threads_count, max_merges_and_mutations);
 
-    const auto moves_threads_count = std::max(background_move_pool_size_top_level, getSettingsRef().background_move_pool_size);
+    const size_t moves_threads_count = std::max<size_t>(background_move_pool_size_top_level, getSettingsRef().background_move_pool_size);
     shared->moves_executor = OrdinaryBackgroundExecutor::create
     (
         "Move",
@@ -3252,7 +3252,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     );
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", moves_threads_count, moves_threads_count);
 
-    const auto fetches_threads_count = std::max(background_fetches_pool_size_top_level, getSettingsRef().background_fetches_pool_size);
+    const size_t fetches_threads_count = std::max<size_t>(background_fetches_pool_size_top_level, getSettingsRef().background_fetches_pool_size);
     shared->fetch_executor = OrdinaryBackgroundExecutor::create
     (
         "Fetch",
@@ -3262,12 +3262,12 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     );
     LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", fetches_threads_count, fetches_threads_count);
 
-    const auto common_threads_count = std::max(background_common_pool_size_top_level, getSettingsRef().background_common_pool_size);
+    const size_t common_threads_count = std::max<size_t>(background_common_pool_size_top_level, getSettingsRef().background_common_pool_size);
     shared->common_executor = OrdinaryBackgroundExecutor::create
     (
         "Common",
         common_threads_count,
-        common_threads_count
+        common_threads_count,
         CurrentMetrics::BackgroundCommonPoolTask
     );
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}", common_threads_count, common_threads_count);
