@@ -501,7 +501,7 @@ void IDiskRemote::removeSharedFileIfExists(const String & path, bool delete_meta
     }
 }
 
-void IDiskRemote::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only)
+void IDiskRemote::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     std::unordered_map<String, std::vector<String>> paths_to_remove;
     for (const auto & file : files)
@@ -511,7 +511,7 @@ void IDiskRemote::removeSharedFiles(const RemoveBatchRequest & files, bool keep_
             removeMetadata(file.path, paths_to_remove);
     }
 
-    if (!keep_all_batch_metadata)
+    if (!keep_all_batch_data)
     {
         std::vector<String> remove_from_remote;
         for (auto && [path, remote_paths] : paths_to_remove)
@@ -523,12 +523,12 @@ void IDiskRemote::removeSharedFiles(const RemoveBatchRequest & files, bool keep_
     }
 }
 
-void IDiskRemote::removeSharedRecursive(const String & path, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only)
+void IDiskRemote::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     std::unordered_map<String, std::vector<String>> paths_to_remove;
     removeMetadataRecursive(path, paths_to_remove);
 
-    if (!keep_all_batch_metadata)
+    if (!keep_all_batch_data)
     {
         std::vector<String> remove_from_remote;
         for (auto && [local_path, remote_paths] : paths_to_remove)

@@ -331,12 +331,19 @@ public:
 
     mutable VersionMetadata version;
 
+    ///
     struct HardlinkedFiles
     {
+        /// Hardlinked from part
         std::string source_part_name;
+        /// Hardlinked files list
         NameSet hardlinks_from_source_part;
     };
 
+    /// Files hardlinked from source part during mutation/backup
+    /// Need only for zero-copy replication implementation.
+    /// Don't use, it's only in memory and don't survive a server restart or table
+    /// DETACH/ATTACH.
     HardlinkedFiles hardlinked_files;
 
     /// For data in RAM ('index')
@@ -520,6 +527,16 @@ protected:
 
     String getRelativePathForDetachedPart(const String & prefix) const;
 
+    /// Checks that part can be actually removed from disk.
+    /// In ordinary scenario always returns true, but in case of
+    /// zero-copy replication part can be hold by some other replicas.
+    ///
+    /// If method return false than only metadata of part from
+    /// local storage can be removed, leaving data in remove FS untouched.
+    ///
+    /// If method return true, than files can be actually removed from remote
+    /// storage storage, excluding files in the second returned argument.
+    /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
 
     void initializePartMetadataManager();
