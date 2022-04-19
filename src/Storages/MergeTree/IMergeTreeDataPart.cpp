@@ -1622,6 +1622,8 @@ void IMergeTreeDataPart::remove() const
     std::unordered_set<String> projection_directories;
     for (const auto & [p_name, projection_part] : projection_parts)
     {
+        /// NOTE: projections currently unsupported with zero copy replication.
+        /// TODO: fix it.
         projection_part->projectionRemove(to, !can_remove);
         projection_directories.emplace(p_name + ".proj");
     }
@@ -1665,7 +1667,6 @@ void IMergeTreeDataPart::remove() const
         catch (...)
         {
             /// Recursive directory removal does many excessive "stat" syscalls under the hood.
-
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
             disk->removeSharedRecursive(fs::path(to) / "", !can_remove, files_not_to_remove);

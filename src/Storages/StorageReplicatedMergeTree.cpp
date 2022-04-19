@@ -7349,12 +7349,12 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
         *getSettings(), disk->getType(), getTableSharedID(),
         part.name, zookeeper_path);
 
-    String path_to_set;
+    String path_to_set_hardlinked_files;
     if (!part.hardlinked_files.hardlinks_from_source_part.empty())
     {
-        path_to_set = getZeroCopyPartPath(
-        *getSettings(), disk->getType(), getTableSharedID(),
-        part.hardlinked_files.source_part_name, zookeeper_path)[0];
+        path_to_set_hardlinked_files = getZeroCopyPartPath(
+            *getSettings(), disk->getType(), getTableSharedID(),
+            part.hardlinked_files.source_part_name, zookeeper_path)[0];
     }
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
@@ -7365,7 +7365,7 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
 
         createZeroCopyLockNode(
             zookeeper, zookeeper_node, zkutil::CreateMode::Persistent,
-            replace_existing_lock, path_to_set, part.hardlinked_files.hardlinks_from_source_part);
+            replace_existing_lock, path_to_set_hardlinked_files, part.hardlinked_files.hardlinks_from_source_part);
     }
 }
 
@@ -7850,7 +7850,9 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 }
 
 
-void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode, bool replace_existing_lock, const std::string & path_to_set, const NameSet & hardlinked_files)
+void StorageReplicatedMergeTree::createZeroCopyLockNode(
+    const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode,
+    bool replace_existing_lock, const String & path_to_set_hardlinked_files, const NameSet & hardlinked_files)
 {
     /// In rare case other replica can remove path between createAncestors and createIfNotExists
     /// So we make up to 5 attempts
@@ -7870,10 +7872,13 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
                 Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_node, -1));
                 ops.emplace_back(zkutil::makeCreateRequest(zookeeper_node, "", mode));
-                if (!path_to_set.empty() && !hardlinked_files.empty())
+                if (!path_to_set_hardlinked_files.empty() && !hardlinked_files.empty())
                 {
                     std::string data = boost::algorithm::join(hardlinked_files, "\n");
-                    ops.emplace_back(zkutil::makeSetRequest(path_to_set, data, -1));
+                    /// List of files used to detect hardlinks. path_to_set_hardlinked_files --
+                    /// is a path to source part zero copy node. During part removal hardlinked
+                    /// files will be left for source part.
+                    ops.emplace_back(zkutil::makeSetRequest(path_to_set_hardlinked_files, data, -1));
                 }
                 Coordination::Responses responses;
                 auto error = zookeeper->tryMulti(ops, responses);
@@ -7883,10 +7888,13 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
             else
             {
                 Coordination::Requests ops;
-                if (!path_to_set.empty() && !hardlinked_files.empty())
+                if (!path_to_set_hardlinked_files.empty() && !hardlinked_files.empty())
                 {
                     std::string data = boost::algorithm::join(hardlinked_files, "\n");
-                    ops.emplace_back(zkutil::makeSetRequest(path_to_set, data, -1));
+                    /// List of files used to detect hardlinks. path_to_set_hardlinked_files --
+                    /// is a path to source part zero copy node. During part removal hardlinked
+                    /// files will be left for source part.
+                    ops.emplace_back(zkutil::makeSetRequest(path_to_set_hardlinked_files, data, -1));
                 }
                 ops.emplace_back(zkutil::makeCreateRequest(zookeeper_node, "", mode));
 

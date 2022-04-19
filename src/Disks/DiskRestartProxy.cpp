@@ -251,16 +251,16 @@ void DiskRestartProxy::removeSharedFile(const String & path, bool keep_s3)
     DiskDecorator::removeSharedFile(path, keep_s3);
 }
 
-void DiskRestartProxy::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only)
+void DiskRestartProxy::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     ReadLock lock (mutex);
-    DiskDecorator::removeSharedFiles(files, keep_all_batch_metadata, file_names_remove_metadata_only);
+    DiskDecorator::removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
 }
 
-void DiskRestartProxy::removeSharedRecursive(const String & path, bool keep_all_batch_metadata, const NameSet & file_names_remove_metadata_only)
+void DiskRestartProxy::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     ReadLock lock (mutex);
-    DiskDecorator::removeSharedRecursive(path, keep_all_batch_metadata, file_names_remove_metadata_only);
+    DiskDecorator::removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
 }
 
 void DiskRestartProxy::setLastModified(const String & path, const Poco::Timestamp & timestamp)
