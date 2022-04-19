@@ -272,7 +272,7 @@ struct ContextSharedPart
     bool shutdown_called = false;
 
     /// Has background executors for MergeTree tables been initialized?
-    bool is_background_executors_initialized = false;
+    bool are_background_executors_initialized = false;
 
     Stopwatch uptime_watch;
 
@@ -3214,7 +3214,7 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 void Context::initializeBackgroundExecutorsIfNeeded()
 {
     auto lock = getLock();
-    if (shared->is_background_executors_initialized)
+    if (shared->are_background_executors_initialized)
         return;
 
     const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
@@ -3264,9 +3264,14 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}",
         getSettingsRef().background_common_pool_size, getSettingsRef().background_common_pool_size);
 
-    shared->is_background_executors_initialized = true;
+    shared->are_background_executors_initialized = true;
 }
 
+bool Context::areBackgroundExecutorsInitialized()
+{
+    auto lock = getLock();
+    return shared->are_background_executors_initialized;
+}
 
 MergeMutateBackgroundExecutorPtr Context::getMergeMutateExecutor() const
 {

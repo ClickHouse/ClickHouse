@@ -1119,6 +1119,35 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
 
+            /// Reload the number of threads for global pools.
+            /// Note: If you specified it in the top level config (not it config of default profile)
+            /// then ClickHouse will use it exactly.
+            /// This is done for backward compatibility.
+            if (global_context->areBackgroundExecutorsInitialized() && (config->has("background_pool_size") || config->has("background_merges_mutations_concurrency_ratio")))
+            {
+                auto new_pool_size = config->getInt("background_pool_size", 16);
+                auto new_ratio = config->getInt("background_merges_mutations_concurrency_ratio", 2);
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_move_pool_size"))
+            {
+                auto new_pool_size = config->getInt("background_move_pool_size", 8);
+                global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_fetches_pool_size"))
+            {
+                auto new_pool_size = config->getInt("background_fetches_pool_size", 8);
+                global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_common_pool_size"))
+            {
+                auto new_pool_size = config->getInt("background_common_pool_size", 8);
+                global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
