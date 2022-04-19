@@ -1018,7 +1018,7 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 
     for (const auto & column : result_columns)
     {
-        if (!array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
