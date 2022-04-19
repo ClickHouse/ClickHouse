@@ -20,7 +20,7 @@ namespace ErrorCodes
  *       <disks>
  *           <web>
  *               <type>web</type>
- *               <endpoint>https://clickhouse-datasets.s3.yandex.net/disk-with-static-files-tests/test-hits/</endpoint>
+ *               <endpoint>https://clickhouse-datasets.s3.amazonaws.com/disk-with-static-files-tests/test-hits/</endpoint>
  *           </web>
  *       </disks>
  *       <policies>
