@@ -557,7 +557,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         if (it == urls_to_check.cend())
             return nullptr;
 
-        return StorageURLSource::getFirstAvailableURLReadBuffer(
+        auto buf = StorageURLSource::getFirstAvailableURLReadBuffer(
             it,
             urls_to_check.cend(),
             context,
@@ -570,7 +570,9 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
             headers,
             false,
             false,
-            context->getSettingsRef().max_download_threads);
+            context->getSettingsRef().max_download_threads);\
+        ++it;
+        return buf;
     };
 
     return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
