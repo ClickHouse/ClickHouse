@@ -298,7 +298,7 @@ String ServerStatCommand::run()
     write("Latency min/avg/max", latency.str());
 
     write("Received", toString(stats.getPacketsReceived()));
-    write("Sent ", toString(stats.getPacketsSent()));
+    write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
     write("Zxid", toString(keeper_info.last_zxid));
@@ -328,7 +328,7 @@ String StatCommand::run()
     write("Latency min/avg/max", latency.str());
 
     write("Received", toString(stats.getPacketsReceived()));
-    write("Sent ", toString(stats.getPacketsSent()));
+    write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
     write("Zxid", toString(keeper_info.last_zxid));
