@@ -589,7 +589,7 @@
         stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
 
         /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
-        if (response.data.length > 3 && response.data[0][0].startsWith("digraph") && document.getElementById('query').value.match(/^\s*EXPLAIN/i)) {
+        if (response.data.length > 3 && document.getElementById('query').value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
             renderGraph(response);
         } else {
             renderTable(response);
