@@ -7,12 +7,13 @@
 #include <IO/HTTPCommon.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadSettings.h>
+#include <IO/WithFileName.h>
 #include <azure/storage/blobs.hpp>
 
 namespace DB
 {
 
-class ReadBufferFromAzureBlobStorage : public SeekableReadBuffer
+class ReadBufferFromAzureBlobStorage : public SeekableReadBuffer, public WithFileName
 {
 public:
 
@@ -32,6 +33,8 @@ public:
     bool nextImpl() override;
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
+
+    String getFileName() const override { return path; }
 
 private:
 

@@ -182,6 +182,11 @@ size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
     return impl->getPosition();
 }
 
+String ReadBufferFromHDFS::getFileName() const
+{
+    return impl->hdfs_file_path;
+}
+
 }
 
 #endif
