@@ -318,3 +318,28 @@ clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --
 4. Copy snapshot to ClickHouse server nodes with a configured `keeper` or start ClickHouse Keeper instead of ZooKeeper. The snapshot must persist on all nodes, otherwise, empty nodes can be faster and one of them can become a leader.
 
 [Original article](https://clickhouse.com/docs/en/operations/clickhouse-keeper/) <!--hide-->
+
+## Recovering after losing quorum
+
+Because Clickhouse Keeper uses Raft it can tolerate certain amount of node crashes depending on the cluster size. \
+E.g. for a 3-node cluster, it will continue working correctly if only 1 node crashes.
+
+Cluster configuration can be dynamically configured but there are some limitations. Reconfiguration relies on Raft also
+so to add/remove a node from the cluster you need to have a quorum. If you lose too many nodes in your cluster at the same time without any chance
+of starting them again, Raft will stop working and not allow you to reconfigure your cluster using the convenvtional way.
+
+Nevertheless, Clickhouse Keeper has a recovery mode which allows you to forcfully reconfigure your cluster with only 1 node.
+This should be done only as your last resort if you cannot start your nodes again, or start a new instance on the same endpoint.
+
+Important things to note before continuing:
+- Make sure that the failed nodes cannot connect to the cluster again.
+- Do not start any of the new nodes until it's specified in the steps
+
+After making sure that the above things are true, you need to do following:
+1. Pick a single Keeper node to be your new leader.
+2. Before doing anything else, make a backup of the `log_storage_path` folder of the picked node
+3. Reconfigure the cluster on all of the nodes you want to use
+4. Send the four letter command `rcvr` to the node you picked which will move the node to the recovery mode
+5. One by one, start Keeper instances on the new nodes making sure that `mntr` returns `follower` for the `zk_server_state` before starting the next one
+6. While in the recovery mode, the leader node will return error message for `mntr` command until it achieves quorum with the new nodes and refuse any requests from the client and the followers
+7. After quorum is achieved, the leader node will return to the normal mode of operation, accepting all the requests using Raft - verify with `mntr` which should return `leader` for the `zk_server_state`
