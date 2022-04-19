@@ -175,7 +175,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     /// In case of JOIN the first stage (which includes JOIN)
     /// should be done on the initiator always.
     ///
-    /// Since in case of JOIN query on shards will receive query w/o JOIN (and their columns).
+    /// Since in case of JOIN query on shards will receive query without JOIN (and their columns).
     /// (see removeJoin())
     ///
     /// And for this we need to return FetchColumns.

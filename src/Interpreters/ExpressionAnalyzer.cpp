@@ -1756,7 +1756,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             // The output of this expression chain is the result of
             // SELECT (before "final projection" i.e. renaming the columns), so
             // we have to mark the expressions that are required in the output,
-            // again. We did it for the previous expression chain ("select w/o
+            // again. We did it for the previous expression chain ("select without
             // window functions") earlier, in appendSelect(). But that chain also
             // produced the expressions required to calculate window functions.
             // They are not needed in the final SELECT result. Knowing the correct
