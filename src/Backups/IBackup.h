@@ -47,20 +47,24 @@ public:
 
     /// Checks if an entry with a specified name exists.
     virtual bool fileExists(const String & file_name) const = 0;
-    virtual bool fileExistsByChecksum(const UInt128 & checksum) const = 0;
+    virtual bool fileExists(const std::pair<UInt64, UInt128> & size_and_checksum) const = 0;
 
     /// Returns the size of the entry's data.
     /// This function does the same as `read(file_name)->getSize()` but faster.
-    virtual size_t getFileSize(const String & file_name) const = 0;
-    virtual size_t getFileSizeByChecksum(const UInt128 & checksum) const = 0;
+    virtual UInt64 getFileSize(const String & file_name) const = 0;
 
     /// Returns the checksum of the entry's data.
     /// This function does the same as `read(file_name)->getCheckum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
+    using SizeAndChecksum = std::pair<UInt64, UInt128>;
+
+    /// Returns both the size and checksum in one call.
+    virtual SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const = 0;
+
     /// Reads an entry from the backup.
     virtual BackupEntryPtr readFile(const String & file_name) const = 0;
-    virtual BackupEntryPtr readFileByChecksum(const UInt128 & checksum) const = 0;
+    virtual BackupEntryPtr readFile(const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Puts a new entry to the backup.
     virtual void writeFile(const String & file_name, BackupEntryPtr entry) = 0;
@@ -69,7 +73,7 @@ public:
     virtual void finalizeWriting() = 0;
 
     /// Whether it's possible to add new entries to the backup in multiple threads.
-    virtual bool supportsWritingInMultipleThreads() const { return true; }
+    virtual bool supportsWritingInMultipleThreads() const = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

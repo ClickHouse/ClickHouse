@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/IBackup.h>
+#include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
 #include <mutex>
 #include <unordered_map>
@@ -57,16 +58,20 @@ public:
     UUID getUUID() const override { return uuid; }
     Strings listFiles(const String & prefix, const String & terminator) const override;
     bool fileExists(const String & file_name) const override;
-    bool fileExistsByChecksum(const UInt128 & checksum) const override;
-    size_t getFileSize(const String & file_name) const override;
-    size_t getFileSizeByChecksum(const UInt128 & checksum) const override;
+    bool fileExists(const SizeAndChecksum & size_and_checksum) const override;
+    UInt64 getFileSize(const String & file_name) const override;
     UInt128 getFileChecksum(const String & file_name) const override;
+    SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
     BackupEntryPtr readFile(const String & file_name) const override;
-    BackupEntryPtr readFileByChecksum(const UInt128 & checksum) const override;
+    BackupEntryPtr readFile(const SizeAndChecksum & size_and_checksum) const override;
     void writeFile(const String & file_name, BackupEntryPtr entry) override;
     void finalizeWriting() override;
+    bool supportsWritingInMultipleThreads() const override { return !use_archives; }
 
 private:
+    using FileInfo = IBackupCoordination::FileInfo;
+    class BackupEntryFromBackupImpl;
+
     void open();
     void close();
     void writeBackupMetadata();
@@ -75,8 +80,6 @@ private:
     std::shared_ptr<IArchiveReader> getArchiveReader(const String & suffix) const;
     std::shared_ptr<IArchiveWriter> getArchiveWriter(const String & suffix);
     void removeAllFilesAfterFailure();
-
-    class BackupEntryFromBackupImpl;
 
     const String backup_name;
     const ArchiveParams archive_params;
@@ -92,7 +95,7 @@ private:
     mutable std::mutex mutex;
     UUID uuid = {};
     time_t timestamp = 0;
-    UInt64 version = 1;
+    UInt64 version;
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::optional<UUID> base_backup_uuid;

@@ -16,13 +16,14 @@ namespace ErrorCodes
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
 }
 
-/// zookeeper_path/file_names/file_name->checksum
-/// zookeeper_path/file_infos/checksum->info
+/// zookeeper_path/file_names/file_name->checksum_and_size
+/// zookeeper_path/file_infos/checksum_and_size->info
 /// zookeeper_path/archive_suffixes
 /// zookeeper_path/current_archive_suffix
 
 namespace
 {
+    using SizeAndChecksum = IBackupCoordination::SizeAndChecksum;
     using FileInfo = IBackupCoordination::FileInfo;
 
     String serializeFileInfo(const FileInfo & info)
@@ -33,6 +34,7 @@ namespace
         writeBinary(info.checksum, out);
         writeBinary(info.base_size, out);
         writeBinary(info.base_checksum, out);
+        writeBinary(info.data_file_name, out);
         writeBinary(info.archive_suffix, out);
         writeBinary(info.pos_in_archive, out);
         return out.str();
@@ -47,27 +49,32 @@ namespace
         readBinary(info.checksum, in);
         readBinary(info.base_size, in);
         readBinary(info.base_checksum, in);
+        readBinary(info.data_file_name, in);
         readBinary(info.archive_suffix, in);
         readBinary(info.pos_in_archive, in);
         return info;
     }
 
-    String hexChecksum(UInt128 checksum)
+    String serializeSizeAndChecksum(const SizeAndChecksum & size_and_checksum)
     {
-        return getHexUIntLowercase(checksum);
+        return getHexUIntLowercase(size_and_checksum.second) + '_' + std::to_string(size_and_checksum.first);
     }
 
-    UInt128 unhexChecksum(const String & checksum)
+    SizeAndChecksum deserializeSizeAndChecksum(const String & str)
     {
-        if (checksum.size() != sizeof(UInt128) * 2)
+        constexpr size_t num_chars_in_checksum = sizeof(UInt128) * 2;
+        if (str.size() <= num_chars_in_checksum)
             throw Exception(
                 ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER,
                 "Unexpected size of checksum: {}, must be {}",
-                checksum.size(),
-                sizeof(UInt128) * 2);
-        return unhexUInt<UInt128>(checksum.data());
+                str.size(),
+                num_chars_in_checksum);
+        UInt128 checksum = unhexUInt<UInt128>(str.data());
+        UInt64 size = parseFromString<UInt64>(str.substr(num_chars_in_checksum + 1));
+        return std::pair{size, checksum};
     }
 
+    /// We try to store data to zookeeper several times due to possible version conflicts.
     constexpr size_t NUM_ATTEMPTS = 10;
 }
 
@@ -96,27 +103,36 @@ void DistributedBackupCoordination::removeAllNodes()
     zookeeper->removeRecursive(zookeeper_path);
 }
 
-void DistributedBackupCoordination::addFileInfo(const FileInfo & file_info, bool & is_new_checksum)
+void DistributedBackupCoordination::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {
     auto zookeeper = get_zookeeper();
 
     String full_path = zookeeper_path + "/file_names/" + escapeForFileName(file_info.file_name);
-    String checksum_str = hexChecksum(file_info.checksum);
-    zookeeper->create(full_path, checksum_str, zkutil::CreateMode::Persistent);
+    String size_and_checksum = serializeSizeAndChecksum(std::pair{file_info.size, file_info.checksum});
+    zookeeper->create(full_path, size_and_checksum, zkutil::CreateMode::Persistent);
 
-    full_path = zookeeper_path + "/file_infos/" + checksum_str;
+    if (!file_info.size)
+    {
+        is_data_file_required = false;
+        return;
+    }
+
+    full_path = zookeeper_path + "/file_infos/" + size_and_checksum;
     auto code = zookeeper->tryCreate(full_path, serializeFileInfo(file_info), zkutil::CreateMode::Persistent);
     if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
         throw zkutil::KeeperException(code, full_path);
 
-    is_new_checksum = (code == Coordination::Error::ZOK);
+    is_data_file_required = (code == Coordination::Error::ZOK) && (file_info.size > file_info.base_size);
 }
 
 void DistributedBackupCoordination::updateFileInfo(const FileInfo & file_info)
 {
+    if (!file_info.size)
+        return; /// we don't keep FileInfos for empty files, nothing to update
+
     auto zookeeper = get_zookeeper();
-    String checksum_str = hexChecksum(file_info.checksum);
-    String full_path = zookeeper_path + "/file_infos/" + checksum_str;
+    String size_and_checksum = serializeSizeAndChecksum(std::pair{file_info.size, file_info.checksum});
+    String full_path = zookeeper_path + "/file_infos/" + size_and_checksum;
     for (size_t attempt = 0; attempt < NUM_ATTEMPTS; ++attempt)
     {
         Coordination::Stat stat;
@@ -138,8 +154,11 @@ std::vector<FileInfo> DistributedBackupCoordination::getAllFileInfos()
     Strings escaped_names = zookeeper->getChildren(zookeeper_path + "/file_names");
     for (const String & escaped_name : escaped_names)
     {
-        String checksum = zookeeper->get(zookeeper_path + "/file_names/" + escaped_name);
-        FileInfo file_info = deserializeFileInfo(zookeeper->get(zookeeper_path + "/file_infos/" + checksum));
+        String size_and_checksum = zookeeper->get(zookeeper_path + "/file_names/" + escaped_name);
+        UInt64 size = deserializeSizeAndChecksum(size_and_checksum).first;
+        FileInfo file_info;
+        if (size) /// we don't keep FileInfos for empty files
+            file_info = deserializeFileInfo(zookeeper->get(zookeeper_path + "/file_infos/" + size_and_checksum));
         file_info.file_name = unescapeForFileName(escaped_name);
         file_infos.emplace_back(std::move(file_info));
     }
@@ -171,33 +190,36 @@ Strings DistributedBackupCoordination::listFiles(const String & prefix, const St
     return elements;
 }
 
-std::optional<UInt128> DistributedBackupCoordination::getChecksumByFileName(const String & file_name)
+std::optional<FileInfo> DistributedBackupCoordination::getFileInfo(const String & file_name)
 {
     auto zookeeper = get_zookeeper();
-    String checksum;
-    if (!zookeeper->tryGet(zookeeper_path + "/file_names/" + escapeForFileName(file_name), checksum))
+    String size_and_checksum;
+    if (!zookeeper->tryGet(zookeeper_path + "/file_names/" + escapeForFileName(file_name), size_and_checksum))
         return std::nullopt;
-    return unhexChecksum(checksum);
+    UInt64 size = deserializeSizeAndChecksum(size_and_checksum).first;
+    FileInfo file_info;
+    if (size) /// we don't keep FileInfos for empty files
+        file_info = deserializeFileInfo(zookeeper->get(zookeeper_path + "/file_infos/" + size_and_checksum));
+    file_info.file_name = file_name;
+    return file_info;
 }
 
-std::optional<FileInfo> DistributedBackupCoordination::getFileInfoByChecksum(const UInt128 & checksum)
+std::optional<FileInfo> DistributedBackupCoordination::getFileInfo(const SizeAndChecksum & size_and_checksum)
 {
     auto zookeeper = get_zookeeper();
     String file_info_str;
-    if (!zookeeper->tryGet(zookeeper_path + "/file_infos/" + hexChecksum(checksum), file_info_str))
+    if (!zookeeper->tryGet(zookeeper_path + "/file_infos/" + serializeSizeAndChecksum(size_and_checksum), file_info_str))
         return std::nullopt;
     return deserializeFileInfo(file_info_str);
 }
 
-std::optional<FileInfo> DistributedBackupCoordination::getFileInfoByFileName(const String & file_name)
+std::optional<SizeAndChecksum> DistributedBackupCoordination::getFileSizeAndChecksum(const String & file_name)
 {
     auto zookeeper = get_zookeeper();
-    String checksum;
-    if (!zookeeper->tryGet(zookeeper_path + "/file_names/" + escapeForFileName(file_name), checksum))
+    String size_and_checksum;
+    if (!zookeeper->tryGet(zookeeper_path + "/file_names/" + escapeForFileName(file_name), size_and_checksum))
         return std::nullopt;
-    FileInfo file_info = deserializeFileInfo(zookeeper->get(zookeeper_path + "/file_infos/" + checksum));
-    file_info.file_name = file_name;
-    return file_info;
+    return deserializeSizeAndChecksum(size_and_checksum);
 }
 
 String DistributedBackupCoordination::getNextArchiveSuffix()
