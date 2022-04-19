@@ -30,8 +30,6 @@ namespace
 
 ARCFileCache::ARCFileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_)
     : IFileCache(cache_base_path_, cache_settings_)
-    , size_ratio(cache_settings_.size_ratio)
-    , min_low_space_size(cache_settings_.size_ratio * cache_settings_.max_size)
     , max_high_space_size((1.0 - cache_settings_.size_ratio) * cache_settings_.max_size)
     , move_threshold(cache_settings_.move_threshold)
     , low_queue(cache_settings_.max_size, cache_settings_.max_elements)
