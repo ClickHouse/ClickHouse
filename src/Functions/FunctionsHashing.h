@@ -1376,7 +1376,8 @@ private:
 };
 
 #if USE_AQUAHASH
-struct ImplAquaHash128 {
+struct ImplAquaHash128
+{
     static constexpr auto name = "aquaHash128";
     using ReturnType = UInt128;
 
