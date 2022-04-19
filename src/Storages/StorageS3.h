@@ -56,6 +56,18 @@ public:
             std::shared_ptr<Impl> pimpl;
     };
 
+    class ReadTasksIterator
+    {
+    public:
+        ReadTasksIterator(const std::vector<String> & read_tasks_, const ReadTaskCallback & new_read_tasks_callback_);
+        String next();
+
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
+    };
+
     using IteratorWrapper = std::function<String()>;
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
@@ -209,9 +221,17 @@ private:
     ASTPtr partition_by;
     bool is_key_with_globs = false;
 
+    std::vector<String> read_tasks_used_in_schema_inference;
+
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentication &);
 
-    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const ClientAuthentication & client_auth, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context);
+    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(
+        const ClientAuthentication & client_auth,
+        const std::vector<String> & keys,
+        bool is_key_with_globs,
+        bool distributed_processing,
+        const ContextPtr & local_context,
+        const std::vector<String> & read_tasks = {});
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const String & format,
@@ -221,7 +241,8 @@ private:
         bool distributed_processing,
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        ContextPtr ctx,
+        std::vector<String> * read_keys_in_distributed_processing = nullptr);
 
     bool isColumnOriented() const override;
 };
