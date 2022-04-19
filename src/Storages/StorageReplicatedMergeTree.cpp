@@ -7387,7 +7387,6 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
 
     if (hardlinked_files.has_value() && !hardlinked_files->hardlinks_from_source_part.empty())
     {
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "ADDING SOME HARDLINKS {}", fmt::join(hardlinked_files->hardlinks_from_source_part, ", "));
         path_to_set_hardlinked_files = getZeroCopyPartPath(
             *getSettings(), disk->getType(), getTableSharedID(),
             hardlinked_files->source_part_name, zookeeper_path)[0];
