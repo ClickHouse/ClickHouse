@@ -122,8 +122,6 @@ private:
 
     CachedFiles files;
 
-    double size_ratio;
-    size_t min_low_space_size;
     size_t max_high_space_size;
     size_t max_high_elem_size;
     size_t move_threshold;
