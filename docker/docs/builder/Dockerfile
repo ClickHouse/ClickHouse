@@ -5,7 +5,7 @@ FROM node:16.14.2-alpine3.15
 RUN apk add --no-cache git openssh bash
 
 # TODO: clean before merge!
-ARG DOCS_BRANCH=staging
+ARG DOCS_BRANCH=main
 
 RUN git clone https://github.com/ClickHouse/clickhouse-docs.git \
     --depth=1 --branch=${DOCS_BRANCH} /opt/clickhouse-docs
