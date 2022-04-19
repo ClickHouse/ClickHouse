@@ -363,9 +363,13 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
                 current_parts.remove(*drop_range_part_name);
             }
 
+            /// During inserting to queue (insertUnlocked()) we remove part for
+            /// DROP_RANGE only for DROP PART but not for DROP PARTITION.
             virtual_parts.remove(*drop_range_part_name);
 
-            removeCoveredPartsFromMutations(*drop_range_part_name, /*remove_part = */ true, /*remove_covered_parts = */ false);
+            /// NOTE: we don't need to remove part/covered parts from mutations (removeCoveredPartsFromMutations()) here because:
+            /// - for DROP PART we have this during inserting to queue (see insertUnlocked())
+            /// - for DROP PARTITION we have this in the loop above (when we adding parts to current_parts)
         }
 
         if (entry->type == LogEntry::DROP_RANGE)
