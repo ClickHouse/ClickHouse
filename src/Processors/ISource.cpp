@@ -1,6 +1,5 @@
 #include <Processors/ISource.h>
-#include <Common/Stopwatch.h>
-#include <common/logger_useful.h>
+
 
 namespace DB
 {
@@ -51,23 +50,14 @@ void ISource::work()
 {
     try
     {
-        Stopwatch watch;
-        watch.start();
         if (auto chunk = tryGenerate())
         {
             current_chunk.chunk = std::move(*chunk);
             if (current_chunk.chunk)
                 has_input = true;
-            time += watch.elapsedNanoseconds();
         }
         else
-        {
             finished = true;
-            LOG_DEBUG(&Poco::Logger::get(getName()),
-                      "Processor {} used {} ms\n",
-                      getName(), time/ 1000000UL);
-        }
-
 
         if (isCancelled())
             finished = true;
