@@ -171,7 +171,7 @@ protected:
     FileCachePtr cache;
 
 private:
-    void removeMetadata(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
+    void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
 
     void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
 
