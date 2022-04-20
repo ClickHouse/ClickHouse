@@ -57,9 +57,9 @@ TEST_P(ParserTest, parseQuery)
         {
             ASTPtr ast;
             ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
-
-            if (std::string("CREATE USER or ALTER USER query") == parser->getName()
-                    && std::string("ATTACH access entity query") == parser->getName())
+            
+            if (std::string("CREATE USER or ALTER USER query") != parser->getName()
+                    && std::string("ATTACH access entity query") != parser->getName())
             {
                 EXPECT_EQ(expected_ast, serializeAST(*ast->clone(), false));
             }
