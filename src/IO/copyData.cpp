@@ -25,8 +25,6 @@ void copyDataImpl(ReadBuffer & from, WriteBuffer & to, bool check_bytes, size_t 
 
         /// buffer() - a piece of data available for reading; position() - the cursor of the place to which you have already read.
         size_t count = std::min(bytes, static_cast<size_t>(from.buffer().end() - from.position()));
-        std::cout << "count:" << count << std::endl;
-        std::cout << "write:" << std::string(from.position(), count) << std::endl;
         to.write(from.position(), count);
         from.position() += count;
         bytes -= count;

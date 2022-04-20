@@ -70,7 +70,6 @@ private:
 
     String getId() const { return std::to_string(reinterpret_cast<std::uintptr_t>(this)); }
     String getStatus(const String & action);
-    std::mutex mutex;
 };
 }
 

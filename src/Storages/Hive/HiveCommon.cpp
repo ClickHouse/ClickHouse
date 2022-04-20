@@ -40,7 +40,7 @@ void HiveMetastoreClient::tryCallHiveClient(std::function<void(ThriftHiveMetasto
         {
             func(client);
         }
-        catch (::apache::thrift::transport::TTransportException & e)
+        catch (apache::thrift::transport::TTransportException & e)
         {
             client.expire();
             err_msg = e.what();
