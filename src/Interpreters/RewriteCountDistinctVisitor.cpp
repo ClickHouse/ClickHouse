@@ -12,6 +12,8 @@
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 namespace DB
 {
@@ -35,13 +37,8 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
     auto * table_expr = selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children[0]->as<ASTTableExpression>();
     if (!table_expr || !table_expr->database_and_table_name)
         return;
-
-    auto column_name = arg[0]->as<ASTIdentifier>()->name();
-    func->name = "count";
-    func->children.clear();
-    func->children.emplace_back(std::make_shared<ASTExpressionList>());
-    func->arguments = func->children[0];
-    func->parameters = nullptr;
+    auto cloned_select_query = selectq->clone();
+    expr_list->children[0] = makeASTFunction("count");
 
     auto table_name = table_expr->database_and_table_name->as<ASTTableIdentifier>()->name();
     table_expr->children.clear();
@@ -50,10 +47,29 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
     table_expr->table_function = nullptr;
     table_expr->subquery = table_expr->children[0];
 
-    std::string sub_sql = "SELECT " + column_name + " FROM " + table_name +  " GROUP BY " + column_name + "  ";
-    ParserQuery parser(&sub_sql[sub_sql.length()-1]);
-    auto parsed_ast = parseQuery(parser, &sub_sql[0], &sub_sql[sub_sql.length()-1], "", 10240, 1024);
-    table_expr->children[0]->as<ASTSubquery>()->children.emplace_back(parsed_ast);
+    auto column_name = arg[0]->as<ASTIdentifier>()->name();
+    // Form AST for subquery
+    {
+        auto * select_ptr = cloned_select_query->as<ASTSelectQuery>();
+        select_ptr->refSelect()->children.clear();
+        select_ptr->refSelect()->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+        auto exprlist = std::make_shared<ASTExpressionList>();
+        exprlist->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+        cloned_select_query->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::GROUP_BY, exprlist);
+        if (auto settings_ptr = select_ptr->getExpression(ASTSelectQuery::Expression::SETTINGS, false))
+            select_ptr->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+
+        auto expr = std::make_shared<ASTExpressionList>();
+        expr->children.emplace_back(cloned_select_query);
+        auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
+        select_with_union->union_mode = SelectUnionMode::Unspecified;
+        select_with_union->is_normalized = false;
+        select_with_union->list_of_modes.clear();
+        select_with_union->set_of_modes.clear();
+        select_with_union->children.emplace_back(expr);
+        select_with_union->list_of_selects = expr;
+        table_expr->children[0]->as<ASTSubquery>()->children.emplace_back(select_with_union);
+    }
 }
 
 }
