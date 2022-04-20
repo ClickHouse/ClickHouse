@@ -1,1 +1,0 @@
-../../../en/operations/system-tables/storage_policies.md

@@ -52,6 +52,7 @@ void JSONAsRowInputFormat::readSuffix()
     {
         assertChar(']', *buf);
         skipWhitespaceIfAny(*buf);
+        data_in_square_brackets = false;
     }
     if (!buf->eof() && *buf->position() == ';')
     {
@@ -228,6 +229,14 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factor
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
+void registerJSONAsStringSchemaReader(FormatFactory & factory)
+{
+    factory.registerExternalSchemaReader("JSONAsString", [](const FormatSettings &)
+    {
+        return std::make_shared<JSONAsStringExternalSchemaReader>();
+    });
+}
+
 void registerInputFormatJSONAsObject(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONAsObject", [](
@@ -245,11 +254,16 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factor
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsObject", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
-void registerJSONAsStringSchemaReader(FormatFactory & factory)
+void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 {
-    factory.registerExternalSchemaReader("JSONAsString", [](const FormatSettings &)
+    factory.registerFileSegmentationEngine("JSONAsObject", &fileSegmentationEngineJSONEachRow);
+}
+
+void registerJSONAsObjectSchemaReader(FormatFactory & factory)
+{
+    factory.registerExternalSchemaReader("JSONAsObject", [](const FormatSettings &)
     {
-        return std::make_shared<JSONAsStringExternalSchemaReader>();
+        return std::make_shared<JSONAsObjectExternalSchemaReader>();
     });
 }
 

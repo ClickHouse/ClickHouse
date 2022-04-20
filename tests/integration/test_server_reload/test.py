@@ -17,10 +17,15 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=[
-        "configs/ports_from_zk.xml", "configs/ssl_conf.xml", "configs/dhparam.pem", "configs/server.crt", "configs/server.key"
+        "configs/ports_from_zk.xml",
+        "configs/ssl_conf.xml",
+        "configs/dhparam.pem",
+        "configs/server.crt",
+        "configs/server.key",
     ],
     user_configs=["configs/default_passwd.xml"],
-    with_zookeeper=True)
+    with_zookeeper=True,
+)
 
 
 LOADS_QUERY = "SELECT value FROM system.events WHERE event = 'MainConfigLoads'"
@@ -33,7 +38,9 @@ gen_dir = Path(__file__).parent / "_gen"
 gen_dir.mkdir(exist_ok=True)
 run_and_check(
     f"python3 -m grpc_tools.protoc -I{proto_dir!s} --python_out={gen_dir!s} --grpc_python_out={gen_dir!s} \
-    {proto_dir!s}/clickhouse_grpc.proto", shell=True)
+    {proto_dir!s}/clickhouse_grpc.proto",
+    shell=True,
+)
 
 sys.path.append(str(gen_dir))
 import clickhouse_grpc_pb2
@@ -56,7 +63,11 @@ def fixture_zk(cluster):
 
 
 def get_client(cluster, port):
-    return Client(host=cluster.get_instance_ip("instance"), port=port, command=cluster.client_bin_path)
+    return Client(
+        host=cluster.get_instance_ip("instance"),
+        port=port,
+        command=cluster.client_bin_path,
+    )
 
 
 def get_mysql_client(cluster, port):
@@ -64,7 +75,12 @@ def get_mysql_client(cluster, port):
     while True:
         try:
             return pymysql.connections.Connection(
-                host=cluster.get_instance_ip("instance"), user="default", password="", database="default", port=port)
+                host=cluster.get_instance_ip("instance"),
+                user="default",
+                password="",
+                database="default",
+                port=port,
+            )
         except pymysql.err.OperationalError:
             if time.monotonic() - start_time > 10:
                 raise
@@ -76,7 +92,12 @@ def get_pgsql_client(cluster, port):
     while True:
         try:
             return psycopg2.connect(
-                host=cluster.get_instance_ip("instance"), user="postgresql", password="123", database="default", port=port)
+                host=cluster.get_instance_ip("instance"),
+                user="postgresql",
+                password="123",
+                database="default",
+                port=port,
+            )
         except psycopg2.OperationalError:
             if time.monotonic() - start_time > 10:
                 raise
@@ -212,7 +233,9 @@ def test_change_grpc_port(cluster, zk):
         assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
         with sync_loaded_config(client.query):
             zk.set("/clickhouse/ports/grpc", b"9090")
-        with pytest.raises(grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"):
+        with pytest.raises(
+            grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
+        ):
             grpc_query(grpc_channel, "SELECT 1")
         grpc_channel_on_new_port = get_grpc_channel(cluster, port=9090)
         assert grpc_query(grpc_channel_on_new_port, "SELECT 1") == "1\n"
@@ -264,13 +287,22 @@ def test_remove_grpc_port(cluster, zk):
         assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
         with sync_loaded_config(client.query):
             zk.delete("/clickhouse/ports/grpc")
-        with pytest.raises(grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"):
+        with pytest.raises(
+            grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
+        ):
             grpc_query(grpc_channel, "SELECT 1")
 
 
 def test_change_listen_host(cluster, zk):
-    localhost_client = Client(host="127.0.0.1", port=9000, command="/usr/bin/clickhouse")
-    localhost_client.command = ["docker", "exec", "-i", instance.docker_id] + localhost_client.command
+    localhost_client = Client(
+        host="127.0.0.1", port=9000, command="/usr/bin/clickhouse"
+    )
+    localhost_client.command = [
+        "docker",
+        "exec",
+        "-i",
+        instance.docker_id,
+    ] + localhost_client.command
     try:
         client = get_client(cluster, port=9000)
         with sync_loaded_config(localhost_client.query):
@@ -281,4 +313,3 @@ def test_change_listen_host(cluster, zk):
     finally:
         with sync_loaded_config(localhost_client.query):
             configure_ports_from_zk(zk)
-

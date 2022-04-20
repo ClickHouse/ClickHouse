@@ -1,7 +1,7 @@
 ---
 title: 我能把 ClickHouse 当做时序数据库来使用吗?
 toc_hidden: true
-toc_priority: 101
+sidebar_position: 101
 ---
 
 # 我能把 ClickHouse 当做时序数据库来使用吗? {#can-i-use-clickhouse-as-a-time-series-database}

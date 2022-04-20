@@ -95,6 +95,7 @@ protected:
         std::optional<ProgramOptionsDescription> hosts_and_ports_description;
     };
 
+    virtual void updateLoggerLevel(const String &) {}
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
     virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
@@ -252,6 +253,8 @@ protected:
 
     QueryProcessingStage::Enum query_processing_stage;
 
+    bool fake_drop = false;
+
     struct HostAndPort
     {
         String host;
@@ -263,6 +266,8 @@ protected:
     bool allow_repeated_settings = false;
 
     bool cancelled = false;
+
+    bool logging_initialized = false;
 };
 
 }

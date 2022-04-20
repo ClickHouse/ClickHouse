@@ -43,7 +43,7 @@ Pipe readFinalFromNestedStorage(
     String filter_column_name;
     Names require_columns_name = column_names;
     ASTPtr expressions = std::make_shared<ASTExpressionList>();
-    if (column_names_set.empty() || !column_names_set.count(sign_column.name))
+    if (column_names_set.empty() || !column_names_set.contains(sign_column.name))
     {
         require_columns_name.emplace_back(sign_column.name);
 
@@ -54,7 +54,7 @@ Pipe readFinalFromNestedStorage(
         filter_column_name = expressions->children.back()->getColumnName();
     }
 
-    auto nested_snapshot = nested_storage->getStorageSnapshot(nested_metadata);
+    auto nested_snapshot = nested_storage->getStorageSnapshot(nested_metadata, context);
     Pipe pipe = nested_storage->read(require_columns_name, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     pipe.addTableLock(lock);
     pipe.addStorageHolder(nested_storage);
