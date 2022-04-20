@@ -650,7 +650,7 @@ void FileSegment::assertDetachedStatus() const
 {
     assert(
         (download_state == State::EMPTY) || (download_state == State::PARTIALLY_DOWNLOADED)
-        || (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION) || (downloaded_stated == State::SKIP_CACHE));
+        || (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION) || (download_state == State::SKIP_CACHE));
 }
 
 FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & /* cache_lock */)
