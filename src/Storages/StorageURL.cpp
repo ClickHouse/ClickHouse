@@ -43,7 +43,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 
