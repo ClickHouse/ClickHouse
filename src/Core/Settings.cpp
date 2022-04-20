@@ -114,30 +114,16 @@ void Settings::addProgramOptionAsMultitoken(boost::program_options::options_desc
         name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));
 }
 
-static std::array<std::string, 5> exceptional_settings =
-{
-    "background_pool_size",
-    "background_merges_mutations_concurrency_ratio",
-    "background_move_pool_size",
-    "background_fetches_pool_size",
-    "background_common_pool_size",
-};
-
 void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
 {
     if (config.getBool("skip_check_for_incorrect_settings", false))
         return;
 
-    auto is_exceptional = [](const String & setting)
-    {
-        return std::find(exceptional_settings.begin(), exceptional_settings.end(), setting) != exceptional_settings.end();
-    };
-
     Settings settings;
     for (auto setting : settings.all())
     {
         const auto & name = setting.getName();
-        if (config.has(name) && !is_exceptional(name))
+        if (config.has(name))
         {
             throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
