@@ -1027,7 +1027,7 @@ bool Context::hasScalar(const String & name) const
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
-    return scalars.count(name);
+    return scalars.contains(name);
 }
 
 
@@ -1101,7 +1101,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     if (!res)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
-        if (table_function_ptr->needStructureHint())
+        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
         {
             const auto & insertion_table = getInsertionTable();
             if (!insertion_table.empty())

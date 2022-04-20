@@ -110,18 +110,19 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
-    auto storage = tryGetTable(table_name, local_context);
+    auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
-    if (storage)
-        storage->dropInnerTableIfAny(no_delay, local_context);
+    if (table)
+        table->dropInnerTableIfAny(no_delay, local_context);
+    else
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
+                        backQuote(database_name), backQuote(table_name));
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
-    StoragePtr table;
     {
         std::unique_lock lock(mutex);
-        table = getTableUnlocked(table_name, lock);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
@@ -353,7 +354,7 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     /// 3. ATTACH TABLE table; (new instance of Storage with the same UUID is created, instances share data on disk)
     /// 4. INSERT INTO table ...; (both Storage instances writes data without any synchronization)
     /// To avoid it, we remember UUIDs of detached tables and does not allow ATTACH table with such UUID until detached instance still in use.
-    if (detached_tables.count(uuid))
+    if (detached_tables.contains(uuid))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table with UUID {}, "
                         "because it was detached but still used by some query. Retry later.", toString(uuid));
 }
@@ -571,7 +572,7 @@ void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
         {
             std::lock_guard lock{mutex};
             not_in_use = cleanupDetachedTables();
-            if (detached_tables.count(uuid) == 0)
+            if (!detached_tables.contains(uuid))
                 return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));

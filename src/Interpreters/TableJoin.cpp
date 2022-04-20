@@ -168,7 +168,7 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
 
     for (auto & column : columns_from_joined_table)
     {
-        if (joined_columns.count(column.name))
+        if (joined_columns.contains(column.name))
             continue;
 
         joined_columns.insert(column.name);
@@ -178,7 +178,7 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
 
         /// Also qualify unusual column names - that does not look like identifiers.
 
-        if (left_table_columns.count(column.name) || !isValidIdentifierBegin(column.name.at(0)))
+        if (left_table_columns.contains(column.name) || !isValidIdentifierBegin(column.name.at(0)))
             inserted.name = right_table_prefix + column.name;
 
         original_names[inserted.name] = column.name;
@@ -280,7 +280,7 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
 
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
-        if (required_keys.count(right_key_name) && !required_right_keys.has(right_key_name))
+        if (required_keys.contains(right_key_name) && !required_right_keys.has(right_key_name))
         {
             const auto & right_key = right_table_keys.getByName(right_key_name);
             required_right_keys.insert(right_key);
