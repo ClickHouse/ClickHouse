@@ -1377,18 +1377,18 @@ struct ImplWyHash64
 
     static UInt64 apply(const char * s, const size_t len)
     {
-        return uint64_t hash=wyhash(s, len, 0, _wyp);
+        return wyhash(s, len, 0, _wyp);
     }
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
         union
         {
             UInt64 u64[2];
-            char chars[8];
+            char chars[16];
         };
         u64[0] = h1;
-        u64[2] = h2;
-        return apply(chars, 8);
+        u64[1] = h2;
+        return apply(chars, 16);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
