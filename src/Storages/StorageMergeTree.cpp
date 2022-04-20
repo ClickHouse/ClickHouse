@@ -593,25 +593,6 @@ bool StorageMergeTree::isSupportLightweightMutate(ContextPtr query_context)
     return true;
 }
 
-bool StorageMergeTree::hasLightWeight() const
-{
-    return getHasLightWeightParts();
-}
-
-bool StorageMergeTree::isSupportLightweightMutate(ContextPtr query_context)
-{
-    const Settings & settings = query_context->getSettingsRef();
-    if (!settings.enable_lightweight_mutation)
-        return false;
-
-    MergeTreeSettingsPtr mt_settings = getSettings();
-    if (mt_settings->min_rows_for_compact_part != 0 || mt_settings->min_bytes_for_compact_part != 0
-        || mt_settings->min_rows_for_wide_part != 0 || mt_settings->min_bytes_for_wide_part != 0)
-        return false;
-
-    return true;
-}
-
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids) const
 {
     std::unique_lock lock(currently_processing_in_background_mutex);
