@@ -1,6 +1,6 @@
 ---
-toc_priority: 34
-toc_title: Arithmetic
+sidebar_position: 34
+sidebar_label: Arithmetic
 ---
 
 # Arithmetic Functions {#arithmetic-functions}

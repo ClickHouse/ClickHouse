@@ -50,6 +50,8 @@ private:
 
     bool nextImplStep();
 
+    void assertCorrectness() const;
+
     enum class ReadType
     {
         CACHED,

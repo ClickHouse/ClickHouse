@@ -210,6 +210,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     ContextPtr context_,
     size_t subquery_depth_,
     bool do_global,
+    bool is_explain,
     SubqueriesForSets subqueries_for_sets_,
     PreparedSets prepared_sets_)
     : WithContext(context_)
@@ -223,7 +224,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
     /// external_tables, subqueries_for_sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
-    initGlobalSubqueriesAndExternalTables(do_global);
+    initGlobalSubqueriesAndExternalTables(do_global, is_explain);
 
     auto temp_actions = std::make_shared<ActionsDAG>(sourceColumns());
     columns_after_array_join = getColumnsAfterArrayJoin(temp_actions, sourceColumns());
@@ -261,7 +262,7 @@ NamesAndTypesList ExpressionAnalyzer::getColumnsAfterArrayJoin(ActionsDAGPtr & a
 
     for (auto & column : actions->getResultColumns())
     {
-        if (syntax->array_join_result_to_source.count(column.name))
+        if (syntax->array_join_result_to_source.contains(column.name))
         {
             new_columns_after_array_join.emplace_back(column.name, column.type);
             added_columns.emplace(column.name);
@@ -269,7 +270,7 @@ NamesAndTypesList ExpressionAnalyzer::getColumnsAfterArrayJoin(ActionsDAGPtr & a
     }
 
     for (const auto & column : src_columns)
-        if (added_columns.count(column.name) == 0)
+        if (!added_columns.contains(column.name))
             new_columns_after_array_join.emplace_back(column.name, column.type);
 
     return new_columns_after_array_join;
@@ -362,7 +363,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 NameAndTypePair key{column_name, node->result_type};
 
                 /// Aggregation keys are uniqued.
-                if (!unique_keys.count(key.name))
+                if (!unique_keys.contains(key.name))
                 {
                     unique_keys.insert(key.name);
                     aggregation_keys.push_back(key);
@@ -391,12 +392,12 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
 }
 
 
-void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
+void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain)
 {
     if (do_global)
     {
         GlobalSubqueriesVisitor::Data subqueries_data(
-            getContext(), subquery_depth, isRemoteStorage(), external_tables, subqueries_for_sets, has_global_subqueries);
+            getContext(), subquery_depth, isRemoteStorage(), is_explain, external_tables, subqueries_for_sets, has_global_subqueries);
         GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
 }
@@ -1075,7 +1076,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         /// TODO: add sampling and final execution to common chain.
         for (const auto & column : additional_required_columns)
         {
-            if (required_source_columns.count(column))
+            if (required_source_columns.contains(column))
                 step.addRequiredOutput(column);
         }
 
@@ -1083,7 +1084,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         NameSet name_set(names.begin(), names.end());
 
         for (const auto & column : sourceColumns())
-            if (required_source_columns.count(column.name) == 0)
+            if (!required_source_columns.contains(column.name))
                 name_set.erase(column.name);
 
         Names required_output(name_set.begin(), name_set.end());
@@ -1109,7 +1110,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
 
         for (const auto & column : sourceColumns())
         {
-            if (prewhere_input_names.count(column.name) == 0)
+            if (!prewhere_input_names.contains(column.name))
             {
                 columns.emplace_back(column.type, column.name);
                 unused_source_columns.emplace(column.name);
@@ -1350,7 +1351,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
                 if (auto * ident = fn->as<ASTIdentifier>())
                 {
                     /// exclude columns from select expression - they are already available
-                    if (select.count(ident->getColumnName()) == 0)
+                    if (!select.contains(ident->getColumnName()))
                         step.addRequiredOutput(ident->getColumnName());
                     return;
                 }
@@ -1381,7 +1382,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     if (with_fill)
     {
         for (const auto & column : step.getResultColumns())
-            if (!order_by_keys.count(column.name))
+            if (!order_by_keys.contains(column.name))
                 non_constant_inputs.insert(column.name);
     }
 
@@ -1415,7 +1416,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
             replaceForPositionalArguments(child, select_query, ASTSelectQuery::Expression::LIMIT_BY);
 
         auto child_name = child->getColumnName();
-        if (!aggregated_names.count(child_name))
+        if (!aggregated_names.contains(child_name))
             step.addRequiredOutput(child_name);
     }
 
@@ -1434,7 +1435,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     for (const auto & ast : asts)
     {
         String result_name = ast->getAliasOrColumnName();
-        if (required_result_columns.empty() || required_result_columns.count(result_name))
+        if (required_result_columns.empty() || required_result_columns.contains(result_name))
         {
             std::string source_name = ast->getColumnName();
 
@@ -1522,7 +1523,7 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
         /// We will not delete the original columns.
         for (const auto & column_name_type : sourceColumns())
         {
-            if (name_set.count(column_name_type.name) == 0)
+            if (!name_set.contains(column_name_type.name))
             {
                 result_names.push_back(column_name_type.name);
                 name_set.insert(column_name_type.name);
@@ -1756,7 +1757,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             // The output of this expression chain is the result of
             // SELECT (before "final projection" i.e. renaming the columns), so
             // we have to mark the expressions that are required in the output,
-            // again. We did it for the previous expression chain ("select w/o
+            // again. We did it for the previous expression chain ("select without
             // window functions") earlier, in appendSelect(). But that chain also
             // produced the expressions required to calculate window functions.
             // They are not needed in the final SELECT result. Knowing the correct

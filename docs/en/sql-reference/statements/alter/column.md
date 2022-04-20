@@ -1,6 +1,6 @@
 ---
-toc_priority: 37
-toc_title: COLUMN
+sidebar_position: 37
+sidebar_label: COLUMN
 ---
 
 # Column Manipulations {#column-manipulations}
@@ -75,8 +75,9 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
-!!! warning "Warning"
-    You can’t delete a column if it is referenced by [materialized view](../../../sql-reference/statements/create/view.md#materialized). Otherwise, it returns an error.
+:::warning    
+You can’t delete a column if it is referenced by [materialized view](../../../sql-reference/statements/create/view.md#materialized). Otherwise, it returns an error.
+:::
 
 Example:
 
