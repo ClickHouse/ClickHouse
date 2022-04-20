@@ -98,6 +98,11 @@ private:
 
     void createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper);
 
+    bool allowMoveTableToOtherDatabaseEngine(IDatabase & to_database) const override
+    {
+        return is_recovering && typeid_cast<DatabaseAtomic *>(&to_database);
+    }
+
     String zookeeper_path;
     String shard_name;
     String replica_name;
@@ -107,6 +112,7 @@ private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     std::atomic_bool is_readonly = true;
+    std::atomic_bool is_recovering = false;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
     UInt32 max_log_ptr_at_creation = 0;
 

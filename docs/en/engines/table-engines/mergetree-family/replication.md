@@ -1,6 +1,6 @@
 ---
-toc_priority: 31
-toc_title: Data Replication
+sidebar_position: 20
+sidebar_label: Data Replication
 ---
 
 # Data Replication {#table_engines-replication}
@@ -31,8 +31,9 @@ ClickHouse uses [Apache ZooKeeper](https://zookeeper.apache.org) for storing rep
 
 To use replication, set parameters in the [zookeeper](../../../operations/server-configuration-parameters/settings.md#server-settings_zookeeper) server configuration section.
 
-!!! attention "Attention"
-    Don’t neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
+:::warning
+Don’t neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
+:::
 
 Example of setting the addresses of the ZooKeeper cluster:
 
