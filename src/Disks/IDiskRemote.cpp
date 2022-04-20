@@ -350,7 +350,7 @@ std::vector<String> IDiskRemote::getRemotePaths(const String & local_path) const
 
     std::vector<String> remote_paths;
     for (const auto & [remote_path, _] : metadata.remote_fs_objects)
-        remote_paths.push_back(remote_path);
+        remote_paths.push_back(fs::path(metadata.remote_fs_root_path) / remote_path);
 
     return remote_paths;
 }

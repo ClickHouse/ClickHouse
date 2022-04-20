@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Движки баз данных"
-toc_priority: 27
-toc_title: "Введение"
+sidebar_position: 27
+sidebar_label: "Движки баз данных"
 ---
 
 # Движки баз данных {#database-engines}

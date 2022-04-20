@@ -1,6 +1,6 @@
 ---
-toc_priority: 38
-toc_title: GraphiteMergeTree
+sidebar_position: 38
+sidebar_label: GraphiteMergeTree
 ---
 
 # GraphiteMergeTree {#graphitemergetree}
@@ -54,9 +54,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-!!! attention "Attention"
+    :::note "Attention"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
-
+    :::
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
@@ -121,7 +121,7 @@ default
     ...
 ```
 
-!!! warning "Внимание"
+:::danger "Внимание"
     Правила должны быть строго упорядочены:
 
       1. Правила без `function` или `retention`.
@@ -255,5 +255,5 @@ default
 ```
 
 
-!!! warning "Внимание"
+:::danger "Внимание"
     Прореживание данных производится во время слияний. Обычно для старых партиций слияния не запускаются, поэтому для прореживания надо инициировать незапланированное слияние используя [optimize](../../../sql-reference/statements/optimize.md). Или использовать дополнительные инструменты, например [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
