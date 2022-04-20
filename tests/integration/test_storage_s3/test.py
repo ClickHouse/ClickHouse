@@ -1337,7 +1337,6 @@ def test_schema_inference_from_globs(started_cluster):
 
     assert "All attempts to extract table structure from files failed" in result
 
-
     result = instance.query_and_get_error(
         f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
     )
@@ -1352,16 +1351,19 @@ def test_schema_inference_from_globs(started_cluster):
         f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
     )
 
-    assert "Cannot extract table structure from JSONCompactEachRow format file" in result
-
+    assert (
+        "Cannot extract table structure from JSONCompactEachRow format file" in result
+    )
 
     url_filename = "test{0,1,2,3}.jsoncompacteachrow"
-    
+
     result = instance.query_and_get_error(
         f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
     )
 
-    assert "Cannot extract table structure from JSONCompactEachRow format file" in result
+    assert (
+        "Cannot extract table structure from JSONCompactEachRow format file" in result
+    )
 
 
 def test_signatures(started_cluster):
