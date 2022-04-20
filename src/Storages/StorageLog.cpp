@@ -205,7 +205,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     {
         return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer * //-V1047
         {
-            if (cache.count(ISerialization::getSubcolumnNameForStream(path)))
+            if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
                 return nullptr;
 
             String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
@@ -223,7 +223,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
         };
     };
 
-    if (deserialize_states.count(name) == 0)
+    if (!deserialize_states.contains(name))
     {
         settings.getter = create_stream_getter(true);
         serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
@@ -459,7 +459,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
     settings.getter = createStreamGetter(name_and_type);
 
-    if (serialize_states.count(name) == 0)
+    if (!serialize_states.contains(name))
          serialization->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
 
     if (storage.use_marks_file)

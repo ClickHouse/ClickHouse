@@ -566,6 +566,8 @@ class IColumn;
     M(Bool, enable_filesystem_cache_on_write_operations, false, "Write into cache on write operations. To actually work this setting requires be added to disk config too", 0) \
     M(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, "", 0) \
     \
+    M(Bool, use_structure_from_insertion_table_in_table_functions, false, "Use structure from insertion table instead of schema inference from data", 0) \
+    \
     M(UInt64, http_max_tries, 10, "Max attempts to read via http.", 0) \
     M(UInt64, http_retry_initial_backoff_ms, 100, "Min milliseconds for backoff, when retrying read via http", 0) \
     M(UInt64, http_retry_max_backoff_ms, 10000, "Max milliseconds for backoff, when retrying read via http", 0) \
@@ -582,7 +584,7 @@ class IColumn;
     M(Bool, allow_experimental_object_type, false, "Allow Object and JSON data types", 0) \
     M(String, insert_deduplication_token, "", "If not empty, used for duplicate detection instead of data digest", 0) \
     M(Bool, throw_on_unsupported_query_inside_transaction, true, "Throw exception if unsupported query is used inside transaction", 0) \
-    M(Bool, throw_if_no_data_to_insert, true, "Enables or disables empty INSERTs, disable by default", 0) \
+    M(Bool, throw_if_no_data_to_insert, true, "Enables or disables empty INSERTs, enabled by default", 0) \
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
 
