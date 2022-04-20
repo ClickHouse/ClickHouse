@@ -1165,7 +1165,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         if (!scheduled && isTTLMergeType(merge_entry->future_part->merge_type))
             getContext()->getMergeList().cancelMergeWithTTL();
-        return true;
+        return scheduled;
     }
     if (mutate_entry)
     {
