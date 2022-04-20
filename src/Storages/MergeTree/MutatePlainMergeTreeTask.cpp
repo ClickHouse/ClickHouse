@@ -101,7 +101,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                         new_part->info.min_block = new_part->info.max_block = storage.getIncrement();
                         new_part->name = new_part->getNewName(new_part->info);
 
-                        storage.renameTempPartAndAdd(new_part);
+                        storage.renameTempPartAndAdd(new_part, merge_mutate_entry->txn.get());
                     }
 
                     /// Fresh lightweight mutationID means finished

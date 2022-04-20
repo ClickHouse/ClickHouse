@@ -1929,7 +1929,7 @@ size_t MergeTreeData::clearEmptyParts()
 
 void MergeTreeData::clearOldDeletedMasks(bool startup)
 {
-    auto parts = getDataPartsVector();
+    auto parts = getDataPartsVectorForInternalUsage();
     for (const auto & part : parts)
     {
         if (!part->hasLightWeight() || !part->isStoredOnDisk())

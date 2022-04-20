@@ -1628,7 +1628,8 @@ private:
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_part_indices,
-            ctx->compression_codec);
+            ctx->compression_codec,
+            ctx->txn);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);

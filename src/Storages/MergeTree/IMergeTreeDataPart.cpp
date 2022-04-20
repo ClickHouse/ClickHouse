@@ -2101,13 +2101,13 @@ std::unordered_map<String, IMergeTreeDataPart::uint128> IMergeTreeDataPart::chec
     return metadata_manager->check();
 }
 
-String IMergeTreeDataPart::getDeletedMaskFileName(Int64 version, bool temp) const
+String IMergeTreeDataPart::getDeletedMaskFileName(Int64 lightweight_version, bool temp) const
 {
     String file_name = "";
     if (temp)
         file_name += "tmp_";
 
-    file_name += DELETED_ROW_MARK_PREFIX_NAME + toString(version) + DATA_FILE_EXTENSION;
+    file_name += DELETED_ROW_MARK_PREFIX_NAME + toString(lightweight_version) + DATA_FILE_EXTENSION;
 
     return file_name;
 }

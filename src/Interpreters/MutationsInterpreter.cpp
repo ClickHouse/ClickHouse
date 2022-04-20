@@ -1017,7 +1017,9 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQueryLightweight(std::vecto
             context_for_scalar_subqueries->setFromLightWeightMutation(false);
 
         auto syntax_result
-            = TreeRewriter(context_for_scalar_subqueries).analyze(all_asts, all_columns, storage, metadata_snapshot, false, true, execute_scalar_subqueries);
+            = TreeRewriter(context_for_scalar_subqueries).analyze(
+            all_asts, all_columns, storage, storage->getStorageSnapshot(metadata_snapshot, context),
+            false, true, execute_scalar_subqueries);
         if (execute_scalar_subqueries && context->hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
