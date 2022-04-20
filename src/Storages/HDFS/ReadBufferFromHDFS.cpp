@@ -160,8 +160,7 @@ std::optional<size_t> ReadBufferFromHDFS::getTotalSize()
 
 bool ReadBufferFromHDFS::nextImpl()
 {
-    std::lock_guard lock(mutex);
-    StatusGuard guard{this, __FUNCTION__};
+    // StatusGuard guard{this, __FUNCTION__};
     impl->position() = impl->buffer().begin() + offset();
     auto result = impl->next();
 
@@ -174,9 +173,8 @@ bool ReadBufferFromHDFS::nextImpl()
 
 off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
 {
-    std::lock_guard lock(mutex);
-    std::cout << "obj:" << getId() << ",seek_offset:" << offset_ << std::endl;
-    StatusGuard guard{this, __FUNCTION__};
+    // std::cout << "obj:" << getId() << ",seek_offset:" << offset_ << std::endl;
+    // StatusGuard guard{this, __FUNCTION__};
     if (whence != SEEK_SET)
         throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 

@@ -20,7 +20,7 @@
 namespace DB
 {
 
-class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>
+class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBufferWithSize>
 {
 public:
     AsynchronousReadBufferFromHDFS(
@@ -35,7 +35,7 @@ public:
 
     void prefetch() override;
 
-    // std::optional<size_t> getTotalSize() override;
+    std::optional<size_t> getTotalSize() override;
 
     off_t getPosition() override;
 
