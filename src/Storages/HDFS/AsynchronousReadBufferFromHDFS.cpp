@@ -108,7 +108,7 @@ std::optional<size_t> AsynchronousReadBufferFromHDFS::getTotalSize()
 
 bool AsynchronousReadBufferFromHDFS::nextImpl()
 {
-    // StatusGuard guard{this, __FUNCTION__};
+    StatusGuard guard{this, __FUNCTION__};
     if (!hasPendingDataToRead())
         return false;
 
@@ -163,8 +163,9 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
 
 off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
 {
-    // std::cout << "obj:" << getId() << ",seek_offset:" << offset << std::endl;
-    // StatusGuard guard{this, __FUNCTION__};
+    std::cout << "AsynchronousReadBufferFromHDFS seek" << std::endl;
+    std::cout << "obj:" << getId() << ",seek_offset:" << offset << std::endl;
+    StatusGuard guard{this, __FUNCTION__};
     ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
 
     if (whence != SEEK_SET)
@@ -194,6 +195,7 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
         else if (prefetch_future.valid())
         {
             /// Read from prefetch buffer and recheck if the new position is valid inside.
+            /// TODO we can judge quickly without waiting for prefetch
             if (nextImpl())
             {
                 read_from_prefetch = true;
@@ -212,7 +214,6 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
     /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();
 
-    ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
     impl->seek(new_pos, SEEK_SET);
     file_offset_of_buffer_end = new_pos;
     return new_pos;
@@ -252,10 +253,12 @@ String AsynchronousReadBufferFromHDFS::getStatus(const String & action)
     res += ",";
     res += "obj:" + getId();
     res += ",";
+    /*
     res += "impl_position:" + std::to_string(impl->getPosition());
     res += ",";
     res += "impl_file_offset_of_buffer_end:" + std::to_string(impl->getFileOffsetOfBufferEnd());
     res += ",";
+    */
     res += "file_offset_of_buffer_end:" + std::to_string(file_offset_of_buffer_end);
     res += ",";
     res += "read_until_position:" + std::to_string(*read_until_position);
