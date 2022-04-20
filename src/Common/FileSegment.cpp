@@ -561,6 +561,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
             * in FileSegmentsHolder represent a contiguous range, so we can resize
             * it only when nobody needs it.
             */
+            download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
             LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), current_downloaded_size);
             cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
         }
@@ -649,8 +650,8 @@ void FileSegment::assertNotDetached() const
 void FileSegment::assertDetachedStatus() const
 {
     assert(
-        (download_state == State::EMPTY) || (download_state == State::PARTIALLY_DOWNLOADED)
-        || (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION) || (download_state == State::SKIP_CACHE));
+        (download_state == State::EMPTY) || (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+        || (download_state == State::SKIP_CACHE));
 }
 
 FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & /* cache_lock */)
