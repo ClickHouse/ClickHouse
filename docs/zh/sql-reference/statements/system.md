@@ -1,6 +1,6 @@
 ---
-toc_priority: 37
-toc_title: SYSTEM
+sidebar_position: 37
+sidebar_label: SYSTEM
 ---
 
 # SYSTEM Queries {#query-language-system}

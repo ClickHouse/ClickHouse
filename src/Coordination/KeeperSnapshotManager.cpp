@@ -196,7 +196,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         writeBinary(timeout, out);
 
         KeeperStorage::AuthIDs ids;
-        if (snapshot.session_and_auth.count(session_id))
+        if (snapshot.session_and_auth.contains(session_id))
             ids = snapshot.session_and_auth.at(session_id);
 
         writeBinary(ids.size(), out);
