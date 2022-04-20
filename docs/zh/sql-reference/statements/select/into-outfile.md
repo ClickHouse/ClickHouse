@@ -1,5 +1,5 @@
 ---
-toc_title: INTO OUTFILE
+sidebar_label: INTO OUTFILE
 ---
 
 # INTO OUTFILE 子句 {#into-outfile-clause}

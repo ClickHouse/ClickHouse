@@ -1,7 +1,6 @@
 ---
 title: Why not use something like MapReduce?
-toc_hidden: true
-toc_priority: 110
+sidebar_position: 110
 ---
 
 # Почему бы не использовать системы типа MapReduce? {#why-not-use-something-like-mapreduce}
