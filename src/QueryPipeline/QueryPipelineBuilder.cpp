@@ -338,7 +338,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     ///                   ╞> FillingJoin ─> Resize ╣     ╞> Joining ─> (totals)
     /// (totals) ─────────┘                        ╙─────┘
 
-    size_t num_streams = left->getNumStreams() < max_streams ? max_streams : left->getNumStreams();
+    // In some cases, left's streams is too smaller then max_streams. Keep it same as max_streams
+    // to make full use of cpu.
+    auto & num_streams = max_streams;
     left->resize(num_streams);
 
     if (join->supportParallelJoin() && !right->hasTotals())

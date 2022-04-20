@@ -112,7 +112,6 @@ private:
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
-    const bool enable_parallel_hash_join = false;
 
     /// the limit has no technical reasons, it supposed to improve safety
     const size_t MAX_DISJUNCTS = 16; /// NOLINT
@@ -196,7 +195,7 @@ public:
     bool forceHashJoin() const
     {
         /// HashJoin always used for DictJoin
-        return dictionary_reader || join_algorithm == JoinAlgorithm::HASH;
+        return dictionary_reader || join_algorithm == JoinAlgorithm::HASH || join_algorithm == JoinAlgorithm::PARALLEL_HASH;
     }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
