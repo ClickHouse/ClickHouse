@@ -168,7 +168,7 @@ def parse_env_variables(
             if not is_cross_arm:
                 result.append("BUILD_MUSL_KEEPER=1")
             else:
-                result.append("-DBUILD_STANDALONE_KEEPER=1")
+                cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
 
     result.append(f"CC={cc}")
     result.append(f"CXX={cxx}")
