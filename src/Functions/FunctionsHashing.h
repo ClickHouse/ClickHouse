@@ -1371,6 +1371,23 @@ private:
     }
 };
 
+template <typename T>
+T highwayhash(const char * s, size_t len)
+{
+    using namespace highwayhash;
+    const HHKey key HH_ALIGNAS(32) = {1, 2, 3, 4};
+    T result;
+#ifdef __AVX2__
+    HHStateT<4> state(key);
+#elif defined(__SSE4_1__)
+    HHStateT<2> state(key);
+#else
+    HHStateT<1> state(key);
+#endif
+    HighwayHashT(&state, s, len, &result);
+    return result;
+}
+
 struct ImplHighwayHash64
 {
     static constexpr auto name = "highwayHash64";
@@ -1378,24 +1395,66 @@ struct ImplHighwayHash64
 
     static UInt64 apply(const char *s, const size_t len)
     {
-        using namespace highwayhash;
-
-        const HHKey key HH_ALIGNAS(32) = {1, 2, 3, 4};
-        UInt64 result;
-#ifdef __AVX2__
-        HHStateT<4> state(key);
-#elif defined(__SSE4_1__)
-        HHStateT<2> state(key);
-#else
-        HHStateT<1> state(key);
-#endif
-        HighwayHashT(&state, s, len, &result);
-        return result;
+        return highwayhash<UInt64>(s, len);
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
-        return h1 ^ h2;
+        union {
+            UInt64 u64[2];
+            char chars[16];
+        };
+        u64[0] = h1;
+        u64[1] = h2;
+        return highwayhash<UInt64>(chars, 16);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct ImplHighwayHash128
+{
+    static constexpr auto name = "highwayHash128";
+    using ReturnType = UInt128;
+
+    static UInt128 apply(const char *s, const size_t len)
+    {
+        return highwayhash<UInt128>(s, len);
+    }
+
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
+    {
+        union {
+            UInt128 u128[2];
+            char chars[32];
+        };
+        u128[0] = h1;
+        u128[1] = h2;
+        return highwayhash<UInt128>(chars, 32);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct ImplHighwayHash256
+{
+    static constexpr auto name = "highwayHash256";
+    using ReturnType = UInt256;
+
+    static UInt256 apply(const char *s, const size_t len)
+    {
+        return highwayhash<UInt256>(s, len);
+    }
+
+    static UInt256 combineHashes(UInt256 h1, UInt256 h2)
+    {
+        union {
+            UInt256 u256[2];
+            char chars[64];
+        };
+        u256[0] = h1;
+        u256[1] = h2;
+        return highwayhash<UInt256>(chars, 64);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -1437,4 +1496,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 using FunctionHighwayHash64 = FunctionAnyHash<ImplHighwayHash64>;
+using FunctionHighwayHash128 = FunctionAnyHash<ImplHighwayHash128>;
+using FunctionHighwayHash256 = FunctionAnyHash<ImplHighwayHash256>;
+
 }

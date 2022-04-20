@@ -40,5 +40,7 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionXxHash32>();
     factory.registerFunction<FunctionXxHash64>();
     factory.registerFunction<FunctionHighwayHash64>();
+    factory.registerFunction<FunctionHighwayHash128>();
+    factory.registerFunction<FunctionHighwayHash256>();
 }
 }
