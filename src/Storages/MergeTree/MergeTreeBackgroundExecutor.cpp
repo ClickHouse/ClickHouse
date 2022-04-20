@@ -34,13 +34,13 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
     std::lock_guard lock(mutex);
 
     /// Do not throw any exceptions from global pool. Just log a warning and silently return.
-    if (new_threads_count <= threads_count)
+    if (new_threads_count < threads_count)
     {
         LOG_WARNING(log, "Loaded new threads count for {}Executor from top level config, but new value ({}) is not greater than current {}", name, new_threads_count, threads_count);
         return;
     }
 
-    if (new_max_tasks_count <= max_tasks_count)
+    if (new_max_tasks_count < max_tasks_count)
     {
         LOG_WARNING(log, "Loaded new max tasks count for {}Executor from top level config, but new value ({}) is not greater than current {}", name, new_max_tasks_count, max_tasks_count);
         return;
