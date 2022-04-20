@@ -14,8 +14,7 @@
 #include <Common/HashTable/Hash.h>
 #include <xxhash.h>
 
-#include <highwayhash/highwayhash_target.h>
-#include <highwayhash/instruction_sets.h>
+#include <highwayhash/highwayhash.h>
 
 #if USE_SSL
 #    include <openssl/md4.h>
@@ -1383,7 +1382,14 @@ struct ImplHighwayHash64
 
         const HHKey key HH_ALIGNAS(32) = {1, 2, 3, 4};
         UInt64 result;
-        InstructionSets::Run<HighwayHash>(key, s, len, &result);
+#ifdef __AVX2__
+        HHStateT<4> state(key);
+#elif defined(__SSE4_1__)
+        HHStateT<2> state(key);
+#else
+        HHStateT<1> state(key);
+#endif
+        HighwayHashT(&state, s, len, &result);
         return result;
     }
 
