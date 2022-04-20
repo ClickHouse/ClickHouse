@@ -178,9 +178,9 @@ ORDER BY
 LIMIT 20
 SETTINGS any_join_distinct_right_table_keys = 1, joined_subquery_requires_alias = 0;
 
-SELECT UserID, EventTime::DateTime('Asia/Dubai'), pp.Key1, pp.Key2, ParsedParams.Key1 FROM test.hits ARRAY JOIN ParsedParams AS pp WHERE CounterID = 1704509 ORDER BY UserID, EventTime, pp.Key1, pp.Key2 LIMIT 100;
+SELECT UserID, pp.Key1, pp.Key2, ParsedParams.Key1 FROM test.hits ARRAY JOIN ParsedParams AS pp WHERE CounterID = 1704509 ORDER BY UserID, EventTime, pp.Key1, pp.Key2 LIMIT 100;
 
-SELECT UserID, EventTime::DateTime('Asia/Dubai'), pp.Key1, pp.Key2, ParsedParams.Key1 FROM test.hits LEFT ARRAY JOIN ParsedParams AS pp WHERE CounterID = 1704509 ORDER BY UserID, EventTime, pp.Key1, pp.Key2 LIMIT 100;
+SELECT UserID, pp.Key1, pp.Key2, ParsedParams.Key1 FROM test.hits LEFT ARRAY JOIN ParsedParams AS pp WHERE CounterID = 1704509 ORDER BY UserID, EventTime, pp.Key1, pp.Key2 LIMIT 100;
 
 SELECT a.*, b.* FROM
 (
