@@ -1,6 +1,6 @@
 ---
-toc_priority: 59
-toc_title: Embedded Dictionaries
+sidebar_position: 59
+sidebar_label: Embedded Dictionaries
 ---
 
 # Functions for Working with Embedded Dictionaries

@@ -1,5 +1,5 @@
 ---
-toc_priority: 203
+sidebar_position: 203
 ---
 
 # quantileExactWeighted {#quantileexactweighted}

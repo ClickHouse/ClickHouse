@@ -693,7 +693,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         /// from disk we just don't read dropped columns
         for (const auto & column : part->getColumns())
         {
-            if (!mutated_columns.count(column.name))
+            if (!mutated_columns.contains(column.name))
                 for_interpreter.emplace_back(
                     MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
         }
@@ -771,7 +771,7 @@ MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     SerializationInfoByName new_serialization_infos;
     for (const auto & [name, info] : serialization_infos)
     {
-        if (removed_columns.count(name))
+        if (removed_columns.contains(name))
             continue;
 
         auto it = renamed_columns_from_to.find(name);
@@ -799,13 +799,13 @@ MergeTreeDataMergerMutator::getColumnsForNewDataPart(
         }
         else
         {
-            if (!source_columns_name_set.count(it->name))
+            if (!source_columns_name_set.contains(it->name))
             {
                 /// Source part doesn't have column but some other column
                 /// was renamed to it's name.
                 auto renamed_it = renamed_columns_to_from.find(it->name);
                 if (renamed_it != renamed_columns_to_from.end()
-                    && source_columns_name_set.count(renamed_it->second))
+                    && source_columns_name_set.contains(renamed_it->second))
                     ++it;
                 else
                     it = storage_columns.erase(it);
@@ -813,19 +813,19 @@ MergeTreeDataMergerMutator::getColumnsForNewDataPart(
             else
             {
                 /// Check that this column was renamed to some other name
-                bool was_renamed = renamed_columns_from_to.count(it->name);
-                bool was_removed = removed_columns.count(it->name);
+                bool was_renamed = renamed_columns_from_to.contains(it->name);
+                bool was_removed = removed_columns.contains(it->name);
 
                 /// If we want to rename this column to some other name, than it
                 /// should it's previous version should be dropped or removed
-                if (renamed_columns_to_from.count(it->name) && !was_renamed && !was_removed)
+                if (renamed_columns_to_from.contains(it->name) && !was_renamed && !was_removed)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Incorrect mutation commands, trying to rename column {} to {}, but part {} already has column {}", renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
 
                 /// Column was renamed and no other column renamed to it's name
                 /// or column is dropped.
-                if (!renamed_columns_to_from.count(it->name) && (was_renamed || was_removed))
+                if (!renamed_columns_to_from.contains(it->name) && (was_renamed || was_removed))
                     it = storage_columns.erase(it);
                 else
                     ++it;

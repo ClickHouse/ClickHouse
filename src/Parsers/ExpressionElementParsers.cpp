@@ -16,6 +16,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -1726,7 +1727,7 @@ const char * ParserAlias::restricted_keywords[] =
     "NOT",
     "OFFSET",
     "ON",
-    "ONLY", /// YQL synonym for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
+    "ONLY", /// YQL's synonym for ANTI. Note: YQL is the name of one of proprietary languages, completely unrelated to ClickHouse.
     "ORDER",
     "PREWHERE",
     "RIGHT",
@@ -2310,6 +2311,35 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->children.push_back(expr_elem);
     if (locale_node)
         elem->children.push_back(locale_node);
+
+    node = elem;
+
+    return true;
+}
+
+bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword as("AS");
+    ParserExpression element_p;
+    ParserIdentifier ident_p;
+
+    ASTPtr ident;
+    if (!ident_p.parse(pos, ident, expected))
+        return false;
+
+    ASTPtr expr;
+    if (as.ignore(pos, expected))
+    {
+        if (!element_p.parse(pos, expr, expected))
+            return false;
+    }
+    else
+        expr = ident;
+
+    auto elem = std::make_shared<ASTInterpolateElement>();
+    elem->column = ident->getColumnName();
+    elem->expr = expr;
+    elem->children.push_back(expr);
 
     node = elem;
 

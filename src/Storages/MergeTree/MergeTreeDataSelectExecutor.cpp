@@ -862,7 +862,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         for (const auto & index_name : forced_indices)
         {
-            if (!useful_indices_names.count(index_name))
+            if (!useful_indices_names.contains(index_name))
             {
                 throw Exception(
                     ErrorCodes::INDEX_NOT_USED,
@@ -987,7 +987,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
         };
 
-        size_t num_threads = std::min(size_t(num_streams), parts.size());
+        size_t num_threads = std::min<size_t>(num_streams, parts.size());
 
         if (num_threads <= 1)
         {

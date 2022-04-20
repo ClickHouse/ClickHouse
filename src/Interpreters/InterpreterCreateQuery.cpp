@@ -8,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
-#include <Common/renameat2.h>
+#include <Common/atomicRename.h>
 #include <Common/hex.h>
 
 #include <Core/Defines.h>
@@ -54,6 +54,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/ObjectUtils.h>
+#include <DataTypes/hasNullable.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
@@ -479,6 +480,21 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             else if (make_columns_nullable)
             {
                 column_type = makeNullable(column_type);
+            }
+            else if (!hasNullable(column_type) &&
+                     col_decl.default_specifier == "DEFAULT" &&
+                     col_decl.default_expression &&
+                     col_decl.default_expression->as<ASTLiteral>() &&
+                     col_decl.default_expression->as<ASTLiteral>()->value.isNull())
+            {
+                if (column_type->lowCardinality())
+                {
+                    const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
+                    assert(low_cardinality_type);
+                    column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
+                }
+                else
+                    column_type = makeNullable(column_type);
             }
 
             column_names_and_types.emplace_back(col_decl.name, column_type);
@@ -1054,6 +1070,38 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
+
+    /// Check type compatible for materialized dest table and select columns
+    if (create.select && create.is_materialized_view && create.to_table_id)
+    {
+        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
+            {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
+            getContext()
+        ))
+        {
+            Block input_block = InterpreterSelectWithUnionQuery(
+                create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
+
+            Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
+
+            ColumnsWithTypeAndName input_columns;
+            ColumnsWithTypeAndName output_columns;
+            for (const auto & input_column : input_block)
+            {
+                if (const auto * output_column = output_block.findByName(input_column.name))
+                {
+                    input_columns.push_back(input_column.cloneEmpty());
+                    output_columns.push_back(output_column->cloneEmpty());
+                }
+            }
+
+            ActionsDAG::makeConvertingActions(
+                input_columns,
+                output_columns,
+                ActionsDAG::MatchColumnsMode::Position
+            );
+        }
+    }
 
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;

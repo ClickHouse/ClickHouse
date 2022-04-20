@@ -29,7 +29,7 @@ TEST(ColumnUnique, InsertRange)
         String str = toString(i % mod_to);
         column_string->insertData(str.data(), str.size());
 
-        if (ref_map.count(str) == 0)
+        if (!ref_map.contains(str))
             ref_map[str] = ref_map.size();
 
         indexes[i]= ref_map[str];
@@ -68,7 +68,7 @@ TEST(ColumnUnique, InsertRangeWithOverflow)
         String str = toString(i % mod_to);
         column_string->insertData(str.data(), str.size());
 
-        if (ref_map.count(str) == 0)
+        if (!ref_map.contains(str))
             ref_map[str] = ref_map.size();
 
         indexes[i]= ref_map[str];
