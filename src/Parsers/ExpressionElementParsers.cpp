@@ -658,9 +658,21 @@ namespace
             return false;
         }
 
+        ASTPtr start_pos_expr_node;
+        if (pos->type == TokenType::Comma)
+        {
+            ++pos;
+
+            if (!expr_parser.parse(pos, start_pos_expr_node, expected))
+                return false;
+        }
+
         auto arguments = std::make_shared<ASTExpressionList>();
         arguments->children.push_back(std::move(first_arg_expr_node));
         arguments->children.push_back(std::move(second_arg_expr_node));
+
+        if (start_pos_expr_node)
+            arguments->children.push_back(std::move(start_pos_expr_node));
 
         auto res = std::make_shared<ASTFunction>();
         res->name = "position";
