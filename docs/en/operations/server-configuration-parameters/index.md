@@ -1,10 +1,9 @@
 ---
-toc_folder_title: Server Configuration Parameters
-toc_priority: 54
-toc_title: Introduction
+sidebar_position: 54
+sidebar_label: Server Configuration Parameters
 ---
 
-# Server Configuration Parameters {#server-settings}
+# Server Configuration Parameters 
 
 This section contains descriptions of server settings that cannot be changed at the session or query level.
 

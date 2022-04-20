@@ -143,7 +143,14 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &) override;
 
-    void checkTableCanBeRenamed() const override;
+    enum RenamingRestrictions
+    {
+        ALLOW_ANY,
+        ALLOW_PRESERVING_UUID,
+        DO_NOT_ALLOW,
+    };
+
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -200,10 +207,7 @@ public:
     void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 
     /// Add a part to the queue of parts whose data you want to check in the background thread.
-    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0)
-    {
-        part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
-    }
+    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
@@ -214,7 +218,8 @@ public:
 
     /** Remove a specific replica from zookeeper.
      */
-    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
+    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
+                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
@@ -413,7 +418,7 @@ private:
     bool other_replicas_fixed_granularity = false;
 
     /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
-    const bool allow_renaming;
+    const RenamingRestrictions renaming_restrictions;
 
     const size_t replicated_fetches_pool_size;
 
@@ -491,8 +496,9 @@ private:
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
                                   NameSet * parts_should_be_retried = nullptr);
 
-    bool tryRemovePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries = 5);
-    bool tryRemovePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries = 5);
+    /// Remove parts from ZooKeeper, throw exception if unable to do so after max_retries.
+    void removePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries = 5);
+    void removePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries = 5);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
@@ -797,7 +803,7 @@ protected:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag,
-        bool allow_renaming_);
+        RenamingRestrictions renaming_restrictions_);
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

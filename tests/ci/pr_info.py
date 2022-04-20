@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import logging
 import os
 
 from unidiff import PatchSet  # type: ignore
@@ -8,7 +9,7 @@ from build_download_helper import get_with_retries
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
-    GITHUB_RUN_ID,
+    GITHUB_RUN_URL,
     GITHUB_EVENT_PATH,
 )
 
@@ -78,7 +79,7 @@ class PRInfo:
             else:
                 github_event = PRInfo.default_event.copy()
         self.event = github_event
-        self.changed_files = set([])
+        self.changed_files = set()
         self.body = ""
         ref = github_event.get("ref", "refs/head/master")
         if ref and ref.startswith("refs/heads/"):
@@ -98,12 +99,20 @@ class PRInfo:
         if "pull_request" in github_event:  # pull request and other similar events
             self.number = github_event["pull_request"]["number"]
             if pr_event_from_api:
-                response = get_with_retries(
-                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
-                    f"/pulls/{self.number}",
-                    sleep=RETRY_SLEEP,
-                )
-                github_event["pull_request"] = response.json()
+                try:
+                    response = get_with_retries(
+                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
+                        f"/pulls/{self.number}",
+                        sleep=RETRY_SLEEP,
+                    )
+                    github_event["pull_request"] = response.json()
+                except Exception as e:
+                    logging.warning(
+                        "Unable to get pull request event %s from API, "
+                        "fallback to received event. Exception: %s",
+                        self.number,
+                        e,
+                    )
 
             if "after" in github_event:
                 self.sha = github_event["after"]
@@ -111,7 +120,7 @@ class PRInfo:
                 self.sha = github_event["pull_request"]["head"]["sha"]
 
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
+            self.task_url = GITHUB_RUN_URL
 
             self.repo_full_name = GITHUB_REPOSITORY
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
@@ -142,7 +151,7 @@ class PRInfo:
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
+            self.task_url = GITHUB_RUN_URL
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
             if pull_request is None or pull_request["state"] == "closed":
@@ -180,7 +189,7 @@ class PRInfo:
             self.number = 0
             self.labels = {}
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
+            self.task_url = GITHUB_RUN_URL
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
             self.pr_html_url = f"{repo_prefix}/commits/{ref}"
@@ -209,6 +218,7 @@ class PRInfo:
         else:
             diff_object = PatchSet(response.text)
             self.changed_files = {f.path for f in diff_object}
+        print("Fetched info about %d changed files", len(self.changed_files))
 
     def get_dict(self):
         return {
@@ -232,6 +242,15 @@ class PRInfo:
             if (
                 ext in DIFF_IN_DOCUMENTATION_EXT and (path_in_docs or path_in_website)
             ) or "docker/docs" in f:
+                return True
+        return False
+
+    def has_changes_in_submodules(self):
+        if self.changed_files is None or not self.changed_files:
+            return True
+
+        for f in self.changed_files:
+            if "contrib" in f:
                 return True
         return False
 

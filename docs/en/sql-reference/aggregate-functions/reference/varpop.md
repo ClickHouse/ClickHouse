@@ -1,5 +1,5 @@
 ---
-toc_priority: 32
+sidebar_position: 32
 ---
 
 # varPop(x) {#varpopx}
@@ -8,5 +8,6 @@ Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x
 
 In other words, dispersion for a set of values. Returns `Float64`.
 
-!!! note "Note"
-    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varPopStable` function. It works slower but provides a lower computational error.
+:::note    
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varPopStable` function. It works slower but provides a lower computational error.
+:::

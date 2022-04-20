@@ -1,6 +1,6 @@
 ---
-toc_priority: 21
-toc_title: Input and Output Formats
+sidebar_position: 21
+sidebar_label: Input and Output Formats
 ---
 
 # Formats for Input and Output Data {#formats}
@@ -51,7 +51,6 @@ The supported formats are:
 | [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
 | [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
 | [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
-| [ProtobufList](#protobuflist)                                                           | ✔     | ✔      |
 | [Avro](#data-format-avro)                                                               | ✔     | ✔      |
 | [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
 | [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
@@ -65,7 +64,7 @@ The supported formats are:
 | [Null](#null)                                                                           | ✗     | ✔      |
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
-| [LineAsString](#lineasstring)                                                           | ✔     | ✔      |
+| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 | [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
@@ -765,8 +764,9 @@ CREATE TABLE IF NOT EXISTS example_table
 -   If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
 -   If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
-!!! note "Warning"
-    When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
+:::warning
+When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
+:::
 
 ### Selecting Data {#selecting-data}
 
@@ -788,8 +788,9 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
-!!! note "Note"
-    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
+:::info    
+Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
+:::
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
@@ -1231,38 +1232,7 @@ See also [how to read/write length-delimited protobuf messages in popular langua
 
 ## ProtobufSingle {#protobufsingle}
 
-Same as [Protobuf](#protobuf) but for storing/parsing a single Protobuf message without length delimiter.
-As a result, only a single table row can be written/read.
-
-## ProtobufList {#protobuflist}
-
-Similar to Protobuf but rows are represented as a sequence of sub-messages contained in a message with fixed name "Envelope".
-
-Usage example:
-
-``` sql
-SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
-```
-
-``` bash
-cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
-```
-
-where the file `schemafile.proto` looks like this:
-
-``` capnp
-syntax = "proto3";
-
-message Envelope {
-  message MessageType {
-    string name = 1;
-    string surname = 2;
-    uint32 birthDate = 3;
-    repeated string phoneNumbers = 4;
-  };
-  MessageType row = 1;
-};
-```
+Same as [Protobuf](#protobuf) but for storing/parsing single Protobuf message without length delimiters.
 
 ## Avro {#data-format-avro}
 
@@ -1372,8 +1342,9 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-!!! note "Warning"
-    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
+:::warning    
+Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
+:::
 
 ## Parquet {#data-format-parquet}
 
@@ -1396,8 +1367,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `FLOAT`, `HALF_FLOAT`        | [Float32](../sql-reference/data-types/float.md)           | `FLOAT`                      |
 | `DOUBLE`                     | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                     |
 | `DATE32`                     | [Date](../sql-reference/data-types/date.md)               | `UINT16`                     |
-| `DATE64`                     | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                     |
-| `TIMESTAMP`                  | [DateTime64](../sql-reference/data-types/datetime64.md)   | `TIMESTAMP`                  |
+| `DATE64`, `TIMESTAMP`        | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                     |
 | `STRING`, `BINARY`           | [String](../sql-reference/data-types/string.md)           | `BINARY`                     |
 | —                            | [FixedString](../sql-reference/data-types/fixedstring.md) | `BINARY`                     |
 | `DECIMAL`                    | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                    |
@@ -1454,8 +1424,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)     | `FLOAT32`                  |
 | `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)     | `FLOAT64`                  |
 | `DATE32`                   | [Date](../sql-reference/data-types/date.md)         | `UINT16`                   |
-| `DATE64`                   | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                   |
-| `TIMESTAMP`                | [DateTime64](../sql-reference/data-types/datetime64.md) | `TIMESTAMP`                   |
+| `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                   |
 | `STRING`, `BINARY`         | [String](../sql-reference/data-types/string.md)     | `BINARY`                   |
 | `STRING`, `BINARY`         | [FixedString](../sql-reference/data-types/fixedstring.md)   | `BINARY`                        |
 | `DECIMAL`                  | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                  |
@@ -1517,8 +1486,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     | `FLOAT`                  |
 | `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     | `DOUBLE`                 |
 | `DATE32`                 | [Date](../sql-reference/data-types/date.md)         | `DATE32`                 |
-| `DATE64`                 | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                 |
-| `TIMESTAMP`              | [DateTime64](../sql-reference/data-types/datetime64.md) | `TIMESTAMP`                   |
+| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`              |
 | `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     | `BINARY`                 |
 | `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
 | `LIST`                   | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |

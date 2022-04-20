@@ -503,7 +503,7 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
     }
     else
     {
-        /// Drain connections synchronously w/o suppressing errors.
+        /// Drain connections synchronously without suppressing errors.
         CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
         ConnectionCollector::drainConnections(*connections, /* throw_error= */ true);
         CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
@@ -563,7 +563,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 {
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
-                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot);
+                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, context);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
                         context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
