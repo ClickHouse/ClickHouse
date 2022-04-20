@@ -425,6 +425,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsTTL() const override { return true; }
+
     bool supportsDynamicSubcolumns() const override { return true; }
 
     NamesAndTypesList getVirtuals() const override;

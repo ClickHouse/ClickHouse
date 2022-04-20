@@ -1,4 +1,4 @@
-# system.tables {#system-tables}
+# tables {#system-tables}
 
 Contains metadata of each table that the server knows about.
 

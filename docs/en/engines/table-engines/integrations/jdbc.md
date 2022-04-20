@@ -1,6 +1,6 @@
 ---
-toc_priority: 3
-toc_title: JDBC
+sidebar_position: 3
+sidebar_label: JDBC
 ---
 
 # JDBC {#table-engine-jdbc}
