@@ -126,8 +126,6 @@ def test_incorrect_data_type(started_cluster):
         "CREATE TABLE strange_mongo_table2(key UInt64, data String, bbbb String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')"
     )
 
-    with pytest.raises(QueryRuntimeException):
-        node.query("SELECT bbbb FROM strange_mongo_table2")
     node.query("DROP TABLE strange_mongo_table")
     node.query("DROP TABLE strange_mongo_table2")
     strange_mongo_table.drop()
@@ -247,6 +245,7 @@ def test_missing_columns(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
+    node.query("drop table if exists simple_mongo_table")
     node.query(
         "create table simple_mongo_table(key UInt64, data Nullable(String)) engine = MongoDB(mongo1)"
     )
