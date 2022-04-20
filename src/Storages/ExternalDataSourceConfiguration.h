@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/StorageS3Settings.h>
 
 
 namespace DB
@@ -168,6 +169,18 @@ struct URLBasedDataSourceConfiguration
     String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);
+};
+
+struct StorageS3Configuration : URLBasedDataSourceConfiguration
+{
+    S3Settings::AuthSettings auth_settings;
+    S3Settings::ReadWriteSettings rw_settings;
+};
+
+
+struct StorageS3ClusterConfiguration : StorageS3Configuration
+{
+    String cluster_name;
 };
 
 struct URLBasedDataSourceConfig

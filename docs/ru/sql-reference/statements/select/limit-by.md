@@ -1,5 +1,5 @@
 ---
-toc_title: LIMIT BY
+sidebar_label: LIMIT BY
 ---
 
 # Секция LIMIT BY {#limit-by-clause}

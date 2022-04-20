@@ -95,10 +95,10 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
             s3_configuration.compression_method = args[args_to_idx["compression_method"]]->as<ASTLiteral &>().value.safeGet<String>();
 
         if (args_to_idx.contains("access_key_id"))
-            s3_configuration.access_key_id = args[args_to_idx["access_key_id"]]->as<ASTLiteral &>().value.safeGet<String>();
+            s3_configuration.auth_settings.access_key_id = args[args_to_idx["access_key_id"]]->as<ASTLiteral &>().value.safeGet<String>();
 
         if (args_to_idx.contains("secret_access_key"))
-            s3_configuration.secret_access_key = args[args_to_idx["secret_access_key"]]->as<ASTLiteral &>().value.safeGet<String>();
+            s3_configuration.auth_settings.secret_access_key = args[args_to_idx["secret_access_key"]]->as<ASTLiteral &>().value.safeGet<String>();
     }
 
     if (s3_configuration.format == "auto")
@@ -137,10 +137,8 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
         return StorageS3::getTableStructureFromData(
             configuration.format,
             S3::URI(Poco::URI(configuration.url)),
-            configuration.access_key_id,
-            configuration.secret_access_key,
-            context->getSettingsRef().s3_max_connections,
-            context->getSettingsRef().s3_max_single_read_retries,
+            configuration.auth_settings.access_key_id,
+            configuration.auth_settings.secret_access_key,
             configuration.compression_method,
             false,
             std::nullopt,
@@ -154,12 +152,6 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 {
     Poco::URI uri (configuration.url);
     S3::URI s3_uri (uri);
-    UInt64 max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
-    UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
-    UInt64 upload_part_size_multiply_factor = context->getSettingsRef().s3_upload_part_size_multiply_factor;
-    UInt64 upload_part_size_multiply_parts_count_threshold = context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold;
-    UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
-    UInt64 max_connections = context->getSettingsRef().s3_max_connections;
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
@@ -169,16 +161,11 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 
     StoragePtr storage = StorageS3::create(
         s3_uri,
-        configuration.access_key_id,
-        configuration.secret_access_key,
+        configuration.auth_settings.access_key_id,
+        configuration.auth_settings.secret_access_key,
         StorageID(getDatabaseName(), table_name),
         configuration.format,
-        max_single_read_retries,
-        min_upload_part_size,
-        upload_part_size_multiply_factor,
-        upload_part_size_multiply_parts_count_threshold,
-        max_single_part_upload_size,
-        max_connections,
+        configuration.rw_settings,
         columns,
         ConstraintsDescription{},
         String{},

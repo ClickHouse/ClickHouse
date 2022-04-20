@@ -47,7 +47,7 @@ bool isSupportedAlterType(int type)
         ASTAlterCommand::NO_TYPE,
     };
 
-    return unsupported_alter_types.count(type) == 0;
+    return !unsupported_alter_types.contains(type);
 }
 
 
@@ -449,9 +449,9 @@ Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_fi
     Strings diff;
     for (const String & host : current_list_of_finished_hosts)
     {
-        if (!waiting_hosts.count(host))
+        if (!waiting_hosts.contains(host))
         {
-            if (!ignoring_hosts.count(host))
+            if (!ignoring_hosts.contains(host))
             {
                 ignoring_hosts.emplace(host);
                 LOG_INFO(log, "Unexpected host {} appeared in task {}", host, node_path);
@@ -459,7 +459,7 @@ Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_fi
             continue;
         }
 
-        if (!finished_hosts.count(host))
+        if (!finished_hosts.contains(host))
         {
             diff.emplace_back(host);
             finished_hosts.emplace(host);
