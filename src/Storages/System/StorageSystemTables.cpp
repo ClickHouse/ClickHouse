@@ -244,14 +244,13 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
-                        auto settings = context->getSettingsRef();
+                        const auto & settings = context->getSettingsRef();
                         while (src_index < columns_mask.size())
                         {
                             // total_rows
                             if (src_index == 18 && columns_mask[src_index])
                             {
-                                auto total_rows = table.second->totalRows(settings);
-                                if (total_rows)
+                                if (auto total_rows = table.second->totalRows(settings))
                                     res_columns[res_index++]->insert(*total_rows);
                                 else
                                     res_columns[res_index++]->insertDefault();
@@ -259,8 +258,7 @@ protected:
                             // total_bytes
                             else if (src_index == 19 && columns_mask[src_index])
                             {
-                                auto total_bytes = table.second->totalBytes(settings);
-                                if (total_bytes)
+                                if (auto total_bytes = table.second->totalBytes(settings))
                                     res_columns[res_index++]->insert(*total_bytes);
                                 else
                                     res_columns[res_index++]->insertDefault();
