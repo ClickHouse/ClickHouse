@@ -532,7 +532,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         }
 
         /// This replica inactive, don't check anything
-        if (!inactive_replicas.empty() && inactive_replicas.count(replica))
+        if (!inactive_replicas.empty() && inactive_replicas.contains(replica))
             break;
 
         /// It maybe already removed from zk, but local in-memory mutations
@@ -547,7 +547,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
                 ErrorCodes::UNFINISHED);
 
         /// Replica inactive, don't check mutation status
-        if (!inactive_replicas.empty() && inactive_replicas.count(replica))
+        if (!inactive_replicas.empty() && inactive_replicas.contains(replica))
             continue;
 
         /// At least we have our current mutation
@@ -1233,7 +1233,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
     /// Collect unexpected parts
     for (const auto & part : parts)
-        if (!expected_parts.count(part->name))
+        if (!expected_parts.contains(part->name))
             unexpected_parts.insert(part); /// this parts we will place to detached with ignored_ prefix
 
     /// Which parts should be taken from other replicas.
@@ -2571,7 +2571,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         /// but before we copied its active parts set. In this case we will GET_PART entry in our queue
         /// and later will pull the original GET_PART from replication log.
         /// It should not cause any issues, but it does not allow to get rid of duplicated entries and add an assertion.
-        if (created_gets.count(part_name))
+        if (created_gets.contains(part_name))
         {
             /// NOTE It would be better to copy log entry instead of creating GET_PART
             /// if there are GET_PART and log entry of other type with the same new_part_name.
@@ -3756,7 +3756,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
             parts_with_quorum.fromString(old_added_parts);
 
         /// Delete information about particular partition.
-        if (!parts_with_quorum.added_parts.count(partition_id))
+        if (!parts_with_quorum.added_parts.contains(partition_id))
         {
             /// There is no information about interested part.
             break;
@@ -4639,7 +4639,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
         PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
         for (const auto & lock : lock_holder.getLocks())
         {
-            if (mutation_affected_partition_ids.empty() || mutation_affected_partition_ids.count(lock.partition_id))
+            if (mutation_affected_partition_ids.empty() || mutation_affected_partition_ids.contains(lock.partition_id))
                 block_numbers[lock.partition_id] = lock.number;
         }
 
@@ -5168,7 +5168,7 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path) cons
 {
     {
         std::lock_guard lock(existing_nodes_cache_mutex);
-        if (existing_nodes_cache.count(path))
+        if (existing_nodes_cache.contains(path))
             return true;
     }
 
@@ -6094,7 +6094,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     /// Delete normal parts on two sets
     for (auto & part : parts_to_delete_completely)
     {
-        if (part_names_to_retry_deletion.count(part->name) == 0)
+        if (!part_names_to_retry_deletion.contains(part->name))
             parts_to_remove_from_filesystem.emplace_back(part);
         else
             parts_to_retry_deletion.emplace_back(part);

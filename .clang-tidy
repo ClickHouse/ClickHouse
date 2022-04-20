@@ -37,6 +37,7 @@ Checks: '-*,
 
     readability-avoid-const-params-in-decls,
     readability-const-return-type,
+    readability-container-contains,
     readability-container-size-empty,
     readability-convert-member-functions-to-static,
     readability-delete-null-pointer,
