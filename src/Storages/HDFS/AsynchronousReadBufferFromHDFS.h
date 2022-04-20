@@ -20,7 +20,7 @@
 namespace DB
 {
 
-class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBufferWithSize>
+class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>
 {
 public:
     AsynchronousReadBufferFromHDFS(
@@ -35,7 +35,7 @@ public:
 
     void prefetch() override;
 
-    std::optional<size_t> getTotalSize() override;
+    // std::optional<size_t> getTotalSize() override;
 
     off_t getPosition() override;
 
@@ -46,6 +46,24 @@ public:
     // String getInfoForLog() override;
 
 private:
+    class StatusGuard
+    {
+    public:
+        StatusGuard(AsynchronousReadBufferFromHDFS * buf_, const String & action_) : buf(buf_), action(action_)
+        {
+            std::cout << "before " << buf->getStatus(action) << std::endl;
+        }
+
+        ~StatusGuard() { std::cout << "after " << buf->getStatus(action) << std::endl; }
+
+    private:
+        AsynchronousReadBufferFromHDFS * buf;
+        String action;
+    };
+
+    String getId() const { return std::to_string(reinterpret_cast<std::uintptr_t>(this)); }
+    String getStatus(const String & action);
+
     bool nextImpl() override;
 
     void finalize();
@@ -62,7 +80,7 @@ private:
 
     size_t file_offset_of_buffer_end = 0;
     // size_t min_bytes_for_seek;
-    size_t bytes_to_ignore = 0;
+    // size_t bytes_to_ignore = 0;
     std::optional<size_t> read_until_position;
 
     Poco::Logger * log;
