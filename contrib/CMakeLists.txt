@@ -94,6 +94,7 @@ if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()
 
+add_contrib (highwayhash-cmake highwayhash)
 add_contrib (cityhash102)
 add_contrib (libfarmhash)
 add_contrib (icu-cmake icu)

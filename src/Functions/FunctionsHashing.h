@@ -1369,6 +1369,26 @@ private:
     }
 };
 
+struct ImplHighwayHash64
+{
+    static constexpr auto name = "highwayHash64";
+    using ReturnType = UInt64;
+
+    static UInt64 apply(const char *s, const size_t len)
+    {
+        const HHKey key HH_ALIGNAS(32) = {1, 2, 3, 4};
+        UInt64 result;
+        InstructionSets::Run<HighwayHash>(key, s, len, &result);
+        return result
+    }
+
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
+    {
+        return h1 ^ h2;
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
@@ -1405,5 +1425,5 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
-
+using FunctionHighwayHash64 = FunctionAnyHash<ImplHighwayHash64>;
 }
