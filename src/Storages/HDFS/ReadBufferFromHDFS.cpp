@@ -213,6 +213,7 @@ size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
 
 ReadBufferFromHDFS::ReadResult ReadBufferFromHDFS::readInto(char * data, size_t size, size_t offset, size_t  /*ignore*/)
 {
+    /// TODO: we don't need to copy if there is no pending data
     seek(offset, SEEK_SET);
     if (eof())
         return {0, 0};

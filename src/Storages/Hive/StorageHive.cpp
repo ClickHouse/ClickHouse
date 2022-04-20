@@ -184,8 +184,8 @@ public:
                             return std::move(buf);
                         }
                     };
-
                     raw_read_buf = get_raw_read_buf();
+                    raw_read_buf->prefetch();
                 }
                 catch (Exception & e)
                 {
