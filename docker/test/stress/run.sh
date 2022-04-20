@@ -376,7 +376,7 @@ else
 fi
 
 # Put logs into /test_output/
-for log_file in /var/log/clickhouse-server/clickhouse-server.log*
+for log_file in /var/log/clickhouse-server/clickhouse-server*.log
 do
     pigz < "${log_file}" > /test_output/"$(basename ${log_file})".gz
     # FIXME: remove once only github actions will be left
