@@ -678,6 +678,26 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter)
         }
     }
 }
+
+/// This function returns an empty part directory to be used for std::promise.
+MergeTreeData::MutableDataPartPtr createFakedNewPartForLightweight(
+                                       FutureMergedMutatedPartPtr future_part,
+                                       ReservationSharedPtr space_reservation,
+                                       MergeTreeData * data
+                                       )
+{
+    VolumePtr single_disk_volume;
+    MergeTreeData::MutableDataPartPtr new_data_part;
+
+    single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part->name, space_reservation->getDisk(), 0);
+    new_data_part = data->createPart(
+        future_part->name, future_part->type, future_part->part_info, single_disk_volume, "tmp_light_mut_" + future_part->name);
+
+    new_data_part->rows_count = 0;
+
+    return new_data_part;
+}
+
 }
 
 struct MutationContext
@@ -1534,7 +1554,7 @@ private:
         ctx->source_part->WriteOrCopyLightWeightMask(ctx->future_part->part_info.lightweight_mutation, bitmap_collector);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
-        ctx->new_data_part = nullptr;
+        ctx->new_data_part = MutationHelpers::createFakedNewPartForLightweight(ctx->future_part, ctx->space_reservation, ctx->data);
     }
 
     enum class State
@@ -1828,8 +1848,8 @@ bool MutateTask::execute()
             if (task->executeStep())
                 return true;
 
-            if (ctx->new_data_part)
-                promise.set_value(ctx->new_data_part);
+            promise.set_value(ctx->new_data_part);
+
             return false;
         }
     }
@@ -2016,7 +2036,7 @@ bool MutateTask::lightweight_prepare()
         LOG_TRACE(ctx->log, "Part {} doesn't change up to lightweight mutation version {}", ctx->source_part->name, ctx->future_part->part_info.lightweight_mutation);
         /// Write an empty temporary mask file or copy previous lightweight mask file to new file.
         ctx->source_part->WriteOrCopyLightWeightMask(ctx->future_part->part_info.lightweight_mutation, "");
-        promise.set_value({});
+        promise.set_value(MutationHelpers::createFakedNewPartForLightweight(ctx->future_part, ctx->space_reservation, ctx->data));
         return false;
     }
     else
@@ -2043,7 +2063,6 @@ bool MutateTask::lightweight_prepare()
     if (ctx->interpreter->getLightweightUpdate() == 0)
     {
         task = std::make_unique<LightWeightMutateOnlyDeleteTask>(ctx);
-        promise.set_value({});
         return true;
     }
 
@@ -2083,8 +2102,4 @@ bool MutateTask::lightweight_prepare()
     return true;
 }
 
-bool MutateTask::hasNewPart()
-{
-    return ctx->new_data_part != nullptr;
-}
 }

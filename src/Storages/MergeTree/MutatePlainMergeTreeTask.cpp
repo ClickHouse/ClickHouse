@@ -81,18 +81,15 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (mutate_task->execute())
                     return true;
 
+                new_part = mutate_task->getFuture().get();
+
                 /// Only lightweight mutations have value lightweight_mutation bigger than 0
                 /// If commands are Ordinary, the value of lightweight_mutation is 0.
-                future_part = merge_mutate_entry->future_part;
-                if (future_part->part_info.lightweight_mutation)
+                if (new_part->info.lightweight_mutation)
                 {
-                    if (mutate_task->hasNewPart())
-                        new_part = mutate_task->getFuture().get();
-                    else
-                        new_part = nullptr;
-
-                    /// Only lightweight update commands can add new part.
-                    if (new_part)
+                    /// Only lightweight update commands can add REAL new part.
+                    /// For faked empty part, no need to add.
+                    if (new_part->rows_count > 0)
                     {
                         /// For the new part, the minblock and maxblock is similar as really inserted part, however
                         /// the mutation is not 0, but is assigned to lightweight_mutation. This allows unfinished mutations to mutate it.
@@ -113,8 +110,6 @@ bool MutatePlainMergeTreeTask::executeStep()
                 }
                 else
                 {
-                    new_part = mutate_task->getFuture().get();
-
                     /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
                     storage.renameTempPartAndReplace(new_part, merge_mutate_entry->txn.get());
                 }
