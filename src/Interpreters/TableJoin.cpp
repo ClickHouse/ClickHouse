@@ -748,7 +748,7 @@ void TableJoin::resetToCross()
     this->table_join.kind = ASTTableJoin::Kind::Cross;
 }
 
-bool TableJoin::allowConcurrentHashJoin() const
+bool TableJoin::allowParallelHashJoin() const
 {
     if (dictionary_reader || join_algorithm != JoinAlgorithm::PARALLEL_HASH)
         return false;
