@@ -1132,20 +1132,44 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             if (global_context->areBackgroundExecutorsInitialized() && config->has("background_move_pool_size"))
             {
-                auto new_pool_size = config->getInt("background_move_pool_size", 8);
+                auto new_pool_size = config->getInt("background_move_pool_size");
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized() && config->has("background_fetches_pool_size"))
             {
-                auto new_pool_size = config->getInt("background_fetches_pool_size", 8);
+                auto new_pool_size = config->getInt("background_fetches_pool_size");
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized() && config->has("background_common_pool_size"))
             {
-                auto new_pool_size = config->getInt("background_common_pool_size", 8);
+                auto new_pool_size = config->getInt("background_common_pool_size");
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (config->has("background_buffer_flush_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_buffer_flush_schedule_pool_size");
+                global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_schedule_pool_size");
+                global_context->getSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_message_broker_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_message_broker_schedule_pool_size");
+                global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_distributed_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_distributed_schedule_pool_size");
+                global_context->getDistributedSchedulePool().increaseThreadsCount(new_pool_size);
             }
 
             if (!initial_loading)
