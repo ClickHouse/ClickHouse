@@ -4,78 +4,53 @@ import socket
 from helpers.cluster import ClickHouseCluster
 import time
 
-BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 
 from kazoo.client import KazooClient
 
-
-def get_quorum_size(cluster_size):
-    return cluster_size // 2 + 1
-
-
-def get_config_dir(cluster_size):
-    if cluster_size == 3:
-        return "configs/three_node_cluster"
-    elif cluster_size == 5:
-        return "configs/five_node_cluster"
-    else:
-        raise Exception("Invalid cluster size {}", cluster_size)
+CLUSTER_SIZE = 5
+QUORUM_SIZE = CLUSTER_SIZE // 2 + 1
 
 
-def create_and_start_cluster(cluster_size):
-    cluster = ClickHouseCluster(__file__)
-    config_dir = get_config_dir(cluster_size)
+cluster = ClickHouseCluster(__file__)
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
-    quorum_size = get_quorum_size(cluster_size)
 
+def get_nodes():
     nodes = []
-    for i in range(cluster_size):
+    for i in range(CLUSTER_SIZE):
         nodes.append(
             cluster.add_instance(
                 f"node{i+1}",
                 main_configs=[
-                    f"{config_dir}/enable_keeper{i+1}.xml",
-                    f"{config_dir}/use_keeper.xml",
+                    f"configs/enable_keeper{i+1}.xml",
+                    f"configs/use_keeper.xml",
                 ],
                 stay_alive=True,
             )
         )
 
-    for i in range(cluster_size, cluster_size + quorum_size):
+    for i in range(CLUSTER_SIZE, CLUSTER_SIZE + QUORUM_SIZE):
         nodes.append(
             cluster.add_instance(f"node{i+1}", main_configs=[], stay_alive=True)
         )
 
-    cluster.start()
-    return cluster, nodes
+    return nodes
 
 
-def wait_node(cluster, node):
-    for _ in range(100):
-        zk = None
-        try:
-            node.query("SELECT * FROM system.zookeeper WHERE path = '/'")
-            zk = get_fake_zk(cluster, node.name, timeout=30.0)
-            zk.create("/test", sequence=True)
-            print("node", node.name, "ready")
-            break
-        except Exception as ex:
-            time.sleep(0.2)
-            print("Waiting until", node.name, "will be ready, exception", ex)
-        finally:
-            if zk:
-                zk.stop()
-                zk.close()
-    else:
-        raise Exception("Can't wait node", node.name, "to become ready")
+nodes = get_nodes()
 
 
-def wait_nodes(cluster, nodes):
-    for node in nodes:
-        wait_node(cluster, node)
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+
+        yield cluster
+    finally:
+        cluster.shutdown()
 
 
-def get_fake_zk(cluster, nodename, timeout=30.0):
+def get_fake_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(
         hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
     )
@@ -83,7 +58,7 @@ def get_fake_zk(cluster, nodename, timeout=30.0):
     return _fake_zk_instance
 
 
-def get_keeper_socket(cluster, node_name):
+def get_keeper_socket(node_name):
     hosts = cluster.get_instance_ip(node_name)
     client = socket.socket()
     client.settimeout(10)
@@ -91,10 +66,10 @@ def get_keeper_socket(cluster, node_name):
     return client
 
 
-def send_4lw_cmd(cluster, node_name, cmd="ruok"):
+def send_4lw_cmd(node_name, cmd="ruok"):
     client = None
     try:
-        client = get_keeper_socket(cluster, node_name)
+        client = get_keeper_socket(node_name)
         client.send(cmd.encode())
         data = client.recv(100_000)
         data = data.decode()
@@ -104,9 +79,14 @@ def send_4lw_cmd(cluster, node_name, cmd="ruok"):
             client.close()
 
 
-def wait_until_connected(cluster, node_name):
-    while send_4lw_cmd(cluster, node_name, "mntr") == NOT_SERVING_REQUESTS_ERROR_MSG:
+def wait_until_connected(node_name):
+    while send_4lw_cmd(node_name, "mntr") == NOT_SERVING_REQUESTS_ERROR_MSG:
         time.sleep(0.1)
+
+
+def wait_nodes(nodes):
+    for node in nodes:
+        wait_until_connected(node.name)
 
 
 def wait_and_assert_data(zk, path, data):
@@ -123,19 +103,16 @@ def close_zk(zk):
 NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"
 
 
-@pytest.mark.parametrize("cluster_size", [3, 5])
-def test_cluster_recovery(cluster_size):
-    cluster, nodes = create_and_start_cluster(cluster_size)
-    quorum_size = get_quorum_size(cluster_size)
+def test_cluster_recovery(started_cluster):
     node_zks = []
     try:
         # initial cluster of `cluster_size` nodes
-        for node in nodes[cluster_size:]:
+        for node in nodes[CLUSTER_SIZE:]:
             node.stop_clickhouse()
 
-        wait_nodes(cluster, nodes[:cluster_size])
+        wait_nodes(nodes[:CLUSTER_SIZE])
 
-        node_zks = [get_fake_zk(cluster, node.name) for node in nodes[:cluster_size]]
+        node_zks = [get_fake_zk(node.name) for node in nodes[:CLUSTER_SIZE]]
 
         data_in_cluster = []
 
@@ -157,80 +134,70 @@ def test_cluster_recovery(cluster_size):
 
         add_data(node_zks[1], "/test_force_recovery_extra", "somedataextra")
 
-        for node_zk in node_zks[2:cluster_size]:
+        for node_zk in node_zks[2:CLUSTER_SIZE]:
             wait_and_assert_data(node_zk, "/test_force_recovery_extra", "somedataextra")
 
         nodes[0].start_clickhouse()
-        wait_node(cluster, nodes[0])
-        node_zks[0] = get_fake_zk(cluster, nodes[0].name)
+        wait_until_connected(nodes[0].name)
+        node_zks[0] = get_fake_zk(nodes[0].name)
         wait_and_assert_data(node_zks[0], "/test_force_recovery_extra", "somedataextra")
 
         # stop last quorum size nodes
-        nodes_left = cluster_size - quorum_size
-        for node_zk in node_zks[nodes_left:cluster_size]:
+        nodes_left = CLUSTER_SIZE - QUORUM_SIZE
+        for node_zk in node_zks[nodes_left:CLUSTER_SIZE]:
             close_zk(node_zk)
 
         node_zks = node_zks[:nodes_left]
 
-        for node in nodes[nodes_left:cluster_size]:
+        for node in nodes[nodes_left:CLUSTER_SIZE]:
             node.stop_clickhouse()
 
         # wait for node1 to lose quorum
-        while (
-            send_4lw_cmd(cluster, nodes[0].name, "mntr")
-            != NOT_SERVING_REQUESTS_ERROR_MSG
-        ):
+        while send_4lw_cmd(nodes[0].name, "mntr") != NOT_SERVING_REQUESTS_ERROR_MSG:
             time.sleep(0.2)
 
         nodes[0].copy_file_to_container(
-            os.path.join(
-                BASE_DIR, get_config_dir(cluster_size), "recovered_keeper1.xml"
-            ),
+            os.path.join(CONFIG_DIR, "recovered_keeper1.xml"),
             "/etc/clickhouse-server/config.d/enable_keeper1.xml",
         )
 
         nodes[0].query("SYSTEM RELOAD CONFIG")
 
-        assert (
-            send_4lw_cmd(cluster, nodes[0].name, "mntr")
-            == NOT_SERVING_REQUESTS_ERROR_MSG
-        )
-        send_4lw_cmd(cluster, nodes[0].name, "rcvr")
-        assert (
-            send_4lw_cmd(cluster, nodes[0].name, "mntr")
-            == NOT_SERVING_REQUESTS_ERROR_MSG
-        )
+        assert send_4lw_cmd(nodes[0].name, "mntr") == NOT_SERVING_REQUESTS_ERROR_MSG
+        send_4lw_cmd(nodes[0].name, "rcvr")
+        assert send_4lw_cmd(nodes[0].name, "mntr") == NOT_SERVING_REQUESTS_ERROR_MSG
 
         # add one node to restore the quorum
-        nodes[cluster_size].copy_file_to_container(
+        nodes[CLUSTER_SIZE].copy_file_to_container(
             os.path.join(
-                BASE_DIR,
-                get_config_dir(cluster_size),
-                f"enable_keeper{cluster_size+1}.xml",
+                CONFIG_DIR,
+                f"enable_keeper{CLUSTER_SIZE+1}.xml",
             ),
-            f"/etc/clickhouse-server/config.d/enable_keeper{cluster_size+1}.xml",
+            f"/etc/clickhouse-server/config.d/enable_keeper{CLUSTER_SIZE+1}.xml",
         )
 
-        nodes[cluster_size].start_clickhouse()
-        wait_until_connected(cluster, nodes[cluster_size].name)
+        nodes[CLUSTER_SIZE].start_clickhouse()
+        wait_until_connected(nodes[CLUSTER_SIZE].name)
 
         # node1 should have quorum now and accept requests
-        wait_until_connected(cluster, nodes[0].name)
+        wait_until_connected(nodes[0].name)
 
-        node_zks.append(get_fake_zk(cluster, nodes[cluster_size].name))
+        node_zks.append(get_fake_zk(nodes[CLUSTER_SIZE].name))
 
         # add rest of the nodes
-        for i in range(cluster_size + 1, len(nodes)):
+        for i in range(CLUSTER_SIZE + 1, len(nodes)):
             node = nodes[i]
             node.copy_file_to_container(
-                os.path.join(
-                    BASE_DIR, get_config_dir(cluster_size), f"enable_keeper{i+1}.xml"
-                ),
+                os.path.join(CONFIG_DIR, f"enable_keeper{i+1}.xml"),
                 f"/etc/clickhouse-server/config.d/enable_keeper{i+1}.xml",
             )
             node.start_clickhouse()
-            wait_until_connected(cluster, node.name)
-            node_zks.append(get_fake_zk(cluster, node.name))
+            wait_until_connected(node.name)
+            node_zks.append(get_fake_zk(node.name))
+
+        # refresh old zk sessions
+        for i, node in enumerate(nodes[:nodes_left]):
+            node_zks[i] = get_fake_zk(node.name)
 
         for zk in node_zks:
             assert_all_data(zk)
@@ -242,7 +209,7 @@ def test_cluster_recovery(cluster_size):
         wait_and_assert_data(node_zks[-1], "/test_force_recovery_last", "somedatalast")
 
         nodes[0].start_clickhouse()
-        node_zks[0] = get_fake_zk(cluster, nodes[0].name)
+        node_zks[0] = get_fake_zk(nodes[0].name)
         for zk in node_zks[:nodes_left]:
             assert_all_data(zk)
     finally:
@@ -251,5 +218,3 @@ def test_cluster_recovery(cluster_size):
                 close_zk(zk_conn)
         except:
             pass
-
-        cluster.shutdown()

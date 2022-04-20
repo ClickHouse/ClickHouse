@@ -263,9 +263,7 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
     }
 
     if (is_recovering)
-    {
         recoveryMode(params);
-    }
 
     nuraft::raft_server::init_options init_options;
 
@@ -292,7 +290,7 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
 
-    raft_instance->start_server(state_manager->shouldStartAsFollower());
+    raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
     nuraft::ptr<nuraft::raft_server> casted_raft_server = raft_instance;
     asio_listener->listen(casted_raft_server);
