@@ -828,9 +828,7 @@ bool ARCFileCache::isLastFileSegmentHolder(
 
 bool ARCFileCache::canMoveCellToHighQueue(const FileSegmentCell & cell) const
 {
-    if (cell.hit_count >= move_threshold)
-        return true;
-    return false;
+    return cell.hit_count >= move_threshold;
 }
 
 bool ARCFileCache::tryMoveLowToHigh(const FileSegmentCell & cell, std::lock_guard<std::mutex> & cache_lock)
