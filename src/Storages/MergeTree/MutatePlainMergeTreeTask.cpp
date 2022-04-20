@@ -81,16 +81,16 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (mutate_task->execute())
                     return true;
 
-                if (mutate_task->hasNewPart())
-                    new_part = mutate_task->getFuture().get();
-                else
-                    new_part = nullptr;
-
                 /// Only lightweight mutations have value lightweight_mutation bigger than 0
                 /// If commands are Ordinary, the value of lightweight_mutation is 0.
                 future_part = merge_mutate_entry->future_part;
                 if (future_part->part_info.lightweight_mutation)
                 {
+                    if (mutate_task->hasNewPart())
+                        new_part = mutate_task->getFuture().get();
+                    else
+                        new_part = nullptr;
+
                     /// Only lightweight update commands can add new part.
                     if (new_part)
                     {
@@ -112,8 +112,13 @@ bool MutatePlainMergeTreeTask::executeStep()
                         storage.has_lightweight_parts = true;
                 }
                 else
+                {
+                    new_part = mutate_task->getFuture().get();
+
                     /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
                     storage.renameTempPartAndReplace(new_part, merge_mutate_entry->txn.get());
+                }
+
                 storage.updateMutationEntriesErrors(future_part, true, "");
                 write_part_log({});
 
