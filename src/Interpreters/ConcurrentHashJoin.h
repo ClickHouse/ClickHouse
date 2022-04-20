@@ -12,6 +12,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
+
 namespace DB
 {
 namespace JoinStuff
@@ -54,9 +55,7 @@ private:
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
         std::list<Block> pending_right_blocks;
-        std::atomic<bool> in_inserting = false;
-        std::atomic<UInt32> rows = 0;
-
+        bool in_inserting = false;
     };
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
@@ -98,7 +97,7 @@ private:
     static void dispatchBlock(BlockDispatchControlData & dispatch_data, Block & from_block, std::vector<Block> & dispatched_blocks);
 
     void waitAllAddJoinedBlocksFinished();
-    std::shared_ptr<InnerHashJoin> getUnfinishedAddJoinedBlockTaks();
+    std::shared_ptr<InnerHashJoin> getUnfinishedAddJoinedBlockTasks();
 
 };
 }

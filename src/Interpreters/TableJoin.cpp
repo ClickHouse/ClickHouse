@@ -106,7 +106,6 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
-    , enable_parallel_hash_join(settings.enable_parallel_hash_join)
     , tmp_volume(tmp_volume_)
 {
 }
@@ -751,9 +750,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowConcurrentHashJoin() const
 {
-    if (!enable_parallel_hash_join)
-        return false;
-    if (dictionary_reader || join_algorithm != JoinAlgorithm::HASH)
+    if (dictionary_reader || join_algorithm != JoinAlgorithm::PARALLEL_HASH)
         return false;
     if (table_join.kind != ASTTableJoin::Kind::Left && table_join.kind != ASTTableJoin::Kind::Inner)
         return false;

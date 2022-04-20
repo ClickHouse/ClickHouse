@@ -59,10 +59,11 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & block, bool check_limits)
     {
         auto & hash_join = hash_joins[i];
         auto & dispatched_block = dispatched_blocks[i];
-        std::unique_lock lock(hash_join->mutex);
-        hash_join->rows += dispatched_block.rows();
-        check_total_rows += dispatched_block.rows();
+        auto rows = dispatched_block.rows();
+        check_total_rows += rows;
         check_total_bytes += dispatched_block.bytes();
+        std::unique_lock lock(hash_join->mutex);
+        
         // Don't take the real insertion here, because inserting a block into HashTable is a time-consuming operation,
         // it may cause serious lock contention and make the whole process slow.
         hash_join->pending_right_blocks.emplace_back(std::move(dispatched_block));
@@ -283,7 +284,7 @@ void ConcurrentHashJoin::waitAllAddJoinedBlocksFinished()
         std::shared_ptr<InnerHashJoin> hash_join;
         {
             std::unique_lock lock(finished_add_joined_blocks_tasks_mutex);
-            hash_join = getUnfinishedAddJoinedBlockTaks();
+            hash_join = getUnfinishedAddJoinedBlockTasks();
             if (!hash_join)
             {
                 while (finished_add_joined_blocks_tasks < hash_joins.size())
@@ -293,7 +294,7 @@ void ConcurrentHashJoin::waitAllAddJoinedBlocksFinished()
                 return;
             }
         }
-        std::unique_lock lock(hash_join->mutex);
+
         while (!hash_join->pending_right_blocks.empty())
         {
             Block & block = hash_join->pending_right_blocks.front();
@@ -305,7 +306,7 @@ void ConcurrentHashJoin::waitAllAddJoinedBlocksFinished()
     }
 }
 
-std::shared_ptr<ConcurrentHashJoin::InnerHashJoin> ConcurrentHashJoin::getUnfinishedAddJoinedBlockTaks()
+std::shared_ptr<ConcurrentHashJoin::InnerHashJoin> ConcurrentHashJoin::getUnfinishedAddJoinedBlockTasks()
 {
     for (auto & hash_join : hash_joins)
     {
