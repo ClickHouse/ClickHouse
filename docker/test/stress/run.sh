@@ -375,14 +375,6 @@ else
     echo -e "Backward compatibility check: Failed to download previous release packets\tFAIL" >> /test_output/test_results.tsv
 fi
 
-# Put logs into /test_output/
-for log_file in /var/log/clickhouse-server/clickhouse-server*.log
-do
-    pigz < "${log_file}" > /test_output/"$(basename ${log_file})".gz
-    # FIXME: remove once only github actions will be left
-    rm "${log_file}"
-done
-
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
 
