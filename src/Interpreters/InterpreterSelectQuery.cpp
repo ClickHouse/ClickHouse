@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -100,6 +101,7 @@ namespace ErrorCodes
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -780,6 +782,7 @@ static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPt
 static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, ContextPtr context)
 {
     FillColumnDescription descr;
+
     if (order_by_elem.fill_from)
         descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
     if (order_by_elem.fill_to)
@@ -835,7 +838,6 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
         std::shared_ptr<Collator> collator;
         if (order_by_elem.collation)
             collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
-
         if (order_by_elem.with_fill)
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
@@ -846,6 +848,77 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
     }
 
     return order_descr;
+}
+
+static InterpolateDescriptionPtr getInterpolateDescription(
+    const ASTSelectQuery & query, const Block & source_block, const Block & result_block, const Aliases & aliases, ContextPtr context)
+{
+    InterpolateDescriptionPtr interpolate_descr;
+    if (query.interpolate())
+    {
+        NamesAndTypesList source_columns;
+        ColumnsWithTypeAndName result_columns;
+        ASTPtr exprs = std::make_shared<ASTExpressionList>();
+
+        if (query.interpolate()->children.empty())
+        {
+            std::unordered_map<String, DataTypePtr> column_names;
+            for (const auto & column : result_block.getColumnsWithTypeAndName())
+                column_names[column.name] = column.type;
+            for (const auto & elem : query.orderBy()->children)
+                if (elem->as<ASTOrderByElement>()->with_fill)
+                    column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+            for (const auto & [name, type] : column_names)
+            {
+                source_columns.emplace_back(name, type);
+                result_columns.emplace_back(type, name);
+                exprs->children.emplace_back(std::make_shared<ASTIdentifier>(name));
+            }
+        }
+        else
+        {
+            NameSet col_set;
+            for (const auto & elem : query.interpolate()->children)
+            {
+                const auto & interpolate = elem->as<ASTInterpolateElement &>();
+
+                if (const ColumnWithTypeAndName *result_block_column = result_block.findByName(interpolate.column))
+                {
+                    if (!col_set.insert(result_block_column->name).second)
+                        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "Duplicate INTERPOLATE column '{}'", interpolate.column);
+
+                    result_columns.emplace_back(result_block_column->type, result_block_column->name);
+                }
+                else
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Missing column '{}' as an INTERPOLATE expression target", interpolate.column);
+
+                exprs->children.emplace_back(interpolate.expr->clone());
+            }
+
+            col_set.clear();
+            for (const auto & column : source_block)
+            {
+                source_columns.emplace_back(column.name, column.type);
+                col_set.insert(column.name);
+            }
+            for (const auto & column : result_block)
+                if (!col_set.contains(column.name))
+                    source_columns.emplace_back(column.name, column.type);
+        }
+
+        auto syntax_result = TreeRewriter(context).analyze(exprs, source_columns);
+        ExpressionAnalyzer analyzer(exprs, syntax_result, context);
+        ActionsDAGPtr actions = analyzer.getActionsDAG(true);
+        ActionsDAGPtr conv_dag = ActionsDAG::makeConvertingActions(actions->getResultColumns(),
+            result_columns, ActionsDAG::MatchColumnsMode::Position, true);
+        ActionsDAGPtr merge_dag = ActionsDAG::merge(std::move(*actions->clone()), std::move(*conv_dag));
+
+        interpolate_descr = std::make_shared<InterpolateDescription>(merge_dag, aliases);
+    }
+
+    return interpolate_descr;
 }
 
 static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
@@ -1701,7 +1774,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             else
                 column_expr = std::make_shared<ASTIdentifier>(column);
 
-            if (required_columns_from_prewhere.count(column))
+            if (required_columns_from_prewhere.contains(column))
             {
                 required_columns_from_prewhere_expr->children.emplace_back(std::move(column_expr));
 
@@ -1729,7 +1802,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
                     continue;
 
-                if (columns_to_remove.count(column.name))
+                if (columns_to_remove.contains(column.name))
                     continue;
 
                 required_columns_all_expr->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
@@ -1753,7 +1826,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 prewhere_info->remove_prewhere_column = false;
 
         /// Remove columns which will be added by prewhere.
-        std::erase_if(required_columns, [&](const String & name) { return required_columns_after_prewhere_set.count(name) != 0; });
+        std::erase_if(required_columns, [&](const String & name) { return required_columns_after_prewhere_set.contains(name); });
 
         if (prewhere_info)
         {
@@ -1776,7 +1849,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
             /// Add physical columns required by prewhere actions.
             for (const auto & column : required_columns_from_prewhere)
-                if (required_aliases_from_prewhere.count(column) == 0)
+                if (!required_aliases_from_prewhere.contains(column))
                     if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
                         required_columns.push_back(column);
         }
@@ -2515,7 +2588,9 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
         if (fill_descr.empty())
             return;
 
-        auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr));
+        InterpolateDescriptionPtr interpolate_descr =
+            getInterpolateDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
+        auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr), interpolate_descr);
         query_plan.addStep(std::move(filling_step));
     }
 }

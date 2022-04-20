@@ -32,6 +32,9 @@ public:
     static String toName(int32_t code);
     static inline int32_t toCode(const String & name);
 
+    // Return true if server is running and serving requests
+    bool serverIsActive() const;
+
 protected:
     KeeperDispatcher & keeper_dispatcher;
 };

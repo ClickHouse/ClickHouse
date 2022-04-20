@@ -153,13 +153,19 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Fast Test
-        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE"
+          mkdir "$GITHUB_WORKSPACE"
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ env.TEMP_PATH }}
+      - name: Fast Test
+        run: |
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 fast_test_check.py
       - name: Cleanup
@@ -1030,15 +1036,14 @@ jobs:
 ############################################################################################
   BuilderReport:
     needs:
-      - BuilderDebRelease
-      - BuilderDebAarch64
       - BuilderBinRelease
-      - BuilderBinGCC
+      - BuilderDebAarch64
       - BuilderDebAsan
+      - BuilderDebDebug
+      - BuilderDebMsan
+      - BuilderDebRelease
       - BuilderDebTsan
       - BuilderDebUBsan
-      - BuilderDebMsan
-      - BuilderDebDebug
     runs-on: [self-hosted, style-checker]
     if: ${{ success() || failure() }}
     steps:
@@ -1051,7 +1056,6 @@ jobs:
           echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
           CHECK_NAME=ClickHouse build check (actions)
-          REPORTS_PATH=${{runner.temp}}/reports_dir
           REPORTS_PATH=${{runner.temp}}/reports_dir
           TEMP_PATH=${{runner.temp}}/report_check
           EOF
@@ -1078,18 +1082,24 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
   BuilderSpecialReport:
     needs:
-      - BuilderDebSplitted
-      - BuilderBinTidy
-      - BuilderBinDarwin
       - BuilderBinAarch64
-      - BuilderBinFreeBSD
+      - BuilderBinDarwin
       - BuilderBinDarwinAarch64
+      - BuilderBinFreeBSD
+      - BuilderBinGCC
       - BuilderBinPPC64
+      - BuilderBinTidy
+      - BuilderDebSplitted
     runs-on: [self-hosted, style-checker]
     if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
+          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
+          ${{ toJSON(needs) }}
+          EOF
+          )
+          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/report_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
@@ -1109,7 +1119,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME"
+          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
       - name: Cleanup
         if: always()
         run: |
