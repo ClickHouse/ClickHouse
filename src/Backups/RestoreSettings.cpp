@@ -62,6 +62,8 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
                 res.allow_different_table_def = SettingFieldBool{setting.value};
             else if (setting.name == "allow_different_database_def")
                 res.allow_different_database_def = SettingFieldBool{setting.value};
+            else if (setting.name == "async")
+                res.async = SettingFieldBool{setting.value};
             else
                 throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", setting.name);
         }

@@ -58,6 +58,8 @@ struct RestoreSettings : public StorageRestoreSettings
     /// Set `allow_different_database_def` to true to skip this check.
     bool allow_different_database_def = false;
 
+    bool async = false;
+
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
 };
 
