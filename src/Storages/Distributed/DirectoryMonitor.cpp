@@ -1021,7 +1021,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         UInt64 file_idx = file.first;
         const String & file_path = file.second;
 
-        if (file_indices_to_skip.count(file_idx))
+        if (file_indices_to_skip.contains(file_idx))
             continue;
 
         size_t total_rows = 0;

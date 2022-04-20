@@ -544,7 +544,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         /// MUST go before any modification (except for prepared statements,
-        /// since it substitute parameters and w/o them query does not contain
+        /// since it substitute parameters and without them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
         query_for_logging = prepareQueryForLogging(query, context);
         logQuery(query_for_logging, context, internal);

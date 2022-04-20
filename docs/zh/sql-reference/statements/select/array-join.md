@@ -1,5 +1,5 @@
 ---
-toc_title: ARRAY JOIN
+sidebar_label: ARRAY JOIN
 ---
 
 # ARRAY JOIN子句 {#select-array-join-clause}
@@ -145,7 +145,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-下面的例子使用 [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) 功能:
+下面的例子使用 [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate) 功能:
 
 ``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -258,7 +258,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-使用功能 [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) 的例子:
+使用功能 [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate) 的例子:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
