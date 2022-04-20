@@ -32,6 +32,8 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
                 res.password = SettingFieldString{setting.value};
             else if (setting.name == "structure_only")
                 res.structure_only = SettingFieldBool{setting.value};
+            else if (setting.name == "async")
+                res.async = SettingFieldBool{setting.value};
             else
                 throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", setting.name);
         }

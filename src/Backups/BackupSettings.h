@@ -25,6 +25,8 @@ struct BackupSettings
     /// without the data of tables.
     bool structure_only = false;
 
+    bool async = false;
+
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
 };
 
