@@ -78,6 +78,8 @@ public:
     Metadata readMetadata(const String & path) const;
     Metadata readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const;
     Metadata readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
+    Metadata readUpdateStoreMetadataAndRemove(const String & path, bool sync, MetadataUpdater updater);
+
     Metadata readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, MetadataUpdater updater);
 
     Metadata createAndStoreMetadata(const String & path, bool sync);
@@ -229,6 +231,7 @@ struct IDiskRemote::Metadata
 
     static Metadata readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_);
     static Metadata readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    static Metadata readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
 
     static Metadata createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
     static Metadata createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);

@@ -45,7 +45,6 @@ IDiskRemote::Metadata IDiskRemote::Metadata::createAndStoreMetadata(const String
     return result;
 }
 
-
 IDiskRemote::Metadata IDiskRemote::Metadata::readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, IDiskRemote::MetadataUpdater updater)
 {
     Metadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
@@ -55,7 +54,6 @@ IDiskRemote::Metadata IDiskRemote::Metadata::readUpdateAndStoreMetadata(const St
     return result;
 }
 
-
 IDiskRemote::Metadata IDiskRemote::Metadata::createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, IDiskRemote::MetadataUpdater updater)
 {
     Metadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
@@ -64,6 +62,16 @@ IDiskRemote::Metadata IDiskRemote::Metadata::createUpdateAndStoreMetadata(const 
     return result;
 }
 
+IDiskRemote::Metadata IDiskRemote::Metadata::readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, IDiskRemote::MetadataUpdater updater)
+{
+    Metadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+    if (updater(result))
+        result.save(sync);
+    metadata_disk_->removeFile(metadata_file_path_);
+
+    return result;
+
+}
 
 IDiskRemote::Metadata IDiskRemote::Metadata::createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite)
 {
@@ -231,6 +239,12 @@ IDiskRemote::Metadata IDiskRemote::readUpdateAndStoreMetadata(const String & pat
 }
 
 
+IDiskRemote::Metadata IDiskRemote::readUpdateStoreMetadataAndRemove(const String & path, bool sync, IDiskRemote::MetadataUpdater updater)
+{
+    std::unique_lock lock(metadata_mutex);
+    return Metadata::readUpdateStoreMetadataAndRemove(remote_fs_root_path, metadata_disk, path, sync, updater);
+}
+
 IDiskRemote::Metadata IDiskRemote::readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, IDiskRemote::MetadataUpdater updater)
 {
     if (mode == WriteMode::Rewrite || !metadata_disk->exists(path))
@@ -308,8 +322,7 @@ void IDiskRemote::removeMetadata(const String & path, std::vector<String> & path
             return true;
         };
 
-        readUpdateAndStoreMetadata(path, false, metadata_updater);
-        metadata_disk->removeFile(path);
+        readUpdateStoreMetadataAndRemove(path, false, metadata_updater);
         /// If there is no references - delete content from remote FS.
     }
     catch (const Exception & e)
