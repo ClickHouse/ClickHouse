@@ -476,7 +476,7 @@ void MergeTreeData::checkProperties(
                         "added to the sorting key. You can add expressions that use only the newly added columns",
                         ErrorCodes::BAD_ARGUMENTS);
 
-                if (new_metadata.columns.getDefaults().count(col))
+                if (new_metadata.columns.getDefaults().contains(col))
                     throw Exception("Newly added column " + backQuoteIfNeed(col) + " has a default expression, so adding "
                         "expressions that use it to the sorting key is forbidden",
                         ErrorCodes::BAD_ARGUMENTS);
@@ -655,7 +655,7 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
 
         for (const auto & [name, ttl_description] : new_column_ttls)
         {
-            if (columns_ttl_forbidden.count(name))
+            if (columns_ttl_forbidden.contains(name))
                 throw Exception("Trying to set TTL for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
         }
     }
@@ -1219,7 +1219,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (disk->isBroken())
                 continue;
 
-            if (defined_disk_names.count(disk_name) == 0 && disk->exists(relative_data_path))
+            if (!defined_disk_names.contains(disk_name) && disk->exists(relative_data_path))
             {
                 for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
                 {
@@ -2187,7 +2187,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
-            if (columns_in_keys.count(command.column_name))
+            if (columns_in_keys.contains(command.column_name))
             {
                 throw Exception(
                     "Trying to ALTER RENAME key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
@@ -2196,7 +2196,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (columns_in_keys.count(command.column_name))
+            if (columns_in_keys.contains(command.column_name))
             {
                 throw Exception(
                     "Trying to ALTER DROP key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
@@ -2229,13 +2229,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
-            if (columns_alter_type_forbidden.count(command.column_name))
+            if (columns_alter_type_forbidden.contains(command.column_name))
                 throw Exception("ALTER of key column " + backQuoteIfNeed(command.column_name) + " is forbidden",
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
 
             if (command.type == AlterCommand::MODIFY_COLUMN)
             {
-                if (columns_alter_type_check_safe_for_partition.count(command.column_name))
+                if (columns_alter_type_check_safe_for_partition.contains(command.column_name))
                 {
                     auto it = old_types.find(command.column_name);
 
@@ -2247,7 +2247,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
                 }
 
-                if (columns_alter_type_metadata_only.count(command.column_name))
+                if (columns_alter_type_metadata_only.contains(command.column_name))
                 {
                     auto it = old_types.find(command.column_name);
                     assert(it != old_types.end());
@@ -2337,7 +2337,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         bool at_least_one_column_rest = false;
         for (const auto & column : part->getColumns())
         {
-            if (!dropped_columns.count(column.name))
+            if (!dropped_columns.contains(column.name))
             {
                 at_least_one_column_rest = true;
                 break;
@@ -6102,7 +6102,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     for (const auto & moving_part : parts_to_move)
     {
         /// Something went completely wrong
-        if (!data.currently_moving_parts.count(moving_part.part))
+        if (!data.currently_moving_parts.contains(moving_part.part))
             std::terminate();
         data.currently_moving_parts.erase(moving_part.part);
     }
@@ -6158,7 +6158,7 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::selectPartsForMove()
             *reason = "part already assigned to background operation.";
             return false;
         }
-        if (currently_moving_parts.count(part))
+        if (currently_moving_parts.contains(part))
         {
             *reason = "part is already moving.";
             return false;
@@ -6191,7 +6191,7 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
                 "Move is not possible: " + fullPath(reserved_disk, relative_data_path + part->name) + " already exists",
                 ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-        if (currently_moving_parts.count(part) || partIsAssignedToBackgroundOperation(part))
+        if (currently_moving_parts.contains(part) || partIsAssignedToBackgroundOperation(part))
             throw Exception(
                 "Cannot move part '" + part->name + "' because it's participating in background process",
                 ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
@@ -6556,7 +6556,7 @@ ReservationPtr MergeTreeData::balancedReservation(
 
                 for (const auto & part : covered_parts)
                 {
-                    if (currently_submerging_big_parts.count(part))
+                    if (currently_submerging_big_parts.contains(part))
                         LOG_WARNING(log, "currently_submerging_big_parts contains duplicates. JBOD might lose balance");
                     else
                         currently_submerging_big_parts.insert(part);
@@ -6627,7 +6627,7 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
 
     for (const auto & part : submerging_parts)
     {
-        if (!storage.currently_submerging_big_parts.count(part))
+        if (!storage.currently_submerging_big_parts.contains(part))
         {
             LOG_ERROR(log, "currently_submerging_big_parts doesn't contain part {} to erase. This is a bug", part->name);
             assert(false);
