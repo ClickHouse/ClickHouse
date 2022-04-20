@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_priority: 67
-toc_title: "\u5982\u4F55\u5728Linux\u4E0A\u6784\u5EFAClickHouse for AARCH64\uFF08\
+sidebar_position: 67
+sidebar_label: "\u5982\u4F55\u5728Linux\u4E0A\u6784\u5EFAClickHouse for AARCH64\uFF08\
   ARM64)"
 ---
 
