@@ -196,7 +196,7 @@ public:
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     /// Differs from removeRecursive for S3/HDFS disks
-    /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
+    /// Second bool param is a flag to remove (false) or keep (true) shared data on S3.
     /// Third param determines which files cannot be removed even if second is true.
     virtual void removeSharedRecursive(const String & path, bool /* keep_all_shared_data */, const NameSet & /* file_names_remove_metadata_only */) { removeRecursive(path); }
 
