@@ -56,6 +56,15 @@ void overrideConfigurationFromNamedCollectionWithAST(
     ContextPtr context);
 
 /**
+ * Override configuration with another configuration if values
+ * in the second configuration are not empty.
+ */
+void overrideConfiguration(
+    ConfigurationFromNamedCollection & configuration,
+    ConfigurationFromNamedCollection & overriding_configuration,
+    const std::unordered_map<String, ConfigKeyInfo> & keys);
+
+/**
  * Get configuration represented as root configuration and some listed configuration.
  * Root configuration can be common to all listed configurations, listed configuration
  * overrides common configuration. Listed configuration is defined by enumerate_by_key prefix.
@@ -81,13 +90,14 @@ String toString(const ConfigurationFromNamedCollection & configuration);
 ConfigurationFromNamedCollection parseConfigKeys(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const std::unordered_map<String, ConfigKeyInfo> & keys);
+    const std::unordered_map<String, ConfigKeyInfo> & keys,
+    bool with_default_values = true);
 
 void validateConfigKeys(
     const Poco::Util::AbstractConfiguration & dict_config,
     const String & config_prefix,
     const std::unordered_map<String, ConfigKeyInfo> & keys,
-    const String & prefix);
+    const String & prefix = "");
 
 
 /// Base for all storage configurations. Contains common fields.

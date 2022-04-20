@@ -39,7 +39,7 @@ static const std::unordered_map<String, ConfigKeyInfo> dictionary_keys =
     {"table", ConfigKeyInfo{ .type = Field::Types::String }},
     {"schema", ConfigKeyInfo{ .type = Field::Types::String }},
     {"update_field", ConfigKeyInfo{ .type = Field::Types::String }},
-    {"update_tag", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"update_lag", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
     {"invalidate_query", ConfigKeyInfo{ .type = Field::Types::String }},
     {"query", ConfigKeyInfo{ .type = Field::Types::String }},
     {"where", ConfigKeyInfo{ .type = Field::Types::String }},
@@ -190,30 +190,6 @@ std::string PostgreSQLDictionarySource::toString() const
     return "PostgreSQL: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-static void getOverridenResultForNamedCollection(const String & key, String & value, ConfigurationFromNamedCollection & overriding_configuration, ConfigurationFromNamedCollection & configuration)
-{
-    String overriding_value, config_value;
-    if (overriding_configuration.contains(key))
-        overriding_value = overriding_configuration[key].safeGet<String>();
-
-    if (configuration.contains(key))
-        config_value = configuration[key].safeGet<String>();
-
-    value = overriding_value.empty() ? config_value : overriding_value;
-}
-
-static void getOverridenResultForNamedCollection(const String & key, UInt64 & value, ConfigurationFromNamedCollection & overriding_configuration, ConfigurationFromNamedCollection & configuration)
-{
-    UInt64 overriding_value = 0, config_value = 0;
-    if (overriding_configuration.contains(key))
-        overriding_value = overriding_configuration[key].safeGet<UInt64>();
-
-    if (configuration.contains(key))
-        config_value = configuration[key].safeGet<UInt64>();
-
-    value = overriding_value == 0 ? config_value : overriding_value;
-}
-
 #endif
 
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
@@ -228,52 +204,52 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
     {
 #if USE_LIBPQXX
         const auto settings_config_prefix = config_prefix + ".postgresql";
+        String database, schema, username, host, password, table, query, where, invalidate_query, update_field;
+        UInt64 update_lag = 0;
 
-        std::optional<PostgreSQLDictionarySource::Configuration> dictionary_configuration;
         std::vector<postgres::PoolWithFailover::AuthSettings> connection_info;
 
         if (isNamedCollection(config, settings_config_prefix))
         {
+            auto collection_name = getCollectionName(config, settings_config_prefix);
             auto [root_configuration, replicas_configurations] = getListedConfigurationFromNamedCollection(
-                getCollectionName(config, settings_config_prefix), context->getConfigRef(), dictionary_keys, "replica");
+                collection_name, context->getConfigRef(), dictionary_keys, "replica");
 
             validateConfigKeys(config, settings_config_prefix, dictionary_keys, "replica");
-            auto overriding_configuration = parseConfigKeys(config, settings_config_prefix, dictionary_keys);
 
-            String database, schema, username, host, password, table, query;
-            UInt64 port, priority;
+            auto overriding_configuration = parseConfigKeys(config, settings_config_prefix, dictionary_keys, false);
+            overrideConfiguration(root_configuration, overriding_configuration, dictionary_keys);
 
-            getOverridenResultForNamedCollection("database", database, overriding_configuration, root_configuration);
-            getOverridenResultForNamedCollection("schema", schema, overriding_configuration, root_configuration);
-            getOverridenResultForNamedCollection("table", table, overriding_configuration, root_configuration);
-            getOverridenResultForNamedCollection("query", query, overriding_configuration, root_configuration);
-
+            database = root_configuration["database"].safeGet<String>();
             if (database.empty())
                 database = root_configuration["db"].safeGet<String>();
+            schema = root_configuration["schema"].safeGet<String>();
+            table = root_configuration["table"].safeGet<String>();
+            query = root_configuration["query"].safeGet<String>();
+            where = root_configuration["where"].safeGet<String>();
+            invalidate_query = root_configuration["invalidate_query"].safeGet<String>();
+            update_field = root_configuration["update_field"].safeGet<String>();
+            update_lag = root_configuration["update_lag"].safeGet<UInt64>();
 
             auto configurations = replicas_configurations.empty() ? std::vector<ConfigurationFromNamedCollection>{ root_configuration } : replicas_configurations;
+
             for (auto & replica_configuration : configurations)
             {
-                getOverridenResultForNamedCollection("user", username, overriding_configuration, replica_configuration);
-                getOverridenResultForNamedCollection("host", host, overriding_configuration, replica_configuration);
-                getOverridenResultForNamedCollection("port", port, overriding_configuration, replica_configuration);
-                getOverridenResultForNamedCollection("password", password, overriding_configuration, replica_configuration);
-                getOverridenResultForNamedCollection("priority", priority, overriding_configuration, replica_configuration);
+                ConfigurationFromNamedCollection result_configuration{root_configuration};
+                overrideConfiguration(result_configuration, replica_configuration, dictionary_keys);
 
                 connection_info.emplace_back(
-                    postgres::PoolWithFailover::AuthSettings{ .database = database, .host = host, .port = static_cast<UInt16>(port), .username = username, .password = password, .priority = priority });
+                    postgres::PoolWithFailover::AuthSettings
+                    {
+                        .database = database,
+                        .host = result_configuration["host"].safeGet<String>(),
+                        .port = static_cast<UInt16>(result_configuration["port"].safeGet<UInt64>()),
+                        .username = result_configuration["user"].safeGet<String>(),
+                        .password = result_configuration["password"].safeGet<String>(),
+                        .priority = result_configuration["priority"].safeGet<UInt64>(),
+                    }
+                );
             }
-
-            dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration{
-                .db = database,
-                .schema = schema,
-                .table = table,
-                .query = query,
-                .where = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
-                .invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), ""),
-                .update_field = config.getString(fmt::format("{}.update_field", settings_config_prefix), ""),
-                .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1)
-            });
         }
         else
         {
@@ -319,24 +295,33 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 connection_info.push_back(std::move(root_configuration));
             }
 
-            dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration{
-                .db = database,
-                .schema = config.getString(fmt::format("{}.schema", settings_config_prefix), ""),
-                .table = config.getString(fmt::format("{}.table", settings_config_prefix), ""),
-                .query = config.getString(fmt::format("{}.query", settings_config_prefix), ""),
-                .where = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
-                .invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), ""),
-                .update_field = config.getString(fmt::format("{}.update_field", settings_config_prefix), ""),
-                .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1)
-            });
+            schema = config.getString(fmt::format("{}.schema", settings_config_prefix), "");
+            table = config.getString(fmt::format("{}.table", settings_config_prefix), "");
+            query = config.getString(fmt::format("{}.query", settings_config_prefix), "");
+            where = config.getString(fmt::format("{}.where", settings_config_prefix), "");
+            invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), "");
+            update_field = config.getString(fmt::format("{}.update_field", settings_config_prefix), "");
+            update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1);
         }
+
+
+        PostgreSQLDictionarySource::Configuration dictionary_configuration{
+            .db = database,
+            .schema = schema,
+            .table = table,
+            .query = query,
+            .where = where,
+            .invalidate_query = invalidate_query,
+            .update_field = update_field,
+            .update_lag = update_lag,
+        };
 
         auto pool = std::make_shared<postgres::PoolWithFailover>(
                     connection_info,
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, *dictionary_configuration, pool, sample_block);
+        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration, pool, sample_block);
 #else
         (void)dict_struct;
         (void)config;

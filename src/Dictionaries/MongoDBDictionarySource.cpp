@@ -2,14 +2,30 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollections.h>
+#include <Storages/StorageMongoDB.h>
 
 
 namespace DB
 {
 
-static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "method"};
+static const NamedConfiguration dictionary_keys =
+{
+    {"uri", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"host", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"port", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+    {"database", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"db", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"table", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"collection", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"method", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"user", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"password", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"options", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"format", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+    {"compression_method", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+    {"structure", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+};
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
@@ -23,12 +39,33 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         bool /* created_from_ddl */)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
-        ExternalDataSourceConfiguration configuration;
-        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key); };
-        auto named_collection = getExternalDataSourceConfiguration(config, config_prefix, context, has_config_key);
-        if (named_collection)
+        StorageMongoDB::Configuration configuration;
+        String uri, method;
+
+        validateConfigKeys(config, config_prefix, dictionary_keys);
+
+        if (isNamedCollection(config, config_prefix))
         {
-            configuration = named_collection->configuration;
+            const auto & config_keys = StorageMongoDB::getConfigKeys();
+            auto collection_name = getCollectionName(config, config_prefix);
+
+            auto result_configuration = getConfigurationFromNamedCollection(
+                collection_name, context->getConfigRef(), config_keys);
+            auto overriding_configuration = parseConfigKeys(config, config_prefix, dictionary_keys, false);
+            overrideConfiguration(result_configuration, overriding_configuration, dictionary_keys);
+
+            configuration.host = result_configuration["host"].safeGet<String>();
+            configuration.port = result_configuration["port"].safeGet<UInt64>();
+            configuration.username = result_configuration["user"].safeGet<String>();
+            configuration.password = result_configuration["password"].safeGet<String>();
+            configuration.database = result_configuration["database"].safeGet<String>();
+            if (configuration.database.empty())
+                configuration.database = result_configuration["db"].safeGet<String>();
+            configuration.table = result_configuration["table"].safeGet<String>();
+            if (configuration.table.empty())
+                configuration.table = result_configuration["collection"].safeGet<String>();
+            uri = result_configuration["uri"].safeGet<String>();
+            method = result_configuration["method"].safeGet<String>();
         }
         else
         {
@@ -37,17 +74,21 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
             configuration.username = config.getString(config_prefix + ".user", "");
             configuration.password = config.getString(config_prefix + ".password", "");
             configuration.database = config.getString(config_prefix + ".db", "");
+            configuration.table = config.getString(config_prefix + ".collection");
+            uri = config.getString(config_prefix + ".uri", "");
+            method = config.getString(config_prefix + ".method", "");
         }
 
-        return std::make_unique<MongoDBDictionarySource>(dict_struct,
-            config.getString(config_prefix + ".uri", ""),
+        return std::make_unique<MongoDBDictionarySource>(
+            dict_struct,
+            uri,
             configuration.host,
             configuration.port,
             configuration.username,
             configuration.password,
-            config.getString(config_prefix + ".method", ""),
+            method,
             configuration.database,
-            config.getString(config_prefix + ".collection"),
+            configuration.table,
             sample_block);
     };
 

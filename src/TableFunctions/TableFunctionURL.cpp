@@ -36,6 +36,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
         auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
         overrideConfigurationFromNamedCollectionWithAST(args, configuration_from_config, config_keys, context);
         configuration = StorageURL::parseConfigurationFromNamedCollection(configuration_from_config);
+        StorageURL::setHeadersInConfiguration(args, context, configuration);
 
         filename = configuration.url;
         format = configuration.format;

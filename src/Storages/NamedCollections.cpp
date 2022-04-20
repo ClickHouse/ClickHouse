@@ -52,13 +52,18 @@ String getCollectionName(const Poco::Util::AbstractConfiguration & dict_config, 
 ConfigurationFromNamedCollection parseConfigKeys(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const std::unordered_map<String, ConfigKeyInfo> & keys)
+    const std::unordered_map<String, ConfigKeyInfo> & keys,
+    bool with_default_values)
 {
     ConfigurationFromNamedCollection configuration;
     for (const auto & [key, key_info] : keys)
     {
         Field value;
+
         auto path = config_prefix + "." + key;
+        if (!with_default_values && !config.has(path))
+            continue;
+
         auto type = key_info.type;
         auto default_value = key_info.default_value;
 
@@ -128,6 +133,19 @@ void overrideConfigurationFromNamedCollectionWithAST(
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
         }
+    }
+}
+
+void overrideConfiguration(
+    ConfigurationFromNamedCollection & configuration,
+    ConfigurationFromNamedCollection & overriding_configuration,
+    const std::unordered_map<String, ConfigKeyInfo> & keys)
+{
+    for (const auto & [key, key_info] : keys)
+    {
+        auto overriding_value = overriding_configuration[key];
+        if (!overriding_value.isNull())
+            configuration[key] = overriding_value;
     }
 }
 
