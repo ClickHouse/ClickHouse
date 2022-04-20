@@ -8,7 +8,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollections.h>
 
 
 namespace DB

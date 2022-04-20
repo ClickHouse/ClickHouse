@@ -18,7 +18,7 @@
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollections.h>
 
 namespace Aws::S3
 {

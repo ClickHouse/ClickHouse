@@ -12,7 +12,7 @@
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollections.h>
 #endif
 
 

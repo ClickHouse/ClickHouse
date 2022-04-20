@@ -15,6 +15,7 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollections.h>
 #include <base/logger_useful.h>
 
 
