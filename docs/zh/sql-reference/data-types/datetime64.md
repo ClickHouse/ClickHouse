@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_priority: 49
-toc_title: DateTime64
+sidebar_position: 49
+sidebar_label: DateTime64
 ---
 
 # Datetime64 {#data_type-datetime64}

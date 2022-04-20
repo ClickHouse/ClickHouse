@@ -1,6 +1,6 @@
 ---
-toc_priority: 6
-toc_title: HDFS
+sidebar_position: 6
+sidebar_label: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}
@@ -96,7 +96,7 @@ CREATE TABLE table_with_question_mark (name String, value UInt32) ENGINE = HDFS(
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-!!! warning "Warning"
+:::danger "Warning"
     Если список файлов содержит числовые интервалы с ведущими нулями, используйте конструкцию с фигурными скобочками для каждой цифры или используйте `?`.
 
 **Example**

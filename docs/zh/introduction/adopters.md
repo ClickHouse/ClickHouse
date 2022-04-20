@@ -1,6 +1,6 @@
 ---
-toc_priority: 5
-toc_title: "ClickHouse用户"
+sidebar_position: 5
+sidebar_label: "ClickHouse用户"
 ---
 
 # ClickHouse用户 {#clickhouse-adopters}

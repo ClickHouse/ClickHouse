@@ -636,7 +636,7 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const String & datab
         if (source_databases_and_tables)
         {
             if (auto it = source_databases_and_tables->find(database_name); it != source_databases_and_tables->end())
-                return it->second.count(table_name_);
+                return it->second.contains(table_name_);
             else
                 return false;
         }

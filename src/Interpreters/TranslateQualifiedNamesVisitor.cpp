@@ -97,7 +97,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
     if (IdentifierSemantic::getColumnName(identifier))
     {
         String short_name = identifier.shortName();
-        bool allow_ambiguous = data.join_using_columns.count(short_name);
+        bool allow_ambiguous = data.join_using_columns.contains(short_name);
         if (auto best_pos = IdentifierSemantic::chooseTable(identifier, data.tables, allow_ambiguous))
         {
             size_t table_pos = *best_pos;
@@ -228,7 +228,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     for (const auto & column : *cols)
                     {
-                        if (first_table || !data.join_using_columns.count(column.name))
+                        if (first_table || !data.join_using_columns.contains(column.name))
                             addIdentifier(columns, table.table, column.name);
                     }
                 }
@@ -253,8 +253,13 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             {
                 for (const auto & column : table.columns)
                 {
-                    if (asterisk_regexp_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
-                        addIdentifier(columns, table.table, column.name);
+                    for (const auto & column : table.columns)
+                    {
+                        if (asterisk_regexp_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
+                        {
+                            addIdentifier(columns, table.table, column.name);
+                        }
+                    }
                 }
                 first_table = false;
             }
