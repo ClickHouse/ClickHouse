@@ -1,6 +1,6 @@
 ---
-toc_priority: 5
-toc_title: MongoDB
+sidebar_position: 5
+sidebar_label: MongoDB
 ---
 
 # MongoDB {#mongodb}
