@@ -7,7 +7,7 @@ toc_title: Enum
 
 Enumerated type consisting of named values.
 
-Named values could be declared as `'string' = integer` pairs or `'string'` . ClickHouse stores only numbers, but supports operations with the values through their names.
+Named values can be declared as `'string' = integer` pairs or `'string'` names . ClickHouse stores only numbers, but supports operations with the values through their names.
 
 ClickHouse supports:
 
@@ -28,7 +28,7 @@ CREATE TABLE t_enum
 ENGINE = TinyLog
 ```
 
-Similarly, you could not specify numbers. ClickHouse will assign consecutive numbers automatically. Numbers are assigned from 1 by default.
+Similarly, you could omit numbers. ClickHouse will assign consecutive numbers automatically. Numbers are assigned starting from 1 by default.
 
 ``` sql
 CREATE TABLE t_enum
@@ -38,7 +38,7 @@ CREATE TABLE t_enum
 ENGINE = TinyLog
 ```
 
-You can also specify legal number for only the first named values.
+You can also specify legal starting number for the first name.
 
 ``` sql
 CREATE TABLE t_enum
