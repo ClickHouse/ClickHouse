@@ -3,6 +3,7 @@
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Storages/StorageURL.h>
 
 
 namespace DB
@@ -34,7 +35,7 @@ private:
 
     ReadWriteBufferFromHTTP::HTTPHeaderEntries getHeaders() const;
 
-    URLBasedDataSourceConfiguration configuration;
+    StorageURL::Configuration configuration;
 };
 
 }

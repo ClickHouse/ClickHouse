@@ -169,27 +169,6 @@ void validateConfigKeys(
     const std::unordered_map<String, ConfigKeyInfo> & keys,
     const String & prefix);
 
-struct URLBasedDataSourceConfiguration
-{
-    String url;
-    String format = "auto";
-    String compression_method = "auto";
-    String structure = "auto";
-
-    std::vector<std::pair<String, Field>> headers;
-    String http_method;
-
-    void set(const URLBasedDataSourceConfiguration & conf);
-};
-
-struct URLBasedDataSourceConfig
-{
-    URLBasedDataSourceConfiguration configuration;
-    StorageSpecificArgs specific_args;
-};
-
-std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
-
 template<typename T>
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context);
 

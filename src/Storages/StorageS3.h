@@ -121,7 +121,7 @@ private:
 class StorageS3 : public shared_ptr_helper<StorageS3>, public IStorage, WithContext
 {
 public:
-    struct Configuration : StorageConfiguration
+    struct Configuration : public StorageConfiguration
     {
         std::optional<S3::URI> uri;
         std::shared_ptr<Aws::S3::S3Client> client;

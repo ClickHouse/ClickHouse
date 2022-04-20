@@ -152,7 +152,30 @@ public:
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
-    static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
+    struct Configuration : public StorageConfiguration
+    {
+        String url;
+        String http_method;
+        std::vector<std::pair<String, Field>> headers;
+    };
+
+    static NamedConfiguration getConfigKeys()
+    {
+        static const NamedConfiguration config_keys =
+        {
+            {"url", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"filename", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"http_method", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"format", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+            {"compression_method", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+            {"structure", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+        };
+        return config_keys;
+    }
+
+    static Configuration getConfiguration(ASTs & args, ContextPtr context);
+    static Configuration parseConfigurationFromNamedCollection(ConfigurationFromNamedCollection & configuration_from_config);
+    static void setHeadersInConfiguration(ASTs & args, ContextPtr context, Configuration & configuration);
 };
 
 

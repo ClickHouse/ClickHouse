@@ -846,7 +846,6 @@ void StorageS3::updateConfiguration(ContextPtr ctx, StorageS3::Configuration & u
     upd.auth_settings = std::move(settings.auth_settings);
 }
 
-
 StorageS3::Configuration StorageS3::parseConfigurationFromNamedCollection(ConfigurationFromNamedCollection & configuration_from_config)
 {
     StorageS3::Configuration configuration;
@@ -899,6 +898,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
     {
         const auto & config_keys = getConfigKeys();
         auto collection_name = getCollectionName(engine_args);
+
         auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
         overrideConfigurationFromNamedCollectionWithAST(engine_args, configuration_from_config, config_keys, local_context);
         configuration = parseConfigurationFromNamedCollection(configuration_from_config);

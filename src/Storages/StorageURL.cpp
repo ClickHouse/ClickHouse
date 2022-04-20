@@ -27,12 +27,14 @@
 #include "IO/HTTPCommon.h"
 #include "IO/ReadWriteBufferFromHTTP.h"
 
-#include <algorithm>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
+
+#include <algorithm>
+#include <filesystem>
 
 
 namespace DB
@@ -862,33 +864,69 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     return format_settings;
 }
 
-URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, ContextPtr local_context)
+StorageURL::Configuration StorageURL::parseConfigurationFromNamedCollection(ConfigurationFromNamedCollection & configuration_from_config)
 {
-    URLBasedDataSourceConfiguration configuration;
+    StorageURL::Configuration configuration;
 
-    if (auto named_collection = getURLBasedDataSourceConfiguration(args, local_context))
+    for (const auto & [name, value] : configuration_from_config)
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
-        configuration.set(common_configuration);
-
-        if (!configuration.http_method.empty() && configuration.http_method != Poco::Net::HTTPRequest::HTTP_POST
-            && configuration.http_method != Poco::Net::HTTPRequest::HTTP_PUT)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Http method can be POST or PUT (current: {}). For insert default is POST, for select GET",
-                configuration.http_method);
-
-        if (!storage_specific_args.empty())
+        if (name == "url")
+            configuration.url = value.safeGet<String>();
+        else if (name == "filename")
         {
-            String illegal_args;
-            for (const auto & arg : storage_specific_args)
-            {
-                if (!illegal_args.empty())
-                    illegal_args += ", ";
-                illegal_args += arg.first;
-            }
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown argument `{}` for storage URL", illegal_args);
+            auto filename = value.safeGet<String>();
+            if (!filename.empty())
+                configuration.url = std::filesystem::path(configuration_from_config["url"].safeGet<String>()) / filename;
         }
+        else if (name == "structure")
+            configuration.structure = value.safeGet<String>();
+        else if (name == "format")
+            configuration.format = value.safeGet<String>();
+        else if (name == "compression_method")
+            configuration.compression_method = value.safeGet<String>();
+        else if (name == "http_method")
+            configuration.http_method = value.safeGet<String>();
+    }
+
+    return configuration;
+}
+
+void StorageURL::setHeadersInConfiguration(ASTs & args, ContextPtr context, Configuration & configuration)
+{
+    const auto & config = context->getConfigRef();
+    auto config_prefix = "named_collections." + getCollectionName(args);
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+
+    for (const auto & key : keys)
+    {
+        if (key == "headers")
+        {
+            Poco::Util::AbstractConfiguration::Keys header_keys;
+            config.keys(config_prefix + ".headers", header_keys);
+            for (const auto & header : header_keys)
+            {
+                const auto header_prefix = config_prefix + ".headers." + header;
+                configuration.headers.emplace_back(std::make_pair(config.getString(header_prefix + ".name"), config.getString(header_prefix + ".value")));
+            }
+        }
+    }
+}
+
+StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, ContextPtr local_context)
+{
+    StorageURL::Configuration configuration;
+    const auto & config = local_context->getConfigRef();
+
+    if (isNamedCollection(args, config))
+    {
+        const auto & config_keys = getConfigKeys();
+        auto collection_name = getCollectionName(args);
+
+        auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
+        overrideConfigurationFromNamedCollectionWithAST(args, configuration_from_config, config_keys, local_context);
+        configuration = parseConfigurationFromNamedCollection(configuration_from_config);
     }
     else
     {

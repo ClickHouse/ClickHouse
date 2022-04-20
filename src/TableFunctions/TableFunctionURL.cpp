@@ -4,7 +4,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/StorageURL.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Storages/StorageExternalDistributed.h>
@@ -22,32 +21,21 @@ namespace ErrorCodes
 void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
-    if (!func_args.arguments)
+    auto & args = func_args.arguments->children;
+
+    if (!func_args.arguments || args.empty())
         throw Exception("Table function 'URL' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-    if (auto with_named_collection = getURLBasedDataSourceConfiguration(func_args.arguments->children, context))
+    const auto & config = context->getConfigRef();
+
+    if (isNamedCollection(args, config))
     {
-        auto [common_configuration, storage_specific_args] = with_named_collection.value();
-        configuration.set(common_configuration);
+        const auto & config_keys = StorageURL::getConfigKeys();
+        auto collection_name = getCollectionName(args);
 
-        if (!configuration.http_method.empty()
-            && configuration.http_method != Poco::Net::HTTPRequest::HTTP_POST
-            && configuration.http_method != Poco::Net::HTTPRequest::HTTP_PUT)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Method can be POST or PUT (current: {}). For insert default is POST, for select GET",
-                            configuration.http_method);
-
-        if (!storage_specific_args.empty())
-        {
-            String illegal_args;
-            for (const auto & arg : storage_specific_args)
-            {
-                if (!illegal_args.empty())
-                    illegal_args += ", ";
-                illegal_args += arg.first;
-            }
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown argument `{}` for table function URL", illegal_args);
-        }
+        auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
+        overrideConfigurationFromNamedCollectionWithAST(args, configuration_from_config, config_keys, context);
+        configuration = StorageURL::parseConfigurationFromNamedCollection(configuration_from_config);
 
         filename = configuration.url;
         format = configuration.format;

@@ -205,6 +205,8 @@ void registerStorageExternalDistributed(StorageFactory & factory)
         if (engine_args.size() < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine ExternalDistributed must have at least 2 arguments: engine_name, named_collection and/or description");
 
+        auto context = args.getLocalContext();
+
         auto engine_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         StorageExternalDistributed::ExternalStorageEngine table_engine;
         if (engine_name == "URL")
@@ -223,24 +225,20 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 
         if (engine_name == "URL")
         {
-            URLBasedDataSourceConfiguration configuration;
-            if (auto named_collection = getURLBasedDataSourceConfiguration(inner_engine_args, args.getLocalContext()))
+            StorageURL::Configuration configuration;
+            const auto & config = context->getConfigRef();
+
+            if (isNamedCollection(engine_args, config))
             {
-                auto [common_configuration, storage_specific_args] = named_collection.value();
-                configuration.set(common_configuration);
+                auto config_keys = StorageURL::getConfigKeys();
+                config_keys.emplace("description", ConfigKeyInfo{ .type = Field::Types::String });
+                auto collection_name = getCollectionName(engine_args);
 
-                for (const auto & [name, value] : storage_specific_args)
-                {
-                    if (name == "description")
-                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
-                    else
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                        "Unknown key-value argument {} for table engine URL", name);
-                }
+                auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
+                overrideConfigurationFromNamedCollectionWithAST(engine_args, configuration_from_config, config_keys, context);
+                cluster_description = configuration_from_config["description"].safeGet<String>();
+                configuration = StorageURL::parseConfigurationFromNamedCollection(configuration_from_config);
 
-                if (cluster_description.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Engine ExternalDistribued must have `description` key-value argument or named collection parameter");
             }
             else
             {

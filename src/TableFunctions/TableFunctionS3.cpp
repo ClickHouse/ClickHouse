@@ -32,6 +32,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
     {
         const auto & config_keys = StorageS3::getConfigKeys();
         auto collection_name = getCollectionName(args);
+
         auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
         overrideConfigurationFromNamedCollectionWithAST(args, configuration_from_config, config_keys, context);
         s3_configuration = StorageS3::parseConfigurationFromNamedCollection(configuration_from_config);
