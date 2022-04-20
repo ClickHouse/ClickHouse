@@ -419,7 +419,7 @@ public:
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void checkTableCanBeRenamed() const {}
+    virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
 
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.

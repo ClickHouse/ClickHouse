@@ -1074,7 +1074,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     continue;
             }
 
-            if (renamed_columns.count(column_name))
+            if (renamed_columns.contains(column_name))
                 throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
                                 ErrorCodes::NOT_IMPLEMENTED};
 
@@ -1236,7 +1236,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": column with this name already exists",
                                 ErrorCodes::DUPLICATE_COLUMN};
 
-            if (modified_columns.count(column_name))
+            if (modified_columns.contains(column_name))
                 throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
                                 ErrorCodes::NOT_IMPLEMENTED};
 
