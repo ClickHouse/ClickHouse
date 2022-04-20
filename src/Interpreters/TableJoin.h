@@ -191,7 +191,7 @@ public:
     bool allowMergeJoin() const;
     bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
     bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
-    bool allowConcurrentHashJoin() const;
+    bool allowParallelHashJoin() const;
     bool forceHashJoin() const
     {
         /// HashJoin always used for DictJoin
