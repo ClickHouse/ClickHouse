@@ -5,6 +5,7 @@
 #include <metrohash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
+#include <meow_hash_x64_aesni.h>
 
 #include "config_functions.h"
 #include "config_core.h"
@@ -1369,6 +1370,35 @@ private:
     }
 };
 
+struct ImplMeowHash128
+{
+    static constexpr auto name = "meowHash128";
+    using ReturnType = UInt128;
+
+    static UInt128 apply(const char *s, const size_t len)
+    {
+        union {
+            __m128i m128;
+            UInt128 u128;
+        };
+        m128 = MeowHash(MeowDefaultSeed, len, s);
+        return u128;
+    }
+
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
+    {
+        union {
+            UInt128 u128[2];
+            char chars[32];
+        };
+        u128[0] = h1;
+        u128[1] = h2;
+        return apply(chars, 32);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
@@ -1405,5 +1435,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+
+using FunctionMeowHash128 = FunctionAnyHash<ImplMeowHash128>;
 
 }
