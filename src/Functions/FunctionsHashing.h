@@ -1379,9 +1379,9 @@ struct ImplHighwayHash64
 
     static UInt64 apply(const char *s, const size_t len)
     {
-        const HHKey key HH_ALIGNAS(32) = {1, 2, 3, 4};
+        const highwayhash::HHKey key highwayhash::HH_ALIGNAS(32) = {1, 2, 3, 4};
         UInt64 result;
-        InstructionSets::Run<highwayhash::HighwayHash>(key, s, len, &result);
+        highwayhash::InstructionSets::Run<highwayhash::HighwayHash>(key, s, len, &result);
         return result;
     }
 
