@@ -7456,10 +7456,14 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
+        String files_not_to_remove_str;
+        zookeeper_ptr->tryGet(zc_zookeeper_path, files_not_to_remove_str);
+
         files_not_to_remove.clear();
-        auto files_not_to_remove_str = zookeeper_ptr->get(zc_zookeeper_path);
         if (!files_not_to_remove_str.empty())
+        {
             boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
+        }
 
         String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
 
