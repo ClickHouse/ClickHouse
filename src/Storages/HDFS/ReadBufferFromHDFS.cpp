@@ -107,6 +107,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         if (whence != SEEK_SET)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Only SEEK_SET is supported");
 
+        std::cout << "actual seek" << std::endl;
         int seek_status = hdfsSeek(fs.get(), fin, file_offset_);
         if (seek_status != 0)
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
@@ -173,6 +174,7 @@ bool ReadBufferFromHDFS::nextImpl()
 
 off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
 {
+    std::cout << "ReadBufferFromHDFS seek" << std::endl;
     // std::cout << "obj:" << getId() << ",seek_offset:" << offset_ << std::endl;
     // StatusGuard guard{this, __FUNCTION__};
     if (whence != SEEK_SET)
@@ -211,6 +213,7 @@ size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
 
 ReadBufferFromHDFS::ReadResult ReadBufferFromHDFS::readInto(char * data, size_t size, size_t offset, size_t  /*ignore*/)
 {
+    std::cout << "ReadBufferFromHDFS::readInto" << std::endl;
     /// TODO: we don't need to copy if there is no pending data
     seek(offset, SEEK_SET);
     if (eof())
