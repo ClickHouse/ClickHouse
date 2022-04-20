@@ -32,8 +32,8 @@ def setup_module(module):
         cluster.mysql_port,
         cluster.mysql_host,
         cluster.mysql_port,
-        "root",
-        "clickhouse",
+        cluster.mysql_user,
+        cluster.mysql_password,
     )
 
     simple_tester = SimpleLayoutTester(test_name)

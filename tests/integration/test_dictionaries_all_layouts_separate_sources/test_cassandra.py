@@ -32,8 +32,8 @@ def setup_module(module):
         cluster.cassandra_port,
         cluster.cassandra_host,
         cluster.cassandra_port,
-        "",
-        "",
+        cluster.cassandra_user,
+        cluster.cassandra_password,
     )
 
     simple_tester = SimpleLayoutTester(test_name)

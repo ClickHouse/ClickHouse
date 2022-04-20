@@ -25,14 +25,15 @@ def setup_module(module):
     global ranged_tester
 
     cluster = ClickHouseCluster(__file__, name=test_name)
+
     SOURCE = SourceMongo(
         "MongoDB",
         "localhost",
         cluster.mongo_port,
         cluster.mongo_host,
-        "27017",
-        "root",
-        "clickhouse",
+        cluster.mongo_docker_port,
+        cluster.mongo_user,
+        cluster.mongo_password,
     )
 
     simple_tester = SimpleLayoutTester(test_name)

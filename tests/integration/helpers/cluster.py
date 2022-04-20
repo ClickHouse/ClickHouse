@@ -417,12 +417,66 @@ class ClickHouseCluster:
         self.mongo_port = get_free_port()
         self.mongo_no_cred_host = "mongo2"
         self.mongo_no_cred_port = get_free_port()
+        self.mongo_docker_port = "27017"
+        self.mongo_user = "root"
+        self.mongo_password = "clickhouse"
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
         self.cassandra_port = 9042
         self.cassandra_ip = None
         self.cassandra_id = self.get_instance_docker_id(self.cassandra_host)
+        self.cassandra_user = ""
+        self.cassandra_password = ""
+
+        # available when test_clickhouse_local called
+        self.clickhouse_local_internal_port = "9000"
+        self.clickhouse_local_docker_hostname = "local_node"
+        self.clickhouse_local_docker_port = "9000"
+        self.clickhouse_local_user = "default"
+        self.clickhouse_local_password = ""
+
+        # available when test_clickhouse_remote called
+        self.clickhouse_remote_internal_port = "9000"
+        self.clickhouse_remote_docker_hostname = "clickhouse_remote"
+        self.clickhouse_remote_docker_port = "9000"
+        self.clickhouse_remote_user = "default"
+        self.clickhouse_remote_password = ""
+
+        # available when test_executable_cache called
+        self.executable_cache_internal_port = "9000"
+        self.executable_cache_docker_hostname = "cache_node"
+        self.executable_cache_docker_port = "9000"
+        self.executable_cache_user = ""
+        self.executable_cache_password = ""
+
+        # available when test_executable_hashed called
+        self.executable_hashed_internal_port = "9000"
+        self.executable_hashed_docker_hostname = "hashed_node"
+        self.executable_hashed_docker_port = "9000"
+        self.executable_hashed_user = ""
+        self.executable_hashed_password = ""
+
+        # available when test_executable_hashed called
+        self.file_internal_port = "9000"
+        self.file_docker_hostname = "file_node"
+        self.file_docker_port = "9000"
+        self.file_user = ""
+        self.file_password = ""
+
+        # available when test_executable_hashed called
+        self.http_internal_port = "9000"
+        self.http_docker_hostname = "clickhouse_h"
+        self.http_docker_port = "9000"
+        self.http_user = ""
+        self.http_password = ""
+
+        # available when test_executable_hashed called
+        self.https_internal_port = "9000"
+        self.https_docker_hostname = "clickhouse_hs"
+        self.https_docker_port = "9000"
+        self.https_user = ""
+        self.https_password = ""
 
         # available when with_rabbitmq == True
         self.rabbitmq_host = "rabbitmq1"
@@ -469,6 +523,8 @@ class ClickHouseCluster:
         self.mysql_host = "mysql57"
         self.mysql_port = 3306
         self.mysql_ip = None
+        self.mysql_user = "root"
+        self.mysql_password = "clickhouse"
         self.mysql_dir = p.abspath(p.join(self.instances_dir, "mysql"))
         self.mysql_logs_dir = os.path.join(self.mysql_dir, "logs")
 
@@ -1153,6 +1209,7 @@ class ClickHouseCluster:
         dictionaries=None,
         macros=None,
         with_zookeeper=False,
+        with_clickhouse_local=False,
         with_zookeeper_secure=False,
         with_mysql_client=False,
         with_mysql=False,

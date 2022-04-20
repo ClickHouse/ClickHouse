@@ -8,8 +8,9 @@ from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceFile
 
-SOURCE = SourceFile("File", "localhost", "9000", "file_node", "9000", "", "")
+# SOURCE = SourceFile("File", "localhost", "9000", "file_node", "9000", "", "")
 
+SOURCE = None
 cluster = None
 node = None
 simple_tester = None
@@ -25,6 +26,18 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
+    cluster = ClickHouseCluster(__file__, name=test_name)
+
+    SOURCE = SourceFile(
+        "File",
+        "localhost",
+        cluster.file_internal_port,
+        cluster.file_docker_hostname,
+        cluster.file_docker_port,
+        cluster.file_user,
+        cluster.file_password
+    )
+
     simple_tester = SimpleLayoutTester(test_name)
     simple_tester.cleanup()
     simple_tester.create_dictionaries(SOURCE)
@@ -35,8 +48,6 @@ def setup_module(module):
     ranged_tester = RangedLayoutTester(test_name)
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
-
-    cluster = ClickHouseCluster(__file__, name=test_name)
 
     main_configs = []
     main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))

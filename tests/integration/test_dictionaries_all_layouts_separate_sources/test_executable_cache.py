@@ -8,10 +8,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceExecutableCache
 
-SOURCE = SourceExecutableCache(
-    "ExecutableCache", "localhost", "9000", "cache_node", "9000", "", ""
-)
-
+SOURCE = None
 cluster = None
 node = None
 simple_tester = None
@@ -27,6 +24,18 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
+    cluster = ClickHouseCluster(__file__, name=test_name)
+
+    SOURCE = SourceExecutableCache(
+        "ExecutableCache",
+        "localhost",
+        cluster.executable_cache_internal_port,
+        cluster.executable_cache_docker_hostname,
+        cluster.executable_cache_docker_port,
+        cluster.executable_cache_user,
+        cluster.executable_cache_password
+    )
+
     simple_tester = SimpleLayoutTester(test_name)
     simple_tester.cleanup()
     simple_tester.create_dictionaries(SOURCE)
@@ -37,8 +46,6 @@ def setup_module(module):
     ranged_tester = RangedLayoutTester(test_name)
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
-
-    cluster = ClickHouseCluster(__file__, name=test_name)
 
     main_configs = []
     main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))

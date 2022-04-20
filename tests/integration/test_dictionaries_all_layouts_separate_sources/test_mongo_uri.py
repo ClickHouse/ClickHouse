@@ -31,9 +31,9 @@ def setup_module(module):
         "localhost",
         cluster.mongo_port,
         cluster.mongo_host,
-        "27017",
-        "root",
-        "clickhouse",
+        cluster.mongo_docker_port,
+        cluster.mongo_user,
+        cluster.mongo_password,
     )
 
     simple_tester = SimpleLayoutTester(test_name)
