@@ -1,5 +1,5 @@
 ---
-toc_priority: 205
+sidebar_position: 205
 ---
 
 # quantileTimingWeighted {#quantiletimingweighted}
