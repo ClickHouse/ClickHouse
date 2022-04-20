@@ -114,9 +114,3 @@ set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-s
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
 endif ()
-
-if (HAVE_AVX2)
-    target_compile_options(clickhouse_functions PRIVATE -mavx2)
-elseif(HAVE_SSE41)
-    target_compile_options(clickhouse_functions PRIVATe -msse4.1)
-endif()

@@ -4,6 +4,10 @@ add_library(highwayhash "${LIBRARY_DIR}/highwayhash/highwayhash_target.h"
                         "${LIBRARY_DIR}/highwayhash/highwayhash_target.cc"
                         "${LIBRARY_DIR}/highwayhash/instruction_sets.h"
                         "${LIBRARY_DIR}/highwayhash/instruction_sets.cc"
+                        "${LIBRARY_DIR}/highwayhash/arch_specific.h"
+                        "${LIBRARY_DIR}/highwayhash/arch_specific.cc"
+                        "${LIBRARY_DIR}/highwayhash/compiler_specific.h"
+                        "${LIBRARY_DIR}/highwayhash/compiler_specific.cc"
         )
 
 if (HAVE_AVX2)
