@@ -46,30 +46,20 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
-    auto mutable_context = const_pointer_cast<Context>(context);
+    auto interpreter = InterpreterSelectQuery(
+        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
 
-    mutable_context->getSettings();
-
-    auto & client_info = mutable_context->getClientInfo();
-    client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    client_info.count_participating_replicas = shard_count;
-    client_info.number_of_current_replica = shard_num;
-
+    interpreter.setProperClientInfo();
     if (coordinator)
     {
-        client_info.collaborate_with_initiator = true;
-        mutable_context->setMergeTreeReadTaskCallback([coordinator](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+        interpreter.setMergeTreeReadTaskCallbackAndClientInfo([coordinator](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
         {
             return coordinator->handleRequest(request);
         });
     }
 
-    auto interpreter = InterpreterSelectQuery(
-        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
     interpreter.buildQueryPlan(*query_plan);
-
     addConvertingActions(*query_plan, header);
-
     return query_plan;
 }
 
