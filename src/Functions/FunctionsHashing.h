@@ -1406,7 +1406,7 @@ struct ImplHighwayHash64
         };
         u64[0] = h1;
         u64[1] = h2;
-        return highwayhash(chars, 16);
+        return apply(chars, 16);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -1435,7 +1435,7 @@ struct ImplHighwayHash128
         };
         u128[0] = h1;
         u128[1] = h2;
-        return highwayhash<UInt128>(chars, 32);
+        return apply(chars, 32);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -1464,7 +1464,7 @@ struct ImplHighwayHash256
         };
         u256[0] = h1;
         u256[1] = h2;
-        return highwayhash<UInt256>(chars, 64);
+        return apply(chars, 64);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
