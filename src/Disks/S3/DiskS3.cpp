@@ -242,7 +242,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         fs::path(remote_fs_root_path) / blob_name,
         settings->s3_settings,
         std::move(object_metadata),
-        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()), blob_name, cache_on_write ? cache : nullptr);
+        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()), cache_on_write ? cache : nullptr);
 
     auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
     {
