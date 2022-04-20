@@ -48,8 +48,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 /// May split ExpressionStep and lift up only a part of it.
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
-/// FIXME
-size_t tryReuseStorageOrdering(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+/// Utilize storage sorting when sorting for window functions.
+/// Update information about prefix sort description in SortingStep.
+size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 inline const auto & getOptimizations()
 {
@@ -60,7 +61,7 @@ inline const auto & getOptimizations()
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryReuseStorageOrdering, "reuseStorageOrdering", &QueryPlanOptimizationSettings::optimize_plan}
+        {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::optimize_plan}
     }};
 
     return optimizations;
