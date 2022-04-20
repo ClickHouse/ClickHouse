@@ -5,12 +5,11 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include "Access/AccessEntityIO.cpp"
+#include "Access/AccessEntityIO.h"
 #include <string_view>
 #include <regex>
 #include <gtest/gtest.h>
@@ -20,6 +19,7 @@ namespace
 using namespace DB;
 using namespace std::literals;
 }
+
 
 struct ParserTestCase
 {
