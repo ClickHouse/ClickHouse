@@ -556,11 +556,21 @@ std::string ParsingException::displayText() const
     try
     {
         formatted_message = message();
+        bool need_newline = false;
         if (!file_name.empty())
+        {
             formatted_message += fmt::format(": (in file/uri {})", file_name);
+            need_newline = true;
+        }
+
         if (line_number != -1)
+        {
             formatted_message += fmt::format(": (at row {})", line_number);
-        formatted_message += "\n";
+            need_newline = true;
+        }
+
+        if (need_newline)
+            formatted_message += "\n";
     }
     catch (...) {}
 

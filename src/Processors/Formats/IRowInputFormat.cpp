@@ -186,8 +186,11 @@ Chunk IRowInputFormat::generate()
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
 
-        e.addMessage(fmt::format(": (in file/uri {})", getFileNameFromReadBuffer(getReadBuffer())));
-        e.addMessage(fmt::format(": (at row {})\n", total_rows));
+        auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+        if (!file_name.empty())
+            e.addMessage(fmt::format("(in file/uri {})", file_name));
+
+        e.addMessage(fmt::format("(at row {})\n", total_rows));
         e.addMessage(verbose_diagnostic);
         throw;
     }
