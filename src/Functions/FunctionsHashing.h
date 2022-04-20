@@ -14,6 +14,9 @@
 #include <Common/HashTable/Hash.h>
 #include <xxhash.h>
 
+#include <highwayhash/highwayhash_target.h>
+#include <highwayhash/instruction_sets.h>
+
 #if USE_SSL
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
@@ -1379,7 +1382,7 @@ struct ImplHighwayHash64
         const HHKey key HH_ALIGNAS(32) = {1, 2, 3, 4};
         UInt64 result;
         InstructionSets::Run<HighwayHash>(key, s, len, &result);
-        return result
+        return result;
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
