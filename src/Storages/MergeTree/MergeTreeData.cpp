@@ -5786,6 +5786,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     if (hardlinked_files)
     {
         hardlinked_files->source_part_name = src_part->name;
+        hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
 
         for (auto it = disk->iterateDirectory(src_part_path); it->isValid(); it->next())
         {

@@ -65,6 +65,7 @@ IDiskRemote::Metadata IDiskRemote::Metadata::createUpdateAndStoreMetadata(const 
 IDiskRemote::Metadata IDiskRemote::Metadata::readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, IDiskRemote::MetadataUpdater updater)
 {
     Metadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+    result.load();
     if (updater(result))
         result.save(sync);
     metadata_disk_->removeFile(metadata_file_path_);
@@ -303,6 +304,7 @@ void IDiskRemote::removeMetadata(const String & path, std::vector<String> & path
             {
                 for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
                 {
+
                     paths_to_remove.push_back(remote_fs_root_path + remote_fs_object_path);
 
                     if (cache)

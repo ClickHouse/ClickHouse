@@ -771,6 +771,8 @@ public:
 
     struct HardlinkedFiles
     {
+        /// Shared table uuid where hardlinks live
+        std::string source_table_shared_id;
         /// Hardlinked from part
         std::string source_part_name;
         /// Hardlinked files list
@@ -963,6 +965,8 @@ public:
     /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
     virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed);
+
+    virtual String getTableSharedID() const { return ""; }
 
     /// Store metadata for replicated tables
     /// Do nothing for non-replicated tables
