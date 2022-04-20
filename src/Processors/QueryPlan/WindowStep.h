@@ -25,7 +25,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const SortDescription & getSortDescription() const;
+    const WindowDescription & getWindowDescription() const;
 
 private:
     WindowDescription window_description;
