@@ -229,10 +229,3 @@ SELECT * FROM system.settings_profile_elements WHERE user_name LIKE 'u%\_01292' 
 DROP USER u1_01292, u2_01292, u3_01292, u4_01292, u5_01292;
 
 DROP ROLE r1_01292, r2_01292;
-
-SELECT '-- authentication with salt';
-CREATE USER test_01292 IDENTIFIED WITH sha256_password BY 'qwe123' HOST LOCAL SETTINGS readonly=1;
-SHOW CREATE USER test_01292;
-ALTER USER test_01292 IDENTIFIED WITH double_sha1_password BY '123root' HOST LOCAL SETTINGS readonly=1;
-SHOW CREATE USER test_01292;
-DROP USER test_01292;
