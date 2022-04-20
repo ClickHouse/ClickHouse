@@ -1,33 +1,57 @@
 -- CAST expression
 
+-- cast(expr [[AS] alias_1] AS Type)
+
+SELECT cast('1234' AS UInt32);
+SELECT cast('1234' AS lhs AS UInt32), lhs;
+SELECT cast('1234' lhs AS UInt32), lhs;
+SELECT cast(('1234' AS lhs) AS UInt32), lhs;
+SELECT cast(('1234' AS lhs) rhs AS UInt32), rhs;
+SELECT cast(('1234' AS lhs) AS rhs AS UInt32), rhs;
+
+-- cast(expr [[AS] alias_1], type_expr [[as] alias_2])
+
+SELECT cast('1234', 'UInt32');
+SELECT cast('1234' AS lhs, 'UInt32'), lhs;
+SELECT cast('1234' lhs, 'UInt32'), lhs;
+SELECT cast('1234', 'UInt32' AS rhs), rhs;
+SELECT cast('1234', 'UInt32' rhs), rhs;
 SELECT cast('1234' AS lhs, 'UInt32' AS rhs), lhs, rhs;
 SELECT cast('1234' lhs, 'UInt32' rhs), lhs, rhs;
-SELECT cast(('1234' AS lhs) AS UInt32), lhs;
-SELECT cast('1234' AS lhs AS UInt32), lhs; --{clientError 62}
-SELECT cast('1234' lhs AS UInt32), lhs; --{clientError 62}
 
 -- SUBSTRING expression
+
+-- SUBSTRING(expr FROM start)
+
+SELECT substring('1234' FROM 2);
+SELECT substring('1234' AS lhs FROM 2), lhs;
+SELECT substring('1234' lhs FROM 2), lhs;
+SELECT substring('1234' FROM 2 AS rhs), rhs;
+SELECT substring('1234' FROM 2 rhs), rhs;
+SELECT substring('1234' AS lhs FROM 2 AS rhs), lhs, rhs;
+SELECT substring('1234' lhs FROM 2 rhs), lhs, rhs;
+SELECT substring(('1234' AS lhs) FROM (2 AS rhs)), lhs, rhs;
+
+-- SUBSTRING(expr FROM start FOR length)
+
+SELECT substring('1234' FROM 2 FOR 2);
+SELECT substring('1234' FROM 2 FOR 2 AS lhs), lhs;
+SELECT substring('1234' FROM 2 FOR 2 lhs), lhs;
 
 -- SUBSTRING(expr, start, length)
 
 SELECT substring('1234' AS arg_1, 2 AS arg_2, 3 AS arg_3), arg_1, arg_2, arg_3;
 SELECT substring('1234' arg_1, 2 arg_2, 3 arg_3), arg_1, arg_2, arg_3;
 
--- SUBSTRING(expr FROM start)
-
-SELECT substring('1234' AS arg_1 FROM 2 AS arg_2), arg_1, arg_2;
-SELECT substring('1234' arg_1 FROM 2 arg_2), arg_1, arg_2;
-
--- SUBSTRING(expr FROM start FOR length)
-
-SELECT substring('1234' AS arg_1 FROM 2 AS arg_2 FOR 3 AS arg_3), arg_1, arg_2, arg_3;
-SELECT substring('1234' arg_1 FROM 2 arg_2 FOR 3 arg_3), arg_1, arg_2, arg_3;
-
-
--- TRIM expression ([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
+-- -- TRIM expression ([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 SELECT trim(LEADING 'a' AS arg_1 FROM 'abca' AS arg_2), arg_1, arg_2;
 SELECT trim(LEADING 'a' arg_1 FROM 'abca' arg_2), arg_1, arg_2;
+SELECT trim(LEADING 'a' FROM 'abca' AS arg_2), arg_2;
+SELECT trim(LEADING 'a' FROM 'abca' arg_2), arg_2;
+SELECT trim(LEADING 'a' AS arg_1 FROM 'abca'), arg_1;
+SELECT trim(LEADING 'a' arg_1 FROM 'abca'), arg_1;
+SELECT trim(LEADING 'a' FROM 'abca');
 
 SELECT trim(TRAILING 'a' AS arg_1 FROM 'abca' AS arg_2), arg_1, arg_2;
 SELECT trim(TRAILING 'a' arg_1 FROM 'abca' arg_2), arg_1, arg_2;
