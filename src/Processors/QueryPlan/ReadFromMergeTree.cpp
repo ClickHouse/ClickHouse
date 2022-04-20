@@ -1072,8 +1072,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (select.final())
     {
-        LOG_DEBUG(log, "Select is final");
-
         /// Add columns needed to calculate the sorting expression and the sign.
         std::vector<String> add_columns = metadata_for_reading->getColumnsRequiredForSortingKey();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
@@ -1093,8 +1091,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     }
     else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order || settings.optimize_read_in_window_order) && input_order_info)
     {
-        LOG_DEBUG(log, "Input order info is present");
-
         pipe = spreadMarkRangesAmongStreamsWithOrder(
             std::move(result.parts_with_ranges),
             column_names_to_read,
@@ -1103,8 +1099,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     }
     else
     {
-        LOG_DEBUG(log, "Something went wrong");
-
         pipe = spreadMarkRangesAmongStreams(
             std::move(result.parts_with_ranges),
             column_names_to_read);

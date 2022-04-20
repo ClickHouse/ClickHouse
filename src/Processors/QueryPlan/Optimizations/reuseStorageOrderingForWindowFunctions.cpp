@@ -33,9 +33,11 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryReuseStorageOrdering(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
+size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
 {
-    auto log = &Poco::Logger::get("tryReuseStorageOrdering()");
+    /// Find the following sequence of steps, add InputOrderInfo and apply prefix sort description to
+    /// SortingStep:
+    /// WindowStep <- SortingStep <- [Expression] <- [SettingQuotaAndLimits] <- ReadFromMergeTree
 
     auto * window_node = parent_node;
     auto * window = typeid_cast<WindowStep *>(window_node->step.get());
@@ -77,8 +79,6 @@ size_t tryReuseStorageOrdering(QueryPlan::Node * parent_node, QueryPlan::Nodes &
         return 0;
     }
 
-    /// Window <- Sorting <- [Expression] <- [SettingQuotaAndLimits] <- ReadFromMergeTree
-
     auto context = read_from_merge_tree->getContext();
     if (!context->getSettings().optimize_read_in_window_order)
     {
@@ -90,70 +90,38 @@ size_t tryReuseStorageOrdering(QueryPlan::Node * parent_node, QueryPlan::Nodes &
 
     auto analyzer = std::make_unique<ExpressionAnalyzer>(query_info.query, query_info.syntax_analyzer_result, context);
 
-    if (select_query->window()) // FIXME
+    ManyExpressionActions order_by_elements_actions;
+    auto & window_desc = window->getWindowDescription();
+
+    for (const auto & actions_dag : window_desc.partition_by_actions)
     {
-        LOG_DEBUG(log, "Query has window");
-
-        ManyExpressionActions order_by_elements_actions;
-
-        auto process_children = [&](ASTPtr node)
-        {
-            for (const auto & column_ast : node->children)
-            {
-                LOG_DEBUG(log, "After join: {}", analyzer->getColumnsAfterJoin().toString());
-                LOG_DEBUG(log, "After window: {}", analyzer->getColumnsAfterWindow().toString());
-                auto actions_dag = std::make_shared<ActionsDAG>(analyzer->getColumnsAfterJoin());
-                analyzer->getRootActions(column_ast, false, actions_dag);
-                order_by_elements_actions.emplace_back(
-                        std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
-            }
-        };
-
-        for (const auto & ptr : select_query->window()->children)
-        {
-            const auto & elem = ptr->as<const ASTWindowListElement &>();
-            auto ast = elem.definition.get();
-            const auto & definition = ast->as<const ASTWindowDefinition &>();
-
-            if (definition.partition_by)
-            {
-                process_children(definition.partition_by);
-            }
-
-            if (definition.order_by)
-            {
-                process_children(definition.order_by);
-            }
-        }
-
-        auto order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                *select_query,
-                order_by_elements_actions,
-                //InterpreterSelectQuery::getSortDescription(*select_query, context),
-                window->getSortDescription(),
-                query_info.syntax_analyzer_result);
-
-        read_from_merge_tree->setQueryInfoOrderOptimizer(order_optimizer);
-
-        LOG_DEBUG(log, "Order optimizer is set");
-
-        /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
-        UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
-        auto order_info = order_optimizer->getInputOrder(
-                query_info.projection ? query_info.projection->desc->metadata : read_from_merge_tree->getStorageMetadata(),
-                context,
-                limit);
-
-        read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
-        /// FIXME Window+Sorting may repeat few times.
-        sorting->convertToFinishSorting(order_info->order_key_prefix_descr);
-
-        LOG_DEBUG(log, "Input order info is set");
+        order_by_elements_actions.emplace_back(
+            std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
     }
-    else
+
+    for (const auto & actions_dag : window_desc.order_by_actions)
     {
-        LOG_DEBUG(log, "Query has no window");
+        order_by_elements_actions.emplace_back(
+            std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
     }
+
+    auto order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+            *select_query,
+            order_by_elements_actions,
+            window->getWindowDescription().full_sort_description,
+            query_info.syntax_analyzer_result);
+
+    read_from_merge_tree->setQueryInfoOrderOptimizer(order_optimizer);
+
+    /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
+    UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
+    auto order_info = order_optimizer->getInputOrder(
+            query_info.projection ? query_info.projection->desc->metadata : read_from_merge_tree->getStorageMetadata(),
+            context,
+            limit);
+
+    read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
+    sorting->convertToFinishSorting(order_info->order_key_prefix_descr);
 
     return 0;
 }

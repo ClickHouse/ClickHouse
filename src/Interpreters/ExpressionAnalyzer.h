@@ -140,6 +140,7 @@ public:
     /// A list of windows for window functions.
     const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
+    void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
     void makeWindowDescriptions(ActionsDAGPtr actions);
 
     /**
@@ -181,12 +182,8 @@ protected:
 
     ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAGPtr & actions, bool is_left) const;
 
-public:
     void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
-    const NamesAndTypesList & getColumnsAfterWindow() const;
-    const NamesAndTypesList & getColumnsAfterJoin() const;
 
-protected:
     /** Similar to getRootActions but do not make sets when analyzing IN functions. It's used in
       * analyzeAggregation which happens earlier than analyzing PREWHERE and WHERE. If we did, the
       * prepared sets would not be applicable for MergeTree index optimization.
