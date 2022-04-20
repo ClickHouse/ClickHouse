@@ -153,6 +153,7 @@ private:
     void assertNotDetached() const;
     void assertDetachedStatus() const;
 
+
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
     bool isDownloaderImpl(std::lock_guard<std::mutex> & segment_lock) const;
