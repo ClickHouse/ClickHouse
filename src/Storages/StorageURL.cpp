@@ -927,6 +927,7 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, ContextPtr l
         auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
         overrideConfigurationFromNamedCollectionWithAST(args, configuration_from_config, config_keys, local_context);
         configuration = parseConfigurationFromNamedCollection(configuration_from_config);
+        setHeadersInConfiguration(args, local_context, configuration);
     }
     else
     {

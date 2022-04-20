@@ -5,7 +5,7 @@
 #include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollections.h>
 
 
 namespace DB
@@ -43,8 +43,37 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    static StorageMongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    struct Configuration : public StorageConfiguration
+    {
+        String host;
+        UInt16 port;
+        String database;
+        String table;
+        String username;
+        String password;
+        String options;
+    };
 
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+
+    static NamedConfiguration getConfigKeys()
+    {
+        static const NamedConfiguration config_keys =
+        {
+            {"host", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"port", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+            {"database", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"table", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"collection", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"user", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"password", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"options", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"format", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+            {"compression_method", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+            {"structure", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+        };
+        return config_keys;
+    }
 private:
     void connectIfNotConnected();
 

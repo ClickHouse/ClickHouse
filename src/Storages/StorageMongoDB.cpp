@@ -112,23 +112,41 @@ Pipe StorageMongoDB::read(
 }
 
 
-StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
+StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    StorageMongoDBConfiguration configuration;
-    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
-    {
-        auto [common_configuration, storage_specific_args, _] = named_collection.value();
-        configuration.set(common_configuration);
+    StorageMongoDB::Configuration configuration;
+    const auto & config = context->getConfigRef();
 
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
+    if (isNamedCollection(engine_args, config))
+    {
+        const auto & config_keys = getConfigKeys();
+        auto collection_name = getCollectionName(engine_args);
+
+        auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
+        overrideConfigurationFromNamedCollectionWithAST(engine_args, configuration_from_config, config_keys, context);
+
+        for (const auto & [name, value] : configuration_from_config)
         {
-            if (arg_name == "options")
-                configuration.options = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected key-value argument."
-                        "Got: {}, but expected one of:"
-                        "host, port, username, password, database, table, options.", arg_name);
+            if (name == "host")
+                configuration.host = value.safeGet<String>();
+            else if (name == "port")
+                configuration.port = static_cast<UInt16>(value.safeGet<UInt64>());
+            else if (name == "database")
+                configuration.database = value.safeGet<String>();
+            else if ((name == "table" || name == "collection") && configuration.table.empty())
+                configuration.table = value.safeGet<String>();
+            else if (name == "user")
+                configuration.username = value.safeGet<String>();
+            else if (name == "password")
+                configuration.password = value.safeGet<String>();
+            else if (name == "options")
+                configuration.options = value.safeGet<String>();
+            else if (name == "structure")
+                configuration.structure = value.safeGet<String>();
+            else if (name == "format")
+                configuration.format = value.safeGet<String>();
+            else if (name == "compression_method")
+                configuration.compression_method = value.safeGet<String>();
         }
     }
     else

@@ -55,7 +55,7 @@ ConfigurationFromNamedCollection parseConfigKeys(
     const std::unordered_map<String, ConfigKeyInfo> & keys)
 {
     ConfigurationFromNamedCollection configuration;
-for (const auto & [key, key_info] : keys)
+    for (const auto & [key, key_info] : keys)
     {
         Field value;
         auto path = config_prefix + "." + key;
@@ -113,7 +113,10 @@ void overrideConfigurationFromNamedCollectionWithAST(
             auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
 
             if (!keys.contains(arg_name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key-value argument `{}` not found in the list of available keys", arg_name);
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Key-value argument `{}` not found in the list of available keys",
+                    arg_name);
 
             auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
             auto * arg_value_literal = arg_value_ast->as<ASTLiteral>();
@@ -168,14 +171,20 @@ ListedConfigurationFromNamedCollection getListedConfigurationFromNamedCollection
 }
 
 void validateConfigKeys(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix, const std::unordered_map<String, ConfigKeyInfo> & keys, const String & prefix)
+    const Poco::Util::AbstractConfiguration & dict_config,
+    const String & config_prefix,
+    const std::unordered_map<String, ConfigKeyInfo> & keys,
+    const String & prefix)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     dict_config.keys(config_prefix, config_keys);
     for (const auto & config_key : config_keys)
     {
         if (!keys.contains(config_key) && !config_key.starts_with(prefix))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected key `{}` found by path {}", config_key, config_prefix);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected key `{}` found by path {}",
+                config_key, config_prefix);
     }
 }
 
