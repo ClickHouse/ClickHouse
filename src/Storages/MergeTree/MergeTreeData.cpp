@@ -1592,6 +1592,19 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 
     time_t now = time(nullptr);
     std::vector<DataPartIteratorByStateAndInfo> parts_to_delete;
+    std::vector<MergeTreePartInfo> skipped_parts;
+
+    auto has_skipped_mutation_parent = [&skipped_parts, need_remove_parts_in_order] (const DataPartPtr & part)
+    {
+        if (!need_remove_parts_in_order)
+            return false;
+
+        for (const auto & part_info : skipped_parts)
+            if (part->info.isMutationChildOf(part_info))
+                return true;
+
+        return false;
+    };
 
     {
         auto parts_lock = lockParts();
@@ -1604,9 +1617,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             /// Do not remove outdated part if it may be visible for some transaction
             if (!part->version.canBeRemoved())
             {
-                if (need_remove_parts_in_order)
-                    break;
-
+                skipped_parts.push_back(part->info);
                 continue;
             }
 
@@ -1615,22 +1626,20 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             /// Grab only parts that are not used by anyone (SELECTs for example).
             if (!part.unique())
             {
-                if (need_remove_parts_in_order)
-                    break;
-
+                skipped_parts.push_back(part->info);
                 continue;
             }
 
-            if ((part_remove_time < now && now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds())
+            if ((part_remove_time < now && now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds() && !has_skipped_mutation_parent(part))
                 || force
                 || isInMemoryPart(part)     /// Remove in-memory parts immediately to not store excessive data in RAM
                 || (part->version.creation_csn == Tx::RolledBackCSN && getSettings()->remove_rolled_back_parts_immediately))
             {
                 parts_to_delete.emplace_back(it);
             }
-            else if (need_remove_parts_in_order)
+            else
             {
-                break;
+                skipped_parts.push_back(part->info);
             }
         }
 
