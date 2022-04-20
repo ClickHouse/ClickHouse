@@ -13,7 +13,7 @@ namespace DB
 
 
 class MutateTask;
-using MutateTaskPtr = std::shared_ptr<MutateTask>;\
+using MutateTaskPtr = std::shared_ptr<MutateTask>;
 
 
 class MergeTreeDataMergerMutator;

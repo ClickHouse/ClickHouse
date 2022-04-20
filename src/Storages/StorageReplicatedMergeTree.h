@@ -283,7 +283,7 @@ public:
     String getZooKeeperName() const { return zookeeper_name; }
 
     // Return table id, common for different replicas
-    String getTableSharedID() const;
+    String getTableSharedID() const override;
 
     static String getDefaultZooKeeperName() { return default_zookeeper_name; }
 

@@ -1122,6 +1122,7 @@ private:
         /// Tracking of hardlinked files required for zero-copy replication.
         /// We don't remove them when we delete last copy of source part because
         /// new part can use them.
+        ctx->hardlinked_files.source_table_shared_id = ctx->source_part->storage.getTableSharedID();
         ctx->hardlinked_files.source_part_name = ctx->source_part->name;
         ctx->hardlinked_files.hardlinks_from_source_part = hardlinked_files;
 
