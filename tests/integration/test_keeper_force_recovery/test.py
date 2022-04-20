@@ -209,6 +209,7 @@ def test_cluster_recovery(started_cluster):
         wait_and_assert_data(node_zks[-1], "/test_force_recovery_last", "somedatalast")
 
         nodes[0].start_clickhouse()
+        wait_until_connected(nodes[0].name)
         node_zks[0] = get_fake_zk(nodes[0].name)
         for zk in node_zks[:nodes_left]:
             assert_all_data(zk)
