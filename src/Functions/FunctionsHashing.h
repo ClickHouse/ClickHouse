@@ -1395,7 +1395,7 @@ struct ImplHighwayHash64
 
     static UInt64 apply(const char *s, const size_t len)
     {
-        return highwayhash(s, len);
+        return highwayhash<highwayhash::HHResult64>(s, len);  // actually, HHResult64 is UInt64
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
