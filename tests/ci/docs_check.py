@@ -28,7 +28,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--docs-branch",
-        required=True,
         default="",
         help="a branch to get from docs repository",
     )
