@@ -1,6 +1,6 @@
 ---
-toc_title: Geographical Coordinates
-toc_priority: 62
+sidebar_label: Geographical Coordinates
+sidebar_position: 62
 ---
 
 
