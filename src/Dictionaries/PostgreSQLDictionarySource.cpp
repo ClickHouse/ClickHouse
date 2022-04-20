@@ -30,21 +30,21 @@ static const UInt64 max_block_size = 8192;
 
 static const std::unordered_map<String, ConfigKeyInfo> dictionary_keys =
 {
-    {"host", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"port", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::UInt64) }},
-    {"user", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"password", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"db", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"database", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"table", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"schema", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"update_field", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"update_tag", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"invalidate_query", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"query", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"where", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"name", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-    {"priority", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::UInt64) }}
+    {"host", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"port", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+    {"user", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"password", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"db", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"database", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"table", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"schema", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"update_field", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"update_tag", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"invalidate_query", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"query", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"where", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"name", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"priority", ConfigKeyInfo{ .type = Field::Types::UInt64 }}
 };
 
 namespace
@@ -190,8 +190,6 @@ std::string PostgreSQLDictionarySource::toString() const
     return "PostgreSQL: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-#endif
-
 static void getOverridenResultForNamedCollection(const String & key, String & value, ConfigurationFromNamedCollection & overriding_configuration, ConfigurationFromNamedCollection & configuration)
 {
     String overriding_value, config_value;
@@ -215,6 +213,8 @@ static void getOverridenResultForNamedCollection(const String & key, UInt64 & va
 
     value = overriding_value == 0 ? config_value : overriding_value;
 }
+
+#endif
 
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {

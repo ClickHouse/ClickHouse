@@ -83,11 +83,7 @@ ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr co
     if (configuration.structure == "auto")
     {
         return StorageS3::getTableStructureFromData(
-            configuration.format,
-            S3::URI(Poco::URI(configuration.url)),
-            configuration.auth_settings.access_key_id,
-            configuration.auth_settings.secret_access_key,
-            configuration.compression_method,
+            configuration,
             false,
             std::nullopt,
             context);
@@ -111,36 +107,25 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this filename won't contains globs
-        Poco::URI uri (configuration.url);
-        S3::URI s3_uri (uri);
         storage = StorageS3::create(
-            s3_uri,
-            configuration.auth_settings.access_key_id,
-            configuration.auth_settings.secret_access_key,
+            configuration,
             StorageID(getDatabaseName(), table_name),
-            configuration.format,
-            configuration.rw_settings,
             columns,
             ConstraintsDescription{},
             String{},
             context,
             // No format_settings for S3Cluster
             std::nullopt,
-            configuration.compression_method,
             /*distributed_processing=*/true);
     }
     else
     {
         storage = StorageS3Cluster::create(
-            configuration.url,
-            configuration.auth_settings.access_key_id,
-            configuration.auth_settings.secret_access_key,
+            configuration,
             StorageID(getDatabaseName(), table_name),
-            configuration.cluster_name, configuration.format,
             columns,
             ConstraintsDescription{},
-            context,
-            configuration.compression_method);
+            context);
     }
 
     storage->startup();

@@ -45,36 +45,36 @@
 namespace DB
 {
 StorageS3Cluster::StorageS3Cluster(
-    const String & filename_,
-    const String & access_key_id_,
-    const String & secret_access_key_,
+    const Configuration & s3_configuration_,
     const StorageID & table_id_,
-    String cluster_name_,
-    const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_,
-    const String & compression_method_)
+    ContextPtr context_)
     : IStorage(table_id_)
-    , s3_configuration{S3::URI{Poco::URI{filename_}}, access_key_id_, secret_access_key_, {}, {}, S3Settings::ReadWriteSettings(context_->getSettingsRef())}
-    , filename(filename_)
-    , cluster_name(cluster_name_)
-    , format_name(format_name_)
-    , compression_method(compression_method_)
+    , s3_configuration{s3_configuration_}
+    , cluster_name(s3_configuration.cluster_name)
+    , format_name(s3_configuration.format)
+    , compression_method(s3_configuration.compression_method)
 {
-    context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI{filename});
     StorageInMemoryMetadata storage_metadata;
-    StorageS3::updateS3Configuration(context_, s3_configuration);
+
+    context_->getGlobalContext()->getRemoteHostFilter().checkURL(s3_configuration.uri->uri);
+    StorageS3::updateConfiguration(context_, s3_configuration);
 
     if (columns_.empty())
     {
-        const bool is_key_with_globs = filename.find_first_of("*?{") != std::string::npos;
+        const bool is_key_with_globs = StorageS3::isKeyWithGlobs(s3_configuration.uri->key);
 
         /// `distributed_processing` is set to false, because this code is executed on the initiator, so there is no callback set
         /// for asking for the next tasks.
         /// `format_settings` is set to std::nullopt, because StorageS3Cluster is used only as table function
-        auto columns = StorageS3::getTableStructureFromDataImpl(format_name, s3_configuration, compression_method,
-            /*distributed_processing_*/false, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
+        auto columns = StorageS3::getTableStructureFromDataImpl(
+            s3_configuration,
+            /*distributed_processing_*/false,
+            is_key_with_globs,
+            /*format_settings=*/std::nullopt,
+             context_);
+
         storage_metadata.setColumns(columns);
     }
     else
@@ -94,11 +94,11 @@ Pipe StorageS3Cluster::read(
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    StorageS3::updateS3Configuration(context, s3_configuration);
+    StorageS3::updateConfiguration(context, s3_configuration);
 
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
-    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*s3_configuration.client, s3_configuration.uri);
+    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*s3_configuration.client, *s3_configuration.uri);
     auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String
     {
         return iterator->next();

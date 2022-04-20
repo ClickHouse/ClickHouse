@@ -83,7 +83,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         }
 
         /// This argument is always the first
-        s3_configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        s3_configuration.uri = S3::URI(Poco::URI(args[0]->as<ASTLiteral &>().value.safeGet<String>()));
 
         if (args_to_idx.contains("format"))
             s3_configuration.format = args[args_to_idx["format"]]->as<ASTLiteral &>().value.safeGet<String>();
@@ -102,7 +102,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
     }
 
     if (s3_configuration.format == "auto")
-        s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url, true);
+        s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.uri->key, true);
 }
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -135,11 +135,7 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     if (configuration.structure == "auto")
     {
         return StorageS3::getTableStructureFromData(
-            configuration.format,
-            S3::URI(Poco::URI(configuration.url)),
-            configuration.auth_settings.access_key_id,
-            configuration.auth_settings.secret_access_key,
-            configuration.compression_method,
+            configuration,
             false,
             std::nullopt,
             context);
@@ -150,9 +146,6 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
 
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    Poco::URI uri (configuration.url);
-    S3::URI s3_uri (uri);
-
     ColumnsDescription columns;
     if (configuration.structure != "auto")
         columns = parseColumnsListFromString(configuration.structure, context);
@@ -160,19 +153,14 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         columns = structure_hint;
 
     StoragePtr storage = StorageS3::create(
-        s3_uri,
-        configuration.auth_settings.access_key_id,
-        configuration.auth_settings.secret_access_key,
+        configuration,
         StorageID(getDatabaseName(), table_name),
-        configuration.format,
-        configuration.rw_settings,
         columns,
         ConstraintsDescription{},
         String{},
         context,
         /// No format_settings for table function S3
-        std::nullopt,
-        configuration.compression_method);
+        std::nullopt);
 
     storage->startup();
 

@@ -121,19 +121,22 @@ private:
 class StorageS3 : public shared_ptr_helper<StorageS3>, public IStorage, WithContext
 {
 public:
+    struct Configuration : StorageConfiguration
+    {
+        std::optional<S3::URI> uri;
+        std::shared_ptr<Aws::S3::S3Client> client;
+        S3Settings::AuthSettings auth_settings;
+        S3Settings::ReadWriteSettings rw_settings;
+    };
+
     StorageS3(
-        const S3::URI & uri,
-        const String & access_key_id,
-        const String & secret_access_key,
+        const Configuration & configuration_,
         const StorageID & table_id_,
-        const String & format_name_,
-        const S3Settings::ReadWriteSettings & rw_settings_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
-        const String & compression_method_ = "",
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr);
 
@@ -160,21 +163,12 @@ public:
     bool supportsPartitionBy() const override;
 
     static ColumnsDescription getTableStructureFromData(
-        const String & format,
-        const S3::URI & uri,
-        const String & access_key_id,
-        const String & secret_access_key,
-        const String & compression_method,
+        const Configuration & configuration_,
         bool distributed_processing,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
 
-    struct Configuration : StorageConfiguration
-    {
-        String access_key_id;
-        String secret_access_key;
-        String url;
-    };
+    static bool isKeyWithGlobs(const String & path) { return path.find_first_of("*?{") != std::string::npos; }
 
     static Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
     static Configuration parseConfigurationFromNamedCollection(ConfigurationFromNamedCollection & configuration_from_config);
@@ -183,13 +177,20 @@ public:
     {
         static const NamedConfiguration config_keys =
         {
-            {"url", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-            {"filename", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-            {"access_key_id", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-            {"secret_access_key", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String) }},
-            {"format", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String), .default_value = "auto" }},
-            {"compression_method", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String), .default_value = "auto" }},
-            {"structure", ConfigKeyInfo{ .which = WhichDataType(TypeIndex::String), .default_value = "auto" }},
+            {"url", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"filename", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"access_key_id", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"secret_access_key", ConfigKeyInfo{ .type = Field::Types::String }},
+            {"format", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+            {"compression_method", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+            {"structure", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
+            {"use_environment_credentials", ConfigKeyInfo{ .type = Field::Types::Bool }},
+            {"max_single_read_retries", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+            {"min_upload_part_size", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+            {"upload_part_size_multiply_factor", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+            {"upload_part_size_multiply_parts_count_threshold", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+            {"max_single_part_upload_size", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+            {"max_connections", ConfigKeyInfo{ .type = Field::Types::UInt64 }}
         };
         return config_keys;
     }
@@ -198,21 +199,7 @@ private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
 
-    struct S3Configuration
-    {
-        const S3::URI uri;
-        const String access_key_id;
-        const String secret_access_key;
-        std::shared_ptr<Aws::S3::S3Client> client;
-        S3Settings::AuthSettings auth_settings;
-        S3Settings::ReadWriteSettings rw_settings;
-    };
-
-private:
-    friend class StorageS3Cluster;
-    friend class TableFunctionS3Cluster;
-
-    S3Configuration s3_configuration;
+    Configuration configuration;
     std::vector<String> keys;
     NamesAndTypesList virtual_columns;
 
@@ -224,14 +211,12 @@ private:
     ASTPtr partition_by;
     bool is_key_with_globs = false;
 
-    static void updateS3Configuration(ContextPtr, S3Configuration &);
+    static void updateConfiguration(ContextPtr, Configuration &);
 
-    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const S3Configuration & s3_configuration, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context);
+    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const Configuration & configuration, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context);
 
     static ColumnsDescription getTableStructureFromDataImpl(
-        const String & format,
-        const S3Configuration & s3_configuration,
-        const String & compression_method,
+        const Configuration & configuration,
         bool distributed_processing,
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,

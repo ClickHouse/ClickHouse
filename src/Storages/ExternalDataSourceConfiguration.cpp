@@ -306,14 +306,14 @@ ConfigurationFromNamedCollection parseConfigKeys(
     {
         Field value;
         auto path = config_prefix + "." + key;
-        auto which = key_info.which;
+        auto type = key_info.type;
         auto default_value = key_info.default_value;
 
-        if (which.isString())
+        if (type == Field::Types::String)
             value = config.getString(path, default_value ? default_value->get<String>() : "");
-        else if (which.isInt())
+        else if (type == Field::Types::Int64)
             value = config.getInt(path, default_value ? default_value->get<Int64>() : 0);
-        else if (which.isUInt())
+        else if (type == Field::Types::UInt64 || type == Field::Types::Bool)
             value = config.getUInt(path, default_value ? default_value->get<UInt64>() : 0);
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type");

@@ -81,29 +81,37 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<T> & settings = {});
 
 
+/// Base for all storage configurations. Contains common fields.
 struct StorageConfiguration
 {
-    String format;
-    String compression_method;
-    String structure;
+    String format = "auto";
+    String compression_method = "auto";
+    String structure = "auto";
 };
 
 struct ConfigKeyInfo
 {
-    WhichDataType which;
+    Field::Types::Which type;
     std::optional<Field> default_value;
 };
 
 using NamedConfiguration = std::unordered_map<String, ConfigKeyInfo>;
+using ConfigurationFromNamedCollection = std::unordered_map<String, Field>;
+using ConfigurationsFromNamedCollection = std::vector<ConfigurationFromNamedCollection>;
 
+/**
+ * Given config_ref and list of ASTs, check if this list refers to a named collection.
+ * E.g. first argument is an AST Identifier with a name of some named collection from config.
+ */
 bool isNamedCollection(const ASTs & args, const Poco::Util::AbstractConfiguration & config);
+
+/**
+ * Same, but checks not in AST, but by NAME key in config. (Used for dictionary sourses).
+ */
 bool isNamedCollection(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 String getCollectionName(const ASTs & args);
 String getCollectionName(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-
-using ConfigurationFromNamedCollection = std::unordered_map<String, Field>;
-using ConfigurationsFromNamedCollection = std::vector<ConfigurationFromNamedCollection>;
 
 /**
  * Get configuration from config by collection name.
@@ -156,7 +164,10 @@ ConfigurationFromNamedCollection parseConfigKeys(
     const std::unordered_map<String, ConfigKeyInfo> & keys);
 
 void validateConfigKeys(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix, const std::unordered_map<String, ConfigKeyInfo> & keys, const String & prefix);
+    const Poco::Util::AbstractConfiguration & dict_config,
+    const String & config_prefix,
+    const std::unordered_map<String, ConfigKeyInfo> & keys,
+    const String & prefix);
 
 struct URLBasedDataSourceConfiguration
 {
@@ -169,18 +180,6 @@ struct URLBasedDataSourceConfiguration
     String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);
-};
-
-struct StorageS3Configuration : URLBasedDataSourceConfiguration
-{
-    S3Settings::AuthSettings auth_settings;
-    S3Settings::ReadWriteSettings rw_settings;
-};
-
-
-struct StorageS3ClusterConfiguration : StorageS3Configuration
-{
-    String cluster_name;
 };
 
 struct URLBasedDataSourceConfig
