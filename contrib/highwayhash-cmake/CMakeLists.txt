@@ -10,7 +10,7 @@ if (HAVE_AVX2)
     target_compile_options(highwayhash PUBLIC -mavx2)
 elseif(HAVE_SSE41)
     target_compile_options(highwayhash PUBLIC -msse4.1)
-
+endif()
 
 target_include_directories(highwayhash PUBLIC ${LIBRARY_DIR})
 
