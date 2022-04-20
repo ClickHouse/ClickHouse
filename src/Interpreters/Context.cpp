@@ -1027,7 +1027,7 @@ bool Context::hasScalar(const String & name) const
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
-    return scalars.count(name);
+    return scalars.contains(name);
 }
 
 

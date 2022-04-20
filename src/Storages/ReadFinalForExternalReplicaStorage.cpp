@@ -43,7 +43,7 @@ Pipe readFinalFromNestedStorage(
     String filter_column_name;
     Names require_columns_name = column_names;
     ASTPtr expressions = std::make_shared<ASTExpressionList>();
-    if (column_names_set.empty() || !column_names_set.count(sign_column.name))
+    if (column_names_set.empty() || !column_names_set.contains(sign_column.name))
     {
         require_columns_name.emplace_back(sign_column.name);
 
