@@ -1423,7 +1423,7 @@ struct ImplHighwayHash128
             UInt64 u64[2];
             UInt128 u128;
         };
-        u64 = highwayhash(s, len);
+        u64 = highwayhash<highwayhash::HHResult128>(s, len);  // actually, HHResult128 is UInt64[2]
         return u128;
     }
 
@@ -1452,7 +1452,7 @@ struct ImplHighwayHash256
             UInt64 u64[4];
             UInt256 u256;
         };
-        u64 = highwayhash(s, len);
+        u64 = highwayhash<highwayhash::HHResult256>(s, len);  // actually, HHResult256 is UInt64[4]
         return u256;
     }
 
