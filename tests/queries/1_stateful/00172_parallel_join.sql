@@ -1,4 +1,4 @@
-set enable_parallel_join=true;
+set enable_parallel_hash_join=true;
 SELECT
     EventDate,
     hits,
@@ -38,7 +38,7 @@ FROM test.hits ANY LEFT JOIN
 GROUP BY EventDate
 ORDER BY hits DESC
 LIMIT 10
-SETTINGS joined_subquery_requires_alias = 0, enable_parallel_join=true;
+SETTINGS joined_subquery_requires_alias = 0, enable_parallel_hash_join=true;
 
 
 SELECT
