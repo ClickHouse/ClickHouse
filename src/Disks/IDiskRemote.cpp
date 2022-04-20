@@ -357,9 +357,9 @@ std::vector<String> IDiskRemote::getRemotePaths(const String & local_path) const
 
 void IDiskRemote::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map)
 {
+    /// Protect against concurrent delition of files (for example because of a merge).
     if (metadata_disk->isFile(local_path))
     {
-        /// File could be concurrently deleted (for example because of a merge).
         try
         {
             paths_map.emplace_back(local_path, getRemotePaths(local_path));
@@ -373,9 +373,19 @@ void IDiskRemote::getRemotePathsRecursive(const String & local_path, std::vector
     }
     else
     {
-        /// Metadata disk is currently only DislLocal. DiskLocal::iterateDirectory will return empty directory iterator
-        /// if file does not exist (even on cocnurrent file delition),
-        for (auto it = iterateDirectory(local_path); it->isValid(); it->next())
+        DiskDirectoryIteratorPtr it;
+        try
+        {
+            it = iterateDirectory(local_path);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+                return;
+            throw;
+        }
+
+        for (; it->isValid(); it->next())
             IDiskRemote::getRemotePathsRecursive(fs::path(local_path) / it->name(), paths_map);
     }
 }
