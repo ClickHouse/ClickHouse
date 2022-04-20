@@ -102,13 +102,7 @@ public:
         return columns_description;
     }
 
-    static AsynchronousReaderPtr getThreadPoolReader()
-    {
-        constexpr size_t pool_size = 50;
-        constexpr size_t queue_size = 1000000;
-        static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader<ReadBufferFromHDFS>>(pool_size, queue_size);
-        return reader;
-    }
+    
 
     StorageHiveSource(
         SourcesInfoPtr source_info_,
@@ -182,8 +176,8 @@ public:
                         bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)
                         {
-                            std::cout << "read from thread pool" << std::endl;
-                            return std::make_unique<AsynchronousReadBufferFromHDFS>(getThreadPoolReader(), read_settings, std::move(buf));
+                            // std::cout << "read from thread pool" << std::endl;
+                            return std::make_unique<AsynchronousReadBufferFromHDFS>(StorageHive::getThreadPoolReader(), read_settings, std::move(buf));
                         }
                         else
                         {
@@ -844,6 +838,13 @@ StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & qu
     return total_rows;
 }
 
+AsynchronousReaderPtr StorageHive::getThreadPoolReader()
+{
+    constexpr size_t pool_size = 50;
+    constexpr size_t queue_size = 1000000;
+    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader<ReadBufferFromHDFS>>(pool_size, queue_size);
+    return reader;
+}
 
 void registerStorageHive(StorageFactory & factory)
 {

@@ -27,6 +27,8 @@ class StorageHive final : public shared_ptr_helper<StorageHive>, public IStorage
 {
     friend struct shared_ptr_helper<StorageHive>;
 public:
+    static AsynchronousReaderPtr getThreadPoolReader();
+
     String getName() const override { return "Hive"; }
 
     bool supportsIndexForIn() const override { return true; }
@@ -55,6 +57,7 @@ public:
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
+
 
 protected:
     friend class StorageHiveSource;
