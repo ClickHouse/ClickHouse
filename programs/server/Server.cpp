@@ -1125,26 +1125,26 @@ int Server::main(const std::vector<std::string> & /*args*/)
             /// This is done for backward compatibility.
             if (global_context->areBackgroundExecutorsInitialized() && (config->has("background_pool_size") || config->has("background_merges_mutations_concurrency_ratio")))
             {
-                auto new_pool_size = config->getInt("background_pool_size", 16);
-                auto new_ratio = config->getInt("background_merges_mutations_concurrency_ratio", 2);
+                auto new_pool_size = config->getUInt64("background_pool_size", 16);
+                auto new_ratio = config->getUInt64("background_merges_mutations_concurrency_ratio", 2);
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
             }
 
             if (global_context->areBackgroundExecutorsInitialized() && config->has("background_move_pool_size"))
             {
-                auto new_pool_size = config->getInt("background_move_pool_size");
+                auto new_pool_size = config->getUInt64("background_move_pool_size");
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized() && config->has("background_fetches_pool_size"))
             {
-                auto new_pool_size = config->getInt("background_fetches_pool_size");
+                auto new_pool_size = config->getUInt64("background_fetches_pool_size");
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized() && config->has("background_common_pool_size"))
             {
-                auto new_pool_size = config->getInt("background_common_pool_size");
+                auto new_pool_size = config->getUInt64("background_common_pool_size");
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
