@@ -170,9 +170,9 @@ namespace
                     String salt;
                     salt.resize(sizeof(key) * 2);
                     char * buf_pos = salt.data();
-                    for (size_t i = 0; i < sizeof(key); ++i)
+                    for (uint8_t k : key)
                     {
-                        writeHexByteUppercase(key[i], buf_pos);
+                        writeHexByteUppercase(k, buf_pos);
                         buf_pos += 2;
                     }
                     value.append(salt);

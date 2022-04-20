@@ -267,18 +267,6 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
             "throws Syntax error"
-        },
-        {
-            "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
-            "throws Syntax error"
-        },
-        {
-            "CREATE USER user1 IDENTIFIED WITH sha256_hash BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
-            "throws Syntax error"
-        },
-        {
-            "ALTER USER user1 IDENTIFIED WITH sha256_hash BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
-            "throws Syntax error"
         }
 })));
 
