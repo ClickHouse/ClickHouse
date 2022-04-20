@@ -7,7 +7,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollections.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
@@ -28,9 +28,22 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "table",
-    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "secure"};
+static const NamedConfiguration dictionary_keys =
+{
+    {"host", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"port", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+    {"user", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"password", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"db", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"database", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"table", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"update_field", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"update_lag", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+    {"invalidate_query", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"query", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"where", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"secure", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+};
 
 namespace
 {
@@ -227,50 +240,68 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const std::string & default_database [[maybe_unused]],
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        bool secure = config.getBool(config_prefix + ".secure", false);
+        String database, table, username, host, user, password, query, where, invalidate_query, update_field;
+        UInt64 update_lag = 0;
+        UInt16 port = 0;
+        bool secure = false;
 
         UInt16 default_port = getPortFromContext(global_context, secure);
-
         std::string settings_config_prefix = config_prefix + ".clickhouse";
 
-        std::string host = config.getString(settings_config_prefix + ".host", "localhost");
-        std::string user = config.getString(settings_config_prefix + ".user", "default");
-        std::string password =  config.getString(settings_config_prefix + ".password", "");
-        std::string db = config.getString(settings_config_prefix + ".db", default_database);
-        std::string table = config.getString(settings_config_prefix + ".table", "");
-        UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
-        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key); };
-
-        auto named_collection = created_from_ddl
-            ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key)
-            : std::nullopt;
-
-        if (named_collection)
+        if (created_from_ddl && isNamedCollection(config, settings_config_prefix))
         {
-            const auto & configuration = named_collection->configuration;
-            host = configuration.host;
-            user = configuration.username;
-            password = configuration.password;
-            db = configuration.database;
-            table = configuration.table;
-            port = configuration.port;
+            auto collection_name = getCollectionName(config, settings_config_prefix);
+
+            auto result_configuration = getConfigurationFromNamedCollection(
+                collection_name, global_context->getConfigRef(), dictionary_keys);
+            auto overriding_configuration = parseConfigKeys(config, config_prefix, dictionary_keys, false);
+            overrideConfiguration(result_configuration, overriding_configuration, dictionary_keys);
+
+            host = result_configuration["host"].safeGet<String>();
+            port = result_configuration["port"].safeGet<UInt64>();
+            user = result_configuration["user"].safeGet<String>();
+            password = result_configuration["password"].safeGet<String>();
+            database = result_configuration["database"].safeGet<String>();
+            if (database.empty())
+                database = result_configuration["db"].safeGet<String>();
+            table = result_configuration["table"].safeGet<String>();
+            query = result_configuration["query"].safeGet<String>();
+            where = result_configuration["where"].safeGet<String>();
+            invalidate_query = result_configuration["invalidate_query"].safeGet<String>();
+            update_field = result_configuration["update_field"].safeGet<String>();
+            update_lag = result_configuration["update_lag"].safeGet<UInt64>();
+            secure = result_configuration["secure"].safeGet<UInt64>();
+        }
+        else
+        {
+            host = config.getString(settings_config_prefix + ".host", "localhost");
+            user = config.getString(settings_config_prefix + ".user", "default");
+            password =  config.getString(settings_config_prefix + ".password", "");
+            database = config.getString(settings_config_prefix + ".db", default_database);
+            table = config.getString(settings_config_prefix + ".table", "");
+            port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
+            query = config.getString(settings_config_prefix + ".query", "");
+            where = config.getString(settings_config_prefix + ".where", "");
+            invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", "");
+            update_field = config.getString(settings_config_prefix + ".update_field", "");
+            update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1);
+            secure = config.getBool(settings_config_prefix + ".secure", false);
         }
 
         ClickHouseDictionarySource::Configuration configuration{
             .host = host,
             .user = user,
             .password = password,
-            .db = db,
+            .db = database,
             .table = table,
-            .query = config.getString(settings_config_prefix + ".query", ""),
+            .query = query,
             .where = config.getString(settings_config_prefix + ".where", ""),
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
-            .update_field = config.getString(settings_config_prefix + ".update_field", ""),
-            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
+            .update_field = update_field,
+            .update_lag = update_lag,
             .port = port,
             .is_local = isLocalAddress({host, port}, default_port),
-            .secure = config.getBool(settings_config_prefix + ".secure", false)};
-
+            .secure = secure};
 
         ContextMutablePtr context;
         if (configuration.is_local)

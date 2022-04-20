@@ -21,10 +21,6 @@ static const NamedConfiguration dictionary_keys =
     {"method", ConfigKeyInfo{ .type = Field::Types::String }},
     {"user", ConfigKeyInfo{ .type = Field::Types::String }},
     {"password", ConfigKeyInfo{ .type = Field::Types::String }},
-    {"options", ConfigKeyInfo{ .type = Field::Types::String }},
-    {"format", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
-    {"compression_method", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
-    {"structure", ConfigKeyInfo{ .type = Field::Types::String, .default_value = "auto" }},
 };
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
@@ -46,11 +42,10 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
         if (isNamedCollection(config, config_prefix))
         {
-            const auto & config_keys = StorageMongoDB::getConfigKeys();
             auto collection_name = getCollectionName(config, config_prefix);
 
             auto result_configuration = getConfigurationFromNamedCollection(
-                collection_name, context->getConfigRef(), config_keys);
+                collection_name, context->getConfigRef(), dictionary_keys);
             auto overriding_configuration = parseConfigKeys(config, config_prefix, dictionary_keys, false);
             overrideConfiguration(result_configuration, overriding_configuration, dictionary_keys);
 

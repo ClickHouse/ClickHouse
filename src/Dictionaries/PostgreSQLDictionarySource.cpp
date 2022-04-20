@@ -43,7 +43,6 @@ static const std::unordered_map<String, ConfigKeyInfo> dictionary_keys =
     {"invalidate_query", ConfigKeyInfo{ .type = Field::Types::String }},
     {"query", ConfigKeyInfo{ .type = Field::Types::String }},
     {"where", ConfigKeyInfo{ .type = Field::Types::String }},
-    {"name", ConfigKeyInfo{ .type = Field::Types::String }},
     {"priority", ConfigKeyInfo{ .type = Field::Types::UInt64 }}
 };
 
