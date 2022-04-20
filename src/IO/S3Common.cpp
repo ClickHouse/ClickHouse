@@ -86,7 +86,7 @@ public:
     void callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
     {
         const auto & [level, prio] = convertLogLevel(log_level);
-        if (tag_loggers.count(tag) > 0)
+        if (tag_loggers.contains(tag))
         {
             LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
         }
