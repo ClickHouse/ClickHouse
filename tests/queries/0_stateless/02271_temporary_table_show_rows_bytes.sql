@@ -1,3 +1,2 @@
-create temporary table 02271_temporary_table_show_rows_bytes (A Int64) Engine=Memory as select * from numbers(1000);
-
-select database, name, total_rows, total_bytes from system.tables where name = '02271_temporary_table_show_rows_bytes';
+CREATE TEMPORARY TABLE 02271_temporary_table_show_rows_bytes (A Int64) Engine=Memory as SELECT * FROM numbers(1000);
+SELECT database, name, total_rows, total_bytes FROM system.tables WHERE is_temporary AND name = '02271_temporary_table_show_rows_bytes';
