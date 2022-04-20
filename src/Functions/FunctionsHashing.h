@@ -1371,12 +1371,12 @@ private:
     }
 };
 
-template <typename T>
-T highwayhash(const char * s, size_t len)
+template <typename Result>
+Result highwayhash(const char * s, size_t len)
 {
     using namespace highwayhash;
     const HHKey key HH_ALIGNAS(32) = {1, 2, 3, 4};
-    T result;
+    Result result;
 #ifdef __AVX2__
     HHStateT<4> state(key);
 #elif defined(__SSE4_1__)
@@ -1384,7 +1384,7 @@ T highwayhash(const char * s, size_t len)
 #else
     HHStateT<1> state(key);
 #endif
-    HighwayHashT(&state, s, len, &result);
+    HighwayHashT(&state, s, len, result);
     return result;
 }
 
@@ -1395,7 +1395,7 @@ struct ImplHighwayHash64
 
     static UInt64 apply(const char *s, const size_t len)
     {
-        return highwayhash<UInt64>(s, len);
+        return highwayhash(s, len);
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
@@ -1406,7 +1406,7 @@ struct ImplHighwayHash64
         };
         u64[0] = h1;
         u64[1] = h2;
-        return highwayhash<UInt64>(chars, 16);
+        return highwayhash(chars, 16);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -1419,7 +1419,12 @@ struct ImplHighwayHash128
 
     static UInt128 apply(const char *s, const size_t len)
     {
-        return highwayhash<UInt128>(s, len);
+        union {
+            UInt64 u64[2];
+            UInt128 u128;
+        };
+        u64 = highwayhash(s, len);
+        return u128;
     }
 
     static UInt128 combineHashes(UInt128 h1, UInt128 h2)
@@ -1443,7 +1448,12 @@ struct ImplHighwayHash256
 
     static UInt256 apply(const char *s, const size_t len)
     {
-        return highwayhash<UInt256>(s, len);
+        union {
+            UInt64 u64[4];
+            UInt256 u256;
+        };
+        u64 = highwayhash(s, len);
+        return u256;
     }
 
     static UInt256 combineHashes(UInt256 h1, UInt256 h2)
