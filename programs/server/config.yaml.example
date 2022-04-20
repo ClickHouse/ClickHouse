@@ -177,8 +177,8 @@ openSSL:
     server:
         # Used for https server AND secure tcp port
         # openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
-        certificateFile: /etc/clickhouse-server/server.crt
-        privateKeyFile: /etc/clickhouse-server/server.key
+        # certificateFile: /etc/clickhouse-server/server.crt
+        # privateKeyFile: /etc/clickhouse-server/server.key
 
         # dhparams are optional. You can delete the dhParamsFile: element.
         # To generate dhparams, use the following command:
