@@ -80,6 +80,8 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
 /// 5. Our ID present in hostnames list
 KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
+    const bool verify_hosts = config.getBool(config_prefix + ".verify_hosts", true);
+
     KeeperConfigurationWrapper result;
     result.cluster_config = std::make_shared<nuraft::cluster_config>();
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -115,18 +117,21 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
                             hostname, port, client_ports[port]);
         }
 
-        if (isLoopback(hostname))
+        if (verify_hosts)
         {
-            loopback_hostname = hostname;
-            local_address_counter++;
-        }
-        else if (isLocalhost(hostname))
-        {
-            local_address_counter++;
-        }
-        else
-        {
-            non_local_hostname = hostname;
+            if (isLoopback(hostname))
+            {
+                loopback_hostname = hostname;
+                local_address_counter++;
+            }
+            else if (isLocalhost(hostname))
+            {
+                local_address_counter++;
+            }
+            else
+            {
+                non_local_hostname = hostname;
+            }
         }
 
         if (start_as_follower)
@@ -168,22 +173,25 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     if (result.servers_start_as_followers.size() == total_servers)
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 
-    if (!loopback_hostname.empty() && !non_local_hostname.empty())
+    if (verify_hosts)
     {
-        throw Exception(
-            ErrorCodes::RAFT_ERROR,
-            "Mixing loopback and non-local hostnames ('{}' and '{}') in raft_configuration is not allowed. "
-            "Different hosts can resolve it to themselves so it's not allowed.",
-            loopback_hostname, non_local_hostname);
-    }
+        if (!loopback_hostname.empty() && !non_local_hostname.empty())
+        {
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Mixing loopback and non-local hostnames ('{}' and '{}') in raft_configuration is not allowed. "
+                "Different hosts can resolve it to themselves so it's not allowed.",
+                loopback_hostname, non_local_hostname);
+        }
 
-    if (!non_local_hostname.empty() && local_address_counter > 1)
-    {
-        throw Exception(
-            ErrorCodes::RAFT_ERROR,
-            "Local address specified more than once ({} times) and non-local hostnames also exists ('{}') in raft_configuration. "
-            "Such configuration is not allowed because single host can vote multiple times.",
-            local_address_counter, non_local_hostname);
+        if (!non_local_hostname.empty() && local_address_counter > 1)
+        {
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Local address specified more than once ({} times) and non-local hostnames also exists ('{}') in raft_configuration. "
+                "Such configuration is not allowed because single host can vote multiple times.",
+                local_address_counter, non_local_hostname);
+        }
     }
 
     return result;
