@@ -1372,7 +1372,7 @@ private:
 };
 
 template <typename Result>
-Result highwayhash(const char * s, size_t len, Result* result)
+void highwayhash(const char * s, size_t len, Result* result)
 {
     using namespace highwayhash;
     const HHKey key HH_ALIGNAS(32) = {1, 2, 3, 4};
@@ -1384,7 +1384,6 @@ Result highwayhash(const char * s, size_t len, Result* result)
     HHStateT<1> state(key);
 #endif
     HighwayHashT(&state, s, len, result);
-    return result;
 }
 
 struct ImplHighwayHash64
