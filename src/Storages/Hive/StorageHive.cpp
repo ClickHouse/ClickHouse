@@ -102,8 +102,6 @@ public:
         return columns_description;
     }
 
-    
-
     StorageHiveSource(
         SourcesInfoPtr source_info_,
         String hdfs_namenode_url_,
