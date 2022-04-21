@@ -87,8 +87,8 @@ public:
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const MergeTreeReaderSettings & reader_settings_,
-        const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{}) const = 0;
+        const ValueSizeMap & avg_value_size_hints_,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
     virtual MergeTreeWriterPtr getWriter(
         DataPartStorageBuilderPtr data_part_storage_builder,
@@ -97,7 +97,7 @@ public:
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity = {}) const = 0;
+        const MergeTreeIndexGranularity & computed_index_granularity) const = 0;
 
     virtual bool isStoredOnDisk() const = 0;
 
