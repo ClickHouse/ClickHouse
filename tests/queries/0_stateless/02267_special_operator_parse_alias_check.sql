@@ -110,8 +110,12 @@ SELECT dateSub(DAY, 1 arg_1, toDate('2019-05-05') arg_2), arg_1, arg_2;
 
 SELECT dateDiff(DAY, toDate('2019-05-05') AS arg_1, toDate('2019-05-06') AS arg_2), arg_1, arg_2;
 SELECT dateDiff(DAY, toDate('2019-05-05') arg_1, toDate('2019-05-06') arg_2), arg_1, arg_2;
+SELECT dateDiff(DAY, toDate('2019-05-05') AS arg_1, toDate('2019-05-06') AS arg_2, 'UTC'), arg_1, arg_2;
+SELECT dateDiff(DAY, toDate('2019-05-05') arg_1, toDate('2019-05-06') arg_2, 'UTC'), arg_1, arg_2;
 
 -- dateDiff('unit', startdate, enddate, [timezone])
 
 SELECT dateDiff('DAY', toDate('2019-05-05') AS arg_1, toDate('2019-05-06') AS arg_2), arg_1, arg_2;
 SELECT dateDiff('DAY', toDate('2019-05-05') arg_1, toDate('2019-05-06') arg_2), arg_1, arg_2;
+SELECT dateDiff('DAY', toDate('2019-05-05') AS arg_1, toDate('2019-05-06') AS arg_2, 'UTC'), arg_1, arg_2;
+SELECT dateDiff('DAY', toDate('2019-05-05') arg_1, toDate('2019-05-06') arg_2, 'UTC'), arg_1, arg_2;

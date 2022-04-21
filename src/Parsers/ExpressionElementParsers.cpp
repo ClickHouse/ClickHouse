@@ -593,7 +593,6 @@ namespace
         /// First try to match with date extract operator EXTRACT(part FROM date)
         /// Then with function extract(haystack, pattern)
 
-        IParser::Pos begin = pos;
         IntervalKind interval_kind;
 
         if (parseIntervalKind(pos, expected, interval_kind))
@@ -608,9 +607,9 @@ namespace
                 node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
                 return true;
             }
-        }
 
-        pos = begin;
+            return false;
+        }
 
         ASTPtr expr_list;
         if (!ParserExpressionList(true /*allow_alias_without_as_keyword*/).parse(pos, expr_list, expected))
@@ -758,7 +757,22 @@ namespace
             if (!ParserExpressionWithOptionalAlias(true /*allow_alias_without_as_keyword*/).parse(pos, right_node, expected))
                 return false;
 
-            node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), left_node, right_node);
+            ASTPtr timezone_node;
+
+            if (pos->type == TokenType::Comma)
+            {
+                /// Optional timezone
+                ++pos;
+
+                if (!ParserExpressionWithOptionalAlias(true /*allow_alias_without_as_keyword*/).parse(pos, timezone_node, expected))
+                    return false;
+            }
+
+            auto interval_literal = std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit());
+            if (timezone_node)
+                node = makeASTFunction("dateDiff",  std::move(interval_literal), std::move(left_node), std::move(right_node), std::move(timezone_node));
+            else
+                node = makeASTFunction("dateDiff", std::move(interval_literal), std::move(left_node), std::move(right_node));
 
             return true;
         }
