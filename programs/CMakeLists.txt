@@ -7,7 +7,12 @@ include(${ClickHouse_SOURCE_DIR}/cmake/strip_binary.cmake)
 # The `clickhouse` binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
 # If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
-option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
+if (NOT USE_MUSL)
+    option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
+else ()
+  # Only clickhouse-keeper can be built with musl currently
+  option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" OFF)
+endif ()
 
 option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
