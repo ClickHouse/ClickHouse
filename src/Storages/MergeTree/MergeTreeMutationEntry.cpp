@@ -13,13 +13,13 @@ namespace DB
 {
 namespace
 {
-   String getFileName(UInt64 tmp_number, bool is_temporary)
-   {
-       if (is_temporary)
-           return fmt::format("tmp_mutation_{}.txt", tmp_number);
-       else
-           return fmt::format("mutation_{}.txt", tmp_number);
-   }
+    String getFileName(UInt64 tmp_number, bool is_temporary)
+    {
+        if (is_temporary)
+            return fmt::format("tmp_mutation_{}.txt", tmp_number);
+        else
+            return fmt::format("mutation_{}.txt", tmp_number);
+    }
 }
 
 namespace ErrorCodes
@@ -66,7 +66,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     , tid(tid_)
 {
     size_t typeToNum = 0;
-    if(type == MutationType::Lightweight)
+    if (type == MutationType::Lightweight)
         typeToNum = 1;
 
     try

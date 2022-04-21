@@ -237,7 +237,7 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
 
 ColumnPtr IMergeTreeReader::getDeletedMask(size_t from_pos, size_t rows_read)
 {
-    if (rows_read <= 0 )
+    if (rows_read <= 0)
         return nullptr;
 
     auto mask_column = ColumnUInt8::create();

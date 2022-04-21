@@ -56,7 +56,8 @@ struct MergeTreePartInfo
 
     /// Get block number that can be used to determine which mutations we still need to apply to this part
     /// (all mutations with version greater than this block number).
-    Int64 getDataVersion() const {
+    Int64 getDataVersion() const
+    {
         Int64 current_mutation = lightweight_mutation > mutation ? lightweight_mutation : mutation;
         return current_mutation ? current_mutation : min_block;
     }
