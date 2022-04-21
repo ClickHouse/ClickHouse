@@ -979,15 +979,14 @@ jobs:
 ############################################################################################
   BuilderReport:
     needs:
-      - BuilderDebRelease
-      - BuilderDebAarch64
       - BuilderBinRelease
-      - BuilderBinGCC
+      - BuilderDebAarch64
       - BuilderDebAsan
+      - BuilderDebDebug
+      - BuilderDebMsan
+      - BuilderDebRelease
       - BuilderDebTsan
       - BuilderDebUBsan
-      - BuilderDebMsan
-      - BuilderDebDebug
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Set envs
@@ -1026,17 +1025,23 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
   BuilderSpecialReport:
     needs:
+      - BuilderBinAarch64
+      - BuilderBinDarwin
+      - BuilderBinDarwinAarch64
+      - BuilderBinFreeBSD
+      - BuilderBinGCC
+      - BuilderBinPPC64
       - BuilderBinTidy
       - BuilderDebSplitted
-      - BuilderBinDarwin
-      - BuilderBinAarch64
-      - BuilderBinFreeBSD
-      - BuilderBinDarwinAarch64
-      - BuilderBinPPC64
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Set envs
         run: |
+          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
+          ${{ toJSON(needs) }}
+          EOF
+          )
+          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/report_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
@@ -1056,7 +1061,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME"
+          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
       - name: Cleanup
         if: always()
         run: |

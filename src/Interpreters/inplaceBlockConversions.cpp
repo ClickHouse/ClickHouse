@@ -45,7 +45,7 @@ void addDefaultRequiredExpressionsRecursively(
     if (is_column_in_query)
         convert_null_to_default = null_as_default && block.findByName(required_column_name)->type->isNullable() && !required_column_type->isNullable();
 
-    if ((is_column_in_query && !convert_null_to_default) || added_columns.count(required_column_name))
+    if ((is_column_in_query && !convert_null_to_default) || added_columns.contains(required_column_name))
         return;
 
     auto column_default = columns.getDefault(required_column_name);
