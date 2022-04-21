@@ -6,9 +6,31 @@
     #include <emmintrin.h>
 #endif
 
+#ifdef __aarch64__
+    #include <arm_neon.h>
+#endif
 
 namespace DB
 {
+
+#ifdef __aarch64__
+uint32_t _mm_movemask_aarch64(uint8x16_t input)
+{   
+    const int8_t __attribute__ ((aligned (16))) ucShift[] =
+    {
+        -7, -6, -5, -4, -3, -2, -1, 0, -7, -6, -5, -4, -3, -2, -1, 0
+    };
+    int8x16_t vshift = vld1q_s8(ucShift);
+    uint8x16_t vmask = vandq_u8(input, vdupq_n_u8(0x80));    
+    vmask = vshlq_u8(vmask, vshift);
+
+    uint32_t result;
+    result = vaddv_u8(vget_low_u8(vmask));
+    result += (vaddv_u8(vget_high_u8(vmask)) << 8);
+    
+    return result;
+}
+#endif
 
 const size_t WriteBufferValidUTF8::DEFAULT_SIZE = 4096;
 
@@ -74,6 +96,18 @@ void WriteBufferValidUTF8::nextImpl()
         while (p < simd_end && !_mm_movemask_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i*>(p))))
             p += SIMD_BYTES;
 
+        if (!(p < pos))
+            break;
+#endif
+
+#ifdef __aarch64__
+        /// Fast skip of ASCII
+        static constexpr size_t SIMD_BYTES = 16;
+        const char * simd_end = p + (end - p) / SIMD_BYTES * SIMD_BYTES;
+
+        while (p < simd_end && !_mm_movemask_aarch64_2(vld1q_u8(p)))
+            p += SIMD_BYTES;
+        
         if (!(p < pos))
             break;
 #endif
