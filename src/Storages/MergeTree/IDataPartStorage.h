@@ -11,8 +11,25 @@ class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
 
-class IDiskDirectoryIterator;
-using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
+class IDataPartStorageIterator
+{
+public:
+    /// Iterate to the next file.
+    virtual void next() = 0;
+
+    /// Return `true` if the iterator points to a valid element.
+    virtual bool isValid() const = 0;
+
+    /// Return `true` if the iterator points to a file.
+    virtual bool isFile() const = 0;
+
+    /// Name of the file that the iterator currently points to.
+    virtual std::string name() const = 0;
+
+    virtual ~IDataPartStorageIterator() = default;
+};
+
+using DataPartStorageIteratorPtr = std::unique_ptr<IDataPartStorageIterator>;
 
 struct MergeTreeDataPartChecksums;
 
@@ -23,6 +40,9 @@ class IStoragePolicy;
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
+
+class ISyncGuard;
+using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 
 class IBackupEntry;
 using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
@@ -50,8 +70,8 @@ public:
 
     virtual Poco::Timestamp getLastModified() const = 0;
 
-    virtual DiskDirectoryIteratorPtr iterate() const = 0;
-    virtual DiskDirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
+    virtual DataPartStorageIteratorPtr iterate() const = 0;
+    virtual DataPartStorageIteratorPtr iterateDirectory(const std::string & path) const = 0;
 
     struct ProjectionChecksums
     {
@@ -66,6 +86,7 @@ public:
         Poco::Logger * log) const = 0;
 
     virtual size_t getFileSize(const std::string & path) const = 0;
+    virtual UInt32 getRefCount(const String &) const { return 0; }
 
     virtual std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const = 0;
 
@@ -85,8 +106,8 @@ public:
     virtual std::string getDiskPathForLogs() const = 0;
 
     /// Should remove it later
-    virtual void writeChecksums(MergeTreeDataPartChecksums & checksums) const = 0;
-    virtual void writeColumns(NamesAndTypesList & columns) const = 0;
+    virtual void writeChecksums(const MergeTreeDataPartChecksums & checksums) const = 0;
+    virtual void writeColumns(const NamesAndTypesList & columns) const = 0;
     virtual void writeDeleteOnDestroyMarker(Poco::Logger * log) const = 0;
 
     virtual void checkConsistency(const MergeTreeDataPartChecksums & checksums) const = 0;
@@ -124,6 +145,7 @@ public:
 
     /// Disk name
     virtual std::string getName() const = 0;
+    virtual std::string getDiskType() const = 0;
 
     virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) const = 0;
 };
@@ -140,11 +162,13 @@ public:
 
     virtual std::string getRelativePath() const = 0;
     virtual std::string getFullPath() const = 0;
+    virtual std::string getFullRelativePath() const = 0;
 
     virtual bool exists() const = 0;
     virtual bool exists(const std::string & path) const = 0;
 
     virtual void createDirectories() = 0;
+    virtual void createProjection(const std::string & name) = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & path,
@@ -152,12 +176,15 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const = 0;
 
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
-        const String & path,
-        size_t buf_size /* = DBMS_DEFAULT_BUFFER_SIZE*/) = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size) = 0;
 
     virtual void removeFile(const String & path) = 0;
     virtual void removeRecursive() = 0;
+    virtual void removeSharedRecursive(bool keep_in_remote_fs) = 0;
+
+    virtual SyncGuardPtr getDirectorySyncGuard() const { return nullptr; }
+
+    virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) const = 0;
 
     virtual ReservationPtr reserve(UInt64 /*bytes*/) { return nullptr; }
 

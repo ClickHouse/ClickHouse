@@ -1371,7 +1371,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         /// NOTE: no race with background cleanup until we hold pointers to parts
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->relative_path);
+            LOG_INFO(log, "Detaching {}", part->data_part_storage->getRelativePath());
             part->makeCloneInDetached("", metadata_snapshot);
         }
     }
@@ -1606,29 +1606,25 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 
     for (auto & part : data_parts)
     {
-        auto disk = part->volume->getDisk();
-        String part_path = part->getFullRelativePath();
+        //auto disk = part->volume->getDisk();
+        //String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = fs::path(part_path) / "checksums.txt";
-        String tmp_checksums_path = fs::path(part_path) / "checksums.txt.tmp";
-        if (part->isStoredOnDisk() && !disk->exists(checksums_path))
+        String checksums_path = "checksums.txt";
+        String tmp_checksums_path = "checksums.txt.tmp";
+        if (part->isStoredOnDisk() && !part->data_part_storage->exists(checksums_path))
         {
             try
             {
                 auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
-                auto out = disk->writeFile(tmp_checksums_path, 4096);
-                part->checksums.write(*out);
-                disk->moveFile(tmp_checksums_path, checksums_path);
+
+                part->data_part_storage->writeChecksums(part->checksums);
 
                 part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (const Exception & ex)
             {
-                if (disk->exists(tmp_checksums_path))
-                    disk->removeFile(tmp_checksums_path);
-
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");
             }

@@ -157,6 +157,7 @@ private:
         std::unique_ptr<PullingPipelineExecutor> merging_executor;
 
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
+        DataPartStorageBuilderPtr data_part_storage_builder;
 
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};

@@ -5,6 +5,7 @@
 
 #include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
+#include <Storages/MergeTree/DataPartStorageOnDisk.h>
 
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -151,12 +152,22 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
 
     auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
+
+    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
+        local_single_disk_volume,
+        local_part_path,
+        local_tmp_part_basename);
+
+    global_ctx->data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(
+        local_single_disk_volume,
+        local_part_path,
+        local_tmp_part_basename);
+
     global_ctx->new_data_part = global_ctx->data->createPart(
         global_ctx->future_part->name,
         global_ctx->future_part->type,
         global_ctx->future_part->part_info,
-        local_single_disk_volume,
-        local_tmp_part_basename,
+        data_part_storage,
         global_ctx->parent_part);
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
@@ -256,6 +267,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
+        global_ctx->data_part_storage_builder,
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
@@ -438,6 +450,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
+        global_ctx->data_part_storage_builder,
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
         ctx->executor->getHeader(),

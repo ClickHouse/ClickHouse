@@ -64,11 +64,11 @@ void MergeTreeSelectProcessor::initializeReaders()
     owned_mark_cache = storage.getContext()->getMarkCache();
 
     reader = data_part->getReader(task_columns.columns, storage_snapshot->getMetadataForQuery(),
-        all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
+        all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {});
 
     if (prewhere_info)
         pre_reader = data_part->getReader(task_columns.pre_columns, storage_snapshot->getMetadataForQuery(),
-            all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
+            all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {});
 
 }
 

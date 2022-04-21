@@ -1298,12 +1298,7 @@ void IMergeTreeDataPart::remove() const
         return;
 
     if (isProjectionPart())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Projection part {} should be removed by its parent {}.", 
-            name, parent_part->name);
-    }
+        LOG_WARNING(storage.log, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
 
     metadata_manager->deleteAll(false);
     metadata_manager->assertAllDeleted(false);
