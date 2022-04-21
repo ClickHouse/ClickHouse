@@ -1,12 +1,10 @@
 #include <Coordination/KeeperStateManager.h>
 
 #include <filesystem>
-#include <ifaddrs.h>
 #include <Coordination/Defines.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
-#include "Access/Common/AllowedClientHosts.h"
 
 namespace DB
 {

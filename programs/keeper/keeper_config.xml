@@ -44,6 +44,8 @@
                 <!-- All settings listed in https://github.com/ClickHouse/ClickHouse/blob/master/src/Coordination/CoordinationSettings.h -->
             </coordination_settings>
 
+            <!-- enable sanity host checks for cluster configuration (e.g. if localhost is used with remote endpoints) -->
+            <host_checks_enabled>true</host_checks_enabled>
             <raft_configuration>
                 <server>
                     <id>1</id>
