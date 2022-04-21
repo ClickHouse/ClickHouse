@@ -1,14 +1,15 @@
 ---
-toc_priority: 61
-toc_title: Interval
+sidebar_position: 61
+sidebar_label: Interval
 ---
 
 # Interval {#data-type-interval}
 
 The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator.
 
-!!! warning "Warning"
-    `Interval` data type values can’t be stored in tables.
+:::warning    
+`Interval` data type values can’t be stored in tables.
+:::
 
 Structure:
 

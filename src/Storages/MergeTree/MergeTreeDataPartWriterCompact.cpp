@@ -47,7 +47,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Shared offsets for Nested type.
-        if (compressed_streams.count(stream_name))
+        if (compressed_streams.contains(stream_name))
             return;
 
         const auto & subtype = substream_path.back().data.type;

@@ -85,7 +85,7 @@ const String & changeNameIfNeeded(const String & func_name, const String & child
         { "max", "min" }
     };
 
-    if (literal.value < zeroField(literal.value) && matches.count(func_name) && matches.find(func_name)->second.count(child_name))
+    if (literal.value < zeroField(literal.value) && matches.contains(func_name) && matches.find(func_name)->second.contains(child_name))
         return swap_to.find(func_name)->second;
 
     return func_name;
@@ -103,8 +103,8 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
     auto lower_name = Poco::toLower(func.name);
 
     const ASTFunction * child_func = getInternalFunction(func);
-    if (!child_func || !child_func->arguments || child_func->arguments->children.size() != 2 || !supported.count(lower_name)
-        || !supported.find(lower_name)->second.count(child_func->name))
+    if (!child_func || !child_func->arguments || child_func->arguments->children.size() != 2 || !supported.contains(lower_name)
+        || !supported.find(lower_name)->second.contains(child_func->name))
         return {};
 
     auto original_alias = func.tryGetAlias();
