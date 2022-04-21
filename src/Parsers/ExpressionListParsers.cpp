@@ -748,6 +748,16 @@ public:
         Operator cur_op;
         while (popOperator(cur_op))
         {
+            if (cur_op.func_name == "if_pre")
+                return false;
+
+            if (cur_op.func_name == "if")
+            {
+                Operator tmp;
+                if (!popOperator(tmp) || tmp.func_name != "if_pre")
+                    return false;
+            }
+
             auto func = makeASTFunction(cur_op.func_name);
 
             if (!lastNOperands(func->children[0]->children, cur_op.arity))
@@ -779,7 +789,7 @@ public:
             return false;
 
         /// 1. If there is already tuple do nothing
-        if (tryGetFunctionName(result.back()).value_or("") == "tuple")
+        if (tryGetFunctionName(result.back()) == "tuple")
         {
             pushOperand(result.back());
             result.pop_back();
@@ -1576,6 +1586,8 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {"NOT IN",        Operator("notIn", 10, 2)},
         {"GLOBAL IN",     Operator("globalIn", 10, 2)},
         {"GLOBAL NOT IN", Operator("globalNotIn", 10, 2)},
+        {"?",             Operator("if_pre", 3, 0)},
+        {":",             Operator("if", 4, 3)},
     });
 
     static std::vector<std::pair<const char *, Operator>> op_table_unary({
@@ -1794,7 +1806,7 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 if (!storage.back()->parseLambda())
                     return false;
 
-                storage.back()->pushOperator(Operator("lambda", 50, 2));
+                storage.back()->pushOperator(Operator("lambda", 2, 2));
             }
             else if (pos->type == TokenType::Comma)
             {
