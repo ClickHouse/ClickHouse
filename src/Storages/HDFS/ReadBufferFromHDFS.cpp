@@ -121,25 +121,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     }
 };
 
-String ReadBufferFromHDFS::getStatus(const String & action)
-{
-    String res;
-    res += "action:" + action;
-    res += ",";
-    res += "obj:" + getId();
-    res += ",";
-    res += "path:" + impl->hdfs_file_path;
-    res += ",";
-    res += "impl_offset:" + std::to_string(impl->offset());
-    res += ",";
-    res += "impl_working_buffer_size:" + std::to_string(impl->buffer().size());
-    res += ",";
-    res += "offset:" + std::to_string(offset());
-    res += ",";
-    res += "working_buffer_size:" + std::to_string(buffer().size());
-    return res;
-}
-
 ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_uri_,
         const String & hdfs_file_path_,
@@ -148,18 +129,15 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
     : SeekableReadBufferWithSize(nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_, read_until_position_))
 {
-    // std::cout << getStatus(__FUNCTION__) << std::endl;
 }
 
 std::optional<size_t> ReadBufferFromHDFS::getTotalSize()
 {
-    // std::cout << getStatus(__FUNCTION__) << std::endl;
     return impl->getTotalSize();
 }
 
 bool ReadBufferFromHDFS::nextImpl()
 {
-    // StatusGuard guard{this, __FUNCTION__};
     impl->position() = impl->buffer().begin() + offset();
     auto result = impl->next();
 
@@ -172,9 +150,6 @@ bool ReadBufferFromHDFS::nextImpl()
 
 off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
 {
-    std::cout << "ReadBufferFromHDFS seek" << std::endl;
-    // std::cout << "obj:" << getId() << ",seek_offset:" << offset_ << std::endl;
-    // StatusGuard guard{this, __FUNCTION__};
     if (whence != SEEK_SET)
         throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
@@ -200,7 +175,6 @@ off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
 
 off_t ReadBufferFromHDFS::getPosition()
 {
-    // std::cout << getStatus(__FUNCTION__) << std::endl;
     return impl->getPosition() - available();
 }
 
@@ -211,7 +185,6 @@ size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
 
 ReadBufferFromHDFS::ReadResult ReadBufferFromHDFS::readInto(char * data, size_t size, size_t offset, size_t  /*ignore*/)
 {
-    std::cout << "ReadBufferFromHDFS::readInto" << std::endl;
     /// TODO: we don't need to copy if there is no pending data
     seek(offset, SEEK_SET);
     if (eof())

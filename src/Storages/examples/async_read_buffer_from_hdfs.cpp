@@ -16,14 +16,14 @@
 int main()
 {
     using namespace DB;
-    String config_path = "/data1/clickhouse_official/conf/config.xml";
+    String config_path = "/path/to/config/file";
     ConfigProcessor config_processor(config_path, false, true);
     config_processor.setConfigPath(fs::path(config_path).parent_path());
     auto loaded_config = config_processor.loadConfig(false);
     auto * config = loaded_config.configuration.duplicate();
 
-    String hdfs_namenode_url = "hdfs://testcluster/";
-    String path = "/data/hive/default.db/test_text/day=2021-09-18/000000_0";
+    String hdfs_namenode_url = "hdfs://namenode:port/";
+    String path = "/path/to/hdfs/file";
     auto in = std::make_unique<ReadBufferFromHDFS>(hdfs_namenode_url, path, *config);
     auto reader = StorageHive::getThreadPoolReader();
     AsynchronousReadBufferFromHDFS buf(reader, {}, std::move(in));
