@@ -65,27 +65,13 @@ int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offse
 }
 
 /// compress data from opened file into output file
-int compress(int in_fd, int out_fd, int level, off_t& pointer, const struct stat& info_in)
+int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct stat & info_in)
 {
-    /// As experiments showed, size of compressed file is 4 times less than clickhouse executable
-    /// Get a little bit more memory to prevent errors with size.
-    /// For compression this difference will not be huge
-    if (0 != ftruncate(out_fd, pointer + info_in.st_size / 3))
-    {
-        perror(nullptr);
-        return 1;
-    }
     off_t in_offset = 0;
 
     /// mmap files
     char * input = static_cast<char*>(mmap(nullptr, info_in.st_size, PROT_READ, MAP_PRIVATE, in_fd, 0));
-    char * output = static_cast<char*>(
-        mmap(nullptr, pointer + info_in.st_size / 3,
-            PROT_READ | PROT_WRITE, MAP_SHARED,
-            out_fd,
-            0)
-        );
-    if (input == MAP_FAILED || output == MAP_FAILED)
+    if (input == MAP_FAILED)
     {
         perror(nullptr);
         return 1;
@@ -119,9 +105,29 @@ int compress(int in_fd, int out_fd, int level, off_t& pointer, const struct stat
     off_t max_block_size = 1ull<<27;
     off_t min_block_size = 1ull<<23;
     off_t size = 0;
+    off_t current_block_size = 0;
+
+    /// Create buffer for compression
+    /// Block can't become much bigger after compression.
+    char * output = static_cast<char*>(
+        mmap(nullptr, 2 * max_block_size,
+            PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE,
+            -1,
+            0)
+        );
+    if (output == MAP_FAILED)
+    {
+        perror(nullptr);
+        return 1;
+    }
+    if (-1 == lseek(out_fd, 0, SEEK_END))
+    {
+        perror(nullptr);
+        return 1;
+    }
 
     /// TODO: Maybe make better information instead of offsets
-    std::cout << "Current offset in infile is|\t Output pointer is " << std::endl;
+    std::cout << "Current offset in infile is|\t Output offset" << std::endl;
     std::cout << in_offset << "\t\t\t\t" << pointer << std::endl;
 
     /// Compress data
@@ -135,20 +141,28 @@ int compress(int in_fd, int out_fd, int level, off_t& pointer, const struct stat
             size = max_block_size;
 
         /// Compress data or exit if error happens
-        if (0 != doCompress(input, output, in_offset, pointer, size, ZSTD_compressBound(size), cctx))
+        if (0 != doCompress(input, output, in_offset, current_block_size, size, ZSTD_compressBound(size), cctx))
         {
             if (0 != munmap(input, info_in.st_size))
                 perror(nullptr);
-            if (0 != munmap(output, pointer + info_in.st_size / 3))
+            if (0 != munmap(output, 2 * max_block_size))
                 perror(nullptr);
             return 1;
         }
+
+        /// Save data into file and refresh pointer
+        if (current_block_size != write(out_fd, output, current_block_size))
+        {
+            perror(nullptr);
+            return 1;
+        }
+        pointer += current_block_size;
         std::cout << in_offset << "\t\t\t" << pointer << std::endl;
+        current_block_size = 0;
     }
 
-    /// Shrink file size and unmap
-    if (0 != ftruncate(out_fd, pointer) || 0 != munmap(input, info_in.st_size) ||
-        0 != munmap(output, pointer + info_in.st_size / 3))
+    if (0 != munmap(input, info_in.st_size) ||
+        0 != munmap(output, 2 * max_block_size))
     {
         perror(nullptr);
         return 1;
@@ -200,11 +214,6 @@ int saveMetaData(char* filenames[], int count, int output_fd, const MetaData& me
 /// Fills metadata and calls compression function for each file
 int compressFiles(char* filenames[], int count, int output_fd, int level, const struct stat& info_out)
 {
-    /// TODO: check that compression can be done (?)
-    /// It is difficult to predict compressed size and
-    /// the upper estimate of memory (size + 1/3 sum_of_files_size)
-    /// is very rude and can fail even if compression can be successfully done
-
     MetaData metadata;
     size_t sum_file_size = 0;
     metadata.number_of_files = count;
