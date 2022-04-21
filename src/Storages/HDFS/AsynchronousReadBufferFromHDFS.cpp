@@ -118,6 +118,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         }
 
         prefetch_buffer.swap(memory);
+
         /// Adjust the working buffer so that it ignores `offset` bytes.
         setWithBytesToIgnore(memory.data(), size, offset);
     }
