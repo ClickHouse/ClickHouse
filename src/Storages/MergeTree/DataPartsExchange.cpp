@@ -304,7 +304,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         writePODBinary(hashing_out.getHash(), out);
 
-        if (!file_names_without_checksums.count(file_name))
+        if (!file_names_without_checksums.contains(file_name))
             data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
     }
 

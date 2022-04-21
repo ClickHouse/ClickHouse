@@ -1,6 +1,6 @@
 ---
-toc_priority: 19
-toc_title: AMPLab Big Data Benchmark
+sidebar_position: 19
+sidebar_label: AMPLab Big Data Benchmark
 ---
 
 # AMPLab Big Data Benchmark {#amplab-big-data-benchmark}
