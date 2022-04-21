@@ -146,7 +146,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
 
-                if (function_builder->isInjective({}))
+                if (!function_builder->isInjective({}))
                 {
                     ++i;
                     continue;
