@@ -204,32 +204,44 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 };
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final);
                 transform_params_per_set.push_back(transform_params_for_set);
-                auto many_data = std::make_shared<ManyAggregatedData>(streams);
 
-                for (size_t j = 0; j < streams; ++j)
+                if (streams > 1)
                 {
-                    auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, many_data, j, merge_threads, temporary_data_merge_threads);
-                    connect(*ports[i + streams * j], aggregation_for_set->getInputs().front());
+                    auto many_data = std::make_shared<ManyAggregatedData>(streams);
+                    for (size_t j = 0; j < streams; ++j)
+                    {
+                        auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, many_data, j, merge_threads, temporary_data_merge_threads);
+                        connect(*ports[i + streams * j], aggregation_for_set->getInputs().front());
+                        aggregators.push_back(aggregation_for_set);
+                    }
+                }
+                else
+                {
+                    auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set);
+                    connect(*ports[i], aggregation_for_set->getInputs().front());
                     aggregators.push_back(aggregation_for_set);
                 }
             }
             return aggregators;
         }, false);
 
-        pipeline.transform([&](OutputPortRawPtrs ports)
+        if (streams > 1)
         {
-            Processors resizes;
-            for (size_t i = 0; i < grouping_sets_size; ++i)
+            pipeline.transform([&](OutputPortRawPtrs ports)
             {
-                auto resize = std::make_shared<ResizeProcessor>(transform_params_per_set[i]->getHeader(), streams, 1);
-                auto & inputs = resize->getInputs();
-                auto output_it = ports.begin() + i * streams;
-                for (auto input_it = inputs.begin(); input_it != inputs.end(); ++output_it, ++input_it)
-                    connect(**output_it, *input_it);
-                resizes.push_back(resize);
-            }
-            return resizes;
-        }, false);
+                Processors resizes;
+                for (size_t i = 0; i < grouping_sets_size; ++i)
+                {
+                    auto resize = std::make_shared<ResizeProcessor>(transform_params_per_set[i]->getHeader(), streams, 1);
+                    auto & inputs = resize->getInputs();
+                    auto output_it = ports.begin() + i * streams;
+                    for (auto input_it = inputs.begin(); input_it != inputs.end(); ++output_it, ++input_it)
+                        connect(**output_it, *input_it);
+                    resizes.push_back(resize);
+                }
+                return resizes;
+            }, false);
+        }
 
         assert(pipeline.getNumStreams() == grouping_sets_size);
         size_t set_counter = 0;

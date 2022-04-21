@@ -1,3 +1,21 @@
+(Expression)
+ExpressionTransform
+  (Sorting)
+  MergingSortedTransform 2 → 1
+    MergeSortingTransform × 2
+      LimitsCheckingTransform × 2
+        PartialSortingTransform × 2
+          (Expression)
+          ExpressionTransform × 2
+            (Aggregating)
+            GroupingSetsTransform × 2
+              AggregatingTransform × 2
+                Copy 1 → 2
+                  (Expression)
+                  ExpressionTransform
+                    (SettingQuotaAndLimits)
+                      (ReadFromStorage)
+                      Memory 0 → 1
 1	0	1	4500
 1	0	3	4700
 1	0	5	4900
