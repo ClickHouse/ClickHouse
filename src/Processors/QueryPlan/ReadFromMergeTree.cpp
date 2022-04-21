@@ -21,8 +21,6 @@
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/AddingSelectorTransform.h>
-#include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
@@ -566,7 +564,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
 static void addMergingFinal(
     Pipe & pipe,
-    size_t num_output_streams,
     const SortDescription & sort_description,
     MergeTreeData::MergingParams merging_params,
     Names partition_key_columns,
@@ -613,56 +610,7 @@ static void addMergingFinal(
         __builtin_unreachable();
     };
 
-    if (num_output_streams <= 1 || sort_description.empty())
-    {
-        pipe.addTransform(get_merging_processor());
-        return;
-    }
-
-    ColumnNumbers key_columns;
-    key_columns.reserve(sort_description.size());
-    for (const auto & desc : sort_description)
-        key_columns.push_back(header.getPositionByName(desc.column_name));
-
-    pipe.addSimpleTransform([&](const Block & stream_header)
-    {
-        return std::make_shared<AddingSelectorTransform>(stream_header, num_output_streams, key_columns);
-    });
-
-    pipe.transform([&](OutputPortRawPtrs ports)
-    {
-        Processors transforms;
-        std::vector<OutputPorts::iterator> output_ports;
-        transforms.reserve(ports.size() + num_output_streams);
-        output_ports.reserve(ports.size());
-
-        for (auto & port : ports)
-        {
-            auto copier = std::make_shared<CopyTransform>(header, num_output_streams);
-            connect(*port, copier->getInputPort());
-            output_ports.emplace_back(copier->getOutputs().begin());
-            transforms.emplace_back(std::move(copier));
-        }
-
-        for (size_t i = 0; i < num_output_streams; ++i)
-        {
-            auto merge = get_merging_processor();
-            merge->setSelectorPosition(i);
-            auto input = merge->getInputs().begin();
-
-            /// Connect i-th merge with i-th input port of every copier.
-            for (size_t j = 0; j < ports.size(); ++j)
-            {
-                connect(*output_ports[j], *input);
-                ++output_ports[j];
-                ++input;
-            }
-
-            transforms.emplace_back(std::move(merge));
-        }
-
-        return transforms;
-    });
+    pipe.addTransform(get_merging_processor());
 }
 
 
@@ -764,12 +712,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 {
                     if (layers[i].empty())
                         continue;
+
                     pipes.emplace_back(read(
                         std::move(layers[i]),
                         column_names,
                         ReadFromMergeTree::ReadType::InOrder,
-                        1 /*num_streams*/,
-                        0,
+                        1 /* num_streams */,
+                        0 /* min_marks_for_concurrent_read */,
                         info.use_uncompressed_cache));
 
                     auto & filter_function = filters[i];
@@ -832,7 +781,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         for (auto & pipe : pipes)
             addMergingFinal(
                 pipe,
-                std::min<size_t>(split_into_layers_optimization_applies ? 1 : num_streams, settings.max_final_threads),
                 sort_description,
                 data.merging_params,
                 partition_key_columns,

@@ -113,11 +113,13 @@ public:
         const RangesInDataParts & parts_,
         size_t max_num_streams,
         std::unique_ptr<IIndexAccess> index_access_)
-        : primary_key(primary_key_), parts(parts_), index_access(std::move(index_access_))
+        : primary_key(primary_key_)
+        , parts(parts_)
+        , index_access(std::move(index_access_))
+        , rows_per_layer(std::max<size_t>(index_access->getTotalRowCount() / max_num_streams, 1))
     {
         if (max_num_streams <= 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "max_num_streams should be greater than 1.");
-        rows_per_layer = std::max<size_t>(index_access->getTotalRowCount() / max_num_streams, 1);
     }
 
     std::vector<IndexValue> chooseBorders()
@@ -312,8 +314,8 @@ public:
 private:
     const KeyDescription & primary_key;
     const RangesInDataParts & parts;
-    std::unique_ptr<IIndexAccess> index_access;
-    size_t rows_per_layer;
+    const std::unique_ptr<IIndexAccess> index_access;
+    const size_t rows_per_layer;
 };
 
 }
