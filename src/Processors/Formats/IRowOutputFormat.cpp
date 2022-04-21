@@ -15,7 +15,8 @@ IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, con
     , types(header.getDataTypes())
     , params(params_)
 {
-    serializations.reserve(types.size());
+    num_columns = types.size();
+    serializations.reserve(num_columns);
     for (const auto & type : types)
         serializations.push_back(type->getDefaultSerialization());
 }
@@ -27,7 +28,7 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (!first_row)
+        if (!first_row || getRowsReadBefore() != 0)
             writeRowBetweenDelimiter();
 
         write(columns, row);
@@ -41,8 +42,6 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 {
-    writeSuffixIfNot();
-
     auto num_rows = chunk.getNumRows();
     if (num_rows != 1)
         throw Exception("Got " + toString(num_rows) + " in totals chunk, expected 1", ErrorCodes::LOGICAL_ERROR);
@@ -56,8 +55,6 @@ void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
 {
-    writeSuffixIfNot();
-
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
     if (num_rows != 2)
@@ -70,16 +67,8 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
     writeAfterExtremes();
 }
 
-void IRowOutputFormat::finalizeImpl()
-{
-    writeSuffixIfNot();
-    writeLastSuffix();
-}
-
 void IRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    size_t num_columns = columns.size();
-
     writeRowStartDelimiter();
 
     for (size_t i = 0; i < num_columns; ++i)

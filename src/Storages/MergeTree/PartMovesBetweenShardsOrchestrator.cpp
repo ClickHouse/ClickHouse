@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -385,7 +386,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 else
                 {
                     // Need to remove ATTACH_PART from the queue or drop data.
-                    // Similar to `StorageReplicatedMergeTree::dropPart` w/o extra
+                    // Similar to `StorageReplicatedMergeTree::dropPart` without extra
                     // checks as we know drop shall be possible.
                     ReplicatedMergeTreeLogEntryData attach_rollback_log_entry;
 

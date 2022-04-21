@@ -12,7 +12,7 @@ class ASTStorage;
 
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
-TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const ASTPtr & ast);
+TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast);
 
 /// Visits ASTCreateQuery and extracts names of table (or dictionary) dependencies
 /// from column default expressions (joinGet, dictGet, etc)

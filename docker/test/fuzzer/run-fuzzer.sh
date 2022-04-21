@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2001,SC2046
+# shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031
 
 set -eux
 set -o pipefail
@@ -13,7 +13,7 @@ script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
 BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-13_debug_none_bundled_unsplitted_disable_False_binary"}
-BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
+BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function clone
 {
@@ -35,7 +35,7 @@ function clone
             fi
             git diff --name-only master HEAD | tee ci-changed-files.txt
         else
-            if [ -v COMMIT_SHA ]; then
+            if [ -v SHA_TO_TEST ]; then
                 git fetch --depth 2 origin "$SHA_TO_TEST"
                 git checkout "$SHA_TO_TEST"
                 echo "Checked out nominal SHA $SHA_TO_TEST for master"
@@ -52,9 +52,21 @@ function clone
 
 }
 
+function wget_with_retry
+{
+    for _ in 1 2 3 4; do
+        if wget -nv -nd -c "$1";then
+            return 0
+        else
+            sleep 0.5
+        fi
+    done
+    return 1
+}
+
 function download
 {
-    wget -nv -nd -c "$BINARY_URL_TO_DOWNLOAD"
+    wget_with_retry "$BINARY_URL_TO_DOWNLOAD"
 
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server
@@ -77,7 +89,7 @@ function configure
 
 function watchdog
 {
-    sleep 3600
+    sleep 1800
 
     echo "Fuzzing run has timed out"
     for _ in {1..10}
@@ -155,21 +167,46 @@ function fuzz
 
     kill -0 $server_pid
 
+    # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
+    # and clickhouse-server can do fork-exec, for example, to run some bridge.
+    # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
+    # explicitly ignore non-fatal signals that are used by server.
+    # Number of SIGRTMIN can be determined only in runtime.
+    RTMIN=$(kill -l SIGRTMIN)
     echo "
-set follow-fork-mode child
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
+set follow-fork-mode parent
+handle SIGHUP nostop noprint pass
+handle SIGINT nostop noprint pass
+handle SIGQUIT nostop noprint pass
+handle SIGPIPE nostop noprint pass
+handle SIGTERM nostop noprint pass
+handle SIGUSR1 nostop noprint pass
+handle SIGUSR2 nostop noprint pass
+handle SIG$RTMIN nostop noprint pass
+info signals
 continue
-thread apply all backtrace
-continue
+gcore
+backtrace full
+thread apply all backtrace full
+info registers
+disassemble /s
+up
+disassemble /s
+up
+disassemble /s
+p \"done\"
+detach
+quit
 " > script.gdb
 
-    gdb -batch -command script.gdb -p $server_pid &
+    gdb -batch -command script.gdb -p $server_pid  &
+    sleep 5
+    # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
+    time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
     # Check connectivity after we attach gdb, because it might cause the server
-    # to freeze and the fuzzer will fail.
-    for _ in {1..60}
+    # to freeze and the fuzzer will fail. In debug build it can take a lot of time.
+    for _ in {1..180}
     do
         sleep 1
         if clickhouse-client --query "select 1"
@@ -275,6 +312,11 @@ continue
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi
+
+    if test -f core.*; then
+        pigz core.*
+        mv core.*.gz core.gz
+    fi
 }
 
 case "$stage" in
@@ -306,6 +348,10 @@ case "$stage" in
     time fuzz
     ;&
 "report")
+CORE_LINK=''
+if [ -f core.gz ]; then
+    CORE_LINK='<a href="core.gz">core.gz</a>'
+fi
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
 <html lang="en">
@@ -347,6 +393,7 @@ th { cursor: pointer; }
 <a href="fuzzer.log">fuzzer.log</a>
 <a href="server.log">server.log</a>
 <a href="main.log">main.log</a>
+${CORE_LINK}
 </p>
 <table>
 <tr><th>Test name</th><th>Test status</th><th>Description</th></tr>

@@ -1,3 +1,32 @@
 <test>
     <query>SELECT avg(number) FROM numbers(1000000000)</query>
+    <query>SELECT avg(number::Float64) FROM numbers(1000000000)</query>
+    <query>SELECT avg(number::Nullable(Float64)) FROM numbers(100000000)</query>
+
+    <query>
+        SELECT avgIf(key, key != -1)
+        FROM
+        (
+            SELECT materialize(1) AS key
+            FROM numbers(100000000)
+        )
+    </query>
+
+    <query>
+        SELECT avgIf(key, key != -1)
+        FROM
+        (
+            SELECT materialize(toNullable(1)) AS key
+            FROM numbers(100000000)
+        )
+    </query>
+
+    <query>
+        SELECT avg(key)
+        FROM
+        (
+            SELECT materialize(toNullable(1)) AS key
+            FROM numbers(100000000)
+        )
+    </query>
 </test>

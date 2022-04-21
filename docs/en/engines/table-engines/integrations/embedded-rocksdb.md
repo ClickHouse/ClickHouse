@@ -1,6 +1,6 @@
 ---
-toc_priority: 9
-toc_title: EmbeddedRocksDB
+sidebar_position: 9
+sidebar_label: EmbeddedRocksDB
 ---
 
 # EmbeddedRocksDB Engine {#EmbeddedRocksDB-engine}
@@ -33,7 +33,7 @@ CREATE TABLE test
     `key` String,
     `v1` UInt32,
     `v2` String,
-    `v3` Float32,
+    `v3` Float32
 )
 ENGINE = EmbeddedRocksDB
 PRIMARY KEY key

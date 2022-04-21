@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
@@ -26,6 +26,9 @@ inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & setti
             return;
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
+            return;
+        case FormatSettings::DateTimeInputFormat::BestEffortUS:
+            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
             return;
     }
 }

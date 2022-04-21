@@ -1,10 +1,9 @@
 ---
-toc_folder_title: Table Functions
-toc_priority: 34
-toc_title: Introduction
+sidebar_label: Table Functions
+sidebar_position: 34
 ---
 
-# Table Functions {#table-functions}
+# Table Functions 
 
 Table functions are methods for constructing tables.
 
@@ -18,8 +17,11 @@ You can use table functions in:
 
         It's one of the methods of creating a table.
 
-!!! warning "Warning"
-    You can’t use table functions if the [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) setting is disabled.
+-   [INSERT INTO TABLE FUNCTION](../../sql-reference/statements/insert-into.md#inserting-into-table-function) query.
+
+:::warning
+You can’t use table functions if the [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) setting is disabled.
+:::
 
 | Function                                                         | Description                                                                                                                            |
 |------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|

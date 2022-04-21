@@ -3,16 +3,13 @@
 #if USE_PROTOBUF
 #   include <Core/Block.h>
 #   include <Formats/FormatFactory.h>
-#   include <Formats/FormatSchemaInfo.h>
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufSchemas.h>
 #   include <Formats/ProtobufSerializer.h>
-#   include <Interpreters/Context.h>
-#   include <base/range.h>
-
 
 namespace DB
 {
+
 ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_)
     : IRowInputFormat(header_, in_, params_)
     , reader(std::make_unique<ProtobufReader>(in_))
@@ -20,13 +17,12 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & h
           header_.getNames(),
           header_.getDataTypes(),
           missing_column_indices,
-          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_),
+          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No),
           with_length_delimiter_,
+          /* with_envelope = */ false,
          *reader))
 {
 }
-
-ProtobufRowInputFormat::~ProtobufRowInputFormat() = default;
 
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 {
@@ -73,6 +69,36 @@ void registerInputFormatProtobuf(FormatFactory & factory)
     }
 }
 
+ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_settings)
+    : schema_info(
+          format_settings.schema.format_schema,
+          "Protobuf",
+          true,
+          format_settings.schema.is_server,
+          format_settings.schema.format_schema_path)
+{
+}
+
+NamesAndTypesList ProtobufSchemaReader::readSchema()
+{
+    const auto * message_descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info, ProtobufSchemas::WithEnvelope::No);
+    return protobufSchemaToCHSchema(message_descriptor);
+}
+
+void registerProtobufSchemaReader(FormatFactory & factory)
+{
+    factory.registerExternalSchemaReader("Protobuf", [](const FormatSettings & settings)
+    {
+        return std::make_shared<ProtobufSchemaReader>(settings);
+    });
+    factory.registerFileExtension("pb", "Protobuf");
+
+    factory.registerExternalSchemaReader("ProtobufSingle", [](const FormatSettings & settings)
+    {
+        return std::make_shared<ProtobufSchemaReader>(settings);
+    });
+}
+
 }
 
 #else
@@ -81,6 +107,7 @@ namespace DB
 {
 class FormatFactory;
 void registerInputFormatProtobuf(FormatFactory &) {}
+void registerProtobufSchemaReader(FormatFactory &) {}
 }
 
 #endif

@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: USER
+sidebar_position: 39
+sidebar_label: USER
 ---
 
 # CREATE USER {#create-user-statement}
@@ -43,7 +43,7 @@ User host is a host from which a connection to ClickHouse server could be establ
 -   `HOST ANY` — User can connect from any location. This is a default option.
 -   `HOST LOCAL` — User can connect only locally.
 -   `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
--   `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
+-   `HOST REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST REGEXP '.*\.mysite\.com'`.
 -   `HOST LIKE 'template'` — Allows you to use the [LIKE](../../../sql-reference/functions/string-search-functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
 
 Another way of specifying host is to use `@` syntax following the username. Examples:
@@ -52,9 +52,9 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 -   `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` syntax.
 -   `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
 
-!!! info "Warning"
-    ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
-
+:::warning    
+ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
+:::
 
 ## GRANTEES Clause {#grantees}
 

@@ -1,11 +1,11 @@
-# system.query_views_log {#system_tables-query_views_log}
+# query_views_log {#system_tables-query_views_log}
 
 Contains information about the dependent views executed when running a query, for example, the view type or the execution time.
 
 To start logging:
 
-1.  Configure parameters in the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) section.
-2.  Set [log_query_views](../../operations/settings/settings.md#settings-log-query-views) to 1.
+1. Configure parameters in the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) section.
+2. Set [log_query_views](../../operations/settings/settings.md#settings-log-query-views) to 1.
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 

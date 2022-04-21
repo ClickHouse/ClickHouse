@@ -72,7 +72,7 @@ void IOutputFormat::work()
         if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
             setRowsBeforeLimit(rows_before_limit_counter->get());
 
-        finalizeImpl();
+        finalize();
         finalized = true;
         return;
     }
@@ -85,10 +85,15 @@ void IOutputFormat::work()
             consume(std::move(current_chunk));
             break;
         case Totals:
+            writeSuffixIfNot();
             if (auto totals = prepareTotals(std::move(current_chunk)))
+            {
                 consumeTotals(std::move(totals));
+                are_totals_written = true;
+            }
             break;
         case Extremes:
+            writeSuffixIfNot();
             consumeExtremes(std::move(current_chunk));
             break;
     }
@@ -116,6 +121,7 @@ void IOutputFormat::write(const Block & block)
 void IOutputFormat::finalize()
 {
     writePrefixIfNot();
+    writeSuffixIfNot();
     finalizeImpl();
 }
 

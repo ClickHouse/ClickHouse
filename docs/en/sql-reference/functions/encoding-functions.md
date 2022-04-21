@@ -1,6 +1,6 @@
 ---
-toc_priority: 52
-toc_title: Encoding
+sidebar_position: 52
+sidebar_label: Encoding
 ---
 
 # Encoding Functions {#encoding-functions}
@@ -93,6 +93,8 @@ For [String](../../sql-reference/data-types/string.md) and [FixedString](../../s
 
 Values of [Float](../../sql-reference/data-types/float.md) and [Decimal](../../sql-reference/data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
 
+Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order string.
+
 **Arguments**
 
 -   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
@@ -147,14 +149,30 @@ Result:
 └──────────────────┘
 ```
 
+Query:
+
+``` sql
+SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) as uuid_hex
+```
+
+Result:
+
+``` text
+┌─uuid_hex─────────────────────────┐
+│ 61f0c4045cb311e7907ba6006ad3dba0 │
+└──────────────────────────────────┘
+```
+
+
 ## unhex {#unhexstr}
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
 
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
+If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
 
-!!! note "Note"
-    If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
+:::note    
+If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
+:::
 
 Alias: `UNHEX`.
 
@@ -224,6 +242,8 @@ For [String](../../sql-reference/data-types/string.md) and [FixedString](../../s
 
 Values of [Float](../../sql-reference/data-types/float.md) and [Decimal](../../sql-reference/data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
 
+Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order string.
+
 **Arguments**
 
 -   `arg` — A value to convert to binary. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
@@ -280,6 +300,21 @@ Result:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+Query:
+
+``` sql
+SELECT bin(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')) as bin_uuid
+```
+
+Result:
+
+``` text
+┌─bin_uuid─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 01100001111100001100010000000100010111001011001100010001111001111001000001111011101001100000000001101010110100111101101110100000 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+
 ## unbin {#unbinstr}
 
 Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to [bin](#bin).
@@ -292,10 +327,11 @@ unbin(arg)
 
 Alias: `UNBIN`.
 
-For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264) functions.
+For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264) functions.
 
-!!! note "Note"
-    If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
+:::note    
+If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
+:::
 
 Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown). 
 

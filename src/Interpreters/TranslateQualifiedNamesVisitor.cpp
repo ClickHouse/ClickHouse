@@ -97,7 +97,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
     if (IdentifierSemantic::getColumnName(identifier))
     {
         String short_name = identifier.shortName();
-        bool allow_ambiguous = data.join_using_columns.count(short_name);
+        bool allow_ambiguous = data.join_using_columns.contains(short_name);
         if (auto best_pos = IdentifierSemantic::chooseTable(identifier, data.tables, allow_ambiguous))
         {
             size_t table_pos = *best_pos;
@@ -228,7 +228,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     for (const auto & column : *cols)
                     {
-                        if (first_table || !data.join_using_columns.count(column.name))
+                        if (first_table || !data.join_using_columns.contains(column.name))
                         {
                             addIdentifier(columns, table.table, column.name);
                         }
@@ -256,7 +256,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     for (const auto & column : table.columns)
                     {
-                        if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
+                        if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.contains(column.name)))
                         {
                             addIdentifier(columns, table.table, column.name);
                         }
@@ -303,7 +303,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 }
 
 /// 'select * from a join b using id' should result one 'id' column
-void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, Data & data)
+void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(ASTPtr ast, Data & data)
 {
     const auto & table_join = ast->as<ASTTableJoin &>();
 
@@ -363,8 +363,7 @@ void RestoreQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, D
         if (IdentifierSemantic::getMembership(identifier))
         {
             identifier.restoreTable();  // TODO(ilezhankin): should restore qualified name here - why exactly here?
-            if (data.rename)
-                data.changeTable(identifier);
+            data.changeTable(identifier);
         }
     }
 }

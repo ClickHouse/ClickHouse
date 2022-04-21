@@ -5,13 +5,16 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <base/range.h>
+#include <base/sort.h>
 #include <boost/range/algorithm_ext/erase.hpp>
+
 
 namespace DB
 {
@@ -22,6 +25,7 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int LOGICAL_ERROR;
     extern const int SHARD_HAS_NO_CONNECTIONS;
+    extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SYNTAX_ERROR;
 }
 
@@ -94,16 +98,22 @@ Cluster::Address::Address(
     , replica_index(replica_index_)
 {
     host_name = config.getString(config_prefix + ".host");
-    port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
     if (config.has(config_prefix + ".user"))
         user_specified = true;
 
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
-    secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = config.getInt(config_prefix + ".priority", 1);
+
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
+    auto default_port = config.getInt(port_type, 0);
+
+    port = static_cast<UInt16>(config.getInt(config_prefix + ".port", default_port));
+    if (!port)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}", config_prefix + ".port");
+
     is_local = isLocal(config.getInt(port_type, 0));
 
     /// By default compression is disabled if address looks like localhost.
@@ -122,7 +132,9 @@ Cluster::Address::Address(
     bool secure_,
     Int64 priority_,
     UInt32 shard_index_,
-    UInt32 replica_index_)
+    UInt32 replica_index_,
+    String cluster_name_,
+    String cluster_secret_)
     : user(user_), password(password_)
 {
     bool can_be_local = true;
@@ -154,6 +166,8 @@ Cluster::Address::Address(
     is_local = can_be_local && isLocal(clickhouse_port);
     shard_index = shard_index_;
     replica_index = replica_index_;
+    cluster = cluster_name_;
+    cluster_secret = cluster_secret_;
 }
 
 
@@ -304,11 +318,11 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
     Poco::Util::AbstractConfiguration::Keys deleted_keys;
     if (old_config)
     {
-        std::sort(new_config_keys.begin(), new_config_keys.end());
+        ::sort(new_config_keys.begin(), new_config_keys.end());
 
         Poco::Util::AbstractConfiguration::Keys old_config_keys;
         old_config->keys(config_prefix, old_config_keys);
-        std::sort(old_config_keys.begin(), old_config_keys.end());
+        ::sort(old_config_keys.begin(), old_config_keys.end());
 
         std::set_difference(
             old_config_keys.begin(), old_config_keys.end(), new_config_keys.begin(), new_config_keys.end(), std::back_inserter(deleted_keys));
@@ -320,13 +334,29 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
     if (old_config)
     {
         for (const auto & key : deleted_keys)
-            impl.erase(key);
+        {
+            if (!automatic_clusters.contains(key))
+                impl.erase(key);
+        }
     }
     else
-        impl.clear();
+    {
+        if (!automatic_clusters.empty())
+            std::erase_if(impl, [this](const auto & e) { return automatic_clusters.contains(e.first); });
+        else
+            impl.clear();
+    }
+
 
     for (const auto & key : new_config_keys)
     {
+        if (new_config.has(config_prefix + "." + key + ".discovery"))
+        {
+            /// Handled in ClusterDiscovery
+            automatic_clusters.insert(key);
+            continue;
+        }
+
         if (key.find('.') != String::npos)
             throw Exception("Cluster names with dots are not supported: '" + key + "'", ErrorCodes::SYNTAX_ERROR);
 
@@ -511,9 +541,13 @@ Cluster::Cluster(
     bool treat_local_as_remote,
     bool treat_local_port_as_remote,
     bool secure,
-    Int64 priority)
+    Int64 priority,
+    String cluster_name,
+    String cluster_secret)
 {
     UInt32 current_shard_num = 1;
+
+    secret = cluster_secret;
 
     for (const auto & shard : names)
     {
@@ -528,7 +562,9 @@ Cluster::Cluster(
                 secure,
                 priority,
                 current_shard_num,
-                current.size() + 1);
+                current.size() + 1,
+                cluster_name,
+                cluster_secret);
 
         addresses_with_failover.emplace_back(current);
 
@@ -664,6 +700,9 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
         }
     }
 
+    secret = from.secret;
+    name = from.name;
+
     initMisc();
 }
 
@@ -677,6 +716,9 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
         if (!from.addresses_with_failover.empty())
             addresses_with_failover.emplace_back(from.addresses_with_failover.at(index));
     }
+
+    secret = from.secret;
+    name = from.name;
 
     initMisc();
 }

@@ -5,6 +5,7 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
 #include <filesystem>
 
@@ -43,7 +44,7 @@ void DatabaseMemory::dropTable(
     auto table = detachTableUnlocked(table_name, lock);
     try
     {
-        /// Remove table w/o lock since:
+        /// Remove table without lock since:
         /// - it does not require it
         /// - it may cause lock-order-inversion if underlying storage need to
         ///   resolve tables (like StorageLiveView)
@@ -77,7 +78,9 @@ ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
     auto create_query = std::make_shared<ASTCreateQuery>();
     create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
-    create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
+    auto engine = makeASTFunction(getEngineName());
+    engine->no_empty_args = true;
+    create_query->storage->set(create_query->storage->engine, engine);
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
         create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
@@ -120,7 +123,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
     applyMetadataChangesToCreateQuery(it->second, metadata);
-    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), it->second);
+    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
     DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 }
 

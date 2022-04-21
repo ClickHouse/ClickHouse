@@ -198,8 +198,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->storage, storage->clone());
     if (select)
         res->set(res->select, select->clone());
-    if (tables)
-        res->set(res->tables, tables->clone());
+    if (table_overrides)
+        res->set(res->table_overrides, table_overrides->clone());
 
     if (dictionary)
     {
@@ -240,6 +240,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         if (storage)
             storage->formatImpl(settings, state, frame);
 
+        if (table_overrides)
+        {
+            settings.ostr << settings.nl_or_ws;
+            table_overrides->formatImpl(settings, state, frame);
+        }
+
         if (comment)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
@@ -268,6 +274,8 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             what = "MATERIALIZED VIEW";
         else if (is_live_view)
             what = "LIVE VIEW";
+        else if (is_window_view)
+            what = "WINDOW VIEW";
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")
@@ -326,7 +334,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (to_table_id)
     {
-        assert(is_materialized_view && to_inner_uuid == UUIDHelpers::Nil);
+        assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
         settings.ostr
             << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
             << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
@@ -349,7 +357,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (as_table_function)
     {
-        if (columns_list)
+        if (columns_list && !columns_list->empty())
         {
             frame.expression_list_always_start_on_new_line = true;
             settings.ostr << (settings.one_line ? " (" : "\n(");
@@ -365,7 +373,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     frame.expression_list_always_start_on_new_line = true;
 
-    if (columns_list && !as_table_function)
+    if (columns_list && !columns_list->empty() && !as_table_function)
     {
         settings.ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
@@ -395,16 +403,33 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (is_populate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
 
-    if (select)
+    if (is_watermark_strictly_ascending)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
-        select->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK STRICTLY_ASCENDING" << (settings.hilite ? hilite_none : "");
+    }
+    else if (is_watermark_ascending)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK ASCENDING" << (settings.hilite ? hilite_none : "");
+    }
+    else if (is_watermark_bounded)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK " << (settings.hilite ? hilite_none : "");
+        watermark_function->formatImpl(settings, state, frame);
     }
 
-    if (tables)
+    if (allowed_lateness)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
-        tables->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ALLOWED_LATENESS " << (settings.hilite ? hilite_none : "");
+        lateness_function->formatImpl(settings, state, frame);
+    }
+
+    if (select)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS"
+                      << (comment ? "(" : "")
+                      << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
+        select->formatImpl(settings, state, frame);
+        settings.ostr << (comment ? ")" : "");
     }
 
     if (comment)

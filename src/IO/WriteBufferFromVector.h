@@ -13,6 +13,8 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
 }
 
+struct AppendModeTag {};
+
 /** Writes data to existing std::vector or similar type. When not enough space, it doubles vector size.
   *
   * In destructor, vector is cut to the size of written data.
@@ -35,7 +37,6 @@ public:
     }
 
     /// Append to vector instead of rewrite.
-    struct AppendModeTag {};
     WriteBufferFromVector(VectorType & vector_, AppendModeTag)
         : WriteBuffer(nullptr, 0), vector(vector_)
     {
@@ -66,7 +67,7 @@ private:
     void finalizeImpl() override final
     {
         vector.resize(
-            ((position() - reinterpret_cast<Position>(vector.data()))
+            ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT
                 + sizeof(typename VectorType::value_type) - 1)  /// Align up.
             / sizeof(typename VectorType::value_type));
 

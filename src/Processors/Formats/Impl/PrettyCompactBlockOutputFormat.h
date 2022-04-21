@@ -33,7 +33,7 @@ private:
     Chunk mono_chunk;
 
     void writeChunk(const Chunk & chunk, PortKind port_kind);
-    void writeSuffixIfNot() override;
+    void writeSuffix() override;
 };
 
 }

@@ -8,9 +8,9 @@
 
 #include <type_traits>
 
-#include <base/DateLUT.h>
-#include <base/LocalDate.h>
-#include <base/LocalDateTime.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
+#include <Common/LocalDateTime.h>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
 #include <base/unit.h>
@@ -48,6 +48,7 @@ struct Memory;
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
@@ -105,7 +106,7 @@ inline void readChar(char & x, ReadBuffer & buf)
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
-    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x));
+    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
 }
 
 template <typename T>
@@ -162,6 +163,7 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
+void assertNotEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
@@ -181,6 +183,15 @@ inline void assertChar(char symbol, ReadBuffer & buf)
         char err[2] = {symbol, '\0'};
         throwAtAssertionFailed(err, buf);
     }
+}
+
+inline bool checkCharCaseInsensitive(char c, ReadBuffer & buf)
+{
+    char a;
+    if (!buf.peek(a) || !equalsCaseInsensitive(a, c))
+        return false;
+    buf.ignore();
+    return true;
 }
 
 inline void assertString(const String & s, ReadBuffer & buf)
@@ -231,20 +242,45 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     x = tmp != '0';
 }
 
-inline void readBoolTextWord(bool & x, ReadBuffer & buf)
+inline void readBoolTextWord(bool & x, ReadBuffer & buf, bool support_upper_case = false)
 {
     if (buf.eof())
         throwReadAfterEOF();
 
-    if (*buf.position() == 't')
+    switch (*buf.position())
     {
-        assertString("true", buf);
-        x = true;
-    }
-    else
-    {
-        assertString("false", buf);
-        x = false;
+        case 't':
+            assertString("true", buf);
+            x = true;
+            break;
+        case 'f':
+            assertString("false", buf);
+            x = false;
+            break;
+        case 'T':
+        {
+            if (support_upper_case)
+            {
+                assertString("TRUE", buf);
+                x = true;
+                break;
+            }
+            else
+                [[fallthrough]];
+        }
+        case 'F':
+        {
+            if (support_upper_case)
+            {
+                assertString("FALSE", buf);
+                x = false;
+                break;
+            }
+            else
+                [[fallthrough]];
+        }
+        default:
+            throw ParsingException("Unexpected Bool value", ErrorCodes::CANNOT_PARSE_BOOL);
     }
 }
 
@@ -528,6 +564,8 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf);
   */
 void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
+/// Differ from readCSVString in that it doesn't remove quotes around field if any.
+void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 /// Read and append result to array of characters.
 template <typename Vector>
@@ -564,14 +602,23 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
     return readJSONStringInto<Vector, bool>(s, buf);
 }
 
+/// Reads chunk of data between {} in that way,
+/// that it has balanced parentheses sequence of {}.
+/// So, it may form a JSON object, but it can be incorrenct.
+template <typename Vector, typename ReturnType = void>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf);
+
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf);
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullOutput
 {
     void append(const char *, size_t) {}
-    void push_back(char) {}
+    void push_back(char) {} /// NOLINT
 };
 
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
@@ -646,6 +693,16 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
         return readDateTextFallback<ReturnType>(date, buf);
 }
 
+inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
+{
+    if (unlikely(from < 0))
+        date = 0;
+    else if (unlikely(from > 0xFFFF))
+        date = 0xFFFF;
+    else
+        date = from;
+}
+
 template <typename ReturnType = void>
 inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
 {
@@ -658,7 +715,8 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
     else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
 
-    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
+    ExtendedDayNum ret = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
+    convertToDayNum(date,ret);
     return ReturnType(true);
 }
 
@@ -794,6 +852,8 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
     /// YYYY-MM-DD hh:mm:ss
     static constexpr auto DateTimeStringInputSize = 19;
+    ///YYYY-MM-DD
+    static constexpr auto DateStringInputSize = 10;
     bool optimistic_path_for_date_time_input = s + DateTimeStringInputSize <= buf.buffer().end();
 
     if (optimistic_path_for_date_time_input)
@@ -804,16 +864,27 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
             UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-            UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
-            UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
-            UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
+            UInt8 hour = 0;
+            UInt8 minute = 0;
+            UInt8 second = 0;
+            ///simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
+            bool dt_long = (s[10] == ' ' || s[10] == 'T');
+            if (dt_long)
+            {
+                hour = (s[11] - '0') * 10 + (s[12] - '0');
+                minute = (s[14] - '0') * 10 + (s[15] - '0');
+                second = (s[17] - '0') * 10 + (s[18] - '0');
+            }
 
             if (unlikely(year == 0))
                 datetime = 0;
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
-            buf.position() += DateTimeStringInputSize;
+            if (dt_long)
+                buf.position() += DateTimeStringInputSize;
+            else
+                buf.position() += DateStringInputSize;
             return ReturnType(true);
         }
         else
@@ -858,19 +929,23 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         /// Ignore digits that are out of precision.
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
+
+        /// Keep sign of fractional part the same with whole part if datetime64 is negative
+        /// 1965-12-12 12:12:12.123 => whole = -127914468, fraction = 123(sign>0) -> new whole = -127914467, new fraction = 877(sign<0)
+        if (components.whole < 0 && components.fractional != 0)
+        {
+            const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
+            ++components.whole;
+            components.fractional = scale_multiplier - components.fractional;
+        }
     }
     /// 9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
     else if (whole >= 9908870400LL)
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
         /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
-
-        for (size_t i = 0; i < scale; ++i)
-        {
-            components.fractional *= 10;
-            components.fractional += components.whole % 10;
-            components.whole /= 10;
-        }
+        components.fractional =  components.whole % common::exp10_i32(scale);
+        components.whole = components.whole / common::exp10_i32(scale);
     }
 
     datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
@@ -920,8 +995,8 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 
 /// Generic methods to read value in native binary format.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+requires is_arithmetic_v<T>
+inline void readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
@@ -936,8 +1011,8 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
-readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+requires is_arithmetic_v<T> && (sizeof(T) <= 8)
+inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     readPODBinary(x, buf);
 
@@ -952,8 +1027,8 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
 }
 
 template <typename T>
-inline std::enable_if_t<is_big_int_v<T>, void>
-readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+requires is_big_int_v<T>
+inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
@@ -988,8 +1063,8 @@ inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
+requires is_arithmetic_v<T>
+inline void readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
 
@@ -1017,8 +1092,8 @@ inline void readQuoted(UUID & x, ReadBuffer & buf)
 
 /// Same as above, but in double quotes.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
+requires is_arithmetic_v<T>
+inline void readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
 
@@ -1035,7 +1110,6 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
     readDateTimeText(x, buf);
     assertChar('"', buf);
 }
-
 
 /// CSV, for numbers, dates: quotes are optional, no special escaping rules.
 template <typename T>
@@ -1056,8 +1130,11 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+requires is_arithmetic_v<T>
+inline void readCSV(T & x, ReadBuffer & buf)
+{
+    readCSVSimple(x, buf);
+}
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
@@ -1231,7 +1308,6 @@ inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
         default:
             return;
     }
-    return;
 }
 
 /// Read something from text format and trying to parse the suffix.
@@ -1348,5 +1424,9 @@ struct PcgDeserializer
         rng.state_ = state;
     }
 };
+
+void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
+
+void readJSONFieldIntoString(String & s, ReadBuffer & buf);
 
 }

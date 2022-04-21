@@ -17,6 +17,8 @@
 #include <Poco/DirectoryIterator.h>
 #include <re2/re2.h>
 #include <Disks/IDiskRemote.h>
+#include <Common/FileCache_fwd.h>
+#include <Storages/StorageS3Settings.h>
 
 
 namespace DB
@@ -27,9 +29,7 @@ struct DiskS3Settings
 {
     DiskS3Settings(
         const std::shared_ptr<Aws::S3::S3Client> & client_,
-        size_t s3_max_single_read_retries_,
-        size_t s3_min_upload_part_size_,
-        size_t s3_max_single_part_upload_size_,
+        const S3Settings::ReadWriteSettings & s3_settings_,
         size_t min_bytes_for_seek_,
         bool send_metadata_,
         int thread_pool_size_,
@@ -37,9 +37,7 @@ struct DiskS3Settings
         int objects_chunk_size_to_delete_);
 
     std::shared_ptr<Aws::S3::S3Client> client;
-    size_t s3_max_single_read_retries;
-    size_t s3_min_upload_part_size;
-    size_t s3_max_single_part_upload_size;
+    S3Settings::ReadWriteSettings s3_settings;
     size_t min_bytes_for_seek;
     bool send_metadata;
     int thread_pool_size;
@@ -69,6 +67,7 @@ public:
         String bucket_,
         String s3_root_path_,
         DiskPtr metadata_disk_,
+        FileCachePtr cache_,
         ContextPtr context_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
@@ -76,16 +75,16 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> size) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode) override;
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
-    void removeFromRemoteFS(RemoteFSPathKeeperPtr keeper) override;
-
-    RemoteFSPathKeeperPtr createFSPathKeeper() const override;
+    void removeFromRemoteFS(const std::vector<String> & paths) override;
 
     void moveFile(const String & from_path, const String & to_path, bool send_metadata);
     void moveFile(const String & from_path, const String & to_path) override;
@@ -97,6 +96,8 @@ public:
     bool isRemote() const override { return true; }
 
     bool supportZeroCopyReplication() const override { return true; }
+
+    bool supportParallelWrite() const override { return true; }
 
     void shutdown() override;
 
@@ -168,7 +169,7 @@ private:
     inline static const String RESTORE_FILE_NAME = "restore";
 
     /// Key has format: ../../r{revision}-{operation}
-    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
+    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+)$"};
 
     /// Object contains information about schema version.
     inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";

@@ -1,14 +1,16 @@
-#include <base/types.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/DumpASTNode.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Parsers/ParserTablePropertiesQuery.h>
-#include <IO/WriteBufferFromString.h>
+#include <base/types.h>
 
 #include <gtest/gtest.h>
 

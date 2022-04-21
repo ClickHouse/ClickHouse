@@ -4,7 +4,6 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
 #include <Parsers/Access/ParserRowPolicyName.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
@@ -12,7 +11,7 @@
 #include <Access/Common/RowPolicyDefs.h>
 #include <base/range.h>
 #include <boost/container/flat_set.hpp>
-#include <boost/range/algorithm_ext/push_back.hpp>
+#include <base/insertAtEnd.h>
 
 
 namespace DB
@@ -265,7 +264,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         std::vector<std::pair<RowPolicyFilterType, ASTPtr>> new_filters;
         if (parseForClauses(pos, expected, alter, new_filters))
         {
-            boost::range::push_back(filters, std::move(new_filters));
+            insertAtEnd(filters, std::move(new_filters));
             continue;
         }
 

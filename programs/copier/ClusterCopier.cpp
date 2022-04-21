@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Chain.h>
@@ -45,7 +46,7 @@ void ClusterCopier::init()
     reloadTaskDescription();
 
     task_cluster->loadTasks(*task_cluster_current_config);
-    getContext()->setClustersConfig(task_cluster_current_config, task_cluster->clusters_prefix);
+    getContext()->setClustersConfig(task_cluster_current_config, false, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
     task_cluster->random_engine.seed(task_cluster->random_device());
@@ -144,7 +145,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
 
         for (const String & partition_name : existing_partitions_names)
         {
-            if (!task_table.enabled_partitions_set.count(partition_name))
+            if (!task_table.enabled_partitions_set.contains(partition_name))
             {
                 LOG_INFO(log, "Partition {} will not be processed, since it is not in enabled_partitions of {}", partition_name, task_table.table_id);
             }
@@ -932,7 +933,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
     /// Process each partition that is present in cluster
     for (const String & partition_name : task_table.ordered_partition_names)
     {
-        if (!task_table.cluster_partitions.count(partition_name))
+        if (!task_table.cluster_partitions.contains(partition_name))
             throw Exception("There are no expected partition " + partition_name + ". It is a bug", ErrorCodes::LOGICAL_ERROR);
 
         ClusterPartition & cluster_partition = task_table.cluster_partitions[partition_name];
@@ -952,10 +953,10 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
         for (const TaskShardPtr & shard : task_table.all_shards)
         {
             /// Does shard have a node with current partition?
-            if (shard->partition_tasks.count(partition_name) == 0)
+            if (!shard->partition_tasks.contains(partition_name))
             {
                 /// If not, did we check existence of that partition previously?
-                if (shard->checked_partitions.count(partition_name) == 0)
+                if (!shard->checked_partitions.contains(partition_name))
                 {
                     auto check_shard_has_partition = [&] () { return checkShardHasPartition(timeouts, *shard, partition_name); };
                     bool has_partition = retry(check_shard_has_partition);

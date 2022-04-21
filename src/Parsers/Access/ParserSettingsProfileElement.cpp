@@ -1,10 +1,10 @@
-#include <Parsers/Access/ParserSettingsProfileElement.h>
-#include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Parsers/Access/ParserSettingsProfileElement.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <boost/algorithm/string/predicate.hpp>
 

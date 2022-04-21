@@ -1,9 +1,9 @@
 ---
-toc_priority: 43
-toc_title: Sources of External Dictionaries
+sidebar_position: 43
+sidebar_label: Sources of External Dictionaries
 ---
 
-# Sources of External Dictionaries {#dicts-external-dicts-dict-sources}
+# Sources of External Dictionaries 
 
 An external dictionary can be connected from many different sources.
 
@@ -122,7 +122,12 @@ Setting fields:
 
 -   `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
 -   `format` — The file format. All the formats described in [Formats](../../../interfaces/formats.md#formats) are supported.
+-   `command_termination_timeout` — executable script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
+-   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
+-   `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false.
+-   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder. Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
+-   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
@@ -150,10 +155,14 @@ Setting fields:
 
 -   `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
 -   `format` — The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
--   `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions.
--   `command_termination_timeout` — Executable pool script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
+-   `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions. Default value is `16`.
+-   `command_termination_timeout` — executable script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
 -   `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10. Optional parameter.
+-   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
+-   `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false. Optional parameter.
+-   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder. Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
+-   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
@@ -211,8 +220,9 @@ When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remot
 
 ### Known Vulnerability of the ODBC Dictionary Functionality {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
-!!! attention "Attention"
-    When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
+:::note    
+When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
+:::
 
 **Example of insecure use**
 
@@ -462,12 +472,13 @@ Setting fields:
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 -   `query` – The custom query. Optional parameter.
 
-!!! info "Note"
-    The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
+:::note    
+The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
+:::
 
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
 
-If you have a problems with encodings when using Oracle, see the corresponding [F.A.Q.](../../../faq/integration/oracle-odbc.md) item.
+If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../../faq/integration/oracle-odbc.md) item.
 
 ### Mysql {#dicts-external_dicts_dict_sources-mysql}
 
@@ -540,8 +551,9 @@ Setting fields:
 
 -   `query` – The custom query. Optional parameter.
 
-!!! info "Note"
-    The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
+:::note    
+The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
+:::
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
@@ -630,8 +642,9 @@ Setting fields:
 -   `secure` - Use ssl for connection.
 -   `query` – The custom query. Optional parameter.
 
-!!! info "Note"
-    The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
+:::note    
+The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
+:::
 
 ### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
 
@@ -743,8 +756,9 @@ Setting fields:
 -   `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
 -   `query` – The custom query. Optional parameter.
 
-!!! info "Note"
-    The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
+:::note    
+The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
+:::
 
 ### PostgreSQL {#dicts-external_dicts_dict_sources-postgresql}
 
@@ -799,5 +813,6 @@ Setting fields:
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 -   `query` – The custom query. Optional parameter.
 
-!!! info "Note"
-    The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
+:::note    
+The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
+:::

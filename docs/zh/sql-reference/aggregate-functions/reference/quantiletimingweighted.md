@@ -1,5 +1,5 @@
 ---
-toc_priority: 205
+sidebar_position: 205
 ---
 
 # quantileTimingWeighted {#quantiletimingweighted}
@@ -48,7 +48,7 @@ quantileTimingWeighted(level)(expr, weight)
 类型: `Float32`。
 
 !!! note "注"
-如果没有值传递给函数（当使用 `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf)被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 参见 [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) 对于 `NaN` 值排序注意事项。
+    如果没有值传递给函数（当使用 `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf)被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 参见 [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) 对于 `NaN` 值排序注意事项。
 
 **示例**
 

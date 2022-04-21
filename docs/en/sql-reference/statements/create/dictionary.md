@@ -1,6 +1,6 @@
 ---
-toc_priority: 38
-toc_title: DICTIONARY
+sidebar_position: 38
+sidebar_label: DICTIONARY
 ---
 
 # CREATE DICTIONARY {#create-dictionary-query}
@@ -10,7 +10,7 @@ Creates a new [external dictionary](../../../sql-reference/dictionaries/external
 **Syntax**
 
 ``` sql
-CREATE DICTIONARY [OR REPLACE][IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
+CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 (
     key1 type1  [DEFAULT|EXPRESSION expr1] [IS_OBJECT_ID],
     key2 type2  [DEFAULT|EXPRESSION expr2],

@@ -13,7 +13,7 @@ namespace DB
 
 /** A stream for outputting data in XML format.
   */
-class XMLRowOutputFormat : public IRowOutputFormat
+class XMLRowOutputFormat final : public IRowOutputFormat
 {
 public:
     XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);
@@ -26,7 +26,7 @@ private:
     void writeRowEndDelimiter() override;
     void writePrefix() override;
     void writeSuffix() override;
-    void writeLastSuffix() override;
+    void finalizeImpl() override;
 
     void writeMinExtreme(const Columns & columns, size_t row_num) override;
     void writeMaxExtreme(const Columns & columns, size_t row_num) override;
@@ -47,9 +47,11 @@ private:
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override
     {
-        applied_limit = true;
-        rows_before_limit = rows_before_limit_;
+        statistics.applied_limit = true;
+        statistics.rows_before_limit = rows_before_limit_;
     }
+
+    void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
 
     void onProgress(const Progress & value) override;
 
@@ -64,13 +66,10 @@ private:
 
     size_t field_number = 0;
     size_t row_count = 0;
-    bool applied_limit = false;
-    size_t rows_before_limit = 0;
     NamesAndTypes fields;
     Names field_tag_names;
 
-    Progress progress;
-    Stopwatch watch;
+    Statistics statistics;
     const FormatSettings format_settings;
 };
 

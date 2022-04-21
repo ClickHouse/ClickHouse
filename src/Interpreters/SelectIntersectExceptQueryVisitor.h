@@ -6,13 +6,13 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 
 
 namespace DB
 {
 
 class ASTFunction;
+class ASTSelectWithUnionQuery;
 
 class SelectIntersectExceptQueryMatcher
 {

@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/checkStackSize.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -26,7 +27,7 @@ bool isLogicalFunction(const ASTFunction & func)
 size_t countAtoms(const ASTPtr & node)
 {
     checkStackSize();
-    if (node->as<ASTIdentifier>())
+    if (node->as<ASTIdentifier>() || node->as<ASTLiteral>())
         return 1;
 
     const auto * func = node->as<ASTFunction>();
@@ -208,7 +209,7 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & result)
 }
 
 std::optional<CNFQuery> TreeCNFConverter::tryConvertToCNF(
-    const ASTPtr & query, size_t max_growth_multipler)
+    const ASTPtr & query, size_t max_growth_multiplier)
 {
     auto cnf = query->clone();
     size_t num_atoms = countAtoms(cnf);
@@ -216,8 +217,8 @@ std::optional<CNFQuery> TreeCNFConverter::tryConvertToCNF(
     splitMultiLogic(cnf);
     traversePushNot(cnf, false);
 
-    size_t max_atoms = max_growth_multipler
-        ? std::max(MAX_ATOMS_WITHOUT_CHECK, num_atoms * max_growth_multipler)
+    size_t max_atoms = max_growth_multiplier
+        ? std::max(MAX_ATOMS_WITHOUT_CHECK, num_atoms * max_growth_multiplier)
         : 0;
 
     if (!traversePushOr(cnf, num_atoms, max_atoms))
@@ -232,13 +233,13 @@ std::optional<CNFQuery> TreeCNFConverter::tryConvertToCNF(
 }
 
 CNFQuery TreeCNFConverter::toCNF(
-    const ASTPtr & query, size_t max_growth_multipler)
+    const ASTPtr & query, size_t max_growth_multiplier)
 {
-    auto cnf = tryConvertToCNF(query, max_growth_multipler);
+    auto cnf = tryConvertToCNF(query, max_growth_multiplier);
     if (!cnf)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
-            "Cannot expression '{}' to CNF, because it produces to many clauses."
-            "Size of formula inCNF can be exponential of size of source formula.");
+            "Cannot convert expression '{}' to CNF, because it produces to many clauses."
+            "Size of boolean formula in CNF can be exponential of size of source formula.");
 
     return *cnf;
 }

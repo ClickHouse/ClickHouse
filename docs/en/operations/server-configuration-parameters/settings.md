@@ -1,6 +1,6 @@
 ---
-toc_priority: 57
-toc_title: Server Settings
+sidebar_position: 57
+sidebar_label: Server Settings
 ---
 
 # Server Settings {#server-settings}
@@ -23,8 +23,9 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-!!! warning "Warning"
-    Don’t use it if you have just started using ClickHouse.
+:::warning    
+Don’t use it if you have just started using ClickHouse.
+:::
 
 Configuration template:
 
@@ -69,8 +70,6 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
-<!--
-
 ## encryption {#server-settings-encryption}
 
 Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
@@ -89,8 +88,9 @@ Loading from config:
 </encryption_codecs>
 ```
 
-!!! note "NOTE"
-    Storing keys in the configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+:::note
+Storing keys in the configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+:::
 
 Loading from config, when the key is in hex:
 
@@ -150,7 +150,6 @@ Or it can be set in hex:
 
 Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 
--->
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -176,8 +175,9 @@ Possible values:
 
 Default value: `1073741824` (1 GB).
 
-!!! info "Note"
-    Hard limit is configured via system tools
+:::note
+Hard limit is configured via system tools
+:::
 
 **Example**
 
@@ -369,12 +369,12 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 <http_server_default_response>
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
-```  
+```
 ## hsts_max_age  {#hsts-max-age}
-  
-Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.  
-  
-**Example**  
+
+Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.
+
+**Example**
 
 ```xml
 <hsts_max_age>600000</hsts_max_age>
@@ -413,7 +413,7 @@ Useful for breaking away from a specific network interface.
 **Example**
 
 ``` xml
-<interserver_http_host>example.yandex.ru</interserver_http_host>
+<interserver_http_host>example.clickhouse.com</interserver_http_host>
 ```
 
 ## interserver_https_port {#interserver-https-port}
@@ -433,30 +433,64 @@ Similar to `interserver_http_host`, except that this hostname can be used by oth
 **Example**
 
 ``` xml
-<interserver_https_host>example.yandex.ru</interserver_https_host>
+<interserver_https_host>example.clickhouse.com</interserver_https_host>
 ```
 
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
-The username and password used to authenticate during [replication](../../engines/table-engines/mergetree-family/replication.md) with the Replicated\* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
-By default, the authentication is not used.
+A username and a password used to connect to other servers during [replication](../../engines/table-engines/mergetree-family/replication.md). Also the server authenticates other replicas using these credentials. So, `interserver_http_credentials` must be the same for all replicas in a cluster.
 
-!!! note "Note"
-    These credentials are common for replication through `HTTP` and `HTTPS`.
+By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
 
-This section contains the following parameters:
+:::note
+`interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
+:::
 
--   `user` — username.
--   `password` — password.
+:::note
+These credentials are common for replication via `HTTP` and `HTTPS`.
+:::
 
-**Example**
+The section contains the following parameters:
+
+-   `user` — Username.
+-   `password` — Password.
+-   `allow_empty` — If `true`, then other replicas are allowed to connect without authentication even if credentials are set. If `false`, then connections without authentication are refused. Default value: `false`.
+-   `old` — Contains old `user` and `password` used during credential rotation. Several `old` sections can be specified.
+
+**Credentials Rotation**
+
+ClickHouse supports dynamic interserver credentials rotation without stopping all replicas at the same time to update their configuration. Credentials can be changed in several steps.
+
+To enable authentication, set `interserver_http_credentials.allow_empty` to `true` and add credentials. This allows connections with authentication and without it.
+
+``` xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>111</password>
+    <allow_empty>true</allow_empty>
+</interserver_http_credentials>
+```
+
+After configuring all replicas set `allow_empty` to `false` or remove this setting. It makes authentication with new credentials mandatory.
+
+To change existing credentials, move the username and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this point the server uses new credentials to connect to other replicas and accepts connections with either new or old credentials.
 
 ``` xml
 <interserver_http_credentials>
     <user>admin</user>
     <password>222</password>
+    <old>
+        <user>admin</user>
+        <password>111</password>
+    </old>
+    <old>
+        <user>temp</user>
+        <password>000</password>
+    </old>
 </interserver_http_credentials>
 ```
+
+When new credentials are applied to all replicas, old credentials may be removed.
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
@@ -508,7 +542,7 @@ Keys:
 -   `level` – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
 -   `log` – The log file. Contains all the entries according to `level`.
 -   `errorlog` – Error log file.
--   `size` – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
+-   `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 -   `count` – The number of archived log files that ClickHouse stores.
 
 **Example**
@@ -643,20 +677,66 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+The maximum number of simultaneously processed queries related to MergeTree table.
+Queries may be limited by other settings: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
-!!! info "Note"
-	These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
 
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `100`.
 
 **Example**
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_insert_queries {#max-concurrent-insert-queries}
+
+The maximum number of simultaneously processed `INSERT` queries.
+
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_insert_queries>100</max_concurrent_insert_queries>
+```
+
+## max_concurrent_select_queries {#max-concurrent-select-queries}
+
+The maximum number of simultaneously processed `SELECT` queries.
+
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_select_queries>100</max_concurrent_select_queries>
 ```
 
 ## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
@@ -666,7 +746,9 @@ The maximum number of simultaneously processed queries related to MergeTree tabl
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -682,7 +764,12 @@ Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users a
 
 Modifying the setting for one query or user does not affect other queries.
 
-Default value: `0` that means no limit.
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -753,9 +840,13 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## max_thread_pool_size {#max-thread-pool-size}
 
-The maximum number of threads in the Global Thread pool.
+ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
-Default value: 10000.
+Possible values:
+
+-   Positive integer.
+
+Default value: `10000`.
 
 **Example**
 
@@ -765,9 +856,13 @@ Default value: 10000.
 
 ## max_thread_pool_free_size {#max-thread-pool-free-size}
 
-The number of threads that are always held in the Global Thread pool.
+If the number of **idle** threads in the Global Thread pool is greater than `max_thread_pool_free_size`, then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
 
-Default value: 1000.
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
 
 **Example**
 
@@ -777,9 +872,13 @@ Default value: 1000.
 
 ## thread_pool_queue_size {#thread-pool-queue-size}
 
-The limit to the number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to the `max_thread_pool_size`.
+The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [max_thread_pool_size](#max-thread-pool-size).
 
-Default value: 10000.
+Possible values:
+
+-   Positive integer.
+
+Default value: `10000`.
 
 **Example**
 
@@ -850,30 +949,30 @@ For more information, see the MergeTreeSettings.h header file.
 
 SSL client/server configuration.
 
-Support for SSL is provided by the `libpoco` library. The interface is described in the file [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
+Support for SSL is provided by the `libpoco` library. The available configuration options are explained in [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). Default values can be found in [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
 
 Keys for server/client settings:
 
 -   privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
 -   certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.
--   caConfig – The path to the file or directory that contains trusted root certificates.
--   verificationMode – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
--   verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
--   loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`. \|
--   cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
--   cacheSessions – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
--   sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
--   sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
--   sessionTimeout – Time for caching the session on the server.
--   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
--   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
--   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
--   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
--   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
--   disableProtocols – Protocols that are not allowed to use.
--   preferServerCiphers – Preferred server ciphers on the client.
+-   caConfig (default: none) – The path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html).
+-   verificationMode (default: relaxed) – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
+-   verificationDepth (default: 9) – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
+-   loadDefaultCAFile (default: true) – Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).
+-   cipherList (default: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`) - Supported OpenSSL encryptions.
+-   cacheSessions (default: false) – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
+-   sessionIdContext (default: `${application.name}`) – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
+-   sessionCacheSize (default: [1024\*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978)) – The maximum number of sessions that the server caches. A value of 0 means unlimited sessions.
+-   sessionTimeout (default: [2h](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1926)) – Time for caching the session on the server.
+-   extendedVerification (default: false) – If enabled, verify that the certificate CN or SAN matches the peer hostname.
+-   requireTLSv1 (default: false) – Require a TLSv1 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_1 (default: false) – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_2 (default: false) – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
+-   fips (default: false) – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
+-   privateKeyPassphraseHandler (default: `KeyConsoleHandler`)– Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
+-   invalidCertificateHandler (default: `ConsoleCertificateHandler`) – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
+-   disableProtocols (default: "") – Protocols that are not allowed to use.
+-   preferServerCiphers (default: false) – Preferred server ciphers on the client.
 
 **Example of settings:**
 
@@ -934,8 +1033,9 @@ Use the following parameters to configure logging:
 
 The path to the directory containing data.
 
-!!! warning "Warning"
-    The trailing slash is mandatory.
+:::note
+The trailing slash is mandatory.
+:::
 
 **Example**
 
@@ -1156,7 +1256,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 **Example**
 
 ``` xml
-<timezone>Europe/Moscow</timezone>
+<timezone>Asia/Istanbul</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
@@ -1197,12 +1297,27 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
+## postgresql_port {#server_configuration_parameters-postgresql_port}
+
+Port for communicating with clients over PostgreSQL protocol.
+
+**Possible values**
+
+Positive integer.
+
+Example
+
+``` xml
+<postgresql_port>9005</postgresql_port>
+```
+
 ## tmp_path {#tmp-path}
 
 Path to temporary data for processing large queries.
 
-!!! warning "Note"
-    The trailing slash is mandatory.
+:::note
+The trailing slash is mandatory.
+:::
 
 **Example**
 
@@ -1216,11 +1331,12 @@ Policy from [storage_configuration](../../engines/table-engines/mergetree-family
 
 If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 
-!!! note "Note"
-    - `move_factor` is ignored.
-    - `keep_free_space_bytes` is ignored.
-    - `max_data_part_size_bytes` is ignored.
-    - Уou must have exactly one volume in that policy.
+:::note
+- `move_factor` is ignored.
+- `keep_free_space_bytes` is ignored.
+- `max_data_part_size_bytes` is ignored.
+- Уou must have exactly one volume in that policy.
+:::
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
@@ -1337,10 +1453,11 @@ This setting only applies to the `MergeTree` family. It can be specified:
 
 If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../../engines/table-engines/mergetree-family/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
 
-!!! attention "Attention"
-    After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can’t downgrade the ClickHouse server to a version that does not support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don’t upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
+:::note
+After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can’t downgrade the ClickHouse server to a version that does not support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don’t upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
 
-      Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
+Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
+:::
 
 **Default value:** 0.
 
@@ -1446,7 +1563,7 @@ You can also define sections `memory` — means storing information only in memo
 
 To add an LDAP server as a remote user directory of users that are not defined locally, define a single `ldap` section with a following parameters:
 -   `server` — one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.
--   `roles` — section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authenthication attept will fail as if the provided password was incorrect.
+-   `roles` — section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authentication attempt will fail as if the provided password was incorrect.
 
 **Example**
 
@@ -1510,3 +1627,4 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
+

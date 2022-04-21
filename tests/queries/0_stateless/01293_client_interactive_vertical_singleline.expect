@@ -1,14 +1,13 @@
 #!/usr/bin/expect -f
-# Tags: no-fasttest
 
 log_user 0
 set timeout 60
 match_max 100000
-# A default timeout action is to do nothing, change it to fail
 expect_after {
-    timeout {
-        exit 1
-    }
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
 }
 
 set basedir [file dirname $argv0]
@@ -24,6 +23,12 @@ expect "Row 1:"
 expect "1: 1"
 expect ":) "
 
+
+send -- "SELECT 1\\G;\r"
+expect "Row 1:"
+expect "1: 1"
+expect ":) "
+
 send -- "SELECT 1\\\r"
 expect ":-] "
 send -- ", 2\r"
@@ -33,6 +38,15 @@ expect ":) "
 send -- "SELECT 1\\\r"
 expect ":-] "
 send -- ", 2\\G\r"
+expect "Row 1:"
+expect "1: 1"
+expect "2: 2"
+expect ":) "
+
+
+send -- "SELECT 1\\\r"
+expect ":-] "
+send -- ", 2\\G;\r"
 expect "Row 1:"
 expect "1: 1"
 expect "2: 2"

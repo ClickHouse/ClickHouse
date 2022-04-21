@@ -61,7 +61,7 @@ function configure
     cp -rv right/config left ||:
 
     # Start a temporary server to rename the tables
-    while killall clickhouse-server; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo all killed
 
     set -m # Spawn temporary in its own process groups
@@ -88,7 +88,7 @@ function configure
     clickhouse-client --port $LEFT_SERVER_PORT --query "create database test" ||:
     clickhouse-client --port $LEFT_SERVER_PORT --query "rename table datasets.hits_v1 to test.hits" ||:
 
-    while killall clickhouse-server; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo all killed
 
     # Make copies of the original db for both servers. Use hardlinks instead
@@ -106,7 +106,7 @@ function configure
 
 function restart
 {
-    while killall clickhouse-server; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo all killed
 
     # Change the jemalloc settings here.
@@ -193,7 +193,7 @@ function run_tests
     then
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
-        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
+        test_files=($(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
     elif [ "$PR_TO_TEST" -ne 0 ] \
         && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
         && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
@@ -201,10 +201,26 @@ function run_tests
         # If only the perf tests were changed in the PR, we will run only these
         # tests. The lists of changed files are prepared in entrypoint.sh because
         # it has the repository.
-        test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt)
+        test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
     else
         # The default -- run all tests found in the test dir.
-        test_files=$(ls "$test_prefix"/*.xml)
+        test_files=($(ls "$test_prefix"/*.xml))
+    fi
+
+    # We split perf tests into multiple checks to make them faster
+    if [ -v CHPC_TEST_RUN_BY_HASH_TOTAL ]; then
+        # filter tests array in bash https://stackoverflow.com/a/40375567
+        for index in "${!test_files[@]}"; do
+            # sorry for this, just calculating hash(test_name) % total_tests_group == my_test_group_num
+            test_hash_result=$(echo test_files[$index] | perl -ne 'use Digest::MD5 qw(md5); print unpack('Q', md5($_)) % $ENV{CHPC_TEST_RUN_BY_HASH_TOTAL} == $ENV{CHPC_TEST_RUN_BY_HASH_NUM};')
+            # BTW, for some reason when hash(test_name) % total_tests_group != my_test_group_num perl outputs nothing, not zero
+            if [ "$test_hash_result" != "1" ]; then
+                # deleting element from array
+                unset -v 'test_files[$index]'
+            fi
+        done
+        # to have sequential indexes...
+        test_files=("${test_files[@]}")
     fi
 
     # For PRs w/o changes in test definitons, test only a subset of queries,
@@ -212,21 +228,26 @@ function run_tests
     # already set, keep those values.
     #
     # NOTE: too high CHPC_RUNS/CHPC_MAX_QUERIES may hit internal CI timeout.
-    if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
-    then
-        CHPC_RUNS=${CHPC_RUNS:-7}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
-    else
-        CHPC_RUNS=${CHPC_RUNS:-13}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
-    fi
+    # NOTE: Currently we disabled complete run even for master branch
+    #if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
+    #then
+    #    CHPC_RUNS=${CHPC_RUNS:-7}
+    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
+    #else
+    #    CHPC_RUNS=${CHPC_RUNS:-13}
+    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
+    #fi
+
+    CHPC_RUNS=${CHPC_RUNS:-7}
+    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
+
     export CHPC_RUNS
     export CHPC_MAX_QUERIES
 
     # Determine which concurrent benchmarks to run. For now, the only test
     # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
     # are also going to run it as a normal test.
-    for test in $test_files; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
+    for test in ${test_files[@]}; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
 
     # Delete old report files.
     for x in {test-times,wall-clock-times}.tsv
@@ -235,8 +256,8 @@ function run_tests
         touch "$x"
     done
 
-    # Randomize test order.
-    test_files=$(for f in $test_files; do echo "$f"; done | sort -R)
+    # Randomize test order. BTW, it's not an array no more.
+    test_files=$(for f in ${test_files[@]}; do echo "$f"; done | sort -R)
 
     # Limit profiling time to 10 minutes, not to run for too long.
     profile_seconds_left=600
@@ -261,24 +282,30 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
-        # The grep is to filter out set -x output and keep only time output.
-        # The '2>&1 >/dev/null' redirects stderr to stdout, and discards stdout.
-        { \
-            time "$script_dir/perf.py" --host localhost localhost --port $LEFT_SERVER_PORT $RIGHT_SERVER_PORT \
-                --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
-                --profile-seconds "$profile_seconds" \
-                -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
-        } 2>&1 >/dev/null | tee >(grep -v ^+ >> "wall-clock-times.tsv") \
-            || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
+        (
+            set +x
+            argv=(
+                --host localhost localhost
+                --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT"
+                --runs "$CHPC_RUNS"
+                --max-queries "$CHPC_MAX_QUERIES"
+                --profile-seconds "$profile_seconds"
+
+                "$test"
+            )
+            TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
+            # one more subshell to suppress trace output for "set +x"
+            (
+                time "$script_dir/perf.py" "${argv[@]}" > "$test_name-raw.tsv" 2> "$test_name-err.log"
+            ) 2>>wall-clock-times.tsv >/dev/null \
+                || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
+        ) 2>/dev/null
 
         profile_seconds_left=$(awk -F'	' \
             'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
         current_test=$((current_test + 1))
     done
-
-    unset TIMEFORMAT
 
     wait
 }
@@ -291,7 +318,7 @@ function get_profiles_watchdog
 
     for pid in $(pgrep -f clickhouse)
     do
-        gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+        sudo gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
     done
     wait
 
@@ -335,27 +362,12 @@ function get_profiles
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1"
 }
 
-function build_log_column_definitions
-{
-# FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
-# absolutely atrocious way. This should be done by the file() function itself.
-for x in {right,left}-{addresses,{query,query-thread,trace,{async-,}metric}-log}.tsv
-do
-    paste -d' ' \
-        <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
-        <(sed -n '2{s/\t/\n/g;p;q}' "$x" ) \
-        | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
-done
-}
-
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
 rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv ||:
 rm -rf analyze ||:
 mkdir analyze analyze/tmp ||:
-
-build_log_column_definitions
 
 # Split the raw test output into files suitable for analysis.
 # To debug calculations only for a particular test, substitute a suitable
@@ -395,12 +407,10 @@ create table partial_query_times engine File(TSVWithNamesAndTypes,
 
 -- Process queries that were run normally, on both servers.
 create view left_query_log as select *
-    from file('left-query-log.tsv', TSVWithNamesAndTypes,
-        '$(cat "left-query-log.tsv.columns")');
+    from file('left-query-log.tsv', TSVWithNamesAndTypes);
 
 create view right_query_log as select *
-    from file('right-query-log.tsv', TSVWithNamesAndTypes,
-        '$(cat "right-query-log.tsv.columns")');
+    from file('right-query-log.tsv', TSVWithNamesAndTypes);
 
 create view query_logs as
     select 0 version, query_id, ProfileEvents,
@@ -518,7 +528,9 @@ unset IFS
 # all nodes.
 numactl --show
 numactl --cpunodebind=all --membind=all numactl --show
-numactl --cpunodebind=all --membind=all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+# Use less jobs to avoid OOM. Some queries can consume 8+ GB of memory.
+jobs_count=$(($(grep -c ^processor /proc/cpuinfo) / 3))
+numactl --cpunodebind=all --membind=all parallel --jobs  $jobs_count --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -615,8 +627,6 @@ rm -r report ||:
 mkdir report report/tmp ||:
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv run-errors.tsv ||:
-
-build_log_column_definitions
 
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
@@ -999,8 +1009,7 @@ create table unstable_query_runs engine File(TSVWithNamesAndTypes,
     ;
 
 create view query_log as select *
-    from file('$version-query-log.tsv', TSVWithNamesAndTypes,
-        '$(cat "$version-query-log.tsv.columns")');
+    from file('$version-query-log.tsv', TSVWithNamesAndTypes);
 
 create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
         'unstable-run-metrics.$version.rep') as
@@ -1028,8 +1037,7 @@ create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
     array join v, n;
 
 create view trace_log as select *
-    from file('$version-trace-log.tsv', TSVWithNamesAndTypes,
-        '$(cat "$version-trace-log.tsv.columns")');
+    from file('$version-trace-log.tsv', TSVWithNamesAndTypes);
 
 create view addresses_src as select addr,
         -- Some functions change name between builds, e.g. '__clone' or 'clone' or
@@ -1038,8 +1046,7 @@ create view addresses_src as select addr,
         [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
             -- this line is a subscript operator of the above array
             [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
-    from file('$version-addresses.tsv', TSVWithNamesAndTypes,
-        '$(cat "$version-addresses.tsv.columns")');
+    from file('$version-addresses.tsv', TSVWithNamesAndTypes);
 
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
@@ -1166,15 +1173,12 @@ done
 
 function report_metrics
 {
-build_log_column_definitions
-
 rm -rf metrics ||:
 mkdir metrics
 
 clickhouse-local --query "
 create view right_async_metric_log as
-    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
-        '$(cat right-async-metric-log.tsv.columns)')
+    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
     ;
 
 -- Use the right log as time reference because it may have higher precision.
@@ -1182,8 +1186,7 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     with (select min(event_time) from right_async_metric_log) as min_time
     select metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
-    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes,
-        '$(cat left-async-metric-log.tsv.columns)') l
+    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes) l
     on l.metric = r.metric and r.event_time <= l.event_time
     order by metric, event_time
     ;
@@ -1265,15 +1268,15 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         select '' test_name,
             '$(sed -n 's/.*<!--message: \(.*\)-->/\1/p' report.html)' test_status,
             0 test_duration_ms,
-            'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url
+            'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url
         union all
             select test || ' #' || toString(query_index), 'slower' test_status, 0 test_duration_ms,
-                'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#changes-in-performance.'
+                'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#changes-in-performance.'
                     || test || '.' || toString(query_index) report_url
             from queries where changed_fail != 0 and diff > 0
         union all
             select test || ' #' || toString(query_index), 'unstable' test_status, 0 test_duration_ms,
-                'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#unstable-queries.'
+                'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#unstable-queries.'
                     || test || '.' || toString(query_index) report_url
             from queries where unstable_fail != 0
     )
@@ -1349,7 +1352,7 @@ $REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/
 EOF
 
     # Also insert some data about the check into the CI checks table.
-    "${client[@]}" --query "INSERT INTO "'"'"gh-data"'"'".checks FORMAT TSVWithNamesAndTypes" \
+    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
         < ci-checks.tsv
 
     set -x
@@ -1409,7 +1412,7 @@ case "$stage" in
     while env kill -- -$watchdog_pid ; do sleep 1; done
 
     # Stop the servers to free memory for the subsequent query analysis.
-    while killall clickhouse; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo Servers stopped.
     ;&
 "analyze_queries")

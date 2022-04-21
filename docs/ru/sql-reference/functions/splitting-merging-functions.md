@@ -1,6 +1,6 @@
 ---
-toc_priority: 47
-toc_title: "Функции разбиения и слияния строк и массивов"
+sidebar_position: 47
+sidebar_label: "Функции разбиения и слияния строк и массивов"
 ---
 
 # Функции разбиения и слияния строк и массивов {#funktsii-razbieniia-i-sliianiia-strok-i-massivov}
@@ -252,7 +252,7 @@ ngrams(string, ngramsize)
 
 -   Массив с n-граммами.
 
-Тип: [Array](../../sql-reference/data-types/array.md)([FixedString](../../sql-reference/data-types/fixedstring.md)).
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Пример**
 

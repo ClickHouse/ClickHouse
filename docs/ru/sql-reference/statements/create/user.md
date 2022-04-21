@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: "Пользователь"
+sidebar_position: 39
+sidebar_label: "Пользователь"
 ---
 
 # CREATE USER {#create-user-statement}
@@ -43,7 +43,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 -   `HOST ANY` — Пользователь может подключиться с любого хоста. Используется по умолчанию.
 -   `HOST LOCAL` — Пользователь может подключиться только локально.
 -   `HOST NAME 'fqdn'` — Хост задается через FQDN. Например, `HOST NAME 'mysite.com'`.
--   `HOST NAME REGEXP 'regexp'` — Позволяет использовать регулярные выражения [pcre](http://www.pcre.org/), чтобы задать хосты. Например, `HOST NAME REGEXP '.*\.mysite\.com'`.
+-   `HOST REGEXP 'regexp'` — Позволяет использовать регулярные выражения [pcre](http://www.pcre.org/), чтобы задать хосты. Например, `HOST REGEXP '.*\.mysite\.com'`.
 -   `HOST LIKE 'template'` — Позволяет использовать оператор [LIKE](../../functions/string-search-functions.md#function-like) для фильтрации хостов. Например, `HOST LIKE '%'` эквивалентен `HOST ANY`; `HOST LIKE '%.mysite.com'` разрешает подключение со всех хостов в домене `mysite.com`.
 
 Также, чтобы задать хост, вы можете использовать `@` вместе с именем пользователя. Примеры:
@@ -52,7 +52,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 -   `CREATE USER mira@'localhost'` — Эквивалентно `HOST LOCAL`.
 -   `CREATE USER mira@'192.168.%.%'` — Эквивалентно `HOST LIKE`.
 
-!!! info "Внимание"
+:::info "Внимание"
     ClickHouse трактует конструкцию `user_name@'address'` как имя пользователя целиком. То есть технически вы можете создать несколько пользователей с одинаковыми `user_name`, но разными частями конструкции после `@`, но лучше так не делать.
 
 ## Секция GRANTEES {#grantees}

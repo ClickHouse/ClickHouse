@@ -11,7 +11,7 @@ namespace DB
 class LZMAInflatingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
-    LZMAInflatingReadBuffer(
+    explicit LZMAInflatingReadBuffer(
         std::unique_ptr<ReadBuffer> in_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
@@ -25,7 +25,7 @@ private:
     std::unique_ptr<ReadBuffer> in;
     lzma_stream lstr;
 
-    bool eof;
+    bool eof_flag;
 };
 
 }

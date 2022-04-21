@@ -53,16 +53,29 @@ DatabaseMySQL::DatabaseMySQL(
     const ASTStorage * database_engine_define_,
     const String & database_name_in_mysql_,
     std::unique_ptr<ConnectionMySQLSettings> settings_,
-    mysqlxx::PoolWithFailover && pool)
+    mysqlxx::PoolWithFailover && pool,
+    bool attach)
     : IDatabase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
     , database_settings(std::move(settings_))
-    , mysql_pool(std::move(pool))
+    , mysql_pool(std::move(pool)) /// NOLINT
 {
-    empty(); /// test database is works fine.
+    try
+    {
+        /// Test that the database is working fine; it will also fetch tables.
+        empty();
+    }
+    catch (...)
+    {
+        if (attach)
+            tryLogCurrentException("DatabaseMySQL");
+        else
+            throw;
+    }
+
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
 

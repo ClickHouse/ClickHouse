@@ -1,6 +1,6 @@
 ---
-toc_priority: 41
-toc_title: "Функции поиска в строках"
+sidebar_position: 41
+sidebar_label: "Функции поиска в строках"
 ---
 
 # Функции поиска в строках {#funktsii-poiska-v-strokakh}
@@ -27,9 +27,9 @@ position(needle IN haystack)
 
 Алиас: `locate(haystack, needle[, start_pos])`.
 
-!!! note "Примечание"
+    :::note "Примечание"
     Синтаксис `position(needle IN haystack)` обеспечивает совместимость с SQL, функция работает так же, как `position(haystack, needle)`.
-
+    :::
 **Аргументы**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
@@ -327,9 +327,9 @@ Result:
 
 Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 
-!!! note "Примечание"
+    :::note "Примечание"
     Во всех функциях `multiSearch*` количество needles должно быть меньше 2<sup>8</sup> из-за особенностей реализации.
-
+    :::
 ## match(haystack, pattern) {#matchhaystack-pattern}
 
 Проверка строки на соответствие регулярному выражению pattern. Регулярное выражение **re2**. Синтаксис регулярных выражений **re2** является более ограниченным по сравнению с регулярными выражениями **Perl** ([подробнее](https://github.com/google/re2/wiki/Syntax)).
@@ -344,9 +344,9 @@ Result:
 
 То же, что и `match`, но возвращает ноль, если ни одно регулярное выражение не подошло и один, если хотя бы одно. Используется библиотека [hyperscan](https://github.com/intel/hyperscan) для соответствия регулярных выражений. Для шаблонов на поиск многих подстрок в строке, лучше используйте `multiSearchAny`, так как она работает существенно быстрее.
 
-!!! note "Примечание"
+    :::note "Примечание"
     Длина любой строки из `haystack` должна быть меньше 2<sup>32</sup> байт, иначе бросается исключение. Это ограничение связано с ограничением hyperscan API.
-
+    :::
 ## multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multimatchanyindexhaystack-pattern1-pattern2-patternn}
 
 То же, что и `multiMatchAny`, только возвращает любой индекс подходящего регулярного выражения.
@@ -357,7 +357,7 @@ Result:
 
 ## multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchanyhaystack-distance-pattern1-pattern2-patternn}
 
-То же, что и `multiMatchAny`, но возвращает 1 если любой pattern соответствует haystack в пределах константного [редакционного расстояния](https://en.wikipedia.org/wiki/Edit_distance). Эта функция также находится в экспериментальном режиме и может быть очень медленной. За подробностями обращайтесь к [документации hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
+То же, что и `multiMatchAny`, но возвращает 1 если любой шаблон соответствует haystack в пределах константного [редакционного расстояния](https://en.wikipedia.org/wiki/Edit_distance). Эта функция основана на экспериментальной библиотеке [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) и может быть медленной для некоторых частных случаев. Производительность зависит от значения редакционного расстояния и используемых шаблонов, но всегда медленнее по сравнению с non-fuzzy вариантами.
 
 ## multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchanyindexhaystack-distance-pattern1-pattern2-patternn}
 
@@ -367,12 +367,12 @@ Result:
 
 То же, что и `multiFuzzyMatchAny`, только возвращает массив всех индексов всех подходящих регулярных выражений в любом порядке в пределах константного редакционного расстояния.
 
-!!! note "Примечание"
+    :::note "Примечание"
     `multiFuzzyMatch*` функции не поддерживают UTF-8 закодированные регулярные выражения, и такие выражения рассматриваются как байтовые из-за ограничения hyperscan.
-
-!!! note "Примечание"
+    :::
+    :::note "Примечание"
     Чтобы выключить все функции, использующие hyperscan, используйте настройку `SET allow_hyperscan = 0;`.
-
+    :::
 ## extract(haystack, pattern) {#extracthaystack-pattern}
 
 Извлечение фрагмента строки по регулярному выражению. Если haystack не соответствует регулярному выражению pattern, то возвращается пустая строка. Если регулярное выражение не содержит subpattern-ов, то вынимается фрагмент, который подпадает под всё регулярное выражение. Иначе вынимается фрагмент, который подпадает под первый subpattern.
@@ -385,9 +385,9 @@ Result:
 
 Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где первый массив содержит все фрагменты, соответствующие первой группе регулярного выражения, второй массив - соответствующие второй группе, и т.д.
 
-!!! note "Замечание"
+    :::note "Замечание"
     Функция `extractAllGroupsHorizontal` работает медленнее, чем функция [extractAllGroupsVertical](#extractallgroups-vertical).
-
+    :::
 **Синтаксис**
 
 ``` sql
@@ -556,9 +556,9 @@ SELECT * FROM Months WHERE ilike(name, '%j%');
 
 Для поиска без учета регистра и/или в формате UTF-8 используйте функции `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8`.
 
-!!! note "Примечание"
+    :::note "Примечание"
     Для случая UTF-8 мы используем триграммное расстояние. Вычисление n-граммного расстояния не совсем честное. Мы используем 2-х байтные хэши для хэширования n-грамм, а затем вычисляем (не)симметрическую разность между хэш таблицами – могут возникнуть коллизии. В формате UTF-8 без учета регистра мы не используем честную функцию `tolower` – мы обнуляем 5-й бит (нумерация с нуля) каждого байта кодовой точки, а также первый бит нулевого байта, если байтов больше 1 – это работает для латиницы и почти для всех кириллических букв.
-
+    :::
 ## countMatches(haystack, pattern) {#countmatcheshaystack-pattern}
 
 Возвращает количество совпадений, найденных в строке `haystack`, для регулярного выражения `pattern`.

@@ -13,10 +13,10 @@ class MergeTreeReverseSelectProcessor final : public MergeTreeSelectProcessor
 {
 public:
     template <typename... Args>
-    MergeTreeReverseSelectProcessor(Args &&... args)
+    explicit MergeTreeReverseSelectProcessor(Args &&... args)
         : MergeTreeSelectProcessor{std::forward<Args>(args)...}
     {
-        LOG_DEBUG(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
+        LOG_TRACE(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
     }
@@ -24,7 +24,9 @@ public:
     String getName() const override { return "MergeTreeReverse"; }
 
 private:
-    bool getNewTask() override;
+    bool getNewTaskImpl() override;
+    void finalizeNewTask() override {}
+
     Chunk readFromPart() override;
 
     Chunks chunks;

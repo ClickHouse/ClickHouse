@@ -8,6 +8,9 @@
 namespace DB
 {
 
+static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
+    "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "method"};
+
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     auto create_mongo_db_dictionary = [](
@@ -21,10 +24,11 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
         ExternalDataSourceConfiguration configuration;
-        auto named_collection = getExternalDataSourceConfiguration(config, config_prefix, context);
+        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key); };
+        auto named_collection = getExternalDataSourceConfiguration(config, config_prefix, context, has_config_key);
         if (named_collection)
         {
-            configuration = *named_collection;
+            configuration = named_collection->configuration;
         }
         else
         {
@@ -177,7 +181,7 @@ Pipe MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 
     Poco::MongoDB::Array::Ptr ids_array(new Poco::MongoDB::Array);
     for (const UInt64 id : ids)
-        ids_array->add(DB::toString(id), Int32(id));
+        ids_array->add(DB::toString(id), static_cast<Int32>(id));
 
     cursor->query().selector().addNewDocument(dict_struct.id->name).add("$in", ids_array);
 
@@ -214,7 +218,7 @@ Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::v
                 case AttributeUnderlyingType::Int32:
                 case AttributeUnderlyingType::Int64:
                 {
-                    key.add(key_attribute.name, Int32(key_columns[attribute_index]->get64(row_idx)));
+                    key.add(key_attribute.name, static_cast<Int32>(key_columns[attribute_index]->get64(row_idx)));
                     break;
                 }
                 case AttributeUnderlyingType::Float32:

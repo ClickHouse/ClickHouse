@@ -1,5 +1,5 @@
 ---
-toc_title: LIMIT BY
+sidebar_label: LIMIT BY
 ---
 
 # LIMIT BY子句 {#limit-by-clause}
@@ -11,7 +11,7 @@ ClickHouse支持以下语法变体:
 -   `LIMIT [offset_value, ]n BY expressions`
 -   `LIMIT n OFFSET offset_value BY expressions`
 
-在查询处理过程中，ClickHouse会选择按排序键排序的数据。 排序键使用以下命令显式设置 [ORDER BY](../../../sql-reference/statements/select/order-by.md) 子句或隐式作为表引擎的属性。 然后ClickHouse应用 `LIMIT n BY expressions` 并返回第一 `n` 每个不同组合的行 `expressions`. 如果 `OFFSET` 被指定，则对于每个数据块属于一个不同的组合 `expressions`，ClickHouse跳过 `offset_value` 从块开始的行数，并返回最大值 `n` 行的结果。 如果 `offset_value` 如果数据块中的行数大于数据块中的行数，ClickHouse将从该块返回零行。
+在进行查询处理时，ClickHouse选择按排序键排序的数据。排序键设置显式地使用一个[ORDER BY](order-by.md#select-order-by)条款或隐式属性表的引擎(行顺序只是保证在使用[ORDER BY](order-by.md#select-order-by),否则不会命令行块由于多线程)。然后ClickHouse应用`LIMIT n BY 表达式`，并为每个不同的`表达式`组合返回前n行。如果指定了`OFFSET`，那么对于每个属于不同`表达式`组合的数据块，ClickHouse将跳过`offset_value`从块开始的行数，并最终返回最多`n`行的结果。如果`offset_value`大于数据块中的行数，则ClickHouse从数据块中返回零行。
 
 !!! note "注"
     `LIMIT BY` 是不相关的 [LIMIT](../../../sql-reference/statements/select/limit.md). 它们都可以在同一个查询中使用。

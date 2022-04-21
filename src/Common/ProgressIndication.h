@@ -16,11 +16,11 @@ namespace DB
 
 struct ThreadEventData
 {
-    UInt64 time() const noexcept { return user_ms + system_ms; }
+    Int64 time() const noexcept { return user_ms + system_ms; }
 
-    UInt64 user_ms      = 0;
-    UInt64 system_ms    = 0;
-    UInt64 memory_usage = 0;
+    Int64 user_ms      = 0;
+    Int64 system_ms    = 0;
+    Int64 memory_usage = 0;
 };
 
 using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadEventData>;
@@ -58,15 +58,12 @@ public:
 
     void addThreadIdToList(String const & host, UInt64 thread_id);
 
-    void updateThreadEventData(HostToThreadTimesMap & new_thread_data);
-
-    bool print_hardware_utilization = false;
+    void updateThreadEventData(HostToThreadTimesMap & new_thread_data, UInt64 elapsed_time);
 
 private:
-
     size_t getUsedThreadsCount() const;
 
-    UInt64 getApproximateCoresNumber() const;
+    double getCPUUsage() const;
 
     struct MemoryUsage
     {
@@ -93,7 +90,7 @@ private:
 
     bool write_progress_on_update = false;
 
-    std::unordered_map<String, UInt64> host_active_cores;
+    std::unordered_map<String, double> host_cpu_usage;
     HostToThreadTimesMap thread_data;
 };
 

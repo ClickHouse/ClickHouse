@@ -90,9 +90,10 @@ public:
     bool hasRows() const { return num_rows > 0; }
     bool hasColumns() const { return !columns.empty(); }
     bool empty() const { return !hasRows() && !hasColumns(); }
-    operator bool() const { return !empty(); }
+    operator bool() const { return !empty(); } /// NOLINT
 
     void addColumn(ColumnPtr column);
+    void addColumn(size_t position, ColumnPtr column);
     void erase(size_t position);
 
     UInt64 bytes() const;
@@ -129,5 +130,11 @@ private:
     /// It could contain less columns and rows then related block.
     RowsMaskByColumnId rows_mask_by_column_id;
 };
+
+/// Converts all columns to full serialization in chunk.
+/// It's needed, when you have to access to the internals of the column,
+/// or when you need to perform operation with two columns
+/// and their structure must be equal (e.g. compareAt).
+void convertToFullIfSparse(Chunk & chunk);
 
 }

@@ -8,19 +8,26 @@
 #include <Core/Types.h>
 #include <boost/noncopyable.hpp>
 
-/* Methods to work with PostgreSQL connection object.
+/** Methods to work with PostgreSQL connection object.
  * Should only be used in case there has to be a single connection object, which
  * is long-lived and there are no concurrent connection queries.
- * Now only use case - for replication handler for replication from PostgreSQL.
- * In all other integration engine use pool with failover.
- **/
+ */
 
 namespace Poco { class Logger; }
 
+namespace pqxx
+{
+    using ConnectionPtr = std::unique_ptr<pqxx::connection>;
+}
+
 namespace postgres
 {
-using ConnectionInfo = std::pair<String, String>;
-using ConnectionPtr = std::unique_ptr<pqxx::connection>;
+
+struct ConnectionInfo
+{
+    String connection_string;
+    String host_port; /// For logs.
+};
 
 class Connection : private boost::noncopyable
 {
@@ -33,14 +40,17 @@ public:
 
     void connect();
 
+    void updateConnection();
+
     void tryUpdateConnection();
 
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
 
-private:
-    void updateConnection();
+    String getInfoForLog() const { return connection_info.host_port; }
 
-    ConnectionPtr connection;
+private:
+
+    pqxx::ConnectionPtr connection;
     ConnectionInfo connection_info;
 
     bool replication;
@@ -48,6 +58,9 @@ private:
 
     Poco::Logger * log;
 };
+
+using ConnectionPtr = std::unique_ptr<Connection>;
+
 }
 
 #endif

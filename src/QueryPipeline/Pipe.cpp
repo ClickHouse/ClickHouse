@@ -192,7 +192,7 @@ Pipe::Pipe(Processors processors_) : processors(std::move(processors_))
                                 " has not connected input port", ErrorCodes::LOGICAL_ERROR);
 
             const auto * connected_processor = &port.getOutputPort().getProcessor();
-            if (set.count(connected_processor) == 0)
+            if (!set.contains(connected_processor))
                 throw Exception("Cannot create Pipe because processor " + processor->getName() +
                                 " has input port which is connected with unknown processor " +
                                 connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -207,7 +207,7 @@ Pipe::Pipe(Processors processors_) : processors(std::move(processors_))
             }
 
             const auto * connected_processor = &port.getInputPort().getProcessor();
-            if (set.count(connected_processor) == 0)
+            if (!set.contains(connected_processor))
                 throw Exception("Cannot create Pipe because processor " + processor->getName() +
                                 " has output port which is connected with unknown processor " +
                                 connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -759,44 +759,6 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
     header.clear();
 }
 
-void Pipe::setOutputFormat(ProcessorPtr output)
-{
-    if (output_ports.empty())
-        throw Exception("Cannot set output format to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
-
-    if (output_ports.size() != 1)
-        throw Exception("Cannot set output format to Pipe because single output port is expected, "
-                        "but it has " + std::to_string(output_ports.size()) + " ports", ErrorCodes::LOGICAL_ERROR);
-
-    auto * format = dynamic_cast<IOutputFormat * >(output.get());
-
-    if (!format)
-        throw Exception("IOutputFormat processor expected for QueryPipelineBuilder::setOutputFormat.",
-                        ErrorCodes::LOGICAL_ERROR);
-
-    auto & main = format->getPort(IOutputFormat::PortKind::Main);
-    auto & totals = format->getPort(IOutputFormat::PortKind::Totals);
-    auto & extremes = format->getPort(IOutputFormat::PortKind::Extremes);
-
-    if (!totals_port)
-        addTotalsSource(std::make_shared<NullSource>(totals.getHeader()));
-
-    if (!extremes_port)
-        addExtremesSource(std::make_shared<NullSource>(extremes.getHeader()));
-
-    if (collected_processors)
-        collected_processors->emplace_back(output);
-
-    processors.emplace_back(std::move(output));
-
-    connect(*output_ports.front(), main);
-    connect(*totals_port, totals);
-    connect(*extremes_port, extremes);
-
-    output_ports.clear();
-    header.clear();
-}
-
 void Pipe::transform(const Transformer & transformer)
 {
     if (output_ports.empty())
@@ -829,7 +791,7 @@ void Pipe::transform(const Transformer & transformer)
                                 " has not connected input port", ErrorCodes::LOGICAL_ERROR);
 
             const auto * connected_processor = &port.getOutputPort().getProcessor();
-            if (set.count(connected_processor) == 0)
+            if (!set.contains(connected_processor))
                 throw Exception("Transformation of Pipe is not valid because processor " + processor->getName() +
                                 " has input port which is connected with unknown processor " +
                                 connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -844,7 +806,7 @@ void Pipe::transform(const Transformer & transformer)
             }
 
             const auto * connected_processor = &port.getInputPort().getProcessor();
-            if (set.count(connected_processor) == 0)
+            if (!set.contains(connected_processor))
                 throw Exception("Transformation of Pipe is not valid because processor " + processor->getName() +
                                 " has output port which is connected with unknown processor " +
                                 connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);

@@ -1,6 +1,6 @@
 ---
-toc_priority: 11
-toc_title: PostgreSQL
+sidebar_position: 11
+sidebar_label: PostgreSQL
 ---
 
 # PostgreSQL {#postgresql}
@@ -36,6 +36,31 @@ The table structure can differ from the original PostgreSQL table structure:
 -   `schema` — Non-default table schema. Optional.
 -   `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
+or via config (since version 21.11):
+
+```
+<named_collections>
+    <postgres1>
+        <host></host>
+        <port></port>
+        <username></username>
+        <password></password>
+        <table></table>
+    </postgres1>
+    <postgres2>
+        <host></host>
+        <port></port>
+        <username></username>
+        <password></password>
+    </postgres2>
+</named_collections>
+```
+
+Some parameters can be overriden by key value arguments:
+``` sql
+SELECT * FROM postgresql(postgres1, schema='schema1', table='table1');
+```
+
 ## Implementation Details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
@@ -48,8 +73,9 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 
 PostgreSQL `Array` types are converted into ClickHouse arrays.
 
-!!! info "Note"
-    Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
+:::warning    
+Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
+:::
 
 Supports multiple replicas that must be listed by `|`. For example:
 

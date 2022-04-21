@@ -13,9 +13,9 @@
 #include <tuple>
 #include <utility> /// pair
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_tools.h"
-#endif
+#include <fmt/format.h>
+
+#include "config_tools.h"
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
@@ -88,6 +88,7 @@ namespace
 
 using MainFunc = int (*)(int, char**);
 
+#if !defined(FUZZING_MODE)
 
 /// Add an item here to register new application
 std::pair<const char *, MainFunc> clickhouse_applications[] =
@@ -141,7 +142,6 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"hash-binary", mainEntryClickHouseHashBinary},
 };
 
-
 int printHelp(int, char **)
 {
     std::cerr << "Use one of the following commands:" << std::endl;
@@ -149,7 +149,6 @@ int printHelp(int, char **)
         std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
     return -1;
 }
-
 
 bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 {
@@ -170,6 +169,7 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
     std::string app_name = "clickhouse-" + app_suffix;
     return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
+#endif
 
 
 enum class InstructionFail
@@ -328,7 +328,38 @@ struct Checker
     {
         checkRequiredInstructions();
     }
-} checker __attribute__((init_priority(101)));  /// Run before other static initializers.
+} checker
+#ifndef __APPLE__
+    __attribute__((init_priority(101)))    /// Run before other static initializers.
+#endif
+;
+
+/// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
+void checkHarmfulEnvironmentVariables()
+{
+    std::initializer_list<const char *> harmful_env_variables = {
+        /// The list is a selection from "man ld-linux".
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "LD_ORIGIN_PATH",
+        "LD_AUDIT",
+        "LD_DYNAMIC_WEAK",
+        /// The list is a selection from "man dyld" (osx).
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+        "DYLD_VERSIONED_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+    };
+
+    for (const auto * var : harmful_env_variables)
+    {
+        if (const char * value = getenv(var); value && value[0])
+        {
+            std::cerr << fmt::format("Environment variable {} is set to {}. It can compromise security.\n", var, value);
+            _exit(1);
+        }
+    }
+}
 
 }
 
@@ -338,13 +369,19 @@ struct Checker
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
+#ifndef FUZZING_MODE
 bool inside_main = false;
+#else
+bool inside_main = true;
+#endif
 
-
+#if !defined(FUZZING_MODE)
 int main(int argc_, char ** argv_)
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
+
+    checkHarmfulEnvironmentVariables();
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
@@ -371,3 +408,4 @@ int main(int argc_, char ** argv_)
 
     return main_func(static_cast<int>(argv.size()), argv.data());
 }
+#endif

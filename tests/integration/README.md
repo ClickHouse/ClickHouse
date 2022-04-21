@@ -119,9 +119,9 @@ You can just open shell inside a container by overwritting the command:
 
 ### Rebuilding the docker containers
 
-The main container used for integration tests lives in `docker/test/integration/Dockerfile`. Rebuild it with
+The main container used for integration tests lives in `docker/test/integration/base/Dockerfile`. Rebuild it with
 ```
-cd docker/test/integration
+cd docker/test/integration/base
 docker build -t clickhouse/integration-test .
 ```
 

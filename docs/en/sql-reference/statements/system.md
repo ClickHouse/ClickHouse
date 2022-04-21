@@ -1,6 +1,6 @@
 ---
-toc_priority: 36
-toc_title: SYSTEM
+sidebar_position: 36
+sidebar_label: SYSTEM
 ---
 
 # SYSTEM Statements {#query-language-system}
@@ -67,12 +67,12 @@ SELECT name, status FROM system.dictionaries;
 
 ## RELOAD MODELS {#query_language-system-reload-models}
 
-Reloads all [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) models if the configuration was updated without restarting the server.
+Reloads all [CatBoost](../../guides/developer/apply-catboost-model.md) models if the configuration was updated without restarting the server.
 
 **Syntax**
 
 ```sql
-SYSTEM RELOAD MODELS
+SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
 ```
 
 ## RELOAD MODEL {#query_language-system-reload-model}
@@ -82,7 +82,7 @@ Completely reloads a CatBoost model `model_name` if the configuration was update
 **Syntax**
 
 ```sql
-SYSTEM RELOAD MODEL <model_name>
+SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_name>
 ```
 
 ## RELOAD FUNCTIONS {#query_language-system-reload-functions}
@@ -92,8 +92,8 @@ Reloads all registered [executable user defined functions](../functions/index.md
 **Syntax**
 
 ```sql
-RELOAD FUNCTIONS
-RELOAD FUNCTION function_name
+RELOAD FUNCTIONS [ON CLUSTER cluster_name]
+RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
@@ -191,8 +191,9 @@ Provides possibility to stop background merges for tables in the MergeTree famil
 SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
-!!! note "Note"
-    `DETACH / ATTACH` table will start background merges for the table even in case when merges have been stopped for all MergeTree tables before.
+:::note    
+`DETACH / ATTACH` table will start background merges for the table even in case when merges have been stopped for all MergeTree tables before.
+:::
 
 ### START MERGES {#query_language-system-start-merges}
 
@@ -326,8 +327,9 @@ One may execute query after:
 Replica attaches locally found parts and sends info about them to Zookeeper.
 Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
 
-!!! warning "Warning"
-    Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
+:::warning    
+Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
+:::
 
 **Syntax**
 

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_HDFS
+
 #include <Disks/IDiskRemote.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Core/UUID.h>
@@ -14,14 +18,17 @@ struct DiskHDFSSettings
     size_t min_bytes_for_seek;
     int thread_pool_size;
     int objects_chunk_size_to_delete;
+    int replication;
 
     DiskHDFSSettings(
             int min_bytes_for_seek_,
             int thread_pool_size_,
-            int objects_chunk_size_to_delete_)
+            int objects_chunk_size_to_delete_,
+            int replication_)
         : min_bytes_for_seek(min_bytes_for_seek_)
         , thread_pool_size(thread_pool_size_)
-        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_) {}
+        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+        , replication(replication_) {}
 };
 
 
@@ -50,13 +57,12 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> size) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override;
 
-    void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) override;
-
-    RemoteFSPathKeeperPtr createFSPathKeeper() const override;
+    void removeFromRemoteFS(const std::vector<String> & paths) override;
 
     /// Check file exists and ClickHouse has an access to it
     /// Overrode in remote disk
@@ -75,3 +81,4 @@ private:
 };
 
 }
+#endif

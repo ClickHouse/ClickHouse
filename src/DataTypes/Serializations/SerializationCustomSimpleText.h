@@ -10,12 +10,12 @@ class WriteBuffer;
 struct FormatSettings;
 class IColumn;
 
-/** Simple IDataTypeCustomTextSerialization that uses serializeText/deserializeText
+/** Simple ISerialization that uses serializeText/deserializeText
  * for all serialization and deserialization. */
 class SerializationCustomSimpleText : public SerializationWrapper
 {
 public:
-    SerializationCustomSimpleText(const SerializationPtr & nested_);
+    explicit SerializationCustomSimpleText(const SerializationPtr & nested_);
 
     // Methods that subclasses must override in order to get full serialization/deserialization support.
     virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override = 0;

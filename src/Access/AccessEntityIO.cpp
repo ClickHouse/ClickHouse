@@ -7,6 +7,7 @@
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
 #include <Core/Defines.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/Access/InterpreterCreateRoleQuery.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
@@ -15,18 +16,6 @@
 #include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
-#include <Parsers/Access/ASTCreateQuotaQuery.h>
-#include <Parsers/Access/ASTCreateRoleQuery.h>
-#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
-#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTGrantQuery.h>
-#include <Parsers/Access/ParserCreateQuotaQuery.h>
-#include <Parsers/Access/ParserCreateRoleQuery.h>
-#include <Parsers/Access/ParserCreateRowPolicyQuery.h>
-#include <Parsers/Access/ParserCreateSettingsProfileQuery.h>
-#include <Parsers/Access/ParserCreateUserQuery.h>
-#include <Parsers/Access/ParserGrantQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <boost/range/algorithm/copy.hpp>
@@ -38,39 +27,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_ACCESS_ENTITY_DEFINITION;
 }
-
-namespace
-{
-    /// Special parser for the 'ATTACH access entity' queries.
-    class ParserAttachAccessEntity : public IParserBase
-    {
-    protected:
-        const char * getName() const override { return "ATTACH access entity query"; }
-
-        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-        {
-            ParserCreateUserQuery create_user_p;
-            ParserCreateRoleQuery create_role_p;
-            ParserCreateRowPolicyQuery create_policy_p;
-            ParserCreateQuotaQuery create_quota_p;
-            ParserCreateSettingsProfileQuery create_profile_p;
-            ParserGrantQuery grant_p;
-
-            create_user_p.useAttachMode();
-            create_role_p.useAttachMode();
-            create_policy_p.useAttachMode();
-            create_quota_p.useAttachMode();
-            create_profile_p.useAttachMode();
-            grant_p.useAttachMode();
-
-            return create_user_p.parse(pos, node, expected) || create_role_p.parse(pos, node, expected)
-                || create_policy_p.parse(pos, node, expected) || create_quota_p.parse(pos, node, expected)
-                || create_profile_p.parse(pos, node, expected) || grant_p.parse(pos, node, expected);
-        }
-    };
-
-}
-
 
 String serializeAccessEntity(const IAccessEntity & entity)
 {
@@ -90,7 +46,7 @@ String serializeAccessEntity(const IAccessEntity & entity)
     return buf.str();
 }
 
-AccessEntityPtr deserializeAccessEntity(const String & definition, const String & path)
+AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
 {
     ASTs queries;
     ParserAttachAccessEntity parser;
@@ -117,43 +73,42 @@ AccessEntityPtr deserializeAccessEntity(const String & definition, const String 
         if (auto * create_user_query = query->as<ASTCreateUserQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = user = std::make_unique<User>();
-            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query);
+            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true);
         }
         else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = role = std::make_unique<Role>();
             InterpreterCreateRoleQuery::updateRoleFromQuery(*role, *create_role_query);
         }
         else if (auto * create_policy_query = query->as<ASTCreateRowPolicyQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = policy = std::make_unique<RowPolicy>();
             InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(*policy, *create_policy_query);
         }
         else if (auto * create_quota_query = query->as<ASTCreateQuotaQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = quota = std::make_unique<Quota>();
             InterpreterCreateQuotaQuery::updateQuotaFromQuery(*quota, *create_quota_query);
         }
         else if (auto * create_profile_query = query->as<ASTCreateSettingsProfileQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = profile = std::make_unique<SettingsProfile>();
             InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(*profile, *create_profile_query);
         }
         else if (auto * grant_query = query->as<ASTGrantQuery>())
         {
             if (!user && !role)
-                throw Exception(
-                    "A user or role should be attached before grant in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("A user or role should be attached before grant", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             if (user)
                 InterpreterGrantQuery::updateUserFromQuery(*user, *grant_query);
             else
@@ -164,9 +119,27 @@ AccessEntityPtr deserializeAccessEntity(const String & definition, const String 
     }
 
     if (!res)
-        throw Exception("No access entities attached in " + path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+        throw Exception("No access entities attached", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
 
     return res;
+}
+
+
+AccessEntityPtr deserializeAccessEntity(const String & definition, const String & file_path)
+{
+    if (file_path.empty())
+        return deserializeAccessEntityImpl(definition);
+
+    try
+    {
+        return deserializeAccessEntityImpl(definition);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("Could not parse " + file_path);
+        e.rethrow();
+        __builtin_unreachable();
+    }
 }
 
 }

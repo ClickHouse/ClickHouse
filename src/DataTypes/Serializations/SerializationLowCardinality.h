@@ -15,13 +15,12 @@ private:
     SerializationPtr dict_inner_serialization;
 
 public:
-    SerializationLowCardinality(const DataTypePtr & dictionary_type);
+    explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
 
     void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const override;
+        const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,

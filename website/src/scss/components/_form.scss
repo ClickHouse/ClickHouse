@@ -1,4 +1,20 @@
 form {
+	.form-group {
+		position: relative;
+	}
+
+	.form-group.is-select:before {
+		border-left: 6px solid transparent;
+		border-right: 6px solid transparent;
+		border-top: 8px solid $gray-700;
+		content: '';
+		display: block;
+		position: absolute;
+		right: 33px;
+		top: calc(50% - 4px);
+		z-index: 10;
+	}
+
 	.form-control {
 		border: 1px solid $gray-700;
 		border-radius: 6px;
@@ -23,6 +39,8 @@ form {
 
 	select.form-control {
 		appearance: none;
+		padding-right: 24px;
+		white-space: pre-wrap;
 	}
 
 	select.form-control:not([data-chosen]) {

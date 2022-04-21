@@ -1,6 +1,6 @@
 ---
-toc_priority: 19
-toc_title: "HTTP-интерфейс"
+sidebar_position: 19
+sidebar_label: "HTTP-интерфейс"
 ---
 
 # HTTP-интерфейс {#http-interface}
@@ -172,9 +172,9 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 Для отправки сжатого запроса `POST` добавьте заголовок `Content-Encoding: compression_method`.
 Чтобы ClickHouse сжимал ответ, разрешите сжатие настройкой [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) и добавьте заголовок `Accept-Encoding: compression_method`. Уровень сжатия данных для всех методов сжатия можно задать с помощью настройки [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level).
 
-!!! note "Примечание"
+    :::note "Примечание"
     Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
-
+    :::
 **Примеры**
 
 ``` bash
@@ -242,7 +242,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 Если пользователь не задан,то используется `default`. Если пароль не задан, то используется пустой пароль.
 Также в параметрах URL вы можете указать любые настройки, которые будут использованы для обработки одного запроса, или целые профили настроек. Пример:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-Подробнее смотрите в разделе [Настройки](../operations/settings/index.md).
+Подробнее смотрите в разделе [Настройки](../operations/settings/overview.md).
 
 ``` bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
@@ -422,8 +422,11 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 Значение `query` — это предопределенный запрос `predefined_query_handler`, который выполняется ClickHouse при совпадении HTTP-запроса и возврате результата запроса. Это обязательная настройка.
 
-В следующем примере определяются настройки [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_alter_threads`, а затем запрашивается системная таблица, чтобы проверить, были ли эти параметры успешно установлены.
+В следующем примере определяются настройки [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_final_threads`, а затем запрашивается системная таблица, чтобы проверить, были ли эти параметры успешно установлены.
 
+    :::note "Предупреждение"
+    Чтобы сохранить стандартные `handlers` такие как `query`, `play`, `ping`, используйте правило `<defaults/>`.
+    :::
 Пример:
 
 ``` xml
@@ -441,25 +444,26 @@ $ curl -v 'http://localhost:8123/predefined_query'
             <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
         </handler>
     </rule>
+    <defaults/>
 </http_handlers>
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_alter_threads?max_threads=1&max_alter_threads=2'
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
-!!! note "Предупреждение"
+    :::note "Предупреждение"
     В одном `predefined_query_handler` поддерживается только один запрос типа `INSERT`.
-
+    :::
 ### dynamic_query_handler {#dynamic_query_handler}
 
 В `dynamic_query_handler`, запрос пишется в виде параметров HTTP-запроса. Разница в том, что в `predefined_query_handler`, запрос записывается в конфигурационный файл. Вы можете настроить `query_param_name` в `dynamic_query_handler`.
 
 ClickHouse извлекает и выполняет значение, соответствующее значению `query_param_name` URL-адресе HTTP-запроса. Значение по умолчанию `query_param_name` — это `/query` . Это необязательная настройка. Если в файле конфигурации нет определения, параметр не передается.
 
-Чтобы поэкспериментировать с этой функциональностью, в примере определяются значения [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_alter_threads` и запрашивается, успешно ли были установлены настройки.
+Чтобы поэкспериментировать с этой функциональностью, в примере определяются значения [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_final_threads` и запрашивается, успешно ли были установлены настройки.
 
 Пример:
 
@@ -473,13 +477,14 @@ ClickHouse извлекает и выполняет значение, соотв
         <query_param_name>query_param</query_param_name>
     </handler>
     </rule>
+    <defaults/>
 </http_handlers>
 ```
 
 ``` bash
-$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_final_threads=2&param_name_1=max_threads&param_name_2=max_final_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
 max_threads 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 ### static {#static}
@@ -503,6 +508,7 @@ max_alter_threads   2
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
+        <defaults/>
 </http_handlers>
 ```
 

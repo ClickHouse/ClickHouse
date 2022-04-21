@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <base/types.h>
 #include <signal.h>
 #include <time.h>
@@ -30,7 +31,7 @@ template <typename ProfilerImpl>
 class QueryProfilerBase
 {
 public:
-    QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_);
+    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_);
     ~QueryProfilerBase();
 
 private:
@@ -40,21 +41,18 @@ private:
 
 #if USE_UNWIND
     /// Timer id from timer_create(2)
-    timer_t timer_id = nullptr;
+    std::optional<timer_t> timer_id;
 #endif
 
     /// Pause signal to interrupt threads to get traces
     int pause_signal;
-
-    /// Previous signal handler to restore after query profiler exits
-    struct sigaction * previous_handler = nullptr;
 };
 
 /// Query profiler with timer based on real clock
 class QueryProfilerReal : public QueryProfilerBase<QueryProfilerReal>
 {
 public:
-    QueryProfilerReal(const UInt64 thread_id, const UInt32 period);
+    QueryProfilerReal(UInt64 thread_id, UInt32 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };
@@ -63,7 +61,7 @@ public:
 class QueryProfilerCPU : public QueryProfilerBase<QueryProfilerCPU>
 {
 public:
-    QueryProfilerCPU(const UInt64 thread_id, const UInt32 period);
+    QueryProfilerCPU(UInt64 thread_id, UInt32 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };

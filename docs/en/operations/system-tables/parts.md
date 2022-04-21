@@ -1,4 +1,4 @@
-# system.parts {#system_tables-parts}
+# parts {#system_tables-parts}
 
 Contains information about parts of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -82,7 +82,7 @@ Columns:
 
 -   `path` ([String](../../sql-reference/data-types/string.md)) – Absolute path to the folder with data part files.
 
--   `disk` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
+-   `disk_name` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
 
 -   `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md#hash_functions-siphash128) of compressed files.
 
@@ -96,8 +96,9 @@ Columns:
 
 -   `move_ttl_info.expression` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of expressions. Each expression defines a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
-    !!! note "Warning"
-        The `move_ttl_info.expression` array is kept mostly for backward compatibility, now the simpliest way to check `TTL MOVE` rule is to use the `move_ttl_info.min` and `move_ttl_info.max` fields.
+:::warning
+The `move_ttl_info.expression` array is kept mostly for backward compatibility, now the simpliest way to check `TTL MOVE` rule is to use the `move_ttl_info.min` and `move_ttl_info.max` fields.
+:::
 
 -   `move_ttl_info.min` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Array of date and time values. Each element describes the minimum key value for a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 

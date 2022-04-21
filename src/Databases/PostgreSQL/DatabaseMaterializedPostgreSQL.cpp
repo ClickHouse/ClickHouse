@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int QUERY_NOT_ALLOWED;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -50,12 +51,17 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
+    , startup_task(getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ startSynchronization(); }))
 {
 }
 
 
 void DatabaseMaterializedPostgreSQL::startSynchronization()
 {
+    std::lock_guard lock(handler_mutex);
+    if (shutdown_called)
+        return;
+
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             /* replication_identifier */database_name,
             remote_database_name,
@@ -78,7 +84,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
 
     if (tables_to_replicate.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty list of tables to replicate");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got empty list of tables to replicate");
 
     for (const auto & table_name : tables_to_replicate)
     {
@@ -104,24 +110,14 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
 
     LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
-    replication_handler->startup();
+    replication_handler->startup(/* delayed */false);
 }
 
 
 void DatabaseMaterializedPostgreSQL::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
 {
     DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
-    try
-    {
-        startSynchronization();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot load nested database objects for PostgreSQL database engine.");
-
-        if (!force_attach)
-            throw;
-    }
+    startup_task->activateAndSchedule();
 }
 
 
@@ -314,8 +310,12 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
     }
 }
 
+StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr, const String &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE not allowed, use DETACH PERMANENTLY");
+}
 
-StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr context_, const String & table_name)
+void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const String & table_name)
 {
     /// If there is query context then we need to detach materialized storage.
     /// If there is no query context then we need to detach internal storage from atomic database.
@@ -365,17 +365,13 @@ StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr context_, cons
         }
 
         materialized_tables.erase(table_name);
-        return nullptr;
-    }
-    else
-    {
-        return DatabaseAtomic::detachTable(context_, table_name);
     }
 }
 
 
 void DatabaseMaterializedPostgreSQL::shutdown()
 {
+    startup_task->deactivate();
     stopReplication();
     DatabaseAtomic::shutdown();
 }
@@ -387,6 +383,7 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
     if (replication_handler)
         replication_handler->shutdown();
 
+    shutdown_called = true;
     /// Clear wrappers over nested, all access is not done to nested tables directly.
     materialized_tables.clear();
 }

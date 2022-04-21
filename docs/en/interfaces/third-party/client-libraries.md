@@ -1,12 +1,13 @@
 ---
-toc_priority: 26
-toc_title: Client Libraries
+sidebar_position: 26
+sidebar_label: Client Libraries
 ---
 
 # Client Libraries from Third-party Developers {#client-libraries-from-third-party-developers}
 
-!!! warning "Disclaimer"
-    Yandex does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
+:::warning    
+ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
+:::
 
 -   Python
     -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
@@ -27,6 +28,7 @@ toc_title: Client Libraries
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
+    -   [chconn](https://github.com/vahid-sohrabloo/chconn)
     -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
     -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
 -   Swift

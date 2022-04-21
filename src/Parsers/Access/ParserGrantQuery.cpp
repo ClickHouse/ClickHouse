@@ -1,9 +1,9 @@
-#include <Parsers/Access/ParserGrantQuery.h>
+#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ParserGrantQuery.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
@@ -156,7 +156,7 @@ namespace
     }
 
 
-    void eraseNonGrantable(AccessRightsElements & elements)
+    void throwIfNotGrantable(AccessRightsElements & elements)
     {
         boost::range::remove_erase_if(elements, [](AccessRightsElement & element)
         {
@@ -303,7 +303,12 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     if (!is_revoke)
-        eraseNonGrantable(elements);
+    {
+        if (attach_mode)
+            elements.eraseNonGrantable();
+        else
+            throwIfNotGrantable(elements);
+    }
 
     auto query = std::make_shared<ASTGrantQuery>();
     node = query;

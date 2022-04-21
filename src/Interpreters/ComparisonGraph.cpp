@@ -159,7 +159,7 @@ ComparisonGraph::CompareResult ComparisonGraph::pathToCompareResult(Path path, b
     __builtin_unreachable();
 }
 
-std::optional<ComparisonGraph::Path> ComparisonGraph::findPath(const size_t start, const size_t finish) const
+std::optional<ComparisonGraph::Path> ComparisonGraph::findPath(size_t start, size_t finish) const
 {
     const auto it = dists.find(std::make_pair(start, finish));
     if (it == std::end(dists))
@@ -232,7 +232,7 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
     return CompareResult::UNKNOWN;
 }
 
-bool ComparisonGraph::isPossibleCompare(const CompareResult expected, const ASTPtr & left, const ASTPtr & right) const
+bool ComparisonGraph::isPossibleCompare(CompareResult expected, const ASTPtr & left, const ASTPtr & right) const
 {
     const auto result = compare(left, right);
 
@@ -267,7 +267,7 @@ bool ComparisonGraph::isPossibleCompare(const CompareResult expected, const ASTP
     return possible_pairs.contains({expected, result});
 }
 
-bool ComparisonGraph::isAlwaysCompare(const CompareResult expected, const ASTPtr & left, const ASTPtr & right) const
+bool ComparisonGraph::isAlwaysCompare(CompareResult expected, const ASTPtr & left, const ASTPtr & right) const
 {
     const auto result = compare(left, right);
 
@@ -324,12 +324,12 @@ std::optional<size_t> ComparisonGraph::getComponentId(const ASTPtr & ast) const
     }
 }
 
-bool ComparisonGraph::hasPath(const size_t left, const size_t right) const
+bool ComparisonGraph::hasPath(size_t left, size_t right) const
 {
     return findPath(left, right) || findPath(right, left);
 }
 
-ASTs ComparisonGraph::getComponent(const size_t id) const
+ASTs ComparisonGraph::getComponent(size_t id) const
 {
     return graph.vertices[id].asts;
 }
@@ -387,7 +387,7 @@ ComparisonGraph::CompareResult ComparisonGraph::functionNameToCompareResult(cons
     return it == std::end(relation_to_compare) ? CompareResult::UNKNOWN : it->second;
 }
 
-ComparisonGraph::CompareResult ComparisonGraph::inverseCompareResult(const CompareResult result)
+ComparisonGraph::CompareResult ComparisonGraph::inverseCompareResult(CompareResult result)
 {
     static const std::unordered_map<CompareResult, CompareResult> inverse_relations =
     {
@@ -486,7 +486,7 @@ std::vector<ASTs> ComparisonGraph::getVertices() const
 
 void ComparisonGraph::dfsComponents(
     const Graph & reversed_graph, size_t v,
-    OptionalIndices & components, const size_t component)
+    OptionalIndices & components, size_t component)
 {
     components[v] = component;
     for (const auto & edge : reversed_graph.edges[v])

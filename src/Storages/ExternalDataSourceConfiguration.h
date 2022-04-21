@@ -1,18 +1,23 @@
 #pragma once
 
-#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/StorageS3Settings.h>
 
 
 namespace DB
 {
 
+#define EMPTY_SETTINGS(M)
+DECLARE_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
+
+struct EmptySettings : public BaseSettings<EmptySettingsTraits> {};
+
 struct ExternalDataSourceConfiguration
 {
     String host;
     UInt16 port = 0;
-    String username;
+    String username = "default";
     String password;
     String database;
     String table;
@@ -41,17 +46,17 @@ struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
 
 struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
 {
-    String collection;
     String options;
 };
 
 
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 
-struct ExternalDataSourceConfig
+struct ExternalDataSourceInfo
 {
     ExternalDataSourceConfiguration configuration;
     StorageSpecificArgs specific_args;
+    SettingsChanges settings_changes;
 };
 
 /* If there is a storage engine's configuration specified in the named_collections,
@@ -64,10 +69,16 @@ struct ExternalDataSourceConfig
  * Any key-value engine argument except common (`host`, `port`, `username`, `password`, `database`)
  * is returned in EngineArgs struct.
  */
-std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine = false, bool throw_on_no_collection = true);
+template <typename T = EmptySettingsTraits>
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const ASTs & args, ContextPtr context, bool is_database_engine = false, bool throw_on_no_collection = true, const BaseSettings<T> & storage_settings = {});
 
-std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
+using HasConfigKeyFunc = std::function<bool(const String &)>;
+
+template <typename T = EmptySettingsTraits>
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
+    ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<T> & settings = {});
 
 
 /// Highest priority is 0, the bigger the number in map, the less the priority.
@@ -82,15 +93,15 @@ struct ExternalDataSourcesByPriority
 };
 
 ExternalDataSourcesByPriority
-getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
+getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key);
 
 
 struct URLBasedDataSourceConfiguration
 {
     String url;
-    String format;
+    String format = "auto";
     String compression_method = "auto";
-    String structure;
+    String structure = "auto";
 
     std::vector<std::pair<String, Field>> headers;
     String http_method;
@@ -100,8 +111,14 @@ struct URLBasedDataSourceConfiguration
 
 struct StorageS3Configuration : URLBasedDataSourceConfiguration
 {
-    String access_key_id;
-    String secret_access_key;
+    S3Settings::AuthSettings auth_settings;
+    S3Settings::ReadWriteSettings rw_settings;
+};
+
+
+struct StorageS3ClusterConfiguration : StorageS3Configuration
+{
+    String cluster_name;
 };
 
 struct URLBasedDataSourceConfig

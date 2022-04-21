@@ -329,7 +329,7 @@ private:
         if (num_threads > first->aggregates_pools.size())
         {
             Arenas & first_pool = first->aggregates_pools;
-            for (size_t j = first_pool.size(); j < num_threads; j++)
+            for (size_t j = first_pool.size(); j < num_threads; ++j)
                 first_pool.emplace_back(std::make_shared<Arena>());
         }
 

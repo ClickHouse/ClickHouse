@@ -401,8 +401,9 @@ Default value: 1.
 
 When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv), [TabSeparated](../../interfaces/formats.md#tabseparated) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
-!!! note "Note"
-    When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
+:::note
+When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
+:::
 
 Possible values:
 
@@ -690,8 +691,9 @@ When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to t
 
 Changes behaviour of join operations with `ANY` strictness.
 
-!!! warning "Attention"
-    This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+:::warning
+This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+:::
 
 Possible values:
 
@@ -762,8 +764,9 @@ Default value: 64.
 
 Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
 
-!!! note "Warning"
-    Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
+:::warning
+Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
+:::
 
 When the legacy behaviour enabled:
 
@@ -817,9 +820,19 @@ If the number of rows to be read from a file of a [MergeTree](../../engines/tabl
 
 Possible values:
 
--   Any positive integer.
+-   Positive integer.
 
-Default value: 163840.
+Default value: `163840`.
+
+## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge-tree-min-rows-for-concurrent-read-for-remote-filesystem}
+
+The minimum number of lines to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `163840`.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
@@ -827,9 +840,19 @@ If the number of bytes to read from one file of a [MergeTree](../../engines/tabl
 
 Possible value:
 
--   Any positive integer.
+-   Positive integer.
 
-Default value: 251658240.
+Default value: `251658240`.
+
+## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge-tree-min-bytes-for-concurrent-read-for-remote-filesystem}
+
+The minimum number of bytes to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `251658240`.
 
 ## merge_tree_min_rows_for_seek {#setting-merge-tree-min-rows-for-seek}
 
@@ -884,26 +907,6 @@ Possible values:
 -   Any positive integer.
 
 Default value: 2013265920.
-
-## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `60` seconds.
-
-## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `1` second.
 
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
@@ -992,9 +995,16 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
+Query threads log into [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting have effect only when [log_queries](#settings-log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
-Example:
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `1`.
+
+**Example**
 
 ``` text
 log_query_threads=1
@@ -1130,8 +1140,9 @@ Higher values will lead to higher memory usage.
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
-!!! note "Warning"
-    This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::warning
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
 
 Don’t confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
@@ -1147,8 +1158,9 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
 
-!!! note "Warning"
-    This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::warning
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
 
 ## max_query_size {#settings-max_query_size}
 
@@ -1236,8 +1248,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
-!!! note "Note"
-    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::note
+60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
@@ -1256,8 +1269,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
-!!! note "Note"
-    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::note
+60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1319,7 +1333,7 @@ If a query from the same user with the same ‘query_id’ already exists at thi
 
 `1` – Cancel the old query and start running the new one.
 
-Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
+Set this parameter to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
 
 ## replace_running_query_max_wait_ms {#replace-running-query-max-wait-ms}
 
@@ -1373,7 +1387,7 @@ load_balancing = nearest_hostname
 
 The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
-For instance, example01-01-1 and example01-01-2.yandex.ru are different in one position, while example01-01-1 and example01-02-2 differ in two places.
+For instance, example01-01-1 and example01-01-2 are different in one position, while example01-01-1 and example01-02-2 differ in two places.
 This method might seem primitive, but it does not require external data about network topology, and it does not compare IP addresses, which would be complicated for our IPv6 addresses.
 
 Thus, if there are equivalent replicas, the closest one by name is preferred.
@@ -1419,8 +1433,9 @@ Possible values:
 
 Default value: 1.
 
-!!! warning "Warning"
-    Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+:::warning
+Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+:::
 
 ## totals_mode {#totals-mode}
 
@@ -1451,8 +1466,9 @@ This setting is useful for replicated tables with a sampling key. A query may be
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
-!!! warning "Warning"
-    This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+:::warning
+This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+:::
 
 ## compile_expressions {#compile-expressions}
 
@@ -1482,7 +1498,7 @@ Possible values:
 
 Default value: `1`.
 
-**See Also** 
+**See Also**
 
 -   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
 
@@ -1700,18 +1716,17 @@ Quorum writes
 
 `INSERT` succeeds only when ClickHouse manages to correctly write data to the `insert_quorum` of replicas during the `insert_quorum_timeout`. If for any reason the number of replicas with successful writes does not reach the `insert_quorum`, the write is considered failed and ClickHouse will delete the inserted block from all the replicas where data has already been written.
 
-All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
+When `insert_quorum_parallel` is disabled, all replicas in the quorum are consistent, i.e. they contain data from all previous `INSERT` queries (the `INSERT` sequence is linearized). When reading data written using `insert_quorum` and `insert_quorum_parallel` is disabled, you can turn on sequential consistency for `SELECT` queries using [select_sequential_consistency](#settings-select_sequential_consistency).
 
-When reading the data written from the `insert_quorum`, you can use the [select_sequential_consistency](#settings-select_sequential_consistency) option.
-
-ClickHouse generates an exception
+ClickHouse generates an exception:
 
 -   If the number of available replicas at the time of the query is less than the `insert_quorum`.
--   At an attempt to write data when the previous block has not yet been inserted in the `insert_quorum` of replicas. This situation may occur if the user tries to perform an `INSERT` before the previous one with the `insert_quorum` is completed.
+-   When `insert_quorum_parallel` is disabled and an attempt to write data is made when the previous block has not yet been inserted in `insert_quorum` of replicas. This situation may occur if the user tries to perform another `INSERT` query to the same table before the previous one with `insert_quorum` is completed.
 
 See also:
 
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
@@ -1723,11 +1738,29 @@ Default value: 600 000 milliseconds (ten minutes).
 See also:
 
 -   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
+
+## insert_quorum_parallel {#settings-insert_quorum_parallel}
+
+Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+See also:
+
+-   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## select_sequential_consistency {#settings-select_sequential_consistency}
 
-Enables or disables sequential consistency for `SELECT` queries:
+Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
 
 Possible values:
 
@@ -1740,10 +1773,13 @@ Usage
 
 When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
 
+When `insert_quorum_parallel` is enabled (the default), then `select_sequential_consistency` does not work. This is because parallel `INSERT` queries can be written to different sets of quorum replicas so there is no guarantee a single replica will have received all writes.
+
 See also:
 
 -   [insert_quorum](#settings-insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 
 ## insert_deduplicate {#settings-insert-deduplicate}
 
@@ -1775,6 +1811,48 @@ By default, deduplication is not performed for materialized views but is done up
 If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
 At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
 ignoring check result for the source table, and will insert rows lost because of the first failure.
+
+## insert_deduplication_token {#insert_deduplication_token}
+
+The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree  
+For example, by providing a unique value for the setting in each INSERT statement,
+user can avoid the same inserted data being deduplicated.
+
+Possilbe values:
+
+-  Any string
+
+Default value: empty string (disabled)
+
+`insert_deduplication_token` is used for deduplication _only_ when not empty.
+
+Example:
+
+```sql
+CREATE TABLE test_table
+( A Int64 )
+ENGINE = MergeTree
+ORDER BY A
+SETTINGS non_replicated_deduplication_window = 100;
+
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
+
+-- the next insert won't be deduplicated because insert_deduplication_token is different
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
+
+-- the next insert will be deduplicated because insert_deduplication_token 
+-- is the same as one of the previous
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
+
+SELECT * FROM test_table
+
+┌─A─┐
+│ 1 │
+└───┘
+┌─A─┐
+│ 1 │
+└───┘
+```
 
 ## max_network_bytes {#settings-max-network-bytes}
 
@@ -2042,8 +2120,9 @@ See also:
 -   [distributed_push_down_limit](#distributed-push-down-limit)
 -   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
 
-!!! note "Note"
-    Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
+:::note
+Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
+:::
 
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
@@ -2088,7 +2167,7 @@ Possible values:
 
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
-   
+
 Default value: `1`.
 
 See also:
@@ -2185,18 +2264,21 @@ Possible values:
 
 Default value: 0.
 
-!!! note "Note"
-    This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+:::note
+This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+:::
 
-!!! warning "Warning"
-    You should not rely on automatic batch splitting, since this may hurt performance.
+:::warning
+You should not rely on automatic batch splitting, since this may hurt performance.
+:::
 
 ## os_thread_priority {#setting-os-thread-priority}
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
 
-!!! warning "Warning"
-    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+:::warning
+To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+:::
 
 Possible values:
 
@@ -2277,7 +2359,7 @@ Possible values:
 -   1 — Enabled.
 -   0 — Disabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
@@ -2288,7 +2370,7 @@ Possible values:
 -   1 — Enabled.
 -   0 — Disabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
@@ -2470,9 +2552,10 @@ Possible values:
 
 Default value: `1`.
 
-!!! note "Note"
-    - with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
-    - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+:::note
+- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
+- with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+:::
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
@@ -3127,6 +3210,14 @@ Possible values:
 
 Default value: `0`.
 
+:::warning
+Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
+:::
+
+:::warning
+Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
+:::
+
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -3675,41 +3766,6 @@ Possible values:
 
 Default value: `0`.
 
-## materialized_postgresql_max_block_size {#materialized-postgresql-max-block-size}
-
-Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
-
-Possible values:
-
--   Positive integer.
-
-Default value: `65536`.
-
-## materialized_postgresql_tables_list {#materialized-postgresql-tables-list}
-
-Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
-
-Default value: empty list — means whole PostgreSQL database will be replicated.
-
-## materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
-
-Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
-
-Possible values:
-
--   0 — The table is not automatically updated in the background, when schema changes are detected.
--   1 — The table is automatically updated in the background, when schema changes are detected.
-
-Default value: `0`.
-
-## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
-
-A user-created replication slot. Must be used together with [materialized_postgresql_snapshot](#materialized-postgresql-snapshot).
-
-## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
-
-A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
-
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md#projections) optimization when processing `SELECT` queries.
@@ -3978,8 +4034,8 @@ If [wait_for_async_insert](#wait-for-async-insert) is enabled, every client will
 
 Possible values:
 
--   0 — Insertions are made synchronously, one after another. 
--   1 — Multiple asynchronous insertions enabled. 
+-   0 — Insertions are made synchronously, one after another.
+-   1 — Multiple asynchronous insertions enabled.
 
 Default value: `0`.
 
@@ -4049,6 +4105,41 @@ Possible values:
 
 Default value: `0`.
 
+## alter_partition_verbose_result {#alter-partition-verbose-result}
+
+Enables or disables the display of information about the parts to which the manipulation operations with partitions and parts have been successfully applied.
+Applicable to [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) and to [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition).
+
+Possible values:
+
+-   0 — disable verbosity.
+-   1 — enable verbosity.
+
+Default value: `0`.
+
+**Example**
+
+```sql
+CREATE TABLE test(a Int64, d Date, s String) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a;
+INSERT INTO test VALUES(1, '2021-01-01', '');
+INSERT INTO test VALUES(1, '2021-01-01', '');
+ALTER TABLE test DETACH PARTITION ID '202101';
+
+ALTER TABLE test ATTACH PARTITION ID '202101' SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─────┬─partition_id─┬─part_name────┬─old_part_name─┐
+│ ATTACH PARTITION │ 202101       │ 202101_7_7_0 │ 202101_5_5_0  │
+│ ATTACH PARTITION │ 202101       │ 202101_8_8_0 │ 202101_6_6_0  │
+└──────────────────┴──────────────┴──────────────┴───────────────┘
+
+ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─┬─partition_id─┬─part_name────┬─backup_name─┬─backup_path───────────────────┬─part_backup_path────────────────────────────────────────────┐
+│ FREEZE ALL   │ 202101       │ 202101_7_7_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_7_7_0 │
+│ FREEZE ALL   │ 202101       │ 202101_8_8_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_8_8_0 │
+└──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
+```
+
 ## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
 
 Determines how to map ClickHouse `Enum` data type and [CapnProto](../../interfaces/formats.md#capnproto) `Enum` data type from schema.
@@ -4071,3 +4162,71 @@ Possible values:
 -   0 — Big files read with only copying data from kernel to userspace.
 
 Default value: `0`.
+
+## format_custom_escaping_rule {#format-custom-escaping-rule}
+
+Sets the field escaping rule for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Possible values:
+
+-   `'Escaped'` — Similarly to [TSV](../../interfaces/formats.md#tabseparated).
+-   `'Quoted'` — Similarly to [Values](../../interfaces/formats.md#data-format-values).
+-   `'CSV'` — Similarly to [CSV](../../interfaces/formats.md#csv).
+-   `'JSON'` — Similarly to [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+-   `'XML'` — Similarly to [XML](../../interfaces/formats.md#xml).
+-   `'Raw'` — Extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
+
+Default value: `'Escaped'`.
+
+## format_custom_field_delimiter {#format-custom-field-delimiter}
+
+Sets the character that is interpreted as a delimiter between the fields for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `'\t'`.
+
+## format_custom_row_before_delimiter {#format-custom-row-before-delimiter}
+
+Sets the character that is interpreted as a delimiter before the field of the first column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_row_after_delimiter {#format-custom-row-after-delimiter}
+
+Sets the character that is interpreted as a delimiter after the field of the last column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `'\n'`.
+
+## format_custom_row_between_delimiter {#format-custom-row-between-delimiter}
+
+Sets the character that is interpreted as a delimiter between the rows for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_result_before_delimiter {#format-custom-result-before-delimiter}
+
+Sets the character that is interpreted as a prefix before the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_result_after_delimiter {#format-custom-result-after-delimiter}
+
+Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## shutdown_wait_unfinished_queries
+
+Enables or disables waiting unfinished queries when shutdown server.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled. The wait time equal shutdown_wait_unfinished config.
+
+Default value: 0.
+
+## shutdown_wait_unfinished
+
+The waiting time in seconds for currently handled connections when shutdown server.
+
+Default Value: 5.

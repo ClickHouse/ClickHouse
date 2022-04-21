@@ -22,22 +22,21 @@ private:
     DataTypes elems;
     Strings names;
     bool have_explicit_names;
-    bool serialize_names = true;
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeTuple(const DataTypes & elems);
-    DataTypeTuple(const DataTypes & elems, const Strings & names, bool serialize_names_ = true);
-
-    static bool canBeCreatedWithNames(const Strings & names);
+    explicit DataTypeTuple(const DataTypes & elems);
+    DataTypeTuple(const DataTypes & elems, const Strings & names);
 
     TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string doGetName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
 
     bool canBeInsideNullable() const override { return false; }
+    bool supportsSparseSerialization() const override { return true; }
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
@@ -52,9 +51,9 @@ public:
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
-    SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const override;
-
     SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
+    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfo::Settings & settings) const override;
 
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }
     const DataTypes & getElements() const { return elems; }
@@ -64,7 +63,6 @@ public:
     String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
-    bool serializeNames() const { return serialize_names; }
 };
 
 }

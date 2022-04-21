@@ -1,5 +1,5 @@
 ---
-toc_title: ARRAY JOIN
+sidebar_label: ARRAY JOIN
 ---
 
 # ARRAY JOIN Clause {#select-array-join-clause}
@@ -127,7 +127,7 @@ ARRAY JOIN [1, 2, 3] AS arr_external;
 └─────────────┴──────────────┘
 ```
 
-Multiple arrays can be comma-separated in the `ARRAY JOIN` clause. In this case, `JOIN` is performed with them simultaneously (the direct sum, not the cartesian product). Note that all the arrays must have the same size. Example:
+Multiple arrays can be comma-separated in the `ARRAY JOIN` clause. In this case, `JOIN` is performed with them simultaneously (the direct sum, not the cartesian product). Note that all the arrays must have the same size by default. Example:
 
 ``` sql
 SELECT s, arr, a, num, mapped
@@ -145,7 +145,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
+The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -161,6 +161,25 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
 │ World │ [3,4,5] │ 4 │   2 │ [1,2,3]             │
 │ World │ [3,4,5] │ 5 │   3 │ [1,2,3]             │
 └───────┴─────────┴───┴─────┴─────────────────────┘
+```
+Multiple arrays with different sizes can be joined by using: `SETTINGS enable_unaligned_array_join = 1`. Example:
+
+```sql
+SELECT s, arr, a, b 
+FROM arrays_test ARRAY JOIN arr as a, [['a','b'],['c']] as b 
+SETTINGS enable_unaligned_array_join = 1;
+```
+
+```text
+┌─s───────┬─arr─────┬─a─┬─b─────────┐
+│ Hello   │ [1,2]   │ 1 │ ['a','b'] │
+│ Hello   │ [1,2]   │ 2 │ ['c']     │
+│ World   │ [3,4,5] │ 3 │ ['a','b'] │
+│ World   │ [3,4,5] │ 4 │ ['c']     │
+│ World   │ [3,4,5] │ 5 │ []        │
+│ Goodbye │ []      │ 0 │ ['a','b'] │
+│ Goodbye │ []      │ 0 │ ['c']     │
+└─────────┴─────────┴───┴───────────┘
 ```
 
 ## ARRAY JOIN with Nested Data Structure {#array-join-with-nested-data-structure}
@@ -258,7 +277,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
+Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num

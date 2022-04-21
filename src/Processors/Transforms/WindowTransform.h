@@ -30,7 +30,7 @@ struct WindowFunctionWorkspace
     std::vector<size_t> argument_column_indices;
 
     // Will not be initialized for a pure window function.
-    AlignedBuffer aggregate_function_state;
+    mutable AlignedBuffer aggregate_function_state;
 
     // Argument columns. Be careful, this is a per-block cache.
     std::vector<const IColumn *> argument_columns;
@@ -39,6 +39,7 @@ struct WindowFunctionWorkspace
 
 struct WindowTransformBlock
 {
+    Columns original_input_columns;
     Columns input_columns;
     MutableColumns output_columns;
 
@@ -244,7 +245,6 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
-public:
     /*
      * Data (formerly) inherited from ISimpleTransform, needed for the
      * implementation of the IProcessor interface.
@@ -320,7 +320,7 @@ public:
     // We update the states of the window functions after we find the final frame
     // boundaries.
     // After we have found the final boundaries of the frame, we can immediately
-    // output the result for the current row, w/o waiting for more data.
+    // output the result for the current row, without waiting for more data.
     RowNumber frame_start;
     RowNumber frame_end;
     bool frame_ended = false;
@@ -348,10 +348,10 @@ public:
 template <>
 struct fmt::formatter<DB::RowNumber>
 {
-    constexpr auto parse(format_parse_context & ctx)
+    static constexpr auto parse(format_parse_context & ctx)
     {
-        auto it = ctx.begin();
-        auto end = ctx.end();
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
 
         /// Only support {}.
         if (it != end && *it != '}')

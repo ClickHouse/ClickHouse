@@ -1,15 +1,11 @@
 #include <amqpcpp.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -21,17 +17,13 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/config_version.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/typeid_cast.h>
 #include <base/logger_useful.h>
 
 namespace DB
@@ -53,6 +45,7 @@ namespace ErrorCodes
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
+    extern const int QUERY_NOT_ALLOWED;
 }
 
 namespace ExchangeType
@@ -97,6 +90,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         , is_attach(is_attach_)
 {
     auto parsed_address = parseAddress(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port), 5672);
+    context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
+
     auto rabbitmq_username = rabbitmq_settings->rabbitmq_username.value;
     auto rabbitmq_password = rabbitmq_settings->rabbitmq_password.value;
     configuration =
@@ -584,13 +579,28 @@ bool StorageRabbitMQ::updateChannel(ChannelPtr & channel)
     try
     {
         channel = connection->createChannel();
-        return channel->usable();
+        return true;
     }
     catch (...)
     {
         tryLogCurrentException(log);
         return false;
     }
+}
+
+
+void StorageRabbitMQ::prepareChannelForBuffer(ConsumerBufferPtr buffer)
+{
+    if (!buffer)
+        return;
+
+    if (buffer->queuesCount() != queues.size())
+        buffer->updateQueues(queues);
+
+    buffer->updateAckTracker();
+
+    if (updateChannel(buffer->getChannel()))
+        buffer->setupChannel();
 }
 
 
@@ -640,7 +650,7 @@ void StorageRabbitMQ::unbindExchange()
 
 Pipe StorageRabbitMQ::read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & /* query_info */,
         ContextPtr local_context,
         QueryProcessingStage::Enum /* processed_stage */,
@@ -653,11 +663,16 @@ Pipe StorageRabbitMQ::read(
     if (num_created_consumers == 0)
         return {};
 
+    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+
+    if (mv_attached)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
+
     std::lock_guard lock(loop_mutex);
 
-    auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
-    auto block_size = getMaxBlockSize();
 
     if (!connection->isConnected())
     {
@@ -675,7 +690,7 @@ Pipe StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-                *this, metadata_snapshot, modified_context, column_names, block_size);
+            *this, storage_snapshot, modified_context, column_names, 1, rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -717,9 +732,9 @@ void StorageRabbitMQ::startup()
             }
             catch (...)
             {
-                tryLogCurrentException(log);
                 if (!is_attach)
                     throw;
+                tryLogCurrentException(log);
             }
         }
         else
@@ -733,15 +748,14 @@ void StorageRabbitMQ::startup()
         try
         {
             auto buffer = createReadBuffer();
-            if (rabbit_is_ready)
-                buffer->initialize();
             pushReadBuffer(std::move(buffer));
             ++num_created_consumers;
         }
-        catch (const AMQP::Exception & e)
+        catch (...)
         {
-            LOG_ERROR(log, "Got AMQ exception {}", e.what());
-            throw;
+            if (!is_attach)
+                throw;
+            tryLogCurrentException(log);
         }
     }
 
@@ -873,9 +887,8 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    ChannelPtr consumer_channel = connection->createChannel();
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-        std::move(consumer_channel), connection->getHandler(), queues, ++consumer_id,
+        connection->getHandler(), queues, ++consumer_id,
         unique_strbase, log, row_delimiter, queue_size, shutdown_called);
 }
 
@@ -923,7 +936,7 @@ void StorageRabbitMQ::initializeBuffers()
     if (!initialized)
     {
         for (const auto & buffer : buffers)
-            buffer->initialize();
+            prepareChannelForBuffer(buffer);
         initialized = true;
     }
 }
@@ -945,6 +958,8 @@ void StorageRabbitMQ::streamingToViewsFunc()
             {
                 initializeBuffers();
                 auto start_time = std::chrono::steady_clock::now();
+
+                mv_attached.store(true);
 
                 // Keep streaming as long as there are attached views and streaming is not cancelled
                 while (!shutdown_called && num_created_consumers > 0)
@@ -984,6 +999,8 @@ void StorageRabbitMQ::streamingToViewsFunc()
         }
     }
 
+    mv_attached.store(false);
+
     /// If there is no running select, stop the loop which was
     /// activated by previous select.
     if (connection->getHandler().loopRunning())
@@ -1009,9 +1026,9 @@ bool StorageRabbitMQ::streamToViews()
     InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
     auto block_io = interpreter.execute();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     auto column_names = block_io.pipeline.getHeader().getNames();
-    auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
     auto block_size = getMaxBlockSize();
 
@@ -1024,7 +1041,7 @@ bool StorageRabbitMQ::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-                *this, metadata_snapshot, rabbitmq_context, column_names, block_size, false);
+            *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -1084,19 +1101,7 @@ bool StorageRabbitMQ::streamToViews()
             if (source->needChannelUpdate())
             {
                 auto buffer = source->getBuffer();
-                if (buffer)
-                {
-                    if (buffer->queuesCount() != queues.size())
-                        buffer->updateQueues(queues);
-
-                    buffer->updateAckTracker();
-
-                    if (updateChannel(buffer->getChannel()))
-                    {
-                        LOG_TRACE(log, "Connection is active, but channel update is needed");
-                        buffer->setupChannel();
-                    }
-                }
+                prepareChannelForBuffer(buffer);
             }
 
             /* false is returned by the sendAck function in only two cases:

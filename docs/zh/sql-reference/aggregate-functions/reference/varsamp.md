@@ -1,5 +1,5 @@
 ---
-toc_priority: 33
+sidebar_position: 33
 ---
 
 # varSamp {#varsamp}
@@ -11,5 +11,5 @@ toc_priority: 33
 返回 `Float64`。 当 `n <= 1`，返回 `+∞`。
 
 !!! note "注"
-该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `varSampStable` 函数。 它的工作速度较慢，但提供较低的计算错误。
+    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `varSampStable` 函数。 它的工作速度较慢，但提供较低的计算错误。
 

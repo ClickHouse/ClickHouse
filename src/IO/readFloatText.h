@@ -154,7 +154,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
     if (likely(!buf.eof() && buf.position() + MAX_LENGTH <= buf.buffer().end()))
     {
-        auto initial_position = buf.position();
+        auto * initial_position = buf.position();
         auto res = fast_float::from_chars(initial_position, buf.buffer().end(), x);
 
         if (unlikely(res.ec != std::errc()))
@@ -341,6 +341,8 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         negative = true;
         ++in.position();
     }
+    else if (*in.position() == '+')
+        ++in.position();
 
     auto count_after_sign = in.count();
 

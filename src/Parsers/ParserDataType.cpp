@@ -1,7 +1,7 @@
 #include <Parsers/ParserDataType.h>
 
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -92,7 +92,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (type_name_upper.find("INT") != std::string::npos)
     {
-        /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL
+        /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL.
         if (ParserKeyword("SIGNED").ignore(pos))
             type_name_suffix = "SIGNED";
         else if (ParserKeyword("UNSIGNED").ignore(pos))

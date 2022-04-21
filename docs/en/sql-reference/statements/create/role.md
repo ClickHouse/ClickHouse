@@ -1,6 +1,6 @@
 ---
-toc_priority: 40
-toc_title: ROLE
+sidebar_position: 40
+sidebar_label: ROLE
 ---
 
 # CREATE ROLE {#create-role-statement}
@@ -22,7 +22,7 @@ User can have default roles which apply at user login. To set default roles, use
 
 To revoke a role, use the [REVOKE](../../../sql-reference/statements/revoke.md) statement.
 
-To delete role, use the [DROP ROLE](../../../sql-reference/statements/drop.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
+To delete role, use the [DROP ROLE](../../../sql-reference/statements/drop#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
 
 ## Examples {#create-role-examples}
 
@@ -31,7 +31,7 @@ CREATE ROLE accountant;
 GRANT SELECT ON db.* TO accountant;
 ```
 
-This sequence of queries creates the role `accountant` that has the privilege of reading data from the `accounting` database.
+This sequence of queries creates the role `accountant` that has the privilege of reading data from the `db` database.
 
 Assigning the role to the user `mira`:
 
