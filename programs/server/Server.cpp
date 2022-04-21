@@ -590,13 +590,13 @@ static void sanityChecks(Server * server)
             server->context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
 
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
-            server->context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + data_path);
+            server->context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
 
         if (!logs_path.empty())
         {
             auto logs_parent = fs::path(logs_path).parent_path();
             if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
-                server->context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + logs_parent);
+                server->context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
         }
     }
     catch (...)
