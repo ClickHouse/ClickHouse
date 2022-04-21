@@ -200,6 +200,12 @@ void DiskRestartProxy::copy(const String & from_path, const std::shared_ptr<IDis
     DiskDecorator::copy(from_path, to_disk, to_path);
 }
 
+void DiskRestartProxy::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
+{
+    ReadLock lock (mutex);
+    DiskDecorator::copyDirectoryContent(from_dir, to_disk, to_dir);
+}
+
 void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file_names)
 {
     ReadLock lock (mutex);

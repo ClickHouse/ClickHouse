@@ -108,6 +108,11 @@ void DiskDecorator::copy(const String & from_path, const std::shared_ptr<IDisk> 
     delegate->copy(from_path, to_disk, to_path);
 }
 
+void DiskDecorator::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
+{
+    delegate->copyDirectoryContent(from_dir, to_disk, to_dir);
+}
+
 void DiskDecorator::listFiles(const String & path, std::vector<String> & file_names)
 {
     delegate->listFiles(path, file_names);
