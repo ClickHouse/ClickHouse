@@ -454,7 +454,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
     for (const auto & desc : aggregate_descriptions)
         aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
 
-    if (select_query->group_by_with_grouping_sets)
+    if (select_query != nullptr && select_query->group_by_with_grouping_sets)
         aggregated_columns.emplace_back("__grouping_set", std::make_shared<DataTypeUInt64>());
 }
 
