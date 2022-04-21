@@ -754,7 +754,8 @@ bool TableJoin::allowParallelHashJoin() const
         return false;
     if (table_join.kind != ASTTableJoin::Kind::Left && table_join.kind != ASTTableJoin::Kind::Inner)
         return false;
-
+    if (isSpecialStorage() || !oneDisjunct())
+        return false;
     return true;
 }
 
