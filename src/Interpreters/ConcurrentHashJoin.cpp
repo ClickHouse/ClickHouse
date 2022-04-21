@@ -108,33 +108,7 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
 
-    ColumnsWithTypeAndName final_columns;
-    MutableColumns mutable_final_columns;
-    NamesAndTypesList names_and_types = dispatched_blocks[0].getNamesAndTypesList();
-    auto types = names_and_types.getTypes();
-    for (auto & dispatched_block : dispatched_blocks)
-    {
-        for (size_t pos = 0; pos < dispatched_block.columns(); ++pos)
-        {
-            auto & from_column = dispatched_block.getByPosition(pos);
-            if (mutable_final_columns.size() <= pos)
-            {
-                mutable_final_columns.emplace_back(from_column.column->cloneEmpty());
-            }
-            if (!from_column.column->empty())
-            {
-                mutable_final_columns[pos]->insertRangeFrom(*from_column.column, 0, from_column.column->size());
-            }
-        }
-    }
-
-    size_t i = 0;
-    for (auto & name_and_type : names_and_types)
-    {
-        final_columns.emplace_back(ColumnWithTypeAndName(std::move(mutable_final_columns[i]), name_and_type.type, name_and_type.name));
-        i += 1;
-    }
-    block = Block(final_columns);
+    block = concatenateBlocks(dispatched_blocks);
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
