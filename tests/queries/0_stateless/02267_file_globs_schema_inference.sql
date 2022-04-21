@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 insert into function file('02267_data2.jsonl') select NULL as x;
 insert into function file('02267_data3.jsonl') select * from numbers(0);
 insert into function file('02267_data4.jsonl') select 1 as x;
