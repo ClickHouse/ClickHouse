@@ -211,7 +211,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     for (size_t j = 0; j < streams; ++j)
                     {
                         auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, many_data, j, merge_threads, temporary_data_merge_threads);
-                        connect(*ports[i + streams * j], aggregation_for_set->getInputs().front());
+                        // For each input stream we have `grouping_sets_size` copies, so port index
+                        // for transform #j should skip ports of first (j-1) streams.
+                        connect(*ports[i + grouping_sets_size * j], aggregation_for_set->getInputs().front());
                         aggregators.push_back(aggregation_for_set);
                     }
                 }
