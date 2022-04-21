@@ -31,7 +31,10 @@ if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
 fi
 
-rm -f CMakeCache.txt
+cache_status
+# clear cache stats
+ccache --zero-stats ||:
+
 if [ "$BUILD_MUSL_KEEPER" == "1" ]
 then
     # build keeper with musl separately
@@ -65,10 +68,6 @@ then
     cov-configure --config ./coverity.config --template --comptype clangcc --compiler "$CC"
     SCAN_WRAPPER="cov-build --config ./coverity.config --dir cov-int"
 fi
-
-cache_status
-# clear cache stats
-ccache --zero-stats ||:
 
 # No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
