@@ -1,4 +1,6 @@
-#include "CacheLog.h"
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/CacheLog.h>
 
 
 namespace DB
