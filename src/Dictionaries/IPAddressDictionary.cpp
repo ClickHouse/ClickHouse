@@ -301,7 +301,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
         for (const auto i : collections::range(0, rows))
         {
-            auto addrv4 = UInt32(first_column->get64(i));
+            auto addrv4 = static_cast<UInt32>(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             out[i] = (found != ipNotFound());
             keys_found += out[i];
@@ -387,7 +387,7 @@ void IPAddressDictionary::loadData()
                 setAttributeValue(attribute, attribute_column[row]);
             }
 
-            const auto [addr, prefix] = parseIPFromString(std::string_view(key_column_ptr->getDataAt(row)));
+            const auto [addr, prefix] = parseIPFromString(std::string_view{key_column_ptr->getDataAt(row)});
             has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
 
             size_t row_number = ip_records.size();
@@ -716,7 +716,7 @@ void IPAddressDictionary::getItemsImpl(
         for (const auto i : collections::range(0, rows))
         {
             // addrv4 has native endianness
-            auto addrv4 = UInt32(first_column->get64(i));
+            auto addrv4 = static_cast<UInt32>(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
             {

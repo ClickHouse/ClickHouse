@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: 算术函数
+sidebar_position: 35
+sidebar_label: 算术函数
 ---
 
 # 算术函数 {#arithmetic-functions}

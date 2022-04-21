@@ -296,7 +296,7 @@ Pipe StorageMerge::read(
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
-        = std::min(unsigned(tables_count), std::max(1U, unsigned(local_context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
+        = std::min(static_cast<unsigned>(tables_count), std::max(1U, static_cast<unsigned>(local_context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
@@ -327,7 +327,7 @@ Pipe StorageMerge::read(
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
-        current_streams = std::max(size_t(1), current_streams);
+        current_streams = std::max(static_cast<size_t>(1), current_streams);
 
         const auto & storage = std::get<1>(table);
 
@@ -636,7 +636,7 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const String & datab
         if (source_databases_and_tables)
         {
             if (auto it = source_databases_and_tables->find(database_name); it != source_databases_and_tables->end())
-                return it->second.count(table_name_);
+                return it->second.contains(table_name_);
             else
                 return false;
         }

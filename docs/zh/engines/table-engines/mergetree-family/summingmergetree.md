@@ -34,7 +34,7 @@
 
 <summary>已弃用的建表方法</summary>
 
-!!! attention "注意"
+    :::info "注意"
     不要在新项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
     CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
