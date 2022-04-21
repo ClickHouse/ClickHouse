@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/CommonCondition.h>
 #include <method/hnsw.h>
 
 #include <cstddef>
@@ -115,7 +116,7 @@ public:
     ~MergeTreeIndexConditionSimpleHnsw() override = default;
 private:
     DataTypes index_data_types;
-    KeyCondition condition;
+    DB::Condition::Common::CommonCondition condition;
 };
 
 class MergeTreeIndexSimpleHnsw : public IMergeTreeIndex

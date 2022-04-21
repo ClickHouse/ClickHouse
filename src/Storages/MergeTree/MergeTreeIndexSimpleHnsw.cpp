@@ -264,30 +264,43 @@ MergeTreeIndexConditionSimpleHnsw::MergeTreeIndexConditionSimpleHnsw(
     const SelectQueryInfo & query,
     ContextPtr context)
     : index_data_types(index.data_types)
-    , condition(query, context, index.column_names, index.expression)
+    , condition(query, context)
 {
 }
 
 bool MergeTreeIndexConditionSimpleHnsw::alwaysUnknownOrTrue() const
 {
-    return false;
+    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Condition -- {}", condition.alwaysUnknownOrTrue());
+    return condition.alwaysUnknownOrTrue();
 }
 
 bool MergeTreeIndexConditionSimpleHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
+
     LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Checking granule begin");
-    auto center_obj = std::make_unique<similarity::Object>(-1, -1, 3 * sizeof(float), nullptr);
-    auto *raw_center_obj = reinterpret_cast<float*>(center_obj->data());
-    raw_center_obj[0] = 0.2;
-    raw_center_obj[1] = 0.2;
-    raw_center_obj[2] = 0.2;
+    float comp_dist = condition.getComparisonDistance();
+    std::vector<float> target_vec = condition.getTargetVector();
+    similarity::Object target(-1,-1, target_vec.size() * sizeof(float), target_vec.data());
     std::shared_ptr<MergeTreeIndexGranuleSimpleHnsw> granule
          = std::dynamic_pointer_cast<MergeTreeIndexGranuleSimpleHnsw>(idx_granule);
     if (!granule)
          throw Exception(
              "SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
-    auto result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(*center_obj, 1));
-    return result->TopDistance() < 10;
+    auto result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(target, 1));
+    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "check res -- {}", result->TopDistance());
+    return result->TopDistance() < comp_dist;
+    // auto center_obj = std::make_unique<similarity::Object>(-1, -1, 3 * sizeof(float), nullptr);
+    // auto *raw_center_obj = reinterpret_cast<float*>(center_obj->data());
+    // raw_center_obj[0] = 0.2;
+    // raw_center_obj[1] = 0.2;
+    // raw_center_obj[2] = 0.2;
+    // std::shared_ptr<MergeTreeIndexGranuleSimpleHnsw> granule
+    //      = std::dynamic_pointer_cast<MergeTreeIndexGranuleSimpleHnsw>(idx_granule);
+    // if (!granule)
+    //      throw Exception(
+    //          "SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+    // auto result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(*center_obj, 1));
+    // return result->TopDistance() < 10;
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexSimpleHnsw::createIndexGranule() const
@@ -319,7 +332,7 @@ bool MergeTreeIndexSimpleHnsw::mayBenefitFromIndexForIn(const ASTPtr & /*node*/)
     //     if (func->arguments->children.size() == 1)
     //         return mayBenefitFromIndexForIn(func->arguments->children.front());
 
-    return false;
+    return true;
 }
 
 MergeTreeIndexFormat MergeTreeIndexSimpleHnsw::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
