@@ -338,7 +338,7 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
     {
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            size_t min_rows = 1 + int(with_names) + int(with_types);
+            size_t min_rows = 1 + static_cast<int>(with_names) + static_cast<int>(with_types);
             factory.registerFileSegmentationEngine(format_name, [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
             {
                 return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, is_raw, min_rows);
