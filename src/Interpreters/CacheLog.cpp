@@ -22,4 +22,4 @@ void CacheLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(miss_count);
 }
 
-}
+};
