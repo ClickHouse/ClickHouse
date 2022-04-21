@@ -1,6 +1,6 @@
 ---
-toc_priority: 14
-toc_title: 体验平台
+sidebar_position: 14
+sidebar_label: 体验平台
 ---
 
 # ClickHouse Playground {#clickhouse-playground}

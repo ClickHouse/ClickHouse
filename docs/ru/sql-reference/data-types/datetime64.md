@@ -1,6 +1,6 @@
 ---
-toc_priority: 49
-toc_title: DateTime64
+sidebar_position: 49
+sidebar_label: DateTime64
 ---
 
 # DateTime64 {#data_type-datetime64}

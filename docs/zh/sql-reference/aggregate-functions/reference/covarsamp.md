@@ -1,5 +1,5 @@
 ---
-toc_priority: 37
+sidebar_position: 37
 ---
 
 # covarSamp {#covarsamp}

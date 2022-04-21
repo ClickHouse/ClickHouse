@@ -1,6 +1,6 @@
 ---
-toc_folder_title: "\u96C6\u6210"
-toc_priority: 30
+sidebar_label: 集成的表引擎
+sidebar_position: 30
 ---
 
 # 集成的表引擎 {#table-engines-for-integrations}
