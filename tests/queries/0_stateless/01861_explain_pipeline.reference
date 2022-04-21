@@ -14,12 +14,12 @@ ExpressionTransform
 5	5
 6	6
 (Expression)
-ExpressionTransform × 2
+ExpressionTransform
   (SettingQuotaAndLimits)
     (ReadFromMergeTree)
-    ExpressionTransform × 2
-      ReplacingSorted × 2 2 → 1
-        Copy × 2 1 → 2
-          AddingSelector × 2
-            ExpressionTransform × 2
-              MergeTreeInOrder × 2 0 → 1
+    ExpressionTransform
+      ReplacingSorted 2 → 1
+        ExpressionTransform × 2
+          FilterTransform × 2
+          Description: filter values in [(0), +inf)
+            MergeTreeInOrder × 2 0 → 1
