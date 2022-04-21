@@ -55,6 +55,9 @@ private:
     static bool tryInsertDefaultFromNested(
         ParseArrayContext & ctx, const PathInData::Parts & path, Array & array);
 
+    static Field getValueAsField(const Element & element);
+    static StringRef getNameOfNested(const PathInData::Parts & path, const Field & value);
+
     ParserImpl parser;
 };
 

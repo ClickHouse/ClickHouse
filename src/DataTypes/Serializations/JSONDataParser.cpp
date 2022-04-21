@@ -11,19 +11,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename Element>
-static Field getValueAsField(const Element & element)
-{
-    if (element.isBool())   return element.getBool();
-    if (element.isInt64())  return element.getInt64();
-    if (element.isUInt64()) return element.getUInt64();
-    if (element.isDouble()) return element.getDouble();
-    if (element.isString()) return element.getString();
-    if (element.isNull())   return Field();
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type of JSON field");
-}
-
 template <typename ParserImpl>
 std::optional<ParseResult> JSONDataParser<ParserImpl>::parse(const char * begin, size_t length)
 {
@@ -115,14 +102,6 @@ void JSONDataParser<ParserImpl>::traverseArray(const JSONArray & array, ParseCon
             ctx.builder.popBack(path.size());
         }
     }
-}
-
-static StringRef getNameOfNested(const PathInData::Parts & path, const Field & value)
-{
-    if (value.getType() != Field::Types::Array || path.empty())
-        return {};
-
-    return StringRef{path[0].key};
 }
 
 template <typename ParserImpl>
@@ -253,6 +232,28 @@ bool JSONDataParser<ParserImpl>::tryInsertDefaultFromNested(
     size_t array_size = current_nested_sizes.back();
     array.push_back(Array(array_size));
     return true;
+}
+
+template <typename ParserImpl>
+Field JSONDataParser<ParserImpl>::getValueAsField(const Element & element)
+{
+    if (element.isBool())   return element.getBool();
+    if (element.isInt64())  return element.getInt64();
+    if (element.isUInt64()) return element.getUInt64();
+    if (element.isDouble()) return element.getDouble();
+    if (element.isString()) return element.getString();
+    if (element.isNull())   return Field();
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type of JSON field");
+}
+
+template <typename ParserImpl>
+StringRef JSONDataParser<ParserImpl>::getNameOfNested(const PathInData::Parts & path, const Field & value)
+{
+    if (value.getType() != Field::Types::Array || path.empty())
+        return {};
+
+    return StringRef{path[0].key};
 }
 
 #if USE_SIMDJSON
