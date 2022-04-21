@@ -150,9 +150,13 @@ private:
     size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
+    void assertNotDetached() const;
+    void assertDetachedStatus() const;
+
 
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
+    bool isDownloaderImpl(std::lock_guard<std::mutex> & segment_lock) const;
 
     void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
 
@@ -199,6 +203,8 @@ private:
 
     Poco::Logger * log;
 
+    /// "detached" file segment means that it is not owned by cache ("detached" from cache).
+    /// In general case, all file segments are owned by cache.
     bool detached = false;
 
     std::atomic<bool> is_downloaded{false};

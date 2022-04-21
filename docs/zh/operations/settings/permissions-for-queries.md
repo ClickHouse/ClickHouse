@@ -1,6 +1,6 @@
 ---
-toc_priority: 58
-toc_title: "\u67E5\u8BE2\u6743\u9650"
+sidebar_position: 58
+sidebar_label: "\u67E5\u8BE2\u6743\u9650"
 ---
 
 # 查询权限 {#permissions_for_queries}

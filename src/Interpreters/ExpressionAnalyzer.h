@@ -98,7 +98,7 @@ public:
     /// Ctor for non-select queries. Generally its usage is:
     /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
     ExpressionAnalyzer(const ASTPtr & query_, const TreeRewriterResultPtr & syntax_analyzer_result_, ContextPtr context_)
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {}, {})
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, false, {}, {})
     {
     }
 
@@ -154,6 +154,7 @@ protected:
         ContextPtr context_,
         size_t subquery_depth_,
         bool do_global_,
+        bool is_explain_,
         SubqueriesForSets subqueries_for_sets_,
         PreparedSets prepared_sets_);
 
@@ -168,7 +169,7 @@ protected:
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
-    void initGlobalSubqueriesAndExternalTables(bool do_global);
+    void initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain);
 
     ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAGPtr & actions, bool is_left) const;
 
@@ -305,6 +306,7 @@ public:
             context_,
             options_.subquery_depth,
             do_global_,
+            options_.is_explain,
             std::move(subqueries_for_sets_),
             std::move(prepared_sets_))
         , metadata_snapshot(metadata_snapshot_)
@@ -323,7 +325,6 @@ public:
     bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
-    const PreparedSets & getPreparedSets() const { return prepared_sets; }
     std::unique_ptr<QueryPlan> getJoinedPlan();
 
     /// Tables that will need to be sent to remote servers for distributed query processing.

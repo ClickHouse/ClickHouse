@@ -350,20 +350,42 @@ std::vector<String> IDiskRemote::getRemotePaths(const String & local_path) const
 
     std::vector<String> remote_paths;
     for (const auto & [remote_path, _] : metadata.remote_fs_objects)
-        remote_paths.push_back(remote_path);
+        remote_paths.push_back(fs::path(metadata.remote_fs_root_path) / remote_path);
 
     return remote_paths;
 }
 
 void IDiskRemote::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map)
 {
+    /// Protect against concurrent delition of files (for example because of a merge).
     if (metadata_disk->isFile(local_path))
     {
-        paths_map.emplace_back(local_path, getRemotePaths(local_path));
+        try
+        {
+            paths_map.emplace_back(local_path, getRemotePaths(local_path));
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+                return;
+            throw;
+        }
     }
     else
     {
-        for (auto it = iterateDirectory(local_path); it->isValid(); it->next())
+        DiskDirectoryIteratorPtr it;
+        try
+        {
+            it = iterateDirectory(local_path);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+                return;
+            throw;
+        }
+
+        for (; it->isValid(); it->next())
             IDiskRemote::getRemotePathsRecursive(fs::path(local_path) / it->name(), paths_map);
     }
 }
