@@ -18,7 +18,7 @@ node = cluster.add_instance(
         "configs/cert.xml",
     ],
 )
-PASS_PHRASE_TEMPLATE="""<privateKeyPassphraseHandler>
+PASS_PHRASE_TEMPLATE = """<privateKeyPassphraseHandler>
                 <name>KeyFileHandler</name>
                 <options>
                 <password>{pass_phrase}</password>
@@ -68,10 +68,11 @@ EOF""".format(
     )
     node.query("SYSTEM RELOAD CONFIG")
 
+
 def check_certificate_switch(
     first, second, pass_phrase_first="", pass_phrase_second=""
 ):
-     # Set first key
+    # Set first key
     change_config_to_key(first, pass_phrase_first)
 
     # Command with correct certificate
@@ -97,7 +98,9 @@ def check_certificate_switch(
                 "curl",
                 "--silent",
                 "--cacert",
-                "/etc/clickhouse-server/config.d/{cur_name}.crt".format(cur_name=second),
+                "/etc/clickhouse-server/config.d/{cur_name}.crt".format(
+                    cur_name=second
+                ),
                 "https://localhost:8443/",
             ]
         )
@@ -132,9 +135,7 @@ def check_certificate_switch(
                 "curl",
                 "--silent",
                 "--cacert",
-                "/etc/clickhouse-server/config.d/{cur_name}.crt".format(
-                    cur_name=first
-                ),
+                "/etc/clickhouse-server/config.d/{cur_name}.crt".format(cur_name=first),
                 "https://localhost:8443/",
             ]
         )
