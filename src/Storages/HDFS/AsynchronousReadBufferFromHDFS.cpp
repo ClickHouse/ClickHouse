@@ -37,14 +37,11 @@ namespace ErrorCodes
 
 AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     AsynchronousReaderPtr reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
-    // size_t min_bytes_for_seek_)
     : BufferWithOwnMemory<SeekableReadBufferWithSize>(settings_.remote_fs_buffer_size)
-    // : BufferWithOwnMemory<SeekableReadBuffer>(settings_.remote_fs_buffer_size)
     , reader(reader_)
     , priority(settings_.priority)
     , impl(std::move(impl_))
     , prefetch_buffer(settings_.remote_fs_buffer_size)
-    // , min_bytes_for_seek(min_bytes_for_seek_)
     , read_until_position(impl->getTotalSize())
     , log(&Poco::Logger::get("AsynchronousReadBufferFromHDFS"))
 {
@@ -75,14 +72,6 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::readInt
     request.offset = file_offset_of_buffer_end;
     request.priority = priority;
     request.ignore = 0;
-    /*
-    if (bytes_to_ignore)
-    {
-        request.ignore = bytes_to_ignore;
-        bytes_to_ignore = 0;
-    }
-    */
-    // std::cout << "obj:" << getId() << ",size:" << request.size << ",offset:" << request.offset << ",ignore:" << request.ignore << std::endl;
     return reader->submit(request);
 }
 
@@ -101,7 +90,6 @@ void AsynchronousReadBufferFromHDFS::prefetch()
 
 std::optional<size_t> AsynchronousReadBufferFromHDFS::getTotalSize()
 {
-    // std::cout << getStatus(__FUNCTION__) << std::endl;
     return impl->getTotalSize();
 }
 
@@ -142,7 +130,6 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         auto result = readInto(memory.data(), memory.size()).get();
         size = result.size;
         auto offset = result.offset;
-        // std::cout << "obj:" << getId() << ",size:" << size << ",offset:" << offset << std::endl;
 
         LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
         assert(offset < size);
@@ -151,20 +138,16 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
             setWithBytesToIgnore(memory.data(), size, offset);
-            // std::cout << "memory:" << std::string(memory.data(), size) << std::endl;
         }
     }
 
     file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
     prefetch_future = {};
-    // std::cout << "stacktrace:" << StackTrace{}.toString() << std::endl;
     return size;
 }
 
 off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
 {
-    std::cout << "AsynchronousReadBufferFromHDFS seek" << std::endl;
-    std::cout << "obj:" << getId() << ",seek_offset:" << offset << std::endl;
     StatusGuard guard{this, __FUNCTION__};
     ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
 
@@ -237,7 +220,6 @@ AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
 
 off_t AsynchronousReadBufferFromHDFS::getPosition()
 {
-    // std::cout << getStatus(__FUNCTION__) << std::endl;
     return file_offset_of_buffer_end - available();
 }
 
@@ -245,32 +227,6 @@ size_t AsynchronousReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
 {
     return file_offset_of_buffer_end;
 }
-
-String AsynchronousReadBufferFromHDFS::getStatus(const String & action)
-{
-    String res;
-    res += "action:" + action;
-    res += ",";
-    res += "obj:" + getId();
-    res += ",";
-    /*
-    res += "impl_position:" + std::to_string(impl->getPosition());
-    res += ",";
-    res += "impl_file_offset_of_buffer_end:" + std::to_string(impl->getFileOffsetOfBufferEnd());
-    res += ",";
-    */
-    res += "file_offset_of_buffer_end:" + std::to_string(file_offset_of_buffer_end);
-    res += ",";
-    res += "read_until_position:" + std::to_string(*read_until_position);
-    res += ",";
-    res += "prefetch_future_valid:" + std::to_string(prefetch_future.valid());
-    res += ",";
-    res += "working_buffer_size:" + std::to_string(working_buffer.size());
-    res += ",";
-    res += "working_buffer_pos:" + std::to_string(offset());
-    return res;
-}
-
 
 }
 

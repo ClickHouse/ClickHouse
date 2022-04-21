@@ -33,7 +33,6 @@ template <class Reader>
 typename RemoteFSFileDescriptor<Reader>::ReadResult RemoteFSFileDescriptor<Reader>::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
     auto result = reader->readInto(data, size, offset, ignore);
-    // std::cout << "result:" << std::string(data, result.size) << std::endl;
     return result;
 }
 

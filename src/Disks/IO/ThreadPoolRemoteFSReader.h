@@ -2,8 +2,6 @@
 
 #include <IO/AsynchronousReader.h>
 #include <Common/ThreadPool.h>
-// #include <IO/SeekableReadBuffer.h>
-// #include <Disks/IDiskRemote.h>
 
 namespace DB
 {
