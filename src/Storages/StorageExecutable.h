@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/logger_useful.h>
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Storages/ExecutableSettings.h>
@@ -15,11 +14,24 @@ namespace DB
  * Executable storage that will start process for read.
  * ExecutablePool storage maintain pool of processes and take process from pool for read.
  */
-class StorageExecutable final : public shared_ptr_helper<StorageExecutable>, public IStorage
+class StorageExecutable final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageExecutable>;
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageExecutable> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageExecutable>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageExecutable(CreatePasskey, TArgs &&... args) : StorageExecutable{std::forward<TArgs>(args)...}
+    {
+    }
 
     String getName() const override
     {

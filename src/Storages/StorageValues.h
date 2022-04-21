@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -9,10 +8,25 @@ namespace DB
 /* One block storage used for values table function
  * It's structure is similar to IStorageSystemOneBlock
  */
-class StorageValues final : public shared_ptr_helper<StorageValues>, public IStorage
+class StorageValues final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageValues>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageValues> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageValues>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageValues(CreatePasskey, TArgs &&... args) : StorageValues{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "Values"; }
 
     Pipe read(

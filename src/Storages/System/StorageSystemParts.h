@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 
 
@@ -12,10 +11,25 @@ class Context;
 
 /** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
   */
-class StorageSystemParts final : public shared_ptr_helper<StorageSystemParts>, public StorageSystemPartsBase
+class StorageSystemParts final : public StorageSystemPartsBase
 {
-    friend struct shared_ptr_helper<StorageSystemParts>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemParts> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemParts>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemParts(CreatePasskey, TArgs &&... args) : StorageSystemParts{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemParts"; }
 
 protected:

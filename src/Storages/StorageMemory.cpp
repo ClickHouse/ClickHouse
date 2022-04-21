@@ -377,11 +377,26 @@ void StorageMemory::truncate(
 }
 
 
-class MemoryBackupEntriesBatch : public shared_ptr_helper<MemoryBackupEntriesBatch>, public IBackupEntriesBatch
+class MemoryBackupEntriesBatch : public IBackupEntriesBatch
 {
 private:
-    friend struct shared_ptr_helper<MemoryBackupEntriesBatch>;
+    struct CreatePasskey
+    {
+    };
 
+public:
+    template <typename... TArgs>
+    static std::shared_ptr<MemoryBackupEntriesBatch> create(TArgs &&... args)
+    {
+        return std::make_shared<MemoryBackupEntriesBatch>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit MemoryBackupEntriesBatch(CreatePasskey, TArgs &&... args) : MemoryBackupEntriesBatch{std::forward<TArgs>(args)...}
+    {
+    }
+
+private:
     MemoryBackupEntriesBatch(
         const StorageMetadataPtr & metadata_snapshot_, const std::shared_ptr<const Blocks> blocks_, UInt64 max_compress_block_size_)
         : IBackupEntriesBatch({"data.bin", "index.mrk", "sizes.json"})

@@ -13,18 +13,30 @@ namespace DB
 
 class DictionarySource;
 
-class DictionarySourceCoordinator final : public shared_ptr_helper<DictionarySourceCoordinator>, public std::enable_shared_from_this<DictionarySourceCoordinator>
+class DictionarySourceCoordinator final : public std::enable_shared_from_this<DictionarySourceCoordinator>
 {
-    friend struct shared_ptr_helper<DictionarySourceCoordinator>;
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<DictionarySourceCoordinator> create(TArgs &&... args)
+    {
+        return std::make_shared<DictionarySourceCoordinator>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit DictionarySourceCoordinator(CreatePasskey, TArgs &&... args) : DictionarySourceCoordinator{std::forward<TArgs>(args)...}
+    {
+    }
 
     using ReadColumnsFunc = std::function<Columns (const Strings &, const DataTypes &, const Columns &, const DataTypes &, const Columns &)>;
 
     Pipe read(size_t num_streams);
 
 private:
-
     explicit DictionarySourceCoordinator(
         std::shared_ptr<const IDictionary> dictionary_,
         const Names & column_names,

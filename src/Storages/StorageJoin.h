@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Common/RWLock.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
@@ -23,10 +21,25 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
   *
   * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin final : public shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
+class StorageJoin final : public StorageSetOrJoinBase
 {
-    friend struct shared_ptr_helper<StorageJoin>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageJoin> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageJoin>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageJoin(CreatePasskey, TArgs &&... args) : StorageJoin{std::forward<TArgs>(args)...}
+    {
+    }
+
     String getName() const override { return "Join"; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;

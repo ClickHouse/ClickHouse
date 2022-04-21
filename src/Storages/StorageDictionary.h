@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
@@ -12,11 +11,27 @@ namespace DB
 struct DictionaryStructure;
 class TableFunctionDictionary;
 
-class StorageDictionary final : public shared_ptr_helper<StorageDictionary>, public IStorage, public WithContext
+class StorageDictionary final : public IStorage, public WithContext
 {
-    friend struct shared_ptr_helper<StorageDictionary>;
-    friend class TableFunctionDictionary;
+friend class TableFunctionDictionary;
+
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageDictionary> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageDictionary>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageDictionary(CreatePasskey, TArgs&&... args) : StorageDictionary{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "Dictionary"; }
 
     ~StorageDictionary() override;

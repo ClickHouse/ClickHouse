@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Parsers/IAST_fwd.h>
 
 #include <Storages/IStorage.h>
@@ -11,10 +9,25 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public shared_ptr_helper<StorageMaterializedView>, public IStorage, WithMutableContext
+class StorageMaterializedView final : public IStorage, WithMutableContext
 {
-    friend struct shared_ptr_helper<StorageMaterializedView>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageMaterializedView> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageMaterializedView>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageMaterializedView(CreatePasskey, TArgs&&... args) : StorageMaterializedView{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
 

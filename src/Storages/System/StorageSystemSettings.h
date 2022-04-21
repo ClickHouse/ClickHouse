@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,10 +11,25 @@ class Context;
 
 /** implements system table "settings", which allows to get information about the current settings.
   */
-class StorageSystemSettings final : public shared_ptr_helper<StorageSystemSettings>, public IStorageSystemOneBlock<StorageSystemSettings>
+class StorageSystemSettings final : public IStorageSystemOneBlock<StorageSystemSettings>
 {
-    friend struct shared_ptr_helper<StorageSystemSettings>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemSettings> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemSettings>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemSettings(CreatePasskey, TArgs &&... args) : StorageSystemSettings{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemSettings"; }
 
     static NamesAndTypesList getNamesAndTypes();

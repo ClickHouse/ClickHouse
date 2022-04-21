@@ -2,7 +2,6 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <base/shared_ptr_helper.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
@@ -122,23 +121,24 @@ private:
     OutputFormatPtr writer;
 };
 
-class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
+class StorageURL : public IStorageURLBase
 {
-    friend struct shared_ptr_helper<StorageURL>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
-    StorageURL(
-        const String & uri_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const std::optional<FormatSettings> & format_settings_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context_,
-        const String & compression_method_,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
-        const String & method_ = "",
-        ASTPtr partition_by_ = nullptr);
+    template <typename... TArgs>
+    static std::shared_ptr<StorageURL> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageURL>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageURL(CreatePasskey, TArgs &&... args) : StorageURL{std::forward<TArgs>(args)...}
+    {
+    }
 
     String getName() const override
     {
@@ -153,6 +153,22 @@ public:
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
     static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
+
+protected:
+    StorageURL(
+        const String & uri_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const std::optional<FormatSettings> & format_settings_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        ContextPtr context_,
+        const String & compression_method_,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
+        const String & method_ = "",
+        ASTPtr partition_by_ = nullptr);
+
 };
 
 

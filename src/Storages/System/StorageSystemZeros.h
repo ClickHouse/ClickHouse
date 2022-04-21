@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <optional>
 #include <Storages/IStorage.h>
 
@@ -14,10 +13,25 @@ namespace DB
   * You could also specify a limit (how many zeros to give).
   * If multithreaded is specified, zeros will be generated in several streams.
   */
-class StorageSystemZeros final : public shared_ptr_helper<StorageSystemZeros>, public IStorage
+class StorageSystemZeros final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageSystemZeros>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemZeros> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemZeros>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemZeros(CreatePasskey, TArgs &&... args) : StorageSystemZeros{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemZeros"; }
 
     Pipe read(

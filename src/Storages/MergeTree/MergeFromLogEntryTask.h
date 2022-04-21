@@ -14,9 +14,25 @@
 namespace DB
 {
 
-class MergeFromLogEntryTask : public shared_ptr_helper<MergeFromLogEntryTask>, public ReplicatedMergeMutateTaskBase
+class MergeFromLogEntryTask : public ReplicatedMergeMutateTaskBase
 {
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<MergeFromLogEntryTask> create(TArgs &&... args)
+    {
+        return std::make_shared<MergeFromLogEntryTask>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit MergeFromLogEntryTask(CreatePasskey, TArgs &&... args) : MergeFromLogEntryTask{std::forward<TArgs>(args)...}
+    {
+    }
+
     template <class Callback>
     MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_, Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MergeFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}

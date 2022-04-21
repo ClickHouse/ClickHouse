@@ -5,7 +5,6 @@
 #include "IMySQLReadPacket.h"
 #include "IMySQLWritePacket.h"
 #include "IO/MySQLPacketPayloadReadBuffer.h"
-#include <base/shared_ptr_helper.h>
 
 namespace DB
 {
@@ -16,9 +15,25 @@ namespace MySQLProtocol
 /* Writes and reads packets, keeping sequence-id.
  * Throws ProtocolError, if packet with incorrect sequence-id was received.
  */
-class PacketEndpoint : public shared_ptr_helper<PacketEndpoint>
+class PacketEndpoint
 {
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<PacketEndpoint> create(TArgs &&... args)
+    {
+        return std::make_shared<PacketEndpoint>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit PacketEndpoint(CreatePasskey, TArgs &&... args) : PacketEndpoint{std::forward<TArgs>(args)...}
+    {
+    }
+
     uint8_t & sequence_id;
     ReadBuffer * in;
     WriteBuffer * out;
@@ -50,8 +65,6 @@ protected:
 
     /// For reading and writing.
     PacketEndpoint(ReadBuffer & in_, WriteBuffer & out_, uint8_t & sequence_id_);
-
-    friend struct shared_ptr_helper<PacketEndpoint>;
 };
 
 using PacketEndpointPtr = std::shared_ptr<PacketEndpoint>;

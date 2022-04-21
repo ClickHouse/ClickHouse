@@ -4,8 +4,6 @@
 #include <optional>
 #include <mutex>
 
-#include <base/shared_ptr_helper.h>
-
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 
@@ -19,13 +17,28 @@ namespace DB
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public shared_ptr_helper<StorageMemory>, public IStorage
+class StorageMemory final : public IStorage
 {
 friend class MemorySink;
 friend class MemoryRestoreTask;
-friend struct shared_ptr_helper<StorageMemory>;
+
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageMemory> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageMemory>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageMemory(CreatePasskey, TArgs &&... args) : StorageMemory{std::forward<TArgs>(args)...}
+    {
+    }
+
     String getName() const override { return "Memory"; }
 
     size_t getSize() const { return data.get()->size(); }

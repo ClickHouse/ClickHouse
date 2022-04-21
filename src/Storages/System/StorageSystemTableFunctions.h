@@ -2,22 +2,34 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
-#include <base/shared_ptr_helper.h>
 namespace DB
 {
 
-class StorageSystemTableFunctions final : public shared_ptr_helper<StorageSystemTableFunctions>,
-                                    public IStorageSystemOneBlock<StorageSystemTableFunctions>
+class StorageSystemTableFunctions final : public IStorageSystemOneBlock<StorageSystemTableFunctions>
 {
-    friend struct shared_ptr_helper<StorageSystemTableFunctions>;
-protected:
+private:
+    struct CreatePasskey
+    {
+    };
 
+public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemTableFunctions> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemTableFunctions>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemTableFunctions(CreatePasskey, TArgs &&... args) : StorageSystemTableFunctions{std::forward<TArgs>(args)...}
+    {
+    }
+
+protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
 public:
-
     std::string getName() const override
     {
         return "SystemTableFunctions";

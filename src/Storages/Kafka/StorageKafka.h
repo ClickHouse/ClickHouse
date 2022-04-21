@@ -7,7 +7,6 @@
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
-#include <base/shared_ptr_helper.h>
 
 #include <mutex>
 #include <list>
@@ -28,12 +27,27 @@ struct StorageKafkaInterceptors;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public shared_ptr_helper<StorageKafka>, public IStorage, WithContext
+class StorageKafka final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageKafka>;
     friend struct StorageKafkaInterceptors;
 
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageKafka> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageKafka>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageKafka(CreatePasskey, TArgs &&... args) : StorageKafka{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "Kafka"; }
 
     bool noPushingToViews() const override { return true; }
@@ -117,7 +131,7 @@ private:
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
     /// Handle error mode
-    HandleKafkaErrorMode handle_error_mode;
+    [[maybe_unused]] HandleKafkaErrorMode handle_error_mode; // NOLINT -- forgotten to remove or an error? needs checking
 
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(size_t consumer_number);

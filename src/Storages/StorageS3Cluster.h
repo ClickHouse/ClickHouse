@@ -7,8 +7,6 @@
 #include <memory>
 #include <optional>
 
-#include <base/shared_ptr_helper.h>
-
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
@@ -19,10 +17,25 @@ namespace DB
 
 class Context;
 
-class StorageS3Cluster : public shared_ptr_helper<StorageS3Cluster>, public IStorage
+class StorageS3Cluster : public IStorage
 {
-    friend struct shared_ptr_helper<StorageS3Cluster>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageS3Cluster> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageS3Cluster>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageS3Cluster(CreatePasskey, TArgs &&... args) : StorageS3Cluster{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "S3Cluster"; }
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,

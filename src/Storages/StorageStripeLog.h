@@ -3,8 +3,6 @@
 #include <map>
 #include <shared_mutex>
 
-#include <base/shared_ptr_helper.h>
-
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Formats/IndexForNativeFormat.h>
@@ -20,14 +18,29 @@ struct IndexForNativeFormat;
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public shared_ptr_helper<StorageStripeLog>, public IStorage
+class StorageStripeLog final : public IStorage
 {
-    friend class StripeLogSource;
-    friend class StripeLogSink;
-    friend class StripeLogRestoreTask;
-    friend struct shared_ptr_helper<StorageStripeLog>;
+friend class StripeLogSource;
+friend class StripeLogSink;
+friend class StripeLogRestoreTask;
+
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageStripeLog> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageStripeLog>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageStripeLog(CreatePasskey, TArgs &&... args) : StorageStripeLog{std::forward<TArgs>(args)...}
+    {
+    }
+
     ~StorageStripeLog() override;
 
     String getName() const override { return "StripeLog"; }

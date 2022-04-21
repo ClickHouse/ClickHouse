@@ -8,8 +8,6 @@
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
 
-#include <base/shared_ptr_helper.h>
-
 #include <atomic>
 #include <condition_variable>
 #include <filesystem>
@@ -26,11 +24,24 @@ namespace ErrorCodes
 
 class FileLogDirectoryWatcher;
 
-class StorageFileLog final : public shared_ptr_helper<StorageFileLog>, public IStorage, WithContext
+class StorageFileLog final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageFileLog>;
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageFileLog> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageFileLog>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageFileLog(CreatePasskey, TArgs &&... args) : StorageFileLog{std::forward<TArgs>(args)...}
+    {
+    }
 
     using Files = std::vector<String>;
 

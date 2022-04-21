@@ -6,18 +6,32 @@
 
 #include <atomic>
 #include <shared_mutex>
-#include <base/shared_ptr_helper.h>
 
 
 namespace DB
 {
 
-class StorageFile final : public shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile final : public IStorage
 {
-friend struct shared_ptr_helper<StorageFile>;
-friend class PartitionedStorageFileSink;
+friend class partitionedstoragefilesink;
+
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageFile> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageFile>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageFile(CreatePasskey, TArgs &&... args) : StorageFile{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "File"; }
 
     Pipe read(

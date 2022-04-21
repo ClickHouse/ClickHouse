@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,10 +11,25 @@ class Context;
 
 /** Implements `databases` system table, which allows you to get information about all databases.
   */
-class StorageSystemDatabases final : public shared_ptr_helper<StorageSystemDatabases>, public IStorageSystemOneBlock<StorageSystemDatabases>
+class StorageSystemDatabases final : public IStorageSystemOneBlock<StorageSystemDatabases>
 {
-    friend struct shared_ptr_helper<StorageSystemDatabases>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemDatabases> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemDatabases>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemDatabases(CreatePasskey, TArgs &&... args) : StorageSystemDatabases{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override
     {
         return "SystemDatabases";

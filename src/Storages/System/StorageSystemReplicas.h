@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -12,10 +11,25 @@ class Context;
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.
   */
-class StorageSystemReplicas final : public shared_ptr_helper<StorageSystemReplicas>, public IStorage
+class StorageSystemReplicas final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageSystemReplicas>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemReplicas> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemReplicas>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemReplicas(CreatePasskey, TArgs &&... args) : StorageSystemReplicas{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemReplicas"; }
 
     Pipe read(

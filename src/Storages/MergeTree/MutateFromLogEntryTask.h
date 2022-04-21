@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
@@ -12,9 +10,28 @@
 namespace DB
 {
 
-class MutateFromLogEntryTask : public shared_ptr_helper<MutateFromLogEntryTask>, public ReplicatedMergeMutateTaskBase
+class MutateFromLogEntryTask : public ReplicatedMergeMutateTaskBase
 {
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<MutateFromLogEntryTask> create(TArgs &&... args)
+    {
+        return std::make_shared<MutateFromLogEntryTask>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit MutateFromLogEntryTask(CreatePasskey, TArgs &&... args) : MutateFromLogEntryTask{std::forward<TArgs>(args)...}
+    {
+    }
+
+    UInt64 getPriority() override { return priority; }
+
+private:
     template <typename Callback>
     MutateFromLogEntryTask(
         ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_,
@@ -22,9 +39,6 @@ public:
         Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MutateFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
 
-    UInt64 getPriority() override { return priority; }
-
-private:
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 

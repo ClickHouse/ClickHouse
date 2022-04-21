@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <base/UUID.h>
 #include <atomic>
 #include <pcg_random.hpp>
@@ -81,10 +80,25 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
-class StorageReplicatedMergeTree final : public shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
+class StorageReplicatedMergeTree final : public MergeTreeData
 {
-    friend struct shared_ptr_helper<StorageReplicatedMergeTree>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageReplicatedMergeTree> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageReplicatedMergeTree>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageReplicatedMergeTree(CreatePasskey, TArgs &&... args) : StorageReplicatedMergeTree{std::forward<TArgs>(args)...}
+    {
+    }
+
     void startup() override;
     void shutdown() override;
     void flush() override;

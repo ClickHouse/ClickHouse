@@ -26,7 +26,7 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    auto result = std::make_shared<StoragePostgreSQL>(
+    auto result = StoragePostgreSQL::create(
         StorageID(getDatabaseName(), table_name),
         connection_pool,
         configuration->table,

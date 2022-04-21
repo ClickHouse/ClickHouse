@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -10,10 +9,25 @@ namespace DB
 class Context;
 
 
-class StorageSystemDictionaries final : public shared_ptr_helper<StorageSystemDictionaries>, public IStorageSystemOneBlock<StorageSystemDictionaries>
+class StorageSystemDictionaries final : public IStorageSystemOneBlock<StorageSystemDictionaries>
 {
-    friend struct shared_ptr_helper<StorageSystemDictionaries>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemDictionaries> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemDictionaries>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemDictionaries(CreatePasskey, TArgs &&... args) : StorageSystemDictionaries{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemDictionaries"; }
 
     static NamesAndTypesList getNamesAndTypes();

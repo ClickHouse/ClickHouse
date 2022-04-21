@@ -4,16 +4,29 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
-#include <base/shared_ptr_helper.h>
-
 
 namespace DB
 {
 
-class StorageView final : public shared_ptr_helper<StorageView>, public IStorage
+class StorageView final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageView>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageView> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageView>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageView(CreatePasskey, TArgs&&... args) : StorageView{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
 

@@ -4,7 +4,6 @@
 
 #if USE_MINIZIP
 #include <IO/Archives/IArchiveWriter.h>
-#include <base/shared_ptr_helper.h>
 #include <mutex>
 
 
@@ -14,9 +13,25 @@ class WriteBuffer;
 class WriteBufferFromFileBase;
 
 /// Implementation of IArchiveWriter for writing zip archives.
-class ZipArchiveWriter : public shared_ptr_helper<ZipArchiveWriter>, public IArchiveWriter
+class ZipArchiveWriter : public IArchiveWriter
 {
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<ZipArchiveWriter> create(TArgs &&... args)
+    {
+        return std::make_shared<ZipArchiveWriter>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit ZipArchiveWriter(CreatePasskey, TArgs &&... args) : ZipArchiveWriter{std::forward<TArgs>(args)...}
+    {
+    }
+
     /// Destructors finalizes writing the archive.
     ~ZipArchiveWriter() override;
 
@@ -69,7 +84,6 @@ private:
     /// Constructs an archive that will be written by using a specified `archive_write_buffer_`.
     ZipArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_);
 
-    friend struct shared_ptr_helper<ZipArchiveWriter>;
     class WriteBufferFromZipArchive;
     class HandleHolder;
     using RawHandle = void *;

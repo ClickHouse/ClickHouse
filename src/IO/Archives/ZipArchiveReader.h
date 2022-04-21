@@ -4,7 +4,6 @@
 
 #if USE_MINIZIP
 #include <IO/Archives/IArchiveReader.h>
-#include <base/shared_ptr_helper.h>
 #include <mutex>
 #include <vector>
 
@@ -16,9 +15,25 @@ class ReadBufferFromFileBase;
 class SeekableReadBuffer;
 
 /// Implementation of IArchiveReader for reading zip archives.
-class ZipArchiveReader : public shared_ptr_helper<ZipArchiveReader>, public IArchiveReader
+class ZipArchiveReader : public IArchiveReader
 {
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<ZipArchiveReader> create(TArgs &&... args)
+    {
+        return std::make_shared<ZipArchiveReader>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit ZipArchiveReader(CreatePasskey, TArgs &&... args) : ZipArchiveReader{std::forward<TArgs>(args)...}
+    {
+    }
+
     ~ZipArchiveReader() override;
 
     /// Returns true if there is a specified file in the archive.
@@ -50,7 +65,6 @@ private:
     /// a specified function.
     ZipArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_);
 
-    friend struct shared_ptr_helper<ZipArchiveReader>;
     class ReadBufferFromZipArchive;
     class FileEnumeratorImpl;
     class HandleHolder;

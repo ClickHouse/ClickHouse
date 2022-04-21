@@ -2,7 +2,6 @@
 
 #include <map>
 #include <shared_mutex>
-#include <base/shared_ptr_helper.h>
 
 #include <Disks/IDisk.h>
 #include <Storages/IStorage.h>
@@ -19,14 +18,29 @@ namespace DB
   * Also implements TinyLog - a table engine that is suitable for small chunks of the log.
   * It differs from Log in the absence of mark files.
   */
-class StorageLog final : public shared_ptr_helper<StorageLog>, public IStorage
+class StorageLog final : public IStorage
 {
     friend class LogSource;
     friend class LogSink;
     friend class LogRestoreTask;
-    friend struct shared_ptr_helper<StorageLog>;
+
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageLog> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageLog>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageLog(CreatePasskey, TArgs &&... args) : StorageLog{std::forward<TArgs>(args)...}
+    {
+    }
+
     ~StorageLog() override;
     String getName() const override { return engine_name; }
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/NullSource.h>
@@ -15,10 +13,25 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull final : public shared_ptr_helper<StorageNull>, public IStorage
+class StorageNull final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageNull>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageNull> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageNull>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageNull(CreatePasskey, TArgs &&... args) : StorageNull{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "Null"; }
 
     Pipe read(

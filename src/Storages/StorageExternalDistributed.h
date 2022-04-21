@@ -2,7 +2,6 @@
 
 #include "config_core.h"
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -16,11 +15,25 @@ struct ExternalDataSourceConfiguration;
 /// A query to external database is passed to one replica on each shard, the result is united.
 /// Replicas on each shard have the same priority, traversed replicas are moved to the end of the queue.
 /// Similar approach is used for URL storage.
-class StorageExternalDistributed final : public shared_ptr_helper<StorageExternalDistributed>, public DB::IStorage
+class StorageExternalDistributed final : public DB::IStorage
 {
-    friend struct shared_ptr_helper<StorageExternalDistributed>;
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageExternalDistributed> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageExternalDistributed>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageExternalDistributed(CreatePasskey, TArgs &&... args) : StorageExternalDistributed{std::forward<TArgs>(args)...}
+    {
+    }
+
     enum class ExternalStorageEngine
     {
         MySQL,

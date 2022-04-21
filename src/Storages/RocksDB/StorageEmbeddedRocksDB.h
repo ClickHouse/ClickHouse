@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <shared_mutex>
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <rocksdb/status.h>
 
@@ -19,11 +18,26 @@ namespace DB
 
 class Context;
 
-class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage, WithContext
+class StorageEmbeddedRocksDB final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
     friend class EmbeddedRocksDBSink;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageEmbeddedRocksDB> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageEmbeddedRocksDB>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageEmbeddedRocksDB(CreatePasskey, TArgs &&... args) : StorageEmbeddedRocksDB{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
     Pipe read(

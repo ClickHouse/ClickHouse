@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -36,14 +34,29 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
+class StorageDistributed final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageDistributed>;
     friend class DistributedSink;
     friend class StorageDistributedDirectoryMonitor;
     friend class StorageSystemDistributionQueue;
 
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageDistributed> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageDistributed>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageDistributed(CreatePasskey, TArgs &&... args) : StorageDistributed{std::forward<TArgs>(args)...}
+    {
+    }
+
     ~StorageDistributed() override;
 
     std::string getName() const override { return "Distributed"; }

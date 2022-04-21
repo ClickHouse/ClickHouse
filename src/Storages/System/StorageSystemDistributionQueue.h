@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,10 +11,25 @@ class Context;
 
 /** Implements the `distribution_queue` system table, which allows you to view the INSERT queues for the Distributed tables.
   */
-class StorageSystemDistributionQueue final : public shared_ptr_helper<StorageSystemDistributionQueue>, public IStorageSystemOneBlock<StorageSystemDistributionQueue>
+class StorageSystemDistributionQueue final : public IStorageSystemOneBlock<StorageSystemDistributionQueue>
 {
-    friend struct shared_ptr_helper<StorageSystemDistributionQueue>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemDistributionQueue> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemDistributionQueue>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemDistributionQueue(CreatePasskey, TArgs &&... args) : StorageSystemDistributionQueue{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemDistributionQueue"; }
 
     static NamesAndTypesList getNamesAndTypes();

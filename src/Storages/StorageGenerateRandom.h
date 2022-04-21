@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -9,10 +8,25 @@ namespace DB
 {
 /* Generates random data for given schema.
  */
-class StorageGenerateRandom final : public shared_ptr_helper<StorageGenerateRandom>, public IStorage
+class StorageGenerateRandom final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageGenerateRandom>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageGenerateRandom> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageGenerateRandom>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageGenerateRandom(CreatePasskey, TArgs &&... args) : StorageGenerateRandom{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "GenerateRandom"; }
 
     Pipe read(

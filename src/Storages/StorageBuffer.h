@@ -3,7 +3,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <base/shared_ptr_helper.h>
 
 #include <Poco/Event.h>
 
@@ -41,13 +40,28 @@ namespace DB
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer final : public shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
+class StorageBuffer final : public IStorage, WithContext
 {
-friend struct shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
 friend class BufferSink;
 
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageBuffer> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageBuffer>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageBuffer(CreatePasskey, TArgs &&... args) : StorageBuffer{std::forward<TArgs>(args)...}
+    {
+    }
+
     struct Thresholds
     {
         time_t time = 0;  /// The number of seconds from the insertion of the first row into the block.

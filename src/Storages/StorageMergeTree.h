@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
@@ -26,10 +24,25 @@ namespace DB
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree final : public shared_ptr_helper<StorageMergeTree>, public MergeTreeData
+class StorageMergeTree final : public MergeTreeData
 {
-    friend struct shared_ptr_helper<StorageMergeTree>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageMergeTree> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageMergeTree>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageMergeTree(CreatePasskey, TArgs &&... args) : StorageMergeTree{std::forward<TArgs>(args)...}
+    {
+    }
+
     void startup() override;
     void flush() override;
     void shutdown() override;

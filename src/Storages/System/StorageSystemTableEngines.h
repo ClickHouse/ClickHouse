@@ -2,15 +2,29 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
-#include <base/shared_ptr_helper.h>
 
 namespace DB
 {
 
-class StorageSystemTableEngines final : public shared_ptr_helper<StorageSystemTableEngines>,
-                                  public IStorageSystemOneBlock<StorageSystemTableEngines>
+class StorageSystemTableEngines final : public IStorageSystemOneBlock<StorageSystemTableEngines>
 {
-    friend struct shared_ptr_helper<StorageSystemTableEngines>;
+private:
+    struct CreatePasskey
+    {
+    };
+
+public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemTableEngines> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemTableEngines>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemTableEngines(CreatePasskey, TArgs &&... args) : StorageSystemTableEngines{std::forward<TArgs>(args)...}
+    {
+    }
+
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 

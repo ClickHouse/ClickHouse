@@ -8,7 +8,6 @@
 #include <ThriftHiveMetastore.h>
 
 #include <base/logger_useful.h>
-#include <base/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/HDFS/HDFSCommon.h>
@@ -23,10 +22,25 @@ class HiveSettings;
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHive final : public shared_ptr_helper<StorageHive>, public IStorage, WithContext
+class StorageHive final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageHive>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageHive> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageHive>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageHive(CreatePasskey, TArgs &&... args) : StorageHive{std::forward<TArgs>(args)...}
+    {
+    }
+
     String getName() const override { return "Hive"; }
 
     bool supportsIndexForIn() const override { return true; }

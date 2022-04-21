@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,10 +11,25 @@ class Context;
 
 /** Implements `metrics` system table, which provides information about the operation of the server.
   */
-class StorageSystemMetrics final : public shared_ptr_helper<StorageSystemMetrics>, public IStorageSystemOneBlock<StorageSystemMetrics>
+class StorageSystemMetrics final : public IStorageSystemOneBlock<StorageSystemMetrics>
 {
-    friend struct shared_ptr_helper<StorageSystemMetrics>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemMetrics> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemMetrics>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemMetrics(CreatePasskey, TArgs &&... args) : StorageSystemMetrics{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemMetrics"; }
 
     static NamesAndTypesList getNamesAndTypes();

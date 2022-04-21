@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -14,10 +13,25 @@ class Context;
 
 /** Implements the system table `disks`, which allows you to get information about all disks.
 */
-class StorageSystemDisks final : public shared_ptr_helper<StorageSystemDisks>, public IStorage
+class StorageSystemDisks final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageSystemDisks>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemDisks> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemDisks>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemDisks(CreatePasskey, TArgs &&... args) : StorageSystemDisks{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemDisks"; }
 
     Pipe read(

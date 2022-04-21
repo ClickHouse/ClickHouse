@@ -12,7 +12,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <base/shared_ptr_helper.h>
 #include <memory>
 
 
@@ -61,16 +60,24 @@ namespace DB
  *
 **/
 
-class StorageMaterializedPostgreSQL final : public shared_ptr_helper<StorageMaterializedPostgreSQL>, public IStorage, WithContext
+class StorageMaterializedPostgreSQL final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageMaterializedPostgreSQL>;
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
-    StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,
-                                const String & postgres_database_name, const String & postgres_table_name);
+    template <typename... TArgs>
+    static std::shared_ptr<StorageMaterializedPostgreSQL> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageMaterializedPostgreSQL>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
 
-    StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_,
-                                const String & postgres_database_name, const String & postgres_table_name);
+    template <typename... TArgs>
+    explicit StorageMaterializedPostgreSQL(CreatePasskey, TArgs &&... args) : StorageMaterializedPostgreSQL{std::forward<TArgs>(args)...}
+    {
+    }
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
@@ -123,6 +130,12 @@ public:
     bool supportsFinal() const override { return true; }
 
 protected:
+    StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,
+                                const String & postgres_database_name, const String & postgres_table_name);
+
+    StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_,
+                                const String & postgres_database_name, const String & postgres_table_name);
+
     StorageMaterializedPostgreSQL(
         const StorageID & table_id_,
         bool is_attach_,

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
 
@@ -12,10 +10,25 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge final : public shared_ptr_helper<StorageMerge>, public IStorage, WithContext
+class StorageMerge final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageMerge>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageMerge> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageMerge>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageMerge(CreatePasskey, TArgs &&... args) : StorageMerge{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "Merge"; }
 
     bool isRemote() const override;

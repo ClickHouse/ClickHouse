@@ -11,7 +11,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -49,14 +48,29 @@ class Pipe;
 using Pipes = std::vector<Pipe>;
 
 
-class StorageLiveView final : public shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
+class StorageLiveView final : public IStorage, WithContext
 {
-friend struct shared_ptr_helper<StorageLiveView>;
 friend class LiveViewSource;
 friend class LiveViewEventsSource;
 friend class LiveViewSink;
 
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageLiveView> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageLiveView>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageLiveView(CreatePasskey, TArgs &&... args) : StorageLiveView{std::forward<TArgs>(args)...}
+    {
+    }
+
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
     bool isView() const override { return true; }

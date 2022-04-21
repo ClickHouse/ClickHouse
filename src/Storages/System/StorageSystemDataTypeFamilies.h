@@ -1,15 +1,29 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
 
-class StorageSystemDataTypeFamilies final : public shared_ptr_helper<StorageSystemDataTypeFamilies>,
-                                      public IStorageSystemOneBlock<StorageSystemDataTypeFamilies>
+class StorageSystemDataTypeFamilies final : public IStorageSystemOneBlock<StorageSystemDataTypeFamilies>
 {
-    friend struct shared_ptr_helper<StorageSystemDataTypeFamilies>;
+private:
+    struct CreatePasskey
+    {
+    };
+
+public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemDataTypeFamilies> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemDataTypeFamilies>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemDataTypeFamilies(CreatePasskey, TArgs &&... args) : StorageSystemDataTypeFamilies{std::forward<TArgs>(args)...}
+    {
+    }
+
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
@@ -63,11 +61,25 @@ private:
   *  and also written to a file-backup, for recovery after a restart.
   * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
-class StorageSet final : public shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
+class StorageSet final : public StorageSetOrJoinBase
 {
-friend struct shared_ptr_helper<StorageSet>;
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSet> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSet>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSet(CreatePasskey, TArgs &&... args) : StorageSet{std::forward<TArgs>(args)...}
+    {
+    }
+
     String getName() const override { return "Set"; }
 
     /// Access the insides.

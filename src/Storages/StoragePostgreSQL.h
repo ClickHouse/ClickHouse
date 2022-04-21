@@ -3,7 +3,6 @@
 #include "config_core.h"
 
 #if USE_LIBPQXX
-#include <base/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
@@ -17,19 +16,24 @@ class Logger;
 namespace DB
 {
 
-class StoragePostgreSQL final : public shared_ptr_helper<StoragePostgreSQL>, public IStorage
+class StoragePostgreSQL final : public IStorage
 {
-    friend struct shared_ptr_helper<StoragePostgreSQL>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
-    StoragePostgreSQL(
-        const StorageID & table_id_,
-        postgres::PoolWithFailoverPtr pool_,
-        const String & remote_table_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        const String & remote_table_schema_ = "",
-        const String & on_conflict = "");
+    template <typename... TArgs>
+    static std::shared_ptr<StoragePostgreSQL> create(TArgs &&... args)
+    {
+        return std::make_shared<StoragePostgreSQL>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StoragePostgreSQL(CreatePasskey, TArgs &&... args) : StoragePostgreSQL{std::forward<TArgs>(args)...}
+    {
+    }
 
     String getName() const override { return "PostgreSQL"; }
 
@@ -48,6 +52,16 @@ public:
 
 private:
     friend class PostgreSQLBlockOutputStream;
+
+    StoragePostgreSQL(
+        const StorageID & table_id_,
+        postgres::PoolWithFailoverPtr pool_,
+        const String & remote_table_name_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        const String & remote_table_schema_ = "",
+        const String & on_conflict = "");
 
     String remote_table_name;
     String remote_table_schema;

@@ -7,8 +7,6 @@
 #include <memory>
 #include <optional>
 
-#include <base/shared_ptr_helper.h>
-
 #include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/HDFS/StorageHDFS.h>
@@ -18,10 +16,25 @@ namespace DB
 
 class Context;
 
-class StorageHDFSCluster : public shared_ptr_helper<StorageHDFSCluster>, public IStorage
+class StorageHDFSCluster : public IStorage
 {
-    friend struct shared_ptr_helper<StorageHDFSCluster>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageHDFSCluster> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageHDFSCluster>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageHDFSCluster(CreatePasskey, TArgs &&... args) : StorageHDFSCluster{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "HDFSCluster"; }
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,

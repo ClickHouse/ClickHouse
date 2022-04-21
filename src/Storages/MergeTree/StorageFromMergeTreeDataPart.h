@@ -9,17 +9,30 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Defines.h>
 
-#include <base/shared_ptr_helper.h>
-
 
 namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromMergeTreeDataPart final : public shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
+class StorageFromMergeTreeDataPart final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageFromMergeTreeDataPart>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageFromMergeTreeDataPart> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageFromMergeTreeDataPart>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageFromMergeTreeDataPart(CreatePasskey, TArgs &&... args) : StorageFromMergeTreeDataPart{std::forward<TArgs>(args)...}
+    {
+    }
+
     String getName() const override { return "FromMergeTreeDataPart"; }
 
     Pipe read(

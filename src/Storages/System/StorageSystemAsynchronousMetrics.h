@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -12,11 +11,25 @@ class Context;
 
 /** Implements system table asynchronous_metrics, which allows to get values of periodically (asynchronously) updated metrics.
   */
-class StorageSystemAsynchronousMetrics final : public shared_ptr_helper<StorageSystemAsynchronousMetrics>,
-    public IStorageSystemOneBlock<StorageSystemAsynchronousMetrics>
+class StorageSystemAsynchronousMetrics final : public IStorageSystemOneBlock<StorageSystemAsynchronousMetrics>
 {
-    friend struct shared_ptr_helper<StorageSystemAsynchronousMetrics>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemAsynchronousMetrics> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemAsynchronousMetrics>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemAsynchronousMetrics(CreatePasskey, TArgs &&... args) : StorageSystemAsynchronousMetrics{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemAsynchronousMetrics"; }
 
     static NamesAndTypesList getNamesAndTypes();

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <optional>
 #include <Storages/IStorage.h>
 
@@ -23,10 +22,25 @@ class Context;
   *  In multithreaded case, if even_distributed is False, implementation with atomic is used,
   *     and result is always in [0 ... limit - 1] range.
   */
-class StorageSystemNumbers final : public shared_ptr_helper<StorageSystemNumbers>, public IStorage
+class StorageSystemNumbers final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageSystemNumbers>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemNumbers> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemNumbers>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemNumbers(CreatePasskey, TArgs &&... args) : StorageSystemNumbers{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemNumbers"; }
 
     Pipe read(

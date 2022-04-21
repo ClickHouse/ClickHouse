@@ -8,7 +8,6 @@
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
 #include <base/logger_useful.h>
-#include <base/shared_ptr_helper.h>
 
 namespace DB
 {
@@ -16,10 +15,25 @@ namespace DB
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHDFS final : public shared_ptr_helper<StorageHDFS>, public IStorage, WithContext
+class StorageHDFS final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageHDFS>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageHDFS> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageHDFS>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageHDFS(CreatePasskey, TArgs &&... args) : StorageHDFS{std::forward<TArgs>(args)...}
+    {
+    }
+
     String getName() const override { return "HDFS"; }
 
     Pipe read(

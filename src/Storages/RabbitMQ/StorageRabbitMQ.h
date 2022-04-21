@@ -3,7 +3,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
-#include <base/shared_ptr_helper.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
@@ -18,11 +17,25 @@
 namespace DB
 {
 
-class StorageRabbitMQ final: public shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
+class StorageRabbitMQ final: public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageRabbitMQ>;
+private:
+    struct CreatePasskey
+    {
+    };
 
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageRabbitMQ> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageRabbitMQ>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageRabbitMQ(CreatePasskey, TArgs &&... args) : StorageRabbitMQ{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "RabbitMQ"; }
 
     bool noPushingToViews() const override { return true; }

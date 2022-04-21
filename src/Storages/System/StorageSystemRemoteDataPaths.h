@@ -1,15 +1,29 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
 
-class StorageSystemRemoteDataPaths : public shared_ptr_helper<StorageSystemRemoteDataPaths>, public IStorage
+class StorageSystemRemoteDataPaths : public IStorage
 {
-    friend struct shared_ptr_helper<StorageSystemRemoteDataPaths>;
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemRemoteDataPaths> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemRemoteDataPaths>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemRemoteDataPaths(CreatePasskey, TArgs &&... args) : StorageSystemRemoteDataPaths{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemRemoteDataPaths"; }
 
     bool isSystemStorage() const override { return true; }

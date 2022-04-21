@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -10,14 +9,29 @@ class Context;
 
 /** Implements the `quotas` system tables, which allows you to get information about quotas.
   */
-class StorageSystemQuotas final : public shared_ptr_helper<StorageSystemQuotas>, public IStorageSystemOneBlock<StorageSystemQuotas>
+class StorageSystemQuotas final : public IStorageSystemOneBlock<StorageSystemQuotas>
 {
+private:
+    struct CreatePasskey
+    {
+    };
+
 public:
+    template <typename... TArgs>
+    static std::shared_ptr<StorageSystemQuotas> create(TArgs &&... args)
+    {
+        return std::make_shared<StorageSystemQuotas>(CreatePasskey{}, std::forward<TArgs>(args)...);
+    }
+
+    template <typename... TArgs>
+    explicit StorageSystemQuotas(CreatePasskey, TArgs &&... args) : StorageSystemQuotas{std::forward<TArgs>(args)...}
+    {
+    }
+
     std::string getName() const override { return "SystemQuotas"; }
     static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    friend struct shared_ptr_helper<StorageSystemQuotas>;
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const override;
 };
