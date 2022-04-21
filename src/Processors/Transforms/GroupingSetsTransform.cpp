@@ -69,7 +69,6 @@ Chunk GroupingSetsTransform::generate()
         result = Chunk(std::move(result_columns), rows);
     }
 
-    finalizeChunk(result);
     return result;
 }
 
