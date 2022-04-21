@@ -8,9 +8,10 @@ namespace DB
 
 NamesAndTypesList CacheLogElement::getNamesAndTypes()
 {
-    return {{"query_id", std::make_shared<DataTypeString>()},
-            {"hit_count", std::make_shared<DataTypeUInt64>()},
-            {"miss_count", std::make_shared<DataTypeUInt64>()}},
+    return {
+        {"query_id", std::make_shared<DataTypeString>()},
+        {"hit_count", std::make_shared<DataTypeUInt64>()},
+        {"miss_count", std::make_shared<DataTypeUInt64>()}};
 }
 
 void CacheLogElement::appendToBlock(MutableColumns & columns) const
