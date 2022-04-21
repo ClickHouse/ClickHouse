@@ -142,6 +142,8 @@ FileSegments LRUFileCache::getImpl(
 
         files.erase(key);
 
+        /// Note: it is guaranteed that there is no concurrency with files delition,
+        /// because cache files are deleted only inside IFileCache and under cache lock.
         if (fs::exists(key_path))
             fs::remove(key_path);
 
@@ -517,7 +519,7 @@ bool LRUFileCache::tryReserve(
     return true;
 }
 
-void LRUFileCache::remove(const Key & key)
+void LRUFileCache::removeIfExists(const Key & key)
 {
     assertInitialized();
 
@@ -538,7 +540,10 @@ void LRUFileCache::remove(const Key & key)
     for (auto & cell : to_remove)
     {
         if (!cell->releasable())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove file from cache because someone reads from it. File segment info: {}", cell->file_segment->getInfoForLog());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot remove file from cache because someone reads from it. File segment info: {}",
+                cell->file_segment->getInfoForLog());
 
         auto file_segment = cell->file_segment;
         if (file_segment)

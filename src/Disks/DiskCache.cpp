@@ -136,7 +136,7 @@ void DiskCache::removeCache(const String & path)
     for (const auto & remote_path : remote_paths)
     {
         auto key = cache->hash(remote_path);
-        cache->remove(key);
+        cache->removeIfExists(key);
     }
 }
 
@@ -150,7 +150,7 @@ void DiskCache::removeCacheRecursive(const String & path)
         for (const auto & remote_path : remote_paths)
         {
             auto key = cache->hash(remote_path);
-            cache->remove(key);
+            cache->removeIfExists(key);
         }
     }
 }
