@@ -13,6 +13,8 @@ from env_helper import (
     GITHUB_EVENT_PATH,
 )
 
+FORCE_TESTS_LABEL = "force tests"
+
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
     ".md",
@@ -256,7 +258,7 @@ class PRInfo:
 
     def can_skip_builds_and_use_version_from_master(self):
         # TODO: See a broken loop
-        if "force tests" in self.labels:
+        if FORCE_TESTS_LABEL in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
@@ -275,7 +277,7 @@ class PRInfo:
 
     def can_skip_integration_tests(self):
         # TODO: See a broken loop
-        if "force tests" in self.labels:
+        if FORCE_TESTS_LABEL in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
@@ -292,7 +294,7 @@ class PRInfo:
 
     def can_skip_functional_tests(self):
         # TODO: See a broken loop
-        if "force tests" in self.labels:
+        if FORCE_TESTS_LABEL in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
