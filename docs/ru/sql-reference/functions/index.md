@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Функции"
-toc_priority: 32
-toc_title: "Введение"
+sidebar_label: "Функции"
+sidebar_position: 32
 ---
 
 # Функции {#funktsii}

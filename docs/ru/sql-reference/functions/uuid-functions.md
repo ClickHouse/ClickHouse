@@ -1,6 +1,6 @@
 ---
-toc_priority: 53
-toc_title: "Функции для работы с UUID"
+sidebar_position: 53
+sidebar_label: "Функции для работы с UUID"
 ---
 
 # Функции для работы с UUID {#funktsii-dlia-raboty-s-uuid}

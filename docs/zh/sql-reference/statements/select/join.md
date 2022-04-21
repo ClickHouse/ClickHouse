@@ -1,5 +1,5 @@
 ---
-toc_title: JOIN
+sidebar_label: JOIN
 ---
 
 # JOIN子句 {#select-join}

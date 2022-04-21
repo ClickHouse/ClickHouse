@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: DATABASE
+sidebar_position: 35
+sidebar_label: DATABASE
 ---
 
 # CREATE DATABASE {#query-language-create-database}
@@ -26,4 +26,4 @@ ClickHouse在指定集群的所有服务器上创建`db_name`数据库。 更多
 
 ### ENGINE {#engine}
 
-[MySQL](../../../engines/database-engines/mysql.md) 允许您从远程MySQL服务器检索数据. 默认情况下，ClickHouse使用自己的[database engine](../../../engines/database-engines/index.md). 还有一个[lazy](../../../engines/database-engines/lazy.md)引擎.
+[MySQL](../../../engines/database-engines/mysql.md) 允许您从远程MySQL服务器检索数据. 默认情况下，ClickHouse使用自己的[database engine](../../../engines/database-engines/index.md). 还有一个[lazy](../../../engines/database-engines/lazy)引擎.
