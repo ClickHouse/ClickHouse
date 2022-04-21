@@ -892,7 +892,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         ReadableSize(elem.read_bytes / elapsed_seconds));
                 }
 
-                if (log_queries && elem.type >= log_queries_min_type && Int64(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
+                if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
                 {
                     if (auto query_log = context->getQueryLog())
                         query_log->add(elem);
@@ -1009,7 +1009,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 logException(context, elem);
 
                 /// In case of exception we log internal queries also
-                if (log_queries && elem.type >= log_queries_min_type && Int64(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
+                if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
                 {
                     if (auto query_log = context->getQueryLog())
                         query_log->add(elem);

@@ -374,12 +374,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         std::move(pipe),
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name));
     plan->addStep(std::move(step));
-
-    if (query_info.projection->subqueries_for_sets && !query_info.projection->subqueries_for_sets->empty())
-    {
-        SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-        addCreatingSetsStep(*plan, std::move(*query_info.projection->subqueries_for_sets), limits, context);
-    }
     return plan;
 }
 
@@ -1095,7 +1089,7 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
         std::set<String> partitions;
         for (const auto & part_with_ranges : result.parts_with_ranges)
             partitions.insert(part_with_ranges.data_part->info.partition_id);
-        if (partitions.size() > size_t(max_partitions_to_read))
+        if (partitions.size() > static_cast<size_t>(max_partitions_to_read))
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTITIONS,
                 "Too many partitions to read. Current {}, max {}",
