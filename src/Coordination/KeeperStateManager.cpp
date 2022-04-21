@@ -1,12 +1,12 @@
 #include <Coordination/KeeperStateManager.h>
 
-#include <Coordination/Defines.h>
-#include <Common/Exception.h>
 #include <filesystem>
-#include <Common/isLocalAddress.h>
-#include <Common/DNSResolver.h>
-#include "Access/Common/AllowedClientHosts.h"
 #include <ifaddrs.h>
+#include <Coordination/Defines.h>
+#include <Common/DNSResolver.h>
+#include <Common/Exception.h>
+#include <Common/isLocalAddress.h>
+#include "Access/Common/AllowedClientHosts.h"
 
 namespace DB
 {
@@ -18,11 +18,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-bool isLoopback(const std::string & hostname)
-{
-    return hostname == "localhost";
-}
 
 bool isLocalhost(const std::string & hostname)
 {
@@ -72,7 +67,8 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
 /// 3. Raft internal port is not equal to any other port for client
 /// 4. No duplicate IDs
 /// 5. Our ID present in hostnames list
-KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
+KeeperStateManager::KeeperConfigurationWrapper
+KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
     const bool host_checks_enabled = config.getBool(config_prefix + ".host_checks_enabled", true);
 
@@ -89,7 +85,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     std::unordered_map<std::string, int> check_duplicated_hostnames;
 
     size_t total_servers = 0;
-    std::string loopback_hostname;
+    bool localhost_present = false;
     std::string non_local_hostname;
     size_t local_address_counter = 0;
     for (const auto & server_key : keys)
@@ -107,15 +103,19 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
 
         if (client_ports.contains(port))
         {
-            throw Exception(ErrorCodes::RAFT_ERROR, "Raft configuration contains hostname '{}' with port '{}' which is equal to '{}' in server configuration",
-                            hostname, port, client_ports[port]);
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Raft configuration contains hostname '{}' with port '{}' which is equal to '{}' in server configuration",
+                hostname,
+                port,
+                client_ports[port]);
         }
 
         if (host_checks_enabled)
         {
-            if (isLoopback(hostname))
+            if (hostname == "localhost")
             {
-                loopback_hostname = hostname;
+                localhost_present = true;
                 local_address_counter++;
             }
             else if (isLocalhost(hostname))
@@ -134,9 +134,13 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
         auto endpoint = hostname + ":" + std::to_string(port);
         if (check_duplicated_hostnames.contains(endpoint))
         {
-            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate endpoints: "
-                            "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
-                            endpoint, check_duplicated_hostnames[endpoint], new_server_id);
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Raft config contains duplicate endpoints: "
+                "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
+                endpoint,
+                check_duplicated_hostnames[endpoint],
+                new_server_id);
         }
         else
         {
@@ -144,8 +148,13 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
             for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
             {
                 if (new_server_id == id)
-                    throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
-                                    "but going to add it one more time with endpoint {}", id, id_endpoint, endpoint);
+                    throw Exception(
+                        ErrorCodes::RAFT_ERROR,
+                        "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
+                        "but going to add it one more time with endpoint {}",
+                        id,
+                        id_endpoint,
+                        endpoint);
             }
             check_duplicated_hostnames.emplace(endpoint, new_server_id);
         }
@@ -169,13 +178,13 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
 
     if (host_checks_enabled)
     {
-        if (!loopback_hostname.empty() && !non_local_hostname.empty())
+        if (localhost_present && !non_local_hostname.empty())
         {
             throw Exception(
                 ErrorCodes::RAFT_ERROR,
-                "Mixing loopback and non-local hostnames ('{}' and '{}') in raft_configuration is not allowed. "
-                "Different hosts can resolve it to themselves so it's not allowed.",
-                loopback_hostname, non_local_hostname);
+                "Mixing 'localhost' and non-local hostnames ('{}') in raft_configuration is not allowed. "
+                "Different hosts can resolve 'localhost' to themselves so it's not allowed.",
+                non_local_hostname);
         }
 
         if (!non_local_hostname.empty() && local_address_counter > 1)
@@ -184,7 +193,8 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
                 ErrorCodes::RAFT_ERROR,
                 "Local address specified more than once ({} times) and non-local hostnames also exists ('{}') in raft_configuration. "
                 "Such configuration is not allowed because single host can vote multiple times.",
-                local_address_counter, non_local_hostname);
+                local_address_counter,
+                non_local_hostname);
         }
     }
 
@@ -192,9 +202,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
 }
 
 KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
-: my_server_id(server_id_)
-, secure(false)
-, log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
+    : my_server_id(server_id_), secure(false), log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     configuration_wrapper.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
@@ -214,10 +222,10 @@ KeeperStateManager::KeeperStateManager(
     , config_prefix(config_prefix_)
     , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
-                    log_storage_path,
-                    coordination_settings->rotate_log_storage_interval,
-                    coordination_settings->force_sync,
-                    coordination_settings->compress_logs))
+          log_storage_path,
+          coordination_settings->rotate_log_storage_interval,
+          coordination_settings->force_sync,
+          coordination_settings->compress_logs))
 {
 }
 
