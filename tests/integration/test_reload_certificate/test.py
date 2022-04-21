@@ -18,13 +18,14 @@ node = cluster.add_instance(
         "configs/cert.xml",
     ],
 )
-PASS_PHRASE_TEMPLATE='''<privateKeyPassphraseHandler>
+PASS_PHRASE_TEMPLATE="""<privateKeyPassphraseHandler>
                 <name>KeyFileHandler</name>
                 <options>
                 <password>{pass_phrase}</password>
                 </options>
             </privateKeyPassphraseHandler>
-'''
+"""
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -61,14 +62,15 @@ def change_config_to_key(name, pass_phrase=""):
     </openSSL>
 </clickhouse>
 EOF""".format(
-                cur_name=name,
-                pass_phrase=pass_phrase
+                cur_name=name, pass_phrase=pass_phrase
             ),
         ]
     )
     node.query("SYSTEM RELOAD CONFIG")
 
-def check_certificate_switch(first, second, pass_phrase_first="", pass_phrase_second=""):
+def check_certificate_switch(
+    first, second, pass_phrase_first="", pass_phrase_second=""
+):
      # Set first key
     change_config_to_key(first, pass_phrase_first)
 
@@ -79,9 +81,7 @@ def check_certificate_switch(first, second, pass_phrase_first="", pass_phrase_se
                 "curl",
                 "--silent",
                 "--cacert",
-                "/etc/clickhouse-server/config.d/{cur_name}.crt".format(
-                    cur_name=first
-                ),
+                "/etc/clickhouse-server/config.d/{cur_name}.crt".format(cur_name=first),
                 "https://localhost:8443/",
             ]
         )
@@ -97,9 +97,7 @@ def check_certificate_switch(first, second, pass_phrase_first="", pass_phrase_se
                 "curl",
                 "--silent",
                 "--cacert",
-                "/etc/clickhouse-server/config.d/{cur_name}.crt".format(
-                    cur_name=second
-                ),
+                "/etc/clickhouse-server/config.d/{cur_name}.crt".format(cur_name=second),
                 "https://localhost:8443/",
             ]
         )
@@ -144,14 +142,19 @@ def check_certificate_switch(first, second, pass_phrase_first="", pass_phrase_se
     except:
         assert True
 
+
 def test_first_than_second_cert():
     """Consistently set first key and check that only it will be accepted, then repeat same for second key."""
     check_certificate_switch("first", "second")
 
+
 def test_ECcert_reload():
-    '''Check EC certificate'''
+    """Check EC certificate"""
     check_certificate_switch("first", "ECcert")
+
 
 def test_cert_with_pass_phrase():
     pass_phrase_for_cert = PASS_PHRASE_TEMPLATE.format(pass_phrase="test")
-    check_certificate_switch("first", "WithPassPhrase", pass_phrase_second=pass_phrase_for_cert)
+    check_certificate_switch(
+        "first", "WithPassPhrase", pass_phrase_second=pass_phrase_for_cert
+    )
