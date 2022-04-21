@@ -13,6 +13,11 @@ SELECT
        number % 100 AS sales_value
 FROM system.numbers limit 1000;
 
+EXPLAIN PIPELINE
+SELECT fact_1_id, fact_2_id, fact_3_id, SUM(sales_value) AS sales_value from grouping_sets
+GROUP BY GROUPING SETS ((fact_1_id, fact_2_id), (fact_1_id, fact_3_id))
+ORDER BY fact_1_id, fact_2_id, fact_3_id;
+
 SELECT fact_1_id, fact_2_id, fact_3_id, SUM(sales_value) AS sales_value from grouping_sets
 GROUP BY GROUPING SETS ((fact_1_id, fact_2_id), (fact_1_id, fact_3_id))
 ORDER BY fact_1_id, fact_2_id, fact_3_id;
