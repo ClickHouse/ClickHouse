@@ -1,17 +1,26 @@
+#include <cstddef>
 #include <Processors/Transforms/GroupingSetsTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnsNumber.h>
 
 namespace DB
 {
 
-GroupingSetsTransform::GroupingSetsTransform(Block header, AggregatingTransformParamsPtr params_)
-    : IAccumulatingTransform(std::move(header), params_->getHeader())
+GroupingSetsTransform::GroupingSetsTransform(
+    Block input_header,
+    Block output_header,
+    AggregatingTransformParamsPtr params_,
+    ColumnNumbersList const & missing_columns_,
+    size_t set_id_
+)
+    : IAccumulatingTransform(std::move(input_header), std::move(output_header))
     , params(std::move(params_))
-    , keys(params->params.keys)
-    , keys_vector(params->params.keys_vector)
-    , keys_vector_idx(0)
-{
-}
+    , missing_columns(missing_columns_[set_id_])
+    , set_id(set_id_)
+    , output_size(getOutputPort().getHeader().columns())
+{}
 
 void GroupingSetsTransform::consume(Chunk chunk)
 {
@@ -31,8 +40,10 @@ Chunk GroupingSetsTransform::merge(Chunks && chunks, bool final)
 
 Chunk GroupingSetsTransform::generate()
 {
+    Chunk result;
     if (!consumed_chunks.empty())
     {
+        Chunk grouping_sets_chunk;
         if (consumed_chunks.size() > 1)
             grouping_sets_chunk = merge(std::move(consumed_chunks), false);
         else
@@ -40,37 +51,26 @@ Chunk GroupingSetsTransform::generate()
 
         consumed_chunks.clear();
 
-        auto num_rows = grouping_sets_chunk.getNumRows();
+        size_t rows = grouping_sets_chunk.getNumRows();
 
-        current_columns = grouping_sets_chunk.getColumns();
-        current_zero_columns.clear();
-
-        for (auto key : keys)
-            current_zero_columns.emplace(key, current_columns[key]->cloneEmpty()->cloneResized(num_rows));
-    }
-
-    Chunk gen_chunk;
-
-    if (!current_columns.empty() && keys_vector_idx < keys_vector.size())
-    {
-        auto columns = current_columns;
-        std::set<size_t> key_vector(keys_vector[keys_vector_idx].begin(), keys_vector[keys_vector_idx].end());
-
-        for (auto key : keys)
+        auto columns = grouping_sets_chunk.detachColumns();
+        Columns result_columns;
+        auto const & output_header = getOutputPort().getHeader();
+        size_t real_column_index = 0, missign_column_index = 0;
+        for (size_t i = 0; i < output_header.columns() - 1; ++i)
         {
-            if (!key_vector.contains(key))
-                columns[key] = current_zero_columns[key];
+            if (missign_column_index < missing_columns.size() && missing_columns[missign_column_index] == i)
+                result_columns.push_back(output_header.getByPosition(missing_columns[missign_column_index++]).column->cloneResized(rows));
+            else
+                result_columns.push_back(std::move(columns[real_column_index++]));
         }
+        result_columns.push_back(ColumnUInt64::create(rows, set_id));
 
-        Chunks chunks;
-        chunks.emplace_back(std::move(columns), current_columns.front()->size());
-        gen_chunk = merge(std::move(chunks), false);
-
-        ++keys_vector_idx;
+        result = Chunk(std::move(result_columns), rows);
     }
 
-    finalizeChunk(gen_chunk);
-    return gen_chunk;
+    finalizeChunk(result);
+    return result;
 }
 
 }
