@@ -54,15 +54,12 @@ private:
     {
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
-        std::list<Block> pending_right_blocks;
-        bool in_inserting = false;
     };
+
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
-    std::atomic<size_t> check_total_rows;
-    std::atomic<size_t> check_total_bytes;
 
     std::mutex finished_add_joined_blocks_tasks_mutex;
     std::condition_variable finished_add_joined_blocks_tasks_cond;
@@ -73,11 +70,8 @@ private:
 
     struct BlockDispatchControlData
     {
-        //std::mutex mutex;
-        //std::atomic<bool> has_init = false;
         std::shared_ptr<ExpressionActions> hash_expression_actions;
         Strings hash_columns_names;
-        //Block header;
         BlockDispatchControlData() = default;
     };
 
@@ -88,9 +82,6 @@ private:
     std::pair<std::shared_ptr<ExpressionActions>, Strings> buildHashExpressionAction(const Block & block, const Strings & based_columns_names);
 
     static void dispatchBlock(BlockDispatchControlData & dispatch_data, Block & from_block, std::vector<Block> & dispatched_blocks);
-
-    void waitAllAddJoinedBlocksFinished();
-    std::shared_ptr<InternalHashJoin> getUnfinishedAddJoinedBlockTasks();
 
 };
 }
