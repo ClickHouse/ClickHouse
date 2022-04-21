@@ -2200,6 +2200,8 @@ Aggregator::Params::GroupingSetsParams InterpreterSelectQuery::getAggregatorGrou
     if (getSelectQuery().group_by_with_grouping_sets)
     {
         auto const & aggregation_keys_list = query_analyzer->aggregationKeysList();
+        if (aggregation_keys_list.size() <= 1)
+            return {};
 
         ColumnNumbersList grouping_sets_with_keys;
         ColumnNumbersList missing_columns_per_set;

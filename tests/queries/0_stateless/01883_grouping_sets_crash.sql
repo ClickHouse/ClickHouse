@@ -61,4 +61,10 @@ ORDER BY
     fact_3_id DESC NULLS FIRST,
     fact_4_id ASC;
 
+SELECT fact_3_id
+FROM grouping_sets
+GROUP BY
+    GROUPING SETS ((fact_3_id, fact_4_id))
+ORDER BY fact_3_id ASC;
+
 DROP TABLE IF EXISTS grouping_sets;
