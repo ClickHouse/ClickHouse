@@ -34,7 +34,7 @@ namespace JoinStuff
 class ConcurrentHashJoin : public IJoin
 {
 public:
-    explicit ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_ = false);
+    explicit ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & left_sample_block, const Block & right_sample_block, bool any_take_last_row_ = false);
     ~ConcurrentHashJoin() override = default;
 
     const TableJoin & getTableJoin() const override { return *table_join; }
@@ -50,7 +50,7 @@ public:
     std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 private:
-    struct InnerHashJoin
+    struct InternalHashJoin
     {
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
@@ -60,7 +60,7 @@ private:
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
-    std::vector<std::shared_ptr<InnerHashJoin>> hash_joins;
+    std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
     std::atomic<size_t> check_total_rows;
     std::atomic<size_t> check_total_bytes;
 
@@ -71,19 +71,13 @@ private:
     mutable std::mutex totals_mutex;
     Block totals;
 
-    enum TableIndex
-    {
-        LEFT = 0,
-        RIGHT = 1
-    };
-
     struct BlockDispatchControlData
     {
-        std::mutex mutex;
-        std::atomic<bool> has_init = false;
+        //std::mutex mutex;
+        //std::atomic<bool> has_init = false;
         std::shared_ptr<ExpressionActions> hash_expression_actions;
         Strings hash_columns_names;
-        Block header;
+        //Block header;
         BlockDispatchControlData() = default;
     };
 
@@ -91,13 +85,12 @@ private:
 
     Poco::Logger * logger = &Poco::Logger::get("ConcurrentHashJoin");
 
-    std::shared_ptr<ExpressionActions> buildHashExpressionAction(const Block & block, const Strings & based_columns_names, Strings & hash_columns_names);
-    BlockDispatchControlData & getBlockDispatchControlData(const Block & block, TableIndex table_index);
+    std::pair<std::shared_ptr<ExpressionActions>, Strings> buildHashExpressionAction(const Block & block, const Strings & based_columns_names);
 
     static void dispatchBlock(BlockDispatchControlData & dispatch_data, Block & from_block, std::vector<Block> & dispatched_blocks);
 
     void waitAllAddJoinedBlocksFinished();
-    std::shared_ptr<InnerHashJoin> getUnfinishedAddJoinedBlockTasks();
+    std::shared_ptr<InternalHashJoin> getUnfinishedAddJoinedBlockTasks();
 
 };
 }

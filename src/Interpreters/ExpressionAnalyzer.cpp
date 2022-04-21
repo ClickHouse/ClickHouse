@@ -60,6 +60,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
 
+#include <Poco/Logger.h>
+#include <base/logger_useful.h>
+
 namespace DB
 {
 
@@ -927,24 +930,24 @@ static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoi
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
-static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, ContextPtr context)
+static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, const Block left_sample_block, const Block & right_sample_block, ContextPtr context)
 {
     /// HashJoin with Dictionary optimisation
-    if (analyzed_join->tryInitDictJoin(sample_block, context))
-        return std::make_shared<HashJoin>(analyzed_join, sample_block);
+    if (analyzed_join->tryInitDictJoin(right_sample_block, context))
+        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
 
     bool allow_merge_join = analyzed_join->allowMergeJoin();
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
     {
         if (analyzed_join->allowParallelHashJoin())
         {
-            return std::make_shared<JoinStuff::ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, sample_block);
+            return std::make_shared<JoinStuff::ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, left_sample_block, right_sample_block);
         }
-        return std::make_shared<HashJoin>(analyzed_join, sample_block);
+        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
-        return std::make_shared<MergeJoin>(analyzed_join, sample_block);
-    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
+        return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
+    return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
@@ -1032,7 +1035,8 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         joined_plan->addStep(std::move(converting_step));
     }
 
-    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
+    Block left_sample_block(left_columns);
+    JoinPtr join = chooseJoinAlgorithm(analyzed_join, left_sample_block, joined_plan->getCurrentDataStream().header, getContext());
 
     /// Do not make subquery for join over dictionary.
     if (analyzed_join->getDictionaryReader())
