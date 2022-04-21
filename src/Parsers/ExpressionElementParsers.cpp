@@ -771,7 +771,7 @@ namespace
 
             auto interval_literal = std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit());
             if (timezone_node)
-                node = makeASTFunction("dateDiff",  std::move(interval_literal), std::move(left_node), std::move(right_node), std::move(timezone_node));
+                node = makeASTFunction("dateDiff", std::move(interval_literal), std::move(left_node), std::move(right_node), std::move(timezone_node));
             else
                 node = makeASTFunction("dateDiff", std::move(interval_literal), std::move(left_node), std::move(right_node));
 
