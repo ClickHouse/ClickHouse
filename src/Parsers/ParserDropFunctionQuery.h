@@ -5,7 +5,6 @@
 namespace DB
 {
 /// DROP FUNCTION function1
-// !! test with new funcs
 class ParserDropFunctionQuery : public IParserBase
 {
 protected:

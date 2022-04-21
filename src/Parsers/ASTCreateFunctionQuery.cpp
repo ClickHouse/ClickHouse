@@ -19,7 +19,7 @@ ASTPtr ASTCreateFunctionQuery::clone() const
     return res;
 }
 
-void ASTCreateFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
+void ASTCreateFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & /*state*/, IAST::FormatStateStacked /*frame*/) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE ";
 

@@ -22,10 +22,10 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-BlockIO InterpreterCreateFunctionQuery::execute()
+BlockIO InterpreterCreateLambdaFunctionQuery::execute()
 {
     FunctionNameNormalizer().visit(query_ptr.get());
-    ASTCreateFunctionQuery & create_function_query = query_ptr->as<ASTCreateFunctionQuery &>();
+    auto & create_function_query = query_ptr->as<ASTCreateLambdaFunctionQuery &>();
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::CREATE_FUNCTION);
@@ -59,7 +59,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     return {};
 }
 
-void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const String & name)
+void InterpreterCreateLambdaFunctionQuery::validateFunction(ASTPtr function, const String & name)
 {
     ASTFunction * lambda_function = function->as<ASTFunction>();
 
@@ -98,7 +98,7 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
     validateFunctionRecursiveness(function_body, name);
 }
 
-void InterpreterCreateFunctionQuery::validateFunctionRecursiveness(ASTPtr node, const String & function_to_create)
+void InterpreterCreateLambdaFunctionQuery::validateFunctionRecursiveness(ASTPtr node, const String & function_to_create)
 {
     for (const auto & child : node->children)
     {
@@ -109,4 +109,42 @@ void InterpreterCreateFunctionQuery::validateFunctionRecursiveness(ASTPtr node, 
         validateFunctionRecursiveness(child, function_to_create);
     }
 }
+
+BlockIO InterpreterCreateInterpFunctionQuery::execute()
+{
+    FunctionNameNormalizer().visit(query_ptr.get());  // !! is this needed??
+    auto & create_function_query = query_ptr->as<ASTCreateInterpFunctionQuery &>();
+
+    AccessRightsElements access_rights_elements;  // !! duplicate code
+    access_rights_elements.emplace_back(AccessType::CREATE_FUNCTION);
+
+    if (create_function_query.or_replace)
+        access_rights_elements.emplace_back(AccessType::DROP_FUNCTION);
+
+    if (!create_function_query.cluster.empty())
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = std::move(access_rights_elements);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
+
+    auto current_context = getContext();
+    current_context->checkAccess(access_rights_elements);
+
+    auto & user_defined_function_factory = UserDefinedSQLFunctionFactory::instance();
+
+    auto function_name = create_function_query.getFunctionName();
+
+    bool if_not_exists = create_function_query.if_not_exists;
+    bool replace = create_function_query.or_replace;
+
+    create_function_query.if_not_exists = false;
+    create_function_query.or_replace = false;
+
+    // NOTE interpreter is not validated, because config may be changed at any time and interpreter may become valid/invalid
+    user_defined_function_factory.registerFunction(current_context, function_name, query_ptr, replace, if_not_exists, persist_function);
+
+    return {};
+}
+
 }

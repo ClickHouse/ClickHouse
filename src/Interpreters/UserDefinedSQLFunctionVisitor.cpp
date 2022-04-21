@@ -46,11 +46,15 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function.name);
     if (!user_defined_function)
         return nullptr;
+    const auto & create_function_query = user_defined_function->as<ASTCreateLambdaFunctionQuery>();
+    if (!create_function_query) {
+        // !! execute (where?)
+        return nullptr;  // InterpFunction
+    }
 
     const auto & function_arguments_list = function.children.at(0)->as<ASTExpressionList>();
     auto & function_arguments = function_arguments_list->children;
 
-    const auto & create_function_query = user_defined_function->as<ASTCreateFunctionQuery>();
     auto & function_core_expression = create_function_query->function_core->children.at(0);
 
     const auto & identifiers_expression_list = function_core_expression->children.at(0)->children.at(0)->as<ASTExpressionList>();

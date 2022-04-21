@@ -284,9 +284,13 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterTransactionControlQuery>(query, context);
     }
-    else if (query->as<ASTCreateFunctionQuery>())
+    else if (query->as<ASTCreateLambdaFunctionQuery>())
     {
-        return std::make_unique<InterpreterCreateFunctionQuery>(query, context, true /*persist_function*/);
+        return std::make_unique<InterpreterCreateLambdaFunctionQuery>(query, context, true /*persist_function*/);
+    }
+    else if (query->as<ASTCreateInterpFunctionQuery>())
+    {
+        return std::make_unique<InterpreterCreateInterpFunctionQuery>(query, context, true /*persist_function*/);
     }
     else if (query->as<ASTDropFunctionQuery>())
     {

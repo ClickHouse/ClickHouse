@@ -31,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int OBJECT_ALREADY_STORED_ON_DISK;
     extern const int OBJECT_WAS_NOT_STORED_ON_DISK;
+    extern const int UNKNOWN_TYPE_OF_QUERY;
 }
 
 UserDefinedSQLObjectsLoader & UserDefinedSQLObjectsLoader::instance()
@@ -69,8 +70,15 @@ void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, User
                     0,
                     context->getSettingsRef().max_parser_depth);
 
-                InterpreterCreateFunctionQuery interpreter(ast, context, false /*persist_function*/);
-                interpreter.execute();
+                if (ast->as<ASTCreateLambdaFunctionQuery>()) {
+                    InterpreterCreateLambdaFunctionQuery interpreter(ast, context, false /*persist_function*/);
+                    interpreter.execute();
+                } else if (ast->as<ASTCreateInterpFunctionQuery>()) {
+                    InterpreterCreateInterpFunctionQuery interpreter(ast, context, false /*persist_function*/);
+                    interpreter.execute();
+                } else {
+                    throw Exception("Unknown type of query: " + ast->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+                }
             }
         }
     }
@@ -111,6 +119,7 @@ void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
     }
 }
 
+// TODO check load efficiency. Use system table instead?
 void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast, bool replace)
 {
     if (unlikely(!enable_persistence))
