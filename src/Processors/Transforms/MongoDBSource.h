@@ -29,8 +29,7 @@ public:
         std::shared_ptr<Poco::MongoDB::Connection> & connection_,
         std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
         const Block & sample_block,
-        UInt64 max_block_size_,
-        bool strict_check_names_ = false);
+        UInt64 max_block_size_);
 
     ~MongoDBSource() override;
 
@@ -44,10 +43,6 @@ private:
     const UInt64 max_block_size;
     ExternalResultDescription description;
     bool all_read = false;
-
-    /// if true stream will check, that all required fields present in MongoDB
-    /// collection, otherwise throw exception.
-    bool strict_check_names;
 };
 
 }

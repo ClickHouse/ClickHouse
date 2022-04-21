@@ -2736,7 +2736,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 
-    bool has_blocks_with_unknown_bucket = bucket_to_blocks.count(-1);
+    bool has_blocks_with_unknown_bucket = bucket_to_blocks.contains(-1);
 
     /// First, parallel the merge for the individual buckets. Then we continue merge the data not allocated to the buckets.
     if (has_two_level)
