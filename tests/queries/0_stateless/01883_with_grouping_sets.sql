@@ -47,3 +47,12 @@ GROUP BY grouping sets (fact_1_id, (fact_1_id, fact_3_id)) WITH TOTALS
 ORDER BY fact_1_id, fact_3_id; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE grouping_sets;
+
+EXPLAIN PIPELINE
+SELECT SUM(number) as sum_value, count() AS count_value from numbers_mt(1000000)
+GROUP BY GROUPING SETS ((number % 10), (number % 100))
+ORDER BY sum_value, count_value SETTINGS max_threads=3;
+
+SELECT SUM(number) as sum_value, count() AS count_value from numbers_mt(1000000)
+GROUP BY GROUPING SETS ((number % 10), (number % 100))
+ORDER BY sum_value, count_value SETTINGS max_threads=3;
