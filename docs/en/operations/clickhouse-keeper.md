@@ -340,7 +340,7 @@ After making sure that the above things are true, you need to do following:
 1. Pick a single Keeper node to be your new leader.
 2. Before doing anything else, make a backup of the `log_storage_path` folder of the picked node
 3. Reconfigure the cluster on all of the nodes you want to use
-4. Send the four letter command `rcvr` to the node you picked which will move the node to the recovery mode
+4. Send the four letter command `rcvr` to the node you picked which will move the node to the recovery mode OR stop Keeper instance on the picked node and start it again with the `--force-recovery` argument
 5. One by one, start Keeper instances on the new nodes making sure that `mntr` returns `follower` for the `zk_server_state` before starting the next one
 6. While in the recovery mode, the leader node will return error message for `mntr` command until it achieves quorum with the new nodes and refuse any requests from the client and the followers
 7. After quorum is achieved, the leader node will return to the normal mode of operation, accepting all the requests using Raft - verify with `mntr` which should return `leader` for the `zk_server_state`
