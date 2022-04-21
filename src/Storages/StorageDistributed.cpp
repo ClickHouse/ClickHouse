@@ -989,7 +989,7 @@ void StorageDistributed::drop()
     // (in shutdown()).
     shutdown();
 
-    // Distributed table w/o sharding_key does not allows INSERTs
+    // Distributed table without sharding_key does not allows INSERTs
     if (relative_data_path.empty())
         return;
 

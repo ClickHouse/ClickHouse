@@ -1,7 +1,6 @@
 ---
-toc_folder_title: MergeTree Family
-toc_priority: 28
-toc_title: Introduction
+sidebar_position: 10
+sidebar_label: MergeTree Family
 ---
 
 # MergeTree Engine Family {#mergetree-engine-family}

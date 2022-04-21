@@ -95,7 +95,7 @@ void convertAnyColumnToBool(const IColumn * column, UInt8Container & res)
 
 
 template <class Op, typename Func>
-static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
+bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 {
     bool has_res = false;
 
@@ -345,7 +345,7 @@ struct OperationApplier<Op, OperationApplierImpl, 0>
 
 
 template <class Op>
-static ColumnPtr executeForTernaryLogicImpl(ColumnRawPtrs arguments, const DataTypePtr & result_type, size_t input_rows_count)
+ColumnPtr executeForTernaryLogicImpl(ColumnRawPtrs arguments, const DataTypePtr & result_type, size_t input_rows_count)
 {
     /// Combine all constant columns into a single constant value.
     UInt8 const_3v_value = 0;
@@ -420,7 +420,7 @@ struct TypedExecutorInvoker<Op>
 
 /// Types of all of the arguments are guaranteed to be non-nullable here
 template <class Op>
-static ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
+ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
 {
     /// Combine all constant columns into a single constant value.
     UInt8 const_val = 0;
