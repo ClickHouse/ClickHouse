@@ -96,7 +96,6 @@ std::optional<size_t> AsynchronousReadBufferFromHDFS::getTotalSize()
 
 bool AsynchronousReadBufferFromHDFS::nextImpl()
 {
-    StatusGuard guard{this, __FUNCTION__};
     if (!hasPendingDataToRead())
         return false;
 
@@ -148,7 +147,6 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
 
 off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
 {
-    StatusGuard guard{this, __FUNCTION__};
     ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
 
     if (whence != SEEK_SET)
@@ -204,7 +202,6 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
 
 void AsynchronousReadBufferFromHDFS::finalize()
 {
-    // StatusGuard guard{this, __FUNCTION__};
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnusedPrefetches);
