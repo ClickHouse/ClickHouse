@@ -28,7 +28,10 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     /// Nodes // TODO quoting and escaping
     for (const auto & processor : processors)
     {
-        out << "    n" << get_proc_id(*processor) << "[label=\"" << processor->getName() << processor->getDescription();
+        auto description = processor->getDescription();
+        if (!description.empty())
+            description = ": " + description;
+        out << "    n" << get_proc_id(*processor) << "[label=\"" << processor->getName() << description;
 
         if (statuses_iter != statuses.end())
         {
