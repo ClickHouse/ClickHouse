@@ -105,6 +105,8 @@ public:
 
     virtual bool isStoredOnRemoteDisk() const = 0;
 
+    virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
+
     virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
