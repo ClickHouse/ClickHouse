@@ -137,14 +137,14 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     auto & dst_column_host_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["host_name"]]);
     auto & dst_array_current_time = typeid_cast<ColumnUInt32 &>(*mutable_columns[name_pos["current_time"]]).getData();
-    auto & dst_array_thread_id = typeid_cast<ColumnUInt64 &>(*mutable_columns[name_pos["thread_id"]]).getData();
+    // auto & dst_array_thread_id = typeid_cast<ColumnUInt64 &>(*mutable_columns[name_pos["thread_id"]]).getData();
     auto & dst_array_type = typeid_cast<ColumnInt8 &>(*mutable_columns[name_pos["type"]]).getData();
     auto & dst_column_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["name"]]);
     auto & dst_array_value = typeid_cast<ColumnInt64 &>(*mutable_columns[name_pos["value"]]).getData();
 
     const auto & src_column_host_name = typeid_cast<const ColumnString &>(*src.getByName("host_name").column);
     const auto & src_array_current_time = typeid_cast<const ColumnUInt32 &>(*src.getByName("current_time").column).getData();
-    // const auto & src_array_thread_id = typeid_cast<const ColumnUInt64 &>(*src.getByName("thread_id").column).getData();
+    const auto & src_array_thread_id = typeid_cast<const ColumnUInt64 &>(*src.getByName("thread_id").column).getData();
     const auto & src_column_name = typeid_cast<const ColumnString &>(*src.getByName("name").column);
     const auto & src_array_value = typeid_cast<const ColumnInt64 &>(*src.getByName("value").column).getData();
 
@@ -169,6 +169,16 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         rows_by_name[id] = src_row;
     }
 
+    /// Filter out snapshots
+    std::set<size_t> thread_id_filter_mask;
+    for (size_t i = 0; i < src_array_thread_id.size(); ++i)
+    {
+        if (src_array_thread_id[i] != 0)
+        {
+            thread_id_filter_mask.emplace(i);
+        }
+    }
+
     /// Merge src into dst.
     for (size_t dst_row = 0; dst_row < dst_rows; ++dst_row)
     {
@@ -180,6 +190,11 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         if (auto it = rows_by_name.find(id); it != rows_by_name.end())
         {
             size_t src_row = it->second;
+            if (thread_id_filter_mask.contains(src_row))
+            {
+                continue;
+            }
+
             dst_array_current_time[dst_row] = src_array_current_time[src_row];
 
             switch (dst_array_type[dst_row])
@@ -199,24 +214,18 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
     /// Copy rows from src that dst does not contains.
     for (const auto & [id, pos] : rows_by_name)
     {
+        if (thread_id_filter_mask.contains(pos))
+        {
+            continue;
+        }
+
         for (size_t col = 0; col < src.columns(); ++col)
         {
             mutable_columns[col]->insert((*src.getByPosition(col).column)[pos]);
         }
     }
 
-    /// Filter out snapshots
-    std::set<size_t> thread_id_filter_mask;
-    for (size_t i = 0; i < dst_array_thread_id.size(); ++i)
-    {
-        if (dst_array_thread_id[i] != 0)
-        {
-            thread_id_filter_mask.emplace(i);
-        }
-    }
-
     dst.setColumns(std::move(mutable_columns));
-    dst.erase(thread_id_filter_mask);
 }
 
 
@@ -394,8 +403,16 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (need_render_progress && (stdout_is_a_tty || is_interactive) && !select_into_file)
         progress_indication.clearProgressOutput();
 
-    output_format->write(materializeBlock(block));
-    written_first_block = true;
+    try
+    {
+        output_format->write(materializeBlock(block));
+        written_first_block = true;
+    }
+    catch (const Exception &)
+    {
+        /// Catch client errors like NO_ROW_DELIMITER
+        throw LocalFormatError(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+    }
 
     /// Received data block is immediately displayed to the user.
     output_format->flush();
@@ -937,6 +954,9 @@ void ClientBase::onProfileEvents(Block & block)
         auto elapsed_time = profile_events.watch.elapsedMicroseconds();
         progress_indication.updateThreadEventData(thread_times, elapsed_time);
 
+        if (need_render_progress)
+            progress_indication.writeProgress();
+
         if (profile_events.print)
         {
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
@@ -1038,7 +1058,13 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     /// Process the query that requires transferring data blocks to the server.
     const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
-        throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+    {
+        const auto & settings = global_context->getSettingsRef();
+        if (settings.throw_if_no_data_to_insert)
+            throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+        else
+            return;
+    }
 
     connection->sendQuery(
         connection_parameters.timeouts,
@@ -1089,6 +1115,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         progress_indication.setFileProgressCallback(global_context, true);
     }
 
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+
     /// If data fetched from file (maybe compressed file)
     if (parsed_insert_query->infile)
     {
@@ -1136,7 +1164,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                         global_context->getSettingsRef().max_block_size,
                         getNumberOfPhysicalCPUCores()
                     ),
-                parsed_query
+                parsed_query,
+                have_data_in_stdin
             );
         }
         catch (Exception & e)
@@ -1144,6 +1173,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             e.addMessage("data for INSERT was parsed from file");
             throw;
         }
+
+        if (have_data_in_stdin)
+            sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else if (parsed_insert_query->data)
     {
@@ -1151,7 +1183,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
         try
         {
-            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query);
+            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query, have_data_in_stdin);
+            if (have_data_in_stdin)
+                sendDataFromStdin(sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
         {
@@ -1167,29 +1201,14 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     }
     else if (!is_interactive)
     {
-        if (need_render_progress)
-        {
-            /// Add callback to track reading from fd.
-            std_in.setProgressCallback(global_context);
-        }
-
-        /// Send data read from stdin.
-        try
-        {
-            sendDataFrom(std_in, sample, columns_description_for_query, parsed_query);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("data for INSERT was parsed from stdin");
-            throw;
-        }
+        sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else
         throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 }
 
 
-void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
+void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data)
 {
     String current_format = insert_format;
 
@@ -1211,10 +1230,10 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         });
     }
 
-    sendDataFromPipe(std::move(pipe), parsed_query);
+    sendDataFromPipe(std::move(pipe), parsed_query, have_more_data);
 }
 
-void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query)
+void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_more_data)
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
@@ -1244,7 +1263,28 @@ void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query)
         }
     }
 
-    connection->sendData({}, "", false);
+    if (!have_more_data)
+        connection->sendData({}, "", false);
+}
+
+void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
+{
+    if (need_render_progress)
+    {
+        /// Add callback to track reading from fd.
+        std_in.setProgressCallback(global_context);
+    }
+
+    /// Send data read from stdin.
+    try
+    {
+        sendDataFrom(std_in, sample, columns_description, parsed_query);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("data for INSERT was parsed from stdin");
+        throw;
+    }
 }
 
 
@@ -1413,6 +1453,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         progress_indication.clearProgressOutput();
         logs_out_stream->writeProfileEvents(profile_events.last_block);
         logs_out_stream->flush();
+
+        profile_events.last_block = {};
     }
 
     if (is_interactive)
@@ -1627,7 +1669,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 catch (...)
                 {
                     // Surprisingly, this is a client error. A server error would
-                    // have been reported w/o throwing (see onReceiveSeverException()).
+                    // have been reported without throwing (see onReceiveSeverException()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
@@ -1670,7 +1712,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     if (!test_hint.clientError() && !test_hint.serverError())
                     {
                         // No error was expected but it still occurred. This is the
-                        // default case w/o test hint, doesn't need additional
+                        // default case without test hint, doesn't need additional
                         // diagnostics.
                         error_matches_hint = false;
                     }
@@ -1838,7 +1880,7 @@ void ClientBase::runInteractive()
     }
 
     LineReader::Patterns query_extenders = {"\\"};
-    LineReader::Patterns query_delimiters = {";", "\\G"};
+    LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
 
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
@@ -1860,9 +1902,13 @@ void ClientBase::runInteractive()
             break;
 
         has_vertical_output_suffix = false;
-        if (input.ends_with("\\G"))
+        if (input.ends_with("\\G") || input.ends_with("\\G;"))
         {
-            input.resize(input.size() - 2);
+            if (input.ends_with("\\G"))
+                input.resize(input.size() - 2);
+            else if (input.ends_with("\\G;"))
+                input.resize(input.size() - 3);
+
             has_vertical_output_suffix = true;
         }
 

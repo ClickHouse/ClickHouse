@@ -94,7 +94,7 @@ jobs:
           path: ${{ runner.temp }}/changed_images.json
   DocsCheck:
     needs: DockerHubPush
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, func-tester-aarch64]
     steps:
       - name: Set envs
         run: |

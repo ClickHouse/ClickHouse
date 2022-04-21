@@ -139,11 +139,6 @@ void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_st
         if (!isObject(column.type))
             continue;
 
-        if (!isObject(column.type))
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Type for column '{}' mismatch in columns list and in block. In list: {}, in block: {}",
-                column.name, column.type->getName(), column.type->getName());
-
         const auto & column_object = assert_cast<const ColumnObject &>(*column.column);
         const auto & subcolumns = column_object.getSubcolumns();
 
@@ -687,7 +682,7 @@ void replaceMissedSubcolumnsByConstants(
 
     /// Replace missed subcolumns to default literals of theirs type.
     for (const auto & [name, type] : missed_names_types)
-        if (identifiers.count(name))
+        if (identifiers.contains(name))
             addConstantToWithClause(query, name, type);
 }
 

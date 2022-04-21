@@ -1,6 +1,6 @@
 ---
-toc_priority: 44
-toc_title: DROP
+sidebar_position: 44
+sidebar_label: DROP
 ---
 
 # DROP语法 {#drop}

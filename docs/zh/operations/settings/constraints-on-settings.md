@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_priority: 62
-toc_title: "\u5BF9\u8BBE\u7F6E\u7684\u9650\u5236"
+sidebar_position: 62
+sidebar_label: "\u5BF9\u8BBE\u7F6E\u7684\u9650\u5236"
 ---
 
 # 对设置的限制 {#constraints-on-settings}
