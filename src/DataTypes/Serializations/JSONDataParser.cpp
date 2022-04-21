@@ -235,13 +235,10 @@ bool JSONDataParser<ParserImpl>::tryInsertDefaultFromNested(
     /// If there is a collected size of current Nested
     /// then insert array of this size as a default value.
 
-    if (array.empty())
+    if (path.empty())
         return false;
 
-    auto nested_key = getNameOfNested(path, array[0]);
-    if (nested_key.empty())
-        return false;
-
+    StringRef nested_key{path[0].key};
     auto * mapped = ctx.nested_sizes_by_key.find(nested_key);
     if (!mapped)
         return false;
