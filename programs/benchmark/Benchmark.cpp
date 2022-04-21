@@ -655,6 +655,9 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             : Ports({default_port});
 
         Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
+        
+        const char * env_user = getenv("CLICKHOUSE_USER");
+        const char * env_password = getenv("CLICKHOUSE_PASSWORD");
 
         Benchmark benchmark(
             options["concurrency"].as<unsigned>(),
@@ -665,8 +668,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options.count("cumulative"),
             options.count("secure"),
             options["database"].as<std::string>(),
-            options["user"].as<std::string>(),
-            options["password"].as<std::string>(),
+            env_user ? env_user : options["user"].as<std::string>(),
+            env_password ? env_password : options["password"].as<std::string>(),            
             options["stage"].as<std::string>(),
             options["randomize"].as<bool>(),
             options["iterations"].as<size_t>(),
