@@ -71,7 +71,7 @@ private:
     struct BlockDispatchControlData
     {
         std::shared_ptr<ExpressionActions> hash_expression_actions;
-        Strings hash_columns_names;
+        String hash_column_name;
         BlockDispatchControlData() = default;
     };
 
@@ -79,9 +79,9 @@ private:
 
     Poco::Logger * logger = &Poco::Logger::get("ConcurrentHashJoin");
 
-    std::pair<std::shared_ptr<ExpressionActions>, Strings> buildHashExpressionAction(const Block & block, const Strings & based_columns_names);
+    std::pair<std::shared_ptr<ExpressionActions>, String> buildHashExpressionAction(const Block & block, const Strings & based_columns_names);
 
-    static void dispatchBlock(BlockDispatchControlData & dispatch_data, Block & from_block, Blocks & dispatched_blocks);
+    void dispatchBlock(BlockDispatchControlData & dispatch_data, Block & from_block, Blocks & dispatched_blocks);
 
 };
 }
