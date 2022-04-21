@@ -62,37 +62,38 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & block, bool check_limits)
     std::vector<Block> dispatched_blocks;
     Block cloned_block = block;
     dispatchBlock(dispatch_data, cloned_block, dispatched_blocks);
-    for (size_t i = 0; i < dispatched_blocks.size(); ++i)
-    {
-        auto & hash_join = hash_joins[i];
-        auto & dispatched_block = dispatched_blocks[i];
-        auto rows = dispatched_block.rows();
-        check_total_rows += rows;
-        check_total_bytes += dispatched_block.bytes();
-        std::unique_lock lock(hash_join->mutex);
 
-        // Don't take the real insertion here, because inserting a block into HashTable is a time-consuming operation,
-        // it may cause serious lock contention and make the whole process slow.
-        hash_join->pending_right_blocks.emplace_back(std::move(dispatched_block));
+    std::list<size_t> pending_blocks;
+    for (size_t i = 0; i < dispatched_blocks.size(); ++i)
+        pending_blocks.emplace_back(i);
+    while (!pending_blocks.empty())
+    {
+        for (auto iter = pending_blocks.begin(); iter != pending_blocks.end();)
+        {
+            auto & i = *iter;
+            auto & hash_join = hash_joins[i];
+            auto & dispatched_block = dispatched_blocks[i];
+            if (hash_join->mutex.try_lock())
+            {
+                hash_join->data->addJoinedBlock(dispatched_block, check_limits);
+
+                hash_join->mutex.unlock();
+                iter = pending_blocks.erase(iter);
+            }
+            else 
+            {
+                iter++;
+            }
+        }
     }
 
     if (check_limits)
-        return table_join->sizeLimits().check(
-            check_total_rows.load(), check_total_bytes.load(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     return true;
 }
 
-void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
+void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
-    if (block.rows())
-        waitAllAddJoinedBlocksFinished();
-    else
-    {
-        std::unique_lock lock(hash_joins[0]->mutex);
-        hash_joins[0]->data->joinBlock(block, not_processed);
-        return;
-    }
-
     auto & dispatch_data = *dispatch_datas[0];
     std::vector<Block> dispatched_blocks;
     Block cloned_block = block;
@@ -179,7 +180,7 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 {
     for (const auto & hash_join : hash_joins)
     {
-        if (!hash_join->data->alwaysReturnsEmptySet() || !hash_join->pending_right_blocks.empty())
+        if (!hash_join->data->alwaysReturnsEmptySet())
             return false;
     }
     return true;
@@ -258,48 +259,6 @@ void ConcurrentHashJoin::dispatchBlock(BlockDispatchControlData & dispatch_data,
         }
         dispatched_blocks.emplace_back(std::move(filtered_block_columns));
     }
-}
-
-void ConcurrentHashJoin::waitAllAddJoinedBlocksFinished()
-{
-    while (finished_add_joined_blocks_tasks < hash_joins.size())[[unlikely]]
-    {
-        std::shared_ptr<InternalHashJoin> hash_join;
-        {
-            std::unique_lock lock(finished_add_joined_blocks_tasks_mutex);
-            hash_join = getUnfinishedAddJoinedBlockTasks();
-            if (!hash_join)
-            {
-                while (finished_add_joined_blocks_tasks < hash_joins.size())
-                {
-                    finished_add_joined_blocks_tasks_cond.wait(lock);
-                }
-                return;
-            }
-        }
-
-        while (!hash_join->pending_right_blocks.empty())
-        {
-            Block & block = hash_join->pending_right_blocks.front();
-            hash_join->data->addJoinedBlock(block, true);
-            hash_join->pending_right_blocks.pop_front();
-        }
-        finished_add_joined_blocks_tasks += 1;
-        finished_add_joined_blocks_tasks_cond.notify_all();
-    }
-}
-
-std::shared_ptr<ConcurrentHashJoin::InternalHashJoin> ConcurrentHashJoin::getUnfinishedAddJoinedBlockTasks()
-{
-    for (auto & hash_join : hash_joins)
-    {
-        if (!hash_join->in_inserting)
-        {
-            hash_join->in_inserting = true;
-            return hash_join;
-        }
-    }
-    return nullptr;
 }
 
 }
