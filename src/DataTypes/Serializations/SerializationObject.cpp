@@ -86,12 +86,7 @@ bool tryInsertDefaultFromNested(
         : getBaseTypeOfArray(least_common_type)->getDefault();
 
     auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar, num_dimensions_to_keep), last_field);
-    auto field_info = getFieldInfo(default_field);
-
-    if (isNothing(field_info.scalar_type))
-        return false;
-
-    entry->data.insert(std::move(default_field), std::move(field_info));
+    entry->data.insert(std::move(default_field));
     return true;
 }
 

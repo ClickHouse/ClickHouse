@@ -258,7 +258,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     if (isNothing(least_common_type.get()))
         column_dim = value_dim;
 
-    if (field.isNull())
+    if (isNothing(base_type))
         value_dim = column_dim;
 
     if (value_dim != column_dim)
