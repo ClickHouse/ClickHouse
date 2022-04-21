@@ -1,6 +1,6 @@
 ---
-toc_priority: 34
-toc_title: SummingMergeTree
+sidebar_position: 34
+sidebar_label: SummingMergeTree
 ---
 
 # SummingMergeTree {#summingmergetree}
@@ -41,9 +41,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-!!! attention "Attention"
+    :::note "Attention"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
-
+    :::
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
