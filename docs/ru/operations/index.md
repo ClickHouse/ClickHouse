@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Эксплуатация"
-toc_priority: 41
-toc_title: "Эксплуатация"
+sidebar_position: 41
+sidebar_label: "Эксплуатация"
 ---
 
 # Эксплуатация {#operations}
@@ -20,6 +19,6 @@ toc_title: "Эксплуатация"
 - [Системные таблицы](system-tables/index.md)
 - [Конфигурационные параметры сервера](server-configuration-parameters/index.md)
 - [Тестирование серверов с помощью ClickHouse](performance-test.md)
-- [Настройки](settings/index.md#settings)
+- [Настройки](settings/overview.md#settings)
 - [Утилиты](utilities/index.md)
 

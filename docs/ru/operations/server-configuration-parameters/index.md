@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Конфигурационные параметры сервера"
-toc_priority: 54
-toc_title: "Введение"
+sidebar_label: "Конфигурационные параметры сервера"
+sidebar_position: 54
 ---
 
 # Конфигурационные параметры сервера {#server-settings}
@@ -10,7 +9,7 @@ toc_title: "Введение"
 
 Рассмотренные настройки хранятся в файле `config.xml` сервера ClickHouse.
 
-Прочие настройки описаны в разделе «[Настройки](../settings/index.md#settings)».
+Прочие настройки описаны в разделе «[Настройки](../settings/overview.md#settings)».
 
 Перед изучением настроек ознакомьтесь с разделом [Конфигурационные файлы](../configuration-files.md#configuration_files), обратите внимание на использование подстановок (атрибуты `incl` и `optional`).
 
