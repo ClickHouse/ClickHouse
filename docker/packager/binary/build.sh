@@ -45,7 +45,7 @@ then
     if [ -n "$MAKE_DEB" ]; then
       # No quotes because I want it to expand to nothing if empty.
       # shellcheck disable=SC2086
-      DESTDIR=/build/packages/root ninja $NINJA_FLAGS install
+      DESTDIR=/build/packages/root ninja $NINJA_FLAGS programs/keeper/install
     fi
     rm -f CMakeCache.txt
 
