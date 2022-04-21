@@ -36,6 +36,7 @@ namespace ErrorCodes
 SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path, size_t file_size)
 {
     current_path = path;
+    auto remote_path = fs::path(common_path_prefix) / path;
 
     auto cache = settings.remote_fs_cache;
     bool with_cache = cache
@@ -45,14 +46,14 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
     auto remote_file_reader_creator = [=, this]()
     {
         return std::make_unique<ReadBufferFromS3>(
-            client_ptr, bucket, fs::path(common_path_prefix) / path, max_single_read_retries,
+            client_ptr, bucket, remote_path, max_single_read_retries,
             settings, /* use_external_buffer */true, /* offset */ 0, read_until_position, /* restricted_seek */true);
     };
 
     if (with_cache)
     {
         return std::make_shared<CachedReadBufferFromRemoteFS>(
-            path, cache, remote_file_reader_creator, settings, read_until_position ? read_until_position : file_size);
+            remote_path, cache, remote_file_reader_creator, settings, read_until_position ? read_until_position : file_size);
     }
 
     return remote_file_reader_creator();

@@ -44,7 +44,7 @@ void DatabaseMemory::dropTable(
     auto table = detachTableUnlocked(table_name, lock);
     try
     {
-        /// Remove table w/o lock since:
+        /// Remove table without lock since:
         /// - it does not require it
         /// - it may cause lock-order-inversion if underlying storage need to
         ///   resolve tables (like StorageLiveView)

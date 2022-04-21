@@ -907,7 +907,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
                 col_set.insert(column.name);
             }
             for (const auto & column : result_block)
-                if (col_set.count(column.name) == 0)
+                if (!col_set.contains(column.name))
                     source_columns.emplace_back(column.name, column.type);
         }
 
@@ -1779,7 +1779,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             else
                 column_expr = std::make_shared<ASTIdentifier>(column);
 
-            if (required_columns_from_prewhere.count(column))
+            if (required_columns_from_prewhere.contains(column))
             {
                 required_columns_from_prewhere_expr->children.emplace_back(std::move(column_expr));
 
@@ -1807,7 +1807,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
                     continue;
 
-                if (columns_to_remove.count(column.name))
+                if (columns_to_remove.contains(column.name))
                     continue;
 
                 required_columns_all_expr->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
@@ -1831,7 +1831,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 prewhere_info->remove_prewhere_column = false;
 
         /// Remove columns which will be added by prewhere.
-        std::erase_if(required_columns, [&](const String & name) { return required_columns_after_prewhere_set.count(name) != 0; });
+        std::erase_if(required_columns, [&](const String & name) { return required_columns_after_prewhere_set.contains(name); });
 
         if (prewhere_info)
         {
@@ -1854,7 +1854,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
             /// Add physical columns required by prewhere actions.
             for (const auto & column : required_columns_from_prewhere)
-                if (required_aliases_from_prewhere.count(column) == 0)
+                if (!required_aliases_from_prewhere.contains(column))
                     if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
                         required_columns.push_back(column);
         }

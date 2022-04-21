@@ -862,7 +862,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         for (const auto & index_name : forced_indices)
         {
-            if (!useful_indices_names.count(index_name))
+            if (!useful_indices_names.contains(index_name))
             {
                 throw Exception(
                     ErrorCodes::INDEX_NOT_USED,
@@ -987,7 +987,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
         };
 
-        size_t num_threads = std::min(size_t(num_streams), parts.size());
+        size_t num_threads = std::min<size_t>(num_streams, parts.size());
 
         if (num_threads <= 1)
         {
@@ -1576,15 +1576,15 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
 
-            MarkRange data_range(
-                    std::max(ranges[i].begin, index_mark * index_granularity),
-                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
-
             if (!condition->mayBeTrueOnGranule(granule))
             {
                 ++granules_dropped;
                 continue;
             }
+
+            MarkRange data_range(
+                    std::max(ranges[i].begin, index_mark * index_granularity),
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
             if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
                 res.push_back(data_range);
@@ -1676,15 +1676,15 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 }
             }
 
-            MarkRange data_range(
-                std::max(range.begin, index_mark * index_granularity),
-                std::min(range.end, (index_mark + 1) * index_granularity));
-
             if (!condition->mayBeTrueOnGranule(granules))
             {
                 ++granules_dropped;
                 continue;
             }
+
+            MarkRange data_range(
+                std::max(range.begin, index_mark * index_granularity),
+                std::min(range.end, (index_mark + 1) * index_granularity));
 
             if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
                 res.push_back(data_range);
