@@ -21,10 +21,17 @@
 #if USE_SSL
 #     include <openssl/crypto.h>
 #     include <openssl/rand.h>
+#     include <openssl/err.h>
 #endif
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int OPENSSL_ERROR;
+}
+
 namespace
 {
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
@@ -166,7 +173,9 @@ namespace
                     ///generate and add salt here
                     ///random generator FIPS complaint
                     uint8_t key[32];
-                    RAND_bytes(key, sizeof(key));
+                    if (RAND_bytes(key, sizeof(key)) != 1)
+                        throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL error code: {}", ERR_get_error());
+
                     String salt;
                     salt.resize(sizeof(key) * 2);
                     char * buf_pos = salt.data();
