@@ -1,9 +1,9 @@
 ---
-toc_priority: 68
-toc_title: Build on Linux for RISC-V 64
+sidebar_position: 68
+sidebar_label: Build on Linux for RISC-V 64
 ---
 
-# How to Build ClickHouse on Linux for RISC-V 64 Architecture {#how-to-build-clickhouse-on-linux-for-risc-v-64-architecture}
+# How to Build ClickHouse on Linux for RISC-V 64 Architecture 
 
 As of writing (11.11.2021) building for risc-v considered to be highly experimental. Not all features can be enabled.
 
