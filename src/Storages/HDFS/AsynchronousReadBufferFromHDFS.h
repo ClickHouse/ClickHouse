@@ -27,7 +27,6 @@ public:
         AsynchronousReaderPtr reader_,
         const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromHDFS> impl_);
-        // size_t min_bytes_for_seek_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~AsynchronousReadBufferFromHDFS() override;
 
@@ -40,10 +39,6 @@ public:
     off_t getPosition() override;
 
     size_t getFileOffsetOfBufferEnd() const override;
-
-    // void setReadUntilPosition(size_t position) override; /// [..., position).
-    // void setReadUntilEnd() override;
-    // String getInfoForLog() override;
 
 private:
     bool nextImpl() override;

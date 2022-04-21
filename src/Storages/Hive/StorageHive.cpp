@@ -176,7 +176,6 @@ public:
                         bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)
                         {
-                            // std::cout << "read from thread pool" << std::endl;
                             return std::make_unique<AsynchronousReadBufferFromHDFS>(StorageHive::getThreadPoolReader(), read_settings, std::move(buf));
                         }
                         else
