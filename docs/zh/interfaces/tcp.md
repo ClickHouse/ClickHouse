@@ -1,6 +1,6 @@
 ---
-toc_priority: 18
-toc_title: 原生接口(TCP)
+sidebar_position: 18
+sidebar_label: 原生接口(TCP)
 ---
 
 # 原生接口（TCP）{#native-interface-tcp}

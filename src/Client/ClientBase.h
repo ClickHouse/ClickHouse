@@ -95,6 +95,7 @@ protected:
         std::optional<ProgramOptionsDescription> hosts_and_ports_description;
     };
 
+    virtual void updateLoggerLevel(const String &) {}
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
     virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
@@ -124,8 +125,9 @@ private:
 
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
-                      const ColumnsDescription & columns_description, ASTPtr parsed_query);
-    void sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query);
+                      const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data = false);
+    void sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_more_data = false);
+    void sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendExternalTables(ASTPtr parsed_query);
 
     void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
@@ -265,6 +267,8 @@ protected:
     bool allow_repeated_settings = false;
 
     bool cancelled = false;
+
+    bool logging_initialized = false;
 };
 
 }

@@ -1,6 +1,6 @@
 ---
-toc_priority: 50
-toc_title: VIEW
+sidebar_position: 50
+sidebar_label: VIEW
 ---
 
 # ALTER TABLE … MODIFY QUERY Statement {#alter-modify-query}

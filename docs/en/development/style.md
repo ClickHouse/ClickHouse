@@ -1,9 +1,10 @@
 ---
-toc_priority: 69
-toc_title: C++ Guide
+sidebar_position: 69
+sidebar_label: C++ Guide
+description: A list of recommendations regarding coding style, naming convention, formatting and more
 ---
 
-# How to Write C++ Code {#how-to-write-c-code}
+# How to Write C++ Code 
 
 ## General Recommendations {#general-recommendations}
 

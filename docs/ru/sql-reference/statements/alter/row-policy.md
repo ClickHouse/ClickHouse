@@ -1,6 +1,6 @@
 ---
-toc_priority: 47
-toc_title: ROW POLICY
+sidebar_position: 47
+sidebar_label: ROW POLICY
 ---
 
 # ALTER ROW POLICY {#alter-row-policy-statement}

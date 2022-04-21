@@ -163,10 +163,24 @@ void Client::initialize(Poco::Util::Application & self)
 
     configReadClient(config(), home_path);
 
+    /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
+      * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
+      *
+      * man getenv:
+      *
+      * As typically implemented, getenv() returns a pointer to a string within the environment list.
+      * The caller must take care not to modify this string, since that would change the environment of
+      * the process.
+      *
+      * The implementation of getenv() is not required to be reentrant. The string pointed to by the return value of getenv()
+      * may be statically allocated, and can be modified by a subsequent call to getenv(), putenv(3), setenv(3), or unsetenv(3).
+      */
+
     const char * env_user = getenv("CLICKHOUSE_USER");
-    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
     if (env_user)
         config().setString("user", env_user);
+
+    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
     if (env_password)
         config().setString("password", env_password);
 
@@ -467,9 +481,9 @@ void Client::printChangedSettings() const
 }
 
 
-static bool queryHasWithClause(const IAST * ast)
+static bool queryHasWithClause(const IAST & ast)
 {
-    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(ast); select && select->with())
+    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(&ast); select && select->with())
     {
         return true;
     }
@@ -479,12 +493,9 @@ static bool queryHasWithClause(const IAST * ast)
     // breakage when the AST structure changes and some new variant of query
     // nesting is added. This function is used in fuzzer, so it's better to be
     // defensive and avoid weird unexpected errors.
-    // clang-tidy is confused by this function: it thinks that if `select` is
-    // nullptr, `ast` is also nullptr, and complains about nullptr dereference.
-    // NOLINTNEXTLINE
-    for (const auto & child : ast->children)
+    for (const auto & child : ast.children)
     {
-        if (queryHasWithClause(child.get()))
+        if (queryHasWithClause(*child))
         {
             return true;
         }
@@ -708,7 +719,7 @@ bool Client::processWithFuzzing(const String & full_query)
         // query, but second and third.
         // If you have to add any more workarounds to this check, just remove
         // it altogether, it's not so useful.
-        if (!have_error && !queryHasWithClause(parsed_query.get()))
+        if (parsed_query && !have_error && !queryHasWithClause(*parsed_query))
         {
             ASTPtr ast_2;
             try
@@ -810,7 +821,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
-        ("compression", po::value<bool>(), "enable or disable compression")
+        ("compression", po::value<bool>(), "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
 
         ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
         ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
@@ -1005,6 +1016,7 @@ void Client::processConfig()
             global_context->setCurrentQueryId(query_id);
     }
     print_stack_trace = config().getBool("stacktrace", false);
+    logging_initialized = true;
 
     if (config().has("multiquery"))
         is_multiquery = true;
