@@ -3,11 +3,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 bool MarkRange::operator==(const MarkRange & rhs) const
 {
     return begin == rhs.begin && end == rhs.end;
