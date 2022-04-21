@@ -11,6 +11,9 @@ namespace DB
 
 struct CacheLogElement
 {
+    time_t event_time{};
+    Decimal64 event_time_microseconds{};
+
     String query_id;
 
     UInt64 hit_count;
