@@ -174,11 +174,16 @@ void Block::insert(ColumnWithTypeAndName elem)
         throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
     auto [it, inserted] = index_by_name.emplace(elem.name, data.size());
-    if (!inserted)
+    if (inserted)
+    {
+        data.emplace_back(std::move(elem));
+    }
+    else
+    {
         checkColumnStructure<void>(data[it->second], elem,
             "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-
-    data.emplace_back(std::move(elem));
+        data[it->second] = std::move(elem);
+    }
 }
 
 
