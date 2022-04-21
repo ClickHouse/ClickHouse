@@ -75,7 +75,7 @@ struct MergeTreePartInfo
     /// Return part mutation version, if part wasn't mutated return zero
     Int64 getMutationVersion() const
     {
-        return mutation ? mutation : 0;
+        return mutation;
     }
 
     /// True if parts do not intersect in any way.
