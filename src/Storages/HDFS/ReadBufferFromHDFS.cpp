@@ -189,7 +189,7 @@ ReadBufferFromHDFS::ReadResult ReadBufferFromHDFS::readInto(char * data, size_t 
     seek(offset, SEEK_SET);
     if (eof())
         return {0, 0};
-    
+
     size_t count = std::min(size, available());
     memcpy(data, position(), count);
     position() += count;

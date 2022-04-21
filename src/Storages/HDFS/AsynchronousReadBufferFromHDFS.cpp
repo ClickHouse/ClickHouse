@@ -21,7 +21,6 @@ namespace ProfileEvents
     extern const Event RemoteFSUnusedPrefetches;
     extern const Event RemoteFSPrefetchedReads;
     extern const Event RemoteFSUnprefetchedReads;
-    extern const Event RemoteFSLazySeeks;
     extern const Event RemoteFSBuffers;
 }
 
