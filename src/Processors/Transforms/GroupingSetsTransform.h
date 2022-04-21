@@ -1,12 +1,12 @@
 #pragma once
-#include <Processors/IAccumulatingTransform.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include "Core/ColumnNumbers.h"
+#include <Core/ColumnNumbers.h>
 
 namespace DB
 {
 
-class GroupingSetsTransform : public IAccumulatingTransform
+class GroupingSetsTransform : public ISimpleTransform
 {
 public:
     GroupingSetsTransform(
@@ -18,20 +18,13 @@ public:
     String getName() const override { return "GroupingSetsTransform"; }
 
 protected:
-    void consume(Chunk chunk) override;
-    Chunk generate() override;
+    void transform(Chunk & chunk) override;
 
 private:
     AggregatingTransformParamsPtr params;
     const ColumnNumbers missing_columns;
     const size_t set_id;
     const size_t output_size;
-
-    Chunks consumed_chunks;
-
-    Poco::Logger * log = &Poco::Logger::get("GroupingSetsTransform");
-
-    Chunk merge(Chunks && chunks, bool final);
 };
 
 }
