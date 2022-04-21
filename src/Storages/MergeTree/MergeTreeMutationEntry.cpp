@@ -65,15 +65,15 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     , is_temp(true)
     , tid(tid_)
 {
-    size_t typeToNum = 0;
+    size_t type_to_num = 0;
     if (type == MutationType::Lightweight)
-        typeToNum = 1;
+        type_to_num = 1;
 
     try
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
         *out << "format version: 2\n"
-             << "type: " << typeToNum << "\n"
+             << "type: " << type_to_num << "\n"
              << "create time: " << LocalDateTime(create_time) << "\n";
         *out << "commands: ";
         commands.writeText(*out);

@@ -998,7 +998,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQueryLightweight(std::vecto
         for (const auto & kv : stage.column_to_updated)
             all_asts->children.push_back(kv.second);
 
-        for (const auto kv : stage.lightweight_update_filters)
+        for (const auto & kv : stage.lightweight_update_filters)
         {
             all_asts->children.push_back(kv);
         }
