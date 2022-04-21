@@ -37,7 +37,7 @@ String CommonCondition::getColumnName() const {
 }
 
 String CommonCondition::getMetric() const {
-    return expression->meteic_name;
+    return expression->metric_name;
 }
 
 size_t CommonCondition::getSpaceDim() const {
@@ -194,7 +194,7 @@ bool CommonCondition::matchRPNWhere(RPN & rpn, ANNExpression & expr) {
     if (iter->function != RPNElement::FUNCTION_DISTANCE) {
         return false;
     }
-    expr.meteic_name = iter->func_name;
+    expr.metric_name = iter->func_name;
 
     ++iter;
     bool identifier_found = false;
