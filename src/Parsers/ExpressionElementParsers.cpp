@@ -1727,7 +1727,7 @@ const char * ParserAlias::restricted_keywords[] =
     "NOT",
     "OFFSET",
     "ON",
-    "ONLY", /// YQL synonym for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
+    "ONLY", /// YQL's synonym for ANTI. Note: YQL is the name of one of proprietary languages, completely unrelated to ClickHouse.
     "ORDER",
     "PREWHERE",
     "RIGHT",
