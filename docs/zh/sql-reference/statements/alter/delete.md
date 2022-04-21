@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: DELETE
+sidebar_position: 39
+sidebar_label: DELETE
 ---
 
 # ALTER TABLE … DELETE 语句 {#alter-mutations}
