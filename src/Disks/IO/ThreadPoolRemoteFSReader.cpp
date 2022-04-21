@@ -7,10 +7,14 @@
 #include <Common/assert_cast.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentThread.h>
+#include <Common/config.h>
 
 #include <IO/SeekableReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+
+#if USE_HDFS
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
+#endif
 
 #include <future>
 #include <iostream>
@@ -104,11 +108,13 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader<Reader>::submi
     return future;
 }
 
-template class ThreadPoolRemoteFSReader<ReadBufferFromHDFS>;
 template class ThreadPoolRemoteFSReader<ReadBufferFromRemoteFSGather>;
-
-template class RemoteFSFileDescriptor<ReadBufferFromHDFS>;
 template class RemoteFSFileDescriptor<ReadBufferFromRemoteFSGather>;
+
+#if USE_HDFS
+template class ThreadPoolRemoteFSReader<ReadBufferFromHDFS>;
+template class RemoteFSFileDescriptor<ReadBufferFromHDFS>;
+#endif
 
 
 }
