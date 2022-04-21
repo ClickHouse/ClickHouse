@@ -40,7 +40,7 @@ public:
     /// Restore cache from local filesystem.
     virtual void initialize() = 0;
 
-    virtual void remove(const Key & key) = 0;
+    virtual void removeIfExists(const Key & key) = 0;
 
     virtual void tryRemoveAll() = 0;
 
@@ -143,7 +143,7 @@ public:
 
     void initialize() override;
 
-    void remove(const Key & key) override;
+    void removeIfExists(const Key & key) override;
 
     void tryRemoveAll() override;
 
