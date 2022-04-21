@@ -593,6 +593,7 @@ namespace
         /// First try to match with date extract operator EXTRACT(part FROM date)
         /// Then with function extract(haystack, pattern)
 
+        IParser::Pos begin = pos;
         IntervalKind interval_kind;
 
         if (parseIntervalKind(pos, expected, interval_kind))
@@ -607,9 +608,9 @@ namespace
                 node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
                 return true;
             }
-
-            return false;
         }
+
+        pos = begin;
 
         ASTPtr expr_list;
         if (!ParserExpressionList(true /*allow_alias_without_as_keyword*/).parse(pos, expr_list, expected))
