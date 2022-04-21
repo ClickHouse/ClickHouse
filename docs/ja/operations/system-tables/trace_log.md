@@ -1,1 +1,0 @@
-../../../en/operations/system-tables/trace_log.md

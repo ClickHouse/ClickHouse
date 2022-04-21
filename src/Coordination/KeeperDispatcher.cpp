@@ -201,7 +201,7 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         const Coordination::ZooKeeperSessionIDResponse & session_id_resp = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
 
         /// Nobody waits for this session id
-        if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.count(session_id_resp.internal_id))
+        if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.contains(session_id_resp.internal_id))
             return;
 
         auto callback = new_session_id_response_callback[session_id_resp.internal_id];
@@ -234,7 +234,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         /// If session was already disconnected than we will ignore requests
         std::lock_guard lock(session_to_response_callback_mutex);
-        if (session_to_response_callback.count(session_id) == 0)
+        if (!session_to_response_callback.contains(session_id))
             return false;
     }
 
