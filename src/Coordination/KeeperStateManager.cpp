@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
+#include "Access/Common/AllowedClientHosts.h"
+#include <ifaddrs.h>
 
 namespace DB
 {
@@ -19,16 +21,7 @@ namespace
 
 bool isLoopback(const std::string & hostname)
 {
-    try
-    {
-        return DNSResolver::instance().resolveHost(hostname).isLoopback();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    return false;
+    return hostname == "localhost";
 }
 
 bool isLocalhost(const std::string & hostname)
@@ -47,18 +40,19 @@ bool isLocalhost(const std::string & hostname)
 
 std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::AbstractConfiguration & config)
 {
-    static const char * config_port_names[] = {
-        "keeper_server.tcp_port",
-        "keeper_server.tcp_port_secure",
-        "interserver_http_port",
-        "interserver_https_port",
-        "tcp_port",
-        "tcp_with_proxy_port",
-        "tcp_port_secure",
-        "mysql_port",
-        "postgresql_port",
-        "grpc_port",
-        "prometheus.port",
+    using namespace std::string_literals;
+    static const std::array config_port_names = {
+        "keeper_server.tcp_port"s,
+        "keeper_server.tcp_port_secure"s,
+        "interserver_http_port"s,
+        "interserver_https_port"s,
+        "tcp_port"s,
+        "tcp_with_proxy_port"s,
+        "tcp_port_secure"s,
+        "mysql_port"s,
+        "postgresql_port"s,
+        "grpc_port"s,
+        "prometheus.port"s,
     };
 
     std::unordered_map<UInt64, std::string> ports;
@@ -80,7 +74,7 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
 /// 5. Our ID present in hostnames list
 KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
-    const bool verify_hosts = config.getBool(config_prefix + ".verify_hosts", true);
+    const bool host_checks_enabled = config.getBool(config_prefix + ".host_checks_enabled", true);
 
     KeeperConfigurationWrapper result;
     result.cluster_config = std::make_shared<nuraft::cluster_config>();
@@ -117,7 +111,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
                             hostname, port, client_ports[port]);
         }
 
-        if (verify_hosts)
+        if (host_checks_enabled)
         {
             if (isLoopback(hostname))
             {
@@ -173,7 +167,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     if (result.servers_start_as_followers.size() == total_servers)
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 
-    if (verify_hosts)
+    if (host_checks_enabled)
     {
         if (!loopback_hostname.empty() && !non_local_hostname.empty())
         {
