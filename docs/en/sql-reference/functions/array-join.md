@@ -1,6 +1,6 @@
 ---
-toc_priority: 61
-toc_title: arrayJoin
+sidebar_position: 61
+sidebar_label: arrayJoin
 ---
 
 # arrayJoin function {#functions_arrayjoin}
