@@ -255,7 +255,12 @@ bool JSONDataParser<ParserImpl>::tryInsertDefaultFromNested(
     return true;
 }
 
-template class JSONDataParser<SimdJSONParser>;
-template class JSONDataParser<RapidJSONParser>;
+#if USE_SIMDJSON
+    template class JSONDataParser<SimdJSONParser>;
+#endif
+
+#if USE_RAPIDJSON
+    template class JSONDataParser<RapidJSONParser>;
+#endif
 
 }
