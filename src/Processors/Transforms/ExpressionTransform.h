@@ -12,7 +12,7 @@ class ActionsDAG;
 
 /** Executes a certain expression over the block.
   * The expression consists of column identifiers from the block, constants, common functions.
-  * For example: hits * 2 + 3, url LIKE '%yandex%'
+  * For example: hits * 2 + 3, url LIKE '%clickhouse%'
   * The expression processes each row independently of the others.
   */
 class ExpressionTransform final : public ISimpleTransform

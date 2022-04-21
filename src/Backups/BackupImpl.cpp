@@ -107,6 +107,7 @@ void BackupImpl::open(OpenMode open_mode_)
         timestamp = std::time(nullptr);
         uuid = UUIDHelpers::generateV4();
         writing_finalized = false;
+        written_files.clear();
     }
 
     if (open_mode_ == OpenMode::READ)
@@ -145,7 +146,7 @@ void BackupImpl::close()
     if (open_mode == OpenMode::NONE)
         return;
 
-    closeImpl(writing_finalized);
+    closeImpl(written_files, writing_finalized);
 
     uuid = UUIDHelpers::Nil;
     timestamp = 0;
@@ -202,9 +203,12 @@ void BackupImpl::writeBackupMetadata()
             config->setString(prefix + "checksum", getHexUIntLowercase(info.checksum));
             if (info.base_size)
             {
-                config->setUInt(prefix + "base_size", info.base_size);
-                if (info.base_checksum != info.checksum)
+                config->setBool(prefix + "use_base", true);
+                if (info.base_size != info.size)
+                {
+                    config->setUInt(prefix + "base_size", info.base_size);
                     config->setString(prefix + "base_checksum", getHexUIntLowercase(info.base_checksum));
+                }
             }
         }
         ++index;
@@ -213,6 +217,7 @@ void BackupImpl::writeBackupMetadata()
     std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     config->save(stream);
     String str = stream.str();
+    written_files.push_back(".backup");
     auto out = writeFileImpl(".backup");
     out->write(str.data(), str.size());
 }
@@ -253,13 +258,14 @@ void BackupImpl::readBackupMetadata()
             if (info.size)
             {
                 info.checksum = unhexChecksum(config->getString(prefix + "checksum"));
-                info.base_size = config->getUInt(prefix + "base_size", 0);
+                bool use_base = config->getBool(prefix + "use_base", false);
+                info.base_size = config->getUInt(prefix + "base_size", use_base ? info.size : 0);
                 if (info.base_size)
                 {
-                    if (config->has(prefix + "base_checksum"))
-                        info.base_checksum = unhexChecksum(config->getString(prefix + "base_checksum"));
-                    else
+                    if (info.base_size == info.size)
                         info.base_checksum = info.checksum;
+                    else
+                        info.base_checksum = unhexChecksum(config->getString(prefix + "base_checksum"));
                 }
             }
             file_infos.emplace(name, info);
@@ -294,7 +300,7 @@ Strings BackupImpl::listFiles(const String & prefix, const String & terminator) 
 bool BackupImpl::fileExists(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    return file_infos.count(file_name) != 0;
+    return file_infos.contains(file_name);
 }
 
 size_t BackupImpl::getFileSize(const String & file_name) const
@@ -344,11 +350,6 @@ BackupEntryPtr BackupImpl::readFile(const String & file_name) const
         /// Entry's data is empty.
         return std::make_unique<BackupEntryFromMemory>(nullptr, 0, UInt128{0, 0});
     }
-
-    auto read_callback = [backup = std::static_pointer_cast<const BackupImpl>(shared_from_this()), file_name]()
-    {
-        return backup->readFileImpl(file_name);
-    };
 
     if (!info.base_size)
     {
@@ -526,6 +527,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     }
 
     /// Copy the entry's data after `copy_pos`.
+    written_files.push_back(file_name);
     auto out = writeFileImpl(file_name);
     copyData(*read_buffer, *out);
 

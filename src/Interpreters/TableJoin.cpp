@@ -168,7 +168,7 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
 
     for (auto & column : columns_from_joined_table)
     {
-        if (joined_columns.count(column.name))
+        if (joined_columns.contains(column.name))
             continue;
 
         joined_columns.insert(column.name);
@@ -178,7 +178,7 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
 
         /// Also qualify unusual column names - that does not look like identifiers.
 
-        if (left_table_columns.count(column.name) || !isValidIdentifierBegin(column.name.at(0)))
+        if (left_table_columns.contains(column.name) || !isValidIdentifierBegin(column.name.at(0)))
             inserted.name = right_table_prefix + column.name;
 
         original_names[inserted.name] = column.name;
@@ -280,7 +280,7 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
 
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
-        if (required_keys.count(right_key_name) && !required_right_keys.has(right_key_name))
+        if (required_keys.contains(right_key_name) && !required_right_keys.has(right_key_name))
         {
             const auto & right_key = right_table_keys.getByName(right_key_name);
             required_right_keys.insert(right_key);
@@ -512,14 +512,6 @@ TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_co
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
 void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
 {
-    if (strictness() == ASTTableJoin::Strictness::Asof)
-    {
-        if (clauses.size() != 1)
-            throw DB::Exception("ASOF join over multiple keys is not supported", ErrorCodes::NOT_IMPLEMENTED);
-        if (right.back().type->isNullable())
-            throw DB::Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     if (!left_type_map.empty() || !right_type_map.empty())
         return;
 
@@ -531,6 +523,15 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     for (const auto & col : right)
         right_types[renamedRightColumnName(col.name)] = col.type;
 
+    if (strictness() == ASTTableJoin::Strictness::Asof)
+    {
+        if (clauses.size() != 1)
+            throw DB::Exception("ASOF join over multiple keys is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+        auto asof_key_type = right_types.find(clauses.back().key_names_right.back());
+        if (asof_key_type != right_types.end() && asof_key_type->second->isNullable())
+            throw DB::Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
