@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include "Core/ColumnNumbers.h"
 
 namespace DB
 {
@@ -8,7 +9,12 @@ namespace DB
 class GroupingSetsTransform : public IAccumulatingTransform
 {
 public:
-    GroupingSetsTransform(Block header, AggregatingTransformParamsPtr params);
+    GroupingSetsTransform(
+        Block input_header,
+        Block output_header,
+        AggregatingTransformParamsPtr params,
+        ColumnNumbersList const & missing_columns,
+        size_t set_id);
     String getName() const override { return "GroupingSetsTransform"; }
 
 protected:
@@ -17,15 +23,11 @@ protected:
 
 private:
     AggregatingTransformParamsPtr params;
-    const ColumnNumbers & keys;
-    const ColumnNumbersList & keys_vector;
+    const ColumnNumbers missing_columns;
+    const size_t set_id;
+    const size_t output_size;
 
     Chunks consumed_chunks;
-    Chunk grouping_sets_chunk;
-    Columns current_columns;
-    std::unordered_map<size_t, ColumnPtr> current_zero_columns;
-
-    UInt64 keys_vector_idx = 0;
 
     Poco::Logger * log = &Poco::Logger::get("GroupingSetsTransform");
 

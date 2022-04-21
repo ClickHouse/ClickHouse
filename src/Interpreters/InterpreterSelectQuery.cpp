@@ -45,7 +45,6 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/GroupingSetsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -81,8 +80,11 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Core/ColumnNumbers.h>
+#include <Interpreters/Aggregator.h>
 #include <base/map.h>
 #include <base/scope_guard_safe.h>
+#include <algorithm>
 #include <memory>
 
 
@@ -1070,7 +1072,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     bool aggregate_final =
         expressions.need_aggregate &&
         options.to_stage > QueryProcessingStage::WithMergeableState &&
-        !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube && !query.group_by_with_grouping_sets;
+        !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
 //    if (query.group_by_with_grouping_sets && query.group_by_with_totals)
 //        throw Exception("WITH TOTALS and GROUPING SETS are not supported together", ErrorCodes::NOT_IMPLEMENTED);
@@ -1354,7 +1356,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 {
                     if (query.group_by_with_totals)
                     {
-                        bool final = !query.group_by_with_rollup && !query.group_by_with_cube && !query.group_by_with_grouping_sets;
+                        bool final = !query.group_by_with_rollup && !query.group_by_with_cube;
                         executeTotalsAndHaving(
                             query_plan, expressions.hasHaving(), expressions.before_having, expressions.remove_having_filter, aggregate_overflow_row, final);
                     }
@@ -1363,8 +1365,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         executeRollupOrCube(query_plan, Modificator::ROLLUP);
                     else if (query.group_by_with_cube)
                         executeRollupOrCube(query_plan, Modificator::CUBE);
-                    else if (query.group_by_with_grouping_sets)
-                        executeRollupOrCube(query_plan, Modificator::GROUPING_SETS);
 
                     if ((query.group_by_with_rollup || query.group_by_with_cube || query.group_by_with_grouping_sets) && expressions.hasHaving())
                     {
@@ -2152,91 +2152,80 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsD
     query_plan.addStep(std::move(where_step));
 }
 
-void InterpreterSelectQuery::initAggregatorParams(
+Aggregator::Params InterpreterSelectQuery::getAggregatorParams(
     const Block & current_data_stream_header,
-    AggregatorParamsPtr & params_ptr,
     const AggregateDescriptions & aggregates,
     bool overflow_row, const Settings & settings,
     size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes)
 {
-    auto & query = getSelectQuery();
     const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
         query_ptr,
         settings.collect_hash_table_stats_during_aggregation,
         settings.max_entries_for_hash_table_stats,
         settings.max_size_to_preallocate_for_aggregation);
 
-    if (query.group_by_with_grouping_sets)
+    ColumnNumbers keys;
+    for (const auto & key : query_analyzer->aggregationKeys())
+        keys.push_back(current_data_stream_header.getPositionByName(key.name));
+
+    return Aggregator::Params{
+        current_data_stream_header,
+        keys,
+        aggregates,
+        overflow_row,
+        settings.max_rows_to_group_by,
+        settings.group_by_overflow_mode,
+        group_by_two_level_threshold,
+        group_by_two_level_threshold_bytes,
+        settings.max_bytes_before_external_group_by,
+        settings.empty_result_for_aggregation_by_empty_set
+            || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
+                && query_analyzer->hasConstAggregationKeys()),
+        context->getTemporaryVolume(),
+        settings.max_threads,
+        settings.min_free_disk_space_for_temporary_data,
+        settings.compile_aggregate_expressions,
+        settings.min_count_to_compile_aggregate_expression,
+        Block{},
+        stats_collecting_params,
+        getAggregatorGroupingSetsParams(current_data_stream_header, keys)
+    };
+}
+
+Aggregator::Params::GroupingSetsParams InterpreterSelectQuery::getAggregatorGroupingSetsParams(
+    const Block & header_before_aggregation,
+    const ColumnNumbers & all_keys
+)
+{
+    if (getSelectQuery().group_by_with_grouping_sets)
     {
-        ColumnNumbers keys;
-        ColumnNumbers all_keys;
-        ColumnNumbersList keys_vector;
-        std::unordered_set<size_t> keys_set;
-        for (const auto & aggregation_keys : query_analyzer->aggregationKeysList())
+        auto const & aggregation_keys_list = query_analyzer->aggregationKeysList();
+
+        ColumnNumbersList grouping_sets_with_keys;
+        ColumnNumbersList missing_columns_per_set;
+
+        for (const auto & aggregation_keys : aggregation_keys_list)
         {
-            keys.clear();
+            ColumnNumbers keys;
+            std::unordered_set<size_t> keys_set;
             for (const auto & key : aggregation_keys)
             {
-                size_t key_name_pos = current_data_stream_header.getPositionByName(key.name);
-                if (!keys_set.contains(key_name_pos))
-                {
-                    keys_set.insert(key_name_pos);
-                    all_keys.push_back(key_name_pos);
-                }
-                keys.push_back(key_name_pos);
+                keys.push_back(header_before_aggregation.getPositionByName(key.name));
+                keys_set.insert(keys.back());
             }
-            keys_vector.push_back(keys);
+            grouping_sets_with_keys.push_back(std::move(keys));
+
+            ColumnNumbers missing_indexes;
+            for (size_t i = 0; i < all_keys.size(); ++i)
+            {
+                if (!keys_set.contains(all_keys[i]))
+                    missing_indexes.push_back(i);
+            }
+            missing_columns_per_set.push_back(std::move(missing_indexes));
         }
-
-        params_ptr = std::make_unique<Aggregator::Params>(
-            current_data_stream_header,
-            all_keys,
-            keys_vector,
-            aggregates,
-            overflow_row,
-            settings.max_rows_to_group_by,
-            settings.group_by_overflow_mode,
-            group_by_two_level_threshold,
-            group_by_two_level_threshold_bytes,
-            settings.max_bytes_before_external_group_by,
-            settings.empty_result_for_aggregation_by_empty_set
-                || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
-                    && query_analyzer->hasConstAggregationKeys()),
-            context->getTemporaryVolume(),
-            settings.max_threads,
-            settings.min_free_disk_space_for_temporary_data,
-            settings.compile_aggregate_expressions,
-            settings.min_count_to_compile_aggregate_expression,
-            Block{},
-            stats_collecting_params);
+        return { std::move(grouping_sets_with_keys), std::move(missing_columns_per_set) };
     }
-    else
-    {
-        ColumnNumbers keys;
-        for (const auto & key : query_analyzer->aggregationKeys())
-            keys.push_back(current_data_stream_header.getPositionByName(key.name));
-
-        params_ptr = std::make_unique<Aggregator::Params>(
-            current_data_stream_header,
-            keys,
-            aggregates,
-            overflow_row,
-            settings.max_rows_to_group_by,
-            settings.group_by_overflow_mode,
-            group_by_two_level_threshold,
-            group_by_two_level_threshold_bytes,
-            settings.max_bytes_before_external_group_by,
-            settings.empty_result_for_aggregation_by_empty_set
-                || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
-                    && query_analyzer->hasConstAggregationKeys()),
-            context->getTemporaryVolume(),
-            settings.max_threads,
-            settings.min_free_disk_space_for_temporary_data,
-            settings.compile_aggregate_expressions,
-            settings.min_count_to_compile_aggregate_expression,
-            Block{},
-            stats_collecting_params);
-    }
+    return {};
 }
 
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
@@ -2258,8 +2247,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     const Settings & settings = context->getSettingsRef();
 
-    AggregatorParamsPtr params_ptr;
-    initAggregatorParams(header_before_aggregation, params_ptr, aggregates, overflow_row, settings,
+    auto aggregator_params = getAggregatorParams(header_before_aggregation, aggregates, overflow_row, settings,
                  settings.group_by_two_level_threshold, settings.group_by_two_level_threshold_bytes);
 
     SortDescription group_by_sort_description;
@@ -2278,7 +2266,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         query_plan.getCurrentDataStream(),
-        *params_ptr,
+        std::move(aggregator_params),
         final,
         settings.max_block_size,
         settings.aggregation_in_order_max_block_bytes,
@@ -2344,17 +2332,14 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
 
     const Settings & settings = context->getSettingsRef();
 
-    AggregatorParamsPtr params_ptr;
-    initAggregatorParams(header_before_transform, params_ptr, query_analyzer->aggregates(), false, settings, 0, 0);
-    auto transform_params = std::make_shared<AggregatingTransformParams>(*params_ptr, true);
+    auto params = getAggregatorParams(header_before_transform, query_analyzer->aggregates(), false, settings, 0, 0);
+    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), true);
 
     QueryPlanStepPtr step;
     if (modificator == Modificator::ROLLUP)
         step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(transform_params));
     else if (modificator == Modificator::CUBE)
         step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(transform_params));
-    else
-        step = std::make_unique<GroupingSetsStep>(query_plan.getCurrentDataStream(), std::move(transform_params));
 
     query_plan.addStep(std::move(step));
 }

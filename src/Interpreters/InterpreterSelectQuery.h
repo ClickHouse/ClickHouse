@@ -131,12 +131,14 @@ private:
 
     /// Different stages of query execution.
 
-    void initAggregatorParams(
+    Aggregator::Params getAggregatorParams(
         const Block & current_data_stream_header,
-        AggregatorParamsPtr & params_ptr,
         const AggregateDescriptions & aggregates,
         bool overflow_row, const Settings & settings,
         size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes);
+    Aggregator::Params::GroupingSetsParams getAggregatorGroupingSetsParams(
+        const Block & header_before_aggregation,
+        const ColumnNumbers & all_keys);
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(
@@ -168,7 +170,6 @@ private:
     {
         ROLLUP = 0,
         CUBE = 1,
-        GROUPING_SETS = 2
     };
 
     void executeRollupOrCube(QueryPlan & query_plan, Modificator modificator);

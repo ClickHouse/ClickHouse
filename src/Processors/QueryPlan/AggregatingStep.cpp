@@ -1,10 +1,17 @@
+#include <cassert>
+#include <cstddef>
+#include <memory>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
+#include "Interpreters/Aggregator.h"
+#include "Processors/QueryPlan/IQueryPlanStep.h"
+#include "Processors/Transforms/GroupingSetsTransform.h"
 
 namespace DB
 {
@@ -145,35 +152,129 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         }
     }
 
-    /// If there are several sources, then we perform parallel aggregation
-    if (pipeline.getNumStreams() > 1)
+    if (params.hasGroupingSets())
     {
-        /// Add resize transform to uniformly distribute data between aggregating streams.
-        if (!storage_has_evenly_distributed_read)
-            pipeline.resize(pipeline.getNumStreams(), true, true);
+        const auto & grouping_sets_params = params.getGroupingSetsParams();
+        const size_t grouping_sets_size = grouping_sets_params.size();
 
-        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
+        const size_t streams = pipeline.getNumStreams();
 
-        size_t counter = 0;
-        pipeline.addSimpleTransform([&](const Block & header)
+        auto input_header = pipeline.getHeader();
+        pipeline.transform([&](OutputPortRawPtrs ports)
         {
-            return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+            Processors copiers;
+            copiers.reserve(ports.size());
+
+            for (auto * port : ports)
+            {
+                auto copier = std::make_shared<CopyTransform>(input_header, grouping_sets_size);
+                connect(*port, copier->getInputPort());
+                copiers.push_back(copier);
+            }
+
+            return copiers;
         });
 
-        pipeline.resize(1);
+        std::vector<AggregatingTransformParamsPtr> transform_params_per_set;
+        pipeline.transform([&](OutputPortRawPtrs ports)
+        {
+            assert(streams * grouping_sets_size == ports.size());
+            Processors aggregators;
+            for (size_t i = 0; i < grouping_sets_size; ++i)
+            {
+                Aggregator::Params params_for_set{
+                    transform_params->params.src_header,
+                    grouping_sets_params.grouping_sets_with_keys[i],
+                    transform_params->params.aggregates,
+                    transform_params->params.overflow_row,
+                    transform_params->params.max_rows_to_group_by,
+                    transform_params->params.group_by_overflow_mode,
+                    transform_params->params.group_by_two_level_threshold,
+                    transform_params->params.group_by_two_level_threshold_bytes,
+                    transform_params->params.max_bytes_before_external_group_by,
+                    transform_params->params.empty_result_for_aggregation_by_empty_set,
+                    transform_params->params.tmp_volume,
+                    transform_params->params.max_threads,
+                    transform_params->params.min_free_disk_space,
+                    transform_params->params.compile_aggregate_expressions,
+                    transform_params->params.min_count_to_compile_aggregate_expression,
+                    transform_params->params.intermediate_header,
+                    transform_params->params.stats_collecting_params
+                };
+                auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final);
+                transform_params_per_set.push_back(transform_params_for_set);
+                auto many_data = std::make_shared<ManyAggregatedData>(streams);
+
+                for (size_t j = 0; j < streams; ++j)
+                {
+                    auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, many_data, j, merge_threads, temporary_data_merge_threads);
+                    connect(*ports[i + streams * j], aggregation_for_set->getInputs().front());
+                    aggregators.push_back(aggregation_for_set);
+                }
+            }
+            return aggregators;
+        }, false);
+
+        pipeline.transform([&](OutputPortRawPtrs ports)
+        {
+            Processors resizes;
+            for (size_t i = 0; i < grouping_sets_size; ++i)
+            {
+                auto resize = std::make_shared<ResizeProcessor>(transform_params_per_set[i]->getHeader(), streams, 1);
+                auto & inputs = resize->getInputs();
+                auto output_it = ports.begin() + i * streams;
+                for (auto input_it = inputs.begin(); input_it != inputs.end(); ++output_it, ++input_it)
+                    connect(**output_it, *input_it);
+                resizes.push_back(resize);
+            }
+            return resizes;
+        }, false);
+
+        assert(pipeline.getNumStreams() == grouping_sets_size);
+        size_t set_counter = 0;
+        auto output_header = transform_params->getHeader();
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            auto transform = std::make_shared<GroupingSetsTransform>(header, output_header, transform_params_per_set[set_counter], grouping_sets_params.missing_columns_per_set, set_counter);
+            ++set_counter;
+            return transform;
+        });
 
         aggregating = collector.detachProcessors(0);
+        return;
     }
     else
     {
-        pipeline.resize(1);
-
-        pipeline.addSimpleTransform([&](const Block & header)
+        /// If there are several sources, then we perform parallel aggregation
+        if (pipeline.getNumStreams() > 1)
         {
-            return std::make_shared<AggregatingTransform>(header, transform_params);
-        });
+            /// Add resize transform to uniformly distribute data between aggregating streams.
+            if (!storage_has_evenly_distributed_read)
+                pipeline.resize(pipeline.getNumStreams(), true, true);
 
-        aggregating = collector.detachProcessors(0);
+            auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
+
+            size_t counter = 0;
+            pipeline.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+            });
+
+            pipeline.resize(1);
+
+            aggregating = collector.detachProcessors(0);
+        }
+        else
+        {
+            pipeline.resize(1);
+
+            pipeline.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<AggregatingTransform>(header, transform_params);
+            });
+
+            aggregating = collector.detachProcessors(0);
+        }
     }
 }
 

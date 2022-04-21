@@ -18,6 +18,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/ColumnNumbers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -950,6 +951,23 @@ public:
         };
         StatsCollectingParams stats_collecting_params;
 
+        struct GroupingSetsParams
+        {
+            GroupingSetsParams() = default;
+
+            GroupingSetsParams(ColumnNumbersList grouping_sets_with_keys_, ColumnNumbersList missing_columns_per_set_)
+                : grouping_sets_with_keys(std::move(grouping_sets_with_keys_))
+                , missing_columns_per_set(std::move(missing_columns_per_set_))
+            {}
+
+            bool isValid() const noexcept { return !grouping_sets_with_keys.empty(); }
+
+            size_t size() const noexcept { return grouping_sets_with_keys.size(); }
+
+            ColumnNumbersList grouping_sets_with_keys;
+            ColumnNumbersList missing_columns_per_set;
+        } grouping_sets_params;
+
         Params(
             const Block & src_header_,
             const ColumnNumbers & keys_,
@@ -967,7 +985,8 @@ public:
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
             const Block & intermediate_header_ = {},
-            const StatsCollectingParams & stats_collecting_params_ = {})
+            const StatsCollectingParams & stats_collecting_params_ = {},
+            const GroupingSetsParams & grouping_sets_params_ = {})
             : src_header(src_header_)
             , intermediate_header(intermediate_header_)
             , keys(keys_)
@@ -987,50 +1006,9 @@ public:
             , compile_aggregate_expressions(compile_aggregate_expressions_)
             , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
             , stats_collecting_params(stats_collecting_params_)
+            , grouping_sets_params(grouping_sets_params_)
         {
         }
-
-        /// two dimensional vector of aggregating keys in params
-        Params(
-            const Block & src_header_,
-            const ColumnNumbers & keys_,
-            const ColumnNumbersList & keys_vector_,
-            const AggregateDescriptions & aggregates_,
-            bool overflow_row_,
-            size_t max_rows_to_group_by_,
-            OverflowMode group_by_overflow_mode_,
-            size_t group_by_two_level_threshold_,
-            size_t group_by_two_level_threshold_bytes_,
-            size_t max_bytes_before_external_group_by_,
-            bool empty_result_for_aggregation_by_empty_set_,
-            VolumePtr tmp_volume_,
-            size_t max_threads_,
-            size_t min_free_disk_space_,
-            bool compile_aggregate_expressions_,
-            size_t min_count_to_compile_aggregate_expression_,
-            const Block & intermediate_header_ = {},
-            const StatsCollectingParams & stats_collecting_params_ = {})
-            : src_header(src_header_)
-            , intermediate_header(intermediate_header_)
-            , keys(keys_)
-            , keys_vector(keys_vector_)
-            , aggregates(aggregates_)
-            , keys_size(keys.size())
-            , aggregates_size(aggregates.size())
-            , overflow_row(overflow_row_)
-            , max_rows_to_group_by(max_rows_to_group_by_)
-            , group_by_overflow_mode(group_by_overflow_mode_)
-            , group_by_two_level_threshold(group_by_two_level_threshold_)
-            , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
-            , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
-            , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
-            , tmp_volume(tmp_volume_)
-            , max_threads(max_threads_)
-            , min_free_disk_space(min_free_disk_space_)
-            , compile_aggregate_expressions(compile_aggregate_expressions_)
-            , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
-            , stats_collecting_params(stats_collecting_params_)
-        {}
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
@@ -1045,11 +1023,22 @@ public:
             const Block & intermediate_header,
             const ColumnNumbers & keys,
             const AggregateDescriptions & aggregates,
+            const GroupingSetsParams & grouping_sets_params,
             bool final);
 
         Block getHeader(bool final) const
         {
-            return getHeader(src_header, intermediate_header, keys, aggregates, final);
+            return getHeader(src_header, intermediate_header, keys, aggregates, grouping_sets_params, final);
+        }
+
+        bool hasGroupingSets() const noexcept
+        {
+            return grouping_sets_params.isValid();
+        }
+
+        GroupingSetsParams const & getGroupingSetsParams() const noexcept
+        {
+            return grouping_sets_params;
         }
 
         /// Returns keys and aggregated for EXPLAIN query
