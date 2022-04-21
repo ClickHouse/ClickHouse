@@ -4,6 +4,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Poco/Logger.h>
+#include <base/logger_useful.h>
 #include <Common/setThreadName.h>
 
 namespace DB
