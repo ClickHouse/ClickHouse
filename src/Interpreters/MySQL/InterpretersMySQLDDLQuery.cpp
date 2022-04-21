@@ -85,10 +85,10 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
         {
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
             {
-                if (options->changes.count("is_null"))
+                if (options->changes.contains("is_null"))
                     is_nullable = options->changes.at("is_null")->as<ASTLiteral>()->value.safeGet<UInt64>();
 
-                if (options->changes.count("is_unsigned"))
+                if (options->changes.contains("is_unsigned"))
                     is_unsigned = options->changes.at("is_unsigned")->as<ASTLiteral>()->value.safeGet<UInt64>();
             }
         }
@@ -161,7 +161,7 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
         String comment;
         if (declare_column->column_options)
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
-                if (options->changes.count("comment"))
+                if (options->changes.contains("comment"))
                     comment = options->changes.at("comment")->as<ASTLiteral>()->value.safeGet<String>();
 
         ColumnDescription column_description(column_name_and_type->name, column_name_and_type->type);
@@ -238,7 +238,7 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
                 if (const auto & function = index_expression->as<ASTFunction>())
                 {
                     /// column_name(int64 literal)
-                    if (columns_name_set.count(function->name) && function->arguments->children.size() == 1)
+                    if (columns_name_set.contains(function->name) && function->arguments->children.size() == 1)
                     {
                         const auto & prefix_limit = function->arguments->children[0]->as<ASTLiteral>();
 
@@ -276,13 +276,13 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
         {
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
             {
-                if (options->changes.count("unique_key"))
+                if (options->changes.contains("unique_key"))
                     unique_keys->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(declare_column->name));
 
-                if (options->changes.count("primary_key"))
+                if (options->changes.contains("primary_key"))
                     primary_keys->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(declare_column->name));
 
-                if (options->changes.count("auto_increment"))
+                if (options->changes.contains("auto_increment"))
                     increment_columns.emplace(declare_column->name);
             }
         }
@@ -385,10 +385,10 @@ static ASTPtr getOrderByPolicy(
 
         for (const auto & [name, type] : names_and_types)
         {
-            if (order_by_columns_set.count(name))
+            if (order_by_columns_set.contains(name))
                 continue;
 
-            if (increment_columns.count(name))
+            if (increment_columns.contains(name))
             {
                 order_by_columns_set.emplace(name);
                 increment_keys.emplace_back(NameAndTypePair(name, type));

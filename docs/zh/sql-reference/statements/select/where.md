@@ -1,5 +1,5 @@
 ---
-toc_title: WHERE
+sidebar_label: WHERE
 ---
 
 # WHERE {#select-where}

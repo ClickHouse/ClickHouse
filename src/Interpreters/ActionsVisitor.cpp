@@ -455,7 +455,7 @@ public:
         return *node;
     }
 
-    bool contains(const std::string & name) const { return map.count(name) > 0; }
+    bool contains(const std::string & name) const { return map.contains(name); }
 };
 
 ActionsMatcher::Data::Data(
@@ -525,7 +525,7 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
     {
         --i;
 
-        if (stack[i].inputs.count(name))
+        if (stack[i].inputs.contains(name))
             return i;
 
         const auto * node = stack[i].index->tryGetNode(name);
