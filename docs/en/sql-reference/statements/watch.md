@@ -1,14 +1,13 @@
 ---
-toc_priority: 53
-toc_title: WATCH
+sidebar_position: 53
+sidebar_label: WATCH
 ---
 
 # WATCH Statement (Experimental) {#watch}
 
-!!! important "Important"
-    This is an experimental feature that may change in backwards-incompatible ways in the future releases.
-    Enable live views and `WATCH` query using `set allow_experimental_live_view = 1`.
-
+:::warning    
+This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable live views and `WATCH` query using `set allow_experimental_live_view = 1`.
+:::
 
 ``` sql
 WATCH [db.]live_view
@@ -105,5 +104,6 @@ WATCH lv EVENTS LIMIT 1;
 
 The `FORMAT` clause works the same way as for the [SELECT](../../sql-reference/statements/select/format.md#format-clause).
 
-!!! info "Note"
-    The [JSONEachRowWithProgress](../../interfaces/formats.md#jsoneachrowwithprogress) format should be used when watching [LIVE VIEW](./create/view.md#live-view) tables over the HTTP interface. The progress messages will be added to the output to keep the long-lived HTTP connection alive until the query result changes. The interval between progress messages is controlled using the [live_view_heartbeat_interval](./create/view.md#live-view-settings) setting.
+:::note    
+The [JSONEachRowWithProgress](../../interfaces/formats.md#jsoneachrowwithprogress) format should be used when watching [LIVE VIEW](./create/view.md#live-view) tables over the HTTP interface. The progress messages will be added to the output to keep the long-lived HTTP connection alive until the query result changes. The interval between progress messages is controlled using the [live_view_heartbeat_interval](./create/view.md#live-view-settings) setting.
+:::

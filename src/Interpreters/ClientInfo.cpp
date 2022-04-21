@@ -24,7 +24,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception("Logical error: method ClientInfo::write is called for unsupported server revision", ErrorCodes::LOGICAL_ERROR);
 
-    writeBinary(UInt8(query_kind), out);
+    writeBinary(static_cast<UInt8>(query_kind), out);
     if (empty())
         return;
 
@@ -35,7 +35,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
     if (server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
         writeBinary(initial_query_start_time_microseconds, out);
 
-    writeBinary(UInt8(interface), out);
+    writeBinary(static_cast<UInt8>(interface), out);
 
     if (interface == Interface::TCP)
     {
@@ -48,7 +48,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
     }
     else if (interface == Interface::HTTP)
     {
-        writeBinary(UInt8(http_method), out);
+        writeBinary(static_cast<UInt8>(http_method), out);
         writeBinary(http_user_agent, out);
 
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO)
@@ -86,7 +86,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         else
         {
             // Don't have OpenTelemetry header.
-            writeBinary(uint8_t(0), out);
+            writeBinary(static_cast<UInt8>(0), out);
         }
     }
 
