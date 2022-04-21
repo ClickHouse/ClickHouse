@@ -184,7 +184,6 @@ public:
                     raw_read_buf = get_raw_read_buf();
                     if (read_settings.remote_fs_prefetch)
                     {
-                        std::cout << "start prefetch" << std::endl;
                         raw_read_buf->prefetch();
                     }
                 }
