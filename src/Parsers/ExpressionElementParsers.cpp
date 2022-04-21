@@ -16,7 +16,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -443,9 +442,9 @@ namespace
                 pattern_list_args->children = {
                     std::make_shared<ASTLiteral>("^["),
                     to_remove,
-                    std::make_shared<ASTLiteral>("]+|["),
+                    std::make_shared<ASTLiteral>("]*|["),
                     to_remove,
-                    std::make_shared<ASTLiteral>("]+$")
+                    std::make_shared<ASTLiteral>("]*$")
                 };
                 func_name = "replaceRegexpAll";
             }
@@ -456,7 +455,7 @@ namespace
                     pattern_list_args->children = {
                         std::make_shared<ASTLiteral>("^["),
                         to_remove,
-                        std::make_shared<ASTLiteral>("]+")
+                        std::make_shared<ASTLiteral>("]*")
                     };
                 }
                 else
@@ -465,7 +464,7 @@ namespace
                     pattern_list_args->children = {
                         std::make_shared<ASTLiteral>("["),
                         to_remove,
-                        std::make_shared<ASTLiteral>("]+$")
+                        std::make_shared<ASTLiteral>("]*$")
                     };
                 }
                 func_name = "replaceRegexpOne";
@@ -506,34 +505,32 @@ namespace
 
     bool parseExtract(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
-        IParser::Pos begin = pos;
+        ASTPtr expr;
+
         IntervalKind interval_kind;
-
-        if (parseIntervalKind(pos, expected, interval_kind))
+        if (!parseIntervalKind(pos, expected, interval_kind))
         {
-            ASTPtr expr;
+            ASTPtr expr_list;
+            if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
+                return false;
 
-            ParserKeyword s_from("FROM");
-            ParserExpression elem_parser;
-
-            if (s_from.ignore(pos, expected) && elem_parser.parse(pos, expr, expected))
-            {
-                node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
-                return true;
-            }
+            auto res = std::make_shared<ASTFunction>();
+            res->name = "extract";
+            res->arguments = expr_list;
+            res->children.push_back(res->arguments);
+            node = std::move(res);
+            return true;
         }
 
-        pos = begin;
-
-        ASTPtr expr_list;
-        if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
+        ParserKeyword s_from("FROM");
+        if (!s_from.ignore(pos, expected))
             return false;
 
-        auto res = std::make_shared<ASTFunction>();
-        res->name = "extract";
-        res->arguments = expr_list;
-        res->children.push_back(res->arguments);
-        node = std::move(res);
+        ParserExpression elem_parser;
+        if (!elem_parser.parse(pos, expr, expected))
+            return false;
+
+        node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
         return true;
     }
 
@@ -1727,7 +1724,7 @@ const char * ParserAlias::restricted_keywords[] =
     "NOT",
     "OFFSET",
     "ON",
-    "ONLY", /// YQL's synonym for ANTI. Note: YQL is the name of one of proprietary languages, completely unrelated to ClickHouse.
+    "ONLY", /// YQL synonym for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
     "ORDER",
     "PREWHERE",
     "RIGHT",
@@ -2311,35 +2308,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->children.push_back(expr_elem);
     if (locale_node)
         elem->children.push_back(locale_node);
-
-    node = elem;
-
-    return true;
-}
-
-bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword as("AS");
-    ParserExpression element_p;
-    ParserIdentifier ident_p;
-
-    ASTPtr ident;
-    if (!ident_p.parse(pos, ident, expected))
-        return false;
-
-    ASTPtr expr;
-    if (as.ignore(pos, expected))
-    {
-        if (!element_p.parse(pos, expr, expected))
-            return false;
-    }
-    else
-        expr = ident;
-
-    auto elem = std::make_shared<ASTInterpolateElement>();
-    elem->column = ident->getColumnName();
-    elem->expr = expr;
-    elem->children.push_back(expr);
 
     node = elem;
 

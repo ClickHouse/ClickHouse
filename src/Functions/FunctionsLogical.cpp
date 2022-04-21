@@ -95,7 +95,7 @@ void convertAnyColumnToBool(const IColumn * column, UInt8Container & res)
 
 
 template <class Op, typename Func>
-bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
+static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 {
     bool has_res = false;
 
@@ -345,7 +345,7 @@ struct OperationApplier<Op, OperationApplierImpl, 0>
 
 
 template <class Op>
-ColumnPtr executeForTernaryLogicImpl(ColumnRawPtrs arguments, const DataTypePtr & result_type, size_t input_rows_count)
+static ColumnPtr executeForTernaryLogicImpl(ColumnRawPtrs arguments, const DataTypePtr & result_type, size_t input_rows_count)
 {
     /// Combine all constant columns into a single constant value.
     UInt8 const_3v_value = 0;
@@ -420,7 +420,7 @@ struct TypedExecutorInvoker<Op>
 
 /// Types of all of the arguments are guaranteed to be non-nullable here
 template <class Op>
-ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
+static ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
 {
     /// Combine all constant columns into a single constant value.
     UInt8 const_val = 0;
@@ -611,7 +611,7 @@ template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    ColumnsWithTypeAndName arguments = args;
+    ColumnsWithTypeAndName arguments = std::move(args);
 
     /// Special implementation for short-circuit arguments.
     if (checkShortCircuitArguments(arguments) != -1)

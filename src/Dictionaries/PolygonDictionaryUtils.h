@@ -38,7 +38,7 @@ public:
     SlabsPolygonIndex() = default;
 
     /** Builds an index by splitting all edges with all points x coordinates. */
-    explicit SlabsPolygonIndex(const std::vector<Polygon> & polygons);
+    SlabsPolygonIndex(const std::vector<Polygon> & polygons);
 
     /** Finds polygon id the same way as IPolygonIndex. */
     bool find(const Point & point, size_t & id) const;
@@ -179,7 +179,7 @@ class GridRoot : public ICell<ReturnCell>
 {
 public:
     GridRoot(size_t min_intersections_, size_t max_depth_, const std::vector<Polygon> & polygons_):
-            k_min_intersections(min_intersections_), k_max_depth(max_depth_), polygons(polygons_)
+            kMinIntersections(min_intersections_), kMaxDepth(max_depth_), polygons(polygons_)
     {
         setBoundingBox();
         std::vector<size_t> order(polygons.size());
@@ -209,8 +209,8 @@ private:
     std::unique_ptr<ICell<ReturnCell>> root = nullptr;
     Coord min_x = 0, min_y = 0;
     Coord max_x = 0, max_y = 0;
-    const size_t k_min_intersections;
-    const size_t k_max_depth;
+    const size_t kMinIntersections;
+    const size_t kMaxDepth;
 
     const std::vector<Polygon> & polygons;
 
@@ -236,7 +236,7 @@ private:
         }
 #endif
         size_t intersections = possible_ids.size() - covered;
-        if (intersections <= k_min_intersections || depth++ == k_max_depth)
+        if (intersections <= kMinIntersections || depth++ == kMaxDepth)
             return std::make_unique<ReturnCell>(possible_ids, polygons, current_box, covered);
         auto x_shift = (current_max_x - current_min_x) / DividedCell<ReturnCell>::kSplit;
         auto y_shift = (current_max_y - current_min_y) / DividedCell<ReturnCell>::kSplit;

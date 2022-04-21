@@ -1,6 +1,6 @@
 ---
-sidebar_position: 4
-sidebar_label: Hive
+toc_priority: 4
+toc_title: Hive
 ---
 
 # Hive {#hive}
@@ -140,7 +140,7 @@ CREATE TABLE test.test_orc
     `f_array_array_float` Array(Array(Float32)),
     `day` String
 )
-ENGINE = Hive('thrift://localhost:9083', 'test', 'test_orc')
+ENGINE = Hive('thrift://202.168.117.26:9083', 'test', 'test_orc')
 PARTITION BY day
 
 ```

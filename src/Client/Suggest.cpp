@@ -103,7 +103,6 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 {
     loading_thread = std::thread([context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
-        ThreadStatus thread_status;
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try

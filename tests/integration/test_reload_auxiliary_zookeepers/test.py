@@ -60,9 +60,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
         </zookeeper2>
     </auxiliary_zookeepers>
 </clickhouse>"""
-    node.replace_config(
-        "/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config
-    )
+    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config)
 
     node.query("SYSTEM RELOAD CONFIG")
 
@@ -83,9 +81,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
         <session_timeout_ms>2000</session_timeout_ms>
     </zookeeper>
 </clickhouse>"""
-    node.replace_config(
-        "/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config
-    )
+    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config)
     node.query("SYSTEM RELOAD CONFIG")
     time.sleep(5)
 

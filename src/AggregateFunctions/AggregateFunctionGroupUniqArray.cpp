@@ -40,7 +40,7 @@ public:
 };
 
 template <typename HasLimit, typename ... TArgs>
-IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, TArgs && ... args)
+static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupUniqArrayDate<HasLimit>(argument_type, std::forward<TArgs>(args)...);

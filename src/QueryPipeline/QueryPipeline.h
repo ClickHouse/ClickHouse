@@ -32,10 +32,10 @@ class QueryPipeline
 {
 public:
     QueryPipeline();
-    QueryPipeline(QueryPipeline &&) noexcept;
+    QueryPipeline(QueryPipeline &&);
     QueryPipeline(const QueryPipeline &) = delete;
 
-    QueryPipeline & operator=(QueryPipeline &&) noexcept;
+    QueryPipeline & operator=(QueryPipeline &&);
     QueryPipeline & operator=(const QueryPipeline &) = delete;
 
     ~QueryPipeline();

@@ -23,9 +23,7 @@
     M(QueryViewsLogElement) \
     M(SessionLogElement) \
     M(TraceLogElement) \
-    M(TransactionsInfoLogElement) \
     M(ZooKeeperLogElement) \
-    M(ProcessorProfileLogElement) \
     M(TextLogElement)
 
 namespace Poco
@@ -47,7 +45,7 @@ class ISystemLog
 public:
     virtual String getName() = 0;
     //// force -- force table creation (used for SYSTEM FLUSH LOGS)
-    virtual void flush(bool force = false) = 0; /// NOLINT
+    virtual void flush(bool force = false) = 0;
     virtual void prepareTable() = 0;
 
     /// Start the background thread.

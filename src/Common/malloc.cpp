@@ -38,7 +38,7 @@ static void dummyFunctionForInterposing()
     ignore(calloc(0, 0)); // -V575 NOLINT
     ignore(realloc(nullptr, 0)); // -V575 NOLINT
     ignore(posix_memalign(&dummy, 0, 0)); // -V575 NOLINT
-    ignore(aligned_alloc(1, 0)); // -V575 NOLINT
+    ignore(aligned_alloc(0, 0)); // -V575 NOLINT
     ignore(valloc(0)); // -V575 NOLINT
     ignore(memalign(0, 0)); // -V575 NOLINT
 #if !defined(USE_MUSL)

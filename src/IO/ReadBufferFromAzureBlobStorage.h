@@ -1,6 +1,8 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -30,8 +32,6 @@ public:
     off_t getPosition() override;
 
     bool nextImpl() override;
-
-    size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
 private:
 

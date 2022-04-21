@@ -2,10 +2,10 @@ from rbac.requirements import *
 from rbac.helper.common import *
 import rbac.helper.errors as errors
 
-
 @TestSuite
 def no_privilege(self, node=None):
-    """Check that user doesn't need privileges to execute `KILL MUTATION` with no mutations."""
+    """Check that user doesn't need privileges to execute `KILL MUTATION` with no mutations.
+    """
     if node is None:
         node = self.context.node
 
@@ -24,10 +24,7 @@ def no_privilege(self, node=None):
                     node.query(f"GRANT USAGE ON *.* TO {user_name}")
 
                 with Then("I attempt to kill mutation on table"):
-                    node.query(
-                        f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                        settings=[("user", user_name)],
-                    )
+                    node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)])
 
     with Scenario("kill mutation on cluster"):
         user_name = f"user_{getuid()}"
@@ -44,11 +41,7 @@ def no_privilege(self, node=None):
                     node.query(f"GRANT USAGE ON *.* TO {user_name}")
 
                 with Then("I attempt to kill mutation on cluster"):
-                    node.query(
-                        f"KILL MUTATION ON CLUSTER sharded_cluster WHERE database = 'default' AND table = '{table_name}'",
-                        settings=[("user", user_name)],
-                    )
-
+                    node.query(f"KILL MUTATION ON CLUSTER sharded_cluster WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)])
 
 @TestSuite
 def privileges_granted_directly(self, node=None):
@@ -66,7 +59,6 @@ def privileges_granted_directly(self, node=None):
         Suite(test=update)(user_name=user_name, grant_target_name=user_name)
         Suite(test=delete)(user_name=user_name, grant_target_name=user_name)
         Suite(test=drop_column)(user_name=user_name, grant_target_name=user_name)
-
 
 @TestSuite
 def privileges_granted_via_role(self, node=None):
@@ -89,9 +81,10 @@ def privileges_granted_via_role(self, node=None):
         Suite(test=delete)(user_name=user_name, grant_target_name=role_name)
         Suite(test=drop_column)(user_name=user_name, grant_target_name=role_name)
 
-
 @TestSuite
-@Requirements(RQ_SRS_006_RBAC_Privileges_KillMutation_AlterUpdate("1.0"))
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_KillMutation_AlterUpdate("1.0")
+)
 def update(self, user_name, grant_target_name, node=None):
     """Check that the user is able to execute `KILL MUTATION` after `ALTER UPDATE`
     if and only if the user has `ALTER UPDATE` privilege.
@@ -119,12 +112,8 @@ def update(self, user_name, grant_target_name, node=None):
                 node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                    exitcode=exitcode,
-                    message="Exception: Not allowed to kill mutation.",
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)],
+                    exitcode=exitcode, message="Exception: Not allowed to kill mutation.")
 
     with Scenario("KILL ALTER UPDATE with privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -138,10 +127,7 @@ def update(self, user_name, grant_target_name, node=None):
                 node.query(f"GRANT ALTER UPDATE ON {table_name} TO {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)])
 
     with Scenario("KILL ALTER UPDATE with revoked privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -155,17 +141,11 @@ def update(self, user_name, grant_target_name, node=None):
                 node.query(f"GRANT ALTER UPDATE ON {table_name} TO {grant_target_name}")
 
             with And("I revoke the ALTER UPDATE privilege"):
-                node.query(
-                    f"REVOKE ALTER UPDATE ON {table_name} FROM {grant_target_name}"
-                )
+                node.query(f"REVOKE ALTER UPDATE ON {table_name} FROM {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                    exitcode=exitcode,
-                    message="Exception: Not allowed to kill mutation.",
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)],
+                    exitcode=exitcode, message="Exception: Not allowed to kill mutation.")
 
     with Scenario("KILL ALTER UPDATE with revoked ALL privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -182,12 +162,8 @@ def update(self, user_name, grant_target_name, node=None):
                 node.query(f"REVOKE ALL ON *.* FROM {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                    exitcode=exitcode,
-                    message="Exception: Not allowed to kill mutation.",
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)],
+                    exitcode=exitcode, message="Exception: Not allowed to kill mutation.")
 
     with Scenario("KILL ALTER UPDATE with ALL privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -201,14 +177,12 @@ def update(self, user_name, grant_target_name, node=None):
                 node.query(f"GRANT ALL ON *.* TO {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                )
-
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)])
 
 @TestSuite
-@Requirements(RQ_SRS_006_RBAC_Privileges_KillMutation_AlterDelete("1.0"))
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_KillMutation_AlterDelete("1.0")
+)
 def delete(self, user_name, grant_target_name, node=None):
     """Check that the user is able to execute `KILL MUTATION` after `ALTER DELETE`
     if and only if the user has `ALTER DELETE` privilege.
@@ -236,12 +210,8 @@ def delete(self, user_name, grant_target_name, node=None):
                 node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                    exitcode=exitcode,
-                    message="Exception: Not allowed to kill mutation.",
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)],
+                    exitcode=exitcode, message="Exception: Not allowed to kill mutation.")
 
     with Scenario("KILL ALTER DELETE with privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -255,10 +225,7 @@ def delete(self, user_name, grant_target_name, node=None):
                 node.query(f"GRANT ALTER DELETE ON {table_name} TO {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)])
 
     with Scenario("KILL ALTER DELETE with revoked privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -272,17 +239,11 @@ def delete(self, user_name, grant_target_name, node=None):
                 node.query(f"GRANT ALTER DELETE ON {table_name} TO {grant_target_name}")
 
             with And("I revoke the ALTER DELETE privilege"):
-                node.query(
-                    f"REVOKE ALTER DELETE ON {table_name} FROM {grant_target_name}"
-                )
+                node.query(f"REVOKE ALTER DELETE ON {table_name} FROM {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                    exitcode=exitcode,
-                    message="Exception: Not allowed to kill mutation.",
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)],
+                    exitcode=exitcode, message="Exception: Not allowed to kill mutation.")
 
     with Scenario("KILL ALTER DELETE with revoked ALL privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -299,12 +260,8 @@ def delete(self, user_name, grant_target_name, node=None):
                 node.query(f"REVOKE ALL ON *.* FROM {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                    exitcode=exitcode,
-                    message="Exception: Not allowed to kill mutation.",
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)],
+                    exitcode=exitcode, message="Exception: Not allowed to kill mutation.")
 
     with Scenario("KILL ALTER DELETE with ALL privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -318,14 +275,12 @@ def delete(self, user_name, grant_target_name, node=None):
                 node.query(f"GRANT ALL ON *.* TO {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                )
-
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)])
 
 @TestSuite
-@Requirements(RQ_SRS_006_RBAC_Privileges_KillMutation_AlterDropColumn("1.0"))
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_KillMutation_AlterDropColumn("1.0")
+)
 def drop_column(self, user_name, grant_target_name, node=None):
     """Check that the user is able to execute `KILL MUTATION` after `ALTER DROP COLUMN`
     if and only if the user has `ALTER DROP COLUMN` privilege.
@@ -353,12 +308,8 @@ def drop_column(self, user_name, grant_target_name, node=None):
                 node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                    exitcode=exitcode,
-                    message="Exception: Not allowed to kill mutation.",
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)],
+                    exitcode=exitcode, message="Exception: Not allowed to kill mutation.")
 
     with Scenario("KILL ALTER DROP COLUMN with privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -369,15 +320,10 @@ def drop_column(self, user_name, grant_target_name, node=None):
                 node.query(f"ALTER TABLE {table_name} DROP COLUMN x")
 
             with When("I grant the ALTER DROP COLUMN privilege"):
-                node.query(
-                    f"GRANT ALTER DROP COLUMN ON {table_name} TO {grant_target_name}"
-                )
+                node.query(f"GRANT ALTER DROP COLUMN ON {table_name} TO {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)])
 
     with Scenario("KILL ALTER DROP COLUMN with revoked privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -388,22 +334,14 @@ def drop_column(self, user_name, grant_target_name, node=None):
                 node.query(f"ALTER TABLE {table_name} DROP COLUMN x")
 
             with When("I grant the ALTER DROP COLUMN privilege"):
-                node.query(
-                    f"GRANT ALTER DROP COLUMN ON {table_name} TO {grant_target_name}"
-                )
+                node.query(f"GRANT ALTER DROP COLUMN ON {table_name} TO {grant_target_name}")
 
             with And("I revoke the ALTER DROP COLUMN privilege"):
-                node.query(
-                    f"REVOKE ALTER DROP COLUMN ON {table_name} FROM {grant_target_name}"
-                )
+                node.query(f"REVOKE ALTER DROP COLUMN ON {table_name} FROM {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                    exitcode=exitcode,
-                    message="Exception: Not allowed to kill mutation.",
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)],
+                    exitcode=exitcode, message="Exception: Not allowed to kill mutation.")
 
     with Scenario("KILL ALTER DROP COLUMN with revoked privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -414,20 +352,14 @@ def drop_column(self, user_name, grant_target_name, node=None):
                 node.query(f"ALTER TABLE {table_name} DROP COLUMN x")
 
             with When("I grant the ALTER DROP COLUMN privilege"):
-                node.query(
-                    f"GRANT ALTER DROP COLUMN ON {table_name} TO {grant_target_name}"
-                )
+                node.query(f"GRANT ALTER DROP COLUMN ON {table_name} TO {grant_target_name}")
 
             with And("I revoke ALL privilege"):
                 node.query(f"REVOKE ALL ON *.* FROM {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                    exitcode=exitcode,
-                    message="Exception: Not allowed to kill mutation.",
-                )
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)],
+                    exitcode=exitcode, message="Exception: Not allowed to kill mutation.")
 
     with Scenario("KILL ALTER DROP COLUMN with ALL privilege"):
         table_name = f"merge_tree_{getuid()}"
@@ -441,21 +373,18 @@ def drop_column(self, user_name, grant_target_name, node=None):
                 node.query(f"GRANT ALL ON *.* TO {grant_target_name}")
 
             with Then("I try to KILL MUTATION"):
-                node.query(
-                    f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'",
-                    settings=[("user", user_name)],
-                )
-
+                node.query(f"KILL MUTATION WHERE database = 'default' AND table = '{table_name}'", settings = [("user", user_name)])
 
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_KillMutation("1.0"),
     RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Name("kill mutation")
 def feature(self, node="clickhouse1", stress=None, parallel=None):
-    """Check the RBAC functionality of KILL MUTATION."""
+    """Check the RBAC functionality of KILL MUTATION.
+    """
     self.context.node = self.context.cluster.node(node)
 
     if parallel is not None:

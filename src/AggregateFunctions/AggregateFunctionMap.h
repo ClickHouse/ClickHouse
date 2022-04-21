@@ -123,7 +123,7 @@ public:
         {
             typename Data::SearchType key;
 
-            if constexpr (std::is_same_v<KeyType, String>)
+            if constexpr (std::is_same<KeyType, String>::value)
             {
                 StringRef key_ref;
                 if (key_type->getTypeId() == TypeIndex::FixedString)

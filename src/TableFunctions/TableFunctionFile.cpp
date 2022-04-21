@@ -41,7 +41,6 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
         return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context);
     }
 
-
     return parseColumnsListFromString(structure, context);
 }
 

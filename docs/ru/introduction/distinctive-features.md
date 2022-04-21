@@ -1,6 +1,6 @@
 ---
-sidebar_position: 4
-sidebar_label: "Отличительные возможности ClickHouse"
+toc_priority: 4
+toc_title: "Отличительные возможности ClickHouse"
 ---
 
 # Отличительные возможности ClickHouse {#otlichitelnye-vozmozhnosti-clickhouse}

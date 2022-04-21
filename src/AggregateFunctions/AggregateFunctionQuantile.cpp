@@ -60,7 +60,7 @@ template <typename Value, bool float_return> using FuncQuantileBFloat16Weighted 
 template <typename Value, bool float_return> using FuncQuantilesBFloat16Weighted = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantilesBFloat16Weighted, true, std::conditional_t<float_return, Float64, void>, true>;
 
 template <template <typename, bool> class Function>
-constexpr bool supportDecimal()
+static constexpr bool supportDecimal()
 {
     return std::is_same_v<Function<Float32, false>, FuncQuantile<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantiles<Float32, false>> ||
@@ -75,7 +75,7 @@ constexpr bool supportDecimal()
 }
 
 template <template <typename, bool> class Function>
-constexpr bool supportBigInt()
+static constexpr bool supportBigInt()
 {
     return std::is_same_v<Function<Float32, false>, FuncQuantile<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantiles<Float32, false>> ||

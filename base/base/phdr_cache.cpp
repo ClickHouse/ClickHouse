@@ -2,7 +2,7 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
-/// This code was based on the code by Fedor Korotkiy https://www.linkedin.com/in/fedor-korotkiy-659a1838/
+/// This code was based on the code by Fedor Korotkiy (prime@yandex-team.ru) for YT product in Yandex.
 
 #include <base/defines.h>
 

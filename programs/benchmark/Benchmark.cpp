@@ -435,8 +435,6 @@ private:
         Progress progress;
         executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
 
-        executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
-
         ProfileInfo info;
         while (Block block = executor.read())
             info.update(block);

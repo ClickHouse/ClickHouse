@@ -15,7 +15,7 @@ class MemoryAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "memory";
 
-    explicit MemoryAccessStorage(const String & storage_name_ = STORAGE_TYPE);
+    MemoryAccessStorage(const String & storage_name_ = STORAGE_TYPE);
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 

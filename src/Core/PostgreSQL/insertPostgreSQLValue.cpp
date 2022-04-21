@@ -108,6 +108,8 @@ void insertPostgreSQLValue(
             ReadBufferFromString in(value);
             DateTime64 time = 0;
             readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+            if (time < 0)
+                time = 0;
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
             break;
         }

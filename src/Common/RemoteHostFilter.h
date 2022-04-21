@@ -2,7 +2,6 @@
 
 #include <string>
 #include <vector>
-#include <mutex>
 #include <unordered_set>
 
 
@@ -25,9 +24,7 @@ public:
     void checkHostAndPort(const std::string & host, const std::string & port) const; /// Does the same as checkURL, but for host and port.
 
 private:
-    std::atomic_bool is_initialized = false;
-
-    mutable std::mutex hosts_mutex;
+    bool is_allow_by_default = true;
     std::unordered_set<std::string> primary_hosts;      /// Allowed primary (<host>) URL from config.xml
     std::vector<std::string> regexp_hosts;              /// Allowed regexp (<hots_regexp>) URL from config.xml
 

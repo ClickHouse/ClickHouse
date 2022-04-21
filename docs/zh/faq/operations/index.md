@@ -1,8 +1,8 @@
 ---
 title: 关于操作ClickHouse服务器和集群的问题
 toc_hidden_folder: true
-sidebar_position: 3
-sidebar_label: Operations
+toc_priority: 3
+toc_title: Operations
 ---
 
 # 关于操作ClickHouse服务器和集群的问题 {#question-about-operating-clickhouse-servers-and-clusters}
@@ -15,6 +15,6 @@ sidebar_label: Operations
     
 
 !!! info "没看到你要找的东西吗?"
-    查看[其他faq类别](../../faq/)或浏览左边栏中的主要文档文章。
+    查看[其他faq类别](../../faq/index.md)或浏览左边栏中的主要文档文章。
 
 {## [原文](https://clickhouse.com/docs/en/faq/production/) ##}

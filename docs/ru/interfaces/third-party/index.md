@@ -1,6 +1,6 @@
 ---
-sidebar_label: "Сторонние интерфейсы"
-sidebar_position: 24
+toc_folder_title: "Сторонние интерфейсы"
+toc_priority: 24
 ---
 
 # Сторонние интерфейсы {#third-party-interfaces}
@@ -12,6 +12,6 @@ sidebar_position: 24
 -   [GUI](../../interfaces/third-party/gui.md)
 -   [Proxies](../../interfaces/third-party/proxy.md)
 
-    :::note "Примечание"
+!!! note "Примечание"
     С ClickHouse работают также универсальные инструменты, поддерживающие общий API, такие как [ODBC](../../interfaces/odbc.md) или [JDBC](../../interfaces/jdbc.md).
-:::
+

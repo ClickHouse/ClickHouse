@@ -30,10 +30,10 @@ public:
     /// Currently not supported
     nuraft::ptr<nuraft::buffer> pre_commit(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
-    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override; /// NOLINT
+    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override;
 
     /// Save new cluster config to our snapshot (copy of the config stored in StateManager)
-    void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
+    void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override;
 
     /// Currently not supported
     void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
@@ -105,7 +105,6 @@ private:
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
-    std::string latest_snapshot_path;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;

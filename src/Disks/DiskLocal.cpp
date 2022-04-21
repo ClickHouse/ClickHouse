@@ -6,8 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
-#include <Common/atomicRename.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/createReadBufferFromFileBase.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -326,14 +325,13 @@ DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
-    renameNoReplace(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
+    fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
 }
 
 void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 {
     fs::path from_file = fs::path(disk_path) / from_path;
     fs::path to_file = fs::path(disk_path) / to_path;
-    fs::create_directories(to_file.parent_path());
     fs::rename(from_file, to_file);
 }
 
@@ -345,7 +343,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
@@ -624,7 +622,7 @@ bool DiskLocal::setup()
         pcg32_fast rng(randomSeed());
         UInt32 magic_number = rng();
         {
-            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
             writeIntBinary(magic_number, *buf);
         }
         disk_checker_magic_number = magic_number;

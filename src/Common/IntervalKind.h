@@ -10,9 +10,6 @@ struct IntervalKind
 {
     enum Kind
     {
-        Nanosecond,
-        Microsecond,
-        Millisecond,
         Second,
         Minute,
         Hour,
@@ -24,8 +21,8 @@ struct IntervalKind
     };
     Kind kind = Second;
 
-    IntervalKind(Kind kind_ = Second) : kind(kind_) {} /// NOLINT
-    operator Kind() const { return kind; } /// NOLINT
+    IntervalKind(Kind kind_ = Second) : kind(kind_) {}
+    operator Kind() const { return kind; }
 
     constexpr std::string_view toString() const { return magic_enum::enum_name(kind); }
 
@@ -62,11 +59,7 @@ struct IntervalKind
     static bool tryParseString(const std::string & kind, IntervalKind::Kind & result);
 };
 
-/// NOLINTNEXTLINE
 #define FOR_EACH_INTERVAL_KIND(M) \
-    M(Nanosecond) \
-    M(Microsecond) \
-    M(Millisecond) \
     M(Second) \
     M(Minute) \
     M(Hour) \

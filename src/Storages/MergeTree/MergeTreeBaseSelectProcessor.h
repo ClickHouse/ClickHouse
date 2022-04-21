@@ -35,7 +35,7 @@ public:
     MergeTreeBaseSelectProcessor(
         Block header,
         const MergeTreeData & storage_,
-        const StorageSnapshotPtr & storage_snapshot_,
+        const StorageMetadataPtr & metadata_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         ExpressionActionsSettings actions_settings,
         UInt64 max_block_size_rows_,
@@ -86,8 +86,9 @@ protected:
 
     void initializeRangeReaders(MergeTreeReadTask & task);
 
+protected:
     const MergeTreeData & storage;
-    StorageSnapshotPtr storage_snapshot;
+    StorageMetadataPtr metadata_snapshot;
 
     PrewhereInfoPtr prewhere_info;
     std::unique_ptr<PrewhereExprInfo> prewhere_actions;

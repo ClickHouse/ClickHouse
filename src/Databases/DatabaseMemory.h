@@ -50,9 +50,6 @@ public:
 
     void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
 
-    /// This database can contain tables to backup.
-    bool hasTablesToBackup() const override { return true; }
-
 private:
     String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;

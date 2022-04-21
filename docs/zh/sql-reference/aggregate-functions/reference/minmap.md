@@ -1,5 +1,5 @@
 ---
-sidebar_position: 142
+toc_priority: 142
 ---
 
 # minMap {#agg_functions-minmap}

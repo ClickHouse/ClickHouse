@@ -129,7 +129,7 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 
     if (!window_description.order_by.empty())
-        map.add("Sort Description", explainSortDescription(window_description.order_by));
+        map.add("Sort Description", explainSortDescription(window_description.order_by, {}));
 
     auto functions_array = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & func : window_functions)

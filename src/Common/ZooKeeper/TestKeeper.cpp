@@ -179,7 +179,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
     CreateResponse response;
     Undo undo;
 
-    if (container.contains(path))
+    if (container.count(path))
     {
         response.error = Error::ZNODEEXISTS;
     }

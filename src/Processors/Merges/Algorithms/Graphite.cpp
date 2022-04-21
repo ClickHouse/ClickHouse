@@ -89,7 +89,7 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
 
 Graphite::RollupRule selectPatternForPath(
         const Graphite::Params & params,
-        StringRef path)
+        const StringRef path)
 {
     const Graphite::Pattern * first_match = &undef_pattern;
 

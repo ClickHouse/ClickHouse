@@ -1,6 +1,6 @@
 ---
-sidebar_position: 19
-sidebar_label: "HTTP-интерфейс"
+toc_priority: 19
+toc_title: "HTTP-интерфейс"
 ---
 
 # HTTP-интерфейс {#http-interface}
@@ -172,9 +172,9 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 Для отправки сжатого запроса `POST` добавьте заголовок `Content-Encoding: compression_method`.
 Чтобы ClickHouse сжимал ответ, разрешите сжатие настройкой [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) и добавьте заголовок `Accept-Encoding: compression_method`. Уровень сжатия данных для всех методов сжатия можно задать с помощью настройки [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level).
 
-    :::note "Примечание"
+!!! note "Примечание"
     Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
-    :::
+
 **Примеры**
 
 ``` bash
@@ -242,7 +242,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 Если пользователь не задан,то используется `default`. Если пароль не задан, то используется пустой пароль.
 Также в параметрах URL вы можете указать любые настройки, которые будут использованы для обработки одного запроса, или целые профили настроек. Пример:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-Подробнее смотрите в разделе [Настройки](../operations/settings/overview.md).
+Подробнее смотрите в разделе [Настройки](../operations/settings/index.md).
 
 ``` bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
@@ -424,9 +424,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 В следующем примере определяются настройки [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_final_threads`, а затем запрашивается системная таблица, чтобы проверить, были ли эти параметры успешно установлены.
 
-    :::note "Предупреждение"
+!!! note "Предупреждение"
     Чтобы сохранить стандартные `handlers` такие как `query`, `play`, `ping`, используйте правило `<defaults/>`.
-    :::
+
 Пример:
 
 ``` xml
@@ -454,9 +454,9 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_final_threads   2
 ```
 
-    :::note "Предупреждение"
+!!! note "Предупреждение"
     В одном `predefined_query_handler` поддерживается только один запрос типа `INSERT`.
-    :::
+
 ### dynamic_query_handler {#dynamic_query_handler}
 
 В `dynamic_query_handler`, запрос пишется в виде параметров HTTP-запроса. Разница в том, что в `predefined_query_handler`, запрос записывается в конфигурационный файл. Вы можете настроить `query_param_name` в `dynamic_query_handler`.

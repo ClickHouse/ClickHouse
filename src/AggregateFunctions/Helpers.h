@@ -55,7 +55,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 {
     WhichDataType which(argument_type);
 #define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<Data<TYPE>>(std::forward<TArgs>(args)...); /// NOLINT
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<Data<TYPE>>(std::forward<TArgs>(args)...);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
     if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Data<Int8>>(std::forward<TArgs>(args)...);
@@ -94,7 +94,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 {
     WhichDataType which(argument_type);
 #define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...); /// NOLINT
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
     if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Int8, Data<Int8>>(std::forward<TArgs>(args)...);
@@ -121,7 +121,7 @@ static IAggregateFunction * createWithBasicNumberOrDateOrDateTime(const IDataTyp
     WhichDataType which(argument_type);
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
-        return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...); /// NOLINT
+        return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...);
     FOR_BASIC_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 

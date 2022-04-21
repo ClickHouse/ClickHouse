@@ -1,6 +1,6 @@
 ---
-sidebar_position: 43
-sidebar_label: jdbc
+toc_priority: 43
+toc_title: jdbc
 ---
 
 # jdbc {#table-function-jdbc}

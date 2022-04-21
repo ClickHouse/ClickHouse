@@ -30,7 +30,7 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreePartCheckThread
 {
 public:
-    explicit ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_);
+    ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_);
     ~ReplicatedMergeTreePartCheckThread();
 
     /// Processing of the queue to be checked is done in the background thread, which you must first start.
@@ -42,12 +42,12 @@ public:
     {
         ReplicatedMergeTreePartCheckThread * parent;
 
-        explicit TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent_) : parent(parent_)
+        TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent_) : parent(parent_)
         {
             parent->stop();
         }
 
-        TemporarilyStop(TemporarilyStop && old) noexcept : parent(old.parent)
+        TemporarilyStop(TemporarilyStop && old) : parent(old.parent)
         {
             old.parent = nullptr;
         }

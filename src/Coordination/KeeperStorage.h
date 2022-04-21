@@ -32,38 +32,28 @@ public:
 
     struct Node
     {
+        String data;
         uint64_t acl_id = 0; /// 0 -- no ACL by default
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
+        ChildrenSet children{};
         uint64_t size_bytes; // save size to avoid calculate every time
 
-        Node() : size_bytes(sizeof(Node)) { }
-
+        Node()
+        {
+            size_bytes = sizeof(size_bytes);
+            size_bytes += data.size();
+            size_bytes += sizeof(acl_id);
+            size_bytes += sizeof(is_sequental);
+            size_bytes += sizeof(stat);
+            size_bytes += sizeof(seq_num);
+        }
         /// Object memory size
         uint64_t sizeInBytes() const
         {
             return size_bytes;
         }
-
-        void setData(String new_data);
-
-        const auto & getData() const noexcept
-        {
-            return data;
-        }
-
-        void addChild(StringRef child_path);
-
-        void removeChild(StringRef child_path);
-
-        const auto & getChildren() const noexcept
-        {
-            return children;
-        }
-    private:
-        String data;
-        ChildrenSet children{};
     };
 
     struct ResponseForSession
@@ -76,7 +66,6 @@ public:
     struct RequestForSession
     {
         int64_t session_id;
-        int64_t time;
         Coordination::ZooKeeperRequestPtr request;
     };
 
@@ -103,6 +92,7 @@ public:
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
 
+public:
     int64_t session_id_counter{1};
 
     SessionAndAuth session_and_auth;
@@ -114,7 +104,7 @@ public:
 
     /// Mapping session_id -> set of ephemeral nodes paths
     Ephemerals ephemerals;
-    /// Mapping session_id -> set of watched nodes paths
+    /// Mapping sessuib_id -> set of watched nodes paths
     SessionAndWatcher sessions_and_watchers;
     /// Expiration queue for session, allows to get dead sessions at some point of time
     SessionExpiryQueue session_expiry_queue;
@@ -142,6 +132,7 @@ public:
 
     const String superdigest;
 
+public:
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_);
 
     /// Allocate new session id with the specified timeouts
@@ -162,17 +153,16 @@ public:
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
-    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, std::optional<int64_t> new_last_zxid, bool check_acl = true);
+    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid, bool check_acl = true);
 
     void finalize();
 
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode(size_t up_to_version)
+    void enableSnapshotMode(size_t up_to_size)
     {
-        container.enableSnapshotMode(up_to_version);
-
+        container.enableSnapshotMode(up_to_size);
     }
 
     /// Turn off snapshot mode.
@@ -199,7 +189,7 @@ public:
     }
 
     /// Get all dead sessions
-    std::vector<int64_t> getDeadSessions() const
+    std::vector<int64_t> getDeadSessions()
     {
         return session_expiry_queue.getExpiredSessions();
     }

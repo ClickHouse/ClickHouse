@@ -924,12 +924,12 @@ void registerInputFormatAvro(FormatFactory & factory)
 
 void registerAvroSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("Avro", [](ReadBuffer & buf, const FormatSettings & settings)
+    factory.registerSchemaReader("Avro", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
     {
            return std::make_shared<AvroSchemaReader>(buf, false, settings);
     });
 
-    factory.registerSchemaReader("AvroConfluent", [](ReadBuffer & buf, const FormatSettings & settings)
+    factory.registerSchemaReader("AvroConfluent", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
     {
         return std::make_shared<AvroSchemaReader>(buf, true, settings);
     });

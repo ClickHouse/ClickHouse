@@ -14,7 +14,7 @@ protected:
     SerializationPtr nested_serialization;
 
 public:
-    explicit SerializationWrapper(const SerializationPtr & nested_serialization_) : nested_serialization(nested_serialization_) {}
+    SerializationWrapper(const SerializationPtr & nested_serialization_) : nested_serialization(nested_serialization_) {}
 
     const SerializationPtr & getNested() const  { return nested_serialization; }
 

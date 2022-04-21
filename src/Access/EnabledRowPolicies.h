@@ -44,7 +44,7 @@ public:
 
 private:
     friend class RowPolicyCache;
-    explicit EnabledRowPolicies(const Params & params_);
+    EnabledRowPolicies(const Params & params_);
 
     struct MixedFiltersKey
     {

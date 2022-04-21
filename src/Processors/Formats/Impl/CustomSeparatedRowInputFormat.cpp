@@ -289,16 +289,17 @@ void CustomSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 }
 
 CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
-    ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_)
+    ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_, ContextPtr context_)
     : FormatWithNamesAndTypesSchemaReader(
         buf,
-        format_setting_,
+        format_setting_.max_rows_to_read_for_schema_inference,
         with_names_,
         with_types_,
         &reader,
         getDefaultDataTypeForEscapingRule(format_setting_.custom.escaping_rule))
     , buf(in_)
     , reader(buf, ignore_spaces_, updateFormatSettings(format_setting_))
+    , context(context_)
 {
 }
 
@@ -314,7 +315,7 @@ DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypes()
         first_row = false;
 
     auto fields = reader.readRow();
-    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
+    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule(), context);
 }
 
 void registerInputFormatCustomSeparated(FormatFactory & factory)
@@ -342,9 +343,9 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
     {
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            factory.registerSchemaReader(format_name, [with_names, with_types, ignore_spaces](ReadBuffer & buf, const FormatSettings & settings)
+            factory.registerSchemaReader(format_name, [with_names, with_types, ignore_spaces](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
             {
-                return std::make_shared<CustomSeparatedSchemaReader>(buf, with_names, with_types, ignore_spaces, settings);
+                return std::make_shared<CustomSeparatedSchemaReader>(buf, with_names, with_types, ignore_spaces, settings, context);
             });
         };
 

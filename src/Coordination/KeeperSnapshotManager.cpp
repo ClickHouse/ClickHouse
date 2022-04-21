@@ -43,7 +43,7 @@ namespace
 
     void writeNode(const KeeperStorage::Node & node, SnapshotVersion version, WriteBuffer & out)
     {
-        writeBinary(node.getData(), out);
+        writeBinary(node.data, out);
 
         /// Serialize ACL
         writeBinary(node.acl_id, out);
@@ -71,9 +71,7 @@ namespace
 
     void readNode(KeeperStorage::Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
     {
-        String new_data;
-        readBinary(new_data, in);
-        node.setData(std::move(new_data));
+        readBinary(node.data, in);
 
         if (version >= SnapshotVersion::V1)
         {
@@ -196,7 +194,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         writeBinary(timeout, out);
 
         KeeperStorage::AuthIDs ids;
-        if (snapshot.session_and_auth.contains(session_id))
+        if (snapshot.session_and_auth.count(session_id))
             ids = snapshot.session_and_auth.at(session_id);
 
         writeBinary(ids.size(), out);
@@ -283,7 +281,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         if (itr.key != "/")
         {
             auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
+            storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.children.insert(getBaseName(path)); });
         }
     }
 
@@ -339,9 +337,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t 
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
 {
-    auto [size, ver] = storage->container.snapshotSizeWithVersion();
-    snapshot_container_size = size;
-    storage->enableSnapshotMode(ver);
+    snapshot_container_size = storage->container.snapshotSize();
+    storage->enableSnapshotMode(snapshot_container_size);
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
@@ -354,9 +351,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, const Sna
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
 {
-    auto [size, ver] = storage->container.snapshotSizeWithVersion();
-    snapshot_container_size = size;
-    storage->enableSnapshotMode(ver);
+    snapshot_container_size = storage->container.snapshotSize();
+    storage->enableSnapshotMode(snapshot_container_size);
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
@@ -530,33 +526,5 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     existing_snapshots.erase(itr);
 }
 
-std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
-{
-    auto up_to_log_idx = snapshot.snapshot_meta->get_last_log_idx();
-    auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
-    auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
-    std::string tmp_snapshot_path = std::filesystem::path{snapshots_path} / tmp_snapshot_file_name;
-    std::string new_snapshot_path = std::filesystem::path{snapshots_path} / snapshot_file_name;
-
-    auto writer = std::make_unique<WriteBufferFromFile>(tmp_snapshot_path, O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC| O_APPEND);
-    std::unique_ptr<WriteBuffer> compressed_writer;
-    if (compress_snapshots_zstd)
-        compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
-    else
-        compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
-
-    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer);
-    compressed_writer->finalize();
-    compressed_writer->sync();
-
-    std::error_code ec;
-    std::filesystem::rename(tmp_snapshot_path, new_snapshot_path, ec);
-    if (!ec)
-    {
-        existing_snapshots.emplace(up_to_log_idx, new_snapshot_path);
-        removeOutdatedSnapshotsIfNeeded();
-    }
-    return {new_snapshot_path, ec};
-}
 
 }

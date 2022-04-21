@@ -21,6 +21,6 @@ public:
 protected:
     explicit StorageSystemProjectionParts(const StorageID & table_id_);
     void processNextStorage(
-        ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) override;
+        MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) override;
 };
 }

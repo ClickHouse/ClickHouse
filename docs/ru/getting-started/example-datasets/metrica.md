@@ -1,6 +1,6 @@
 ---
-sidebar_position: 15
-sidebar_label: "Анонимизированные данные Яндекс.Метрики"
+toc_priority: 15
+toc_title: "Анонимизированные данные Яндекс.Метрики"
 ---
 
 # Анонимизированные данные Яндекс.Метрики {#anonimizirovannye-dannye-iandeks-metriki}

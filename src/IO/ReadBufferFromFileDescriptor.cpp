@@ -191,7 +191,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
             off_t res = ::lseek(fd, seek_pos, SEEK_SET);
             if (-1 == res)
-                throwFromErrnoWithPath(fmt::format("Cannot seek through file {} at offset {}", getFileName(), seek_pos), getFileName(),
+                throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
                     ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
             /// Also note that seeking past the file size is not allowed.

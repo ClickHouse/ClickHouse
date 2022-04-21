@@ -17,7 +17,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -31,10 +31,6 @@ public:
     {
         return virtuals;
     }
-
-    /// FIXME probably it should return false, but StorageValues is used in ExecutingInnerQueryFromViewTransform (whatever it is)
-    bool supportsTransactions() const override { return true; }
-
 private:
     Block res_block;
     NamesAndTypesList virtuals;

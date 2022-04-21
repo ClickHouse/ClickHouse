@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
 <graphite_rollup>
 	<pattern>
  		<regexp>\.sum$</regexp>
@@ -144,4 +144,4 @@
  		</retention>
  	</default>
 </graphite_rollup>
-</clickhouse>
+</yandex>

@@ -1,0 +1,8 @@
+Here are pre-generated files from jemalloc on Linux aarch64.
+You can obtain these files by running ./autogen.sh inside jemalloc source directory.
+
+Added #define GNU_SOURCE
+Added JEMALLOC_OVERRIDE___POSIX_MEMALIGN because why not.
+Removed JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF because it's non standard.
+Removed JEMALLOC_PURGE_MADVISE_FREE because it's available only from Linux 4.5.
+Added JEMALLOC_CONFIG_MALLOC_CONF substitution

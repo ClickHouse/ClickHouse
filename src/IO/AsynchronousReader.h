@@ -32,7 +32,7 @@ public:
 
     struct LocalFileDescriptor : public IFileDescriptor
     {
-        explicit LocalFileDescriptor(int fd_) : fd(fd_) {}
+        LocalFileDescriptor(int fd_) : fd(fd_) {}
         int fd;
     };
 

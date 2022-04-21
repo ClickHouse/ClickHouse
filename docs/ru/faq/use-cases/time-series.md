@@ -1,6 +1,7 @@
 ---
 title: Можно ли использовать ClickHouse как базу данных временных рядов?
-sidebar_position: 101
+toc_hidden: true
+toc_priority: 101
 ---
 
 # Можно ли использовать ClickHouse как базу данных временных рядов? {#can-i-use-clickhouse-as-a-time-series-database}

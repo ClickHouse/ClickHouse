@@ -7,7 +7,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB

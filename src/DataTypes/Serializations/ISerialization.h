@@ -125,9 +125,6 @@ public:
             SparseElements,
             SparseOffsets,
 
-            ObjectStructure,
-            ObjectElement,
-
             Regular,
         };
 
@@ -135,9 +132,6 @@ public:
 
         /// Index of tuple element, starting at 1 or name.
         String tuple_element_name;
-
-        /// Name of subcolumn of object column.
-        String object_key_name;
 
         /// Do we need to escape a dot in filenames for tuple elements.
         bool escape_tuple_delimiter = true;
@@ -151,7 +145,7 @@ public:
         /// Flag, that may help to traverse substream paths.
         mutable bool visited = false;
 
-        Substream(Type type_) : type(type_) {} /// NOLINT
+        Substream(Type type_) : type(type_) {}
 
         String toString() const;
     };

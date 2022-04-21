@@ -65,7 +65,7 @@ template <typename T, ReservoirSamplerOnEmpty::Enum OnEmpty = ReservoirSamplerOn
 class ReservoirSampler
 {
 public:
-    explicit ReservoirSampler(size_t sample_count_ = DEFAULT_SAMPLE_COUNT)
+    ReservoirSampler(size_t sample_count_ = DEFAULT_SAMPLE_COUNT)
         : sample_count(sample_count_)
     {
         rng.seed(123456);
@@ -111,7 +111,7 @@ public:
         sortIfNeeded();
 
         double index = level * (samples.size() - 1);
-        size_t int_index = static_cast<size_t>(index + 0.5); /// NOLINT
+        size_t int_index = static_cast<size_t>(index + 0.5);
         int_index = std::max(0LU, std::min(samples.size() - 1, int_index));
         return samples[int_index];
     }
@@ -190,7 +190,7 @@ public:
             }
             else
             {
-                for (double i = 0; i < sample_count; i += frequency) /// NOLINT
+                for (double i = 0; i < sample_count; i += frequency)
                     samples[i] = b.samples[i];
             }
         }

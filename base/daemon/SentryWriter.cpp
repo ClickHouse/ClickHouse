@@ -18,7 +18,7 @@
 #include "Common/config_version.h"
 #include <Common/config.h>
 
-#if USE_SENTRY && !defined(KEEPER_STANDALONE_BUILD)
+#if USE_SENTRY
 
 #    include <sentry.h>
 #    include <stdio.h>

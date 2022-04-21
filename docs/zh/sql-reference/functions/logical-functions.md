@@ -1,6 +1,6 @@
 ---
-sidebar_position: 37
-sidebar_label: 逻辑函数
+toc_priority: 37
+toc_title: 逻辑函数
 ---
 
 # 逻辑函数 {#luo-ji-han-shu}

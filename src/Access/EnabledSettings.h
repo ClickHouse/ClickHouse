@@ -38,7 +38,7 @@ public:
 
 private:
     friend class SettingsProfilesCache;
-    explicit EnabledSettings(const Params & params_);
+    EnabledSettings(const Params & params_);
     void setInfo(const std::shared_ptr<const SettingsProfilesInfo> & info_);
 
     const Params params;

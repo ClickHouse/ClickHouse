@@ -130,8 +130,8 @@ struct PerformanceStatistics
 /** This method dispatch to one of different implementations depending on performance statistics.
   */
 bool decompress(
-    const char * const source, /// NOLINT
-    char * const dest, /// NOLINT
+    const char * const source,
+    char * const dest,
     size_t source_size,
     size_t dest_size,
     PerformanceStatistics & statistics);
@@ -156,8 +156,8 @@ struct StreamStatistics
 };
 
 void statistics(
-    const char * const source, /// NOLINT
-    char * const dest, /// NOLINT
+    const char * const source,
+    char * const dest,
     size_t dest_size,
     StreamStatistics & stat);
 

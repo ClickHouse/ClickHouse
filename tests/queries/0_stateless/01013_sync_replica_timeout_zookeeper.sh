@@ -19,7 +19,7 @@ ${CLICKHOUSE_CLIENT} -n -q "
     INSERT INTO $R1 VALUES (1)
 "
 
-clickhouse_client_timeout 10s ${CLICKHOUSE_CLIENT} --receive_timeout 1 -n -q "
+timeout 10s ${CLICKHOUSE_CLIENT} -n -q "
     SET receive_timeout=1;
     SYSTEM SYNC REPLICA $R2
 " 2>&1 | grep -F -q "Code: 159. DB::Exception" && echo 'OK' || echo 'Failed!'

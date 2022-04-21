@@ -1,22 +1,16 @@
-#include <stack>
-
-#include <Common/JSONBuilder.h>
-
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <IO/WriteBuffer.h>
+#include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
-
-#include <IO/Operators.h>
-#include <IO/WriteBuffer.h>
-
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-
-#include <QueryPipeline/QueryPipelineBuilder.h>
-
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -28,8 +22,8 @@ namespace ErrorCodes
 
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
-QueryPlan::QueryPlan(QueryPlan &&) noexcept = default;
-QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
+QueryPlan::QueryPlan(QueryPlan &&) = default;
+QueryPlan & QueryPlan::operator=(QueryPlan &&) = default;
 
 void QueryPlan::checkInitialized() const
 {
@@ -394,7 +388,6 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
 {
     settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
-
     size_t current_offset = settings.offset;
     step.describePipeline(settings);
     if (current_offset == settings.offset)

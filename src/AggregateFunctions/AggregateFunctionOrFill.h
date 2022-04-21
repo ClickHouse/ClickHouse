@@ -108,7 +108,7 @@ public:
         place[size_of_data] = 1;
     }
 
-    void addBatch( /// NOLINT
+    void addBatch(
         size_t batch_size,
         AggregateDataPtr * places,
         size_t place_offset,
@@ -134,7 +134,7 @@ public:
         }
     }
 
-    void addBatchSinglePlace( /// NOLINT
+    void addBatchSinglePlace(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
     {
         if (if_argument_pos >= 0)
@@ -160,7 +160,7 @@ public:
         }
     }
 
-    void addBatchSinglePlaceNotNull( /// NOLINT
+    void addBatchSinglePlaceNotNull(
         size_t batch_size,
         AggregateDataPtr place,
         const IColumn ** columns,

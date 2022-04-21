@@ -23,7 +23,7 @@ void BlockIO::reset()
     /// TODO Do we need also reset callbacks? In which order?
 }
 
-BlockIO & BlockIO::operator= (BlockIO && rhs) noexcept
+BlockIO & BlockIO::operator= (BlockIO && rhs)
 {
     if (this == &rhs)
         return *this;

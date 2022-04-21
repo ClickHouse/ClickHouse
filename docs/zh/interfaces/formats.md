@@ -1,6 +1,6 @@
 ---
-sidebar_position: 21
-sidebar_label: 输入/输出格式
+toc_priority: 21
+toc_title: 输入/输出格式
 ---
 
 # 输入/输出格式 {#formats}
@@ -1153,7 +1153,7 @@ $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avr
 
 Clickhouse通过字段名称来对应架构的列名称。字段名称区分大小写。未使用的字段会被跳过。
 
-ClickHouse表列的数据类型可能与插入的Avro数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后通过 [Cast](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 将数据转换为相应的列类型。
+ClickHouse表列的数据类型可能与插入的Avro数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后通过 [Cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) 将数据转换为相应的列类型。
 
 ### 选择数据 {#selecting-data}
 
@@ -1240,8 +1240,7 @@ SELECT * FROM topic1_stream;
 | `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)          | `FLOAT`                    |
 | `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)          | `DOUBLE`                   |
 | `DATE32`                   | [Date](../sql-reference/data-types/date.md)              | `UINT16`                   |
-| `DATE64`                   | [DateTime](../sql-reference/data-types/datetime.md)      | `UINT32`                   |
-| `TIMESTAMP`                | [DateTime64](../sql-reference/data-types/datetime64.md) | `TIMESTAMP`                 |
+| `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md)      | `UINT32`                   |
 | `STRING`, `BINARY`         | [String](../sql-reference/data-types/string.md)          | `STRING`                   |
 | —                          | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                   |
 | `DECIMAL`                  | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                  |
@@ -1250,7 +1249,7 @@ ClickHouse支持对 `Decimal` 类型设置精度。 `INSERT` 查询将 Parquet `
 
 不支持的Parquet数据类型: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-ClickHouse表列的数据类型可能与插入的Parquet数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 为ClickHouse表列设置的数据类型的数据。
+ClickHouse表列的数据类型可能与插入的Parquet数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) 为ClickHouse表列设置的数据类型的数据。
 
 ### 插入和选择数据 {#inserting-and-selecting-data}
 
@@ -1296,8 +1295,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 | `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     | `FLOAT`                  |
 | `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     | `DOUBLE`                 |
 | `DATE32`                 | [Date](../sql-reference/data-types/date.md)         | `DATE32`                 |
-| `DATE64`                 | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                 |
-| `TIMESTAMP`                | [DateTime64](../sql-reference/data-types/datetime64.md) | `TIMESTAMP`        |
+| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`              |
 | `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     | `BINARY`                 |
 | `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
 | `-`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
@@ -1306,7 +1304,7 @@ ClickHouse支持的可配置精度的 `Decimal` 类型。 `INSERT` 查询将ORC�
 
 不支持的ORC数据类型: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-ClickHouse表列的数据类型不必匹配相应的ORC数据字段。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 将数据转换为ClickHouse表列的数据类型集。
+ClickHouse表列的数据类型不必匹配相应的ORC数据字段。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) 将数据转换为ClickHouse表列的数据类型集。
 
 ### 插入数据 {#inserting-data-1}
 

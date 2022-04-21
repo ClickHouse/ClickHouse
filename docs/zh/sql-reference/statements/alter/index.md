@@ -1,6 +1,6 @@
 ---
-sidebar_position: 35
-sidebar_label: ALTER
+toc_priority: 35
+toc_title: ALTER
 ---
 
 ## ALTER {#query_language_queries_alter}
@@ -32,7 +32,7 @@ sidebar_label: ALTER
 -   [ROW POLICY](../../../sql-reference/statements/alter/row-policy.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/alter/settings-profile.md)
 
-[ALTER TABLE ... MODIFY COMMENT](../alter/index.md) 语句添加、修改或删除表中的注释，无论之前是否设置过。
+[ALTER TABLE ... MODIFY COMMENT](../../../sql-reference/statements/alter/comment.md) 语句添加、修改或删除表中的注释，无论之前是否设置过。
 
 ## Mutations 突变 {#mutations}
 

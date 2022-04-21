@@ -1,5 +1,5 @@
 ---
-sidebar_label: 设置
+toc_folder_title: "\u8BBE\u7F6E"
 ---
 
 # 设置 {#settings}

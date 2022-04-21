@@ -1,6 +1,6 @@
 ---
-sidebar_position: 43
-sidebar_label: "Функции для работы с файлами"
+toc_priority: 43
+toc_title: "Функции для работы с файлами"
 ---
 
 # Функции для работы с файлами {#funktsii-dlia-raboty-s-failami}

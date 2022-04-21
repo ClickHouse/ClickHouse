@@ -1,6 +1,6 @@
 ---
-sidebar_position: 62
-sidebar_label: "Ограничения на изменение настроек"
+toc_priority: 62
+toc_title: "Ограничения на изменение настроек"
 ---
 
 # Ограничения на изменение настроек {#constraints-on-settings}

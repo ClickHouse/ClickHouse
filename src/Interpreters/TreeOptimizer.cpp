@@ -111,7 +111,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
         if (const auto * function = group_exprs[i]->as<ASTFunction>())
         {
             /// assert function is injective
-            if (possibly_injective_function_names.contains(function->name))
+            if (possibly_injective_function_names.count(function->name))
             {
                 /// do not handle semantic errors here
                 if (function->arguments->children.size() < 2)
@@ -233,7 +233,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 
     /// filling the result
     for (const auto & group_key : group_by_keys)
-        if (group_by_keys_data.key_names.contains(group_key->getColumnName()))
+        if (group_by_keys_data.key_names.count(group_key->getColumnName()))
             modified.push_back(group_key);
 
     /// modifying the input
@@ -349,7 +349,7 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
         {
             const String & name = identifier->shortName();
 
-            if (select.distinct || implicit_distinct.contains(name))
+            if (select.distinct || implicit_distinct.count(name))
             {
                 if (alias.empty())
                     names.insert(name);
@@ -392,7 +392,7 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
             return;
 
         String name = identifier->shortName();
-        if (!distinct_names.contains(name))
+        if (!distinct_names.count(name))
             return; /// Not a distinct column, keep DISTINCT for it.
 
         selected_names.insert(name);
@@ -445,7 +445,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         }
     }
 
-    auto sorting_key_columns = result.storage_snapshot ? result.storage_snapshot->metadata->getSortingKeyColumns() : Names{};
+    auto sorting_key_columns = result.metadata_snapshot ? result.metadata_snapshot->getSortingKeyColumns() : Names{};
 
     bool is_sorting_key_prefix = true;
     for (size_t i = 0; i < order_by->children.size(); ++i)
@@ -740,8 +740,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
-        optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
+    if (settings.optimize_functions_to_subcolumns && result.storage
+        && result.storage->supportsSubcolumns() && result.metadata_snapshot)
+        optimizeFunctionsToSubcolumns(query, result.metadata_snapshot);
 
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
@@ -751,14 +752,14 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.convert_query_to_cnf)
         converted_to_cnf = convertQueryToCNF(select_query);
 
-    if (converted_to_cnf && settings.optimize_using_constraints && result.storage_snapshot)
+    if (converted_to_cnf && settings.optimize_using_constraints)
     {
         optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
-            tables_with_columns, result.storage_snapshot->metadata, settings.optimize_append_index);
+            tables_with_columns, result.metadata_snapshot, settings.optimize_append_index);
 
         if (settings.optimize_substitute_columns)
             optimizeSubstituteColumn(select_query, result.aliases, result.source_columns_set,
-                tables_with_columns, result.storage_snapshot->metadata, result.storage);
+                tables_with_columns, result.metadata_snapshot, result.storage);
     }
 
     /// GROUP BY injective function elimination.

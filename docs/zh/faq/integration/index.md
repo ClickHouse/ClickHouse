@@ -1,8 +1,8 @@
 ---
 title: 关于集成ClickHouse和其他系统的问题
 toc_hidden_folder: true
-sidebar_position: 4
-sidebar_label: Integration
+toc_priority: 4
+toc_title: Integration
 ---
 
 # 关于集成ClickHouse和其他系统的问题 {#question-about-integrating-clickhouse-and-other-systems}
@@ -16,6 +16,6 @@ sidebar_label: Integration
 
 
 !!! info "没看到你要找的东西吗?"
-    查看[其他faq类别](../../faq/)或浏览左边栏中的主要文档文章。
+    查看[其他faq类别](../../faq/index.md)或浏览左边栏中的主要文档文章。
 
 {## [原文](https://clickhouse.com/docs/en/faq/integration/) ##}

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 45
-sidebar_label: "Мониторинг"
+toc_priority: 45
+toc_title: "Мониторинг"
 ---
 
 # Мониторинг {#monitoring}

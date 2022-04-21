@@ -25,7 +25,7 @@ struct OpenTelemetrySpan
 struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
 {
     OpenTelemetrySpanLogElement() = default;
-    explicit OpenTelemetrySpanLogElement(const OpenTelemetrySpan & span)
+    OpenTelemetrySpanLogElement(const OpenTelemetrySpan & span)
         : OpenTelemetrySpan(span) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
@@ -44,12 +44,7 @@ public:
 
 struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
 {
-    explicit OpenTelemetrySpanHolder(const std::string & _operation_name);
-    void addAttribute(const std::string& name, UInt64 value);
-    void addAttribute(const std::string& name, const std::string& value);
-    void addAttribute(const Exception & e);
-    void addAttribute(std::exception_ptr e);
-
+    OpenTelemetrySpanHolder(const std::string & _operation_name);
     ~OpenTelemetrySpanHolder();
 };
 

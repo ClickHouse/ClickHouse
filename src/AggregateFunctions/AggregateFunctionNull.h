@@ -77,7 +77,7 @@ protected:
 
     static bool getFlag(ConstAggregateDataPtr __restrict place) noexcept
     {
-        return result_is_nullable ? place[0] : true;
+        return result_is_nullable ? place[0] : 1;
     }
 
 public:
@@ -148,7 +148,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
-        bool flag = true;
+        bool flag = 1;
         if constexpr (serialize_flag)
             readBinary(flag, buf);
         if (flag)
@@ -306,7 +306,7 @@ public:
         }
     }
 
-    void addBatchSinglePlace( /// NOLINT
+    void addBatchSinglePlace(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);

@@ -26,7 +26,7 @@ public:
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_, /// NOLINT
+        const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_);
 
     std::string getKeyDescription() const { return key_description; }
@@ -160,7 +160,7 @@ private:
     template <typename T>
     static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value); /// NOLINT
+    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
     template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsByTwoKeyColumnsImpl(
@@ -177,7 +177,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const T value); /// NOLINT
+    void setAttributeValueImpl(Attribute & attribute, const T value);
 
     void setAttributeValue(Attribute & attribute, const Field & value);
 

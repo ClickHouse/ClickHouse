@@ -1,6 +1,8 @@
 ---
-sidebar_label: Special Data Types
-sidebar_position: 55
+toc_folder_title: Special Data Types
+toc_hidden: true
+toc_priority: 55
+toc_title: hidden
 ---
 
 # Special Data Types {#special-data-types}

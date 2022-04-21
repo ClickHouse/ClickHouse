@@ -1,7 +1,8 @@
 ---
 title: "Синтаксис запросов SELECT"
-sidebar_label: SELECT
-sidebar_position: 32
+toc_folder_title: SELECT
+toc_priority: 32
+toc_title: "Обзор"
 ---
 
 # Синтаксис запросов SELECT {#select-queries-syntax}
@@ -19,7 +20,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [WHERE expr]
 [GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
 [HAVING expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
@@ -273,7 +274,7 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию.
 
-Другие способы задания настроек описаны [здесь](../../../operations/settings/overview.md).
+Другие способы задания настроек описаны [здесь](../../../operations/settings/index.md).
 
 **Пример**
 

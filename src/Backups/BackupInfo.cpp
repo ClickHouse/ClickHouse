@@ -1,7 +1,6 @@
 #include <Backups/BackupInfo.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/formatAST.h>
@@ -24,11 +23,7 @@ String BackupInfo::toString() const
     auto list = std::make_shared<ASTExpressionList>();
     func->arguments = list;
     func->children.push_back(list);
-    list->children.reserve(args.size() + !id_arg.empty());
-
-    if (!id_arg.empty())
-        list->children.push_back(std::make_shared<ASTIdentifier>(id_arg));
-
+    list->children.reserve(args.size());
     for (const auto & arg : args)
         list->children.push_back(std::make_shared<ASTLiteral>(arg));
 
@@ -58,22 +53,9 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
         const auto * list = func->arguments->as<const ASTExpressionList>();
         if (!list)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected list, got {}", serializeAST(*func->arguments));
-
-        size_t index = 0;
-        if (!list->children.empty())
+        res.args.reserve(list->children.size());
+        for (const auto & elem : list->children)
         {
-            const auto * id = list->children[0]->as<const ASTIdentifier>();
-            if (id)
-            {
-                res.id_arg = id->name();
-                ++index;
-            }
-        }
-
-        res.args.reserve(list->children.size() - index);
-        for (; index < list->children.size(); ++index)
-        {
-            const auto & elem = list->children[index];
             const auto * lit = elem->as<const ASTLiteral>();
             if (!lit)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected literal, got {}", serializeAST(*elem));

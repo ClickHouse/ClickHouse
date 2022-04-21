@@ -17,7 +17,7 @@ private:
 public:
     String getName() const override { return "QueueBuffer"; }
 
-    explicit QueueBuffer(Block header)
+    QueueBuffer(Block header)
         : IAccumulatingTransform(header, header)
     {
     }

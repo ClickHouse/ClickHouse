@@ -14,7 +14,7 @@ class MergeTreeSequentialSource : public SourceWithProgress
 public:
     MergeTreeSequentialSource(
         const MergeTreeData & storage_,
-        const StorageSnapshotPtr & storage_snapshot_,
+        const StorageMetadataPtr & metadata_snapshot_,
         MergeTreeData::DataPartPtr data_part_,
         Names columns_to_read_,
         bool read_with_direct_io_,
@@ -35,7 +35,7 @@ protected:
 private:
 
     const MergeTreeData & storage;
-    StorageSnapshotPtr storage_snapshot;
+    StorageMetadataPtr metadata_snapshot;
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
@@ -58,6 +58,7 @@ private:
     /// current row at which we stop reading
     size_t current_row = 0;
 
+private:
     /// Closes readers and unlock part locks
     void finish();
 };

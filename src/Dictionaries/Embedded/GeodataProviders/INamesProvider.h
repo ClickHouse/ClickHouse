@@ -10,7 +10,7 @@ class ILanguageRegionsNamesReader
 public:
     virtual bool readNext(RegionNameEntry & entry) = 0;
 
-    virtual ~ILanguageRegionsNamesReader() = default;
+    virtual ~ILanguageRegionsNamesReader() {}
 };
 
 using ILanguageRegionsNamesReaderPtr = std::unique_ptr<ILanguageRegionsNamesReader>;
@@ -32,7 +32,7 @@ public:
 
     virtual std::string getSourceName() const = 0;
 
-    virtual ~ILanguageRegionsNamesDataSource() = default;
+    virtual ~ILanguageRegionsNamesDataSource() {}
 };
 
 using ILanguageRegionsNamesDataSourcePtr = std::unique_ptr<ILanguageRegionsNamesDataSource>;
@@ -45,7 +45,7 @@ public:
     /// Returns nullptr if the language data does not exist.
     virtual ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(const std::string & language) const = 0;
 
-    virtual ~IRegionsNamesDataProvider() = default;
+    virtual ~IRegionsNamesDataProvider() {}
 };
 
 using IRegionsNamesDataProviderPtr = std::unique_ptr<IRegionsNamesDataProvider>;

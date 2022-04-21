@@ -22,7 +22,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -31,7 +31,6 @@ public:
 
     bool hasEvenlyDistributedRead() const override { return true; }
     bool isSystemStorage() const override { return true; }
-    bool supportsTransactions() const override { return true; }
 
 private:
     bool multithreaded;

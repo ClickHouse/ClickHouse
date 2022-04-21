@@ -1,5 +1,3 @@
-SET convert_query_to_cnf = 0;
-
 DROP TABLE IF EXISTS t0;
 
 CREATE TABLE t0

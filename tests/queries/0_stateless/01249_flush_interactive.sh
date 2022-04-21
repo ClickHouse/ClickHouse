@@ -28,5 +28,3 @@ while true; do
     [[ $(test) == $(echo -ne "0\n1\n2\n3\n4\n---\n0\n1\n2\n3\n4\n---\n") ]] && break
     sleep 1
 done
-
-clickhouse_test_wait_queries 60

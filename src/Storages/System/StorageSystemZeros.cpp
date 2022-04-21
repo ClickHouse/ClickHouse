@@ -92,14 +92,14 @@ StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multith
 
 Pipe StorageSystemZeros::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo &,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    storage_snapshot->check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     bool use_multiple_streams = multithreaded;
 

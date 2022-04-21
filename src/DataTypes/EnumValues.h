@@ -29,7 +29,7 @@ private:
     void fillMaps();
 
 public:
-    explicit EnumValues(const Values & values_);
+    EnumValues(const Values & values_);
 
     const Values & getValues() const { return values; }
 

@@ -11,6 +11,7 @@
 
 #include "HadoopSnappyReadBuffer.h"
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -31,11 +32,11 @@ inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
 
 inline void HadoopSnappyDecoder::copyToBuffer(size_t * avail_in, const char ** next_in)
 {
-    assert(*avail_in + buffer_length <= sizeof(buffer));
+    assert(*avail_in <= sizeof(buffer));
 
-    memcpy(buffer + buffer_length, *next_in, *avail_in);
+    memcpy(buffer, *next_in, *avail_in);
 
-    buffer_length += *avail_in;
+    buffer_length = *avail_in;
     *next_in += *avail_in;
     *avail_in = 0;
 }
@@ -77,21 +78,14 @@ inline HadoopSnappyDecoder::Status HadoopSnappyDecoder::readLength(size_t * avai
 inline HadoopSnappyDecoder::Status HadoopSnappyDecoder::readBlockLength(size_t * avail_in, const char ** next_in)
 {
     if (block_length < 0)
-    {
         return readLength(avail_in, next_in, &block_length);
-    }
     return Status::OK;
 }
 
 inline HadoopSnappyDecoder::Status HadoopSnappyDecoder::readCompressedLength(size_t * avail_in, const char ** next_in)
 {
     if (compressed_length < 0)
-    {
-        auto status = readLength(avail_in, next_in, &compressed_length);
-        if (unlikely(compressed_length > 0 && static_cast<size_t>(compressed_length) > sizeof(buffer)))
-            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Too large snappy compressed block. buffer size: {}, compressed block size: {}", sizeof(buffer), compressed_length);
-        return status;
-    }
+        return readLength(avail_in, next_in, &compressed_length);
     return Status::OK;
 }
 
@@ -117,6 +111,7 @@ HadoopSnappyDecoder::readCompressedData(size_t * avail_in, const char ** next_in
     {
         compressed = const_cast<char *>(*next_in);
     }
+
     size_t uncompressed_length = *avail_out;
     auto status = snappy_uncompress(compressed, compressed_length, *next_out, &uncompressed_length);
     if (status != SNAPPY_OK)
@@ -159,9 +154,7 @@ HadoopSnappyDecoder::Status HadoopSnappyDecoder::readBlock(size_t * avail_in, co
             return status;
     }
     if (total_uncompressed_length != block_length)
-    {
         return Status::INVALID_INPUT;
-    }
     return Status::OK;
 }
 

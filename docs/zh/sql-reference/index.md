@@ -1,7 +1,8 @@
 ---
-sidebar_label: SQL参考
+toc_folder_title: SQL参考
 toc_hidden: true
-sidebar_position: 28
+toc_priority: 28
+toc_title: hidden
 ---
 
 # SQL参考 {#sql-reference}

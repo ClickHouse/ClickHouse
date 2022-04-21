@@ -14,7 +14,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/createReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Storages/Cache/IRemoteFileMetadata.h>
 #include <Storages/Cache/RemoteCacheController.h>
@@ -34,13 +34,10 @@ class LocalFileHolder
 {
 public:
     explicit LocalFileHolder(RemoteFileCacheType::MappedHolderPtr cache_controller);
-    explicit LocalFileHolder(RemoteFileCacheType::MappedHolderPtr cache_controller, std::unique_ptr<ReadBuffer> original_readbuffer_, BackgroundSchedulePool * thread_pool_);
-    ~LocalFileHolder();
+    ~LocalFileHolder() = default;
 
     RemoteFileCacheType::MappedHolderPtr file_cache_controller;
     std::unique_ptr<ReadBufferFromFileBase> file_buffer;
-    std::unique_ptr<ReadBuffer> original_readbuffer;
-    BackgroundSchedulePool * thread_pool;
 };
 
 class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBufferWithSize>
@@ -48,7 +45,7 @@ class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBufferWithSize>
 public:
     explicit RemoteReadBuffer(size_t buff_size);
     ~RemoteReadBuffer() override = default;
-    static std::unique_ptr<ReadBuffer> create(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> read_buffer, size_t buff_size, bool is_random_accessed = false);
+    static std::unique_ptr<ReadBuffer> create(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> read_buffer, size_t buff_size);
 
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;
@@ -73,8 +70,7 @@ public:
     inline bool isInitialized() const { return initialized; }
 
     std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>>
-    createReader(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer, bool is_random_accessed);
-
+    createReader(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer);
 
     void updateTotalSize(size_t size) { total_size += size; }
 
@@ -82,7 +78,7 @@ protected:
     ExternalDataSourceCache();
 
 private:
-    // Root directory of local cache for remote filesystem.
+    // root directory of local cache for remote filesystem
     String root_dir;
     size_t local_cache_bytes_read_before_flush = 0;
 

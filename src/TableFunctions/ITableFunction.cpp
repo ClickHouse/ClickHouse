@@ -14,16 +14,11 @@ namespace ProfileEvents
 namespace DB
 {
 
-AccessType ITableFunction::getSourceAccessType() const
-{
-    return StorageFactory::instance().getSourceAccessType(getStorageTypeName());
-}
-
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
                                    ColumnsDescription cached_columns, bool use_global_context) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
-    context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE | getSourceAccessType());
+    context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE | StorageFactory::instance().getSourceAccessType(getStorageTypeName()));
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 

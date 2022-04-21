@@ -9,11 +9,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <Common/JSONParsers/SimdJSONParser.h>
-#include <Common/JSONParsers/RapidJSONParser.h>
-#include <Common/JSONParsers/DummyJSONParser.h>
+#include <Functions/SimdJSONParser.h>
+#include <Functions/RapidJSONParser.h>
+#include <Functions/DummyJSONParser.h>
 
 #include <base/find_symbols.h>
 
@@ -119,7 +117,7 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
         return nullptr;
 
     if (field.isBool())
-        return DataTypeFactory::instance().get("Nullable(Bool)");
+        return makeNullable(std::make_shared<DataTypeUInt8>());
 
     if (field.isInt64() || field.isUInt64() || field.isDouble())
         return makeNullable(std::make_shared<DataTypeFloat64>());
@@ -160,37 +158,22 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
     {
         auto object = field.getObject();
         DataTypePtr value_type;
-        bool is_object = false;
         for (const auto key_value_pair : object)
         {
             auto type = getDataTypeFromJSONFieldImpl(key_value_pair.second);
             if (!type)
-                continue;
+                return nullptr;
 
-            if (isObject(type))
-            {
-                is_object = true;
-                break;
-            }
+            if (value_type && value_type->getName() != type->getName())
+                return nullptr;
 
-            if (!value_type)
-            {
-                value_type = type;
-            }
-            else if (!value_type->equals(*type))
-            {
-                is_object = true;
-                break;
-            }
+            value_type = type;
         }
 
-        if (is_object)
-            return std::make_shared<DataTypeObject>("json", false);
+        if (!value_type)
+            return nullptr;
 
-        if (value_type)
-            return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
-
-        return nullptr;
+        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
     }
 
     throw Exception{ErrorCodes::INCORRECT_DATA, "Unexpected JSON type"};
@@ -255,10 +238,6 @@ struct JSONEachRowFieldsExtractor
     std::vector<Element> extract(const Element & element)
     {
         /// {..., "<column_name>" : <value>, ...}
-
-        if (!element.isObject())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Root JSON value is not an object");
-
         auto object = element.getObject();
         std::vector<Element> fields;
         fields.reserve(object.size());
@@ -275,13 +254,13 @@ struct JSONEachRowFieldsExtractor
     std::vector<String> column_names;
 };
 
-NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings)
+std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings)
 {
     JSONEachRowFieldsExtractor extractor;
     auto data_types = determineColumnDataTypesFromJSONEachRowDataImpl<JSONEachRowFieldsExtractor, '{', '}'>(in, json_strings, extractor);
-    NamesAndTypesList result;
+    std::unordered_map<String, DataTypePtr> result;
     for (size_t i = 0; i != extractor.column_names.size(); ++i)
-        result.emplace_back(extractor.column_names[i], data_types[i]);
+        result[extractor.column_names[i]] = data_types[i];
     return result;
 }
 
@@ -291,9 +270,6 @@ struct JSONCompactEachRowFieldsExtractor
     std::vector<Element> extract(const Element & element)
     {
         /// [..., <value>, ...]
-        if (!element.isArray())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Root JSON value is not an array");
-
         auto array = element.getArray();
         std::vector<Element> fields;
         fields.reserve(array.size());

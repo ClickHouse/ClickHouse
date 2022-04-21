@@ -106,8 +106,6 @@ public:
 
     Names getRequiredColumns() { return required_columns; }
 
-    bool supportsTransactions() const override { return true; }
-
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -207,7 +205,6 @@ private:
 
     Poco::Logger * log;
     StorageMetadataPtr metadata_snapshot;
-    StorageSnapshotPtr storage_snapshot;
 
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
     SubqueriesForSets subquery_for_sets;

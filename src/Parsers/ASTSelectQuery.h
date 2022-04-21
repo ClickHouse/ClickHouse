@@ -32,8 +32,7 @@ public:
         LIMIT_BY,
         LIMIT_OFFSET,
         LIMIT_LENGTH,
-        SETTINGS,
-        INTERPOLATE
+        SETTINGS
     };
 
     static String expressionToString(Expression expr)
@@ -70,8 +69,6 @@ public:
                 return "LIMIT LENGTH";
             case Expression::SETTINGS:
                 return "SETTINGS";
-            case Expression::INTERPOLATE:
-                return "INTERPOLATE";
         }
         return "";
     }
@@ -101,7 +98,7 @@ public:
     const ASTPtr where()          const { return getExpression(Expression::WHERE); }
     const ASTPtr groupBy()        const { return getExpression(Expression::GROUP_BY); }
     const ASTPtr having()         const { return getExpression(Expression::HAVING); }
-    const ASTPtr window()         const { return getExpression(Expression::WINDOW); }
+    const ASTPtr window() const { return getExpression(Expression::WINDOW); }
     const ASTPtr orderBy()        const { return getExpression(Expression::ORDER_BY); }
     const ASTPtr limitByOffset()  const { return getExpression(Expression::LIMIT_BY_OFFSET); }
     const ASTPtr limitByLength()  const { return getExpression(Expression::LIMIT_BY_LENGTH); }
@@ -109,7 +106,6 @@ public:
     const ASTPtr limitOffset()    const { return getExpression(Expression::LIMIT_OFFSET); }
     const ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
     const ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
-    const ASTPtr interpolate()    const { return getExpression(Expression::INTERPOLATE); }
 
     bool hasFiltration() const { return where() || prewhere() || having(); }
 

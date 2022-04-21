@@ -182,6 +182,7 @@ struct RewriteTablesVisitorData
     }
 };
 
+template <size_t version = 1>
 bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *> & table_expressions)
 {
     if (!select.tables())
@@ -232,6 +233,8 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         return false;
 
     /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
+    if (num_using && version <= 1)
+        throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
     if (num_array_join)
         throw Exception("Multiple JOIN does not support mix with ARRAY JOINs", ErrorCodes::NOT_IMPLEMENTED);
     return true;
@@ -259,7 +262,7 @@ struct CollectColumnIdentifiersMatcher
         void addIdentifier(const ASTIdentifier & ident)
         {
             for (const auto & aliases : ignored)
-                if (aliases.contains(ident.name()))
+                if (aliases.count(ident.name()))
                     return;
             identifiers.push_back(const_cast<ASTIdentifier *>(&ident));
         }
@@ -324,7 +327,7 @@ struct CheckAliasDependencyVisitorData
 
     void visit(ASTIdentifier & ident, ASTPtr &)
     {
-        if (!dependency && aliases.contains(ident.name()))
+        if (!dependency && aliases.count(ident.name()))
             dependency = &ident;
     }
 };
@@ -377,11 +380,7 @@ private:
     static void visit(ASTSelectQuery & select, ASTPtr &, Data & data)
     {
         if (!data.done)
-        {
-            if (data.expression_list->children.empty())
-                data.expression_list->children.emplace_back(std::make_shared<ASTAsterisk>());
             select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(data.expression_list));
-        }
         data.done = true;
     }
 };
@@ -470,7 +469,7 @@ void restoreName(ASTIdentifier & ident, const String & original_name, NameSet & 
     if (original_name.empty())
         return;
 
-    if (!restored_names.contains(original_name))
+    if (!restored_names.count(original_name))
     {
         ident.setAlias(original_name);
         restored_names.emplace(original_name);
@@ -502,7 +501,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 
     for (ASTIdentifier * ident : identifiers)
     {
-        bool got_alias = aliases.contains(ident->name());
+        bool got_alias = aliases.count(ident->name());
         bool allow_ambiguous = got_alias; /// allow ambiguous column overridden by an alias
 
         if (auto table_pos = IdentifierSemantic::chooseTableColumnMatch(*ident, tables, allow_ambiguous))
@@ -520,13 +519,13 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 }
                 String short_name = ident->shortName();
                 String original_long_name;
-                if (public_identifiers.contains(ident))
+                if (public_identifiers.count(ident))
                     original_long_name = ident->name();
 
                 size_t count = countTablesWithColumn(tables, short_name);
 
                 /// isValidIdentifierBegin retuired to be consistent with TableJoin::deduplicateAndQualifyColumnNames
-                if (count > 1 || aliases.contains(short_name) || !isValidIdentifierBegin(short_name.at(0)))
+                if (count > 1 || aliases.count(short_name) || !isValidIdentifierBegin(short_name.at(0)))
                 {
                     const auto & table = tables[*table_pos];
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
@@ -577,7 +576,7 @@ std::shared_ptr<ASTExpressionList> subqueryExpressionList(
     needed_columns[table_pos].fillExpressionList(*expression_list);
 
     for (const auto & expr : alias_pushdown[table_pos])
-        expression_list->children.emplace_back(expr);
+        expression_list->children.emplace_back(std::move(expr));
 
     return expression_list;
 }
@@ -606,7 +605,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data & data)
 {
     std::vector<const ASTTableExpression *> table_expressions;
-    if (!needRewrite(select, table_expressions))
+    if (!needRewrite<2>(select, table_expressions))
         return;
 
     auto & src_tables = select.tables()->children;
@@ -654,7 +653,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
                     for (auto * ident : on_identifiers)
                     {
                         auto it = data.aliases.find(ident->name());
-                        if (!on_aliases.contains(ident->name()) && it != data.aliases.end())
+                        if (!on_aliases.count(ident->name()) && it != data.aliases.end())
                         {
                             auto alias_expression = it->second;
                             alias_pushdown[table_pos].push_back(alias_expression);
@@ -684,7 +683,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
 
     /// Check same name in aliases, USING and ON sections. Cannot push down alias to ON through USING cause of name masquerading.
     for (auto * ident : using_identifiers)
-        if (on_aliases.contains(ident->name()))
+        if (on_aliases.count(ident->name()))
             throw Exception("Cannot rewrite JOINs. Alias '" + ident->name() + "' appears both in ON and USING", ErrorCodes::NOT_IMPLEMENTED);
     using_identifiers.clear();
 

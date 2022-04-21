@@ -9,7 +9,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
-#include <Interpreters/MergeTreeTransaction.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/queryToString.h>
@@ -142,18 +141,6 @@ namespace
 
 /// Settings. Different for each explain type.
 
-struct QueryASTSettings
-{
-    bool graph = false;
-
-    constexpr static char name[] = "AST";
-
-    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
-    {
-        {"graph", graph},
-    };
-};
-
 struct QueryPlanSettings
 {
     QueryPlan::ExplainPlanOptions query_plan_options;
@@ -269,18 +256,14 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
-    SelectQueryOptions options;
-    options.setExplain();
-
     switch (ast.getKind())
     {
         case ASTExplainQuery::ParsedAST:
         {
-            auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
-            if (settings.graph)
-                dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
-            else
-                dumpAST(*ast.getExplainedQuery(), buf);
+            if (ast.getSettings())
+                throw Exception("Settings are not supported for EXPLAIN AST query.", ErrorCodes::UNKNOWN_SETTING);
+
+            dumpAST(*ast.getExplainedQuery(), buf);
             break;
         }
         case ASTExplainQuery::AnalyzedSyntax:
@@ -302,7 +285,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
 
-            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
+            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
             interpreter.buildQueryPlan(plan);
 
             if (settings.optimize)
@@ -337,7 +320,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
                 QueryPlan plan;
 
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
                 interpreter.buildQueryPlan(plan);
                 auto pipeline = plan.buildQueryPipeline(
                     QueryPlanOptimizationSettings::fromContext(getContext()),
@@ -402,23 +385,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
             override_analyzer.analyze(metadata_snapshot, override_info);
             override_info.appendTo(buf);
-            break;
-        }
-        case ASTExplainQuery::CurrentTransaction:
-        {
-            if (ast.getSettings())
-                throw Exception("Settings are not supported for EXPLAIN CURRENT TRANSACTION query.", ErrorCodes::UNKNOWN_SETTING);
-
-            if (auto txn = getContext()->getCurrentTransaction())
-            {
-                String dump = txn->dumpDescription();
-                buf.write(dump.data(), dump.size());
-            }
-            else
-            {
-                writeCString("<no current transaction>", buf);
-            }
-
             break;
         }
     }

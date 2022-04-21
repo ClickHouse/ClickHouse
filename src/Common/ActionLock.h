@@ -19,8 +19,8 @@ public:
 
     explicit ActionLock(const ActionBlocker & blocker);
 
-    ActionLock(ActionLock && other) noexcept;
-    ActionLock & operator=(ActionLock && other) noexcept;
+    ActionLock(ActionLock && other);
+    ActionLock & operator=(ActionLock && other);
 
     ActionLock(const ActionLock & other) = delete;
     ActionLock & operator=(const ActionLock & other) = delete;

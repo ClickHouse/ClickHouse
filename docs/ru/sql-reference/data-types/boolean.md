@@ -1,6 +1,6 @@
 ---
-sidebar_position: 43
-sidebar_label: "Булевы значения"
+toc_priority: 43
+toc_title: "Булевы значения"
 ---
 
 # Булевы значения {#bulevy-znacheniia}

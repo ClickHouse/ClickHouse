@@ -187,7 +187,7 @@ private:
     DataTypes dictionary_attributes_types;
 };
 
-static inline void insertDefaultValuesIntoColumns( /// NOLINT
+static inline void insertDefaultValuesIntoColumns(
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
     size_t row_index)
@@ -206,7 +206,7 @@ static inline void insertDefaultValuesIntoColumns( /// NOLINT
 
 /// Deserialize column value and insert it in columns.
 /// Skip unnecessary columns that were not requested from deserialization.
-static inline void deserializeAndInsertIntoColumns( /// NOLINT
+static inline void deserializeAndInsertIntoColumns(
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
     const char * place_for_serialized_columns)

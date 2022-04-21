@@ -16,7 +16,7 @@ class ReadBuffer;
 class ProtobufReader
 {
 public:
-    explicit ProtobufReader(ReadBuffer & in_);
+    ProtobufReader(ReadBuffer & in_);
 
     void startMessage(bool with_length_delimiter_);
     void endMessage(bool ignore_errors);

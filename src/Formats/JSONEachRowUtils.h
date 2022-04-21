@@ -1,7 +1,5 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
@@ -20,9 +18,9 @@ std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in
 DataTypePtr getDataTypeFromJSONField(const String & field);
 
 /// Read row in JSONEachRow format and try to determine type for each field.
-/// Return list of names and types.
+/// Return map {column_name : type}.
 /// If cannot determine the type of some field, return nullptr for it.
-NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings);
+std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings);
 
 /// Read row in JSONCompactEachRow format and try to determine type for each field.
 /// If cannot determine the type of some field, return nullptr for it.

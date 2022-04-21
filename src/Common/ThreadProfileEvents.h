@@ -177,7 +177,7 @@ class TasksStatsCounters
 {
 public:
     static bool checkIfAvailable();
-    static std::unique_ptr<TasksStatsCounters> create(UInt64 tid);
+    static std::unique_ptr<TasksStatsCounters> create(const UInt64 tid);
 
     void reset();
     void updateCounters(ProfileEvents::Counters & profile_events);
@@ -193,7 +193,8 @@ private:
         Netlink
     };
 
-    explicit TasksStatsCounters(UInt64 tid, MetricsProvider provider);
+private:
+    explicit TasksStatsCounters(const UInt64 tid, const MetricsProvider provider);
 
     static MetricsProvider findBestAvailableProvider();
     static void incrementProfileEvents(const ::taskstats & prev, const ::taskstats & curr, ProfileEvents::Counters & profile_events);

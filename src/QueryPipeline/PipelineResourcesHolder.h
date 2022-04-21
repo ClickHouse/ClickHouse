@@ -16,10 +16,10 @@ class Context;
 struct PipelineResourcesHolder
 {
     PipelineResourcesHolder();
-    PipelineResourcesHolder(PipelineResourcesHolder &&) noexcept;
+    PipelineResourcesHolder(PipelineResourcesHolder &&);
     ~PipelineResourcesHolder();
     /// Custom mode assignment does not destroy data from lhs. It appends data from rhs to lhs.
-    PipelineResourcesHolder& operator=(PipelineResourcesHolder &&) noexcept;
+    PipelineResourcesHolder& operator=(PipelineResourcesHolder &&);
 
     /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
     /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,

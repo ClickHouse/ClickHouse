@@ -54,12 +54,13 @@ private:
         Mean mean;
         Weight weight;
 
-        WeightedValue operator+(const WeightedValue & other) const
+        WeightedValue operator+ (const WeightedValue & other)
         {
             return {mean + other.weight * (other.mean - mean) / (other.weight + weight), other.weight + weight};
         }
     };
 
+private:
     // quantity of stored weighted-values
     UInt32 size;
 
@@ -70,6 +71,7 @@ private:
     // Weighted values representation of histogram.
     WeightedValue points[0];
 
+private:
     void sort()
     {
         ::sort(points, points + size,
@@ -85,18 +87,18 @@ private:
         size_t size = 0;
         T * data_ptr;
 
-        explicit PriorityQueueStorage(T * value)
+        PriorityQueueStorage(T * value)
             : data_ptr(value)
         {
         }
 
-        void push_back(T val) /// NOLINT
+        void push_back(T val)
         {
             data_ptr[size] = std::move(val);
             ++size;
         }
 
-        void pop_back() { --size; } /// NOLINT
+        void pop_back() { --size; }
         T * begin() { return data_ptr; }
         T * end() const { return data_ptr + size; }
         bool empty() const { return size == 0; }

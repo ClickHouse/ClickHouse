@@ -6,7 +6,6 @@ import json
 import os
 import sys
 import time
-from shutil import rmtree
 from typing import List, Optional, Tuple
 
 from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
@@ -21,8 +20,6 @@ from ccache_utils import get_ccache_if_not_exists, upload_ccache
 from ci_config import CI_CONFIG, BuildConfig
 from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
-
-IMAGE_NAME = "clickhouse/binary-builder"
 
 
 def get_build_config(build_check_name: str, build_name: str) -> BuildConfig:
@@ -55,7 +52,7 @@ def get_packager_cmd(
     build_version: str,
     image_version: str,
     ccache_path: str,
-    official: bool,
+    pr_info: PRInfo,
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
@@ -65,30 +62,35 @@ def get_packager_cmd(
     )
 
     if build_config["build_type"]:
-        cmd += f" --build-type={build_config['build_type']}"
+        cmd += " --build-type={}".format(build_config["build_type"])
     if build_config["sanitizer"]:
-        cmd += f" --sanitizer={build_config['sanitizer']}"
+        cmd += " --sanitizer={}".format(build_config["sanitizer"])
     if build_config["splitted"] == "splitted":
         cmd += " --split-binary"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
     cmd += " --cache=ccache"
-    cmd += f" --ccache_dir={ccache_path}"
+    cmd += " --ccache_dir={}".format(ccache_path)
 
-    if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
-        cmd += " --additional-pkgs"
+    if "alien_pkgs" in build_config and build_config["alien_pkgs"]:
+        if pr_info.number == 0 or "release" in pr_info.labels:
+            cmd += " --alien-pkgs rpm tgz"
 
-    cmd += f" --docker-image-version={image_version}"
-    cmd += f" --version={build_version}"
+    cmd += " --docker-image-version={}".format(image_version)
+    cmd += " --version={}".format(build_version)
 
     if _can_export_binaries(build_config):
         cmd += " --with-binaries=tests"
 
-    if official:
-        cmd += " --official"
-
     return cmd
+
+
+def get_image_name(build_config: BuildConfig) -> str:
+    if build_config["package_type"] != "deb":
+        return "clickhouse/binary-builder"
+    else:
+        return "clickhouse/deb-builder"
 
 
 def build_clickhouse(
@@ -137,7 +139,7 @@ def create_json_artifact(
     success: bool,
 ):
     subprocess.check_call(
-        f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
+        f"echo 'BUILD_NAME=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
     )
 
     result = {
@@ -150,9 +152,16 @@ def create_json_artifact(
 
     json_name = "build_urls_" + build_name + ".json"
 
-    print(f"Dump json report {result} to {json_name} with env build_urls_{build_name}")
+    print(
+        "Dump json report",
+        result,
+        "to",
+        json_name,
+        "with env",
+        "build_urls_{build_name}",
+    )
 
-    with open(os.path.join(temp_path, json_name), "w", encoding="utf-8") as build_links:
+    with open(os.path.join(temp_path, json_name), "w") as build_links:
         json.dump(result, build_links)
 
 
@@ -231,7 +240,6 @@ def main():
                     "https://s3.amazonaws.com/clickhouse-builds/"
                     + url.replace("+", "%2B").replace(" ", "%20")
                 )
-        success = len(build_urls) > 0
         create_json_artifact(
             TEMP_PATH,
             build_name,
@@ -239,26 +247,21 @@ def main():
             build_urls,
             build_config,
             0,
-            success,
+            len(build_urls) > 0,
         )
-        # Fail build job if not successeded
-        if not success:
-            sys.exit(1)
-        else:
-            sys.exit(0)
+        return
 
-    docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
+    image_name = get_image_name(build_config)
+    docker_image = get_image_with_version(IMAGES_PATH, image_name)
     image_version = docker_image.version
 
     logging.info("Got version from repo %s", version.string)
 
-    official_flag = pr_info.number == 0
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         version_type = "stable"
-        official_flag = True
 
-    update_version_local(version, version_type)
+    update_version_local(REPO_COPY, version, version_type)
 
     logging.info("Updated local files with version")
 
@@ -271,12 +274,7 @@ def main():
     ccache_path = os.path.join(CACHES_PATH, build_name + "_ccache")
 
     logging.info("Will try to fetch cache for our build")
-    try:
-        get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
-    except Exception as e:
-        # In case there are issues with ccache, remove the path and do not fail a build
-        logging.info("Failed to get ccache, building without it. Error: %s", e)
-        rmtree(ccache_path, ignore_errors=True)
+    get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
 
     if not os.path.exists(ccache_path):
         logging.info("cache was not fetched, will create empty dir")
@@ -295,9 +293,8 @@ def main():
         version.string,
         image_version,
         ccache_path,
-        official_flag,
+        pr_info,
     )
-
     logging.info("Going to run packager with %s", packager_cmd)
 
     build_clickhouse_log = os.path.join(TEMP_PATH, "build_log")
@@ -336,7 +333,7 @@ def main():
 
     print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
 
-    print(f"::notice ::Log URL: {log_url}")
+    print("::notice ::Log URL: {}".format(log_url))
 
     create_json_artifact(
         TEMP_PATH, build_name, log_url, build_urls, build_config, elapsed, success

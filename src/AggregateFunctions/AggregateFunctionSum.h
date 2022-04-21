@@ -97,7 +97,7 @@ struct AggregateFunctionSumData
 
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
-    addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
+    addManyConditional_internal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
     {
         const auto * end = ptr + count;
 
@@ -124,8 +124,7 @@ struct AggregateFunctionSumData
             /// For floating point we use a similar trick as above, except that now we  reinterpret the floating point number as an unsigned
             /// integer of the same size and use a mask instead (0 to discard, 0xFF..FF to keep)
             static_assert(sizeof(Value) == 4 || sizeof(Value) == 8);
-            using equivalent_integer = typename std::conditional_t<sizeof(Value) == 4, UInt32, UInt64>;
-
+            typedef typename std::conditional<sizeof(Value) == 4, UInt32, UInt64>::type equivalent_integer;
             constexpr size_t unroll_count = 128 / sizeof(T);
             T partial_sums[unroll_count]{};
 
@@ -164,13 +163,13 @@ struct AggregateFunctionSumData
     template <typename Value>
     void ALWAYS_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
     {
-        return addManyConditionalInternal<Value, true>(ptr, null_map, count);
+        return addManyConditional_internal<Value, true>(ptr, null_map, count);
     }
 
     template <typename Value>
     void ALWAYS_INLINE addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict cond_map, size_t count)
     {
-        return addManyConditionalInternal<Value, false>(ptr, cond_map, count);
+        return addManyConditional_internal<Value, false>(ptr, cond_map, count);
     }
 
     void NO_SANITIZE_UNDEFINED merge(const AggregateFunctionSumData & rhs)
@@ -249,7 +248,7 @@ struct AggregateFunctionSumKahanData
     }
 
     template <typename Value, bool add_if_zero>
-    void NO_INLINE addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
+    void NO_INLINE addManyConditional_internal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
     {
         constexpr size_t unroll_count = 4;
         T partial_sums[unroll_count]{};
@@ -282,13 +281,13 @@ struct AggregateFunctionSumKahanData
     template <typename Value>
     void ALWAYS_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
     {
-        return addManyConditionalInternal<Value, true>(ptr, null_map, count);
+        return addManyConditional_internal<Value, true>(ptr, null_map, count);
     }
 
     template <typename Value>
     void ALWAYS_INLINE addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict cond_map, size_t count)
     {
-        return addManyConditionalInternal<Value, false>(ptr, cond_map, count);
+        return addManyConditional_internal<Value, false>(ptr, cond_map, count);
     }
 
     void ALWAYS_INLINE mergeImpl(T & to_sum, T & to_compensation, T from_sum, T from_compensation)
@@ -352,7 +351,7 @@ public:
         __builtin_unreachable();
     }
 
-    explicit AggregateFunctionSum(const DataTypes & argument_types_)
+    AggregateFunctionSum(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {})
         , scale(0)
     {}

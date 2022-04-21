@@ -39,7 +39,7 @@ public:
     /** Initialize LRUCache with max_size and max_elements_size.
       * max_elements_size == 0 means no elements size restrictions.
       */
-    explicit LRUCache(size_t max_size_, size_t max_elements_size_ = 0)
+    LRUCache(size_t max_size_, size_t max_elements_size_ = 0)
         : max_size(std::max(static_cast<size_t>(1), max_size_))
         , max_elements_size(max_elements_size_)
         {}
@@ -174,7 +174,7 @@ public:
         misses = 0;
     }
 
-    virtual ~LRUCache() = default;
+    virtual ~LRUCache() {}
 
 protected:
     using LRUQueue = std::list<Key>;

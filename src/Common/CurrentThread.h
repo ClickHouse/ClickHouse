@@ -91,7 +91,6 @@ public:
     struct QueryScope
     {
         explicit QueryScope(ContextMutablePtr query_context);
-        explicit QueryScope(ContextPtr query_context);
         ~QueryScope();
 
         void logPeakMemoryUsage();

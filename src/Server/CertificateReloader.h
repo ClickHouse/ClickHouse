@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_SSL
 
@@ -72,7 +74,7 @@ private:
     struct Data
     {
         Poco::Crypto::X509Certificate cert;
-        Poco::Crypto::EVPPKey key;
+        Poco::Crypto::RSAKey key;
 
         Data(std::string cert_path, std::string key_path);
     };

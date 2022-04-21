@@ -2,7 +2,6 @@
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <re2/re2.h>
-#include <filesystem>
 
 #if USE_HDFS
 #include <Common/ShellCommand.h>
@@ -25,17 +24,15 @@ namespace ErrorCodes
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
 const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
 
-std::once_flag init_libhdfs3_conf_flag;
-
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
-    const String & prefix, bool isUser)
+    const String & config_path, bool isUser)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
 
-    config.keys(prefix, keys);
+    config.keys(config_path, keys);
     for (const auto & key : keys)
     {
-        const String key_path = prefix + "." + key;
+        const String key_path = config_path + "." + key;
 
         String key_name;
         if (key == "hadoop_kerberos_keytab")
@@ -125,22 +122,11 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
     // Shall set env LIBHDFS3_CONF *before* HDFSBuilderWrapper construction.
-    std::call_once(init_libhdfs3_conf_flag, [&config]()
+    const String & libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
+    if (!libhdfs3_conf.empty())
     {
-        String libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
-        if (!libhdfs3_conf.empty())
-        {
-            if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
-            {
-                const String config_path = config.getString("config-file", "config.xml");
-                const auto config_dir = std::filesystem::path{config_path}.remove_filename();
-                if (std::filesystem::exists(config_dir / libhdfs3_conf))
-                    libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
-            }
-            setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
-        }
-    });
-
+        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
+    }
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
         throw Exception("Unable to create builder to connect to HDFS: " +

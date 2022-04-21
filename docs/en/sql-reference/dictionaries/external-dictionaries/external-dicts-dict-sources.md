@@ -1,9 +1,9 @@
 ---
-sidebar_position: 43
-sidebar_label: Sources of External Dictionaries
+toc_priority: 43
+toc_title: Sources of External Dictionaries
 ---
 
-# Sources of External Dictionaries 
+# Sources of External Dictionaries {#dicts-external-dicts-dict-sources}
 
 An external dictionary can be connected from many different sources.
 
@@ -220,9 +220,8 @@ When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remot
 
 ### Known Vulnerability of the ODBC Dictionary Functionality {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
-:::note    
-When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
-:::
+!!! attention "Attention"
+    When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
 
 **Example of insecure use**
 
@@ -472,13 +471,12 @@ Setting fields:
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 -   `query` – The custom query. Optional parameter.
 
-:::note    
-The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
-:::
+!!! info "Note"
+    The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
 
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
 
-If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../../faq/integration/oracle-odbc.md) item.
+If you have a problems with encodings when using Oracle, see the corresponding [F.A.Q.](../../../faq/integration/oracle-odbc.md) item.
 
 ### Mysql {#dicts-external_dicts_dict_sources-mysql}
 
@@ -551,9 +549,8 @@ Setting fields:
 
 -   `query` – The custom query. Optional parameter.
 
-:::note    
-The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-:::
+!!! info "Note"
+    The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
@@ -642,9 +639,8 @@ Setting fields:
 -   `secure` - Use ssl for connection.
 -   `query` – The custom query. Optional parameter.
 
-:::note    
-The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-:::
+!!! info "Note"
+    The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 
 ### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
 
@@ -756,9 +752,8 @@ Setting fields:
 -   `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
 -   `query` – The custom query. Optional parameter.
 
-:::note    
-The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
-:::
+!!! info "Note"
+    The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
 
 ### PostgreSQL {#dicts-external_dicts_dict_sources-postgresql}
 
@@ -813,6 +808,5 @@ Setting fields:
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 -   `query` – The custom query. Optional parameter.
 
-:::note    
-The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-:::
+!!! info "Note"
+    The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.

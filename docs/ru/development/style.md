@@ -1,6 +1,6 @@
 ---
-sidebar_position: 69
-sidebar_label: "Как писать код на C++"
+toc_priority: 69
+toc_title: "Как писать код на C++"
 ---
 
 

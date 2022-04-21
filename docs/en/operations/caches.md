@@ -1,6 +1,6 @@
 ---
-sidebar_position: 65
-sidebar_label: Caches
+toc_priority: 65
+toc_title: Caches
 ---
 
 # Cache Types {#cache-types}

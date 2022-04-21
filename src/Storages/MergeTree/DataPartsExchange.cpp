@@ -13,7 +13,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/createReadBufferFromFileBase.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
@@ -304,7 +304,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         writePODBinary(hashing_out.getHash(), out);
 
-        if (!file_names_without_checksums.contains(file_name))
+        if (!file_names_without_checksums.count(file_name))
             data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
     }
 
@@ -573,7 +573,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
     MergeTreeData::MutableDataPartPtr new_data_part =
         std::make_shared<MergeTreeDataPartInMemory>(data, part_name, volume);
-    new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
 
     for (auto i = 0ul; i < projections; ++i)
     {
@@ -602,8 +601,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             metadata_snapshot->projections.get(projection_name).metadata,
             block.getNamesAndTypesList(),
             {},
-            CompressionCodecFactory::instance().get("NONE", {}),
-            NO_TRANSACTION_PTR);
+            CompressionCodecFactory::instance().get("NONE", {}));
 
         part_out.write(block);
         part_out.finalizePart(new_projection_part, false);
@@ -627,7 +625,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
     MergedBlockOutputStream part_out(
         new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {},
-        CompressionCodecFactory::instance().get("NONE", {}), NO_TRANSACTION_PTR);
+        CompressionCodecFactory::instance().get("NONE", {}));
 
     part_out.write(block);
     part_out.finalizePart(new_data_part, false);
@@ -755,7 +753,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     assertEOF(in);
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
-    new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
@@ -845,7 +842,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     assertEOF(in);
 
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
-    new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);

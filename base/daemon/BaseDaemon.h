@@ -76,10 +76,10 @@ public:
     /// return none if daemon doesn't exist, reference to the daemon otherwise
     static std::optional<std::reference_wrapper<BaseDaemon>> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
 
-    /// Graphite metric name has components separated by dots.
-    /// We used to have the following format: root_path.hostname_clickhouse_com.key
-    /// root_path - one_min by default
-    /// key - something that makes sense. Examples: "meminfo.cached" or "meminfo.free", "meminfo.total".
+    /// В Graphite компоненты пути(папки) разделяются точкой.
+    /// У нас принят путь формата root_path.hostname_yandex_ru.key
+    /// root_path по умолчанию one_min
+    /// key - лучше группировать по смыслу. Например "meminfo.cached" или "meminfo.free", "meminfo.total"
     template <class T>
     void writeToGraphite(const std::string & key, const T & value, const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME, time_t timestamp = 0, const std::string & custom_root_path = "")
     {

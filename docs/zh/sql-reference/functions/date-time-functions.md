@@ -212,13 +212,13 @@ SELECT toStartOfSecond(dt64);
 
 ``` sql
 WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
-SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
+SELECT toStartOfSecond(dt64, 'Europe/Moscow');
 ```
 
 结果:
 
 ``` text
-┌─toStartOfSecond(dt64, 'Asia/Istanbul')─┐
+┌─toStartOfSecond(dt64, 'Europe/Moscow')─┐
 │                2020-01-01 13:20:30.000 │
 └────────────────────────────────────────┘
 ```
@@ -414,13 +414,13 @@ SELECT now(), date_trunc('hour', now());
 指定时区查询:
 
 ```sql
-SELECT now(), date_trunc('hour', now(), 'Asia/Istanbul');
+SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
 ```
 
 结果:
 
 ```text
-┌───────────────now()─┬─date_trunc('hour', now(), 'Asia/Istanbul')─┐
+┌───────────────now()─┬─date_trunc('hour', now(), 'Europe/Moscow')─┐
 │ 2020-09-28 10:46:26 │                        2020-09-28 13:00:00 │
 └─────────────────────┴────────────────────────────────────────────┘
 ```
@@ -468,13 +468,13 @@ SELECT now();
 指定时区查询:
 
 ``` sql
-SELECT now('Asia/Istanbul');
+SELECT now('Europe/Moscow');
 ```
 
 结果:
 
 ``` text
-┌─now('Asia/Istanbul')─┐
+┌─now('Europe/Moscow')─┐
 │  2020-10-17 10:42:23 │
 └──────────────────────┘
 ```

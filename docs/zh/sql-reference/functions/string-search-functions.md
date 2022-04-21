@@ -58,7 +58,7 @@
 与`match`相同，但如果所有正则表达式都不匹配，则返回0；如果任何模式匹配，则返回1。它使用[超扫描](https://github.com/intel/hyperscan)库。对于在字符串中搜索子字符串的模式，最好使用«multisearchany»，因为它更高效。
 
 !!! note "注意"
-    任何`haystack`字符串的长度必须小于2<sup>32\</sup>字节，否则抛出异常。这种限制是因为hyperscan API而产生的。
+    任何`haystack`字符串的长度必须小于2<sup>32\</ sup\>字节，否则抛出异常。这种限制是因为hyperscan API而产生的。
 
 ## multiMatchAnyIndex（大海捞针，\[模式<sub>1</sub>，模式<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multimatchanyindexhaystack-pattern1-pattern2-patternn}
 

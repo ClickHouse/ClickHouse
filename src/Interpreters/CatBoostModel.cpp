@@ -26,10 +26,10 @@ extern const int CANNOT_LOAD_CATBOOST_MODEL;
 extern const int CANNOT_APPLY_CATBOOST_MODEL;
 }
 
+
 /// CatBoost wrapper interface functions.
-class CatBoostWrapperAPI
+struct CatBoostWrapperAPI
 {
-public:
     using ModelCalcerHandle = void;
 
     ModelCalcerHandle * (* ModelCalcerCreate)(); // NOLINT
@@ -68,6 +68,9 @@ public:
 };
 
 
+namespace
+{
+
 class CatBoostModelHolder
 {
 private:
@@ -81,61 +84,7 @@ public:
 };
 
 
-/// Holds CatBoost wrapper library and provides wrapper interface.
-class CatBoostLibHolder
-{
-public:
-    explicit CatBoostLibHolder(std::string lib_path_) : lib_path(std::move(lib_path_)), lib(lib_path) { initAPI(); }
-
-    const CatBoostWrapperAPI & getAPI() const { return api; }
-    const std::string & getCurrentPath() const { return lib_path; }
-
-private:
-    CatBoostWrapperAPI api;
-    std::string lib_path;
-    SharedLibrary lib;
-
-    void initAPI()
-    {
-        load(api.ModelCalcerCreate, "ModelCalcerCreate");
-        load(api.ModelCalcerDelete, "ModelCalcerDelete");
-        load(api.GetErrorString, "GetErrorString");
-        load(api.LoadFullModelFromFile, "LoadFullModelFromFile");
-        load(api.CalcModelPredictionFlat, "CalcModelPredictionFlat");
-        load(api.CalcModelPrediction, "CalcModelPrediction");
-        load(api.CalcModelPredictionWithHashedCatFeatures, "CalcModelPredictionWithHashedCatFeatures");
-        load(api.GetStringCatFeatureHash, "GetStringCatFeatureHash");
-        load(api.GetIntegerCatFeatureHash, "GetIntegerCatFeatureHash");
-        load(api.GetFloatFeaturesCount, "GetFloatFeaturesCount");
-        load(api.GetCatFeaturesCount, "GetCatFeaturesCount");
-        tryLoad(api.CheckModelMetadataHasKey, "CheckModelMetadataHasKey");
-        tryLoad(api.GetModelInfoValueSize, "GetModelInfoValueSize");
-        tryLoad(api.GetModelInfoValue, "GetModelInfoValue");
-        tryLoad(api.GetTreeCount, "GetTreeCount");
-        tryLoad(api.GetDimensionsCount, "GetDimensionsCount");
-    }
-
-    template <typename T>
-    void load(T& func, const std::string & name) { func = lib.get<T>(name); }
-
-    template <typename T>
-    void tryLoad(T& func, const std::string & name) { func = lib.tryGet<T>(name); }
-};
-
-std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & lib_path)
-{
-    static std::shared_ptr<CatBoostLibHolder> ptr;
-    static std::mutex mutex;
-
-    std::lock_guard lock(mutex);
-
-    if (!ptr || ptr->getCurrentPath() != lib_path)
-        ptr = std::make_shared<CatBoostLibHolder>(lib_path);
-
-    return ptr;
-}
-
-class CatBoostModelImpl
+class CatBoostModelImpl : public ICatBoostModel
 {
 public:
     CatBoostModelImpl(const CatBoostWrapperAPI * api_, const std::string & model_path) : api(api_)
@@ -143,15 +92,13 @@ public:
         handle = std::make_unique<CatBoostModelHolder>(api);
         if (!handle)
         {
-            throw Exception(ErrorCodes::CANNOT_LOAD_CATBOOST_MODEL,
-                "Cannot create CatBoost model: {}",
-                api->GetErrorString());
+            std::string msg = "Cannot create CatBoost model: ";
+            throw Exception(msg + api->GetErrorString(), ErrorCodes::CANNOT_LOAD_CATBOOST_MODEL);
         }
         if (!api->LoadFullModelFromFile(handle->get(), model_path.c_str()))
         {
-            throw Exception(ErrorCodes::CANNOT_LOAD_CATBOOST_MODEL,
-                "Cannot load CatBoost model: {}",
-                api->GetErrorString());
+            std::string msg = "Cannot load CatBoost model: ";
+            throw Exception(msg + api->GetErrorString(), ErrorCodes::CANNOT_LOAD_CATBOOST_MODEL);
         }
 
         float_features_count = api->GetFloatFeaturesCount(handle->get());
@@ -161,23 +108,32 @@ public:
             tree_count = api->GetDimensionsCount(handle->get());
     }
 
-    ColumnPtr evaluate(const ColumnRawPtrs & columns) const
+    ColumnPtr evaluate(const ColumnRawPtrs & columns) const override
     {
         if (columns.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got empty columns list for CatBoost model.");
+            throw Exception("Got empty columns list for CatBoost model.", ErrorCodes::BAD_ARGUMENTS);
 
         if (columns.size() != float_features_count + cat_features_count)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Number of columns is different with number of features: columns size {} float features size {} + cat features size {}",
-                columns.size(),
-                float_features_count,
-                cat_features_count);
+        {
+            std::string msg;
+            {
+                WriteBufferFromString buffer(msg);
+                buffer << "Number of columns is different with number of features: ";
+                buffer << columns.size() << " vs " << float_features_count << " + " << cat_features_count;
+            }
+            throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
+        }
 
         for (size_t i = 0; i < float_features_count; ++i)
         {
             if (!columns[i]->isNumeric())
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} should be numeric to make float feature.", i);
+                std::string msg;
+                {
+                    WriteBufferFromString buffer(msg);
+                    buffer << "Column " << i << " should be numeric to make float feature.";
+                }
+                throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
@@ -186,13 +142,16 @@ public:
         {
             const auto * column = columns[i];
             if (column->isNumeric())
-            {
                 cat_features_are_strings = false;
-            }
             else if (!(typeid_cast<const ColumnString *>(column)
                        || typeid_cast<const ColumnFixedString *>(column)))
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} should be numeric or string.", i);
+                std::string msg;
+                {
+                    WriteBufferFromString buffer(msg);
+                    buffer << "Column " << i << " should be numeric or string.";
+                }
+                throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
@@ -228,9 +187,9 @@ public:
         return ColumnTuple::create(std::move(mutable_columns));
     }
 
-    size_t getFloatFeaturesCount() const { return float_features_count; }
-    size_t getCatFeaturesCount() const { return cat_features_count; }
-    size_t getTreeCount() const { return tree_count; }
+    size_t getFloatFeaturesCount() const override { return float_features_count; }
+    size_t getCatFeaturesCount() const override { return cat_features_count; }
+    size_t getTreeCount() const override { return tree_count; }
 
 private:
     std::unique_ptr<CatBoostModelHolder> handle;
@@ -476,6 +435,66 @@ private:
     }
 };
 
+
+/// Holds CatBoost wrapper library and provides wrapper interface.
+class CatBoostLibHolder: public CatBoostWrapperAPIProvider
+{
+public:
+    explicit CatBoostLibHolder(std::string lib_path_) : lib_path(std::move(lib_path_)), lib(lib_path) { initAPI(); }
+
+    const CatBoostWrapperAPI & getAPI() const override { return api; }
+    const std::string & getCurrentPath() const { return lib_path; }
+
+private:
+    CatBoostWrapperAPI api;
+    std::string lib_path;
+    SharedLibrary lib;
+
+    void initAPI();
+
+    template <typename T>
+    void load(T& func, const std::string & name) { func = lib.get<T>(name); }
+
+    template <typename T>
+    void tryLoad(T& func, const std::string & name) { func = lib.tryGet<T>(name); }
+};
+
+void CatBoostLibHolder::initAPI()
+{
+    load(api.ModelCalcerCreate, "ModelCalcerCreate");
+    load(api.ModelCalcerDelete, "ModelCalcerDelete");
+    load(api.GetErrorString, "GetErrorString");
+    load(api.LoadFullModelFromFile, "LoadFullModelFromFile");
+    load(api.CalcModelPredictionFlat, "CalcModelPredictionFlat");
+    load(api.CalcModelPrediction, "CalcModelPrediction");
+    load(api.CalcModelPredictionWithHashedCatFeatures, "CalcModelPredictionWithHashedCatFeatures");
+    load(api.GetStringCatFeatureHash, "GetStringCatFeatureHash");
+    load(api.GetIntegerCatFeatureHash, "GetIntegerCatFeatureHash");
+    load(api.GetFloatFeaturesCount, "GetFloatFeaturesCount");
+    load(api.GetCatFeaturesCount, "GetCatFeaturesCount");
+    tryLoad(api.CheckModelMetadataHasKey, "CheckModelMetadataHasKey");
+    tryLoad(api.GetModelInfoValueSize, "GetModelInfoValueSize");
+    tryLoad(api.GetModelInfoValue, "GetModelInfoValue");
+    tryLoad(api.GetTreeCount, "GetTreeCount");
+    tryLoad(api.GetDimensionsCount, "GetDimensionsCount");
+}
+
+std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & lib_path)
+{
+    static std::shared_ptr<CatBoostLibHolder> ptr;
+    static std::mutex mutex;
+
+    std::lock_guard lock(mutex);
+
+    if (!ptr || ptr->getCurrentPath() != lib_path)
+        ptr = std::make_shared<CatBoostLibHolder>(lib_path);
+
+    return ptr;
+}
+
+}
+
+
 CatBoostModel::CatBoostModel(std::string name_, std::string model_path_, std::string lib_path_,
                              const ExternalLoadableLifetime & lifetime_)
     : name(std::move(name_)), model_path(std::move(model_path_)), lib_path(std::move(lib_path_)), lifetime(lifetime_)
@@ -483,28 +502,43 @@ CatBoostModel::CatBoostModel(std::string name_, std::string model_path_, std::st
     api_provider = getCatBoostWrapperHolder(lib_path);
     api = &api_provider->getAPI();
     model = std::make_unique<CatBoostModelImpl>(api, model_path);
+    float_features_count = model->getFloatFeaturesCount();
+    cat_features_count = model->getCatFeaturesCount();
+    tree_count = model->getTreeCount();
 }
 
-CatBoostModel::~CatBoostModel() = default;
+const ExternalLoadableLifetime & CatBoostModel::getLifetime() const
+{
+    return lifetime;
+}
+
+bool CatBoostModel::isModified() const
+{
+    return true;
+}
+
+std::shared_ptr<const IExternalLoadable> CatBoostModel::clone() const
+{
+    return std::make_shared<CatBoostModel>(name, model_path, lib_path, lifetime);
+}
 
 size_t CatBoostModel::getFloatFeaturesCount() const
 {
-    return model->getFloatFeaturesCount();
+    return float_features_count;
 }
 
 size_t CatBoostModel::getCatFeaturesCount() const
 {
-    return model->getCatFeaturesCount();
+    return cat_features_count;
 }
 
 size_t CatBoostModel::getTreeCount() const
 {
-    return model->getTreeCount();
+    return tree_count;
 }
 
 DataTypePtr CatBoostModel::getReturnType() const
 {
-    size_t tree_count = getTreeCount();
     auto type = std::make_shared<DataTypeFloat64>();
     if (tree_count == 1)
         return type;
@@ -518,7 +552,6 @@ ColumnPtr CatBoostModel::evaluate(const ColumnRawPtrs & columns) const
 {
     if (!model)
         throw Exception("CatBoost model was not loaded.", ErrorCodes::LOGICAL_ERROR);
-
     return model->evaluate(columns);
 }
 

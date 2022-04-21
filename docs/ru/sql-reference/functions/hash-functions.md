@@ -1,6 +1,6 @@
 ---
-sidebar_position: 50
-sidebar_label: "Функции хэширования"
+toc_priority: 50
+toc_title: "Функции хэширования"
 ---
 
 # Функции хэширования {#funktsii-kheshirovaniia}

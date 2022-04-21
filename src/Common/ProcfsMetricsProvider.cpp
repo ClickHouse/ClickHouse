@@ -92,7 +92,7 @@ bool ProcfsMetricsProvider::isAvailable() noexcept
 }
 
 
-ProcfsMetricsProvider::ProcfsMetricsProvider(pid_t /*tid*/)
+ProcfsMetricsProvider::ProcfsMetricsProvider(const pid_t /*tid*/)
 {
     thread_schedstat_fd = ::open(thread_schedstat, O_RDONLY | O_CLOEXEC);
     if (-1 == thread_schedstat_fd)

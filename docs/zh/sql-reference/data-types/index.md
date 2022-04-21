@@ -1,6 +1,7 @@
 ---
-sidebar_label: 数据类型
-sidebar_position: 37
+toc_folder_title: 数据类型
+toc_priority: 37
+toc_title: 简介
 ---
 
 # 数据类型 {#data_types}

@@ -26,6 +26,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
     , params(std::move(params_))
+    , group_by_description(group_by_description_)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
@@ -33,8 +34,15 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
     res_header = params->getCustomHeader(false);
 
-    for (const auto & column_description : group_by_description_)
-        group_by_description.emplace_back(column_description, res_header.getPositionByName(column_description.column_name));
+    /// Replace column names to column position in description_sorted.
+    for (auto & column_description : group_by_description)
+    {
+        if (!column_description.column_name.empty())
+        {
+            column_description.column_number = res_header.getPositionByName(column_description.column_name);
+            column_description.column_name.clear();
+        }
+    }
 }
 
 AggregatingInOrderTransform::~AggregatingInOrderTransform() = default;

@@ -555,19 +555,19 @@ std::string ParsingException::displayText() const
 {
     try
     {
-        if (line_number == -1)
-            formatted_message = message();
+        if (line_number_ == -1)
+            formatted_message_ = message();
         else
-            formatted_message = message() + fmt::format(": (at row {})\n", line_number);
+            formatted_message_ = message() + fmt::format(": (at row {})\n", line_number_);
     }
     catch (...)
     {}
 
-    if (!formatted_message.empty())
+    if (!formatted_message_.empty())
     {
         std::string result = name();
         result.append(": ");
-        result.append(formatted_message);
+        result.append(formatted_message_);
         return result;
     }
     else

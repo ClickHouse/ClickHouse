@@ -3,15 +3,10 @@ import argparse
 import os.path as p
 import re
 import subprocess
-from typing import List, Optional
+from typing import Optional
 
-# ^ and $ match subline in `multiple\nlines`
-# \A and \Z match only start and end of the whole string
-RELEASE_BRANCH_REGEXP = r"\A\d+[.]\d+\Z"
-TAG_REGEXP = (
-    r"\Av\d{2}[.][1-9]\d*[.][1-9]\d*[.][1-9]\d*-(testing|prestable|stable|lts)\Z"
-)
-SHA_REGEXP = r"\A([0-9]|[a-f]){40}\Z"
+TAG_REGEXP = r"^v\d{2}[.][1-9]\d*[.][1-9]\d*[.][1-9]\d*-(testing|prestable|stable|lts)$"
+SHA_REGEXP = r"^([0-9]|[a-f]){40}$"
 
 
 # Py 3.8 removeprefix and removesuffix
@@ -33,13 +28,6 @@ def commit(name: str):
         raise argparse.ArgumentTypeError(
             "commit hash should contain exactly 40 hex characters"
         )
-    return name
-
-
-def release_branch(name: str):
-    r = re.compile(RELEASE_BRANCH_REGEXP)
-    if not r.match(name):
-        raise argparse.ArgumentTypeError("release branch should be as 12.1")
     return name
 
 
@@ -89,11 +77,11 @@ class Git:
             self.run(f"git rev-list {self.latest_tag}..HEAD --count")
         )
 
-    def check_tag(self, value: str):
+    def _check_tag(self, value: str):
         if value == "":
             return
         if not self._tag_pattern.match(value):
-            raise ValueError(f"last tag {value} doesn't match the pattern")
+            raise Exception(f"last tag {value} doesn't match the pattern")
 
     @property
     def latest_tag(self) -> str:
@@ -101,7 +89,7 @@ class Git:
 
     @latest_tag.setter
     def latest_tag(self, value: str):
-        self.check_tag(value)
+        self._check_tag(value)
         self._latest_tag = value
 
     @property
@@ -110,7 +98,7 @@ class Git:
 
     @new_tag.setter
     def new_tag(self, value: str):
-        self.check_tag(value)
+        self._check_tag(value)
         self._new_tag = value
 
     @property
@@ -122,6 +110,3 @@ class Git:
 
         version = self.latest_tag.split("-", maxsplit=1)[0]
         return int(version.split(".")[-1]) + self.commits_since_tag
-
-    def get_tags(self) -> List[str]:
-        return self.run("git tag").split()

@@ -6,7 +6,6 @@
 #include <string>
 #include <iostream>
 #include <mutex>
-#include <filesystem>
 
 #include <Poco/Exception.h>
 
@@ -29,7 +28,6 @@ namespace DB
     }
 }
 
-namespace fs = std::filesystem;
 
 /** Stores a number in the file.
  * Designed for rare calls (not designed for performance).
@@ -41,7 +39,7 @@ private:
 
 public:
     /// path - the name of the file, including the path
-    explicit CounterInFile(const std::string & path_) : path(path_) {}
+    CounterInFile(const std::string & path_) : path(path_) {}
 
     /** Add `delta` to the number in the file and return the new value.
      * If the `create_if_need` parameter is not set to true, then

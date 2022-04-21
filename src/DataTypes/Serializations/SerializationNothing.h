@@ -14,7 +14,7 @@ namespace ErrorCodes
 class SerializationNothing : public SimpleTextSerialization
 {
 private:
-    [[noreturn]] static void throwNoSerialization()
+    [[noreturn]] void throwNoSerialization() const
     {
         throw Exception("Serialization is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }

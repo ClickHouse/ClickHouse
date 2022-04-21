@@ -277,7 +277,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         {
             /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
             Session session(global_context, ClientInfo::Interface::LOCAL);
-            session.authenticate(configuration.user, configuration.password, Poco::Net::SocketAddress{});
+            session.authenticate(configuration.user, configuration.password, {});
             context = session.makeQueryContext();
         }
         else

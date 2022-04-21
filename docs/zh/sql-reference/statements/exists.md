@@ -1,6 +1,6 @@
 ---
-sidebar_position: 45
-sidebar_label: EXISTS
+toc_priority: 45
+toc_title: EXISTS
 ---
 
 # EXISTS 语句 {#exists-statement}

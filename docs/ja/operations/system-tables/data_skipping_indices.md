@@ -1,0 +1,1 @@
+../../../en/operations/system-tables/data_skipping_indices.md

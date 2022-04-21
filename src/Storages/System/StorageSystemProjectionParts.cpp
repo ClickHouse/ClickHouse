@@ -90,7 +90,7 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
 }
 
 void StorageSystemProjectionParts::processNextStorage(
-    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;

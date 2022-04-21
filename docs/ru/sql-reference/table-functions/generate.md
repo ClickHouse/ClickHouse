@@ -1,6 +1,6 @@
 ---
-sidebar_position: 47
-sidebar_label: generateRandom
+toc_priority: 47
+toc_title: generateRandom
 ---
 
 # generateRandom {#generaterandom}

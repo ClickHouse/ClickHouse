@@ -1,4 +1,5 @@
--- Tags: no-fasttest, use-hyperscan
+-- Tags: no-fasttest
+-- Tag no-fasttest: Hyperscan
 
 SET send_logs_level = 'fatal';
 

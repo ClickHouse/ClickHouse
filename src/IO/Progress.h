@@ -56,7 +56,7 @@ struct FileProgress
     size_t read_bytes;
     size_t total_bytes_to_read;
 
-    explicit FileProgress(size_t read_bytes_, size_t total_bytes_to_read_ = 0) : read_bytes(read_bytes_), total_bytes_to_read(total_bytes_to_read_) {}
+    FileProgress(size_t read_bytes_, size_t total_bytes_to_read_ = 0) : read_bytes(read_bytes_), total_bytes_to_read(total_bytes_to_read_) {}
 };
 
 
@@ -111,9 +111,9 @@ struct Progress
 
     ProgressValues fetchAndResetPiecewiseAtomically();
 
-    Progress & operator=(Progress && other) noexcept;
+    Progress & operator=(Progress && other);
 
-    Progress(Progress && other) noexcept
+    Progress(Progress && other)
     {
         *this = std::move(other);
     }

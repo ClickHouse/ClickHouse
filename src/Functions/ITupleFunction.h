@@ -1,11 +1,6 @@
 #pragma once
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Interpreters/Context_fwd.h>
-
 
 namespace DB
 {

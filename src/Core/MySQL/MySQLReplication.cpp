@@ -142,7 +142,8 @@ namespace MySQLReplication
         out << "XID: " << this->xid << '\n';
     }
 
-    void TableMapEventHeader::parse(ReadBuffer & payload)
+    /// https://dev.mysql.com/doc/internals/en/table-map-event.html
+    void TableMapEvent::parseImpl(ReadBuffer & payload)
     {
         payload.readStrict(reinterpret_cast<char *>(&table_id), 6);
         payload.readStrict(reinterpret_cast<char *>(&flags), 2);
@@ -156,11 +157,7 @@ namespace MySQLReplication
         table.resize(table_len);
         payload.readStrict(reinterpret_cast<char *>(table.data()), table_len);
         payload.ignore(1);
-    }
 
-    /// https://dev.mysql.com/doc/internals/en/table-map-event.html
-    void TableMapEvent::parseImpl(ReadBuffer & payload)
-    {
         column_count = readLengthEncodedNumber(payload);
         for (auto i = 0U; i < column_count; ++i)
         {
@@ -168,6 +165,7 @@ namespace MySQLReplication
             payload.readStrict(reinterpret_cast<char *>(&v), 1);
             column_type.emplace_back(v);
         }
+
         String meta;
         readLengthEncodedString(meta, payload);
         parseMeta(meta);
@@ -431,7 +429,7 @@ namespace MySQLReplication
                         UInt32 i24 = 0;
                         payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
-                        const ExtendedDayNum date_day_number(DateLUT::instance().makeDayNum(
+                        const DayNum date_day_number(DateLUT::instance().makeDayNum(
                             static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f)).toUnderType());
 
                         row.push_back(Field(date_day_number.toUnderType()));
@@ -959,20 +957,10 @@ namespace MySQLReplication
             }
             case TABLE_MAP_EVENT:
             {
-                TableMapEventHeader map_event_header;
-                map_event_header.parse(event_payload);
-                if (doReplicate(map_event_header.schema, map_event_header.table))
-                {
-                    event = std::make_shared<TableMapEvent>(std::move(event_header), map_event_header);
-                    event->parseEvent(event_payload);
-                    auto table_map = std::static_pointer_cast<TableMapEvent>(event);
-                    table_maps[table_map->table_id] = table_map;
-                }
-                else
-                {
-                    event = std::make_shared<DryRunEvent>(std::move(event_header));
-                    event->parseEvent(event_payload);
-                }
+                event = std::make_shared<TableMapEvent>(std::move(event_header));
+                event->parseEvent(event_payload);
+                auto table_map = std::static_pointer_cast<TableMapEvent>(event);
+                table_maps[table_map->table_id] = table_map;
                 break;
             }
             case WRITE_ROWS_EVENT_V1:
@@ -1042,21 +1030,8 @@ namespace MySQLReplication
             // Special "dummy event"
             return false;
         }
-        if (table_maps.contains(table_id))
-        {
-            auto table_map = table_maps.at(table_id);
-            return (table_map->schema == replicate_do_db) && (replicate_tables.empty() || replicate_tables.contains(table_map->table));
-        }
-        return false;
-    }
-
-    bool MySQLFlavor::doReplicate(const String & db, const String & table_name)
-    {
-        if (replicate_do_db.empty())
-            return false;
-        if (replicate_do_db != db)
-            return false;
-        return replicate_tables.empty() || table_name.empty() || replicate_tables.contains(table_name);
+        auto table_map = table_maps.at(table_id);
+        return table_map->schema == replicate_do_db;
     }
 }
 

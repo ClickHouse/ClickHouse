@@ -24,14 +24,12 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     , plain_file(data_part->volume->getDisk()->writeFile(
             part_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
-            WriteMode::Rewrite,
-            settings_.query_write_settings))
+            WriteMode::Rewrite))
     , plain_hashing(*plain_file)
     , marks_file(data_part->volume->getDisk()->writeFile(
         part_path + MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
         4096,
-        WriteMode::Rewrite,
-        settings_.query_write_settings))
+        WriteMode::Rewrite))
     , marks(*marks_file)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
@@ -47,7 +45,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Shared offsets for Nested type.
-        if (compressed_streams.contains(stream_name))
+        if (compressed_streams.count(stream_name))
             return;
 
         const auto & subtype = substream_path.back().data.type;

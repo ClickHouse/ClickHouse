@@ -47,7 +47,7 @@ bool isSupportedAlterType(int type)
         ASTAlterCommand::NO_TYPE,
     };
 
-    return !unsupported_alter_types.contains(type);
+    return unsupported_alter_types.count(type) == 0;
 }
 
 
@@ -63,9 +63,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, c
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, AccessRightsElements && query_requires_access)
 {
-    if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
-
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
     ASTQueryWithOutput::resetOutputASTIfExist(*query_ptr);
@@ -323,13 +320,12 @@ Chunk DDLQueryStatusSource::generate()
             if (throw_on_timeout)
             {
                 if (!first_exception)
-                    first_exception = std::make_unique<Exception>(
-                        fmt::format(msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts),
-                        ErrorCodes::TIMEOUT_EXCEEDED);
+                    first_exception = std::make_unique<Exception>(ErrorCodes::TIMEOUT_EXCEEDED, msg_format,
+                        node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
                 return {};
             }
 
-            LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+            LOG_INFO(log, fmt::runtime(msg_format), node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
 
             NameSet unfinished_hosts = waiting_hosts;
             for (const auto & host_id : finished_hosts)
@@ -362,12 +358,9 @@ Chunk DDLQueryStatusSource::generate()
             /// Paradoxically, this exception will be throw even in case of "never_throw" mode.
 
             if (!first_exception)
-                first_exception = std::make_unique<Exception>(
-                    fmt::format(
-                        "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
-                        " since it was finished (or its lifetime is expired)",
-                        node_path),
-                    ErrorCodes::UNFINISHED);
+                first_exception = std::make_unique<Exception>(ErrorCodes::UNFINISHED,
+                    "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
+                    " since it was finished (or its lifetime is expired)", node_path);
             return {};
         }
 
@@ -393,8 +386,7 @@ Chunk DDLQueryStatusSource::generate()
             if (status.code != 0 && !first_exception
                 && context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW)
             {
-                first_exception = std::make_unique<Exception>(
-                    fmt::format("There was an error on [{}:{}]: {}", host, port, status.message), status.code);
+                first_exception = std::make_unique<Exception>(status.code, "There was an error on [{}:{}]: {}", host, port, status.message);
             }
 
             ++num_hosts_finished;
@@ -449,9 +441,9 @@ Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_fi
     Strings diff;
     for (const String & host : current_list_of_finished_hosts)
     {
-        if (!waiting_hosts.contains(host))
+        if (!waiting_hosts.count(host))
         {
-            if (!ignoring_hosts.contains(host))
+            if (!ignoring_hosts.count(host))
             {
                 ignoring_hosts.emplace(host);
                 LOG_INFO(log, "Unexpected host {} appeared in task {}", host, node_path);
@@ -459,7 +451,7 @@ Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_fi
             continue;
         }
 
-        if (!finished_hosts.contains(host))
+        if (!finished_hosts.count(host))
         {
             diff.emplace_back(host);
             finished_hosts.emplace(host);

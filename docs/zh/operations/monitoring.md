@@ -1,6 +1,6 @@
 ---
-sidebar_position: 45
-sidebar_label: "监控"
+toc_priority: 45
+toc_title: "监控"
 ---
 
 # 监控 {#jian-kong}

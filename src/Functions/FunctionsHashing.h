@@ -38,8 +38,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <Common/TargetSpecific.h>
 #include <base/range.h>
 #include <base/bit_cast.h>
 

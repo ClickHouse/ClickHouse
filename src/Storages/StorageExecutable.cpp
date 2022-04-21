@@ -1,19 +1,21 @@
 #include <Storages/StorageExecutable.h>
 
 #include <filesystem>
-#include <unistd.h>
 
 #include <boost/algorithm/string/split.hpp>
 
+#include <Common/ShellCommand.h>
 #include <Common/filesystemHelpers.h>
 
 #include <Core/Block.h>
 
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <QueryPipeline/Pipe.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -103,7 +105,7 @@ StorageExecutable::StorageExecutable(
 
 Pipe StorageExecutable::read(
     const Names & /*column_names*/,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -121,15 +123,9 @@ Pipe StorageExecutable::read(
             script_name,
             user_scripts_path);
 
-    if (!FS::exists(script_path))
+    if (!std::filesystem::exists(std::filesystem::path(script_path)))
          throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Executable file {} does not exist inside user scripts folder {}",
-            script_name,
-            user_scripts_path);
-
-    if (!FS::canExecute(script_path))
-         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Executable file {} is not executable inside user scripts folder {}",
             script_name,
             user_scripts_path);
 
@@ -146,7 +142,7 @@ Pipe StorageExecutable::read(
     if (settings.is_executable_pool)
         transformToSingleBlockSources(inputs);
 
-    auto sample_block = storage_snapshot->metadata->getSampleBlock();
+    auto sample_block = metadata_snapshot->getSampleBlock();
 
     ShellCommandSourceConfiguration configuration;
     configuration.max_block_size = max_block_size;

@@ -1,8 +1,9 @@
 ---
-sidebar_label: Cell Towers
+toc_priority: 21
+toc_title: Cell Towers
 ---
 
-# Cell Towers 
+# Cell Towers {#cell-towers}
 
 This dataset is from [OpenCellid](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 

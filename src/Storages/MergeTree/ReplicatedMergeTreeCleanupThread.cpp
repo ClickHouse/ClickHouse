@@ -64,7 +64,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
         storage.clearOldWriteAheadLogs();
-        storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
+        storage.clearOldTemporaryDirectories(storage.merger_mutator, storage.getSettings()->temporary_directories_lifetime.totalSeconds());
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -404,7 +404,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         NameSet blocks_set(blocks.begin(), blocks.end());
         for (auto it = cached_block_stats.begin(); it != cached_block_stats.end();)
         {
-            if (!blocks_set.contains(it->first))
+            if (!blocks_set.count(it->first))
                 it = cached_block_stats.erase(it);
             else
                 ++it;

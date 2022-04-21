@@ -1,6 +1,6 @@
 ---
-sidebar_position: 45
-sidebar_label: "Внешние данные для обработки запроса"
+toc_priority: 45
+toc_title: "Внешние данные для обработки запроса"
 ---
 
 # Внешние данные для обработки запроса {#vneshnie-dannye-dlia-obrabotki-zaprosa}

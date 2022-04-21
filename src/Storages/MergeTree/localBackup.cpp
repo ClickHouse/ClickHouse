@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 
-static void localBackupImpl(const DiskPtr & disk, const String & source_path, const String & destination_path, bool make_source_readonly, size_t level,
+static void localBackupImpl(const DiskPtr & disk, const String & source_path, const String & destination_path, size_t level,
                             std::optional<size_t> max_level)
 {
     if (max_level && level > *max_level)
@@ -32,13 +32,12 @@ static void localBackupImpl(const DiskPtr & disk, const String & source_path, co
 
         if (!disk->isDirectory(source))
         {
-            if (make_source_readonly)
-                disk->setReadOnly(source);
+            disk->setReadOnly(source);
             disk->createHardLink(source, destination);
         }
         else
         {
-            localBackupImpl(disk, source, destination, make_source_readonly, level + 1, max_level);
+            localBackupImpl(disk, source, destination, level + 1, max_level);
         }
     }
 }
@@ -81,7 +80,7 @@ private:
 };
 }
 
-void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, bool make_source_readonly, std::optional<size_t> max_level)
+void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, std::optional<size_t> max_level)
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
@@ -101,7 +100,7 @@ void localBackup(const DiskPtr & disk, const String & source_path, const String 
     {
         try
         {
-            localBackupImpl(disk, source_path, destination_path, make_source_readonly, 0, max_level);
+            localBackupImpl(disk, source_path, destination_path, 0, max_level);
         }
         catch (const DB::ErrnoException & e)
         {

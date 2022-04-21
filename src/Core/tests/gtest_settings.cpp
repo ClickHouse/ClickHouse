@@ -53,29 +53,6 @@ GTEST_TEST(SettingMySQLDataTypesSupport, WithDECIMAL)
     ASSERT_EQ(Field("decimal"), setting);
 }
 
-GTEST_TEST(SettingMySQLDataTypesSupport, WithDATE)
-{
-    SettingMySQLDataTypesSupport setting;
-    setting = String("date2Date32");
-    ASSERT_EQ(4, setting.value.getValue());
-
-    ASSERT_TRUE(setting.value.isSet(MySQLDataTypesSupport::DATE2DATE32));
-    ASSERT_FALSE(setting.value.isSet(MySQLDataTypesSupport::DECIMAL));
-    ASSERT_FALSE(setting.value.isSet(MySQLDataTypesSupport::DATETIME64));
-
-    ASSERT_EQ("date2Date32", setting.toString());
-    ASSERT_EQ(Field("date2Date32"), setting);
-
-    setting = String("date2String");
-    ASSERT_EQ(8, setting.value.getValue());
-
-    ASSERT_TRUE(setting.value.isSet(MySQLDataTypesSupport::DATE2STRING));
-    ASSERT_FALSE(setting.value.isSet(MySQLDataTypesSupport::DATE2DATE32));
-
-    ASSERT_EQ("date2String", setting.toString());
-    ASSERT_EQ(Field("date2String"), setting);
-}
-
 GTEST_TEST(SettingMySQLDataTypesSupport, With1)
 {
     // Setting can be initialized with int value corresponding to DECIMAL
