@@ -185,7 +185,7 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
         }
 
         if (is_object)
-            return std::make_shared<DataTypeObject>("json", false);
+            return std::make_shared<DataTypeObject>("json", true);
 
         if (value_type)
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
@@ -361,14 +361,18 @@ DataTypePtr getCommonTypeForJSONFormats(const DataTypePtr & first, const DataTyp
     }
 
     /// If we have Map and Object, make result type Object
-    DataTypePtr object_type = isObject(first) ? first : isObject(second) ? second : nullptr;
-    DataTypePtr map_type = isMap(first) ? first : isMap(second) ? second : nullptr;
-    if (object_type && map_type)
-        return object_type;
+    bool object_type_presents = isObject(first) || isObject(second);
+    bool map_type_presents = isMap(first) || isMap(second);
+    if (object_type_presents && map_type_presents)
+    {
+        if (isObject(first))
+            return first;
+        return second;
+    }
 
     /// If we have different Maps, make result type Object
     if (isMap(first) && isMap(second) && !first->equals(*second))
-        return DataTypeFactory::instance().get("JSON");
+        return std::make_shared<DataTypeObject>("json", true);
 
     return nullptr;
 }
