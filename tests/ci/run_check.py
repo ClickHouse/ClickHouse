@@ -9,7 +9,7 @@ from github import Github
 from commit_status_helper import get_commit, post_labels, remove_labels
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
+from pr_info import FORCE_TESTS_LABEL, PRInfo
 from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
 
 NAME = "Run Check (actions)"
@@ -23,7 +23,6 @@ TRUSTED_ORG_IDS = {
 OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
 CAN_BE_TESTED_LABEL = "can be tested"
 DO_NOT_TEST_LABEL = "do not test"
-FORCE_TESTS_LABEL = "force tests"
 SUBMODULE_CHANGED_LABEL = "submodule changed"
 
 LABELS = {
