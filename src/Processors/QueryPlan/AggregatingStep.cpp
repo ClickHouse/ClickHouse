@@ -182,7 +182,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             Processors aggregators;
             for (size_t i = 0; i < grouping_sets_size; ++i)
             {
-                Aggregator::Params params_for_set{
+                Aggregator::Params params_for_set
+                {
                     transform_params->params.src_header,
                     grouping_sets_params.grouping_sets_with_keys[i],
                     transform_params->params.aggregates,
