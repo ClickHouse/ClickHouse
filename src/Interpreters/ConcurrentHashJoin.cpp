@@ -59,7 +59,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<Tabl
 bool ConcurrentHashJoin::addJoinedBlock(const Block & block, bool check_limits)
 {
     auto & dispatch_data = *dispatch_datas[1];
-    std::vector<Block> dispatched_blocks;
+    Blocks dispatched_blocks;
     Block cloned_block = block;
     dispatchBlock(dispatch_data, cloned_block, dispatched_blocks);
 
@@ -95,7 +95,7 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & block, bool check_limits)
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
     auto & dispatch_data = *dispatch_datas[0];
-    std::vector<Block> dispatched_blocks;
+    Blocks dispatched_blocks;
     Block cloned_block = block;
     dispatchBlock(dispatch_data, cloned_block, dispatched_blocks);
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
@@ -214,7 +214,7 @@ std::pair<std::shared_ptr<ExpressionActions>, Strings> ConcurrentHashJoin::build
     return {std::make_shared<ExpressionActions>(actions), hash_columns_names};
 }
 
-void ConcurrentHashJoin::dispatchBlock(BlockDispatchControlData & dispatch_data, Block & from_block, std::vector<Block> & dispatched_blocks)
+void ConcurrentHashJoin::dispatchBlock(BlockDispatchControlData & dispatch_data, Block & from_block, Blocks & dispatched_blocks)
 {
     auto rows_before_filtration = from_block.rows();
     auto header = from_block.cloneEmpty();
