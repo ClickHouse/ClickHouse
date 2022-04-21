@@ -1,7 +1,13 @@
-#include <string>
+#pragma once
 
-class Exp
+#include <Parsers/IAST.h>
+
+namespace MySQLCompatibility
+{
+class Converter
 {
 public:
-	std::string Test(const std::string & query);
+	String dumpAST(const String & query);
+	DB::ASTPtr toClickHouseAST(const String & query);
 };
+}

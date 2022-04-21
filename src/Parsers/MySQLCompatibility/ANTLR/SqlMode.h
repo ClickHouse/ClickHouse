@@ -1,13 +1,11 @@
 #pragma once
 
-class SqlMode
+enum SqlMode
 {
-public:
-    enum
-    {
-        NoMode = 0,
-        AnsiQuotes = 1 << 0,
-        HighNotPrecedence = 1 << 1, // MOO: others
-        NoBackslashEscapes = 1 << 4
-    };
+	NoMode = 0,
+	AnsiQuotes = 1 << 0,
+	HighNotPrecedence = 1 << 1,
+	PipesAsConcat = 1 << 2,
+	IgnoreSpace = 1 << 3,
+	NoBackslashEscapes = 1 << 4
 };

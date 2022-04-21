@@ -3,16 +3,17 @@ include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_parsers .)
 add_headers_and_sources(clickhouse_parsers ./Access)
 add_headers_and_sources(clickhouse_parsers ./MySQL)
-add_headers_and_sources(mysql_compatibility ./MySQLCompatibility)
-add_headers_and_sources(mysql_compatibility ./MySQLCompatibility/ANTLR)
+add_headers_and_sources(clickhouse_parsers ./MySQLCompatibility)
+add_headers_and_sources(mysql_parser ./MySQLCompatibility/ANTLR)
+add_headers_and_sources(mysql_parser ./MySQLCompatibility/ParserOverlay)
 
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})
-add_library(mysql_compatibility ${mysql_compatibility_headers} ${mysql_compatibility_sources})
+add_library(mysql_parser ${mysql_parser_headers} ${mysql_parser_sources})
 
-target_compile_options(mysql_compatibility PRIVATE -Wno-everything)
+target_compile_options(mysql_parser PRIVATE -Wno-everything)
 
-target_link_libraries(mysql_compatibility PUBLIC antlr4-runtime)
-target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access mysql_compatibility)
+target_link_libraries(mysql_parser PUBLIC antlr4-runtime)
+target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access mysql_parser)
 
 
 if (USE_DEBUG_HELPERS)

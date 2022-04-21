@@ -252,7 +252,7 @@ bool MySQLLexer::sempred(RuleContext *context, size_t ruleIndex, size_t predicat
 
 void MySQLLexer::DOT_IDENTIFIERAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 0:  MySQLBaseLexer::emitDot();  break;
+    case 0:  MySQLLexer::emitDot();  break;
 
   default:
     break;
@@ -261,7 +261,7 @@ void MySQLLexer::DOT_IDENTIFIERAction(antlr4::RuleContext *context, size_t actio
 
 void MySQLLexer::ADDDATE_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 1: this->type = this->determineFunction(MySQLBaseLexer::ADDDATE_SYMBOL);  break;
+    case 1: this->type = this->determineFunction(MySQLLexer::ADDDATE_SYMBOL);  break;
 
   default:
     break;
@@ -270,7 +270,7 @@ void MySQLLexer::ADDDATE_SYMBOLAction(antlr4::RuleContext *context, size_t actio
 
 void MySQLLexer::BIT_AND_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 2: this->type = this->determineFunction(MySQLBaseLexer::BIT_AND_SYMBOL);  break;
+    case 2: this->type = this->determineFunction(MySQLLexer::BIT_AND_SYMBOL);  break;
 
   default:
     break;
@@ -279,7 +279,7 @@ void MySQLLexer::BIT_AND_SYMBOLAction(antlr4::RuleContext *context, size_t actio
 
 void MySQLLexer::BIT_OR_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 3: this->type = this->determineFunction(MySQLBaseLexer::BIT_OR_SYMBOL);  break;
+    case 3: this->type = this->determineFunction(MySQLLexer::BIT_OR_SYMBOL);  break;
 
   default:
     break;
@@ -288,7 +288,7 @@ void MySQLLexer::BIT_OR_SYMBOLAction(antlr4::RuleContext *context, size_t action
 
 void MySQLLexer::BIT_XOR_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 4: this->type = this->determineFunction(MySQLBaseLexer::BIT_XOR_SYMBOL);  break;
+    case 4: this->type = this->determineFunction(MySQLLexer::BIT_XOR_SYMBOL);  break;
 
   default:
     break;
@@ -297,7 +297,7 @@ void MySQLLexer::BIT_XOR_SYMBOLAction(antlr4::RuleContext *context, size_t actio
 
 void MySQLLexer::CAST_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 5: this->type = this->determineFunction(MySQLBaseLexer::CAST_SYMBOL);  break;
+    case 5: this->type = this->determineFunction(MySQLLexer::CAST_SYMBOL);  break;
 
   default:
     break;
@@ -306,7 +306,7 @@ void MySQLLexer::CAST_SYMBOLAction(antlr4::RuleContext *context, size_t actionIn
 
 void MySQLLexer::COUNT_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 6: this->type = this->determineFunction(MySQLBaseLexer::COUNT_SYMBOL);  break;
+    case 6: this->type = this->determineFunction(MySQLLexer::COUNT_SYMBOL);  break;
 
   default:
     break;
@@ -315,7 +315,7 @@ void MySQLLexer::COUNT_SYMBOLAction(antlr4::RuleContext *context, size_t actionI
 
 void MySQLLexer::CURDATE_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 7: this->type = this->determineFunction(MySQLBaseLexer::CURDATE_SYMBOL);  break;
+    case 7: this->type = this->determineFunction(MySQLLexer::CURDATE_SYMBOL);  break;
 
   default:
     break;
@@ -324,7 +324,7 @@ void MySQLLexer::CURDATE_SYMBOLAction(antlr4::RuleContext *context, size_t actio
 
 void MySQLLexer::CURRENT_DATE_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 8: this->type = this->determineFunction(MySQLBaseLexer::CURDATE_SYMBOL);  break;
+    case 8: this->type = this->determineFunction(MySQLLexer::CURDATE_SYMBOL);  break;
 
   default:
     break;
@@ -333,7 +333,7 @@ void MySQLLexer::CURRENT_DATE_SYMBOLAction(antlr4::RuleContext *context, size_t 
 
 void MySQLLexer::CURRENT_TIME_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 9: this->type = this->determineFunction(MySQLBaseLexer::CURTIME_SYMBOL);  break;
+    case 9: this->type = this->determineFunction(MySQLLexer::CURTIME_SYMBOL);  break;
 
   default:
     break;
@@ -342,7 +342,7 @@ void MySQLLexer::CURRENT_TIME_SYMBOLAction(antlr4::RuleContext *context, size_t 
 
 void MySQLLexer::CURTIME_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 10: this->type = this->determineFunction(MySQLBaseLexer::CURTIME_SYMBOL); break;
+    case 10: this->type = this->determineFunction(MySQLLexer::CURTIME_SYMBOL); break;
 
   default:
     break;
@@ -351,7 +351,7 @@ void MySQLLexer::CURTIME_SYMBOLAction(antlr4::RuleContext *context, size_t actio
 
 void MySQLLexer::DATE_ADD_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 11: this->type = this->determineFunction(MySQLBaseLexer::DATE_ADD_SYMBOL);  break;
+    case 11: this->type = this->determineFunction(MySQLLexer::DATE_ADD_SYMBOL);  break;
 
   default:
     break;
@@ -360,7 +360,7 @@ void MySQLLexer::DATE_ADD_SYMBOLAction(antlr4::RuleContext *context, size_t acti
 
 void MySQLLexer::DATE_SUB_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 12: this->type = this->determineFunction(MySQLBaseLexer::DATE_SUB_SYMBOL);  break;
+    case 12: this->type = this->determineFunction(MySQLLexer::DATE_SUB_SYMBOL);  break;
 
   default:
     break;
@@ -369,7 +369,7 @@ void MySQLLexer::DATE_SUB_SYMBOLAction(antlr4::RuleContext *context, size_t acti
 
 void MySQLLexer::EXTRACT_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 13: this->type = this->determineFunction(MySQLBaseLexer::EXTRACT_SYMBOL);  break;
+    case 13: this->type = this->determineFunction(MySQLLexer::EXTRACT_SYMBOL);  break;
 
   default:
     break;
@@ -378,7 +378,7 @@ void MySQLLexer::EXTRACT_SYMBOLAction(antlr4::RuleContext *context, size_t actio
 
 void MySQLLexer::GROUP_CONCAT_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 14: this->type = this->determineFunction(MySQLBaseLexer::GROUP_CONCAT_SYMBOL);  break;
+    case 14: this->type = this->determineFunction(MySQLLexer::GROUP_CONCAT_SYMBOL);  break;
 
   default:
     break;
@@ -387,7 +387,7 @@ void MySQLLexer::GROUP_CONCAT_SYMBOLAction(antlr4::RuleContext *context, size_t 
 
 void MySQLLexer::MAX_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 15: this->type = this->determineFunction(MySQLBaseLexer::MAX_SYMBOL);  break;
+    case 15: this->type = this->determineFunction(MySQLLexer::MAX_SYMBOL);  break;
 
   default:
     break;
@@ -396,7 +396,7 @@ void MySQLLexer::MAX_SYMBOLAction(antlr4::RuleContext *context, size_t actionInd
 
 void MySQLLexer::MID_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 16: this->type = this->determineFunction(MySQLBaseLexer::SUBSTRING_SYMBOL);  break;
+    case 16: this->type = this->determineFunction(MySQLLexer::SUBSTRING_SYMBOL);  break;
 
   default:
     break;
@@ -405,7 +405,7 @@ void MySQLLexer::MID_SYMBOLAction(antlr4::RuleContext *context, size_t actionInd
 
 void MySQLLexer::MIN_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 17: this->type = this->determineFunction(MySQLBaseLexer::MIN_SYMBOL);  break;
+    case 17: this->type = this->determineFunction(MySQLLexer::MIN_SYMBOL);  break;
 
   default:
     break;
@@ -414,7 +414,7 @@ void MySQLLexer::MIN_SYMBOLAction(antlr4::RuleContext *context, size_t actionInd
 
 void MySQLLexer::NOT_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 18: this->type = this->isSqlModeActive(SqlMode::HighNotPrecedence) ? MySQLBaseLexer::NOT2_SYMBOL: MySQLBaseLexer::NOT_SYMBOL;  break;
+    case 18: this->type = this->isSqlModeActive(SqlMode::HighNotPrecedence) ? MySQLLexer::NOT2_SYMBOL: MySQLLexer::NOT_SYMBOL;  break;
 
   default:
     break;
@@ -423,7 +423,7 @@ void MySQLLexer::NOT_SYMBOLAction(antlr4::RuleContext *context, size_t actionInd
 
 void MySQLLexer::NOW_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 19: this->type = this->determineFunction(MySQLBaseLexer::NOW_SYMBOL);  break;
+    case 19: this->type = this->determineFunction(MySQLLexer::NOW_SYMBOL);  break;
 
   default:
     break;
@@ -432,7 +432,7 @@ void MySQLLexer::NOW_SYMBOLAction(antlr4::RuleContext *context, size_t actionInd
 
 void MySQLLexer::POSITION_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 20: this->type = this->determineFunction(MySQLBaseLexer::POSITION_SYMBOL);  break;
+    case 20: this->type = this->determineFunction(MySQLLexer::POSITION_SYMBOL);  break;
 
   default:
     break;
@@ -441,7 +441,7 @@ void MySQLLexer::POSITION_SYMBOLAction(antlr4::RuleContext *context, size_t acti
 
 void MySQLLexer::SESSION_USER_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 21: this->type = this->determineFunction(MySQLBaseLexer::USER_SYMBOL);  break;
+    case 21: this->type = this->determineFunction(MySQLLexer::USER_SYMBOL);  break;
 
   default:
     break;
@@ -450,7 +450,7 @@ void MySQLLexer::SESSION_USER_SYMBOLAction(antlr4::RuleContext *context, size_t 
 
 void MySQLLexer::STDDEV_SAMP_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 22: this->type = this->determineFunction(MySQLBaseLexer::STDDEV_SAMP_SYMBOL);  break;
+    case 22: this->type = this->determineFunction(MySQLLexer::STDDEV_SAMP_SYMBOL);  break;
 
   default:
     break;
@@ -459,7 +459,7 @@ void MySQLLexer::STDDEV_SAMP_SYMBOLAction(antlr4::RuleContext *context, size_t a
 
 void MySQLLexer::STDDEV_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 23: this->type = this->determineFunction(MySQLBaseLexer::STD_SYMBOL);  break;
+    case 23: this->type = this->determineFunction(MySQLLexer::STD_SYMBOL);  break;
 
   default:
     break;
@@ -468,7 +468,7 @@ void MySQLLexer::STDDEV_SYMBOLAction(antlr4::RuleContext *context, size_t action
 
 void MySQLLexer::STDDEV_POP_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 24: this->type = this->determineFunction(MySQLBaseLexer::STD_SYMBOL);  break;
+    case 24: this->type = this->determineFunction(MySQLLexer::STD_SYMBOL);  break;
 
   default:
     break;
@@ -477,7 +477,7 @@ void MySQLLexer::STDDEV_POP_SYMBOLAction(antlr4::RuleContext *context, size_t ac
 
 void MySQLLexer::STD_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 25: this->type = this->determineFunction(MySQLBaseLexer::STD_SYMBOL);  break;
+    case 25: this->type = this->determineFunction(MySQLLexer::STD_SYMBOL);  break;
 
   default:
     break;
@@ -486,7 +486,7 @@ void MySQLLexer::STD_SYMBOLAction(antlr4::RuleContext *context, size_t actionInd
 
 void MySQLLexer::SUBDATE_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 26: this->type = this->determineFunction(MySQLBaseLexer::SUBDATE_SYMBOL);  break;
+    case 26: this->type = this->determineFunction(MySQLLexer::SUBDATE_SYMBOL);  break;
 
   default:
     break;
@@ -495,7 +495,7 @@ void MySQLLexer::SUBDATE_SYMBOLAction(antlr4::RuleContext *context, size_t actio
 
 void MySQLLexer::SUBSTR_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 27: this->type = this->determineFunction(MySQLBaseLexer::SUBSTRING_SYMBOL);  break;
+    case 27: this->type = this->determineFunction(MySQLLexer::SUBSTRING_SYMBOL);  break;
 
   default:
     break;
@@ -504,7 +504,7 @@ void MySQLLexer::SUBSTR_SYMBOLAction(antlr4::RuleContext *context, size_t action
 
 void MySQLLexer::SUBSTRING_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 28: this->type = this->determineFunction(MySQLBaseLexer::SUBSTRING_SYMBOL);  break;
+    case 28: this->type = this->determineFunction(MySQLLexer::SUBSTRING_SYMBOL);  break;
 
   default:
     break;
@@ -513,7 +513,7 @@ void MySQLLexer::SUBSTRING_SYMBOLAction(antlr4::RuleContext *context, size_t act
 
 void MySQLLexer::SUM_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 29: this->type = this->determineFunction(MySQLBaseLexer::SUM_SYMBOL);  break;
+    case 29: this->type = this->determineFunction(MySQLLexer::SUM_SYMBOL);  break;
 
   default:
     break;
@@ -522,7 +522,7 @@ void MySQLLexer::SUM_SYMBOLAction(antlr4::RuleContext *context, size_t actionInd
 
 void MySQLLexer::SYSDATE_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 30: this->type = this->determineFunction(MySQLBaseLexer::SYSDATE_SYMBOL);  break;
+    case 30: this->type = this->determineFunction(MySQLLexer::SYSDATE_SYMBOL);  break;
 
   default:
     break;
@@ -531,7 +531,7 @@ void MySQLLexer::SYSDATE_SYMBOLAction(antlr4::RuleContext *context, size_t actio
 
 void MySQLLexer::SYSTEM_USER_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 31: this->type = this->determineFunction(MySQLBaseLexer::USER_SYMBOL);  break;
+    case 31: this->type = this->determineFunction(MySQLLexer::USER_SYMBOL);  break;
 
   default:
     break;
@@ -540,7 +540,7 @@ void MySQLLexer::SYSTEM_USER_SYMBOLAction(antlr4::RuleContext *context, size_t a
 
 void MySQLLexer::TRIM_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 32: this->type = this->determineFunction(MySQLBaseLexer::TRIM_SYMBOL);  break;
+    case 32: this->type = this->determineFunction(MySQLLexer::TRIM_SYMBOL);  break;
 
   default:
     break;
@@ -549,7 +549,7 @@ void MySQLLexer::TRIM_SYMBOLAction(antlr4::RuleContext *context, size_t actionIn
 
 void MySQLLexer::VARIANCE_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 33: this->type = this->determineFunction(MySQLBaseLexer::VARIANCE_SYMBOL);  break;
+    case 33: this->type = this->determineFunction(MySQLLexer::VARIANCE_SYMBOL);  break;
 
   default:
     break;
@@ -558,7 +558,7 @@ void MySQLLexer::VARIANCE_SYMBOLAction(antlr4::RuleContext *context, size_t acti
 
 void MySQLLexer::VAR_POP_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 34: this->type = this->determineFunction(MySQLBaseLexer::VARIANCE_SYMBOL);  break;
+    case 34: this->type = this->determineFunction(MySQLLexer::VARIANCE_SYMBOL);  break;
 
   default:
     break;
@@ -567,7 +567,7 @@ void MySQLLexer::VAR_POP_SYMBOLAction(antlr4::RuleContext *context, size_t actio
 
 void MySQLLexer::VAR_SAMP_SYMBOLAction(antlr4::RuleContext *context, size_t actionIndex) {
   switch (actionIndex) {
-    case 35: this->type = this->determineFunction(MySQLBaseLexer::VAR_SAMP_SYMBOL);  break;
+    case 35: this->type = this->determineFunction(MySQLLexer::VAR_SAMP_SYMBOL);  break;
 
   default:
     break;

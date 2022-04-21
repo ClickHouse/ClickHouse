@@ -403,12 +403,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool internal,
     QueryProcessingStage::Enum stage,
     ReadBuffer * istr)
-{
-    
-    LOG_INFO(&Poco::Logger::get("executeQuery"), "executeQueryImpl: {}", begin);
-    Exp cls;
-    std::string testAst = cls.Test(begin);
-    LOG_INFO(&Poco::Logger::get("executeQuery"), "TEST {}", testAst); 
+{   
     const auto current_time = std::chrono::system_clock::now();
 
     auto & client_info = context->getClientInfo();
@@ -428,7 +423,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
-
+	
     ASTPtr ast;
     const char * query_end;
 
@@ -441,17 +436,31 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_table;
     try
     {
-        ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
+		std::string sql_dialect = settings.sql_dialect;
+		assert(sql_dialect == "clickhouse" || sql_dialect == "mysql");
+ 		if (sql_dialect == "mysql")
+		{
+			MySQLCompatibility::Converter converter;
+			std::string ast_dump = converter.dumpAST(begin);
+			LOG_INFO(&Poco::Logger::get("executeQuery"), "MySQL AST = {}", ast_dump);
+			ast = converter.toClickHouseAST(begin);
+			if (ast == nullptr)
+				throw Exception(ErrorCodes::INVALID_TRANSACTION, "Convertion failed");
+		}
+		else
+		{
+			ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
 
-        /// TODO: parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+			/// TODO: parser should fail early when max_query_size limit is reached.
+			ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
 
-        if (auto txn = context->getCurrentTransaction())
-        {
-            assert(txn->getState() != MergeTreeTransaction::COMMITTED);
-            if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
-                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query: transaction is rolled back");
-        }
+			if (auto txn = context->getCurrentTransaction())
+			{
+				assert(txn->getState() != MergeTreeTransaction::COMMITTED);
+				if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
+					throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query: transaction is rolled back");
+			}
+		}
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
