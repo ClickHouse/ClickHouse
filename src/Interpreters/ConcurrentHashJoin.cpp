@@ -137,6 +137,7 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
+        std::lock_guard lokc(hash_join->mutex);
         res += hash_join->data->getTotalRowCount();
     }
     return res;
@@ -147,6 +148,7 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
+        std::lock_guard lokc(hash_join->mutex);
         res += hash_join->data->getTotalByteCount();
     }
     return res;
@@ -156,6 +158,7 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 {
     for (const auto & hash_join : hash_joins)
     {
+        std::lock_guard lokc(hash_join->mutex);
         if (!hash_join->data->alwaysReturnsEmptySet())
             return false;
     }
@@ -226,25 +229,8 @@ void ConcurrentHashJoin::dispatchBlock(BlockDispatchControlData & dispatch_data,
     }
     if (selector_column.column->isNullable())
     {
-        const auto * nullable_col = typeid_cast<const ColumnNullable *>(selector_column.column.get());
-        const auto & nested_col = nullable_col->getNestedColumnPtr();
-        size_t last_offset = 0;
-        MutableColumnPtr dst = nullable_col->cloneEmpty();
-        for (size_t i = 0, sz = selector_column.column->size(); i < sz; ++i)
-        {
-            if (selector_column.column->isNullAt(i))[[unlikely]]
-            {
-                if (i > last_offset)[[likely]]
-                    dst->insertRangeFrom(*nested_col, last_offset, i - last_offset);
-                dst->insertDefault();
-                last_offset = i + 1;
-            }
-        }
-        if (last_offset < selector_column.column->size())
-        {
-            dst->insertRangeFrom(*nested_col, last_offset, selector_column.column->size() - last_offset);
-        }
-        selector_column.column = std::move(dst);
+        // use the default value for null rows.
+        selector_column.column = typeid_cast<const ColumnNullable *>(selector_column.column.get())->getNestedColumnPtr();
     }
     auto selector = createBlockSelector<UInt8>(*selector_column.column, selector_slots);
 
