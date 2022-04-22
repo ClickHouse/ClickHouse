@@ -95,7 +95,7 @@ void MergeTreeMarksLoader::loadMarks()
 {
     if (mark_cache)
     {
-        auto key = mark_cache->hash(mrk_path);
+        auto key = mark_cache->hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
         if (save_marks_in_cache)
         {
             auto callback = [this]{ return loadMarksImpl(); };
@@ -112,7 +112,7 @@ void MergeTreeMarksLoader::loadMarks()
         marks = loadMarksImpl();
 
     if (!marks)
-        throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Failed to load marks: " + std::string(fs::path(data_part_storage->getFullPath()) / mrk_path), ErrorCodes::LOGICAL_ERROR);
 }
 
 }
