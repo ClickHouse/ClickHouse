@@ -68,7 +68,7 @@ protected:
     String getString(const Columns & columns, size_t row_num, size_t column_pos);
     String getString(const IColumn & column, size_t row_num, SerializationPtr serialization);
 
-    void fixupBucketLables(CurrentMetric & metric);
+    static void fixupBucketLabels(CurrentMetric & metric);
 
     ColumnPositions pos;
     CurrentMetric current_metric;
