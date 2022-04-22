@@ -225,6 +225,8 @@ class ParserCollation : public IParserBase
 protected:
     const char * getName() const override { return "collation"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+private:
+    static const char * valid_collations[];
 };
 
 /// Fast path of cast operator "::".
