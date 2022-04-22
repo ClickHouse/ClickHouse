@@ -190,7 +190,7 @@ public:
 
     /// Handler for hot-reloading
     /// Supports only increasing the number of threads and tasks, because
-    /// implemeting tasks eviction will definitely be too error-prone and buggy.
+    /// implementing tasks eviction will definitely be too error-prone and buggy.
     void increaseThreadsAndMaxTasksCount(size_t new_threads_count, size_t new_max_tasks_count);
 
     bool trySchedule(ExecutableTaskPtr task);
