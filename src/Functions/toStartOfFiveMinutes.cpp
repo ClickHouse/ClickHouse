@@ -11,7 +11,7 @@ using FunctionToStartOfFiveMinutes = FunctionDateOrDateTimeToSomething<DataTypeD
 void registerFunctionToStartOfFiveMinutes(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToStartOfFiveMinutes>();
-    factory.registerAlias("ToStartOfFiveMinute", FunctionToStartOfFiveMinutes::name);
+    factory.registerAlias("toStartOfFiveMinute", FunctionToStartOfFiveMinutes::name);
 }
 
 }
