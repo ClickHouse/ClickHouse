@@ -85,6 +85,7 @@ class ZooKeeperLog;
 class SessionLog;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
+class CacheLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -819,6 +820,7 @@ public:
     std::shared_ptr<SessionLog> getSessionLog() const;
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
+    std::shared_ptr<CacheLog> getCacheLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.

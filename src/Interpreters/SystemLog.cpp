@@ -237,6 +237,10 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(transactions_info_log.get());
     if (processors_profile_log)
         logs.emplace_back(processors_profile_log.get());
+    if (cache_log) {
+        LOG_INFO(sys_log, "Cache Enable.");
+        logs.emplace_back(cache_log.get());
+    }
 
     try
     {
@@ -436,6 +440,8 @@ template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
+
+    LOG_INFO(log, "Prepare Table for {} - {}", table_id.getDatabaseName(), table_id.getTableName());
 
     auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     if (table)
