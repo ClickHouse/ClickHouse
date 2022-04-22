@@ -360,6 +360,24 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
     });
 
+    factory.registerInputFormat("JSONLines", [](
+        ReadBuffer & buf,
+        const Block & sample,
+        IRowInputFormat::Params params,
+        const FormatSettings & settings)
+    {
+        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
+    });
+
+    factory.registerInputFormat("NDJSON", [](
+        ReadBuffer & buf,
+        const Block & sample,
+        IRowInputFormat::Params params,
+        const FormatSettings & settings)
+    {
+        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
+    });
+
     factory.registerFileExtension("ndjson", "JSONEachRow");
     factory.registerFileExtension("jsonl", "JSONEachRow");
 
@@ -377,12 +395,16 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRow);
     factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONLines", &fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("NDJSON", &fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory)
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONStringsEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONLines", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("NDJSON", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 void registerJSONEachRowSchemaReader(FormatFactory & factory)
@@ -395,6 +417,16 @@ void registerJSONEachRowSchemaReader(FormatFactory & factory)
     factory.registerSchemaReader("JSONStringsEachRow", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_unique<JSONEachRowSchemaReader>(buf, true, settings);
+    });
+
+    factory.registerSchemaReader("JSONLines", [](ReadBuffer & buf, const FormatSettings & settings)
+    {
+        return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
+    });
+
+    factory.registerSchemaReader("NDJSON", [](ReadBuffer & buf, const FormatSettings & settings)
+    {
+        return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
     });
 }
 
