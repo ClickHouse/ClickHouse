@@ -6,10 +6,13 @@
 #include <Storages/MergeTree/CommonCondition.h>
 #include <method/hnsw.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <sstream>
+#include <vector>
 #include <index.h>
 #include <knnqueue.h>
 #include <methodfactory.h>
@@ -54,6 +57,8 @@ namespace HnswWrapper{
 
     void freeAndClearObjectVector();
 
+    size_t dataSize() const;
+
     ~IndexWrap();
 
 private:
@@ -88,7 +93,8 @@ struct MergeTreeIndexGranuleSimpleHnsw final : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexAggregatorSimpleHnsw final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorSimpleHnsw(const String & index_name_, const Block & index_sample_block);
+    MergeTreeIndexAggregatorSimpleHnsw(const String & index_name_, const Block & index_sample_block, 
+    const similarity::AnyParams & index_params_);
     ~MergeTreeIndexAggregatorSimpleHnsw() override = default;
 
     bool empty() const override { return data.empty();}
@@ -97,6 +103,7 @@ struct MergeTreeIndexAggregatorSimpleHnsw final : IMergeTreeIndexAggregator
 
     String index_name;
     Block index_sample_block;
+    similarity::AnyParams index_params;
     similarity::ObjectVector data;
 };
 
@@ -110,20 +117,22 @@ public:
         ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;
-
+    
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
+
+    std::optional<std::set<size_t>> getMaybeTrueGranules(MergeTreeIndexGranulePtr idx_granule) const override;
 
     ~MergeTreeIndexConditionSimpleHnsw() override = default;
 private:
-    DataTypes index_data_types;
     DB::Condition::Common::CommonCondition condition;
+    size_t granularity;
 };
 
 class MergeTreeIndexSimpleHnsw : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexSimpleHnsw(const IndexDescription & index_)
-        : IMergeTreeIndex(index_)
+    MergeTreeIndexSimpleHnsw(const IndexDescription & index_, const similarity::AnyParams & index_params_)
+        : IMergeTreeIndex(index_), index_params(index_params_)
     {}
 
     ~MergeTreeIndexSimpleHnsw() override = default;
@@ -138,6 +147,10 @@ public:
 
     const char* getSerializedFileExtension() const override { return ".idx2"; }
     MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & path_prefix) const override;
+
+    private:
+    
+    similarity::AnyParams index_params;
 };
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -87,6 +88,9 @@ public:
     virtual ~IMergeTreeIndexCondition() = default;
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
+
+    virtual std::optional<std::set<size_t>> getMaybeTrueGranules(MergeTreeIndexGranulePtr /*idx_granule*/) const{return std::nullopt;}
+
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 };

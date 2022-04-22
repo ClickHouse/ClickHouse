@@ -1,8 +1,12 @@
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <optional>
+#include <set>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <knnquery.h>
@@ -170,6 +174,11 @@ namespace HnswWrapper{
     }
 
     template<typename Dist>
+    size_t IndexWrap<Dist>::dataSize() const{
+       return data.size();
+    }
+
+    template<typename Dist>
     IndexWrap<Dist>::~IndexWrap(){
         freeAndClearObjectVector();
     }
@@ -193,9 +202,8 @@ MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & 
 
 
 MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_,
-     std::unique_ptr<HnswWrapper::IndexWrap<float>> index_impl_)
-    : index_name(index_name_),
-    index_sample_block(index_sample_block_), index_impl(std::move(index_impl_))
+std::unique_ptr<HnswWrapper::IndexWrap<float>> index_impl_)
+    : index_name(index_name_), index_sample_block(index_sample_block_), index_impl(std::move(index_impl_))
 {}
 
 
@@ -211,22 +219,22 @@ void MergeTreeIndexGranuleSimpleHnsw::deserializeBinary(ReadBuffer & istr, Merge
 }
 
 MergeTreeIndexAggregatorSimpleHnsw::MergeTreeIndexAggregatorSimpleHnsw(const String & index_name_, 
-const Block & index_sample_block_)
+const Block & index_sample_block_, const similarity::AnyParams & index_params_)
     : index_name(index_name_)
-    , index_sample_block(index_sample_block_)
+    , index_sample_block(index_sample_block_), index_params(index_params_)
 {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSimpleHnsw::getGranuleAndReset()
 {
     auto impl = std::make_unique<HnswWrapper::IndexWrap<float>>("l2");
     impl->addBatchUnsafe(std::move(data));
-    impl->createIndex();
+    impl->createIndex(index_params);
     LOG_DEBUG(&Poco::Logger::get("Hnsw"), "Create here");
     return std::make_shared<MergeTreeIndexGranuleSimpleHnsw>(index_name, index_sample_block,std::move(impl));
 }
 
 void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * pos, size_t limit){
-     if (*pos >= block.rows())
+    if (*pos >= block.rows())
         throw Exception(
                 "The provided position is not less than the number of block rows. Position: "
                 + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
@@ -262,9 +270,8 @@ void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * po
 MergeTreeIndexConditionSimpleHnsw::MergeTreeIndexConditionSimpleHnsw(
     const IndexDescription & index,
     const SelectQueryInfo & query,
-    ContextPtr context)
-    : index_data_types(index.data_types)
-    , condition(query, context)
+    ContextPtr context):
+    condition(query, context), granularity(index.granularity)
 {
 }
 
@@ -273,6 +280,21 @@ bool MergeTreeIndexConditionSimpleHnsw::alwaysUnknownOrTrue() const
     LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Condition -- {}", condition.alwaysUnknownOrTrue());
     return condition.alwaysUnknownOrTrue();
 }
+
+std::optional<std::set<size_t>> MergeTreeIndexConditionSimpleHnsw::getMaybeTrueGranules(MergeTreeIndexGranulePtr /*idx_granule*/) const{
+    // LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "getMaybeTrueGranules begin");
+    // float comp_dist = condition.getComparisonDistance();
+    // //size_t limit = condition.getLimit(); // todo
+    // std::vector<float> target_vec = condition.getTargetVector();
+    // similarity::Object target(-1,-1, target_vec.size() * sizeof(float), target_vec.data());
+    // std::shared_ptr<MergeTreeIndexGranuleSimpleHnsw> granule
+    //      = std::dynamic_pointer_cast<MergeTreeIndexGranuleSimpleHnsw>(idx_granule);
+    // if (!granule)
+    //      throw Exception(
+    //          "SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+    return std::nullopt;
+}
+
 
 bool MergeTreeIndexConditionSimpleHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
@@ -286,21 +308,10 @@ bool MergeTreeIndexConditionSimpleHnsw::mayBeTrueOnGranule(MergeTreeIndexGranule
     if (!granule)
          throw Exception(
              "SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+     LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Granularity {}, vec_size -- {}", granularity, granule->index_impl->dataSize());
     auto result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(target, 1));
     LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "check res -- {}", result->TopDistance());
     return result->TopDistance() < comp_dist;
-    // auto center_obj = std::make_unique<similarity::Object>(-1, -1, 3 * sizeof(float), nullptr);
-    // auto *raw_center_obj = reinterpret_cast<float*>(center_obj->data());
-    // raw_center_obj[0] = 0.2;
-    // raw_center_obj[1] = 0.2;
-    // raw_center_obj[2] = 0.2;
-    // std::shared_ptr<MergeTreeIndexGranuleSimpleHnsw> granule
-    //      = std::dynamic_pointer_cast<MergeTreeIndexGranuleSimpleHnsw>(idx_granule);
-    // if (!granule)
-    //      throw Exception(
-    //          "SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
-    // auto result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(*center_obj, 1));
-    // return result->TopDistance() < 10;
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexSimpleHnsw::createIndexGranule() const
@@ -311,7 +322,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexSimpleHnsw::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexSimpleHnsw::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorSimpleHnsw>(index.name, index.sample_block);
+    return std::make_shared<MergeTreeIndexAggregatorSimpleHnsw>(index.name, index.sample_block, index_params);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSimpleHnsw::createIndexCondition(
@@ -348,11 +359,30 @@ MergeTreeIndexFormat MergeTreeIndexSimpleHnsw::getDeserializedFormat(const DiskP
 MergeTreeIndexPtr simpleHnswIndexCreator(
     const IndexDescription & index)
 {
-    return std::make_shared<MergeTreeIndexSimpleHnsw>(index);
+    static std::vector<std::string> param_places_to_names({ "M", "efConstruction", "maxM", "maxM0"});
+   
+    std::vector<string> param_names;
+    std::vector<string> param_values;
+    for(size_t i = 0 ; i < index.arguments.size();++i){
+        param_names.push_back(param_places_to_names[i]);
+        size_t param_val  = index.arguments[i].get<size_t>();
+        param_values.push_back(std::to_string(param_val));
+    }
+    similarity::AnyParams params(param_names, param_values);
+    return std::make_shared<MergeTreeIndexSimpleHnsw>(index, params);
 }
 
-void simpleHnswIndexValidator(const IndexDescription & /* index */, bool /* attach */)
+void simpleHnswIndexValidator(const IndexDescription & index, bool /* attach */)
 {
+    if(index.arguments.size() > 4){
+        throw Exception("Hnsw index must have exactly one argument.", ErrorCodes::INCORRECT_DATA);
+    }
+
+    for(const auto & arg: index.arguments){
+        if(arg.getType() != Field::Types::UInt64){
+            throw Exception("Hnsw index must have exactly one argument.", ErrorCodes::INCORRECT_DATA);
+        }
+    }
 }
 
 }
