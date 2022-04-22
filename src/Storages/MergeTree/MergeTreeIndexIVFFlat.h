@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <faiss/IndexIVFFlat.h>
+#include "Core/Field.h"
 #include "Interpreters/Context_fwd.h"
 #include "Parsers/IAST_fwd.h"
 #include "Storages/SelectQueryInfo.h"
@@ -14,7 +15,7 @@ namespace DB
 struct MergeTreeIndexGranuleIVFFlat final : public IMergeTreeIndexGranule
 {
     using FaissBaseIndex = faiss::Index;
-    using FaissBaseIndexPtr = std::shared_ptr<FaissBaseIndex>; 
+    using FaissBaseIndexPtr = std::unique_ptr<FaissBaseIndex>; 
 
     MergeTreeIndexGranuleIVFFlat(const String & index_name_, const Block & index_sample_block_);
     MergeTreeIndexGranuleIVFFlat(
@@ -40,7 +41,7 @@ struct MergeTreeIndexAggregatorIVFFlat final : IMergeTreeIndexAggregator
 {
     using Value = Float32;
 
-    MergeTreeIndexAggregatorIVFFlat(const String & index_name_, const Block & index_sample_block_);
+    MergeTreeIndexAggregatorIVFFlat(const String & index_name_, const Block & index_sample_block_, const String & index_key_);
     ~MergeTreeIndexAggregatorIVFFlat() override = default;
 
     bool empty() const override;
@@ -49,7 +50,9 @@ struct MergeTreeIndexAggregatorIVFFlat final : IMergeTreeIndexAggregator
 
     String index_name;
     Block index_sample_block;
+    String index_key;
     std::vector<Value> values;
+    size_t dimension = 0;
 };
 
 
@@ -59,7 +62,8 @@ public:
     MergeTreeIndexConditionIVFFlat(
         const IndexDescription & index,
         const SelectQueryInfo & query,
-        ContextPtr context);
+        ContextPtr context,
+        FieldVector arguments_);
     ~MergeTreeIndexConditionIVFFlat() override = default;
 
     bool alwaysUnknownOrTrue() const override;
@@ -138,6 +142,7 @@ private:
 
     DataTypes index_data_types;
     ANNExpressionOpt expression;
+    FieldVector arguments;
 };
 
 
@@ -158,6 +163,10 @@ public:
 
     const char* getSerializedFileExtension() const override { return ".idx2"; }
     MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & path_prefix) const override;
+
+private:
+    String index_key;
+    FieldVector arguments;
 };
 
 }

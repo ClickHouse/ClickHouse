@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <Storages/MergeTree/MergeTreeIndexIVFFlat.h>
 
@@ -13,6 +14,7 @@
 #include <base/logger_useful.h>
 
 #include "Core/Field.h"
+#include "Disks/IVolume.h"
 #include "Interpreters/Context_fwd.h"
 #include "MergeTreeIndices.h"
 #include "KeyCondition.h"
@@ -23,12 +25,18 @@
 #include "base/types.h"
 #include <Common/FieldVisitorsAccurateComparison.h>
 
+#include <faiss/AutoTune.h>
+#include <faiss/IVFlib.h>
+#include <faiss/Index.h>
 #include <faiss/IndexFlat.h>
 #include <faiss/IndexIVF.h>
 #include <faiss/IndexIVFFlat.h>
 #include <faiss/MetricType.h>
+#include <faiss/impl/FaissException.h>
 #include <faiss/impl/io.h>
+#include <faiss/index_factory.h>
 #include <faiss/index_io.h>
+#include <libnuraft/log_store.hxx>
 
 // TODO: Refactor includes, they are ugly
 
@@ -111,9 +119,11 @@ bool MergeTreeIndexGranuleIVFFlat::empty() const
 
 
 MergeTreeIndexAggregatorIVFFlat::MergeTreeIndexAggregatorIVFFlat(const String & index_name_,
-                                                                const Block & index_sample_block_)
+                                                                const Block & index_sample_block_,
+                                                                const String & index_key_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
+    , index_key(index_key_)
 {}
 
 bool MergeTreeIndexAggregatorIVFFlat::empty() const
@@ -126,22 +136,37 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIVFFlat::getGranuleAndReset()
     // TODO: Remove hardcoded params, we can get it from CREATE or from creation of the granule
     // Hyperparams for the index
     // Num of dimensions
-    size_t dim = 3; 
+    // size_t dim = 3; 
     // Num of clusters for training
-    size_t nlist = 100;
+    // size_t nlist = 100;
 
-    // IndexIFVFlat will take care of memory managment
-    MergeTreeIndexGranuleIVFFlat::FaissBaseIndex* coarse_quantizer = new faiss::IndexFlat(dim, faiss::METRIC_L2);
-    auto index = std::make_shared<faiss::IndexIVFFlat>(coarse_quantizer, dim, nlist);
-    index->own_fields = true;
+    // // IndexIFVFlat will take care of memory managment
+    // MergeTreeIndexGranuleIVFFlat::FaissBaseIndex* coarse_quantizer = new faiss::IndexFlat(dim, faiss::METRIC_L2);
+    // auto index = std::make_shared<faiss::IndexIVFFlat>(coarse_quantizer, dim, nlist);
+    // index->own_fields = true;
 
-    auto num_elements = values.size() / dim;
-    index->train(num_elements, values.data());
-    index->add(num_elements, values.data());
+    // auto num_elements = values.size() / dim;
+    // index->train(num_elements, values.data());
+    // index->add(num_elements, values.data());
 
+    // values.clear();
+
+    // return std::make_shared<MergeTreeIndexGranuleIVFFlat>(index_name, index_sample_block, index);
+    // const std::string key_string = "IVF64(Flat)";
+
+    std::unique_ptr<faiss::Index> index(faiss::index_factory(dimension, index_key.c_str()));
+
+    auto num_elements = values.size() / dimension;
+
+    try {
+        index->train(num_elements, values.data());
+        index->add(num_elements, values.data());
+    } catch (const faiss::FaissException&) {
+        LOG_DEBUG(&Poco::Logger::get("IVFFlat"), "Too few items. Values: {}, dim: {}, num_el: {}", values.size(), dimension, num_elements);
+    }
     values.clear();
 
-    return std::make_shared<MergeTreeIndexGranuleIVFFlat>(index_name, index_sample_block, index);
+    return std::make_shared<MergeTreeIndexGranuleIVFFlat>(index_name, index_sample_block, std::move(index));
 }
 
 void MergeTreeIndexAggregatorIVFFlat::update(const Block & block, size_t * pos, size_t limit)
@@ -160,21 +185,44 @@ void MergeTreeIndexAggregatorIVFFlat::update(const Block & block, size_t * pos, 
     auto index_column_name = index_sample_block.getByPosition(0).name;
     const auto & column = block.getByName(index_column_name).column->cut(*pos, rows_read);
 
-    // TODO: Fix dummy way of the access to the Field
-    for (size_t i = 0; i < rows_read; ++i) 
-    {
-        Field field;
-        column->get(i, field);
-        
-        auto field_array = field.safeGet<Tuple>();
+    std::vector<std::vector<Float32>> coords_vector;
 
-        // Store vectors in the flatten arrays
-        for (const auto& value : field_array) 
-        {
-            auto num = value.safeGet<Float32>();
-            values.push_back(num);
+    const auto * vectors = typeid_cast<const ColumnTuple *>(column.get());
+
+    // TODO: Get dimension in the CREATE request
+    dimension = vectors->getColumns().size();
+
+    size_t offset = values.size();
+    values.resize(offset + dimension * rows_read);
+
+    for (size_t col_idx = 0; col_idx < dimension; ++col_idx) {
+        const auto & inner_column = vectors->getColumns()[col_idx];
+        const auto * coordinate_column = typeid_cast<const ColumnFloat32 *>(inner_column.get());
+
+        for (size_t row_idx = 0; row_idx < coordinate_column->size(); ++row_idx) {
+            values[offset + dimension * row_idx + col_idx] = coordinate_column->getElement(row_idx);
         }
     }
+
+    // TODO: Fix dummy way of the access to the Field
+    // for (size_t i = 0; i < rows_read; ++i) 
+    // {
+    //     Field field;
+    //     column->get(i, field);
+        
+    //     auto field_array = field.safeGet<Tuple>();
+
+    //     if (dimension == 0) {
+    //         dimension = field_array
+    //     }
+
+    //     // Store vectors in the flatten arrays
+    //     for (const auto& value : field_array) 
+    //     {
+    //         auto num = value.safeGet<Float32>();
+    //         values.push_back(num);
+    //     }
+    // }
 
     *pos += rows_read;
 }
@@ -183,8 +231,10 @@ void MergeTreeIndexAggregatorIVFFlat::update(const Block & block, size_t * pos, 
 MergeTreeIndexConditionIVFFlat::MergeTreeIndexConditionIVFFlat(
     const IndexDescription & index,
     const SelectQueryInfo & query,
-    ContextPtr context)
+    ContextPtr context,
+    FieldVector arguments_)
     : index_data_types(index.data_types)
+    , arguments(std::move(arguments_))
 {
     // Build Reverse Polish notation from the query
     RPN rpn = buildRPN(query, context); 
@@ -219,9 +269,44 @@ bool MergeTreeIndexConditionIVFFlat::mayBeTrueOnGranule(MergeTreeIndexGranulePtr
     int64_t label;
 
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleIVFFlat>(idx_granule);
-    auto ifv_index = std::dynamic_pointer_cast<faiss::IndexIVFFlat>(granule->index_base);
 
-    ifv_index->search(n, target_vec.data(), k, &distance, &label);
+    std::optional<faiss::IVFSearchParameters> params;
+
+    // Explicit arguments
+    if (!arguments.empty()) {
+        const size_t nprobe_pos = 0;
+        const size_t max_codes_pos = 1;
+
+        params.emplace(faiss::IVFSearchParameters{});
+        params->nprobe = arguments[nprobe_pos].safeGet<size_t>();
+        if (arguments.size() > max_codes_pos) {
+            params->max_codes = arguments[max_codes_pos].safeGet<size_t>();
+        }
+    } else {
+        // TODO: Add autotune
+        auto* ifv_index = faiss::ivflib::try_extract_index_ivf(granule->index_base.get());
+        if (ifv_index != nullptr) {
+            // We use IVF-like index, so we use autotuning to find parameters
+
+            // TODO: add autotune
+            params.emplace(faiss::IVFSearchParameters{});
+            params->nprobe = 1;
+            params->max_codes = 0;
+        }     
+    }
+
+    if (params.has_value()) {
+        faiss::ivflib::search_with_parameters(
+            granule->index_base.get(), 
+            n, 
+            target_vec.data(), 
+            k, 
+            &distance, 
+            &label, 
+            &params.value());
+    } else {
+        granule->index_base->search(n, target_vec.data(), k, &distance, &label);
+    }
 
     return distance < min_distance;
 }
@@ -416,7 +501,16 @@ bool MergeTreeIndexConditionIVFFlat::matchRPN(const RPN & rpn)
 
 MergeTreeIndexIVFFlat::MergeTreeIndexIVFFlat(const IndexDescription & index_)
     : IMergeTreeIndex(index_)
-{}
+{
+    assert(!index.arguments.empty());
+
+    index_key = index.arguments.front().safeGet<String>();
+
+    if (index.arguments.size() > 1) {
+        arguments.resize(index.arguments.size() - 1);
+        std::copy(index.arguments.begin() + 1, index.arguments.end(), arguments.begin());
+    }
+}
 
 
 MergeTreeIndexGranulePtr MergeTreeIndexIVFFlat::createIndexGranule() const
@@ -426,13 +520,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexIVFFlat::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexIVFFlat::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorIVFFlat>(index.name, index.sample_block);
+    return std::make_shared<MergeTreeIndexAggregatorIVFFlat>(index.name, index.sample_block, index_key);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexIVFFlat::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionIVFFlat>(index, query, context);
+    return std::make_shared<MergeTreeIndexConditionIVFFlat>(index, query, context, arguments);
 }
 
 bool MergeTreeIndexIVFFlat::mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const
