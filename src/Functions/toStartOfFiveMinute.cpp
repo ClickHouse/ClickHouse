@@ -6,11 +6,11 @@
 namespace DB
 {
 
-using FunctionToStartOfFiveMinute = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfFiveMinuteImpl>;
+using FunctionToStartOfFiveMinutes = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfFiveMinutesImpl>;
 
-void registerFunctionToStartOfFiveMinute(FunctionFactory & factory)
+void registerFunctionToStartOfFiveMinutes(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionToStartOfFiveMinute>();
+    factory.registerFunction<FunctionToStartOfFiveMinutes>();
 }
 
 }
