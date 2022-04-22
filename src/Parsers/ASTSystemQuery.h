@@ -104,9 +104,9 @@ public:
         return res;
     }
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
-        return removeOnCluster<ASTSystemQuery>(clone(), new_database);
+        return removeOnCluster<ASTSystemQuery>(clone(), params.default_database);
     }
 
     virtual QueryKind getQueryKind() const override { return QueryKind::System; }
