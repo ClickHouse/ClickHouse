@@ -21,6 +21,8 @@
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 
 namespace DB
 {
@@ -456,6 +458,35 @@ void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source->setProcessListElement(elem);
     }
+}
+
+size_t QueryPipelineBuilder::getNumThreads() const
+{
+    auto num_threads = pipe.maxParallelStreams();
+
+    auto adqm_log = &Poco::Logger::get("ADQM");
+    LOG_DEBUG(adqm_log,"maxParallelStreams: {}", num_threads);
+    LOG_DEBUG(adqm_log,"max_threads: {}", max_threads);
+
+    if (max_threads) //-V1051
+        num_threads = std::min(num_threads, max_threads);
+
+    LOG_DEBUG(adqm_log,"Recommended num threads: {}", num_threads);
+    auto context = process_list_element->getContext();
+    auto global_max_threads = context->getSettingsRef().global_max_threads;
+    if (process_list_element && global_max_threads) {
+        LOG_DEBUG(adqm_log,"Global number of threads from config: {}", global_max_threads);
+        LOG_DEBUG(adqm_log,"Current global num threads: {}",
+                  context->getProcessList().getGlobalNumThreads());
+        auto globally_available_threads = global_max_threads - context->getProcessList().getGlobalNumThreads();
+        LOG_DEBUG(adqm_log,"Globally available threads: {}", globally_available_threads);
+        num_threads = std::min(num_threads, globally_available_threads);
+        LOG_DEBUG(adqm_log,"Recommended num threads: {}", num_threads);
+    }
+
+    num_threads = std::max<size_t>(1, num_threads);
+    LOG_DEBUG(adqm_log,"Final num threads: {}", num_threads);
+    return num_threads;
 }
 
 PipelineExecutorPtr QueryPipelineBuilder::execute()

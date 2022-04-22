@@ -6,6 +6,10 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ProcessList.h>
+#include <Poco/Logger.h>
+#include <loggers/Loggers.h>
+
 
 namespace DB
 {
@@ -29,6 +33,8 @@ struct ExpressionActionsSettings;
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
+
+class Context;
 
 class QueryPipelineBuilder
 {
@@ -130,15 +136,7 @@ public:
     void setProcessListElement(QueryStatus * elem);
 
     /// Recommend number of threads for pipeline execution.
-    size_t getNumThreads() const
-    {
-        auto num_threads = pipe.maxParallelStreams();
-
-        if (max_threads) //-V1051
-            num_threads = std::min(num_threads, max_threads);
-
-        return std::max<size_t>(1, num_threads);
-    }
+    size_t getNumThreads() const;
 
     /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
