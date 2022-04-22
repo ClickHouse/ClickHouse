@@ -68,7 +68,7 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
 KeeperStateManager::KeeperConfigurationWrapper
 KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
-    const bool host_checks_enabled = config.getBool(config_prefix + ".host_checks_enabled", true);
+    const bool hostname_checks_enabled = config.getBool(config_prefix + ".hostname_checks_enabled", true);
 
     KeeperConfigurationWrapper result;
     result.cluster_config = std::make_shared<nuraft::cluster_config>();
@@ -109,7 +109,7 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
                 client_ports[port]);
         }
 
-        if (host_checks_enabled)
+        if (hostname_checks_enabled)
         {
             if (hostname == "localhost")
             {
@@ -174,7 +174,7 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     if (result.servers_start_as_followers.size() == total_servers)
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 
-    if (host_checks_enabled)
+    if (hostname_checks_enabled)
     {
         if (localhost_present && !non_local_hostname.empty())
         {
