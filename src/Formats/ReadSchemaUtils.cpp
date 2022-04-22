@@ -94,7 +94,7 @@ ColumnsDescription readSchemaFromFormat(
         }
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} file format doesn't support schema inference", format_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} file format doesn't support schema inference. You must specify the structure manually", format_name);
 
     return ColumnsDescription(names_and_types);
 }

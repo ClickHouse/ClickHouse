@@ -328,7 +328,7 @@ ProjectionsDescription ProjectionsDescription::parse(const String & str, const C
 
 bool ProjectionsDescription::has(const String & projection_name) const
 {
-    return map.count(projection_name) > 0;
+    return map.contains(projection_name);
 }
 
 const ProjectionDescription & ProjectionsDescription::get(const String & projection_name) const
