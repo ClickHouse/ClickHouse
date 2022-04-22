@@ -87,6 +87,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     {
         materialized_columns.push_back(chunk.getColumns().at(params->params.keys[i])->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back();
+        if (group_by_key)
+            key_columns_raw[i] = materialized_columns.back().get();
     }
 
     Aggregator::NestedColumnsHolder nested_columns_holder;
@@ -135,15 +137,9 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         if (key_begin != key_end)
         {
             if (group_by_key)
-            {
-                bool no_more_keys = false;
-                /// FIXME: suboptimal (create states and requires key_columns_raw)
-                params->aggregator.executeOnBlock(chunk.getColumns(), key_begin, key_end, variants, key_columns_raw, aggregate_columns, no_more_keys);
-            }
+                params->aggregator.executeOnBlockSmall(variants, key_begin, key_end, key_columns_raw, aggregate_function_instructions.data());
             else
-            {
                 params->aggregator.executeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_function_instructions.data(), variants.aggregates_pool);
-            }
         }
 
         current_memory_usage = getCurrentMemoryUsage() - initial_memory_usage;

@@ -1166,6 +1166,26 @@ private:
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
 
 
+    /// Used for optimize_aggregation_in_order:
+    /// - No two-level aggregation
+    /// - No external aggregation
+    /// - No without_key support (it is implemented using executeOnIntervalWithoutKeyImpl())
+    void executeOnBlockSmall(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions) const;
+
+    void executeImpl(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions,
+        bool no_more_keys = false,
+        AggregateDataPtr overflow_row = nullptr) const;
+
     /// Process one data block, aggregate the data into a hash table.
     template <typename Method>
     void executeImpl(
