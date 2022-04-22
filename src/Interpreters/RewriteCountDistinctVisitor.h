@@ -1,7 +1,5 @@
 #pragma once
 
-#include <unordered_set>
-
 #include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include "Interpreters/TreeRewriter.h"
@@ -15,10 +13,7 @@ class ASTFunction;
 class RewriteCountDistinctFunctionMatcher
 {
 public:
-    struct Data
-    {
-        //TreeRewriterResult & result;
-    };
+    struct Data {};
     static void visit(ASTPtr & ast, Data &);
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 };

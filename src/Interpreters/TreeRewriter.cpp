@@ -25,7 +25,6 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
-#include <Interpreters/RewriteCountDistinctVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>

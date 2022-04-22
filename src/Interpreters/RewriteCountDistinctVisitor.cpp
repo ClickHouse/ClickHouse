@@ -34,9 +34,12 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
         return;
     if (!arg[0]->as<ASTIdentifier>())
         return;
+    if (selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children.size() != 1)
+        return;
     auto * table_expr = selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children[0]->as<ASTTableExpression>();
     if (!table_expr || !table_expr->database_and_table_name)
         return;
+    // Check done, we now rewrite the AST
     auto cloned_select_query = selectq->clone();
     expr_list->children[0] = makeASTFunction("count");
 
@@ -56,8 +59,6 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
         auto exprlist = std::make_shared<ASTExpressionList>();
         exprlist->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
         cloned_select_query->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::GROUP_BY, exprlist);
-        if (auto settings_ptr = select_ptr->getExpression(ASTSelectQuery::Expression::SETTINGS, false))
-            select_ptr->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
 
         auto expr = std::make_shared<ASTExpressionList>();
         expr->children.emplace_back(cloned_select_query);
