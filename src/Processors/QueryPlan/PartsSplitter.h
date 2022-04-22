@@ -93,8 +93,9 @@ private:
     /// Returns the rightmost mark where PK value is less than border.
     size_t splitByBorder(size_t part_idx, const MarkRange & range, const IndexValue & border)
     {
+        const bool index_is_defined_at_the_end_mark = range.end < parts[part_idx].data_part->index_granularity.getMarksCount();
         auto left = range.begin;
-        auto right = range.end;
+        auto right = range.end + index_is_defined_at_the_end_mark;
         while (left + 1 < right)
         {
             auto mid = (left + right) / 2;
