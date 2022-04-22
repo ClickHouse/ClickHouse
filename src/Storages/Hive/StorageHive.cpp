@@ -178,7 +178,7 @@ public:
                         }
                         else
                         {
-                            return std::move(buf);
+                            return buf;
                         }
                     };
                     raw_read_buf = get_raw_read_buf();
