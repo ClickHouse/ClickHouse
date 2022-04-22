@@ -26,15 +26,6 @@ from tee_popen import TeePopen
 IMAGE_NAME = "clickhouse/binary-builder"
 
 
-def get_build_config(build_check_name: str, build_name: str) -> BuildConfig:
-    if build_check_name == "ClickHouse build check (actions)":
-        build_config_name = "build_config"
-    else:
-        raise Exception(f"Unknown build check name {build_check_name}")
-
-    return CI_CONFIG[build_config_name][build_name]
-
-
 def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config["package_type"] != "deb":
         return False
@@ -196,10 +187,9 @@ def upload_master_static_binaries(
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    build_check_name = sys.argv[1]
-    build_name = sys.argv[2]
+    build_name = sys.argv[1]
 
-    build_config = get_build_config(build_check_name, build_name)
+    build_config = CI_CONFIG["build_config"][build_name]
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
