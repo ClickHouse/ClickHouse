@@ -12,6 +12,7 @@
 #include <Columns/ColumnSparse.h>
 
 #include <iterator>
+#include <list>
 #include <base/sort.h>
 #include <boost/algorithm/string.hpp>
 
@@ -133,7 +134,7 @@ Block::Block(ColumnsWithTypeAndName && data_) : data{std::move(data_)}
 void Block::initializeIndexByName()
 {
     for (size_t i = 0, size = data.size(); i < size; ++i)
-        index_by_name.emplace(data[i].name, i);
+        index_by_name[data[i].name].push_back(i);
 }
 
 
@@ -153,15 +154,27 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
     if (elem.name.empty())
         throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
-    auto [new_it, inserted] = index_by_name.emplace(elem.name, position);
-    if (!inserted)
-        checkColumnStructure<void>(data[new_it->second], elem,
+    auto & positions = index_by_name[elem.name];
+    if (!positions.empty())
+        checkColumnStructure<void>(data[positions.front()], elem,
             "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
+    positions.push_back(position);
+
+    /// Remove the name that previously was at this position
     for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
     {
-        if (it->second >= position && (!inserted || it != new_it))
-            ++it->second;
+        auto & old_positions = it->second;
+        auto position_it = find(old_positions.begin(), old_positions.end(), position);
+        if (position_it == old_positions.end())
+            continue;
+
+        old_positions.erase(position_it);
+
+        if (old_positions.empty())
+            index_by_name.erase(it);
+
+        break;
     }
 
     data.emplace(data.begin() + position, std::move(elem));
@@ -173,17 +186,13 @@ void Block::insert(ColumnWithTypeAndName elem)
     if (elem.name.empty())
         throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
-    auto [it, inserted] = index_by_name.emplace(elem.name, data.size());
-    if (inserted)
-    {
-        data.emplace_back(std::move(elem));
-    }
-    else
-    {
-        checkColumnStructure<void>(data[it->second], elem,
+    auto & positions = index_by_name[elem.name];
+    if (!positions.empty())
+        checkColumnStructure<void>(data[positions.front()], elem,
             "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-        data[it->second] = std::move(elem);
-    }
+
+    positions.push_back(data.size());
+    data.emplace_back(std::move(elem));
 }
 
 
@@ -221,16 +230,20 @@ void Block::eraseImpl(size_t position)
 {
     data.erase(data.begin() + position);
 
-    for (auto it = index_by_name.begin(); it != index_by_name.end();)
+    /// Remove the name that previously was at this position
+    for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
     {
-        if (it->second == position)
-            it = index_by_name.erase(it);
-        else
-        {
-            if (it->second > position)
-                --it->second;
-            ++it;
-        }
+        auto & old_positions = it->second;
+        auto position_it = find(old_positions.begin(), old_positions.end(), position);
+        if (position_it == old_positions.end())
+            continue;
+
+        old_positions.erase(position_it);
+
+        if (old_positions.empty())
+            index_by_name.erase(it);
+
+        break;
     }
 }
 
@@ -242,7 +255,7 @@ void Block::erase(const String & name)
         throw Exception("No such name in Block::erase(): '"
             + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
-    eraseImpl(index_it->second);
+    eraseImpl(index_it->second.back());
 }
 
 
@@ -293,7 +306,7 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool c
     {
         return nullptr;
     }
-    return &data[it->second];
+    return &data[it->second.front()];
 }
 
 
@@ -325,7 +338,7 @@ size_t Block::getPositionByName(const std::string & name) const
         throw Exception(
             "Not found column " + name + " in block. There are only columns: " + dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
-    return it->second;
+    return it->second.front();
 }
 
 
@@ -417,7 +430,9 @@ std::string Block::dumpIndex() const
             out << ", ";
         first = false;
 
-        out << name << ' ' << pos;
+        out << name;
+        for (const auto p : pos)
+            out << ' ' << p;
     }
     return out.str();
 }
@@ -571,7 +586,8 @@ Block Block::sortColumns() const
     });
 
     for (const auto & it : sorted_index_by_name)
-        sorted_block.insert(data[it->second]);
+        for (const auto pos : it->second)
+            sorted_block.insert(data[pos]);
 
     return sorted_block;
 }
