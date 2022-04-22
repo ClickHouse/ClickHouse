@@ -1,10 +1,12 @@
 # docker build -t clickhouse/mysql-golang-client .
 # MySQL golang client docker container
 
-FROM golang:1.13
+FROM golang:1.17
 
-RUN go get "github.com/go-sql-driver/mysql"
+WORKDIR /opt
 
 COPY ./main.go main.go
 
-RUN go build main.go
+RUN go mod init none \
+    && go get \
+    && go build main.go
