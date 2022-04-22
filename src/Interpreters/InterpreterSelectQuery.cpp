@@ -1672,6 +1672,20 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     }
 }
 
+void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
+{
+    context->getClientInfo().collaborate_with_initiator = true;
+    context->setMergeTreeReadTaskCallback(std::move(callback));
+}
+
+void InterpreterSelectQuery::setProperClientInfo()
+{
+    context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    assert(options.shard_count.has_value() && options.shard_num.has_value());
+    context->getClientInfo().count_participating_replicas = *options.shard_count;
+    context->getClientInfo().number_of_current_replica = *options.shard_num;
+}
+
 bool InterpreterSelectQuery::shouldMoveToPrewhere()
 {
     const Settings & settings = context->getSettingsRef();
