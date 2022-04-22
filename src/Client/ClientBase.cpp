@@ -1326,9 +1326,13 @@ bool ClientBase::receiveEndOfQuery()
                 onProgress(packet.progress);
                 break;
 
+            case Protocol::Server::ProfileEvents:
+                onProfileEvents(packet.block);
+                break;
+
             default:
                 throw NetException(
-                    "Unexpected packet from server (expected Exception, EndOfStream or Log, got "
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got "
                         + String(Protocol::Server::toString(packet.type)) + ")",
                     ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
         }
