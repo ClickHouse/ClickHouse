@@ -8,5 +8,5 @@ WORKDIR /opt
 COPY ./main.go main.go
 
 RUN go mod init none \
-    && go get \
+    && go get github.com/go-sql-driver/mysql@master \
     && go build main.go
