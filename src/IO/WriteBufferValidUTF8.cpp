@@ -16,7 +16,8 @@ namespace DB
 #ifdef __aarch64__
 uint32_t _mm_movemask_aarch64(uint8x16_t input)
 {   
-    const int8_t __attribute__ ((aligned (16))) ucShift[] =
+    //const int8_t __attribute__ ((aligned (16))) ucShift[] =
+    int8_t const ucShift[] =
     {
         -7, -6, -5, -4, -3, -2, -1, 0, -7, -6, -5, -4, -3, -2, -1, 0
     };
@@ -103,9 +104,9 @@ void WriteBufferValidUTF8::nextImpl()
 #ifdef __aarch64__
         /// Fast skip of ASCII
         static constexpr size_t SIMD_BYTES = 16;
-        const char * simd_end = p + (end - p) / SIMD_BYTES * SIMD_BYTES;
+        const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
 
-        while (p < simd_end && !_mm_movemask_aarch64_2(vld1q_u8(p)))
+        while (p < simd_end && !_mm_movemask_aarch64(vld1q_u8(reinterpret_cast<const unsigned char *>(p))))
             p += SIMD_BYTES;
         
         if (!(p < pos))
