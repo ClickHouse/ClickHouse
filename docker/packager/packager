@@ -165,10 +165,10 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
         if is_release_build(build_type, package_type, sanitizer, split_binary):
             cmake_flags.append("-DINSTALL_STRIPPED_BINARIES=ON")
-            if not is_cross_arm:
-                result.append("BUILD_MUSL_KEEPER=1")
-            else:
+            if is_cross_arm:
                 cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
+            else:
+                result.append("BUILD_MUSL_KEEPER=1")
 
     result.append(f"CC={cc}")
     result.append(f"CXX={cxx}")
