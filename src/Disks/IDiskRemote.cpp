@@ -364,9 +364,9 @@ void IDiskRemote::getRemotePathsRecursive(const String & local_path, std::vector
         {
             paths_map.emplace_back(local_path, getRemotePaths(local_path));
         }
-        catch (const Exception & e)
+        catch (const ErrnoException & e)
         {
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            if (e.getErrno() == ENOENT)
                 return;
             throw;
         }
