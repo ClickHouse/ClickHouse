@@ -151,7 +151,7 @@ Mode引数は、toWeek()のmode引数とまったく同じように動作しま�
 
 日付と時刻を分の開始まで切り捨てます。
 
-## トスタートオフィブミニュート {#tostartoffiveminute}
+## トスタートオフィブミニュート {#tostartoffiveminutes}
 
 日付と時刻を切り捨てます。
 
