@@ -23,7 +23,7 @@ public:
 
     const StoragePtr & table() const override
     {
-        StoragePtr storage = std::make_shared<StorageMaterializedMySQL>(nested_iterator->table(), database);
+        StoragePtr storage = StorageMaterializedMySQL::create(nested_iterator->table(), database);
         return tables.emplace_back(storage);
     }
 

@@ -131,7 +131,7 @@ private:
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
     /// Handle error mode
-    [[maybe_unused]] HandleKafkaErrorMode handle_error_mode; // NOLINT -- forgotten to remove or an error? needs checking
+    // HandleKafkaErrorMode handle_error_mode; // NOLINT -- actually not used, needs checing
 
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(size_t consumer_number);

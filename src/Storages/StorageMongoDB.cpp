@@ -39,7 +39,7 @@ StorageMongoDB::StorageMongoDB(
     const String & comment)
     : IStorage(table_id_)
     , host(host_)
-    , port(port_)
+    // , port(port_)
     , database_name(database_name_)
     , collection_name(collection_name_)
     , username(username_)

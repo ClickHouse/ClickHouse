@@ -137,7 +137,7 @@ StoragePtr DatabaseMaterializedMySQL::tryGetTable(const String & name, ContextPt
     if (context_->isInternalQuery())
         return nested_storage;
     if (nested_storage)
-        return std::make_shared<StorageMaterializedMySQL>(std::move(nested_storage), this);
+        return StorageMaterializedMySQL::create(std::move(nested_storage), this);
     return nullptr;
 }
 
