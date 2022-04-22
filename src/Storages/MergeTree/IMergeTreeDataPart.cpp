@@ -1309,7 +1309,7 @@ void IMergeTreeDataPart::remove() const
     {
         projection_part->metadata_manager->deleteAll(false);
         projection_part->metadata_manager->assertAllDeleted(false);
-        projection_checksums.emplace_back(p_name, projection_part->checksums);
+        projection_checksums.emplace_back(IDataPartStorage::ProjectionChecksums{.name = p_name, .checksums = projection_part->checksums});
     }
 
     data_part_storage->remove(*keep_shared_data, checksums, projection_checksums, storage.log);
@@ -1351,7 +1351,7 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
     data_part_storage->freeze(storage.relative_data_path, getRelativePathForDetachedPart(prefix), {});
 }
 
-void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
+DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
 {
     assertOnDisk();
 
@@ -1361,7 +1361,7 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
         throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    data_part_storage->clone(path_to_clone, data_part_storage->getRelativePath(), storage.log);
+    return data_part_storage->clone(path_to_clone, data_part_storage->getRelativePath(), storage.log);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

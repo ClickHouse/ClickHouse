@@ -318,7 +318,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
 void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
 {
-    const auto * data_part_storage_on_disk = typeid_cast<const DataPartStorageOnDisk *>(part->data_part_storage.get());
+    const auto * data_part_storage_on_disk = dynamic_cast<const DataPartStorageOnDisk *>(part->data_part_storage.get());
     if (!data_part_storage_on_disk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage '{}' doesn't support zero-copy replication", part->data_part_storage->getName());
 

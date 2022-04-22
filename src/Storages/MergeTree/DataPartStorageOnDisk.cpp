@@ -3,6 +3,7 @@
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <base/logger_useful.h>
 #include <Disks/IStoragePolicy.h>
 #include <Backups/BackupEntryFromSmallFile.h>
@@ -78,6 +79,11 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDisk::readFile(
 bool DataPartStorageOnDisk::exists(const std::string & path) const
 {
     return volume->getDisk()->exists(fs::path(root_path) / part_dir / path);
+}
+
+bool DataPartStorageOnDisk::isDirectory(const std::string & path) const
+{
+    return volume->getDisk()->isDirectory(fs::path(root_path) / part_dir / path);
 }
 
 bool DataPartStorageOnDisk::exists() const
@@ -251,6 +257,11 @@ void DataPartStorageOnDisk::clearDirectory(
     }
 }
 
+DataPartStorageOnDisk::DisksSet::const_iterator DataPartStorageOnDisk::isStoredOnDisk(const DisksSet & disks) const
+{
+    return disks.find(volume->getDisk());
+}
+
 DataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name) const
 {
     return std::make_shared<DataPartStorageOnDisk>(volume, std::string(fs::path(root_path) / part_dir), name);
@@ -286,6 +297,11 @@ bool DataPartStorageOnDisk::isStoredOnRemoteDisk() const
 bool DataPartStorageOnDisk::supportZeroCopyReplication() const
 {
     return volume->getDisk()->supportZeroCopyReplication();
+}
+
+bool DataPartStorageOnDisk::supportParallelWrite() const
+{
+    return volume->getDisk()->supportParallelWrite();
 }
 
 bool DataPartStorageOnDisk::isBroken() const
@@ -375,13 +391,18 @@ void DataPartStorageOnDisk::checkConsistency(const MergeTreeDataPartChecksums & 
     checksums.checkSizes(volume->getDisk(), getFullRelativePath());
 }
 
-ReservationPtr DataPartStorageOnDisk::reserve(UInt64 bytes)
+ReservationPtr DataPartStorageOnDisk::reserve(UInt64 bytes) const
 {
     auto res = volume->reserve(bytes);
     if (!res)
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Cannot reserve {}, not enough space", ReadableSize(bytes));
 
     return res;
+}
+
+ReservationPtr DataPartStorageOnDisk::tryReserve(UInt64 bytes) const
+{
+    return volume->reserve(bytes);
 }
 
 void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync)
@@ -441,6 +462,11 @@ bool DataPartStorageOnDisk::shallParticipateInMerges(const IStoragePolicy & stor
     auto volume_ptr = storage_policy.getVolume(storage_policy.getVolumeIndexByDisk(volume->getDisk()));
 
     return !volume_ptr->areMergesAvoided();
+}
+
+size_t DataPartStorageOnDisk::getVolumeIndex(const IStoragePolicy & storage_policy) const
+{
+    return storage_policy.getVolumeIndexByDisk(volume->getDisk());
 }
 
 String DataPartStorageOnDisk::getUniqueId() const

@@ -157,8 +157,8 @@ bool PartLog::addNewParts(
             elem.table_name = table_id.table_name;
             elem.partition_id = part->info.partition_id;
             elem.part_name = part->name;
-            elem.disk_name = part->volume->getDisk()->getName();
-            elem.path_on_disk = part->getFullPath();
+            elem.disk_name = part->data_part_storage->getName();
+            elem.path_on_disk = part->data_part_storage->getFullPath();
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             elem.rows = part->rows_count;

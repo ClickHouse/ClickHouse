@@ -23,6 +23,7 @@ public:
 
     bool exists() const override;
     bool exists(const std::string & path) const override;
+    bool isDirectory(const std::string & path) const override;
 
     Poco::Timestamp getLastModified() const override;
 
@@ -51,6 +52,7 @@ public:
 
     bool isStoredOnRemoteDisk() const override;
     bool supportZeroCopyReplication() const override;
+    bool supportParallelWrite() const override;
     bool isBroken() const override;
     std::string getDiskPathForLogs() const override;
 
@@ -60,11 +62,13 @@ public:
 
     void checkConsistency(const MergeTreeDataPartChecksums & checksums) const override;
 
-    ReservationPtr reserve(UInt64 bytes) override;
+    ReservationPtr reserve(UInt64 bytes) const override;
+    ReservationPtr tryReserve(UInt64 bytes) const override;
 
     String getUniqueId() const override;
 
     bool shallParticipateInMerges(const IStoragePolicy &) const override;
+    size_t getVolumeIndex(const IStoragePolicy &) const override;
 
     void backup(
         TemporaryFilesOnDisks & temp_dirs,
@@ -86,6 +90,8 @@ public:
 
     std::string getName() const override;
     std::string getDiskType() const override;
+
+    DisksSet::const_iterator isStoredOnDisk(const DisksSet & disks) const override;
 
     DataPartStoragePtr getProjection(const std::string & name) const override;
 

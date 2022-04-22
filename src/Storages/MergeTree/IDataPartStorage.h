@@ -65,8 +65,9 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const = 0;
 
-    virtual bool exists(const std::string & path) const = 0;
     virtual bool exists() const = 0;
+    virtual bool exists(const std::string & path) const = 0;
+    virtual bool isDirectory(const std::string & path) const = 0;
 
     virtual Poco::Timestamp getLastModified() const = 0;
 
@@ -102,6 +103,7 @@ public:
 
     virtual bool isStoredOnRemoteDisk() const { return false; }
     virtual bool supportZeroCopyReplication() const { return false; }
+    virtual bool supportParallelWrite() const = 0;
     virtual bool isBroken() const = 0;
     virtual std::string getDiskPathForLogs() const = 0;
 
@@ -112,7 +114,9 @@ public:
 
     virtual void checkConsistency(const MergeTreeDataPartChecksums & checksums) const = 0;
 
-    virtual ReservationPtr reserve(UInt64 /*bytes*/) { return nullptr; }
+    virtual ReservationPtr reserve(UInt64 /*bytes*/) const { return nullptr; }
+    virtual ReservationPtr tryReserve(UInt64 /*bytes*/) const { return nullptr; }
+    virtual size_t getVolumeIndex(const IStoragePolicy &) const { return 0; }
 
     /// A leak of abstraction.
     /// Return some uniq string for file.
@@ -141,11 +145,14 @@ public:
         const std::string & dir_path,
         Poco::Logger * log) const = 0;
 
-    virtual void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync);
+    virtual void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync) = 0;
 
     /// Disk name
     virtual std::string getName() const = 0;
     virtual std::string getDiskType() const = 0;
+
+    using DisksSet = std::unordered_set<DiskPtr>;
+    virtual DisksSet::const_iterator isStoredOnDisk(const DisksSet & disks) const { return disks.end(); }
 
     virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) const = 0;
 };
