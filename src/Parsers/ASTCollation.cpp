@@ -5,7 +5,7 @@ namespace DB
     ASTPtr ASTCollation::clone() const
     {
         auto res = std::make_shared<ASTCollation>(*this);
-        res->collation = collation;
+        res->collation = collation->clone();
         return res;
     }
 

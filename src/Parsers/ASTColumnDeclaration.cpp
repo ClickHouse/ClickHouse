@@ -105,7 +105,7 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
 
     if (collation)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COLLATION" << (settings.hilite ? hilite_none : "") << ' ';
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COLLATE" << (settings.hilite ? hilite_none : "") << ' ';
         collation->formatImpl(settings, state, frame);
     }
 }
