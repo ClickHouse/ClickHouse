@@ -685,7 +685,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             std::vector<ProtocolServerMetrics> metrics;
             metrics.reserve(servers_to_start_before_tables.size());
             for (const auto & server : servers_to_start_before_tables)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
 
             std::lock_guard lock(servers_lock);
             for (const auto & server : servers)
