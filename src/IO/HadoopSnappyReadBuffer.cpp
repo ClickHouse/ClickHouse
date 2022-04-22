@@ -26,7 +26,7 @@ inline bool HadoopSnappyDecoder::checkBufferLength(int max) const
 
 inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
 {
-    return avail_in >= size_t(min);
+    return avail_in >= static_cast<size_t>(min);
 }
 
 inline void HadoopSnappyDecoder::copyToBuffer(size_t * avail_in, const char ** next_in)
