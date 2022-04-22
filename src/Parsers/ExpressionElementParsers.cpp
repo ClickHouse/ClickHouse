@@ -1595,7 +1595,6 @@ bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     // check the collation name is valid
     const String name = getIdentifierName(collation);
-    std::cout << name << std::endl;
     bool valid_check{false};
     for (const char ** valid_name = valid_collations; *valid_name != nullptr; ++valid_name)
     {
