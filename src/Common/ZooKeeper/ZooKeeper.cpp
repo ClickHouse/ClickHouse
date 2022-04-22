@@ -851,8 +851,9 @@ void ZooKeeper::waitForEphemeralToDisappearIfAny(const std::string & path)
     int32_t timeout_ms = 2 * session_timeout_ms;
     if (!eph_node_disappeared->tryWait(timeout_ms))
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-                            "Ephemeral node {} still exists after {}s, probably it's owned by someone else. Node data: '{}'",
-                            path, timeout_ms / 1000, content);
+                            "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
+                            "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
+                            "Node data: '{}'", path, timeout_ms / 1000, content);
 }
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
