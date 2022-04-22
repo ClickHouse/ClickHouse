@@ -620,7 +620,7 @@ void getMaskForLightWeight(ColumnPtr mask_column, bool * result_mask, size_t siz
     const ColumnUInt8 * column;
     if ((column = typeid_cast<const ColumnUInt8 *>(&(*mask_column))))
     {
-        const auto bitmap = &column->getData();
+        const auto *const bitmap = &column->getData();
         const UInt8 *begin = bitmap->data();
 
         if (bitmap->size() != size)
@@ -639,7 +639,7 @@ void getMaskForLightWeight(ColumnPtr mask_column, bool * result_mask, size_t siz
     else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&(*mask_column)))
     {
         column = typeid_cast<const ColumnUInt8 *>(&(nullable_column->getNestedColumn()));
-        const auto bitmap = &column->getData();
+        const auto *const bitmap = &column->getData();
         const UInt8 *begin = bitmap->data();
         const NullMap & null_map = nullable_column->getNullMapData();
 
