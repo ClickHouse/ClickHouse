@@ -1,83 +1,83 @@
 -- join_algorithm = default, join_use_nulls = 0 --
 str	LowCardinality(String)
 	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str	LowCardinality(String)
 	LowCardinality(String)
 str_l	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str_l	LowCardinality(String)
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 LowCardinality(String)	LowCardinality(String)			LowCardinality(String)	LowCardinality(String)	str_l	str_l
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 LowCardinality(String)	LowCardinality(String)			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 str	LowCardinality(String)
 	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str	LowCardinality(String)
 	LowCardinality(String)
 str_l	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str_l	LowCardinality(String)
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
-String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 String	String			LowCardinality(String)	LowCardinality(String)	str_l	str_l
-String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 String	String			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 str	String
 	String
-str_r	String
 str	String
+str_r	String
 str	String
 	String
 str_l	String
-str_r	String
 str	String
+str_r	String
 str_l	String
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
 LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
 LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
 LowCardinality(String)	LowCardinality(String)			String	String	str_l	str_l
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
 LowCardinality(String)	LowCardinality(String)			String	String	str_l	str_l
 str	LowCardinality(String)
 	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str	LowCardinality(String)
 	LowCardinality(String)
 str_l	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str_l	LowCardinality(String)
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
-Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 Nullable(String)	Nullable(String)	\N	\N	LowCardinality(String)	LowCardinality(String)	str_l	str_l
-Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 Nullable(String)	Nullable(String)	\N	\N	LowCardinality(String)	LowCardinality(String)	str_l	str_l
 str	Nullable(String)
 \N	Nullable(String)
@@ -203,83 +203,83 @@ LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	str_r	str_r	Nu
 -- join_algorithm = partial_merge, join_use_nulls = 0 --
 str	LowCardinality(String)
 	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str	LowCardinality(String)
 	LowCardinality(String)
 str_l	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str_l	LowCardinality(String)
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 LowCardinality(String)	LowCardinality(String)			LowCardinality(String)	LowCardinality(String)	str_l	str_l
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 LowCardinality(String)	LowCardinality(String)			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 str	LowCardinality(String)
 	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str	LowCardinality(String)
 	LowCardinality(String)
 str_l	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str_l	LowCardinality(String)
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
-String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 String	String			LowCardinality(String)	LowCardinality(String)	str_l	str_l
-String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 String	String			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 str	String
 	String
-str_r	String
 str	String
+str_r	String
 str	String
 	String
 str_l	String
-str_r	String
 str	String
+str_r	String
 str_l	String
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
 LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
 LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
 LowCardinality(String)	LowCardinality(String)			String	String	str_l	str_l
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
 LowCardinality(String)	LowCardinality(String)			String	String	str_l	str_l
 str	LowCardinality(String)
 	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str	LowCardinality(String)
 	LowCardinality(String)
 str_l	LowCardinality(String)
-str_r	LowCardinality(String)
 str	LowCardinality(String)
+str_r	LowCardinality(String)
 str_l	LowCardinality(String)
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
-Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 Nullable(String)	Nullable(String)	\N	\N	LowCardinality(String)	LowCardinality(String)	str_l	str_l
-Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
+Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
 Nullable(String)	Nullable(String)	\N	\N	LowCardinality(String)	LowCardinality(String)	str_l	str_l
 str	Nullable(String)
 \N	Nullable(String)
