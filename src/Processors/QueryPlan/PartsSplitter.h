@@ -87,7 +87,7 @@ private:
 
         const MarkRange & base() const { return static_cast<const MarkRange &>(*this); }
 
-        bool operator<(const RangeInDataPart & other) const { return std::tie(base(), part_idx) < std::tie(other.base(), other.part_idx); }
+        bool operator<(const RangeInDataPart & other) const { return std::tie(part_idx, base()) < std::tie(other.part_idx, other.base()); }
     };
 
     /// Returns the rightmost mark where PK value is less than border.
