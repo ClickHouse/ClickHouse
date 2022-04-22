@@ -105,7 +105,9 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             {"HTTP",                   static_cast<Int8>(Interface::HTTP)},
             {"gRPC",                   static_cast<Int8>(Interface::GRPC)},
             {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
-            {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)}
+            {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
+            {"LOCAL",                  static_cast<Int8>(Interface::LOCAL)},
+            {"TCP_INTERSERVER",        static_cast<Int8>(Interface::TCP_INTERSERVER)}
         });
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());

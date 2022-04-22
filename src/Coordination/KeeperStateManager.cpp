@@ -109,7 +109,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
 
-        if (client_ports.count(port) != 0)
+        if (client_ports.contains(port))
         {
             throw Exception(ErrorCodes::RAFT_ERROR, "Raft configuration contains hostname '{}' with port '{}' which is equal to '{}' in server configuration",
                             hostname, port, client_ports[port]);
@@ -133,7 +133,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
             result.servers_start_as_followers.insert(new_server_id);
 
         auto endpoint = hostname + ":" + std::to_string(port);
-        if (check_duplicated_hostnames.count(endpoint))
+        if (check_duplicated_hostnames.contains(endpoint))
         {
             throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate endpoints: "
                             "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
@@ -278,14 +278,14 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
     /// First of all add new servers
     for (auto [new_id, server_config] : new_ids)
     {
-        if (!old_ids.count(new_id))
+        if (!old_ids.contains(new_id))
             result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::AddServer, server_config});
     }
 
     /// After that remove old ones
     for (auto [old_id, server_config] : old_ids)
     {
-        if (!new_ids.count(old_id))
+        if (!new_ids.contains(old_id))
             result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::RemoveServer, server_config});
     }
 

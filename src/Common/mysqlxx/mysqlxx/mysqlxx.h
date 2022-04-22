@@ -10,10 +10,10 @@
 
 /** 'mysqlxx' - very simple library for replacement of 'mysql++' library.
   *
-  * For whatever reason, in Yandex.Metrica, back in 2008, 'mysql++' library was used.
+  * For whatever reason, in Metrica web analytics system, back in 2008, 'mysql++' library was used.
   * There are the following shortcomings of 'mysql++':
   * 1. Too rich functionality: most of it is not used.
-  * 2. Low performance (when used for Yandex.Metrica).
+  * 2. Low performance (when used for Metrica).
   *
   * Low performance is caused by the following reasons:
   *
@@ -50,7 +50,7 @@
   * And for the sake of simplicity, some functions work only with certain assumptions,
   *  or with slightly different semantic than in mysql++.
   * And we don't care about cross-platform usage of mysqlxx.
-  * These assumptions are specific for Yandex.Metrica. Your mileage may vary.
+  * These assumptions are specific for Metrica. Your mileage may vary.
   *
   * mysqlxx could not be considered as separate full-featured library,
   *  because it is developed from the principle - "everything that we don't need is not implemented".
