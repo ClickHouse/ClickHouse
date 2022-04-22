@@ -35,7 +35,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     // if (!part_path.empty())
     //     volume->getDisk()->createDirectories(part_path);
 
-    writer = data_part->getWriter(std::move(data_part_storage_builder), columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings, {});
+    writer = data_part->getWriter(data_part_storage_builder, columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings, {});
 }
 
 /// If data is pre-sorted.
