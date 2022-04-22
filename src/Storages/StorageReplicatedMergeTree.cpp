@@ -7235,7 +7235,7 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
     if (!part.data_part_storage || !part.isStoredOnDisk())
         return;
 
-    if (part.data_part_storage->supportZeroCopyReplication())
+    if (!part.data_part_storage->supportZeroCopyReplication())
         return;
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();

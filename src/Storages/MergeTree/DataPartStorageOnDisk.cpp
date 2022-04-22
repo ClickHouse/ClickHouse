@@ -33,17 +33,17 @@ void DataPartStorageOnDisk::setRelativePath(const std::string & path)
 
 std::string DataPartStorageOnDisk::getFullRelativePath() const
 {
-    return fs::path(root_path) / part_dir;
+    return fs::path(root_path) / part_dir / "";
 }
 
 std::string DataPartStorageOnDisk::getFullPath() const
 {
-    return fs::path(volume->getDisk()->getPath()) / root_path / part_dir;
+    return fs::path(volume->getDisk()->getPath()) / root_path / part_dir / "";
 }
 
 std::string DataPartStorageOnDisk::getFullRootPath() const
 {
-    return fs::path(volume->getDisk()->getPath()) / root_path;
+    return fs::path(volume->getDisk()->getPath()) / root_path / "";
 }
 
 std::string DataPartStorageOnDisk::getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const
