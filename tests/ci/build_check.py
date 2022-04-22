@@ -14,6 +14,7 @@ from s3_helper import S3Helper
 from pr_info import PRInfo
 from version_helper import (
     ClickHouseVersion,
+    Git,
     get_version_from_repo,
     update_version_local,
 )
@@ -209,7 +210,7 @@ def main():
 
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
-    version = get_version_from_repo()
+    version = get_version_from_repo(git=Git(True))
     release_or_pr = get_release_or_pr(pr_info, build_config, version)
 
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
@@ -284,9 +285,12 @@ def main():
 
     if build_config["package_type"] == "performance" and pr_info.number != 0:
         # because perf tests store some information about git commits
-        subprocess.check_call(
-            f"cd {REPO_COPY} && git fetch origin master:master", shell=True
+        cmd = (
+            f"cd {REPO_COPY} && git fetch --depth=60 --no-recurse-submodules "
+            "--no-tags origin master:master"
         )
+        logging.info("Fetch master branch with a command: %s", cmd)
+        subprocess.check_call(cmd, shell=True)
 
     packager_cmd = get_packager_cmd(
         build_config,
