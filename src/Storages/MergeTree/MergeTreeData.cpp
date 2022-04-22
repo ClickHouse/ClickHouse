@@ -3369,7 +3369,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             original_active_part->force_keep_shared_data = false;
 
             if (original_active_part->volume->getDisk()->supportZeroCopyReplication() &&
-                part_copy->volume->getDisk()->supportZeroCopyReplication() &&
+                part_copy->isStoredOnRemoteDiskWithZeroCopySupport() &&
                 original_active_part->getUniqueId() == part_copy->getUniqueId())
             {
                 /// May be when several volumes use the same S3/HDFS storage
