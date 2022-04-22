@@ -17,9 +17,9 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromF
 {
     if (data_part_storage->exists())
     {
-        for (DiskDirectoryIteratorPtr it = data_part_storage->iterate(); it->isValid(); it->next())
+        for (auto it = data_part_storage->iterate(); it->isValid(); it->next())
         {
-            const auto & ext = fs::path(it->path()).extension();
+            const auto & ext = fs::path(it->name()).extension();
             if (ext == getNonAdaptiveMrkExtension()
                 || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE)
                 || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::COMPACT))

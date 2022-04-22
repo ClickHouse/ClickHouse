@@ -1759,7 +1759,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
 }
 
 
-bool StorageReplicatedMergeTree::executeFetchShared(
+DataPartStoragePtr StorageReplicatedMergeTree::executeFetchShared(
     const String & source_replica,
     const String & new_part_name,
     const DiskPtr & disk,
@@ -1768,7 +1768,7 @@ bool StorageReplicatedMergeTree::executeFetchShared(
     if (source_replica.empty())
     {
         LOG_INFO(log, "No active replica has part {} on shared storage.", new_part_name);
-        return false;
+        return nullptr;
     }
 
     const auto storage_settings_ptr = getSettings();
@@ -1776,8 +1776,7 @@ bool StorageReplicatedMergeTree::executeFetchShared(
 
     try
     {
-        if (!fetchExistsPart(new_part_name, metadata_snapshot, fs::path(zookeeper_path) / "replicas" / source_replica, disk, path))
-            return false;
+        return fetchExistsPart(new_part_name, metadata_snapshot, fs::path(zookeeper_path) / "replicas" / source_replica, disk, path);
     }
     catch (Exception & e)
     {
@@ -1786,8 +1785,6 @@ bool StorageReplicatedMergeTree::executeFetchShared(
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
         throw;
     }
-
-    return true;
 }
 
 
@@ -3971,7 +3968,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 }
 
 
-bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const StorageMetadataPtr & metadata_snapshot,
+DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const StorageMetadataPtr & metadata_snapshot,
     const String & source_replica_path, DiskPtr replaced_disk, String replaced_part_path)
 {
     auto zookeeper = getZooKeeper();
@@ -3982,7 +3979,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         LOG_DEBUG(log, "Part {} should be deleted after previous attempt before fetch", part->name);
         /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
         cleanup_thread.wakeup();
-        return false;
+        return nullptr;
     }
 
     {
@@ -3990,7 +3987,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         if (!currently_fetching_parts.insert(part_name).second)
         {
             LOG_DEBUG(log, "Part {} is already fetching right now", part_name);
-            return false;
+            return nullptr;
         }
     }
 
@@ -4052,7 +4049,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         /// The same part is being written right now (but probably it's not committed yet).
         /// We will check the need for fetch later.
         if (e.code() == ErrorCodes::DIRECTORY_ALREADY_EXISTS)
-            return false;
+            return nullptr;
 
         throw;
     }
@@ -4066,7 +4063,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
 
     LOG_DEBUG(log, "Fetched part {} from {}", part_name, source_replica_path);
 
-    return true;
+    return part->data_part_storage;
 }
 
 
@@ -7354,7 +7351,7 @@ bool StorageReplicatedMergeTree::unlockSharedDataByID(String part_id, const Stri
 }
 
 
-bool StorageReplicatedMergeTree::tryToFetchIfShared(
+DataPartStoragePtr StorageReplicatedMergeTree::tryToFetchIfShared(
     const IMergeTreeDataPart & part,
     const DiskPtr & disk,
     const String & path)
@@ -7362,13 +7359,13 @@ bool StorageReplicatedMergeTree::tryToFetchIfShared(
     const auto settings = getSettings();
     auto disk_type = disk->getType();
     if (!(disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication))
-        return false;
+        return nullptr;
 
     String replica = getSharedDataReplica(part, disk_type);
 
     /// We can't fetch part when none replicas have this part on a same type remote disk
     if (replica.empty())
-        return false;
+        return nullptr;
 
     return executeFetchShared(replica, part.name, disk, path);
 }

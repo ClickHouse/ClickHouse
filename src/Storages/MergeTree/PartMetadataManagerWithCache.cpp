@@ -30,12 +30,12 @@ PartMetadataManagerWithCache::PartMetadataManagerWithCache(const IMergeTreeDataP
 
 String PartMetadataManagerWithCache::getKeyFromFilePath(const String & file_path) const
 {
-    return disk->getName() + ":" + file_path;
+    return part->data_part_storage->getName() + ":" + file_path;
 }
 
 String PartMetadataManagerWithCache::getFilePathFromKey(const String & key) const
 {
-    return key.substr(disk->getName().size() + 1);
+    return key.substr(part->data_part_storage->getName().size() + 1);
 }
 
 std::unique_ptr<SeekableReadBuffer> PartMetadataManagerWithCache::read(const String & file_name) const
@@ -47,7 +47,7 @@ std::unique_ptr<SeekableReadBuffer> PartMetadataManagerWithCache::read(const Str
     if (!status.ok())
     {
         ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheMiss);
-        auto in = disk->readFile(file_path);
+        auto in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
         readStringUntilEOF(value, *in);
         cache->put(key, value);
     }
@@ -77,7 +77,7 @@ bool PartMetadataManagerWithCache::existsImpl(const String & path, const String 
     else
     {
         ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheMiss);
-        return disk->exists(fs::path(path) / file_name);
+        return part->data_part_storage->exists(file_name);
     }
 }
 
@@ -128,9 +128,9 @@ void PartMetadataManagerWithCache::updateAllImpl(const String & path, bool inclu
     for (const auto & file_name : file_names)
     {
         String file_path = fs::path(path) / file_name;
-        if (!disk->exists(file_path))
+        if (!part->data_part_storage->exists(file_name))
             continue;
-        auto in = disk->readFile(file_path);
+        auto in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
         readStringUntilEOF(value, *in);
 
         String key = getKeyFromFilePath(file_path);
@@ -244,7 +244,7 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
         results.emplace(file_name, cache_checksums[i]);
 
         /// File belongs to normal part
-        if (fs::path(part->getFullRelativePath()) / file_name == file_path)
+        if (fs::path(part->data_part_storage->getFullRelativePath()) / file_name == file_path)
         {
             auto disk_checksum = part->getActualChecksumByFile(file_path);
             if (disk_checksum != cache_checksums[i])

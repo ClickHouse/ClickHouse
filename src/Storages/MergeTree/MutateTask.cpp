@@ -1091,7 +1091,7 @@ private:
             else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
-                ctx->data_part_storage_builder->createDirectory(destination);
+                ctx->data_part_storage_builder->createProjection(destination);
 
                 auto projection_data_part_storage = ctx->source_part->data_part_storage->getProjection(destination);
                 auto projection_data_part_storage_builder = ctx->data_part_storage_builder->getProjection(destination);
@@ -1122,6 +1122,7 @@ private:
                 builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
+                ctx->data_part_storage_builder,
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 ctx->updated_header,
@@ -1170,7 +1171,7 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->data_part_storage_builder, ctx->execute_ttl_type, ctx->compression_codec);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part,  ctx->data_part_storage_builder, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec);
     }
 
 
@@ -1300,15 +1301,15 @@ bool MutateTask::prepare()
         ctx->mutating_pipeline.setProgressCallback(MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress));
     }
 
-    ctx->single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
 
     auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
-        ctx->single_disk_volume,
+        single_disk_volume,
         ctx->data->getRelativeDataPath(),
         "tmp_mut_" + ctx->future_part->name);
 
     ctx->data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(
-        ctx->single_disk_volume,
+        single_disk_volume,
         ctx->data->getRelativeDataPath(),
         "tmp_mut_" + ctx->future_part->name);
 
