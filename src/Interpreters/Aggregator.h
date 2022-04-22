@@ -941,9 +941,10 @@ public:
                 size_t max_entries_for_hash_table_stats_,
                 size_t max_size_to_preallocate_for_aggregation_);
 
-            bool isCollectionAndUseEnabled() const;
+            bool isCollectionAndUseEnabled() const { return key != 0; }
+            void disable() { key = 0; }
 
-            const UInt64 key = 0;
+            UInt64 key = 0;
             const size_t max_entries_for_hash_table_stats = 0;
             const size_t max_size_to_preallocate_for_aggregation = 0;
         };
