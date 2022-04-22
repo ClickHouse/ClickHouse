@@ -342,6 +342,9 @@ public:
     /// Get current state of process list.
     Info getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
+    /// Get total number of threads for all queries in process list.
+    size_t getGlobalNumThreads() const;
+
     /// Get current state of process list per user.
     UserInfo getUserInfo(bool get_profile_events = false) const;
 
