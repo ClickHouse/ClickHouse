@@ -582,12 +582,11 @@ bool StorageMergeTree::hasLightWeight() const
 bool StorageMergeTree::isSupportLightweightMutate(ContextPtr query_context)
 {
     const Settings & settings = query_context->getSettingsRef();
-    if (!settings.enable_lightweight_mutation)
-        return false;
-
     MergeTreeSettingsPtr mt_settings = getSettings();
-    if (mt_settings->min_rows_for_compact_part != 0 || mt_settings->min_bytes_for_compact_part != 0
-        || mt_settings->min_rows_for_wide_part != 0 || mt_settings->min_bytes_for_wide_part != 0)
+
+    if (!settings.enable_lightweight_mutation || mt_settings->min_rows_for_compact_part != 0 ||
+        mt_settings->min_bytes_for_compact_part != 0 || mt_settings->min_rows_for_wide_part != 0 ||
+        mt_settings->min_bytes_for_wide_part != 0)
         return false;
 
     return true;

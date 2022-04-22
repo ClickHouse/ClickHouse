@@ -480,7 +480,7 @@ public:
     void CheckIfEmptyBitmap() const;
 
     /// Return deleted mask file name deleted_row_mask_version.bin, if temporary is true, file name starts with tmp_.
-    String getDeletedMaskFileName(Int64 lightweight_version, bool temp = false) const;
+    static String getDeletedMaskFileName(Int64 lightweight_version, bool temp = false);
 
     /// Write lightweight deleted mask to a temporary file. If empty, copy from old mask file with new name.
     void WriteOrCopyLightWeightMask(Int64 new_value, String new_bitmap) const;

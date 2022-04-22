@@ -235,16 +235,16 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
                         "got " + toString(num_columns_to_read), ErrorCodes::LOGICAL_ERROR);
 }
 
-ColumnPtr IMergeTreeReader::getDeletedMask(size_t from_pos, size_t rows_read)
+ColumnPtr IMergeTreeReader::getDeletedMask(size_t from_pos, size_t rows_read) const
 {
     if (rows_read <= 0)
         return nullptr;
 
     auto mask_column = ColumnUInt8::create();
     String bitmap = deleted_rows_bitmap.substr(from_pos, rows_read);
-    for (size_t i = 0; i < bitmap.size(); i++)
+    for (char bit : bitmap)
     {
-        if (bitmap[i] == '0')
+        if (bit == '0')
             mask_column->insert(1);
         else
             mask_column->insert(0);

@@ -1180,7 +1180,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQueryLightweight(std::vecto
         {
             /// Propagate information about columns needed as input.
             /// Here give mask columns to the next stage
-            for (auto column : actions_chain.getLastStep().getResultColumns())
+            for (const auto & column : actions_chain.getLastStep().getResultColumns())
                 prepared_stages[i + 1].output_columns.insert(column.name);
         }
 

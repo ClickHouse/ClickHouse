@@ -63,7 +63,7 @@ public:
     MergeTreeData::DataPartPtr data_part;
 
     bool needCollectDeletedMask() { return !settings.from_lightweight_mutation && has_lightweight; }
-    ColumnPtr getDeletedMask(size_t from_pos, size_t rows_read);
+    ColumnPtr getDeletedMask(size_t from_pos, size_t rows_read) const;
     String deleted_rows_bitmap;
 
 protected:

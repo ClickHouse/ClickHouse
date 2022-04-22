@@ -837,9 +837,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                     if (read_rows > 0)
                     {
                         String bitmap = merge_tree_reader->deleted_rows_bitmap.substr(from_pos, read_rows);
-                        for (size_t i = 0; i < bitmap.size(); i++)
+                        for (char bit : bitmap)
                         {
-                            if (bitmap[i] == '0')
+                            if (bit == '0')
                                 mask_column->insert(1);
                             else
                                 mask_column->insert(0);
@@ -879,9 +879,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         if (read_rows > 0)
         {
             String bitmap = merge_tree_reader->deleted_rows_bitmap.substr(from_pos, read_rows);
-            for (size_t i = 0; i < bitmap.size(); i++)
+            for (char bit : bitmap)
             {
-                if (bitmap[i] == '0')
+                if (bit == '0')
                     mask_column->insert(1);
                 else
                     mask_column->insert(0);

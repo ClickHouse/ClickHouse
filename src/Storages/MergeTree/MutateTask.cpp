@@ -620,7 +620,7 @@ void getMaskForLightWeight(ColumnPtr mask_column, bool * result_mask, size_t siz
     const ColumnUInt8 * column;
     if ((column = typeid_cast<const ColumnUInt8 *>(&(*mask_column))))
     {
-        auto bitmap = &column->getData();
+        const auto bitmap = &column->getData();
         const UInt8 *begin = bitmap->data();
 
         if (bitmap->size() != size)
@@ -639,7 +639,7 @@ void getMaskForLightWeight(ColumnPtr mask_column, bool * result_mask, size_t siz
     else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&(*mask_column)))
     {
         column = typeid_cast<const ColumnUInt8 *>(&(nullable_column->getNestedColumn()));
-        auto bitmap = &column->getData();
+        const auto bitmap = &column->getData();
         const UInt8 *begin = bitmap->data();
         const NullMap & null_map = nullable_column->getNullMapData();
 
@@ -659,7 +659,6 @@ void getMaskForLightWeight(ColumnPtr mask_column, bool * result_mask, size_t siz
     else
         throw Exception("Illegal type " + column->getName() + " of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
-    return;
 }
 
 static void filterColumns(Columns & columns, const IColumn::Filter & filter)
@@ -1509,7 +1508,7 @@ private:
         size_t current_bitmap_pos = 0;
 
         /// If this part has already applied lightweight mutation, load the past latest bitmap to merge with current bitmap
-        String old_bitmap = "";
+        String old_bitmap;
         if (ctx->source_part->hasLightWeight() && !ctx->source_part->is_empty_bitmap)
             old_bitmap = ctx->source_part->readLightWeightDeletedMaskFile();
 
@@ -1528,7 +1527,7 @@ private:
                 MutationHelpers::getMaskForLightWeight(cur_block.getByPosition(col_pos).column, delete_mask, block_rows);
             }
 
-            String current_block_bitmap = "";
+            String current_block_bitmap;
             /// Get the corresponding deleted mask for current block from latest bitmap
             if (!old_bitmap.empty())
             {
@@ -1662,7 +1661,7 @@ private:
         size_t current_bitmap_pos = 0;
 
         /// If this part has already applied lightweight mutation, load the past latest bitmap to merge with current bitmap
-        String old_bitmap = "";
+        String old_bitmap;
         if (ctx->source_part->hasLightWeight() && !ctx->source_part->is_empty_bitmap)
             old_bitmap = ctx->source_part->readLightWeightDeletedMaskFile();
 
@@ -1697,7 +1696,7 @@ private:
                 cur_block.erase(col_pos);
             }
 
-            String current_block_bitmap = "";
+            String current_block_bitmap;
             /// Get the corresponding deleted mask for current block from latest bitmap
             if (!old_bitmap.empty())
             {

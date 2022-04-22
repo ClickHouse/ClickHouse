@@ -2101,9 +2101,9 @@ std::unordered_map<String, IMergeTreeDataPart::uint128> IMergeTreeDataPart::chec
     return metadata_manager->check();
 }
 
-String IMergeTreeDataPart::getDeletedMaskFileName(Int64 lightweight_version, bool temp) const
+String IMergeTreeDataPart::getDeletedMaskFileName(Int64 lightweight_version, bool temp)
 {
-    String file_name = "";
+    String file_name;
     if (temp)
         file_name += "tmp_";
 
@@ -2147,8 +2147,6 @@ void IMergeTreeDataPart::WriteOrCopyLightWeightMask(Int64 new_value, String new_
     /// write Non-Empty merged bitmap
     auto out = disk->writeFile(path + new_tmp_file_name);
     DB::writeText(new_bitmap, *out);
-
-    return;
 }
 
 void IMergeTreeDataPart::renameTempLightWeightMaskAndReplace(Int64 new_value) const
@@ -2176,7 +2174,7 @@ void IMergeTreeDataPart::renameTempLightWeightMaskAndReplace(Int64 new_value) co
 
 String IMergeTreeDataPart::readLightWeightDeletedMaskFile() const
 {
-    String deleted_rows_bitmap = "";
+    String deleted_rows_bitmap;
 
     if (hasLightWeight() && !is_empty_bitmap)
     {
