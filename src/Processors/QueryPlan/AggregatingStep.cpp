@@ -57,9 +57,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     pipeline.dropTotalsAndExtremes();
 
     bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0;
-    /// Disable two-level aggregation for optimize_aggregation_in_order
+
+    /// optimize_aggregation_in_order
     if (group_by_info)
+    {
+        /// two-level aggregation is not supported anyway for in order aggregation.
         allow_to_use_two_level_group_by = false;
+
+        /// It is incorrect for in order aggregation.
+        params.stats_collecting_params.disable();
+    }
 
     if (!allow_to_use_two_level_group_by)
     {

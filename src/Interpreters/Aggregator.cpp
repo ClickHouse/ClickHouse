@@ -355,11 +355,6 @@ Aggregator::Params::StatsCollectingParams::StatsCollectingParams(
 {
 }
 
-bool Aggregator::Params::StatsCollectingParams::isCollectionAndUseEnabled() const
-{
-    return key != 0;
-}
-
 Block Aggregator::getHeader(bool final) const
 {
     return params.getHeader(final);
