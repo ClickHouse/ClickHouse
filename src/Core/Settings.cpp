@@ -4,7 +4,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
-#include <array>
 #include <string.h>
 #include <boost/program_options/options_description.hpp>
 
