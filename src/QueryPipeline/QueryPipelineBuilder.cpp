@@ -473,7 +473,7 @@ size_t QueryPipelineBuilder::getNumThreads() const
 
     LOG_DEBUG(adqm_log,"Recommended num threads: {}", num_threads);
     auto context = process_list_element->getContext();
-    auto global_max_threads = context->getSettingsRef().global_max_threads;
+    auto global_max_threads = context->getProcessList().getGlobalMaxThreads();
     if (process_list_element && global_max_threads) {
         LOG_DEBUG(adqm_log,"Global number of threads from config: {}", global_max_threads);
         LOG_DEBUG(adqm_log,"Current global num threads: {}",
