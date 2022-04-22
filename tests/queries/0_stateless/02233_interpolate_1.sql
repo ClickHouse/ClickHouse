@@ -70,3 +70,10 @@ SELECT n, source, inter + NULL AS inter_p FROM (
 SELECT n, source, inter AS inter_p FROM (
     SELECT toFloat32(number % 10) AS n, 'original' AS source, number + NULL AS inter FROM numbers(10) WHERE (number % 3) = 1
 ) ORDER BY n ASC WITH FILL FROM 0 TO 11.51 STEP 0.5 INTERPOLATE ( inter_p AS inter_p + 1 );
+
+# Test INTERPOLATE for MergeTree
+DROP TABLE IF EXISTS t_inter_02233;
+CREATE TABLE t_inter_02233 (n Int32) ENGINE = MergeTree ORDER BY n;
+INSERT INTO t_inter_02233 VALUES (1),(3),(3),(6),(6),(6);
+SELECT n, count() AS m FROM t_inter_02233 GROUP BY n ORDER BY n WITH FILL INTERPOLATE ( m AS m + 1 );
+DROP TABLE IF EXISTS t_inter_02233;
