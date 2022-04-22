@@ -257,6 +257,11 @@ endif()
 
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+if (NOT BUILD_STANDALONE_KEEPER)
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
+else ()
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" OFF)
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
