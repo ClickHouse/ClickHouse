@@ -205,12 +205,8 @@ bool ParallelReadBuffer::nextImpl()
 void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 {
     SCOPE_EXIT({
-        std::lock_guard lock{mutex};
-        --active_working_reader;
-        if (active_working_reader == 0)
-        {
-            readers_done.notify_all();
-        }
+        if (active_working_reader.fetch_sub(1) == 1)
+            active_working_reader.notify_all();
     });
 
     try
@@ -265,8 +261,12 @@ void ParallelReadBuffer::finishAndWait()
 {
     emergency_stop = true;
 
-    std::unique_lock lock{mutex};
-    readers_done.wait(lock, [&] { return active_working_reader == 0; });
+    size_t active_readers = active_working_reader.load();
+    while (active_readers != 0)
+    {
+        active_working_reader.wait(active_readers);
+        active_readers = active_working_reader.load();
+    }
 }
 
 }

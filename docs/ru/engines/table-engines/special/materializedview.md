@@ -1,6 +1,6 @@
 ---
-toc_priority: 43
-toc_title: MaterializedView
+sidebar_position: 43
+sidebar_label: MaterializedView
 ---
 
 # MaterializedView {#materializedview}

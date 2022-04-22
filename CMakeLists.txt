@@ -314,6 +314,15 @@ if (ENABLE_BUILD_PATH_MAPPING)
     set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
 endif ()
 
+option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
+if (ENABLE_BUILD_PROFILING)
+     if (COMPILER_CLANG)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
+     else ()
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Build profiling is only available with CLang")
+     endif ()
+endif ()
+
 if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
     # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
     # We will add C++ standard controlling flag in CMAKE_CXX_FLAGS manually for now.
