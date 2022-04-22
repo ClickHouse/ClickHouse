@@ -159,3 +159,5 @@ then
     # files in place, and will fail because this directory is not writable.
     tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
 fi
+
+ls -l /output
