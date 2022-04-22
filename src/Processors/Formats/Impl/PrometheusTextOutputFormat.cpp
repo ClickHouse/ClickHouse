@@ -35,17 +35,12 @@ namespace ErrorCodes
 
 constexpr auto FORMAT_NAME = "Prometheus";
 
-static bool isDataTypeString(const DataTypePtr & type)
-{
-    return WhichDataType(type).isStringOrFixedString();
-}
-
 static bool isDataTypeMapString(const DataTypePtr & type)
 {
     if (!isMap(type))
         return false;
     const auto * type_map = assert_cast<const DataTypeMap *>(type.get());
-    return isDataTypeString(type_map->getKeyType()) && isDataTypeString(type_map->getValueType());
+    return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
 }
 
 template <typename ResType, typename Pred>
@@ -55,7 +50,7 @@ static void getColumnPos(const Block & header, const String & col_name, Pred pre
 
     constexpr bool is_optional = std::is_same_v<ResType, std::optional<size_t>>;
 
-    if (header.has(col_name))
+    if (header.has(col_name, true))
     {
         res = header.getPositionByName(col_name);
         const auto & col = header.getByName(col_name);
@@ -93,11 +88,11 @@ PrometheusTextOutputFormat::PrometheusTextOutputFormat(
 {
     const Block & header = getPort(PortKind::Main).getHeader();
 
-    getColumnPos(header, "name", isDataTypeString, pos.name);
+    getColumnPos(header, "name", isStringOrFixedString<DataTypePtr>, pos.name);
     getColumnPos(header, "value", isNumber<DataTypePtr>, pos.value);
 
-    getColumnPos(header, "help", isDataTypeString, pos.help);
-    getColumnPos(header, "type", isDataTypeString, pos.type);
+    getColumnPos(header, "help", isStringOrFixedString<DataTypePtr>, pos.help);
+    getColumnPos(header, "type", isStringOrFixedString<DataTypePtr>, pos.type);
     getColumnPos(header, "timestamp", isNumber<DataTypePtr>, pos.timestamp);
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
 }
@@ -108,14 +103,14 @@ PrometheusTextOutputFormat::PrometheusTextOutputFormat(
  * > A histogram must have a bucket with {le="+Inf"}. Its value must be identical to the value of x_count.
  * > The buckets of a histogram and the quantiles of a summary must appear in increasing numerical order of their label values (for the le or the quantile label, respectively).
 */
-void PrometheusTextOutputFormat::fixupBucketLables(CurrentMetric & metric)
+void PrometheusTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
 {
     String bucket_label = metric.type == "histogram" ? "le" : "quantile";
 
     std::sort(metric.values.begin(), metric.values.end(),
         [&bucket_label](const auto & lhs, const auto & rhs)
         {
-            /// rows with lables at the begining and then `_sum` and `_count`
+            /// rows with labels at the beginning and then `_sum` and `_count`
             if (lhs.labels.contains("sum") && rhs.labels.contains("count"))
                 return true;
             if (lhs.labels.contains("count") && rhs.labels.contains("sum"))
@@ -184,7 +179,7 @@ void PrometheusTextOutputFormat::flushCurrentMetric()
     bool use_buckets = current_metric.type == "histogram" || current_metric.type == "summary";
     if (use_buckets)
     {
-        fixupBucketLables(current_metric);
+        fixupBucketLabels(current_metric);
     }
 
     for (auto & val : current_metric.values)
