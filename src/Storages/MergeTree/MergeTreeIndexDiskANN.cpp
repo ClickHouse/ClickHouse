@@ -90,6 +90,8 @@ uint64_t MergeTreeIndexGranuleDiskANN::calculateIndexSize() const {
 
     index_size += sizeof(uint64_t) + 2 * sizeof(unsigned);
     
+    std::cout << base_index->_nd << " " << base_index->_final_graph.size() << std::endl;
+
     for (unsigned i = 0; i < base_index->_nd + base_index->_num_frozen_pts; i++) {
       unsigned gk = static_cast<unsigned>(base_index->_final_graph[i].size());
       index_size += sizeof(unsigned) + gk * sizeof(unsigned);
@@ -139,6 +141,8 @@ void MergeTreeIndexGranuleDiskANN::deserializeBinary(ReadBuffer & in, MergeTreeI
     in.read(reinterpret_cast<char*>(&dims), sizeof(dims));
 
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "num_of_points={}, dims={}", num_of_points, dims);
+
+    dimensions = dims;
 
     datapoints.resize(num_of_points * dims);
     in.read(reinterpret_cast<char*>(datapoints.data()), sizeof(DiskANNValue) * num_of_points * dims);
