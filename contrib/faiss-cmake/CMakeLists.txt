@@ -189,8 +189,42 @@ endif()
 set(FAISS_HEADERS ${FAISS_HEADERS} PARENT_SCOPE)
 
 add_library(_faiss ${FAISS_SRC})
-
 add_library(_faiss_avx2 ${FAISS_SRC})
+
+find_package(OpenMP REQUIRED)
+target_link_libraries(_faiss PRIVATE OpenMP::OpenMP_CXX)
+target_link_libraries(_faiss PRIVATE OpenMP::OpenMP_C)
+target_link_libraries(_faiss_avx2 PRIVATE OpenMP::OpenMP_CXX)
+target_link_libraries(_faiss_avx2 PRIVATE OpenMP::OpenMP_C)
+message("CXX dirs: ${OpenMP_CXX_INCLUDE_DIRS}")
+message("C dirs: ${OpenMP_C_INCLUDE_DIRS}")
+message("OpenMP_C_FLAGS = ${OpenMP_C_FLAGS}")
+message("OpenMP_CXX_FLAGS = ${OpenMP_CXX_FLAGS}")
+message("OpenMP_C_INCLUDE_DIRS = ${OpenMP_C_INCLUDE_DIRS}")
+message("OpenMP_CXX_INCLUDE_DIRS = ${OpenMP_CXX_INCLUDE_DIRS}")
+message("OpenMP_C_LIBRARIES = ${OpenMP_C_LIBRARIES}")
+message("OpenMP_CXX_LIBRARIES = ${OpenMP_CXX_LIBRARIES}")
+target_include_directories(_faiss PRIVATE "/usr/include/clang/13/include")
+target_include_directories(_faiss_avx2 PRIVATE "/usr/include/clang/13/include")
+
+add_library(extOpenMP SHARED IMPORTED)
+set_target_properties(extOpenMP
+    PROPERTIES IMPORTED_LOCATION /usr/lib/llvm-13/lib/libomp-13.so.5
+)
+target_link_libraries(_faiss PRIVATE extOpenMP)
+
+add_library(extBlas SHARED IMPORTED)
+set_target_properties(extBlas
+    PROPERTIES IMPORTED_LOCATION /usr/lib/x86_64-linux-gnu/blas/libblas.so 
+)
+target_link_libraries(_faiss PRIVATE extBlas)
+
+add_library(extLapack SHARED IMPORTED)
+set_target_properties(extLapack
+    PROPERTIES IMPORTED_LOCATION /usr/lib/x86_64-linux-gnu/lapack/liblapack.so 
+)
+target_link_libraries(_faiss PRIVATE extLapack)
+
 if(NOT FAISS_OPT_LEVEL STREQUAL "avx2")
   set_target_properties(_faiss_avx2 PROPERTIES EXCLUDE_FROM_ALL TRUE)
 endif()
@@ -228,20 +262,6 @@ endif()
 target_compile_definitions(_faiss PRIVATE FINTEGER=int)
 target_compile_definitions(_faiss_avx2 PRIVATE FINTEGER=int)
 
-find_package(OpenMP REQUIRED)
-target_link_libraries(_faiss PRIVATE OpenMP::OpenMP_CXX)
-target_link_libraries(_faiss PRIVATE OpenMP::OpenMP_C)
-target_link_libraries(_faiss_avx2 PRIVATE OpenMP::OpenMP_CXX)
-message("CXX dirs: ${OpenMP_CXX_INCLUDE_DIRS}")
-message("C dirs: ${OpenMP_C_INCLUDE_DIRS}")
-message("OpenMP_C_FLAGS = ${OpenMP_C_FLAGS}")
-message("OpenMP_CXX_FLAGS = ${OpenMP_CXX_FLAGS}")
-message("OpenMP_C_INCLUDE_DIRS = ${OpenMP_C_INCLUDE_DIRS}")
-message("OpenMP_CXX_INCLUDE_DIRS = ${OpenMP_CXX_INCLUDE_DIRS}")
-message("OpenMP_C_LIBRARIES = ${OpenMP_C_LIBRARIES}")
-message("OpenMP_CXX_LIBRARIES = ${OpenMP_CXX_LIBRARIES}")
-target_include_directories(_faiss PRIVATE "/usr/include/clang/13/include")
-target_include_directories(_faiss_avx2 PRIVATE "/usr/include/clang/13/include")
 
 find_package(MKL)
 if(MKL_FOUND)
