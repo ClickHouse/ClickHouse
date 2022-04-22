@@ -22,7 +22,7 @@ INSERT INTO l VALUES (0, 'str'), (2, 'str_l');
 INSERT INTO nl VALUES (0, 'str'), (2, 'str_l');
 INSERT INTO l_lc VALUES (0, 'str'), (2, 'str_l');
 
-{% for join_algorithm in [None, 'partial_merge'] -%}
+{% for join_algorithm in [None, 'partial_merge', 'parallel_hash'] -%}
 {% for join_use_nulls in [0, 1] -%}
 
 SELECT '-- join_algorithm = {{ join_algorithm or 'default' }}, join_use_nulls = {{ join_use_nulls }} --';
