@@ -847,6 +847,45 @@ bool Aggregator::hasSparseArguments(AggregateFunctionInstruction * aggregate_ins
     return false;
 }
 
+void Aggregator::executeOnBlockSmall(
+    AggregatedDataVariants & result,
+    size_t row_begin,
+    size_t row_end,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions) const
+{
+    /// `result` will destroy the states of aggregate functions in the destructor
+    result.aggregator = this;
+
+    /// How to perform the aggregation?
+    if (result.empty())
+    {
+        initDataVariantsWithSizeHint(result, method_chosen, params);
+        result.keys_size = params.keys_size;
+        result.key_sizes = key_sizes;
+    }
+
+    executeImpl(result, row_begin, row_end, key_columns, aggregate_instructions);
+}
+
+void Aggregator::executeImpl(
+    AggregatedDataVariants & result,
+    size_t row_begin,
+    size_t row_end,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions,
+    bool no_more_keys,
+    AggregateDataPtr overflow_row) const
+{
+    #define M(NAME, IS_TWO_LEVEL) \
+        else if (result.type == AggregatedDataVariants::Type::NAME) \
+            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, no_more_keys, overflow_row);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+}
+
 /** It's interesting - if you remove `noinline`, then gcc for some reason will inline this function, and the performance decreases (~ 10%).
   * (Probably because after the inline of this function, more internal functions no longer be inlined.)
   * Inline does not make sense, since the inner loop is entirely inside this function.
@@ -1316,15 +1355,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
         AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
-
-        #define M(NAME, IS_TWO_LEVEL) \
-            else if (result.type == AggregatedDataVariants::Type::NAME) \
-                executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), \
-                    no_more_keys, overflow_row_ptr);
-
-        if (false) {} // NOLINT
-        APPLY_FOR_AGGREGATED_VARIANTS(M)
-        #undef M
+        executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, overflow_row_ptr);
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
