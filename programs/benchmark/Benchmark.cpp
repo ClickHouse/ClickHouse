@@ -552,9 +552,9 @@ private:
 
             print_key_value("QPS", info->queries.load() / seconds);
             print_key_value("RPS", info->read_rows / seconds);
-            print_key_value("MiBPS", info->read_bytes / seconds);
+            print_key_value("MiBPS", info->read_bytes / seconds / 1048576);
             print_key_value("RPS_result", info->result_rows / seconds);
-            print_key_value("MiBPS_result", info->result_bytes / seconds);
+            print_key_value("MiBPS_result", info->result_bytes / seconds / 1048576);
             print_key_value("num_queries", info->queries.load());
             print_key_value("num_errors", info->errors, false);
 
