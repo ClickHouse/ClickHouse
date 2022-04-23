@@ -76,7 +76,7 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
     /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
     /// might be in positional GROUP BY.
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(Int64(-1)));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<Int64>(-1)));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.

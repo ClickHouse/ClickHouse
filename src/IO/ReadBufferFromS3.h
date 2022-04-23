@@ -12,6 +12,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/WithFileName.h>
 
 #include <aws/s3/model/GetObjectResult.h>
 
@@ -25,7 +26,7 @@ namespace DB
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
-class ReadBufferFromS3 : public SeekableReadBufferWithSize
+class ReadBufferFromS3 : public SeekableReadBufferWithSize, public WithFileName
 {
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
@@ -70,6 +71,8 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
+    String getFileName() const override { return bucket + "/" + key; }
+
 private:
     std::unique_ptr<ReadBuffer> initialize();
 
@@ -83,7 +86,7 @@ private:
 };
 
 /// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
-class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory
+class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
 {
 public:
     explicit ReadBufferS3Factory(
@@ -112,6 +115,8 @@ public:
     off_t seek(off_t off, [[maybe_unused]] int whence) override;
 
     std::optional<size_t> getTotalSize() override;
+
+    String getFileName() const override { return bucket + "/" + key; }
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
