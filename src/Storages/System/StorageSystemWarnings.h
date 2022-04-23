@@ -11,7 +11,8 @@ class Context;
 /** Implements system.warnings table that contains warnings about server configuration
   * to be displayed in clickhouse-client.
   */
-class StorageSystemWarnings final : public IStorageSystemOneBlock<StorageSystemWarnings> {
+class StorageSystemWarnings final : public IStorageSystemOneBlock<StorageSystemWarnings>
+{
 private:
     struct CreatePasskey
     {

@@ -59,7 +59,8 @@ To typeid_cast(From * from)
     }
 }
 
-namespace detail {
+namespace detail
+{
 
 template <typename T>
 struct is_shared_ptr : std::false_type
