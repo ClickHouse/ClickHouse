@@ -1,6 +1,6 @@
 ---
-toc_priority: 57
-toc_title: Server Settings
+sidebar_position: 57
+sidebar_label: Server Settings
 ---
 
 # Server Settings {#server-settings}
@@ -23,8 +23,9 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-!!! warning "Warning"
-    Don’t use it if you have just started using ClickHouse.
+:::warning    
+Don’t use it if you have just started using ClickHouse.
+:::
 
 Configuration template:
 
@@ -87,8 +88,9 @@ Loading from config:
 </encryption_codecs>
 ```
 
-!!! note "NOTE"
-    Storing keys in the configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+:::note
+Storing keys in the configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+:::
 
 Loading from config, when the key is in hex:
 
@@ -173,8 +175,9 @@ Possible values:
 
 Default value: `1073741824` (1 GB).
 
-!!! info "Note"
-    Hard limit is configured via system tools
+:::note
+Hard limit is configured via system tools
+:::
 
 **Example**
 
@@ -439,11 +442,13 @@ A username and a password used to connect to other servers during [replication](
 
 By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
 
-!!! note "Note"
-    `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
+:::note
+`interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
+:::
 
-!!! note "Note"
-    These credentials are common for replication via `HTTP` and `HTTPS`.
+:::note
+These credentials are common for replication via `HTTP` and `HTTPS`.
+:::
 
 The section contains the following parameters:
 
@@ -675,8 +680,9 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 The maximum number of simultaneously processed queries related to MergeTree table.
 Queries may be limited by other settings: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
-!!! info "Note"
-	These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
 
 Possible values:
 
@@ -695,8 +701,9 @@ Default value: `100`.
 
 The maximum number of simultaneously processed `INSERT` queries.
 
-!!! info "Note"
-    These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
 
 Possible values:
 
@@ -715,8 +722,9 @@ Default value: `0`.
 
 The maximum number of simultaneously processed `SELECT` queries.
 
-!!! info "Note"
-    These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
 
 Possible values:
 
@@ -1025,8 +1033,9 @@ Use the following parameters to configure logging:
 
 The path to the directory containing data.
 
-!!! warning "Warning"
-    The trailing slash is mandatory.
+:::note
+The trailing slash is mandatory.
+:::
 
 **Example**
 
@@ -1306,8 +1315,9 @@ Example
 
 Path to temporary data for processing large queries.
 
-!!! warning "Note"
-    The trailing slash is mandatory.
+:::note
+The trailing slash is mandatory.
+:::
 
 **Example**
 
@@ -1321,11 +1331,12 @@ Policy from [storage_configuration](../../engines/table-engines/mergetree-family
 
 If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 
-!!! note "Note"
-    - `move_factor` is ignored.
-    - `keep_free_space_bytes` is ignored.
-    - `max_data_part_size_bytes` is ignored.
-    - Уou must have exactly one volume in that policy.
+:::note
+- `move_factor` is ignored.
+- `keep_free_space_bytes` is ignored.
+- `max_data_part_size_bytes` is ignored.
+- Уou must have exactly one volume in that policy.
+:::
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
@@ -1442,10 +1453,11 @@ This setting only applies to the `MergeTree` family. It can be specified:
 
 If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../../engines/table-engines/mergetree-family/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
 
-!!! attention "Attention"
-    After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can’t downgrade the ClickHouse server to a version that does not support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don’t upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
+:::note
+After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can’t downgrade the ClickHouse server to a version that does not support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don’t upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
 
-      Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
+Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
+:::
 
 **Default value:** 0.
 
@@ -1466,18 +1478,6 @@ The update is performed asynchronously, in a separate system thread.
 **See also**
 
 -   [background_schedule_pool_size](../../operations/settings/settings.md#background_schedule_pool_size)
-
-
-## dns_max_consecutive_failures {#server-settings-dns-max-consecutive-failures}
-
-The number of consecutive failures accepted when updating a DNS cache entry before it is dropped.
-Use `0` to disable cache dropping (entries will only be cleaned by `SYSTEM DROP DNS CACHE`)
-
-**Default value**: 5.
-
-**See also**
-
--   [`SYSTEM DROP DNS CACHE`](../../sql-reference/statements/system.md#query_language-system-drop-dns-cache)
 
 ## distributed_ddl {#server-settings-distributed_ddl}
 
@@ -1627,15 +1627,4 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
-
-## global_memory_usage_overcommit_max_wait_microseconds {#global_memory_usage_overcommit_max_wait_microseconds}
-
-Sets maximum waiting time for global overcommit tracker.
-
-Possible values:
-
--   Positive integer.
-
-Default value: `0`.
-
 

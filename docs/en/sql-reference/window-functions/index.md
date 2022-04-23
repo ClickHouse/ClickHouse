@@ -1,6 +1,6 @@
 ---
-toc_priority: 62
-toc_title: Window Functions
+sidebar_position: 62
+sidebar_label: Window Functions
 ---
 
 # Window Functions

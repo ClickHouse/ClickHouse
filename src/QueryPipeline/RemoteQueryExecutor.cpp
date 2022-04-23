@@ -503,7 +503,7 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
     }
     else
     {
-        /// Drain connections synchronously w/o suppressing errors.
+        /// Drain connections synchronously without suppressing errors.
         CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
         ConnectionCollector::drainConnections(*connections, /* throw_error= */ true);
         CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);

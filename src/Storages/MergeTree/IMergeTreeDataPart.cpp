@@ -1831,22 +1831,22 @@ void IMergeTreeDataPart::checkConsistencyBase() const
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     if (!checksums.empty())
     {
-        if (!pk.column_names.empty() && !checksums.files.count("primary.idx"))
+        if (!pk.column_names.empty() && !checksums.files.contains("primary.idx"))
             throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
-            if (!checksums.files.count("count.txt"))
+            if (!checksums.files.contains("count.txt"))
                 throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-            if (metadata_snapshot->hasPartitionKey() && !checksums.files.count("partition.dat"))
+            if (metadata_snapshot->hasPartitionKey() && !checksums.files.contains("partition.dat"))
                 throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
 
             if (!isEmpty() && !parent_part)
             {
                 for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
                 {
-                    if (!checksums.files.count("minmax_" + escapeForFileName(col_name) + ".idx"))
+                    if (!checksums.files.contains("minmax_" + escapeForFileName(col_name) + ".idx"))
                         throw Exception("No minmax idx file checksum for column " + col_name, ErrorCodes::NO_FILE_IN_DATA_PART);
                 }
             }
@@ -1980,26 +1980,26 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     for (const auto & [column, desc] : metadata_snapshot->getColumnTTLs())
     {
         /// Part has this column, but we don't calculated TTL for it
-        if (!ttl_infos.columns_ttl.count(column) && getColumns().contains(column))
+        if (!ttl_infos.columns_ttl.contains(column) && getColumns().contains(column))
             return false;
     }
 
     for (const auto & move_desc : metadata_snapshot->getMoveTTLs())
     {
         /// Move TTL is not calculated
-        if (!ttl_infos.moves_ttl.count(move_desc.result_column))
+        if (!ttl_infos.moves_ttl.contains(move_desc.result_column))
             return false;
     }
 
     for (const auto & group_by_desc : metadata_snapshot->getGroupByTTLs())
     {
-        if (!ttl_infos.group_by_ttl.count(group_by_desc.result_column))
+        if (!ttl_infos.group_by_ttl.contains(group_by_desc.result_column))
             return false;
     }
 
     for (const auto & rows_where_desc : metadata_snapshot->getRowsWhereTTLs())
     {
-        if (!ttl_infos.rows_where_ttl.count(rows_where_desc.result_column))
+        if (!ttl_infos.rows_where_ttl.contains(rows_where_desc.result_column))
             return false;
     }
 
@@ -2047,7 +2047,7 @@ IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const St
     String file_name = std::filesystem::path(file_path).filename();
     const auto filenames_without_checksums = getFileNamesWithoutChecksums();
     auto it = checksums.files.find(file_name);
-    if (filenames_without_checksums.count(file_name) == 0 && it != checksums.files.end())
+    if (!filenames_without_checksums.contains(file_name) && it != checksums.files.end())
     {
         return it->second.file_hash;
     }

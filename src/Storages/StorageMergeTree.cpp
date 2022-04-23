@@ -413,7 +413,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     for (const auto & part : future_part->parts)
     {
-        if (storage.currently_merging_mutating_parts.count(part))
+        if (storage.currently_merging_mutating_parts.contains(part))
             throw Exception("Tagging already tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
     }
     storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
@@ -425,7 +425,7 @@ CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
 
     for (const auto & part : future_part->parts)
     {
-        if (!storage.currently_merging_mutating_parts.count(part))
+        if (!storage.currently_merging_mutating_parts.contains(part))
             std::terminate();
         storage.currently_merging_mutating_parts.erase(part);
     }
@@ -806,8 +806,8 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
         /// This predicate is checked for the first part of each range.
         /// (left = nullptr, right = "first part of partition")
         if (!left)
-            return !currently_merging_mutating_parts.count(right);
-        return !currently_merging_mutating_parts.count(left) && !currently_merging_mutating_parts.count(right)
+            return !currently_merging_mutating_parts.contains(right);
+        return !currently_merging_mutating_parts.contains(left) && !currently_merging_mutating_parts.contains(right)
             && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock) && partsContainSameProjections(left, right);
     };
 
@@ -949,7 +949,7 @@ bool StorageMergeTree::merge(
 bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
 {
     std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
-    return currently_merging_mutating_parts.count(part);
+    return currently_merging_mutating_parts.contains(part);
 }
 
 std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
@@ -981,7 +981,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
     auto mutations_end_it = current_mutations_by_version.end();
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
-        if (currently_merging_mutating_parts.count(part))
+        if (currently_merging_mutating_parts.contains(part))
             continue;
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(getUpdatedDataVersion(part, currently_processing_in_background_mutex_lock));
@@ -1443,7 +1443,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
 
         /// Part will be "removed" by merge or mutation, it's OK in case of some
         /// background cleanup processes like removing of empty parts.
-        if (currently_merging_mutating_parts.count(part))
+        if (currently_merging_mutating_parts.contains(part))
             return nullptr;
 
         removePartsFromWorkingSet(txn, {part}, true);

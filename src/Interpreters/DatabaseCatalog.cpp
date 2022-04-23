@@ -945,7 +945,7 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     std::unique_lock lock{tables_marked_dropped_mutex};
     wait_table_finally_dropped.wait(lock, [&]()
     {
-        return tables_marked_dropped_ids.count(uuid) == 0;
+        return !tables_marked_dropped_ids.contains(uuid);
     });
 }
 
