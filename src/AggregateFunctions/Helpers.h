@@ -3,6 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #define FOR_BASIC_NUMERIC_TYPES(M, ...) \
     M(UInt8 __VA_OPT__(, ) __VA_ARGS__) \
     M(UInt16 __VA_OPT__(, ) __VA_ARGS__) \
