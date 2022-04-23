@@ -694,10 +694,19 @@ class ClickHouseCluster:
         )
 
         binary_path = self.server_bin_path
-        if binary_path.endswith("-server"):
-            binary_path = binary_path[: -len("-server")]
+        binary_dir = os.path.dirname(self.server_bin_path)
+
+        # always prefer clickhouse-keeper standalone binary
+        if os.path.exists(os.path.join(binary_dir, "clickhouse-keeper")):
+            binary_path = os.path.join(binary_dir, "clickhouse-keeper")
+            keeper_cmd_prefix = "clickhouse-keeper"
+        else:
+            if binary_path.endswith("-server"):
+                binary_path = binary_path[: -len("-server")]
+            keeper_cmd_prefix = "clickhouse keeper"
 
         env_variables["keeper_binary"] = binary_path
+        env_variables["keeper_cmd_prefix"] = keeper_cmd_prefix
         env_variables["image"] = "clickhouse/integration-test:" + self.docker_base_tag
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
