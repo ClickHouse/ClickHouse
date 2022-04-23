@@ -114,10 +114,10 @@ public:
                 "Parameters for aggregate function " + name + " should be of equal types. Got " + argument_types[0]->getName() + " and " \
                     + argument_types[1]->getName(), \
                 ErrorCodes::BAD_ARGUMENTS); \
-        AggregateFunctionPtr ans{createWithNumericType<operation>(*argument_types[0], argument_types[0], parameters)}; \
-        if (!ans) \
-            ans.reset(new operation<StringRef>(argument_types[0], parameters)); \
-        return ans; \
+        AggregateFunctionPtr result{createWithNumericType<operation>(*argument_types[0], argument_types[0], parameters)}; \
+        if (!result) \
+            result.reset(new operation<StringRef>(argument_types[0], parameters)); \
+        return result; \
     }
 
 #define INSTANTIATE_UNARY_GRAPH_OPERATION(data_type, operation) template class operation<data_type>;
