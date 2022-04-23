@@ -9,12 +9,18 @@ import logging
 from git_helper import commit, release_branch
 from version_helper import (
     FILE_WITH_VERSION_PATH,
+    GENERATED_CONTRIBUTORS,
     ClickHouseVersion,
+    Git,
     VersionType,
     get_abs_path,
     get_version_from_repo,
     update_cmake_version,
+    update_contributors,
 )
+
+
+git = Git()
 
 
 class Repo:
@@ -47,14 +53,16 @@ class Repo:
 class Release:
     BIG = ("major", "minor")
     SMALL = ("patch",)
+    CMAKE_PATH = get_abs_path(FILE_WITH_VERSION_PATH)
+    CONTRIBUTORS_PATH = get_abs_path(GENERATED_CONTRIBUTORS)
 
     def __init__(self, repo: Repo, release_commit: str, release_type: str):
         self.repo = repo
         self._release_commit = ""
         self.release_commit = release_commit
         self.release_type = release_type
-        self._version = get_version_from_repo()
-        self._git = self._version._git
+        self._git = git
+        self._version = get_version_from_repo(git=self._git)
         self._release_branch = ""
         self._rollback_stack = []  # type: List[str]
 
@@ -75,7 +83,7 @@ class Release:
 
     def read_version(self):
         self._git.update()
-        self.version = get_version_from_repo()
+        self.version = get_version_from_repo(git=self._git)
 
     def check_prerequisites(self):
         """
@@ -179,14 +187,15 @@ class Release:
             self.version = self.version.update(self.release_type)
             self.version.with_description(version_type)
             update_cmake_version(self.version)
-            cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
+            update_contributors(raise_error=True)
             # Checkouting the commit of the branch and not the branch itself,
             # then we are able to skip rollback
             with self._checkout(f"{self.release_branch}@{{0}}", False):
                 current_commit = self.run("git rev-parse HEAD")
                 self.run(
                     f"git commit -m "
-                    f"'Update version to {self.version.string}' '{cmake_path}'"
+                    f"'Update version to {self.version.string}' "
+                    f"'{self.CMAKE_PATH}' '{self.CONTRIBUTORS_PATH}'"
                 )
                 with self._push(
                     "HEAD", with_rollback_on_fail=False, remote_ref=self.release_branch
@@ -243,9 +252,10 @@ class Release:
         new_version = self.version.patch_update()
         new_version.with_description("prestable")
         update_cmake_version(new_version)
-        cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
+        update_contributors(raise_error=True)
         self.run(
-            f"git commit -m 'Update version to {new_version.string}' '{cmake_path}'"
+            f"git commit -m 'Update version to {new_version.string}' "
+            f"'{self.CMAKE_PATH}' '{self.CONTRIBUTORS_PATH}'"
         )
         with self._push(self.release_branch):
             with self._create_gh_label(
@@ -271,9 +281,10 @@ class Release:
         self.version = self.version.update(self.release_type)
         self.version.with_description("testing")
         update_cmake_version(self.version)
-        cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
+        update_contributors(raise_error=True)
         self.run(
-            f"git commit -m 'Update version to {self.version.string}' '{cmake_path}'"
+            f"git commit -m 'Update version to {self.version.string}' "
+            f"'{self.CMAKE_PATH}' '{self.CONTRIBUTORS_PATH}'"
         )
         with self._push(helper_branch):
             body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
