@@ -2569,6 +2569,11 @@ std::shared_ptr<CacheLog> Context::getCacheLog() const
     return shared->system_logs->cache_log;
 }
 
+std::shared_ptr<CacheLogRecorder> Context::getCacheRecorder() const
+{
+    return cache_log_recorder;
+}
+
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();

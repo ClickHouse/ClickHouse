@@ -900,6 +900,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (auto query_log = context->getQueryLog())
                         query_log->add(elem);
                     if (auto cache_log = context->getCacheLog()) {
+                        cache_elem.event_time = elem.query_start_time;
+                        cache_elem.event_time_microseconds = elem.query_start_time_microseconds;
                         cache_elem.query_id = elem.client_info.current_query_id;
                         cache_elem.hit_count = 0;
                         cache_elem.miss_count = 0;
