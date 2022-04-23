@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_PARAMETER;
 }
 
-template<typename VertexType>
+template <typename VertexType>
 class TreeDiameter final : public GraphOperation<BidirectionalGraphData<VertexType>, TreeDiameter<VertexType>>
 {
 public:

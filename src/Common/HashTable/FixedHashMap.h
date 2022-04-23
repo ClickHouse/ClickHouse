@@ -4,6 +4,11 @@
 #include <Common/HashTable/HashMap.h>
 
 
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 template <typename Key, typename TMapped, typename TState = HashTableNoState>
 struct FixedHashMapCell
 {
@@ -16,9 +21,9 @@ struct FixedHashMapCell
     bool full;
     Mapped mapped;
 
-    FixedHashMapCell() {} //-V730 /// NOLINT
-    FixedHashMapCell(const Key &, const State &) : full(true) {}
-    FixedHashMapCell(const value_type & value_, const State &) : full(true), mapped(value_.second) {}
+    FixedHashMapCell() { } //-V730 /// NOLINT
+    FixedHashMapCell(const Key &, const State &) : full(true) { }
+    FixedHashMapCell(const value_type & value_, const State &) : full(true), mapped(value_.second) { }
 
     const VoidKey getKey() const { return {}; } /// NOLINT
     Mapped & getMapped() { return mapped; }
@@ -31,8 +36,8 @@ struct FixedHashMapCell
     ///  Note that we have to assemble a continuous layout for the value_type on each call of getValue().
     struct CellExt
     {
-        CellExt() {} //-V730 /// NOLINT
-        CellExt(Key && key_, const FixedHashMapCell * ptr_) : key(key_), ptr(const_cast<FixedHashMapCell *>(ptr_)) {}
+        CellExt() { } //-V730 /// NOLINT
+        CellExt(Key && key_, const FixedHashMapCell * ptr_) : key(key_), ptr(const_cast<FixedHashMapCell *>(ptr_)) { }
         void update(Key && key_, const FixedHashMapCell * ptr_)
         {
             key = key_;
@@ -61,9 +66,9 @@ struct FixedHashMapImplicitZeroCell
 
     Mapped mapped;
 
-    FixedHashMapImplicitZeroCell() {} /// NOLINT
-    FixedHashMapImplicitZeroCell(const Key &, const State &) {}
-    FixedHashMapImplicitZeroCell(const value_type & value_, const State &) : mapped(value_.second) {}
+    FixedHashMapImplicitZeroCell() { } /// NOLINT
+    FixedHashMapImplicitZeroCell(const Key &, const State &) { }
+    FixedHashMapImplicitZeroCell(const value_type & value_, const State &) : mapped(value_.second) { }
 
     const VoidKey getKey() const { return {}; } /// NOLINT
     Mapped & getMapped() { return mapped; }
@@ -76,8 +81,10 @@ struct FixedHashMapImplicitZeroCell
     ///  Note that we have to assemble a continuous layout for the value_type on each call of getValue().
     struct CellExt
     {
-        CellExt() {} //-V730 /// NOLINT
-        CellExt(Key && key_, const FixedHashMapImplicitZeroCell * ptr_) : key(key_), ptr(const_cast<FixedHashMapImplicitZeroCell *>(ptr_)) {}
+        CellExt() { } //-V730 /// NOLINT
+        CellExt(Key && key_, const FixedHashMapImplicitZeroCell * ptr_) : key(key_), ptr(const_cast<FixedHashMapImplicitZeroCell *>(ptr_))
+        {
+        }
         void update(Key && key_, const FixedHashMapImplicitZeroCell * ptr_)
         {
             key = key_;
@@ -158,11 +165,8 @@ public:
 
         return it->getMapped();
     }
-    
-    Mapped & ALWAYS_INLINE at(const Key & x)
-    {
-        return const_cast<Mapped&>(std::as_const(*this).at(x));
-    }
+
+    Mapped & ALWAYS_INLINE at(const Key & x) { return const_cast<Mapped &>(std::as_const(*this).at(x)); }
 
     const Mapped & ALWAYS_INLINE at(const Key & x) const
     {

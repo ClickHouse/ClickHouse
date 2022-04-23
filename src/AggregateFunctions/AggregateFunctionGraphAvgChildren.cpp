@@ -1,12 +1,11 @@
-#include "AggregateFunctionGraphOperation.h"
 #include "AggregateFunctionGraphDirectionalData.h"
+#include "AggregateFunctionGraphOperation.h"
 #include "DataTypes/DataTypesNumber.h"
 #include "base/types.h"
 
 namespace DB
 {
-
-template<typename DataType>
+template <typename DataType>
 class GraphAvgChildren final : public GraphOperation<DirectionalGraphData<DataType>, GraphAvgChildren<DataType>>
 {
 public:

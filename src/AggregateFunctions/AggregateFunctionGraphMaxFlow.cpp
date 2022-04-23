@@ -7,8 +7,7 @@
 
 namespace DB
 {
-
-template<typename VertexType>
+template <typename VertexType>
 class GraphMaxFlow final : public GraphOperation<DirectionalGraphData<VertexType>, GraphMaxFlow<VertexType>, 2>
 {
 public:

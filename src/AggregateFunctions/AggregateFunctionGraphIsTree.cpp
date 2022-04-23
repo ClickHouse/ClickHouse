@@ -4,8 +4,7 @@
 
 namespace DB
 {
-
-template<typename VertexType>
+template <typename VertexType>
 class GraphIsTree final : public GraphOperation<BidirectionalGraphData<VertexType>, GraphIsTree<VertexType>>
 {
 public:

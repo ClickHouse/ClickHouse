@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_PARAMETER;
 }
 
-template<typename VertexType>
+template <typename VertexType>
 class GraphCountBipartiteMaximumMatching final
     : public GraphOperation<BidirectionalGraphData<VertexType>, GraphCountBipartiteMaximumMatching<VertexType>>
 {
@@ -23,11 +23,7 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    bool isBipartite(
-        const GraphType & graph,
-        Vertex vertex,
-        HashMap<Vertex, bool> & color,
-        bool currentColor = true) const
+    bool isBipartite(const GraphType & graph, Vertex vertex, HashMap<Vertex, bool> & color, bool currentColor = true) const
     {
         color[vertex] = currentColor;
         for (Vertex next : graph.at(vertex))
@@ -53,12 +49,7 @@ public:
         return std::make_optional(std::move(color));
     }
 
-    bool dfsMatch(
-        Vertex vertex,
-        UInt64 currentColor,
-        const GraphType & graph,
-        HashMap<Vertex, UInt64> & used,
-        VertexMap & matching) const
+    bool dfsMatch(Vertex vertex, UInt64 currentColor, const GraphType & graph, HashMap<Vertex, UInt64> & used, VertexMap & matching) const
     {
         if (std::exchange(used[vertex], currentColor) == currentColor)
             return false;

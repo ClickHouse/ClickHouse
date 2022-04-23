@@ -5,8 +5,12 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
 
-template<typename DataType>
+template <typename DataType>
 struct BidirectionalGraphData : DirectionalGraphData<DataType>
 {
     using Vertex = typename DirectionalGraphData<DataType>::Vertex;
@@ -22,10 +26,13 @@ struct BidirectionalGraphData : DirectionalGraphData<DataType>
             throw Exception("Too large graph size", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
         Vertex key;
         Vertex value;
-        if constexpr (is_arithmetic_v<Vertex>) {
+        if constexpr (is_arithmetic_v<Vertex>)
+        {
             key = assert_cast<const ColumnVector<Vertex> &>(*columns[0]).getData()[row_num];
             value = assert_cast<const ColumnVector<Vertex> &>(*columns[1]).getData()[row_num];
-        } else {
+        }
+        else
+        {
             const char * begin = nullptr;
             key = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
             value = columns[1]->serializeValueIntoArena(row_num, *arena, begin);
@@ -65,7 +72,8 @@ struct BidirectionalGraphData : DirectionalGraphData<DataType>
         return true;
     }
 
-    size_t componentsCount() const {
+    size_t componentsCount() const
+    {
         size_t components_count = 0;
         VertexSet visited;
         for (const auto & [from, tos] : graph)
@@ -91,9 +99,11 @@ struct BidirectionalGraphData : DirectionalGraphData<DataType>
         return components_count;
     }
 
-    size_t componentSize(Vertex root, VertexSet* visited = nullptr) const {
+    size_t componentSize(Vertex root, VertexSet * visited = nullptr) const
+    {
         VertexSet visited_buffer;
-        if (visited == nullptr) {
+        if (visited == nullptr)
+        {
             visited = &visited_buffer;
         }
         visited->insert(root);

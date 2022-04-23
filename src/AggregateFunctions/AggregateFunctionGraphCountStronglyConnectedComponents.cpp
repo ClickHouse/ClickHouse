@@ -6,8 +6,7 @@
 
 namespace DB
 {
-
-template<typename VertexType>
+template <typename VertexType>
 class GraphCountStronglyConnectedComponents final
     : public GraphOperation<DirectionalGraphData<VertexType>, GraphCountStronglyConnectedComponents<VertexType>>
 {
@@ -18,11 +17,7 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    void dfsOrder(
-        const GraphType & graph,
-        Vertex vertex,
-        VertexSet & used,
-        std::vector<Vertex> & order) const
+    void dfsOrder(const GraphType & graph, Vertex vertex, VertexSet & used, std::vector<Vertex> & order) const
     {
         typename VertexSet::LookupResult it;
         bool inserted;

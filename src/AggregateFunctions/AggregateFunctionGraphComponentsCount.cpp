@@ -3,8 +3,7 @@
 
 namespace DB
 {
-
-template<typename VertexType>
+template <typename VertexType>
 class GraphComponentsCount final : public GraphOperation<BidirectionalGraphData<VertexType>, GraphComponentsCount<VertexType>>
 {
 public:

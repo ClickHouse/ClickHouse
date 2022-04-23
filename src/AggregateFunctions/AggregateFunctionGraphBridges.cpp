@@ -5,8 +5,7 @@
 
 namespace DB
 {
-
-template<typename VertexType>
+template <typename VertexType>
 class GraphCountBridges final : public GraphOperation<BidirectionalGraphData<VertexType>, GraphCountBridges<VertexType>>
 {
 public:

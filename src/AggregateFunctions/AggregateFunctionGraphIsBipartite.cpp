@@ -4,8 +4,7 @@
 
 namespace DB
 {
-
-template<typename VertexType>
+template <typename VertexType>
 class GraphIsBipartite final : public GraphOperation<BidirectionalGraphData<VertexType>, GraphIsBipartite<VertexType>>
 {
 public:
@@ -15,11 +14,7 @@ public:
 
     DataTypePtr getReturnType() const override { return DataTypeFactory::instance().get("Bool"); }
 
-    bool isBipartite(
-        const GraphType & graph,
-        Vertex vertex,
-        HashMap<Vertex, bool> & color,
-        bool currentColor = true) const
+    bool isBipartite(const GraphType & graph, Vertex vertex, HashMap<Vertex, bool> & color, bool currentColor = true) const
     {
         color[vertex] = currentColor;
         for (Vertex next : graph.at(vertex))

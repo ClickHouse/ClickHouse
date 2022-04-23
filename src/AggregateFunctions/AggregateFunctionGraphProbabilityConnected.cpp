@@ -6,8 +6,7 @@
 
 namespace DB
 {
-
-template<typename ValueType>
+template <typename ValueType>
 class GraphProbabilityConnected final : public GraphOperation<BidirectionalGraphData<ValueType>, GraphProbabilityConnected<ValueType>>
 {
 public:
@@ -23,7 +22,7 @@ public:
             return 1;
         UInt64 connected_vertices = 0;
         VertexSet visited;
-        for (const auto & [from, _] : data(place).graph) 
+        for (const auto & [from, _] : data(place).graph)
         {
             if (!visited.has(from))
             {
