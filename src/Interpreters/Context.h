@@ -26,6 +26,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <atomic>
 
 #include <thread>
 #include <exception>
@@ -85,6 +86,7 @@ class ZooKeeperLog;
 class SessionLog;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
+struct CacheLogRecorder;
 class CacheLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
@@ -211,6 +213,8 @@ private:
 
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
+
+    std::shared_ptr<CacheLogRecorder> cache_log_recorder;
 
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
@@ -820,7 +824,9 @@ public:
     std::shared_ptr<SessionLog> getSessionLog() const;
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
+
     std::shared_ptr<CacheLog> getCacheLog() const;
+    std::shared_ptr<CacheLogRecorder> getCacheRecorder() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
