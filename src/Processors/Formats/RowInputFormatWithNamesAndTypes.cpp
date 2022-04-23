@@ -297,9 +297,8 @@ FormatWithNamesAndTypesSchemaReader::FormatWithNamesAndTypesSchemaReader(
     bool with_names_,
     bool with_types_,
     FormatWithNamesAndTypesReader * format_reader_,
-    DataTypePtr default_type_,
-    bool allow_bools_as_numbers_)
-    : IRowSchemaReader(in_, format_settings, default_type_, allow_bools_as_numbers_), with_names(with_names_), with_types(with_types_), format_reader(format_reader_)
+    DataTypePtr default_type_)
+    : IRowSchemaReader(in_, format_settings, default_type_), with_names(with_names_), with_types(with_types_), format_reader(format_reader_)
 {
 }
 
