@@ -3,28 +3,33 @@
 namespace MySQLCompatibility
 {
 
-using MySQLParserOverlay::ASTNode;
-using MySQLParserOverlay::ASTNodePtr;
-
-RecognizeResult SetQueryRecognizer::Recognize(ASTNodePtr node) const
+ConvPtr SetQueryRecognizer::Recognize(MySQLPtr node) const
 {
-	if (node->rule_type == "setStatement")
-		return {node, SET_QUERY_TYPE};
-	return {nullptr, UNKNOWN_QUERY_TYPE};
+	if (node->rule_name == "setStatement")
+		return std::make_shared<SetQueryCT>(node);
+	return nullptr;
 }
 
-RecognizeResult GenericRecognizer::Recognize(ASTNodePtr node) const
+ConvPtr SimpleSelectQueryRecognizer::Recognize(MySQLPtr node) const
 {
-	RecognizeResult result = {nullptr, UNKNOWN_QUERY_TYPE};
+	if (node->rule_name == "selectStatement")
+		return std::make_shared<SimpleSelectQueryCT>(node);
+	
+	return nullptr;
+}
+
+ConvPtr GenericRecognizer::Recognize(MySQLPtr node) const
+{
+	ConvPtr result = nullptr;
 	for (const auto & rule : rules)
 	{
-		if ((result = rule->Recognize(node)).first != nullptr)
+		if ((result = rule->Recognize(node)) != nullptr)
 			return result;
 	}
 
 	for (auto child : node->children)
 	{
-		if ((result = GenericRecognizer::Recognize(child)).first != nullptr)
+		if ((result = this->Recognize(child)) != nullptr)
 			return result;
 	}
 

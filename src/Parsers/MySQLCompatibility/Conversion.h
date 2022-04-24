@@ -8,6 +8,6 @@ class Converter
 {
 public:
 	String dumpAST(const String & query);
-	DB::ASTPtr toClickHouseAST(const String & query);
+	void toClickHouseAST(const String & query, DB::ASTPtr & ch_tree);
 };
 }

@@ -436,16 +436,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_table;
     try
     {
-		std::string sql_dialect = settings.sql_dialect;
+		String sql_dialect = settings.sql_dialect;
 		assert(sql_dialect == "clickhouse" || sql_dialect == "mysql");
  		if (sql_dialect == "mysql")
 		{
 			MySQLCompatibility::Converter converter;
-			std::string ast_dump = converter.dumpAST(begin);
+			String ast_dump = converter.dumpAST(begin);
 			LOG_INFO(&Poco::Logger::get("executeQuery"), "MySQL AST = {}", ast_dump);
-			ast = converter.toClickHouseAST(begin);
+			converter.toClickHouseAST(begin, ast);
 			if (ast == nullptr)
 				throw Exception(ErrorCodes::INVALID_TRANSACTION, "Convertion failed");
+			
+			ast_dump = ast->dumpTree();
+			LOG_INFO(&Poco::Logger::get("executeQuery"), "Converted AST = {}", ast_dump);
 		}
 		else
 		{
@@ -453,6 +456,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 			/// TODO: parser should fail early when max_query_size limit is reached.
 			ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+			String ast_dump = ast->dumpTree();
+			LOG_INFO(&Poco::Logger::get("executeQuery"), "CH AST = {}", ast_dump);
 
 			if (auto txn = context->getCurrentTransaction())
 			{
