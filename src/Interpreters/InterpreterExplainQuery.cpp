@@ -269,6 +269,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
+    SelectQueryOptions options;
+    options.setExplain();
+
     switch (ast.getKind())
     {
         case ASTExplainQuery::ParsedAST:
@@ -299,7 +302,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
 
-            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
             interpreter.buildQueryPlan(plan);
 
             if (settings.optimize)
@@ -334,7 +337,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
                 QueryPlan plan;
 
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
                 interpreter.buildQueryPlan(plan);
                 auto pipeline = plan.buildQueryPipeline(
                     QueryPlanOptimizationSettings::fromContext(getContext()),

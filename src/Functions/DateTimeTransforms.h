@@ -539,7 +539,7 @@ struct ToStartOfFifteenMinutesImpl
     using FactorTransform = ZeroTransform;
 };
 
-/// Round to start of half-an-hour length interval with unspecified offset. This transform is specific for Yandex.Metrica.
+/// Round to start of half-an-hour length interval with unspecified offset. This transform is specific for Metrica web analytics system.
 struct TimeSlotImpl
 {
     static constexpr auto name = "timeSlot";

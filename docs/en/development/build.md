@@ -1,9 +1,10 @@
 ---
-toc_priority: 64
-toc_title: Build on Linux
+sidebar_position: 64
+sidebar_label: Build on Linux
+description: How to build ClickHouse on Linux
 ---
 
-# How to Build ClickHouse on Linux {#how-to-build-clickhouse-for-development}
+# How to Build ClickHouse on Linux
 
 Supported platforms:
 
