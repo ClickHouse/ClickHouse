@@ -1,7 +1,7 @@
 ---
 machine_translated: true
 machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
-toc_title: "\u53D8\u66F4\u65E5\u5FD7"
+sidebar_label: "\u53D8\u66F4\u65E5\u5FD7"
 ---
 
 ## 碌莽禄release拢.0755-88888888 {#clickhouse-release-v20-3}

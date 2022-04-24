@@ -1,6 +1,6 @@
 ---
-toc_priority: 12
-toc_title: 使用教程
+sidebar_position: 12
+sidebar_label: 使用教程
 ---
 
 # ClickHouse教程 {#clickhouse-tutorial}

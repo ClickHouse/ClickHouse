@@ -343,7 +343,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
             && decoded_char != '"'
             && decoded_char != '`'  /// MySQL style identifiers
             && decoded_char != '/'  /// JavaScript in HTML
-            && decoded_char != '='  /// Yandex's TSKV
+            && decoded_char != '='  /// TSKV format invented somewhere
             && !isControlASCII(decoded_char))
         {
             s.push_back('\\');
