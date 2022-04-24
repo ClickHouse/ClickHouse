@@ -1,6 +1,6 @@
 ---
-toc_priority: 36
-toc_title: Merge
+sidebar_position: 36
+sidebar_label: Merge
 ---
 
 # Merge {#merge}
