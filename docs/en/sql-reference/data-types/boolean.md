@@ -1,6 +1,6 @@
 ---
-toc_priority: 43
-toc_title: Boolean
+sidebar_position: 43
+sidebar_label: Boolean
 ---
 
 # Boolean Values {#boolean-values}

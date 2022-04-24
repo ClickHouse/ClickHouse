@@ -85,6 +85,8 @@ public:
     std::optional<size_t> getTotalSize() override;
     off_t getPosition() override;
 
+    const ReadBufferFactory & getReadBufferFactory() const { return *reader_factory; }
+
 private:
     /// Reader in progress with a list of read segments
     struct ReadWorker
@@ -135,9 +137,7 @@ private:
     Segment current_segment;
 
     size_t max_working_readers;
-    size_t active_working_reader{0};
-    // Triggered when all reader workers are done
-    std::condition_variable readers_done;
+    std::atomic_size_t active_working_reader{0};
 
     CallbackRunner schedule;
 
