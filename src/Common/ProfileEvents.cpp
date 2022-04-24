@@ -253,7 +253,7 @@
     \
     M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
-    M(ReadBufferFromS3RequestsErrors, "Number exceptions while reading from S3.") \
+    M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
     \
     M(WriteBufferFromS3Bytes, "Bytes written to S3.") \
     \
