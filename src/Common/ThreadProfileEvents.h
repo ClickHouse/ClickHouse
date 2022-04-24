@@ -176,17 +176,7 @@ extern PerfEventsCounters current_thread_counters;
 class TasksStatsCounters
 {
 public:
-    enum class MetricsProvider
-    {
-        None,
-        Procfs,
-        Netlink,
-    };
-
-    static const char * metricsProviderString(MetricsProvider provider);
     static bool checkIfAvailable();
-    static MetricsProvider findBestAvailableProvider();
-
     static std::unique_ptr<TasksStatsCounters> create(UInt64 tid);
 
     void reset();
@@ -196,8 +186,16 @@ private:
     ::taskstats stats;  //-V730_NOINIT
     std::function<::taskstats()> stats_getter;
 
+    enum class MetricsProvider
+    {
+        None,
+        Procfs,
+        Netlink
+    };
+
     explicit TasksStatsCounters(UInt64 tid, MetricsProvider provider);
 
+    static MetricsProvider findBestAvailableProvider();
     static void incrementProfileEvents(const ::taskstats & prev, const ::taskstats & curr, ProfileEvents::Counters & profile_events);
 };
 
