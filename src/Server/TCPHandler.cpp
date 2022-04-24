@@ -202,7 +202,7 @@ void TCPHandler::runImpl()
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
          */
-        std::optional<DB::Exception> exception;
+        std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
 
         try
@@ -396,7 +396,7 @@ void TCPHandler::runImpl()
         catch (const Exception & e)
         {
             state.io.onException();
-            exception.emplace(e);
+            exception.reset(e.clone());
 
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
@@ -420,12 +420,12 @@ void TCPHandler::runImpl()
              *  We will try to send exception to the client in any case - see below.
              */
             state.io.onException();
-            exception.emplace(Exception::CreateFromPocoTag{}, e);
+            exception = std::make_unique<DB::Exception>(Exception::CreateFromPocoTag{}, e);
         }
         catch (const Poco::Exception & e)
         {
             state.io.onException();
-            exception.emplace(Exception::CreateFromPocoTag{}, e);
+            exception = std::make_unique<DB::Exception>(Exception::CreateFromPocoTag{}, e);
         }
 // Server should die on std logic errors in debug, like with assert()
 // or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
@@ -434,7 +434,7 @@ void TCPHandler::runImpl()
         catch (const std::logic_error & e)
         {
             state.io.onException();
-            exception.emplace(Exception::CreateFromSTDTag{}, e);
+            exception = std::make_unique<DB::Exception>(Exception::CreateFromSTDTag{}, e);
             sendException(*exception, send_exception_with_stack_trace);
             std::abort();
         }
@@ -442,12 +442,12 @@ void TCPHandler::runImpl()
         catch (const std::exception & e)
         {
             state.io.onException();
-            exception.emplace(Exception::CreateFromSTDTag{}, e);
+            exception = std::make_unique<DB::Exception>(Exception::CreateFromSTDTag{}, e);
         }
         catch (...)
         {
             state.io.onException();
-            exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            exception = std::make_unique<DB::Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
 
         try

@@ -943,7 +943,7 @@ void MergeTreeData::loadDataPartsFromDisk(
     const MergeTreeSettingsPtr & settings)
 {
     /// Parallel loading of data parts.
-    pool.setMaxThreads(std::min(size_t(settings->max_part_loading_threads), num_parts));
+    pool.setMaxThreads(std::min(static_cast<size_t>(settings->max_part_loading_threads), num_parts));
     size_t num_threads = pool.getMaxThreads();
     std::vector<size_t> parts_per_thread(num_threads, num_parts / num_threads);
     for (size_t i = 0ul; i < num_parts % num_threads; ++i)
@@ -3250,7 +3250,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
                 "Too many inactive parts ({}). Parts cleaning are processing significantly slower than inserts",
                 inactive_parts_count_in_partition);
         }
-        k_inactive = ssize_t(inactive_parts_count_in_partition) - ssize_t(settings->inactive_parts_to_delay_insert);
+        k_inactive = static_cast<ssize_t>(inactive_parts_count_in_partition) - static_cast<ssize_t>(settings->inactive_parts_to_delay_insert);
     }
 
     if (parts_count_in_partition >= settings->parts_to_throw_insert)
@@ -5229,9 +5229,12 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         query_ptr,
         query_context,
         query_options,
-        /* prepared_sets_= */ query_info.sets);
+        std::move(query_info.subquery_for_sets),
+        std::move(query_info.sets));
     const auto & analysis_result = select.getAnalysisResult();
-    query_info.sets = select.getQueryAnalyzer()->getPreparedSets();
+
+    query_info.sets = std::move(select.getQueryAnalyzer()->getPreparedSets());
+    query_info.subquery_for_sets = std::move(select.getQueryAnalyzer()->getSubqueriesForSets());
 
     bool can_use_aggregate_projection = true;
     /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
@@ -5631,8 +5634,6 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     {
         selected_candidate->aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
         selected_candidate->aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
-        selected_candidate->subqueries_for_sets
-            = std::make_shared<SubqueriesForSets>(std::move(select.getQueryAnalyzer()->getSubqueriesForSets()));
     }
 
     return *selected_candidate;
