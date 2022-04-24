@@ -517,6 +517,12 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserInterpolateExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "interpolate expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /// Parser for key-value pair, where value can be list of pairs.
 class ParserKeyValuePair : public IParserBase

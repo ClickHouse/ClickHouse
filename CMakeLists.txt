@@ -222,6 +222,12 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
+option(ENABLE_CURL_BUILD "Enable curl, azure, sentry build on by default except MacOS." ON)
+if (OS_DARWIN)
+    # Disable the curl, azure, senry build on MacOS
+    set (ENABLE_CURL_BUILD OFF)
+endif ()
+
 # Ignored if `lld` is used
 option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
@@ -251,6 +257,11 @@ endif()
 
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+if (NOT BUILD_STANDALONE_KEEPER)
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
+else ()
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" OFF)
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
@@ -294,14 +305,28 @@ include(cmake/cpu_features.cmake)
 # Enable it explicitly.
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
 
-# Reproducible builds
-# If turned `ON`, remap file source paths in debug info, predefined preprocessor macros and __builtin_FILE().
-option(ENABLE_BUILD_PATH_MAPPING "Enable remap file source paths in debug info, predefined preprocessor macros and __builtin_FILE(). It's to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ON)
+# Reproducible builds.
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT OFF)
+else ()
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+endif ()
+
+option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
     set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
-endif()
+endif ()
+
+option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
+if (ENABLE_BUILD_PROFILING)
+     if (COMPILER_CLANG)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
+     else ()
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Build profiling is only available with CLang")
+     endif ()
+endif ()
 
 if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
     # CMake < 3.12 doesn't support setting 20 as a C++ standard version.

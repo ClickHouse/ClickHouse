@@ -1,5 +1,6 @@
 #pragma once
 #include <Common/config.h>
+
 #if USE_HIVE
 #include <TableFunctions/ITableFunction.h>
 #include <Poco/Logger.h>

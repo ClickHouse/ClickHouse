@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
@@ -118,7 +119,7 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
         return nullptr;
 
     if (field.isBool())
-        return makeNullable(std::make_shared<DataTypeUInt8>());
+        return DataTypeFactory::instance().get("Nullable(Bool)");
 
     if (field.isInt64() || field.isUInt64() || field.isDouble())
         return makeNullable(std::make_shared<DataTypeFloat64>());
@@ -184,7 +185,7 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
         }
 
         if (is_object)
-            return std::make_shared<DataTypeObject>("json", false);
+            return std::make_shared<DataTypeObject>("json", true);
 
         if (value_type)
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
@@ -254,6 +255,10 @@ struct JSONEachRowFieldsExtractor
     std::vector<Element> extract(const Element & element)
     {
         /// {..., "<column_name>" : <value>, ...}
+
+        if (!element.isObject())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Root JSON value is not an object");
+
         auto object = element.getObject();
         std::vector<Element> fields;
         fields.reserve(object.size());
@@ -286,6 +291,9 @@ struct JSONCompactEachRowFieldsExtractor
     std::vector<Element> extract(const Element & element)
     {
         /// [..., <value>, ...]
+        if (!element.isArray())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Root JSON value is not an array");
+
         auto array = element.getArray();
         std::vector<Element> fields;
         fields.reserve(array.size());
@@ -340,6 +348,40 @@ bool readFieldImpl(ReadBuffer & in, IColumn & column, const DataTypePtr & type, 
         e.addMessage("(while reading the value of key " + column_name + ")");
         throw;
     }
+}
+
+DataTypePtr getCommonTypeForJSONFormats(const DataTypePtr & first, const DataTypePtr & second, bool allow_bools_as_numbers)
+{
+    if (allow_bools_as_numbers)
+    {
+        auto not_nullable_first = removeNullable(first);
+        auto not_nullable_second = removeNullable(second);
+        /// Check if we have Bool and Number and if so make the result type Number
+        bool bool_type_presents = isBool(not_nullable_first) || isBool(not_nullable_second);
+        bool number_type_presents = isNumber(not_nullable_first) || isNumber(not_nullable_second);
+        if (bool_type_presents && number_type_presents)
+        {
+            if (isBool(not_nullable_first))
+                return second;
+            return first;
+        }
+    }
+
+    /// If we have Map and Object, make result type Object
+    bool object_type_presents = isObject(first) || isObject(second);
+    bool map_type_presents = isMap(first) || isMap(second);
+    if (object_type_presents && map_type_presents)
+    {
+        if (isObject(first))
+            return first;
+        return second;
+    }
+
+    /// If we have different Maps, make result type Object
+    if (isMap(first) && isMap(second) && !first->equals(*second))
+        return std::make_shared<DataTypeObject>("json", true);
+
+    return nullptr;
 }
 
 }
