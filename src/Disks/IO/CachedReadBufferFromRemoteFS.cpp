@@ -613,7 +613,10 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
             {
                 bool need_complete_file_segment = file_segment->isDownloader();
                 if (need_complete_file_segment)
+                {
+                    LOG_TEST(log, "Resetting downloader {} from scope exit", file_segment->getDownloader());
                     file_segment->completeBatchAndResetDownloader();
+                }
             }
             catch (...)
             {
