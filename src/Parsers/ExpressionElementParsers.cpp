@@ -1934,16 +1934,18 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     ++pos;
 
-    auto res = std::make_shared<ASTColumnsMatcher>();
+    ASTPtr res;
     if (column_list)
     {
-        res->column_list = column_list;
-        res->children.push_back(res->column_list);
+        auto list_matcher = std::make_shared<ASTColumnsListMatcher>();
+        list_matcher->column_list = column_list;
+        res = list_matcher;
     }
     else
     {
-        res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
-        res->children.push_back(regex_node);
+        auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
+        regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+        res = regexp_matcher;
     }
 
     ParserColumnsTransformers transformers_p(allowed_transformers);
