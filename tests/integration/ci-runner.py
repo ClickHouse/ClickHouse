@@ -461,6 +461,10 @@ class ClickhouseIntegrationTestsRunner:
                 if test not in main_counters[state]:
                     main_counters[state].append(test)
 
+        for state in ("SKIPPED",):
+            for test in current_counters[state]:
+                main_counters[state].append(test)
+
     def _get_runner_image_cmd(self, repo_path):
         image_cmd = ""
         if self._can_run_with(

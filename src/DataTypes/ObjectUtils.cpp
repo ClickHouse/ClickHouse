@@ -682,7 +682,7 @@ void replaceMissedSubcolumnsByConstants(
 
     /// Replace missed subcolumns to default literals of theirs type.
     for (const auto & [name, type] : missed_names_types)
-        if (identifiers.count(name))
+        if (identifiers.contains(name))
             addConstantToWithClause(query, name, type);
 }
 

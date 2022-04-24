@@ -127,7 +127,7 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
     while (nodes.size() < num_processors)
     {
         auto * processor = processors[nodes.size()].get();
-        if (processors_map.count(processor))
+        if (processors_map.contains(processor))
             throw Exception("Processor " + processor->getName() + " was already added to pipeline.",
                             ErrorCodes::LOGICAL_ERROR);
 
