@@ -31,18 +31,22 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-    bool executeMultiQuery(const String & all_queries_text) override;
-
     void connect() override;
+
     void processError(const String & query) const override;
+
     String getName() const override { return "local"; }
 
     void printHelpMessage(const OptionsDescription & options_description) override;
 
     void addOptions(OptionsDescription & options_description) override;
+
     void processOptions(const OptionsDescription & options_description, const CommandLineOptions & options,
-                        const std::vector<Arguments> &) override;
+                        const std::vector<Arguments> &, const std::vector<Arguments> &) override;
+
     void processConfig() override;
+
+    void updateLoggerLevel(const String & logs_level) override;
 
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)

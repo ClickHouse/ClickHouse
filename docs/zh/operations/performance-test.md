@@ -1,6 +1,6 @@
 ---
-toc_priority: 54
-toc_title: "\u6D4B\u8BD5\u786C\u4EF6"
+sidebar_position: 54
+sidebar_label: "\u6D4B\u8BD5\u786C\u4EF6"
 ---
 
 # 如何使用 ClickHouse 测试您的硬件 {#how-to-test-your-hardware-with-clickhouse}
@@ -36,6 +36,18 @@ chmod a+x ./hardware.sh
 wget https://builds.clickhouse.com/master/amd64/clickhouse
 # For aarch64:
 wget https://builds.clickhouse.com/master/aarch64/clickhouse
+# For powerpc64le:
+wget https://builds.clickhouse.com/master/powerpc64le/clickhouse
+# For freebsd:
+wget https://builds.clickhouse.com/master/freebsd/clickhouse
+# For freebsd-aarch64:
+wget https://builds.clickhouse.com/master/freebsd-aarch64/clickhouse
+# For freebsd-powerpc64le:
+wget https://builds.clickhouse.com/master/freebsd-powerpc64le/clickhouse
+# For macos:
+wget https://builds.clickhouse.com/master/macos/clickhouse
+# For macos-aarch64:
+wget https://builds.clickhouse.com/master/macos-aarch64/clickhouse
 # Then do:
 chmod a+x clickhouse
 ```

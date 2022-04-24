@@ -2,6 +2,7 @@
 #include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ArenaUtils.h>
 #include <unordered_map>
 #include <list>
 #include <atomic>
@@ -16,6 +17,8 @@ struct ListNode
     StringRef key;
     V value;
 
+    /// Monotonically increasing version info for snapshot
+    size_t version{0};
     bool active_in_map{true};
     bool free_key{false};
 };
@@ -34,8 +37,11 @@ private:
     IndexMap map;
     bool snapshot_mode{false};
     /// Allows to avoid additional copies in updateValue function
-    size_t snapshot_up_to_size = 0;
+    size_t current_version{0};
+    size_t snapshot_up_to_version{0};
     ArenaWithFreeLists arena;
+    /// Collect invalid iterators to avoid traversing the whole list
+    std::vector<Mapped> snapshot_invalid_iters;
 
     uint64_t approximate_data_size{0};
 
@@ -74,7 +80,7 @@ private:
                     approximate_data_size += value_size;
                     if (!snapshot_mode)
                     {
-                        approximate_data_size += key_size;
+                        approximate_data_size -= key_size;
                         approximate_data_size -= old_value_size;
                     }
                 }
@@ -113,17 +119,6 @@ private:
         }
     }
 
-    StringRef copyStringInArena(const std::string & value_to_copy)
-    {
-        size_t value_to_copy_size = value_to_copy.size();
-        char * place_for_key = arena.alloc(value_to_copy_size);
-        memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(value_to_copy.data()), value_to_copy_size);
-        StringRef updated_value{place_for_key, value_to_copy_size};
-
-        return updated_value;
-    }
-
-
 public:
 
     using iterator = typename List::iterator;
@@ -137,8 +132,8 @@ public:
 
         if (!it)
         {
-            ListElem elem{copyStringInArena(key), value, true};
-            auto itr = list.insert(list.end(), elem);
+            ListElem elem{copyStringInArena(arena, key), value, current_version};
+            auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
             assert(inserted);
@@ -159,8 +154,8 @@ public:
 
         if (it == map.end())
         {
-            ListElem elem{copyStringInArena(key), value, true};
-            auto itr = list.insert(list.end(), elem);
+            ListElem elem{copyStringInArena(arena, key), value, current_version};
+            auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
             assert(inserted);
@@ -171,10 +166,11 @@ public:
             auto list_itr = it->getMapped();
             if (snapshot_mode)
             {
-                ListElem elem{list_itr->key, value, true};
+                ListElem elem{list_itr->key, value, current_version};
                 list_itr->active_in_map = false;
-                auto new_list_itr = list.insert(list.end(), elem);
+                auto new_list_itr = list.insert(list.end(), std::move(elem));
                 it->getMapped() = new_list_itr;
+                snapshot_invalid_iters.push_back(list_itr);
             }
             else
             {
@@ -195,6 +191,7 @@ public:
         if (snapshot_mode)
         {
             list_itr->active_in_map = false;
+            snapshot_invalid_iters.push_back(list_itr);
             list_itr->free_key = true;
             map.erase(it->getKey());
         }
@@ -230,13 +227,14 @@ public:
             /// We in snapshot mode but updating some node which is already more
             /// fresh than snapshot distance. So it will not participate in
             /// snapshot and we don't need to copy it.
-            size_t distance = std::distance(list.begin(), list_itr);
-            if (distance < snapshot_up_to_size)
+            if (list_itr->version <= snapshot_up_to_version)
             {
                 auto elem_copy = *(list_itr);
                 list_itr->active_in_map = false;
+                snapshot_invalid_iters.push_back(list_itr);
                 updater(elem_copy.value);
-                auto itr = list.insert(list.end(), elem_copy);
+                elem_copy.version = current_version;
+                auto itr = list.insert(list.end(), std::move(elem_copy));
                 it->getMapped() = itr;
                 ret = itr;
             }
@@ -274,23 +272,15 @@ public:
 
     void clearOutdatedNodes()
     {
-        auto start = list.begin();
-        auto end = list.end();
-        for (auto itr = start; itr != end;)
+        for (auto & itr: snapshot_invalid_iters)
         {
-            if (!itr->active_in_map)
-            {
-                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
-                if (itr->free_key)
-                    arena.free(const_cast<char *>(itr->key.data), itr->key.size);
-                itr = list.erase(itr);
-            }
-            else
-            {
-                assert(!itr->free_key);
-                itr++;
-            }
+            assert(!itr->active_in_map);
+            updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
+            if (itr->free_key)
+                arena.free(const_cast<char *>(itr->key.data), itr->key.size);
+            list.erase(itr);
         }
+        snapshot_invalid_iters.clear();
     }
 
     void clear()
@@ -302,17 +292,16 @@ public:
         updateDataSize(CLEAR, 0, 0, 0);
     }
 
-    void enableSnapshotMode(size_t up_to_size)
+    void enableSnapshotMode(size_t version)
     {
         snapshot_mode = true;
-        snapshot_up_to_size = up_to_size;
+        snapshot_up_to_version = version;
+        ++current_version;
     }
 
     void disableSnapshotMode()
     {
-
         snapshot_mode = false;
-        snapshot_up_to_size = 0;
     }
 
     size_t size() const
@@ -320,9 +309,9 @@ public:
         return map.size();
     }
 
-    size_t snapshotSize() const
+    std::pair<size_t, size_t> snapshotSizeWithVersion() const
     {
-        return list.size();
+        return std::make_pair(list.size(), current_version);
     }
 
     uint64_t getApproximateDataSize() const

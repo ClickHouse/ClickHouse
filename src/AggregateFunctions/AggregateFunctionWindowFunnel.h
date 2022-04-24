@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static constexpr auto max_events = 32;
+static constexpr size_t max_events = 32;
 
 template <typename T>
 struct AggregateFunctionWindowFunnelData

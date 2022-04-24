@@ -24,8 +24,8 @@ namespace ErrorCodes
 }
 
 QueryPipeline::QueryPipeline() = default;
-QueryPipeline::QueryPipeline(QueryPipeline &&) = default;
-QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) = default;
+QueryPipeline::QueryPipeline(QueryPipeline &&) noexcept = default;
+QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) noexcept = default;
 QueryPipeline::~QueryPipeline() = default;
 
 static void checkInput(const InputPort & input, const ProcessorPtr & processor)

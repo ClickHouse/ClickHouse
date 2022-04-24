@@ -44,6 +44,11 @@ int32_t IFourLetterCommand::toCode(const String & name)
     return __builtin_bswap32(res);
 }
 
+bool IFourLetterCommand::serverIsActive() const
+{
+    return keeper_dispatcher.hasLeader();
+}
+
 IFourLetterCommand::~IFourLetterCommand() = default;
 
 FourLetterCommandFactory & FourLetterCommandFactory::instance()
@@ -129,7 +134,7 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr watch_command = std::make_shared<WatchCommand>(keeper_dispatcher);
         factory.registerCommand(watch_command);
 
-        factory.initializeWhiteList(keeper_dispatcher);
+        factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
 }
@@ -137,17 +142,17 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 bool FourLetterCommandFactory::isEnabled(int32_t code)
 {
     checkInitialization();
-    if (!white_list.empty() && *white_list.cbegin() == WHITE_LIST_ALL)
+    if (!allow_list.empty() && *allow_list.cbegin() == ALLOW_LIST_ALL)
         return true;
 
-    return std::find(white_list.begin(), white_list.end(), code) != white_list.end();
+    return std::find(allow_list.begin(), allow_list.end(), code) != allow_list.end();
 }
 
-void FourLetterCommandFactory::initializeWhiteList(KeeperDispatcher & keeper_dispatcher)
+void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
 {
     const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
 
-    String list_str = keeper_settings->four_letter_word_white_list;
+    String list_str = keeper_settings->four_letter_word_allow_list;
     Strings tokens;
     splitInto<','>(tokens, list_str);
 
@@ -157,15 +162,15 @@ void FourLetterCommandFactory::initializeWhiteList(KeeperDispatcher & keeper_dis
 
         if (token == "*")
         {
-            white_list.clear();
-            white_list.push_back(WHITE_LIST_ALL);
+            allow_list.clear();
+            allow_list.push_back(ALLOW_LIST_ALL);
             return;
         }
         else
         {
             if (commands.contains(IFourLetterCommand::toCode(token)))
             {
-                white_list.push_back(IFourLetterCommand::toCode(token));
+                allow_list.push_back(IFourLetterCommand::toCode(token));
             }
             else
             {
@@ -198,17 +203,19 @@ void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t 
     print(buf, key, toString(value));
 }
 
+constexpr auto * SERVER_NOT_ACTIVE_MSG = "This instance is not currently serving requests";
+
 }
 
 String MonitorCommand::run()
 {
-    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
-    if (!keeper_info.has_leader)
-        return "This instance is not currently serving requests";
-
     const auto & state_machine = keeper_dispatcher.getStateMachine();
+
+    if (!keeper_info.has_leader)
+        return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer ret;
     print(ret, "version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
@@ -247,6 +254,9 @@ String MonitorCommand::run()
 
 String StatResetCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     keeper_dispatcher.resetConnectionStats();
     return "Server stats reset.\n";
 }
@@ -258,6 +268,9 @@ String NopCommand::run()
 
 String ConfCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
     return buf.str();
@@ -265,6 +278,9 @@ String ConfCommand::run()
 
 String ConsCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     KeeperTCPHandler::dumpConnections(buf, false);
     return buf.str();
@@ -272,12 +288,18 @@ String ConsCommand::run()
 
 String RestConnStatsCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     KeeperTCPHandler::resetConnsStats();
     return "Connection stats reset.\n";
 }
 
 String ServerStatCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
 
     auto write = [&buf](const String & key, const String & value)
@@ -288,7 +310,7 @@ String ServerStatCommand::run()
         writeText('\n', buf);
     };
 
-    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
@@ -298,7 +320,7 @@ String ServerStatCommand::run()
     write("Latency min/avg/max", latency.str());
 
     write("Received", toString(stats.getPacketsReceived()));
-    write("Sent ", toString(stats.getPacketsSent()));
+    write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
     write("Zxid", toString(keeper_info.last_zxid));
@@ -310,11 +332,14 @@ String ServerStatCommand::run()
 
 String StatCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
 
     auto write = [&buf] (const String & key, const String & value) { buf << key << ": " << value << '\n'; };
 
-    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
@@ -328,7 +353,7 @@ String StatCommand::run()
     write("Latency min/avg/max", latency.str());
 
     write("Received", toString(stats.getPacketsReceived()));
-    write("Sent ", toString(stats.getPacketsSent()));
+    write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
     write("Zxid", toString(keeper_info.last_zxid));
@@ -340,6 +365,9 @@ String StatCommand::run()
 
 String BriefWatchCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
     buf << state_machine.getSessionsWithWatchesCount() << " connections watching "
@@ -350,6 +378,9 @@ String BriefWatchCommand::run()
 
 String WatchCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
     state_machine.dumpWatches(buf);
@@ -358,6 +389,9 @@ String WatchCommand::run()
 
 String WatchByPathCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
     state_machine.dumpWatchesByPath(buf);
@@ -366,6 +400,9 @@ String WatchByPathCommand::run()
 
 String DataSizeCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     buf << "snapshot_dir_size: " << keeper_dispatcher.getSnapDirSize() << '\n';
     buf << "log_dir_size: " << keeper_dispatcher.getLogDirSize() << '\n';
@@ -374,6 +411,9 @@ String DataSizeCommand::run()
 
 String DumpCommand::run()
 {
+    if (!serverIsActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
     state_machine.dumpSessionsAndEphemerals(buf);

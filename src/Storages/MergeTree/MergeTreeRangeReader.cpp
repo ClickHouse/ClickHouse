@@ -695,10 +695,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             {
                 auto block = prev_reader->sample_block.cloneWithColumns(read_result.columns);
                 auto block_before_prewhere = read_result.block_before_prewhere;
-                for (auto & ctn : block)
+                for (const auto & column : block)
                 {
-                    if (block_before_prewhere.has(ctn.name))
-                        block_before_prewhere.erase(ctn.name);
+                    if (block_before_prewhere.has(column.name))
+                        block_before_prewhere.erase(column.name);
                 }
 
                 if (block_before_prewhere)
@@ -707,11 +707,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                     {
                         auto old_columns = block_before_prewhere.getColumns();
                         filterColumns(old_columns, read_result.getFilterOriginal()->getData());
-                        block_before_prewhere.setColumns(std::move(old_columns));
+                        block_before_prewhere.setColumns(old_columns);
                     }
 
-                    for (auto && ctn : block_before_prewhere)
-                        block.insert(std::move(ctn));
+                    for (auto & column : block_before_prewhere)
+                        block.insert(std::move(column));
                 }
                 merge_tree_reader->evaluateMissingDefaults(block, columns);
             }

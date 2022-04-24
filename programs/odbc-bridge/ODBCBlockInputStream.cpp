@@ -149,8 +149,6 @@ void ODBCSource::insertValue(
             DateTime64 time = 0;
             const auto * datetime_type = assert_cast<const DataTypeDateTime64 *>(data_type.get());
             readDateTime64Text(time, datetime_type->getScale(), in, datetime_type->getTimeZone());
-            if (time < 0)
-                time = 0;
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
             break;
         }

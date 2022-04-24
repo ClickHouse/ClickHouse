@@ -134,6 +134,12 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "");
     };
 
+    auto print_identifier = [&](const String & identifier)
+    {
+        settings.ostr << " " << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
+                      << (settings.hilite ? hilite_none : "");
+    };
+
     if (!cluster.empty())
         formatOnCluster(settings);
 
@@ -161,9 +167,19 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             || type == Type::RESTORE_REPLICA
             || type == Type::SYNC_REPLICA
             || type == Type::FLUSH_DISTRIBUTED
-            || type == Type::RELOAD_DICTIONARY)
+            || type == Type::RELOAD_DICTIONARY
+            || type == Type::RELOAD_MODEL
+            || type == Type::RELOAD_FUNCTION
+            || type == Type::RESTART_DISK)
     {
-        print_database_table();
+        if (table)
+            print_database_table();
+        else if (!target_model.empty())
+            print_identifier(target_model);
+        else if (!target_function.empty())
+            print_identifier(target_function);
+        else if (!disk.empty())
+            print_identifier(disk);
     }
     else if (type == Type::DROP_REPLICA)
     {

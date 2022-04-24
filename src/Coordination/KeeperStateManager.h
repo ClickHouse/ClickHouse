@@ -71,9 +71,9 @@ public:
 
     int32_t server_id() override { return my_server_id; }
 
-    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return configuration_wrapper.config; }
+    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return configuration_wrapper.config; } /// NOLINT
 
-    void system_exit(const int /* exit_code */) override {}
+    void system_exit(const int exit_code) override; /// NOLINT
 
     int getPort() const
     {
@@ -84,7 +84,7 @@ public:
     bool shouldStartAsFollower() const
     {
         std::lock_guard lock(configuration_wrapper_mutex);
-        return configuration_wrapper.servers_start_as_followers.count(my_server_id);
+        return configuration_wrapper.servers_start_as_followers.contains(my_server_id);
     }
 
     bool isSecure() const

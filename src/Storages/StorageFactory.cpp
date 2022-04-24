@@ -66,6 +66,7 @@ StoragePtr StorageFactory::get(
     bool has_force_restore_data_flag) const
 {
     String name, comment;
+
     ASTStorage * storage_def = query.storage;
 
     bool has_engine_args = false;
@@ -107,7 +108,10 @@ StoragePtr StorageFactory::get(
         }
         else
         {
-            if (!storage_def)
+            if (!query.storage)
+                throw Exception("Incorrect CREATE query: storage required", ErrorCodes::INCORRECT_QUERY);
+
+            if (!storage_def->engine)
                 throw Exception("Incorrect CREATE query: ENGINE required", ErrorCodes::ENGINE_REQUIRED);
 
             const ASTFunction & engine_def = *storage_def->engine;

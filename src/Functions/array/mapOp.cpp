@@ -225,7 +225,7 @@ private:
                 for (size_t j = 0; j < len; ++j)
                 {
                     KeyType key;
-                    if constexpr (std::is_same<KeyType, String>::value)
+                    if constexpr (std::is_same_v<KeyType, String>)
                     {
                         if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(arg.key_column.get()))
                             key = col_fixed->getDataAt(offset + j).toString();

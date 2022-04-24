@@ -126,19 +126,25 @@ DataTypePtr IDataType::tryGetSubcolumnType(const String & subcolumn_name) const
 DataTypePtr IDataType::getSubcolumnType(const String & subcolumn_name) const
 {
     SubstreamData data = { getDefaultSerialization(), getPtr(), nullptr, nullptr };
-    return getForSubcolumn<DataTypePtr>(subcolumn_name, data, &SubstreamData::type);
+    return getForSubcolumn<DataTypePtr>(subcolumn_name, data, &SubstreamData::type, true);
 }
 
-SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const
+ColumnPtr IDataType::tryGetSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const
 {
-    SubstreamData data = { serialization, nullptr, nullptr, nullptr };
-    return getForSubcolumn<SerializationPtr>(subcolumn_name, data, &SubstreamData::serialization);
+    SubstreamData data = { getDefaultSerialization(), nullptr, column, nullptr };
+    return getForSubcolumn<ColumnPtr>(subcolumn_name, data, &SubstreamData::column, false);
 }
 
 ColumnPtr IDataType::getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const
 {
     SubstreamData data = { getDefaultSerialization(), nullptr, column, nullptr };
-    return getForSubcolumn<ColumnPtr>(subcolumn_name, data, &SubstreamData::column);
+    return getForSubcolumn<ColumnPtr>(subcolumn_name, data, &SubstreamData::column, true);
+}
+
+SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const
+{
+    SubstreamData data = { serialization, nullptr, nullptr, nullptr };
+    return getForSubcolumn<SerializationPtr>(subcolumn_name, data, &SubstreamData::serialization, true);
 }
 
 Names IDataType::getSubcolumnNames() const

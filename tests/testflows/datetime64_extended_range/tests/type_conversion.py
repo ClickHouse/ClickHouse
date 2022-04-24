@@ -14,13 +14,29 @@ from datetime64_extended_range.tests.common import *
 
 
 @TestOutline(Scenario)
-@Examples("cast", [
-    (False, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toInt_8_16_32_64_128_256_("1.0"))),
-    (True, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_("1.0")))
-])
+@Examples(
+    "cast",
+    [
+        (
+            False,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toInt_8_16_32_64_128_256_(
+                    "1.0"
+                )
+            ),
+        ),
+        (
+            True,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_(
+                    "1.0"
+                )
+            ),
+        ),
+    ],
+)
 def to_int_8_16_32_64_128_256(self, cast):
-    """Check the toInt(8|16|32|64|128|256) functions with DateTime64 extended range
-    """
+    """Check the toInt(8|16|32|64|128|256) functions with DateTime64 extended range"""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
@@ -45,7 +61,9 @@ def to_int_8_16_32_64_128_256(self, cast):
                                 np_res = py_res
                         if np_res == py_res:
                             with Given(f"{py_res} fits int{int_type}"):
-                                with When(f"making a query string for ClickHouse if py_res fits int{int_type}"):
+                                with When(
+                                    f"making a query string for ClickHouse if py_res fits int{int_type}"
+                                ):
                                     if cast:
                                         query = f"SELECT cast(toDateTime64('{dt_str}', 0, '{tz}'), 'Int{int_type}')"
                                     else:
@@ -55,13 +73,29 @@ def to_int_8_16_32_64_128_256(self, cast):
 
 
 @TestOutline(Scenario)
-@Examples("cast", [
-    (False, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUInt_8_16_32_64_256_("1.0"))),
-    (True, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_("1.0")))
-])
+@Examples(
+    "cast",
+    [
+        (
+            False,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUInt_8_16_32_64_256_(
+                    "1.0"
+                )
+            ),
+        ),
+        (
+            True,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_(
+                    "1.0"
+                )
+            ),
+        ),
+    ],
+)
 def to_uint_8_16_32_64_256(self, cast):
-    """Check the toUInt(8|16|32|64|256) functions with DateTime64 extended range
-    """
+    """Check the toUInt(8|16|32|64|256) functions with DateTime64 extended range"""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
@@ -86,7 +120,9 @@ def to_uint_8_16_32_64_256(self, cast):
                                 np_res = py_res
                         if np_res == py_res:
                             with Given(f"{py_res} fits int{int_type}"):
-                                with When(f"making a query string for ClickHouse if py_res fits int{int_type}"):
+                                with When(
+                                    f"making a query string for ClickHouse if py_res fits int{int_type}"
+                                ):
                                     if cast:
                                         query = f"SELECT cast(toDateTime64('{dt_str}', 0, '{tz}'), 'UInt{int_type}')"
                                     else:
@@ -96,13 +132,29 @@ def to_uint_8_16_32_64_256(self, cast):
 
 
 @TestOutline(Scenario)
-@Examples("cast", [
-    (False, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toFloat_32_64_("1.0"))),
-    (True, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_("1.0")))
-])
+@Examples(
+    "cast",
+    [
+        (
+            False,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toFloat_32_64_(
+                    "1.0"
+                )
+            ),
+        ),
+        (
+            True,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_(
+                    "1.0"
+                )
+            ),
+        ),
+    ],
+)
 def to_float_32_64(self, cast):
-    """Check the toFloat(32|64) functions with DateTime64 extended range
-    """
+    """Check the toFloat(32|64) functions with DateTime64 extended range"""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
@@ -133,11 +185,12 @@ def to_float_32_64(self, cast):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDateTime64_FromString_MissingTime("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDateTime64_FromString_MissingTime(
+        "1.0"
+    )
 )
 def to_datetime64_from_string_missing_time(self):
-    """Check the toDateTime64() with DateTime64 extended range conversion when string is missing the time part.
-    """
+    """Check the toDateTime64() with DateTime64 extended range conversion when string is missing the time part."""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
@@ -163,8 +216,7 @@ def to_datetime64_from_string_missing_time(self):
     RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDateTime64("1.0")
 )
 def to_datetime64(self):
-    """Check the toDateTime64() conversion with DateTime64. This is supposed to work in normal range ONLY.
-    """
+    """Check the toDateTime64() conversion with DateTime64. This is supposed to work in normal range ONLY."""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
@@ -185,13 +237,29 @@ def to_datetime64(self):
 
 
 @TestOutline(Scenario)
-@Examples("cast", [
-    (False, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDate("1.0"))),
-    (True, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_("1.0")))
-])
+@Examples(
+    "cast",
+    [
+        (
+            False,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDate(
+                    "1.0"
+                )
+            ),
+        ),
+        (
+            True,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_(
+                    "1.0"
+                )
+            ),
+        ),
+    ],
+)
 def to_date(self, cast):
-    """Check the toDate() conversion with DateTime64. This is supposed to work in normal range ONLY.
-    """
+    """Check the toDate() conversion with DateTime64. This is supposed to work in normal range ONLY."""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
@@ -202,7 +270,7 @@ def to_date(self, cast):
         for dt in datetimes:
             for tz in timezones:
                 with Step(f"{dt} {tz}"):
-                    expected = None # by default - not checked, checking the exitcode
+                    expected = None  # by default - not checked, checking the exitcode
                     with By("converting datetime to string"):
                         dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -214,20 +282,38 @@ def to_date(self, cast):
                         if cast:
                             query = f"SELECT CAST(toDateTime64('{dt_str}', 0, '{tz}'), 'Date')"
                         else:
-                            query = f"SELECT toDate(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            query = (
+                                f"SELECT toDate(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            )
 
                     with Then(f"I execute toDate() query and check return/exitcode"):
                         exec_query(request=query, expected=expected, exitcode=0)
 
 
 @TestOutline(Scenario)
-@Examples("cast", [
-    (False, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDateTime("1.0"))),
-    (True, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_("1.0")))
-])
+@Examples(
+    "cast",
+    [
+        (
+            False,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDateTime(
+                    "1.0"
+                )
+            ),
+        ),
+        (
+            True,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_(
+                    "1.0"
+                )
+            ),
+        ),
+    ],
+)
 def to_datetime(self, cast):
-    """Check the toDateTime() conversion with DateTime64. This is supposed to work in normal range ONLY.
-    """
+    """Check the toDateTime() conversion with DateTime64. This is supposed to work in normal range ONLY."""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
@@ -247,7 +333,9 @@ def to_datetime(self, cast):
                             dt_transformed = dt_local.astimezone(tzlocal())
                             expected = f"{dt_transformed.strftime('%Y-%m-%d %H:%M:%S')}"
                     else:
-                        query = f"SELECT toDateTime(toDateTime64('{dt_str}', 0, '{tz}'))"
+                        query = (
+                            f"SELECT toDateTime(toDateTime64('{dt_str}', 0, '{tz}'))"
+                        )
                         with When("figure out expected result in python"):
                             expected = f"{dt.strftime('%Y-%m-%d %H:%M:%S')}"
 
@@ -260,13 +348,29 @@ def to_datetime(self, cast):
 
 
 @TestOutline(Scenario)
-@Examples("cast", [
-    (False, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toString("1.0"))),
-    (True, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_("1.0")))
-])
+@Examples(
+    "cast",
+    [
+        (
+            False,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toString(
+                    "1.0"
+                )
+            ),
+        ),
+        (
+            True,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_(
+                    "1.0"
+                )
+            ),
+        ),
+    ],
+)
 def to_string(self, cast):
-    """Check the toString() with DateTime64 extended range.
-    """
+    """Check the toString() with DateTime64 extended range."""
     stress = self.context.stress
     timezones = timezones_range(stress)
 
@@ -283,22 +387,45 @@ def to_string(self, cast):
                         if cast:
                             query = f"SELECT cast(toDateTime64('{dt_str}', 0, '{tz}'), 'String')"
                         else:
-                            query = f"SELECT toString(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            query = (
+                                f"SELECT toString(toDateTime64('{dt_str}', 0, '{tz}'))"
+                            )
                     with Then(f"I execute toDateTime64() query"):
                         exec_query(request=query, expected=f"{dt_str}")
 
 
 def valid_decimal_range(bit_depth, S):
     """A helper to find valid range for Decimal(32|64|128|256) with given scale (S)"""
-    return {32: -1 * 10 ** (9 - S), 64: -1 * 10 ** (18 - S), 128: -1 * 10 ** (38 - S), 256: -1 * 10 ** (76 - S)}[
-        bit_depth]
+    return {
+        32: -1 * 10 ** (9 - S),
+        64: -1 * 10 ** (18 - S),
+        128: -1 * 10 ** (38 - S),
+        256: -1 * 10 ** (76 - S),
+    }[bit_depth]
 
 
 @TestOutline(Scenario)
-@Examples("cast", [
-    (False, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDecimal_32_64_128_256_("1.0"))),
-    (True, Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_("1.0")))
-])
+@Examples(
+    "cast",
+    [
+        (
+            False,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDecimal_32_64_128_256_(
+                    "1.0"
+                )
+            ),
+        ),
+        (
+            True,
+            Requirements(
+                RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_(
+                    "1.0"
+                )
+            ),
+        ),
+    ],
+)
 def to_decimal_32_64_128_256(self, cast):
     """Check the toDecimal(32|64|128|256) functions with DateTime64 extended range.
     Decimal32(S) - ( -1 * 10^(9 - S), 1 * 10^(9 - S) )
@@ -320,7 +447,9 @@ def to_decimal_32_64_128_256(self, cast):
                 for decimal_type in (32, 64, 128, 256):
                     for scale in range(scales[decimal_type]):
                         with When(f"{dt} {tz}, Decimal{decimal_type}({scale})"):
-                            valid_range = valid_decimal_range(bit_depth=decimal_type, S=scale)
+                            valid_range = valid_decimal_range(
+                                bit_depth=decimal_type, S=scale
+                            )
                             with By("computing the expected result using python"):
                                 expected = decimal.Decimal(time.mktime(dt.timetuple()))
                             if -valid_range < expected < valid_range:
@@ -342,11 +471,13 @@ def to_unix_timestamp64_milli_micro_nano(self, scale):
     """
     stress = self.context.stress
     timezones = timezones_range(stress)
-    func = {3: 'Milli', 6: 'Micro', 9: 'Nano'}
+    func = {3: "Milli", 6: "Micro", 9: "Nano"}
 
     for year in years_range(stress):
         with Given(f"I select datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         for d in datetimes:
             for tz in timezones:
@@ -355,7 +486,7 @@ def to_unix_timestamp64_milli_micro_nano(self, scale):
                     with By("converting datetime to string"):
                         dt_str = dt.strftime("%Y-%m-%d %H:%M:%S.%f")
                     with And("converting DateTime to UTC"):
-                        dt = dt.astimezone(pytz.timezone('UTC'))
+                        dt = dt.astimezone(pytz.timezone("UTC"))
                     with And("computing the expected result using python"):
                         expected = int(dt.timestamp() * (10**scale))
                         if expected >= 0:
@@ -370,31 +501,34 @@ def to_unix_timestamp64_milli_micro_nano(self, scale):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUnixTimestamp64Milli("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUnixTimestamp64Milli(
+        "1.0"
+    )
 )
 def to_unix_timestamp64_milli(self):
-    """Check the toUnixTimestamp64Milli functions with DateTime64 extended range.
-    """
+    """Check the toUnixTimestamp64Milli functions with DateTime64 extended range."""
     to_unix_timestamp64_milli_micro_nano(scale=3)
 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUnixTimestamp64Micro("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUnixTimestamp64Micro(
+        "1.0"
+    )
 )
 def to_unix_timestamp64_micro(self):
-    """Check the toUnixTimestamp64Micro functions with DateTime64 extended range.
-    """
+    """Check the toUnixTimestamp64Micro functions with DateTime64 extended range."""
     to_unix_timestamp64_milli_micro_nano(scale=6)
 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUnixTimestamp64Nano("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUnixTimestamp64Nano(
+        "1.0"
+    )
 )
 def to_unix_timestamp64_nano(self):
-    """Check the toUnixTimestamp64Nano functions with DateTime64 extended range.
-    """
+    """Check the toUnixTimestamp64Nano functions with DateTime64 extended range."""
     to_unix_timestamp64_milli_micro_nano(scale=9)
 
 
@@ -405,11 +539,13 @@ def from_unix_timestamp64_milli_micro_nano(self, scale):
     """
     stress = self.context.stress
     timezones = timezones_range(stress)
-    func = {3: 'Milli', 6: 'Micro', 9: 'Nano'}
+    func = {3: "Milli", 6: "Micro", 9: "Nano"}
 
     for year in years_range(stress):
         with Given(f"I select datetimes in {year}"):
-            datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
+            datetimes = select_dates_in_year(
+                year=year, stress=stress, microseconds=True
+            )
 
         for d in datetimes:
             for tz in timezones:
@@ -417,9 +553,9 @@ def from_unix_timestamp64_milli_micro_nano(self, scale):
                 with When(f"{dt} {tz}"):
                     with By("converting datetime to string"):
                         d_str = d.strftime("%Y-%m-%d %H:%M:%S.%f")
-                        d_str += "0" * (scale-3)
+                        d_str += "0" * (scale - 3)
                     with And("converting DateTime64 to UTC"):
-                        dt = dt.astimezone(pytz.timezone('UTC'))
+                        dt = dt.astimezone(pytz.timezone("UTC"))
                     with And("computing the expected result using python"):
                         ts = int(dt.timestamp() * (10**scale))
                         if ts >= 0:
@@ -434,38 +570,39 @@ def from_unix_timestamp64_milli_micro_nano(self, scale):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64Milli("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64Milli(
+        "1.0"
+    )
 )
 def from_unix_timestamp64_milli(self):
-    """Check the fromUnixTimestamp64Milli functions with DateTime64 extended range.
-    """
+    """Check the fromUnixTimestamp64Milli functions with DateTime64 extended range."""
     from_unix_timestamp64_milli_micro_nano(scale=3)
 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64Micro("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64Micro(
+        "1.0"
+    )
 )
 def from_unix_timestamp64_micro(self):
-    """Check the fromUnixTimestamp64Micro functions with DateTime64 extended range.
-    """
+    """Check the fromUnixTimestamp64Micro functions with DateTime64 extended range."""
     from_unix_timestamp64_milli_micro_nano(scale=6)
 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64Nano("1.0")
+    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64Nano(
+        "1.0"
+    )
 )
 def from_unix_timestamp64_nano(self):
-    """Check the fromUnixTimestamp64Nano functions with DateTime64 extended range.
-    """
+    """Check the fromUnixTimestamp64Nano functions with DateTime64 extended range."""
     from_unix_timestamp64_milli_micro_nano(scale=9)
 
 
 @TestFeature
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions("1.0")
-)
+@Requirements(RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions("1.0"))
 def type_conversion(self, node="clickhouse1"):
     """Check the type conversion operations with DateTime64.
     Cast can be set as Requirement thereby as the module
