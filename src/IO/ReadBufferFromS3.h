@@ -12,6 +12,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/WithFileName.h>
 
 #include <aws/s3/model/GetObjectResult.h>
 
@@ -25,7 +26,7 @@ namespace DB
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
-class ReadBufferFromS3 : public SeekableReadBufferWithSize
+class ReadBufferFromS3 : public SeekableReadBufferWithSize, public WithFileName
 {
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
@@ -33,8 +34,11 @@ private:
     String key;
     UInt64 max_single_read_retries;
 
-    off_t offset = 0;
-    off_t read_until_position = 0;
+    /// These variables are atomic because they can be used for `logging only`
+    /// (where it is not important to get consistent result)
+    /// from separate thread other than the one which uses the buffer for s3 reading.
+    std::atomic<off_t> offset = 0;
+    std::atomic<off_t> read_until_position = 0;
 
     Aws::S3::Model::GetObjectResult read_result;
     std::unique_ptr<ReadBuffer> impl;
@@ -67,6 +71,8 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
+    String getFileName() const override { return bucket + "/" + key; }
+
 private:
     std::unique_ptr<ReadBuffer> initialize();
 
@@ -80,7 +86,7 @@ private:
 };
 
 /// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
-class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory
+class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
 {
 public:
     explicit ReadBufferS3Factory(
@@ -109,6 +115,8 @@ public:
     off_t seek(off_t off, [[maybe_unused]] int whence) override;
 
     std::optional<size_t> getTotalSize() override;
+
+    String getFileName() const override { return bucket + "/" + key; }
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;

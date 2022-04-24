@@ -269,7 +269,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     return std::make_unique<ReadBufferFromEncryptedFile>(settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
 {
     auto wrapped_path = wrappedPath(path);
     FileEncryption::Header header;

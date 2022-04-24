@@ -612,14 +612,8 @@ static void addMergingFinal(
 
     ColumnNumbers key_columns;
     key_columns.reserve(sort_description.size());
-
     for (const auto & desc : sort_description)
-    {
-        if (!desc.column_name.empty())
-            key_columns.push_back(header.getPositionByName(desc.column_name));
-        else
-            key_columns.emplace_back(desc.column_number);
-    }
+        key_columns.push_back(header.getPositionByName(desc.column_name));
 
     pipe.addSimpleTransform([&](const Block & stream_header)
     {
@@ -774,9 +768,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
         Names partition_key_columns = metadata_for_reading->getPartitionKey().column_names;
 
-        const auto & header = pipe.getHeader();
         for (size_t i = 0; i < sort_columns_size; ++i)
-            sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+            sort_description.emplace_back(sort_columns[i], 1, 1);
 
         addMergingFinal(
             pipe,
