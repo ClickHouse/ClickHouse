@@ -151,7 +151,9 @@ def test_profile_events(cluster):
     stat1 = get_query_stat(instance, query1)
     for metric in stat1:
         assert stat1[metric] == metrics1[metric] - metrics0[metric]
-    assert metrics1["WriteBufferFromS3Bytes"] - metrics0["WriteBufferFromS3Bytes"] == size1
+    assert (
+        metrics1["WriteBufferFromS3Bytes"] - metrics0["WriteBufferFromS3Bytes"] == size1
+    )
 
     query2 = "INSERT INTO test_s3.test_s3 FORMAT Values"
     instance.query(query2 + " (1,1)")
@@ -171,7 +173,10 @@ def test_profile_events(cluster):
     stat2 = get_query_stat(instance, query2)
     for metric in stat2:
         assert stat2[metric] == metrics2[metric] - metrics1[metric]
-    assert metrics2["WriteBufferFromS3Bytes"] - metrics1["WriteBufferFromS3Bytes"] == size2 - size1
+    assert (
+        metrics2["WriteBufferFromS3Bytes"] - metrics1["WriteBufferFromS3Bytes"]
+        == size2 - size1
+    )
 
     query3 = "SELECT * from test_s3.test_s3"
     assert instance.query(query3) == "1\t1\n"
