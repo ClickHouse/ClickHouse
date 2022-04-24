@@ -175,7 +175,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     if (!restricted_seek)
     {
         if (!working_buffer.empty()
-            && size_t(offset_) >= offset - working_buffer.size()
+            && static_cast<size_t>(offset_) >= offset - working_buffer.size()
             && offset_ < offset)
         {
             pos = working_buffer.end() - (offset - offset_);

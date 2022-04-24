@@ -1,6 +1,6 @@
 ---
-toc_priority: 17
-toc_title: "Клиент командной строки"
+sidebar_position: 17
+sidebar_label: "Клиент командной строки"
 ---
 
 # Клиент командной строки {#klient-komandnoi-stroki}

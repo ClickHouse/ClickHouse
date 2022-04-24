@@ -362,27 +362,12 @@ function get_profiles
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1"
 }
 
-function build_log_column_definitions
-{
-# FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
-# absolutely atrocious way. This should be done by the file() function itself.
-for x in {right,left}-{addresses,{query,query-thread,trace,{async-,}metric}-log}.tsv
-do
-    paste -d' ' \
-        <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
-        <(sed -n '2{s/\t/\n/g;p;q}' "$x" ) \
-        | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
-done
-}
-
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
 rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv ||:
 rm -rf analyze ||:
 mkdir analyze analyze/tmp ||:
-
-build_log_column_definitions
 
 # Split the raw test output into files suitable for analysis.
 # To debug calculations only for a particular test, substitute a suitable
@@ -422,12 +407,10 @@ create table partial_query_times engine File(TSVWithNamesAndTypes,
 
 -- Process queries that were run normally, on both servers.
 create view left_query_log as select *
-    from file('left-query-log.tsv', TSVWithNamesAndTypes,
-        '$(cat "left-query-log.tsv.columns")');
+    from file('left-query-log.tsv', TSVWithNamesAndTypes);
 
 create view right_query_log as select *
-    from file('right-query-log.tsv', TSVWithNamesAndTypes,
-        '$(cat "right-query-log.tsv.columns")');
+    from file('right-query-log.tsv', TSVWithNamesAndTypes);
 
 create view query_logs as
     select 0 version, query_id, ProfileEvents,
@@ -644,8 +627,6 @@ rm -r report ||:
 mkdir report report/tmp ||:
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv run-errors.tsv ||:
-
-build_log_column_definitions
 
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
@@ -1028,8 +1009,7 @@ create table unstable_query_runs engine File(TSVWithNamesAndTypes,
     ;
 
 create view query_log as select *
-    from file('$version-query-log.tsv', TSVWithNamesAndTypes,
-        '$(cat "$version-query-log.tsv.columns")');
+    from file('$version-query-log.tsv', TSVWithNamesAndTypes);
 
 create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
         'unstable-run-metrics.$version.rep') as
@@ -1057,8 +1037,7 @@ create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
     array join v, n;
 
 create view trace_log as select *
-    from file('$version-trace-log.tsv', TSVWithNamesAndTypes,
-        '$(cat "$version-trace-log.tsv.columns")');
+    from file('$version-trace-log.tsv', TSVWithNamesAndTypes);
 
 create view addresses_src as select addr,
         -- Some functions change name between builds, e.g. '__clone' or 'clone' or
@@ -1067,8 +1046,7 @@ create view addresses_src as select addr,
         [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
             -- this line is a subscript operator of the above array
             [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
-    from file('$version-addresses.tsv', TSVWithNamesAndTypes,
-        '$(cat "$version-addresses.tsv.columns")');
+    from file('$version-addresses.tsv', TSVWithNamesAndTypes);
 
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
@@ -1195,15 +1173,12 @@ done
 
 function report_metrics
 {
-build_log_column_definitions
-
 rm -rf metrics ||:
 mkdir metrics
 
 clickhouse-local --query "
 create view right_async_metric_log as
-    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
-        '$(cat right-async-metric-log.tsv.columns)')
+    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
     ;
 
 -- Use the right log as time reference because it may have higher precision.
@@ -1211,8 +1186,7 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     with (select min(event_time) from right_async_metric_log) as min_time
     select metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
-    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes,
-        '$(cat left-async-metric-log.tsv.columns)') l
+    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes) l
     on l.metric = r.metric and r.event_time <= l.event_time
     order by metric, event_time
     ;
