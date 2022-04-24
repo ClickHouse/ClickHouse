@@ -10,6 +10,7 @@
 #include <boost/noncopyable.hpp>
 #include <map>
 
+#include <Interpreters/CacheLog.h>
 #include "FileCache_fwd.h"
 #include <Common/logger_useful.h>
 #include <Common/FileSegment.h>
@@ -30,6 +31,7 @@ friend struct FileSegmentsHolder;
 public:
     using Key = UInt128;
     using Downloader = std::unique_ptr<SeekableReadBuffer>;
+    using CacheLogs = std::unordered_map<String, std::shared_ptr<CacheLogRecorder> >;
 
     IFileCache(
         const String & cache_base_path_,
@@ -90,6 +92,12 @@ public:
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
 
+    void addQueryRef(String & query_id);
+
+    void DecQueryRef(String & query_id);
+
+    void updateQueryCacheLog(String &query_id, size_t hit_count, size_t miss_count);
+
 protected:
     String cache_base_path;
     size_t max_size;
@@ -99,6 +107,9 @@ protected:
     bool is_initialized = false;
 
     mutable std::mutex mutex;
+
+    mutable std::mutex logs_mutex;
+    CacheLogs cache_logs;
 
     virtual bool tryReserve(
         const Key & key, size_t offset, size_t size,

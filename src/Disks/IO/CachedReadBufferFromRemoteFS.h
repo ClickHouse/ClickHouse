@@ -21,6 +21,8 @@ public:
         const ReadSettings & settings_,
         size_t read_until_position_);
 
+    ~CachedReadBufferFromRemoteFS() override;
+
     bool nextImpl() override;
 
     off_t seek(off_t off, int whence) override;
@@ -73,6 +75,9 @@ private:
     size_t read_until_position;
     size_t file_offset_of_buffer_end = 0;
     size_t bytes_to_predownload = 0;
+
+    size_t cache_hit_count = 0;
+    size_t cache_miss_count = 0;
 
     RemoteFSFileReaderCreator remote_file_reader_creator;
 

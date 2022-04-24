@@ -12,18 +12,15 @@ namespace DB
 struct CacheLogRecorder
 {
 public:
-    std::atomic<size_t> cache_hit_count = 0;
-    std::atomic<size_t> cache_miss_count = 0;
-
-public:
-    void incrementHitsCount() { cache_hit_count++; }
-    void incrementMissCount() { cache_miss_count++; }
+    size_t ref = 0;
+    size_t cache_hit_count = 0;
+    size_t cache_miss_count = 0;
 };
 
 struct CacheLogElement
 {
-    time_t event_time{};
-    Decimal64 event_time_microseconds{};
+    /// time_t event_time{};
+    /// Decimal64 event_time_microseconds{};
 
     String query_id;
 
