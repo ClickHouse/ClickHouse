@@ -47,7 +47,6 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/CacheLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -852,8 +851,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (!process_list_elem)
                     return;
-
-                CacheLogElement cache_elem;
 
                 /// Update performance counters before logging to query_log
                 CurrentThread::finalizePerformanceCounters();
