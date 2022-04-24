@@ -577,7 +577,6 @@ include (cmake/print_flags.cmake)
 add_subdirectory (base)
 add_subdirectory (src)
 add_subdirectory (programs)
-add_subdirectory (tests)
 add_subdirectory (utils)
 
 include (cmake/sanitize_target_link_libraries.cmake)
