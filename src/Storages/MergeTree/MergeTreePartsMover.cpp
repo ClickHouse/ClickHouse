@@ -94,7 +94,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     unsigned parts_to_move_by_ttl_rules = 0;
     double parts_to_move_total_size_bytes = 0.0;
 
-    MergeTreeData::DataPartsVector data_parts = data->getDataPartsVector();
+    MergeTreeData::DataPartsVector data_parts = data->getDataPartsVectorForInternalUsage();
 
     if (data_parts.empty())
         return false;
@@ -231,6 +231,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
+    cloned_part->loadVersionMetadata();
     cloned_part->modification_time = disk->getLastModified(cloned_part->getFullRelativePath()).epochTime();
     return cloned_part;
 

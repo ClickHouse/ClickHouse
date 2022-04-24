@@ -35,10 +35,15 @@ void ASTPartition::formatImpl(const FormatSettings & settings, FormatState & sta
     }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
-        WriteBufferFromOwnString id_buf;
-        writeQuoted(id, id_buf);
-        settings.ostr << id_buf.str();
+        if (all)
+            settings.ostr << "ALL";
+        else
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
+            WriteBufferFromOwnString id_buf;
+            writeQuoted(id, id_buf);
+            settings.ostr << id_buf.str();
+        }
     }
 }
 

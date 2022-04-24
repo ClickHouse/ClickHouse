@@ -1,6 +1,6 @@
 ---
-toc_priority: 49
-toc_title: EXCHANGE
+sidebar_position: 49
+sidebar_label: EXCHANGE
 ---
 
 # EXCHANGE语法 {#exchange}

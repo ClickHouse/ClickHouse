@@ -171,7 +171,7 @@ struct SocketInterruptablePollWrapper
 
             if (rc >= 1 && poll_buf[0].revents & POLLIN)
                 socket_ready = true;
-            if (rc >= 1 && poll_buf[1].revents & POLLIN)
+            if (rc >= 2 && poll_buf[1].revents & POLLIN)
                 fd_ready = true;
 #endif
         }
@@ -345,7 +345,11 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    if (keeper_dispatcher->checkInit() && keeper_dispatcher->hasLeader())
+    // we store the checks because they can change during the execution
+    // leading to weird results
+    const auto is_initialized = keeper_dispatcher->checkInit();
+    const auto has_leader = keeper_dispatcher->hasLeader();
+    if (is_initialized && has_leader)
     {
         try
         {
@@ -366,9 +370,9 @@ void KeeperTCPHandler::runImpl()
     else
     {
         String reason;
-        if (!keeper_dispatcher->checkInit() && !keeper_dispatcher->hasLeader())
+        if (!is_initialized && !has_leader)
             reason = "server is not initialized yet and no alive leader exists";
-        else if (!keeper_dispatcher->checkInit())
+        else if (!is_initialized)
             reason = "server is not initialized yet";
         else
             reason = "no alive leader exists";
@@ -415,6 +419,13 @@ void KeeperTCPHandler::runImpl()
             log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
+                if (in->eof())
+                {
+                    LOG_DEBUG(log, "Client closed connection, session id #{}", session_id);
+                    keeper_dispatcher->finishSession(session_id);
+                    break;
+                }
+
                 auto [received_op, received_xid] = receiveRequest();
                 packageReceived();
                 log_long_operation("Receiving request");

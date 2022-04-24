@@ -360,6 +360,27 @@ public:
             return toDayNum(LUTIndex(i - (lut[i].day_of_month - 1)));
     }
 
+    /// Round up to last day of month.
+    template <typename DateOrTime>
+    inline Time toLastDayOfMonth(DateOrTime v) const
+    {
+        const LUTIndex i = toLUTIndex(v);
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return lut_saturated[i - lut[i].day_of_month + lut[i].days_in_month].date;
+        else
+            return lut[i - lut[i].day_of_month + lut[i].days_in_month].date;
+    }
+
+    template <typename DateOrTime>
+    inline auto toLastDayNumOfMonth(DateOrTime v) const
+    {
+        const LUTIndex i = toLUTIndex(v);
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return toDayNum(LUTIndexWithSaturation(i - lut[i].day_of_month + lut[i].days_in_month));
+        else
+            return toDayNum(LUTIndex(i - lut[i].day_of_month + lut[i].days_in_month));
+    }
+
     /// Round down to start of quarter.
     template <typename DateOrTime>
     inline auto toFirstDayNumOfQuarter(DateOrTime v) const

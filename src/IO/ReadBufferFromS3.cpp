@@ -175,7 +175,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     if (!restricted_seek)
     {
         if (!working_buffer.empty()
-            && size_t(offset_) >= offset - working_buffer.size()
+            && static_cast<size_t>(offset_) >= offset - working_buffer.size()
             && offset_ < offset)
         {
             pos = working_buffer.end() - (offset - offset_);
@@ -240,7 +240,7 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
 
 SeekableReadBuffer::Range ReadBufferFromS3::getRemainingReadRange() const
 {
-    return Range{.left = static_cast<size_t>(offset), .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt};
+    return Range{ .left = static_cast<size_t>(offset), .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt };
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()

@@ -4,6 +4,7 @@
 #include <Common/FileCache.h>
 #include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/FileCacheSettings.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
@@ -67,7 +68,7 @@ void download(DB::FileSegmentPtr file_segment)
         fs::create_directories(subdir);
 
     std::string data(size, '0');
-    file_segment->write(data.data(), size);
+    file_segment->write(data.data(), size, file_segment->getDownloadOffset());
 }
 
 void prepareAndDownload(DB::FileSegmentPtr file_segment)
@@ -102,7 +103,10 @@ TEST(LRUFileCache, get)
     query_context->setCurrentQueryId("query_id");
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
-    auto cache = DB::LRUFileCache(cache_base_path, 30, 5);
+    DB::FileCacheSettings settings;
+    settings.max_size = 30;
+    settings.max_elements = 5;
+    auto cache = DB::LRUFileCache(cache_base_path, settings);
     cache.initialize();
     auto key = cache.hash("key1");
 
@@ -472,7 +476,7 @@ TEST(LRUFileCache, get)
     {
         /// Test LRUCache::restore().
 
-        auto cache2 = DB::LRUFileCache(cache_base_path, 30, 5);
+        auto cache2 = DB::LRUFileCache(cache_base_path, settings);
         cache2.initialize();
 
         ASSERT_EQ(cache2.getStat().downloaded_size, 5);
@@ -491,7 +495,9 @@ TEST(LRUFileCache, get)
     {
         /// Test max file segment size
 
-        auto cache2 = DB::LRUFileCache(caches_dir / "cache2", 30, 5, /* max_file_segment_size */10);
+        auto settings2 = settings;
+        settings2.max_file_segment_size = 10;
+        auto cache2 = DB::LRUFileCache(caches_dir / "cache2", settings2);
         cache2.initialize();
 
         auto holder1 = cache2.getOrSet(key, 0, 25); /// Get [0, 24]
