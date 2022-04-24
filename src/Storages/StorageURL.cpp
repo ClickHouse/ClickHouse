@@ -224,14 +224,12 @@ namespace
                 }
 
                 Chunk chunk;
+                std::lock_guard lock(reader_mutex);
                 if (reader->pull(chunk))
                     return chunk;
 
-                {
-                    std::lock_guard lock(reader_mutex);
-                    pipeline->reset();
-                    reader.reset();
-                }
+                pipeline->reset();
+                reader.reset();
             }
         }
 

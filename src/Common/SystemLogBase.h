@@ -23,7 +23,9 @@
     M(QueryViewsLogElement) \
     M(SessionLogElement) \
     M(TraceLogElement) \
+    M(TransactionsInfoLogElement) \
     M(ZooKeeperLogElement) \
+    M(ProcessorProfileLogElement) \
     M(TextLogElement)
 
 namespace Poco
