@@ -403,6 +403,21 @@ Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
 }
 
 template <typename T>
+void ColumnVector<T>::insertIndicesFrom(const IColumn & src, std::vector<size_t> & rows)
+{
+    const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
+
+    size_t old_size = data.size();
+    data.reserve(old_size + rows.size());
+    const auto * indices_begin = rows.data();
+    for (size_t i = 0; i < rows.size(); i++)
+    {
+        auto row_data = src_vec.getElement(*(indices_begin + i));
+        data.emplace_back(row_data);
+    }
+}
+
+template <typename T>
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);

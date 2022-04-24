@@ -169,7 +169,7 @@ public:
 
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
-    void setTotals(const Block & block) override { totals = block; }
+    void setTotals(const Block & block) override;
     const Block & getTotals() const override { return totals; }
 
     bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
@@ -325,10 +325,13 @@ public:
     {
         Type type = Type::EMPTY;
         bool empty = true;
-
+        bool exceed_memory = false;
+        size_t total_bytes = 0;
+        size_t total_rows = 0;
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
         BlocksList blocks; /// Blocks of "right" table.
+        Blocks prepare_merged_blocks;
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
@@ -362,6 +365,7 @@ private:
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
+    bool finish_filling_right_side = false;
 
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     std::optional<TypeIndex> asof_type;
@@ -417,6 +421,7 @@ private:
 
     bool empty() const;
     bool overDictionary() const;
+    bool tryMergeBlocks(Block & block, bool size_limits);
 };
 
 }
