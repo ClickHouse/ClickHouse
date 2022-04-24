@@ -1326,9 +1326,13 @@ bool ClientBase::receiveEndOfQuery()
                 onProgress(packet.progress);
                 break;
 
+            case Protocol::Server::ProfileEvents:
+                onProfileEvents(packet.block);
+                break;
+
             default:
                 throw NetException(
-                    "Unexpected packet from server (expected Exception, EndOfStream or Log, got "
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got "
                         + String(Protocol::Server::toString(packet.type)) + ")",
                     ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
         }
@@ -1476,7 +1480,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
     String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
-    std::optional<Exception> & current_exception)
+    std::unique_ptr<Exception> & current_exception)
 {
     if (!is_interactive && cancelled)
         return MultiQueryProcessingStage::QUERIES_END;
@@ -1514,7 +1518,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     }
     catch (Exception & e)
     {
-        current_exception.emplace(e);
+        current_exception.reset(e.clone());
         return MultiQueryProcessingStage::PARSING_EXCEPTION;
     }
 
@@ -1595,7 +1599,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
     String query_to_execute;
     ASTPtr parsed_query;
-    std::optional<Exception> current_exception;
+    std::unique_ptr<Exception> current_exception;
 
     while (true)
     {
@@ -1939,7 +1943,7 @@ void ClientBase::runInteractive()
         {
             /// We don't need to handle the test hints in the interactive mode.
             std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-            client_exception = std::make_unique<Exception>(e);
+            client_exception.reset(e.clone());
         }
 
         if (client_exception)
