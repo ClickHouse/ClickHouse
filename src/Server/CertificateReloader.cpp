@@ -81,7 +81,7 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
     {
         bool cert_file_changed = cert_file.changeIfModified(std::move(new_cert_path), log);
         bool key_file_changed = key_file.changeIfModified(std::move(new_key_path), log);
-        std::string pass_phrase = config.getString("openSSL.server.privateKeyPassphraseHandler.options.password","");
+        std::string pass_phrase = config.getString("openSSL.server.privateKeyPassphraseHandler.options.password", "");
 
         if (cert_file_changed || key_file_changed)
         {
