@@ -1,6 +1,6 @@
 ---
-toc_priority: 29
-toc_title: "Прокси-серверы от сторонних разработчиков"
+sidebar_position: 29
+sidebar_label: "Прокси-серверы от сторонних разработчиков"
 ---
 
 # Прокси-серверы от сторонних разработчиков {#proksi-servery-ot-storonnikh-razrabotchikov}
