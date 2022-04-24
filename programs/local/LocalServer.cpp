@@ -434,6 +434,14 @@ catch (...)
     return getCurrentExceptionCode();
 }
 
+void LocalServer::updateLoggerLevel(const String & logs_level)
+{
+    if (!logging_initialized)
+        return;
+
+    config().setString("logger.level", logs_level);
+    updateLevels(config(), logger());
+}
 
 void LocalServer::processConfig()
 {
@@ -460,30 +468,31 @@ void LocalServer::processConfig()
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
                     || config().has("log-level")
+                    || config().has("send_logs_level")
                     || config().has("logger.log"));
 
-    auto file_logging = config().has("server_logs_file");
-    if (is_interactive && logging && !file_logging)
-        throw Exception("For interactive mode logging is allowed only with --server_logs_file option",
-                        ErrorCodes::BAD_ARGUMENTS);
+    auto level = config().getString("log-level", "trace");
 
-    if (file_logging)
+    if (config().has("server_logs_file"))
     {
-        auto level = Poco::Logger::parseLevel(config().getString("log-level", "trace"));
-        Poco::Logger::root().setLevel(level);
+        auto poco_logs_level = Poco::Logger::parseLevel(level);
+        Poco::Logger::root().setLevel(poco_logs_level);
         Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
+        logging_initialized = true;
     }
-    else if (logging)
+    else if (logging || is_interactive)
     {
-        // force enable logging
         config().setString("logger", "logger");
-        // sensitive data rules are not used here
+        auto log_level_default = is_interactive && !logging ? "none" : level;
+        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
         buildLoggers(config(), logger(), "clickhouse-local");
+        logging_initialized = true;
     }
     else
     {
         Poco::Logger::root().setLevel("none");
         Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+        logging_initialized = false;
     }
 
     shared_context = Context::createShared();
@@ -713,6 +722,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.log", options["logger.log"].as<std::string>());
     if (options.count("logger.level"))
         config().setString("logger.level", options["logger.level"].as<std::string>());
+    if (options.count("send_logs_level"))
+        config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
 }
 
 }

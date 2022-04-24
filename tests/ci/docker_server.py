@@ -16,6 +16,7 @@ from commit_status_helper import post_commit_status
 from docker_images_check import DockerImage
 from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from git_helper import Git
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
@@ -24,11 +25,12 @@ from version_helper import (
     ClickHouseVersion,
     get_tagged_versions,
     get_version_from_repo,
-    get_version_from_string,
+    version_arg,
 )
 
 TEMP_PATH = p.join(RUNNER_TEMP, "docker_images_check")
 BUCKETS = {"amd64": "package_release", "arm64": "package_aarch64"}
+git = Git(ignore_no_tags=True)
 
 
 class DelOS(argparse.Action):
@@ -48,8 +50,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version",
         type=version_arg,
-        default=get_version_from_repo().string,
-        help="a version to build",
+        default=get_version_from_repo(git=git).string,
+        help="a version to build, automaticaly got from version_helper, accepts either "
+        "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
     )
     parser.add_argument(
         "--release-type",
@@ -111,13 +114,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def version_arg(version: str) -> ClickHouseVersion:
-    try:
-        return get_version_from_string(version)
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(e)
-
-
 def auto_release_type(version: ClickHouseVersion, release_type: str) -> str:
     if release_type != "auto":
         return release_type
@@ -125,7 +121,7 @@ def auto_release_type(version: ClickHouseVersion, release_type: str) -> str:
     git_versions = get_tagged_versions()
     reference_version = git_versions[0]
     for i in reversed(range(len(git_versions))):
-        if git_versions[i] < version:
+        if git_versions[i] <= version:
             if i == len(git_versions) - 1:
                 return "latest"
             reference_version = git_versions[i + 1]
@@ -209,7 +205,7 @@ def build_and_push_image(
     result = []
     if os != "ubuntu":
         tag += f"-{os}"
-    init_args = ["docker", "buildx", "build"]
+    init_args = ["docker", "buildx", "build", "--build-arg BUILDKIT_INLINE_CACHE=1"]
     if push:
         init_args.append("--push")
         init_args.append("--output=type=image,push-by-digest=true")
