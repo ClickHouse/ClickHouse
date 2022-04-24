@@ -102,7 +102,7 @@ static void splitMutationCommands(
         /// from disk we just don't read dropped columns
         for (const auto & column : part->getColumns())
         {
-            if (!mutated_columns.count(column.name))
+            if (!mutated_columns.contains(column.name))
                 for_interpreter.emplace_back(
                     MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
         }
@@ -159,7 +159,7 @@ static MergeTreeIndices getIndicesForNewDataPart(
 
     MergeTreeIndices new_indices;
     for (const auto & index : all_indices)
-        if (!removed_indices.count(index.name))
+        if (!removed_indices.contains(index.name))
             new_indices.push_back(MergeTreeIndexFactory::instance().get(index));
 
     return new_indices;
@@ -176,7 +176,7 @@ static std::vector<ProjectionDescriptionRawPtr> getProjectionsForNewDataPart(
 
     std::vector<ProjectionDescriptionRawPtr> new_projections;
     for (const auto & projection : all_projections)
-        if (!removed_projections.count(projection.name))
+        if (!removed_projections.contains(projection.name))
             new_projections.push_back(&projection);
 
     return new_projections;
@@ -207,7 +207,7 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
             source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") ||
             source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx2");
         // If we ask to materialize and it already exists
-        if (!has_index && materialized_indices.count(index.name))
+        if (!has_index && materialized_indices.contains(index.name))
         {
             if (indices_to_recalc.insert(index_factory.get(index)).second)
             {
@@ -223,7 +223,7 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
             const auto & index_cols = index.expression->getRequiredColumns();
             for (const auto & col : index_cols)
             {
-                if (updated_columns.count(col))
+                if (updated_columns.contains(col))
                 {
                     mutate = true;
                     break;
@@ -270,7 +270,7 @@ std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         // If we ask to materialize and it doesn't exist
-        if (!source_part->checksums.has(projection.name + ".proj") && materialized_projections.count(projection.name))
+        if (!source_part->checksums.has(projection.name + ".proj") && materialized_projections.contains(projection.name))
         {
             projections_to_recalc.insert(&projection);
         }
@@ -281,7 +281,7 @@ std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
             const auto & projection_cols = projection.required_columns;
             for (const auto & col : projection_cols)
             {
-                if (updated_columns.count(col))
+                if (updated_columns.contains(col))
                 {
                     mutate = true;
                     break;
@@ -481,7 +481,6 @@ void finalizeMutatedPart(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), part_path));
     new_data_part->default_codec = codec;
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
-    new_data_part->storage.lockSharedData(*new_data_part);
 }
 
 }
@@ -549,6 +548,8 @@ struct MutationContext
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
 
     MergeTreeTransactionPtr txn;
+
+    MergeTreeData::HardlinkedFiles hardlinked_files;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -1071,10 +1072,11 @@ private:
         ctx->new_data_part->version.setCreationTID(tid, nullptr);
         ctx->new_data_part->storeVersionMetadata();
 
+        NameSet hardlinked_files;
         /// Create hardlinks for unchanged files
         for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
         {
-            if (ctx->files_to_skip.count(it->name()))
+            if (ctx->files_to_skip.contains(it->name()))
                 continue;
 
             String destination = ctx->new_part_tmp_path;
@@ -1084,10 +1086,12 @@ private:
             {
                 return rename_pair.first == file_name;
             });
+
             if (rename_it != ctx->files_to_rename.end())
             {
                 if (rename_it->second.empty())
                     continue;
+
                 destination += rename_it->second;
             }
             else
@@ -1095,8 +1099,13 @@ private:
                 destination += it->name();
             }
 
+
             if (!ctx->disk->isDirectory(it->path()))
+            {
                 ctx->disk->createHardLink(it->path(), destination);
+                hardlinked_files.insert(it->name());
+            }
+
             else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
@@ -1105,9 +1114,17 @@ private:
                 {
                     String p_destination = fs::path(destination) / p_it->name();
                     ctx->disk->createHardLink(p_it->path(), p_destination);
+                    hardlinked_files.insert(p_it->name());
                 }
             }
         }
+
+        /// Tracking of hardlinked files required for zero-copy replication.
+        /// We don't remove them when we delete last copy of source part because
+        /// new part can use them.
+        ctx->hardlinked_files.source_table_shared_id = ctx->source_part->storage.getTableSharedID();
+        ctx->hardlinked_files.source_part_name = ctx->source_part->name;
+        ctx->hardlinked_files.hardlinks_from_source_part = hardlinked_files;
 
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
@@ -1164,11 +1181,11 @@ private:
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            if (rename_to.empty() && ctx->new_data_part->checksums.files.count(rename_from))
+            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
             {
                 ctx->new_data_part->checksums.files.erase(rename_from);
             }
-            else if (ctx->new_data_part->checksums.files.count(rename_from))
+            else if (ctx->new_data_part->checksums.files.contains(rename_from))
             {
                 ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
                 ctx->new_data_part->checksums.files.erase(rename_from);
@@ -1283,7 +1300,7 @@ bool MutateTask::prepare()
         storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn));
+        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false));
         return false;
     }
     else
@@ -1374,7 +1391,7 @@ bool MutateTask::prepare()
             && ctx->files_to_rename.empty())
         {
             LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {} (optimized)", ctx->source_part->name, ctx->future_part->part_info.mutation);
-            promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn));
+            promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false));
             return false;
         }
 
@@ -1382,6 +1399,11 @@ bool MutateTask::prepare()
     }
 
     return true;
+}
+
+const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
+{
+    return ctx->hardlinked_files;
 }
 
 
