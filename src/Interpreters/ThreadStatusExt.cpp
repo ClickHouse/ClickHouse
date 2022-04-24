@@ -49,7 +49,7 @@ void ThreadStatus::applyQuerySettings()
     initQueryProfiler();
 
     untracked_memory_limit = settings.max_untracked_memory;
-    if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
+    if (settings.memory_profiler_step && settings.memory_profiler_step < static_cast<UInt64>(untracked_memory_limit))
         untracked_memory_limit = settings.memory_profiler_step;
 
 #if defined(OS_LINUX)
