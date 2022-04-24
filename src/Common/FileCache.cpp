@@ -48,8 +48,10 @@ void IFileCache::addQueryRef(String & query_id)
     {
         std::lock_guard cache_lock(logs_mutex);
         auto iter = cache_logs.find(query_id);
-        if (iter == cache_logs.end())
+        if (iter == cache_logs.end()) {
             iter = cache_logs.insert({query_id, std::make_shared<CacheLogRecorder>()}).first;
+            iter->second->logs = std::make_shared<CacheFileTrace>();
+        }
         iter->second->ref++;
     }
 }
@@ -68,11 +70,16 @@ void IFileCache::DecQueryRef(String & query_id)
             {
                 if (auto cache_log = Context::getGlobalContextInstance()->getCacheLog())
                 {
-                    CacheLogElement cache_elem;
-                    cache_elem.query_id = query_id;
-                    cache_elem.hit_count = iter->second->cache_hit_count;
-                    cache_elem.miss_count = iter->second->cache_miss_count;
-                    cache_log->add(cache_elem);
+                    /// [remote_file_name, [hit_count, miss_count]]
+                    for (const auto & access : *(iter->second->logs))
+                    {
+                        CacheLogElement cache_elem;
+                        cache_elem.query_id = iter->first;
+                        cache_elem.remote_file_path = access.first;
+                        cache_elem.hit_count = access.second.first;
+                        cache_elem.miss_count = access.second.second;
+                        cache_log->add(cache_elem);
+                    }
                 }
                 cache_logs.erase(iter);
             }
@@ -80,7 +87,7 @@ void IFileCache::DecQueryRef(String & query_id)
     }
 }
 
-void IFileCache::updateQueryCacheLog(String & query_id, size_t hit_count, size_t miss_count)
+void IFileCache::updateQueryCacheLog(String & query_id, String &remote_fs_path, size_t hit_count, size_t miss_count)
 {
     /// must be a query log
     if (query_id.size())
@@ -89,8 +96,9 @@ void IFileCache::updateQueryCacheLog(String & query_id, size_t hit_count, size_t
         auto iter = cache_logs.find(query_id);
         if (iter != cache_logs.end()) 
         {
-            iter->second->cache_hit_count += hit_count;
-            iter->second->cache_miss_count += miss_count;
+            /// [query_id, [remote_fs_path, [hit_count, miss_count]]]
+            (*iter->second->logs)[remote_fs_path].first += hit_count;
+            (*iter->second->logs)[remote_fs_path].second += miss_count;
         }
     }
 }
