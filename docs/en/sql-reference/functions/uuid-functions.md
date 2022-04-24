@@ -1,6 +1,6 @@
 ---
-toc_priority: 53
-toc_title: UUID
+sidebar_position: 53
+sidebar_label: UUID
 ---
 
 # Functions for Working with UUID {#functions-for-working-with-uuid}

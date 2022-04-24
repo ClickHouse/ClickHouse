@@ -102,7 +102,7 @@ static void splitMutationCommands(
         /// from disk we just don't read dropped columns
         for (const auto & column : part->getColumns())
         {
-            if (!mutated_columns.count(column.name))
+            if (!mutated_columns.contains(column.name))
                 for_interpreter.emplace_back(
                     MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
         }
@@ -159,7 +159,7 @@ static MergeTreeIndices getIndicesForNewDataPart(
 
     MergeTreeIndices new_indices;
     for (const auto & index : all_indices)
-        if (!removed_indices.count(index.name))
+        if (!removed_indices.contains(index.name))
             new_indices.push_back(MergeTreeIndexFactory::instance().get(index));
 
     return new_indices;
@@ -176,7 +176,7 @@ static std::vector<ProjectionDescriptionRawPtr> getProjectionsForNewDataPart(
 
     std::vector<ProjectionDescriptionRawPtr> new_projections;
     for (const auto & projection : all_projections)
-        if (!removed_projections.count(projection.name))
+        if (!removed_projections.contains(projection.name))
             new_projections.push_back(&projection);
 
     return new_projections;
@@ -207,7 +207,7 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
             source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") ||
             source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx2");
         // If we ask to materialize and it already exists
-        if (!has_index && materialized_indices.count(index.name))
+        if (!has_index && materialized_indices.contains(index.name))
         {
             if (indices_to_recalc.insert(index_factory.get(index)).second)
             {
@@ -223,7 +223,7 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
             const auto & index_cols = index.expression->getRequiredColumns();
             for (const auto & col : index_cols)
             {
-                if (updated_columns.count(col))
+                if (updated_columns.contains(col))
                 {
                     mutate = true;
                     break;
@@ -270,7 +270,7 @@ std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         // If we ask to materialize and it doesn't exist
-        if (!source_part->checksums.has(projection.name + ".proj") && materialized_projections.count(projection.name))
+        if (!source_part->checksums.has(projection.name + ".proj") && materialized_projections.contains(projection.name))
         {
             projections_to_recalc.insert(&projection);
         }
@@ -281,7 +281,7 @@ std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
             const auto & projection_cols = projection.required_columns;
             for (const auto & col : projection_cols)
             {
-                if (updated_columns.count(col))
+                if (updated_columns.contains(col))
                 {
                     mutate = true;
                     break;
@@ -1074,7 +1074,7 @@ private:
         /// Create hardlinks for unchanged files
         for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
         {
-            if (ctx->files_to_skip.count(it->name()))
+            if (ctx->files_to_skip.contains(it->name()))
                 continue;
 
             String destination = ctx->new_part_tmp_path;
@@ -1164,11 +1164,11 @@ private:
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            if (rename_to.empty() && ctx->new_data_part->checksums.files.count(rename_from))
+            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
             {
                 ctx->new_data_part->checksums.files.erase(rename_from);
             }
-            else if (ctx->new_data_part->checksums.files.count(rename_from))
+            else if (ctx->new_data_part->checksums.files.contains(rename_from))
             {
                 ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
                 ctx->new_data_part->checksums.files.erase(rename_from);
