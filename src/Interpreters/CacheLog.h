@@ -11,25 +11,14 @@
 
 namespace DB
 {
-
-/// [remote_file_path, [hit_count, miss_count]]
-using CacheFileTrace = std::unordered_map<String, std::pair<size_t, size_t>>;
-
-struct CacheLogRecorder
-{
-public:
-    size_t ref = 0;
-    std::shared_ptr<CacheFileTrace> logs;
-};
-
 struct CacheLogElement
 {
-    /// time_t event_time{};
+    time_t event_time{};
     String query_id;
     String remote_file_path;
 
-    UInt64 hit_count;
-    UInt64 miss_count;
+    UInt64 hit_count = 0;
+    UInt64 miss_count = 0;
 
     static std::string name() { return "CacheLog"; }
 
@@ -37,6 +26,17 @@ struct CacheLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
+};
+
+/// [remote_file_path, [hit_count, miss_count]]
+using CacheLogElementPtr = std::shared_ptr<CacheLogElement>;
+using CacheFileTrace = std::unordered_map<String, CacheLogElementPtr>;
+using CacheFileTracePtr = std::shared_ptr<CacheFileTrace>;
+
+struct CacheLogRecorder
+{
+    size_t ref = 0;
+    CacheFileTracePtr trace;
 };
 
 class CacheLog : public SystemLog<CacheLogElement>

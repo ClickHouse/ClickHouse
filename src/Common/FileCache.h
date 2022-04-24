@@ -31,7 +31,7 @@ friend struct FileSegmentsHolder;
 public:
     using Key = UInt128;
     using Downloader = std::unique_ptr<SeekableReadBuffer>;
-    using CacheLogs = std::unordered_map<String, std::shared_ptr<CacheLogRecorder> >;
+    using CacheLogs = std::unordered_map<String, std::shared_ptr<CacheLogRecorder>>;
 
     IFileCache(
         const String & cache_base_path_,
@@ -109,6 +109,7 @@ protected:
     mutable std::mutex mutex;
 
     mutable std::mutex logs_mutex;
+
     CacheLogs cache_logs;
 
     virtual bool tryReserve(
