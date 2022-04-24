@@ -1462,10 +1462,10 @@ def test_redis_virtual_columns_with_materialized_view(redis_cluster):
                      redis_stream_list = '{}',
                      redis_group_name = '{}';
         CREATE TABLE test.view (key UInt64, value UInt64,
-            stream String, _key String, timestamp UInt8, sequence_number UInt8) ENGINE = MergeTree()
+            stream String, message_id String, timestamp UInt8, sequence_number UInt8) ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-        SELECT *, _stream as stream, _key, _timestamp as timestamp, _sequence_number as sequence_number
+        SELECT *, _stream as stream, _key as message_id, _timestamp as timestamp, _sequence_number as sequence_number
         FROM test.redis_virtuals_mv;
         """.format(
                 redis_cluster.redis_host,
@@ -1487,19 +1487,19 @@ def test_redis_virtual_columns_with_materialized_view(redis_cluster):
     connection.close()
 
     result = instance.query(
-        "SELECT key, value, stream, SUBSTRING(channel_id, 1, 3), delivery_tag, redelivered FROM test.view ORDER BY delivery_tag"
+        "SELECT key, value, stream, _key, timestamp, sequence_number FROM test.view ORDER BY key"
     )
     expected = """\
-0	0	virtuals_mv	1_0	1	0
-1	1	virtuals_mv	1_0	2	0
-2	2	virtuals_mv	1_0	3	0
-3	3	virtuals_mv	1_0	4	0
-4	4	virtuals_mv	1_0	5	0
-5	5	virtuals_mv	1_0	6	0
-6	6	virtuals_mv	1_0	7	0
-7	7	virtuals_mv	1_0	8	0
-8	8	virtuals_mv	1_0	9	0
-9	9	virtuals_mv	1_0	10	0
+0	0	virtuals_mv	1-0	1	0
+1	1	virtuals_mv	2-0	2	0
+2	2	virtuals_mv	3-0	3	0
+3	3	virtuals_mv	4-0	4	0
+4	4	virtuals_mv	5-0	5	0
+5	5	virtuals_mv	6-0	6	0
+6	6	virtuals_mv	7-0	7	0
+7	7	virtuals_mv	8-0	8	0
+8	8	virtuals_mv	9-0	9	0
+9	9	virtuals_mv	10-0	10	0
 """
 
     instance.query(

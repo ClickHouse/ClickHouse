@@ -108,7 +108,9 @@ if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
-add_headers_and_sources(dbms Storages/Redis)
+if (TARGET ch_contrib:hiredis)
+    add_headers_and_sources(dbms Storages/Redis)
+endif()
 
 if (USE_LIBPQXX)
     add_headers_and_sources(dbms Core/PostgreSQL)
