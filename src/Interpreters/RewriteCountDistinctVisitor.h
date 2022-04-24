@@ -9,7 +9,7 @@ namespace DB
 
 class ASTFunction;
 
-/// Rewrite 'select countDistinct(a) from t' to 'select count(1) from (select a from t groupBy a)'
+/// Really simple rewrite 'select countDistinct(a) from t' to 'select count(1) from (select a from t groupBy a)'
 class RewriteCountDistinctFunctionMatcher
 {
 public:
@@ -18,5 +18,5 @@ public:
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 };
 
-using RewriteCountDistinctFunctionVisitor = InDepthNodeVisitor<RewriteCountDistinctFunctionMatcher, false>;
+using RewriteCountDistinctFunctionVisitor = InDepthNodeVisitor<RewriteCountDistinctFunctionMatcher, true>;
 }

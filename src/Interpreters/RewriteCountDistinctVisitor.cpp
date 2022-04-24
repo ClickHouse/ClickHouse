@@ -37,7 +37,7 @@ void RewriteCountDistinctFunctionMatcher::visit(ASTPtr & ast, Data & /*data*/)
     if (selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children.size() != 1)
         return;
     auto * table_expr = selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children[0]->as<ASTTableExpression>();
-    if (!table_expr || !table_expr->database_and_table_name)
+    if (!table_expr || table_expr->size() != 1 || !table_expr->database_and_table_name)
         return;
     // Check done, we now rewrite the AST
     auto cloned_select_query = selectq->clone();
