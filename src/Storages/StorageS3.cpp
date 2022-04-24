@@ -36,7 +36,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <QueryPipeline/narrowPipe.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
