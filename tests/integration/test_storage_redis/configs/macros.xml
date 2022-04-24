@@ -1,0 +1,7 @@
+<clickhouse>
+  <macros>
+    <redis_broker>redis1:6379</redis_broker>
+    <redis_stream_list>macro</redis_stream_list>
+    <redis_group_name>test_macro</redis_group_name>
+  </macros>
+</clickhouse>

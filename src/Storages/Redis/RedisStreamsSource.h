@@ -18,7 +18,7 @@ class RedisStreamsSource : public SourceWithProgress
 public:
     RedisStreamsSource(
         StorageRedis & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context_,
         const Names & columns,
         Poco::Logger * log_,
@@ -29,12 +29,12 @@ public:
 
     Chunk generate() override;
 
-    void commit();
+    void ack();
     bool isStalled() const { return !buffer || read_nothing; }
 
 private:
     StorageRedis & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     Names column_names;
     Poco::Logger * log;
@@ -43,7 +43,6 @@ private:
     ConsumerBufferPtr buffer;
     bool read_nothing = true;
     bool is_finished = false;
-    bool commit_in_suffix;
 
     const Block non_virtual_header;
     const Block virtual_header;

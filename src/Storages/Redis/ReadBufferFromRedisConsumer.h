@@ -5,7 +5,6 @@
 #include <IO/ReadBuffer.h>
 #include <Poco/JSON/Object.h>
 
-#include <cppkafka/cppkafka.h>
 #include <redis++/redis++.h>
 #include <boost/algorithm/string.hpp>
 
@@ -59,6 +58,9 @@ public:
         uint64_t sequence_number;
         String attrs;
     };
+
+    String groupName() const { return group_name; }
+    String consumerName() const { return consumer_name; }
 
     // Return values for the message that's being read.
     String currentTopic() const { return current[-1].stream; }

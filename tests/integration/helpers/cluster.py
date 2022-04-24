@@ -212,6 +212,15 @@ def check_rabbitmq_is_available(rabbitmq_id):
     return p.returncode == 0
 
 
+def check_redis_is_available(redis_id):
+    p = subprocess.Popen(
+        ("docker", "exec", "-i", redis_id, "redis-cli", "ping"),
+        stdout=subprocess.PIPE
+    )
+    p.communicate()
+    return p.returncode == 0
+
+
 def enable_consistent_hash_plugin(rabbitmq_id):
     p = subprocess.Popen(
         (
@@ -439,7 +448,8 @@ class ClickHouseCluster:
 
         # available when with_redis == True
         self.redis_host = "redis1"
-        self.redis_port = get_free_port()
+        self.redis_ip = None
+        self.redis_port = 6379
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
@@ -1827,6 +1837,23 @@ class ClickHouseCluster:
             raise Exception("Cannot wait RabbitMQ container")
         return False
 
+    def wait_redis_to_start(self, timeout=180, throw=True):
+        self.redis_ip = self.get_instance_ip(self.redis_host)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_redis_is_available(self.redis_docker_id):
+                    logging.debug("Redis is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't connect to Redis " + str(ex))
+                time.sleep(0.5)
+
+        if throw:
+            raise Exception("Cannot wait Redis container")
+        return False
+
     def wait_nginx_to_start(self, timeout=60):
         self.nginx_ip = self.get_instance_ip(self.nginx_host)
         start = time.time()
@@ -2312,7 +2339,14 @@ class ClickHouseCluster:
                 logging.debug("Setup Redis")
                 subprocess_check_call(self.base_redis_cmd + common_opts)
                 self.up_called = True
-                time.sleep(10)
+
+                for i in range(5):
+                    subprocess_check_call(self.base_redis_cmd + common_opts)
+                    self.up_called = True
+                    self.redis_docker_id = self.get_instance_docker_id(self.redis_host)
+                    logging.debug(f"Redis checking container try: {i}")
+                    if self.wait_redis_to_start(throw=(i == 4)):
+                        break
 
             if self.with_hive and self.base_hive_cmd:
                 logging.debug("Setup hive")

@@ -14,13 +14,6 @@
 #include <list>
 #include <atomic>
 
-namespace cppRedis
-{
-
-class Configuration;
-
-}
-
 namespace DB
 {
 
@@ -45,7 +38,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -79,7 +72,7 @@ private:
     // Configuration and state
     std::unique_ptr<RedisSettings> redis_settings;
     const Names streams;
-    const String brokers;
+    const String broker;
     const String group;
     const String client_id;
     const size_t num_consumers; /// total number of consumers

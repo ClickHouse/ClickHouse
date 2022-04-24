@@ -19,20 +19,20 @@ const auto MAX_FAILED_POLL_ATTEMPTS = 10;
 
 RedisStreamsSource::RedisStreamsSource(
     StorageRedis & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const Names & columns,
     Poco::Logger * log_,
     size_t max_block_size_)
-    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns, storage_.getVirtuals(), storage_.getStorageID()))
+    : SourceWithProgress(storage_snapshot_->getSampleBlockForColumns(columns))
     , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , context(context_)
     , column_names(columns)
     , log(log_)
     , max_block_size(max_block_size_)
-    , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
-    , virtual_header(metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
+    , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
+    , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
 {
 }
 
@@ -59,6 +59,7 @@ Chunk RedisStreamsSource::generateImpl()
         return {};
 
     is_finished = true;
+    read_nothing = true;
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
     // otherwise external iteration will reuse that and logic will became even more fuzzy
@@ -114,6 +115,9 @@ Chunk RedisStreamsSource::generateImpl()
         }
     }
 
+    if (read_nothing)
+        LOG_DEBUG(log, "Redis consumer {} from group {} read nothing", buffer->consumerName(), buffer->groupName());
+
     if (total_rows == 0)
         return {};
 
@@ -141,7 +145,7 @@ Chunk RedisStreamsSource::generate()
     return chunk;
 }
 
-void RedisStreamsSource::commit()
+void RedisStreamsSource::ack()
 {
     if (!buffer)
         return;

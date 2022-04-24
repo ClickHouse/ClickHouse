@@ -1,0 +1,5 @@
+<clickhouse>
+    <redis>
+        <password>clickhouse</password>
+    </redis>
+</clickhouse>

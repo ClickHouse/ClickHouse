@@ -1,5 +1,4 @@
 #include <Storages/Redis/StorageRedis.h>
-#include <Storages/Redis/parseSyslogLevel.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -31,6 +30,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/parseAddress.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int CONSUMER_GROUP_NOT_CREATED;
 }
 
 namespace
@@ -66,7 +67,7 @@ StorageRedis::StorageRedis(
     , WithContext(context_->getGlobalContext())
     , redis_settings(std::move(redis_settings_))
     , streams(parseStreams(getContext()->getMacros()->expand(redis_settings->redis_stream_list.value)))
-    , brokers(getContext()->getMacros()->expand(redis_settings->redis_broker_list.value))
+    , broker(getContext()->getMacros()->expand(redis_settings->redis_broker))
     , group(getContext()->getMacros()->expand(redis_settings->redis_group_name.value))
     , client_id(
           redis_settings->redis_client_id.value.empty() ? getDefaultClientId(table_id_)
@@ -83,9 +84,20 @@ StorageRedis::StorageRedis(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
+    auto parsed_address = parseAddress(broker, 6379);
+    sw::redis::ConnectionOptions connect_options;
+    connect_options.host = parsed_address.first;
+    connect_options.port = parsed_address.second;
+    auto redis_password = redis_settings->redis_password.value;
+    if (redis_password.empty() && getContext()->getConfigRef().has("redis.password")) {
+        redis_password = getContext()->getConfigRef().getString("redis.password");
+    }
+    if (!redis_password.empty()) {
+        connect_options.password = std::move(redis_password);
+    }
 
-    redis = std::make_shared<sw::redis::Redis>(brokers);
-    /// TODO: should a create consumer groups?
+    redis = std::make_shared<sw::redis::Redis>(connect_options);
+    /// TODO: should I create consumer groups?
     auto task_count = thread_per_consumer ? num_consumers : 1;
     try
     {
@@ -129,7 +141,7 @@ SettingsChanges StorageRedis::createSettingsAdjustments()
 Names StorageRedis::parseStreams(String stream_list)
 {
     Names result;
-    boost::split(result,stream_list,[](char c){ return c == ','; });
+    boost::split(result, stream_list,[](char c){ return c == ','; });
     for (String & stream : result)
     {
         boost::trim(stream);
@@ -145,7 +157,7 @@ String StorageRedis::getDefaultClientId(const StorageID & table_id_)
 
 Pipe StorageRedis::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /* query_info */,
     ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
@@ -173,7 +185,7 @@ Pipe StorageRedis::read(
         /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        pipes.emplace_back(std::make_shared<RedisStreamsSource>(*this, metadata_snapshot, modified_context, column_names, log, 1));
+        pipes.emplace_back(std::make_shared<RedisStreamsSource>(*this, storage_snapshot, modified_context, column_names, log, 1));
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -395,7 +407,8 @@ bool StorageRedis::streamToViews()
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
@@ -421,7 +434,7 @@ bool StorageRedis::streamToViews()
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<RedisStreamsSource>(*this, metadata_snapshot, redis_context, block_io.pipeline.getHeader().getNames(), log, block_size);
+        auto source = std::make_shared<RedisStreamsSource>(*this, storage_snapshot, redis_context, block_io.pipeline.getHeader().getNames(), log, block_size);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -453,7 +466,7 @@ bool StorageRedis::streamToViews()
     for (auto & source : sources)
     {
         some_stream_is_stalled = some_stream_is_stalled || source->isStalled();
-        source->commit();
+        source->ack();
     }
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
@@ -544,7 +557,7 @@ void registerStorageRedis(StorageFactory & factory)
         else
         {
             /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
-            CHECK_REDIS_STORAGE_ARGUMENT(1, redis_broker_list, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(1, redis_broker, 0)
             CHECK_REDIS_STORAGE_ARGUMENT(2, redis_stream_list, 1)
             CHECK_REDIS_STORAGE_ARGUMENT(3, redis_group_name, 2)
             CHECK_REDIS_STORAGE_ARGUMENT(7, redis_num_consumers, 0)

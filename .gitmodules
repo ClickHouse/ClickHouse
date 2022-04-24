@@ -262,3 +262,9 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/hiredis"]
+	path = contrib/hiredis
+	url = https://github.com/redis/hiredis.git
+[submodule "contrib/redis-plus-plus"]
+	path = contrib/redis-plus-plus
+	url = https://github.com/sewenew/redis-plus-plus.git

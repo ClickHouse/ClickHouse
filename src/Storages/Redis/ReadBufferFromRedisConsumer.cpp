@@ -2,8 +2,6 @@
 
 #include <base/logger_useful.h>
 
-#include <cppkafka/cppkafka.h>
-#include <boost/algorithm/string/join.hpp>
 #include <fmt/ostream.h>
 #include <algorithm>
 
@@ -31,7 +29,7 @@ ReadBufferFromRedisConsumer::ReadBufferFromRedisConsumer(
     , intermediate_ack(intermediate_ack_)
     , current(messages.begin())
 {
-    for (const auto& stream: _streams)
+    for (const auto & stream: _streams)
     {
         streams_with_ids[stream] = ">";
     }
@@ -42,7 +40,7 @@ ReadBufferFromRedisConsumer::~ReadBufferFromRedisConsumer() = default;
 
 void ReadBufferFromRedisConsumer::ack()
 {
-    for (auto& [stream_name, ids] : last_read_ids)
+    for (auto & [stream_name, ids] : last_read_ids)
     {
         if (!ids.empty())
         {
@@ -109,9 +107,9 @@ void ReadBufferFromRedisConsumer::convertStreamsOutputToMessages(const StreamsOu
     if (intermediate_ack)
         ack();
     messages.clear();
-    for (const auto& [stream_name, msg_stream] : output)
+    for (const auto & [stream_name, msg_stream] : output)
     {
-        for (const auto& [id, attrs] : msg_stream)
+        for (const auto & [id, attrs] : msg_stream)
         {
             last_read_ids[stream_name].push_back(id);
             Message msg;

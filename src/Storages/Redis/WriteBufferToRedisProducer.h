@@ -7,14 +7,11 @@
 #include <redis++/redis++.h>
 #include <boost/algorithm/string.hpp>
 
-#include <cppkafka/cppkafka.h>
-
 #include <list>
 
 namespace DB
 {
 class Block;
-using ProducerPtr = std::shared_ptr<cppkafka::Producer>;
 using RedisPtr = std::shared_ptr<sw::redis::Redis>;
 
 class WriteBufferToRedisProducer : public WriteBuffer

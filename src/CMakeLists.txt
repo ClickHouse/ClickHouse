@@ -108,6 +108,8 @@ if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
+add_headers_and_sources(dbms Storages/Redis)
+
 if (USE_LIBPQXX)
     add_headers_and_sources(dbms Core/PostgreSQL)
     add_headers_and_sources(dbms Databases/PostgreSQL)
@@ -372,6 +374,10 @@ dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
 dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
+
+if (TARGET ch_contrib::hiredis)
+    dbms_target_link_libraries(PRIVATE ch_contrib::sw ch_contrib::hiredis)
+endif()
 
 if (TARGET ch_contrib::rdkafka)
     dbms_target_link_libraries(PRIVATE ch_contrib::rdkafka ch_contrib::cppkafka)
