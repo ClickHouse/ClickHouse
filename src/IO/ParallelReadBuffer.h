@@ -85,6 +85,8 @@ public:
     std::optional<size_t> getTotalSize() override;
     off_t getPosition() override;
 
+    const ReadBufferFactory & getReadBufferFactory() const { return *reader_factory; }
+
 private:
     /// Reader in progress with a list of read segments
     struct ReadWorker
