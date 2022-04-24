@@ -235,8 +235,8 @@ private:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        return Int64(transform_y.execute(y, timezone_y))
-             - Int64(transform_x.execute(x, timezone_x));
+        return static_cast<Int64>(transform_y.execute(y, timezone_y))
+             - static_cast<Int64>(transform_x.execute(x, timezone_x));
     }
 
     template <typename T>

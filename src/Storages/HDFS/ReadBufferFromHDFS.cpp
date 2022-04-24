@@ -196,6 +196,11 @@ ReadBufferFromHDFS::ReadResult ReadBufferFromHDFS::readInto(char * data, size_t 
     return {count, 0};
 }
 
+String ReadBufferFromHDFS::getFileName() const
+{
+    return impl->hdfs_file_path;
+}
+
 }
 
 #endif
