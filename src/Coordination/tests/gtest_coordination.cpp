@@ -1,3 +1,4 @@
+#include <chrono>
 #include <gtest/gtest.h>
 
 #include "config_core.h"
@@ -406,6 +407,7 @@ TEST_P(CoordinationTest, ChangelogTestCompaction)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
 
     changelog.compact(6);
+    std::this_thread::sleep_for(std::chrono::microseconds(1000));
 
     EXPECT_FALSE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -865,7 +867,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_FALSE(map_snp.insert("/hello", 145).second);
     map_snp.updateValue("/hello", [](IntNode & value) { value = 554; });
     EXPECT_EQ(map_snp.getValue("/hello"), 554);
-    EXPECT_EQ(map_snp.snapshotSize(), 2);
+    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 2);
     EXPECT_EQ(map_snp.size(), 1);
 
     auto itr = map_snp.begin();
@@ -884,7 +886,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     }
     EXPECT_EQ(map_snp.getValue("/hello3"), 3);
 
-    EXPECT_EQ(map_snp.snapshotSize(), 7);
+    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 7);
     EXPECT_EQ(map_snp.size(), 6);
     itr = std::next(map_snp.begin(), 2);
     for (size_t i = 0; i < 5; ++i)
@@ -898,7 +900,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_TRUE(map_snp.erase("/hello3"));
     EXPECT_TRUE(map_snp.erase("/hello2"));
 
-    EXPECT_EQ(map_snp.snapshotSize(), 7);
+    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 7);
     EXPECT_EQ(map_snp.size(), 4);
     itr = std::next(map_snp.begin(), 2);
     for (size_t i = 0; i < 5; ++i)
@@ -910,7 +912,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     }
     map_snp.clearOutdatedNodes();
 
-    EXPECT_EQ(map_snp.snapshotSize(), 4);
+    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 4);
     EXPECT_EQ(map_snp.size(), 4);
     itr = map_snp.begin();
     EXPECT_EQ(itr->key, "/hello");
@@ -944,6 +946,8 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
+    hello.insertOrReplace("hello", 3);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
     hello.erase("hello");
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
@@ -956,6 +960,8 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateDataSize(), 18);
+    hello.insertOrReplace("hello", 1);
+    EXPECT_EQ(hello.getApproximateDataSize(), 27);
 
     hello.clearOutdatedNodes();
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
@@ -970,31 +976,31 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     using Node = DB::KeeperStorage::Node;
     DB::SnapshotableHashTable<Node> world;
     Node n1;
-    n1.data = "1234";
+    n1.setData("1234");
     Node n2;
-    n2.data = "123456";
-    n2.children.insert("");
+    n2.setData("123456");
+    n2.addChild("");
 
     world.disableSnapshotMode();
     world.insert("world", n1);
-    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    EXPECT_EQ(world.getApproximateDataSize(), 177);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    EXPECT_EQ(world.getApproximateDataSize(), 195);
 
     world.erase("world");
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 
     world.enableSnapshotMode(100000);
     world.insert("world", n1);
-    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    EXPECT_EQ(world.getApproximateDataSize(), 177);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateDataSize(), 196);
+    EXPECT_EQ(world.getApproximateDataSize(), 372);
 
     world.clearOutdatedNodes();
-    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    EXPECT_EQ(world.getApproximateDataSize(), 195);
 
     world.erase("world");
-    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    EXPECT_EQ(world.getApproximateDataSize(), 195);
 
     world.clear();
     EXPECT_EQ(world.getApproximateDataSize(), 0);
@@ -1004,7 +1010,7 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
 {
     using Node = DB::KeeperStorage::Node;
     Node node{};
-    node.data = data;
+    node.setData(data);
     node.stat.ephemeralOwner = ephemeral_owner;
     storage.container.insertOrReplace(path, node);
 }
@@ -1042,13 +1048,13 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 3);
-    EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").children.size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
 
-    EXPECT_EQ(restored_storage->container.getValue("/").data, "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello").data, "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").data, "somedata");
+    EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
+    EXPECT_EQ(restored_storage->container.getValue("/hello").getData(), "world");
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->zxid, 2);
     EXPECT_EQ(restored_storage->ephemerals.size(), 2);
@@ -1093,7 +1099,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
     EXPECT_EQ(restored_storage->container.size(), 51);
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
     }
 }
 
@@ -1133,7 +1139,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
 
     for (size_t i = 0; i < 250; ++i)
     {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
     }
 }
 
@@ -1156,7 +1162,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
         }
         for (size_t i = 0; i < 50; ++i)
         {
-            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).data, "wlrd_" + std::to_string(i));
+            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).getData(), "wlrd_" + std::to_string(i));
         }
         for (size_t i = 0; i < 50; ++i)
         {
@@ -1164,18 +1170,19 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
                 storage.container.erase("/hello_" + std::to_string(i));
         }
         EXPECT_EQ(storage.container.size(), 26);
-        EXPECT_EQ(storage.container.snapshotSize(), 101);
+        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 101);
+        EXPECT_EQ(storage.container.snapshotSizeWithVersion().second, 1);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
     EXPECT_EQ(storage.container.size(), 26);
     storage.clearGarbageAfterSnapshot();
-    EXPECT_EQ(storage.container.snapshotSize(), 26);
+    EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 26);
     for (size_t i = 0; i < 50; ++i)
     {
         if (i % 2 != 0)
-            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).data, "wlrd_" + std::to_string(i));
+            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).getData(), "wlrd_" + std::to_string(i));
         else
             EXPECT_FALSE(storage.container.contains("/hello_" + std::to_string(i)));
     }
@@ -1184,7 +1191,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
 
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
     }
 
 }
@@ -1219,6 +1226,9 @@ nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, const Coo
     DB::WriteBufferFromNuraftBuffer buf;
     DB::writeIntBinary(session_id, buf);
     request->write(buf);
+    using namespace std::chrono;
+    auto time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    DB::writeIntBinary(time, buf);
     return buf.getBuffer();
 }
 
@@ -1304,7 +1314,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     for (size_t i = 1; i < total_logs + 1; ++i)
     {
         auto path = "/hello_" + std::to_string(i);
-        EXPECT_EQ(source_storage.container.getValue(path).data, restored_storage.container.getValue(path).data);
+        EXPECT_EQ(source_storage.container.getValue(path).getData(), restored_storage.container.getValue(path).getData());
     }
 }
 
@@ -1459,6 +1469,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     }
 
     changelog_2.compact(105);
+    std::this_thread::sleep_for(std::chrono::microseconds(1000));
 
     EXPECT_FALSE(fs::exists("./logs/changelog_1_100.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin" + params.extension));
@@ -1478,6 +1489,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     }
 
     changelog_3.compact(125);
+    std::this_thread::sleep_for(std::chrono::microseconds(1000));
     EXPECT_FALSE(fs::exists("./logs/changelog_101_110.bin" + params.extension));
     EXPECT_FALSE(fs::exists("./logs/changelog_111_117.bin" + params.extension));
     EXPECT_FALSE(fs::exists("./logs/changelog_118_124.bin" + params.extension));
@@ -1577,13 +1589,13 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 3);
-    EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").children.size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
 
-    EXPECT_EQ(restored_storage->container.getValue("/").data, "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello").data, "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").data, "somedata");
+    EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
+    EXPECT_EQ(restored_storage->container.getValue("/hello").getData(), "world");
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->zxid, 2);
     EXPECT_EQ(restored_storage->ephemerals.size(), 2);

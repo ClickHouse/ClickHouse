@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
+extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -52,7 +53,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * column = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
         if (!column)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -60,7 +65,6 @@ public:
                 arguments[0].type->getName(),
                 1,
                 getName());
-
         const auto & data = column->getData();
 
         auto dst = ColumnVector<Float64>::create();
@@ -70,6 +74,12 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
+
+            CellBoundary boundary{};
+            auto err = cellToBoundary(index, &boundary);
+            if (err)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
+
             Float64 res = cellAreaRads2(index);
             dst_data[row] = res;
         }

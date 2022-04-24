@@ -27,7 +27,7 @@ protected:
     std::string getFileName() const override;
 
 public:
-    ReadBufferFromFileDescriptor(
+    explicit ReadBufferFromFileDescriptor(
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
@@ -70,7 +70,7 @@ private:
 class ReadBufferFromFileDescriptorPRead : public ReadBufferFromFileDescriptor
 {
 public:
-    ReadBufferFromFileDescriptorPRead(
+    explicit ReadBufferFromFileDescriptorPRead(
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,

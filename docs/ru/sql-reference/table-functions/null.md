@@ -1,6 +1,6 @@
 ---
-toc_priority: 53
-toc_title: null функция
+sidebar_position: 53
+sidebar_label: null функция
 ---
 
 # null {#null-function}

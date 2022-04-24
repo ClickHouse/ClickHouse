@@ -41,7 +41,7 @@ public:
 
 private:
     friend class RoleCache;
-    EnabledRoles(const Params & params_);
+    explicit EnabledRoles(const Params & params_);
 
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, scope_guard & notifications);
 

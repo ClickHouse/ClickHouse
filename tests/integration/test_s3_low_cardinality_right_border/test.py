@@ -65,6 +65,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", main_configs=["configs/s3.xml"], with_minio=True)
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -76,7 +77,8 @@ def started_cluster():
 
 
 def test_s3_right_border(started_cluster):
-    node1.query("""
+    node1.query(
+        """
 CREATE TABLE s3_low_cardinality
 (
     str_column LowCardinality(String)
@@ -84,12 +86,17 @@ CREATE TABLE s3_low_cardinality
 ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS storage_policy = 's3',  min_bytes_for_wide_part = 0, index_granularity = 1024;
-    """)
+    """
+    )
 
     node1.query("INSERT INTO s3_low_cardinality SELECT 'aaaaaa' FROM numbers(600000)")
-    node1.query("INSERT INTO s3_low_cardinality SELECT toString(number) FROM numbers(100000)")
+    node1.query(
+        "INSERT INTO s3_low_cardinality SELECT toString(number) FROM numbers(100000)"
+    )
     node1.query("INSERT INTO s3_low_cardinality SELECT 'bbbbbb' FROM numbers(500000)")
-    node1.query("INSERT INTO s3_low_cardinality SELECT toString(number + 100000000) FROM numbers(100000)")
+    node1.query(
+        "INSERT INTO s3_low_cardinality SELECT toString(number + 100000000) FROM numbers(100000)"
+    )
 
     node1.query("OPTIMIZE TABLE s3_low_cardinality FINAL")
 
@@ -98,4 +105,10 @@ SETTINGS storage_policy = 's3',  min_bytes_for_wide_part = 0, index_granularity 
         "merge_tree_min_rows_for_concurrent_read": "0",
         "max_threads": "2",
     }
-    assert node1.query("SELECT COUNT() FROM s3_low_cardinality WHERE not ignore(str_column)", settings=settings) == "1300000\n"
+    assert (
+        node1.query(
+            "SELECT COUNT() FROM s3_low_cardinality WHERE not ignore(str_column)",
+            settings=settings,
+        )
+        == "1300000\n"
+    )

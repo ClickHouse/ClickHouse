@@ -159,7 +159,6 @@ struct IntegerRoundingComputation
         switch (scale_mode)
         {
             case ScaleMode::Zero:
-                return x;
             case ScaleMode::Positive:
                 return x;
             case ScaleMode::Negative:
@@ -171,10 +170,15 @@ struct IntegerRoundingComputation
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
     {
-        if (sizeof(T) <= sizeof(scale) && scale > size_t(std::numeric_limits<T>::max()))
-            *out = 0;
-        else
-            *out = compute(*in, scale);
+        if constexpr (sizeof(T) <= sizeof(scale) && scale_mode == ScaleMode::Negative)
+        {
+            if (scale > size_t(std::numeric_limits<T>::max()))
+            {
+                *out = 0;
+                return;
+            }
+        }
+        *out = compute(*in, scale);
     }
 
 };
@@ -659,7 +663,7 @@ public:
             throw Exception{"Elements of array of second argument of function " + getName()
                             + " must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
-        return getLeastSupertype({type_x, type_arr_nested});
+        return getLeastSupertype(DataTypes{type_x, type_arr_nested});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override

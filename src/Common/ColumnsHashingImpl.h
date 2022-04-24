@@ -125,7 +125,7 @@ class FindResultImpl : public FindResultImplBase, public FindResultImplOffsetBas
 
 public:
     FindResultImpl()
-        : FindResultImplBase(false), FindResultImplOffsetBase<need_offset>(0)
+        : FindResultImplBase(false), FindResultImplOffsetBase<need_offset>(0) // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject)  intentionally allow uninitialized value here
     {}
 
     FindResultImpl(Mapped * value_, bool found_, size_t off)
@@ -146,7 +146,7 @@ class HashMethodBase
 public:
     using EmplaceResult = EmplaceResultImpl<Mapped>;
     using FindResult = FindResultImpl<Mapped, need_offset>;
-    static constexpr bool has_mapped = !std::is_same<Mapped, void>::value;
+    static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using Cache = LastElementCache<Value, consecutive_keys_optimization>;
 
     static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
@@ -312,14 +312,14 @@ template <typename Key>
 class BaseStateKeysFixed<Key, true>
 {
 protected:
-    BaseStateKeysFixed(const ColumnRawPtrs & key_columns)
+    explicit BaseStateKeysFixed(const ColumnRawPtrs & key_columns)
     {
         null_maps.reserve(key_columns.size());
         actual_columns.reserve(key_columns.size());
 
         for (const auto & col : key_columns)
         {
-            if (auto * nullable_col = checkAndGetColumn<ColumnNullable>(col))
+            if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col))
             {
                 actual_columns.push_back(&nullable_col->getNestedColumn());
                 null_maps.push_back(&nullable_col->getNullMapColumn());
@@ -373,7 +373,7 @@ template <typename Key>
 class BaseStateKeysFixed<Key, false>
 {
 protected:
-    BaseStateKeysFixed(const ColumnRawPtrs & columns) : actual_columns(columns) {}
+    explicit BaseStateKeysFixed(const ColumnRawPtrs & columns) : actual_columns(columns) {}
 
     const ColumnRawPtrs & getActualColumns() const { return actual_columns; }
 

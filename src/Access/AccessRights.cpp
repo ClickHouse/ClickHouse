@@ -706,8 +706,8 @@ private:
 
 AccessRights::AccessRights() = default;
 AccessRights::~AccessRights() = default;
-AccessRights::AccessRights(AccessRights && src) = default;
-AccessRights & AccessRights::operator =(AccessRights && src) = default;
+AccessRights::AccessRights(AccessRights && src) noexcept = default;
+AccessRights & AccessRights::operator =(AccessRights && src) noexcept = default;
 
 
 AccessRights::AccessRights(const AccessRights & src)

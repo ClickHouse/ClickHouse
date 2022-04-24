@@ -103,7 +103,7 @@ private:
 
     friend class TreeRewriter;
 
-    const SizeLimits size_limits;
+    SizeLimits size_limits;
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
     const size_t max_joined_block_rows = 0;
@@ -114,7 +114,7 @@ private:
     const String temporary_files_codec = "LZ4";
 
     /// the limit has no technical reasons, it supposed to improve safety
-    const size_t MAX_DISJUNCTS = 16;
+    const size_t MAX_DISJUNCTS = 16; /// NOLINT
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -152,7 +152,8 @@ private:
 
     /// Create converting actions and change key column names if required
     ActionsDAGPtr applyKeyConvertToTable(
-        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename) const;
+        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename,
+        bool make_nullable) const;
 
     void addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast = nullptr);
 
@@ -160,7 +161,7 @@ private:
 
     /// Calculates common supertypes for corresponding join key columns.
     template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-    bool inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right);
+    void inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right);
 
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 

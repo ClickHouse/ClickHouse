@@ -363,7 +363,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
     else if (std::holds_alternative<std::exception_ptr>(res))
     {
         finishProcessReplica(replica_state, true);
-        std::rethrow_exception(std::move(std::get<std::exception_ptr>(res)));
+        std::rethrow_exception(std::get<std::exception_ptr>(res));
     }
 
     return false;

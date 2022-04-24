@@ -11,31 +11,50 @@ namespace
     using Element = ASTBackupQuery::Element;
     using ElementType = ASTBackupQuery::ElementType;
 
-    void formatName(const DatabaseAndTableName & name, ElementType type, const IAST::FormatSettings & format)
+    void formatTypeWithName(const DatabaseAndTableName & name, bool name_is_in_temp_db, ElementType type, bool show_type, const IAST::FormatSettings & format)
     {
         switch (type)
         {
-            case ElementType::TABLE: [[fallthrough]];
-            case ElementType::DICTIONARY:
+            case ElementType::TABLE:
             {
+                if (show_type)
+                {
+                    format.ostr << (format.hilite ? IAST::hilite_keyword : "");
+                    if (name_is_in_temp_db)
+                        format.ostr << " TEMPORARY TABLE";
+                    else
+                        format.ostr << " TABLE";
+                    format.ostr << (format.hilite ? IAST::hilite_none : "");
+                }
+
                 format.ostr << " ";
-                if (!name.first.empty())
+                if (!name_is_in_temp_db && !name.first.empty())
                     format.ostr << backQuoteIfNeed(name.first) << ".";
                 format.ostr << backQuoteIfNeed(name.second);
                 break;
             }
             case ElementType::DATABASE:
             {
-                format.ostr << " " << backQuoteIfNeed(name.first);
+                if (show_type)
+                {
+                    format.ostr << (format.hilite ? IAST::hilite_keyword : "");
+                    if (name_is_in_temp_db)
+                        format.ostr << " ALL TEMPORARY TABLES";
+                    else
+                        format.ostr << " DATABASE";
+                    format.ostr << (format.hilite ? IAST::hilite_none : "");
+                }
+
+                if (!name_is_in_temp_db)
+                    format.ostr << " " << backQuoteIfNeed(name.first);
                 break;
             }
-            case ElementType::TEMPORARY_TABLE:
+            case ElementType::ALL_DATABASES:
             {
-                format.ostr << " " << backQuoteIfNeed(name.second);
+                if (show_type)
+                    format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " ALL DATABASES" << (format.hilite ? IAST::hilite_none : "");
                 break;
             }
-            default:
-                break;
         }
     }
 
@@ -55,32 +74,36 @@ namespace
         }
     }
 
+    void formatExceptList(const std::set<String> & except_list, const IAST::FormatSettings & format)
+    {
+        if (except_list.empty())
+            return;
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " EXCEPT "
+                    << (format.hilite ? IAST::hilite_none : "");
+        bool need_comma = false;
+        for (const auto & item : except_list)
+        {
+            if (std::exchange(need_comma, true))
+                format.ostr << ",";
+            format.ostr << " " << backQuoteIfNeed(item);
+        }
+    }
+
     void formatElement(const Element & element, Kind kind, const IAST::FormatSettings & format)
     {
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " ";
-        switch (element.type)
-        {
-            case ElementType::TABLE: format.ostr << "TABLE"; break;
-            case ElementType::DICTIONARY: format.ostr << "DICTIONARY"; break;
-            case ElementType::DATABASE: format.ostr << "DATABASE"; break;
-            case ElementType::ALL_DATABASES: format.ostr << "ALL DATABASES"; break;
-            case ElementType::TEMPORARY_TABLE: format.ostr << "TEMPORARY TABLE"; break;
-            case ElementType::ALL_TEMPORARY_TABLES: format.ostr << "ALL TEMPORARY TABLES"; break;
-            case ElementType::EVERYTHING: format.ostr << "EVERYTHING"; break;
-        }
-        format.ostr << (format.hilite ? IAST::hilite_none : "");
+        formatTypeWithName(element.name, element.name_is_in_temp_db, element.type, true, format);
 
-        formatName(element.name, element.type, format);
+        formatPartitions(element.partitions, format);
+        formatExceptList(element.except_list, format);
 
-        bool under_another_name = !element.new_name.first.empty() || !element.new_name.second.empty();
-        if (under_another_name)
+        bool new_name_is_different = (element.new_name != element.name) || (element.new_name_is_in_temp_db != element.name_is_in_temp_db);
+        if (new_name_is_different)
         {
             format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " " << ((kind == Kind::BACKUP) ? "AS" : "INTO")
                         << (format.hilite ? IAST::hilite_none : "");
-            formatName(element.new_name, element.type, format);
+            bool show_type = (element.new_name_is_in_temp_db != element.name_is_in_temp_db);
+            formatTypeWithName(element.new_name, element.new_name_is_in_temp_db, element.type, show_type, format);
         }
-
-        formatPartitions(element.partitions, format);
     }
 
     void formatElements(const std::vector<Element> & elements, Kind kind, const IAST::FormatSettings & format)

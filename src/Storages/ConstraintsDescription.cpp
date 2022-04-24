@@ -114,7 +114,7 @@ std::unique_ptr<ComparisonGraph> ConstraintsDescription::buildGraph() const
         CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
         pushNotIn(atom);
         auto * func = atom.ast->as<ASTFunction>();
-        if (func && relations.count(func->name))
+        if (func && relations.contains(func->name))
         {
             assert(!atom.negative);
             constraints_for_graph.push_back(atom.ast);
@@ -195,6 +195,20 @@ ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDesc
     for (size_t i = 0; i < constraints.size(); ++i)
         constraints[i] = other.constraints[i]->clone();
     update();
+    return *this;
+}
+
+ConstraintsDescription::ConstraintsDescription(ConstraintsDescription && other) noexcept
+    : constraints(std::move(other.constraints))
+{
+    update();
+}
+
+ConstraintsDescription & ConstraintsDescription::operator=(ConstraintsDescription && other) noexcept
+{
+    constraints = std::move(other.constraints);
+    update();
+
     return *this;
 }
 

@@ -64,7 +64,7 @@ namespace ErrorCodes
  * Both WelchTTest and StudentTTest have t-statistric with Student distribution but with different degrees of freedom.
  * So the procedure of computing p-value is the same.
 */
-static inline Float64 getPValue(Float64 degrees_of_freedom, Float64 t_stat2)
+static inline Float64 getPValue(Float64 degrees_of_freedom, Float64 t_stat2) /// NOLINT
 {
     Float64 numerator = integrateSimpson(0, degrees_of_freedom / (t_stat2 + degrees_of_freedom),
         [degrees_of_freedom](double x) { return std::pow(x, degrees_of_freedom / 2 - 1) / std::sqrt(1 - x); });
@@ -92,7 +92,7 @@ public:
     AggregateFunctionTTest(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>({arguments}, params)
     {
-        if (params.size() > 0)
+        if (!params.empty())
         {
             need_confidence_interval = true;
             confidence_level = params.at(0).safeGet<Float64>();

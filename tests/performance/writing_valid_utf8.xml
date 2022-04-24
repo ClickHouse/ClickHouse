@@ -20,7 +20,7 @@
 
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}, '/dev/null') AS SELECT SearchPhrase, ClientIP6, URL, Referer, URLDomain FROM test.hits limit 0</create_query>
     
-    <query>INSERT INTO table_{format} SELECT SearchPhrase, ClientIP6, URL, Referer, URLDomain FROM test.hits LIMIT 100000 SETTINGS engine_file_truncate_on_insert = 1</query>
+    <query>INSERT INTO table_{format} SELECT SearchPhrase, ClientIP6, URL, Referer, URLDomain FROM test.hits LIMIT 100000</query>
 
     <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
 </test>

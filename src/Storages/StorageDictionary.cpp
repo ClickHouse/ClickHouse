@@ -163,7 +163,7 @@ void StorageDictionary::checkTableCanBeDetached() const
 
 Pipe StorageDictionary::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & /*query_info*/,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -295,7 +295,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     }
 
     std::lock_guard<std::mutex> lock(dictionary_config_mutex);
-    configuration->setString("dictionary.comment", std::move(new_comment));
+    configuration->setString("dictionary.comment", new_comment);
 }
 
 void registerStorageDictionary(StorageFactory & factory)

@@ -48,6 +48,7 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"forwarded_for", std::make_shared<DataTypeString>()},
 
         {"quota_key", std::make_shared<DataTypeString>()},
+        {"distributed_depth", std::make_shared<DataTypeUInt64>()},
 
         {"elapsed", std::make_shared<DataTypeFloat64>()},
         {"is_cancelled", std::make_shared<DataTypeUInt8>()},
@@ -115,6 +116,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.client_info.forwarded_for);
 
         res_columns[i++]->insert(process.client_info.quota_key);
+        res_columns[i++]->insert(process.client_info.distributed_depth);
 
         res_columns[i++]->insert(process.elapsed_seconds);
         res_columns[i++]->insert(process.is_cancelled);

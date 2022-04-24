@@ -1,5 +1,6 @@
 set log_queries = 1;
 set max_threads = 16;
+set prefer_localhost_replica = 1;
 
 select sum(number) from remote('127.0.0.{1|2}', numbers_mt(1000000)) group by number % 2 order by number % 2;
 
