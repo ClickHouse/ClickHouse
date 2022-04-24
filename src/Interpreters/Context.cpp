@@ -3389,6 +3389,7 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
+    res.current_query_id = client_info.current_query_id;
 
     std::string_view read_method_str = settings.local_filesystem_read_method.value;
 

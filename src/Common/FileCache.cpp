@@ -11,6 +11,7 @@
 #include <IO/Operators.h>
 #include <pcg-random/pcg_random.hpp>
 #include <filesystem>
+#include <Interpreters/Context.h>
 
 namespace fs = std::filesystem;
 
@@ -38,6 +39,60 @@ IFileCache::IFileCache(
     , max_element_size(cache_settings_.max_elements)
     , max_file_segment_size(cache_settings_.max_file_segment_size)
 {
+}
+
+void IFileCache::addQueryRef(String & query_id)
+{
+    /// must be a query log
+    if (query_id.size())
+    {
+        std::lock_guard cache_lock(logs_mutex);
+        auto iter = cache_logs.find(query_id);
+        if (iter == cache_logs.end())
+            iter = cache_logs.insert({query_id, std::make_shared<CacheLogRecorder>()}).first;
+        iter->second->ref++;
+    }
+}
+
+void IFileCache::DecQueryRef(String & query_id)
+{
+    /// must be a query log
+    if (query_id.size())
+    {
+        std::lock_guard cache_lock(logs_mutex);
+        auto iter = cache_logs.find(query_id);
+        if (iter != cache_logs.end())
+        {
+            iter->second->ref--;
+            if (!iter->second->ref)
+            {
+                if (auto cache_log = Context::getGlobalContextInstance()->getCacheLog())
+                {
+                    CacheLogElement cache_elem;
+                    cache_elem.query_id = query_id;
+                    cache_elem.hit_count = iter->second->cache_hit_count;
+                    cache_elem.miss_count = iter->second->cache_miss_count;
+                    cache_log->add(cache_elem);
+                }
+                cache_logs.erase(iter);
+            }
+        }
+    }
+}
+
+void IFileCache::updateQueryCacheLog(String & query_id, size_t hit_count, size_t miss_count)
+{
+    /// must be a query log
+    if (query_id.size())
+    {
+        std::lock_guard cache_lock(logs_mutex);
+        auto iter = cache_logs.find(query_id);
+        if (iter != cache_logs.end()) 
+        {
+            iter->second->cache_hit_count += hit_count;
+            iter->second->cache_miss_count += miss_count;
+        }
+    }
 }
 
 IFileCache::Key IFileCache::hash(const String & path)

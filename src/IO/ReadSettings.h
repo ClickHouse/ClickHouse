@@ -54,6 +54,8 @@ class MMappedFileCache;
 
 struct ReadSettings
 {
+    String current_query_id;
+
     /// Method to use reading from local filesystem.
     LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
     /// Method to use reading from remote filesystem.

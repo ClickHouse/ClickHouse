@@ -42,6 +42,14 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , read_until_position(read_until_position_)
     , remote_file_reader_creator(remote_file_reader_creator_)
 {
+    LOG_TRACE(log, "current_query_id is {}", settings.current_query_id);
+    cache->addQueryRef(settings.current_query_id);
+}
+
+CachedReadBufferFromRemoteFS::~CachedReadBufferFromRemoteFS()
+{
+    cache->updateQueryCacheLog(settings.current_query_id, cache_hit_count, cache_miss_count);
+    cache->DecQueryRef(settings.current_query_id);
 }
 
 void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
@@ -401,8 +409,13 @@ bool CachedReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
 
     implementation_buffer = getImplementationBuffer(*current_file_segment_it);
 
-    if (read_type == ReadType::CACHED)
+    if (read_type == ReadType::CACHED) 
+    {
+        cache_hit_count++;
         (*current_file_segment_it)->incrementHitsCount();
+    }
+    else
+        cache_miss_count++;
 
     LOG_TEST(log, "New segment: {}", (*current_file_segment_it)->range().toString());
     return true;
@@ -639,7 +652,12 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
         implementation_buffer = getImplementationBuffer(*current_file_segment_it);
 
         if (read_type == ReadType::CACHED)
+        {
+            cache_hit_count++;
             (*current_file_segment_it)->incrementHitsCount();
+        }
+        else
+            cache_miss_count++;
     }
 
     assert(!internal_buffer.empty());
