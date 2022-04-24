@@ -96,7 +96,7 @@ public:
 
     void DecQueryRef(String & query_id);
 
-    void updateQueryCacheLog(String &query_id, size_t hit_count, size_t miss_count);
+    void updateQueryCacheLog(String &query_id, String &remote_fs_path, size_t hit_count, size_t miss_count);
 
 protected:
     String cache_base_path;

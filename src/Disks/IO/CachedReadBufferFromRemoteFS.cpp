@@ -48,7 +48,7 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
 
 CachedReadBufferFromRemoteFS::~CachedReadBufferFromRemoteFS()
 {
-    cache->updateQueryCacheLog(settings.current_query_id, cache_hit_count, cache_miss_count);
+    cache->updateQueryCacheLog(settings.current_query_id, remote_fs_object_path, cache_hit_count, cache_miss_count);
     cache->DecQueryRef(settings.current_query_id);
 }
 
