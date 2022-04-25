@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterBackupQuery.h>
-#include <Backups/Common/BackupSettings.h>
-#include <Backups/Common/RestoreSettings.h>
+#include <Backups/BackupSettings.h>
+#include <Backups/RestoreSettings.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreTask.h>
@@ -51,7 +51,7 @@ namespace
         return BackupFactory::instance().createBackup(params);
     }
 
-    void executeBackupSync(const ASTBackupQuery & query, UInt64 task_id, const ContextPtr & context, const BackupInfo & backup_info, const BackupSettings & backup_settings, bool no_throw = false)
+    void executeBackupSync(const ASTBackupQuery & query, size_t task_id, const ContextPtr & context, const BackupInfo & backup_info, const BackupSettings & backup_settings, bool no_throw = false)
     {
         auto & worker = BackupsWorker::instance();
         bool is_internal_backup = backup_settings.internal;
@@ -107,7 +107,7 @@ namespace
         }
     }
 
-    void executeRestoreSync(const ASTBackupQuery & query, UInt64 task_id, ContextMutablePtr context, const BackupInfo & backup_info, const RestoreSettings & restore_settings, bool no_throw = false)
+    void executeRestoreSync(const ASTBackupQuery & query, size_t task_id, ContextMutablePtr context, const BackupInfo & backup_info, const RestoreSettings & restore_settings, bool no_throw = false)
     {
         auto & worker = BackupsWorker::instance();
         bool is_internal_restore = restore_settings.internal;
@@ -155,7 +155,7 @@ namespace
         }
     }
 
-    UInt64 executeBackup(const ASTBackupQuery & query, const ContextPtr & context)
+    size_t executeBackup(const ASTBackupQuery & query, const ContextPtr & context)
     {
         const auto backup_info = BackupInfo::fromAST(*query.backup_name);
         const auto backup_settings = BackupSettings::fromBackupQuery(query);
@@ -175,7 +175,7 @@ namespace
         return task_id;
     }
 
-    UInt64 executeRestore(const ASTBackupQuery & query, ContextMutablePtr context)
+    size_t executeRestore(const ASTBackupQuery & query, ContextMutablePtr context)
     {
         const auto backup_info = BackupInfo::fromAST(*query.backup_name);
         const auto restore_settings = RestoreSettings::fromRestoreQuery(query);
@@ -195,7 +195,7 @@ namespace
         return task_id;
     }
 
-    Block getResultRow(UInt64 task_id)
+    Block getResultRow(size_t task_id)
     {
         if (!task_id)
             return {};
@@ -223,7 +223,7 @@ BlockIO InterpreterBackupQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTBackupQuery &>();
 
-    UInt64 task_id;
+    size_t task_id;
     if (query.kind == ASTBackupQuery::BACKUP)
         task_id = executeBackup(query, context);
     else

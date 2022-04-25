@@ -1,5 +1,8 @@
+#pragma once
+
 #include <Backups/IBackupCoordination.h>
 #include <map>
+#include <mutex>
 
 
 namespace DB

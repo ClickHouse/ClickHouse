@@ -1,5 +1,5 @@
 #include <Backups/BackupInfo.h>
-#include <Backups/Common/BackupSettings.h>
+#include <Backups/BackupSettings.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSetQuery.h>

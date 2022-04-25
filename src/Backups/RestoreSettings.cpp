@@ -1,5 +1,5 @@
 #include <Backups/BackupInfo.h>
-#include <Backups/Common/RestoreSettings.h>
+#include <Backups/RestoreSettings.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTBackupQuery.h>

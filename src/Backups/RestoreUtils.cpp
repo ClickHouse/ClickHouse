@@ -1,6 +1,6 @@
 #include <Backups/RestoreUtils.h>
 #include <Backups/BackupUtils.h>
-#include <Backups/Common/RestoreSettings.h>
+#include <Backups/RestoreSettings.h>
 #include <Backups/DDLCompareUtils.h>
 #include <Backups/DDLRenamingVisitor.h>
 #include <Backups/IBackup.h>
