@@ -29,44 +29,6 @@ private:
     /// Finished readers removed from queue and data from next readers processed
     bool nextImpl() override;
 
-    class Segment : private boost::noncopyable
-    {
-    public:
-        Segment(size_t size_, SynchronizedArenaWithFreeLists * arena_) : arena(arena_), m_data(arena->alloc(size_)), m_size(size_) { }
-
-        Segment() = default;
-
-        Segment(Segment && other) noexcept : arena(other.arena)
-        {
-            std::swap(m_data, other.m_data);
-            std::swap(m_size, other.m_size);
-        }
-
-        Segment & operator=(Segment && other) noexcept
-        {
-            arena = other.arena;
-            std::swap(m_data, other.m_data);
-            std::swap(m_size, other.m_size);
-            return *this;
-        }
-
-        ~Segment()
-        {
-            if (m_data)
-            {
-                arena->free(m_data, m_size);
-            }
-        }
-
-        auto data() const noexcept { return m_data; }
-        auto size() const noexcept { return m_size; }
-
-    private:
-        SynchronizedArenaWithFreeLists * arena{nullptr};
-        char * m_data{nullptr};
-        size_t m_size{0};
-    };
-
 public:
     class ReadBufferFactory
     {
@@ -97,7 +59,7 @@ private:
             bytes_left = *range.right - range.left + 1;
         }
 
-        Segment nextSegment()
+        auto nextSegment()
         {
             assert(!segments.empty());
             auto next_segment = std::move(segments.front());
@@ -107,7 +69,7 @@ private:
         }
 
         SeekableReadBufferPtr reader;
-        std::deque<Segment> segments;
+        std::deque<Memory<>> segments;
         bool finished{false};
         SeekableReadBuffer::Range range;
         size_t bytes_left{0};
@@ -134,7 +96,7 @@ private:
 
     SynchronizedArenaWithFreeLists arena;
 
-    Segment current_segment;
+    Memory<> current_segment;
 
     size_t max_working_readers;
     std::atomic_size_t active_working_reader{0};
