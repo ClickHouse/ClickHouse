@@ -1,6 +1,6 @@
 ---
-toc_priority: 38
-toc_title: SETTING
+sidebar_position: 38
+sidebar_label: SETTING
 ---
 
 # 表设置操作 {#table_settings_manipulations}
