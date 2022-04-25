@@ -82,7 +82,7 @@ namespace
         static String getPathForShardAndReplica(size_t shard_index, size_t replica_index)
         {
             if (shard_index || replica_index)
-                return fmt::format("shard{}/replica{}/", shard_index, replica_index);
+                return fmt::format("shards/{}/replicas/{}/", shard_index, replica_index);
             else
                 return "";
         }
