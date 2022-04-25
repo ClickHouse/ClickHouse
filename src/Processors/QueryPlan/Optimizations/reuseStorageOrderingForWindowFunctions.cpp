@@ -25,10 +25,6 @@
 #include <Columns/IColumn.h>
 #include <base/logger_useful.h>
 
-namespace DB::ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace DB::QueryPlanOptimizations
 {
