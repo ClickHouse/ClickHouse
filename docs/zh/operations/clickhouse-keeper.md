@@ -1,6 +1,6 @@
 ---
-toc_priority: 66
-toc_title: ClickHouse Keeper
+sidebar_position: 66
+sidebar_label: ClickHouse Keeper
 ---
 
 # [预发生产] ClickHouse Keeper {#clickHouse-keeper}
