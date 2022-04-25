@@ -1,4 +1,4 @@
-#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <QueryPipeline/narrowPipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>

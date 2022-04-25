@@ -306,8 +306,8 @@ CREATE TABLE table_name
 Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in the following queries:
 
 ``` sql
-SELECT count() FROM table WHERE s &lt; 'z'
-SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) &gt;= 1234
+SELECT count() FROM table WHERE s < 'z'
+SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 ```
 
 #### Available Types of Indices {#available-types-of-indices}
