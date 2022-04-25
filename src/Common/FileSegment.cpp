@@ -452,6 +452,8 @@ void FileSegment::completeBatchAndResetDownloader()
 
 void FileSegment::complete(State state)
 {
+    assertNotDetached();
+
     std::lock_guard cache_lock(cache->mutex);
     std::lock_guard segment_lock(mutex);
 
@@ -476,8 +478,6 @@ void FileSegment::complete(State state)
         setDownloaded(segment_lock);
 
     download_state = state;
-
-    assertNotDetached();
 
     try
     {
