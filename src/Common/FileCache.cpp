@@ -578,7 +578,7 @@ void LRUFileCache::tryRemoveAll()
                std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
             }
-        }   
+        }
     }
 }
 

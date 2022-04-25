@@ -666,7 +666,7 @@ void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_informa
 {
     const ReadSettings read_settings;
     auto buffer = metadata_disk->readFile(RESTORE_FILE_NAME, read_settings, 512);
-    if(buffer)
+    if (buffer)
     {
        buffer->next();
        try
