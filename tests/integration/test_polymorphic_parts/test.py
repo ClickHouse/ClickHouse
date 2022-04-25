@@ -698,7 +698,9 @@ def test_in_memory_alters(start_cluster):
     expected = "1\tab\t0\n2\tcd\t0\n"
     assert node9.query("SELECT id, s, col1 FROM alters_table ORDER BY id") == expected
     check_parts_type(1)
-    node9.query("INSERT INTO alters_table (date, id, col1) VALUES (toDate('2020-10-10'), 3, 100)")
+    node9.query(
+        "INSERT INTO alters_table (date, id, col1) VALUES (toDate('2020-10-10'), 3, 100)"
+    )
     node9.query("ALTER TABLE alters_table MODIFY COLUMN col1 String")
     node9.query("ALTER TABLE alters_table DROP COLUMN s")
     node9.restart_clickhouse(kill=True)
