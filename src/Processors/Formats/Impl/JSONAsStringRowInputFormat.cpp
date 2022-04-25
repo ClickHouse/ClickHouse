@@ -52,6 +52,7 @@ void JSONAsRowInputFormat::readSuffix()
     {
         assertChar(']', *buf);
         skipWhitespaceIfAny(*buf);
+        data_in_square_brackets = false;
     }
     if (!buf->eof() && *buf->position() == ';')
     {

@@ -237,7 +237,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     /// in case of file descriptor we have a stream of data and we cannot
     /// start reading data from the beginning after reading some data for
     /// schema inference.
-    auto read_buffer_creator = [&]()
+    ReadBufferIterator read_buffer_iterator = [&]()
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
@@ -247,7 +247,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
         return read_buf;
     };
 
-    auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_creator, context, peekable_read_buffer_from_fd);
+    auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, false, context, peekable_read_buffer_from_fd);
     if (peekable_read_buffer_from_fd)
     {
         /// If we have created read buffer in readSchemaFromFormat we should rollback to checkpoint.
@@ -274,38 +274,22 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
-    std::string exception_messages;
-    bool read_buffer_creator_was_used = false;
-    for (const auto & path : paths)
+    if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
+        throw Exception(
+            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+            "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
+            "table structure manually",
+            format);
+
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()]() mutable -> std::unique_ptr<ReadBuffer>
     {
-        auto read_buffer_creator = [&]()
-        {
-            read_buffer_creator_was_used = true;
+        if (it == paths.end())
+            return nullptr;
 
-            if (!std::filesystem::exists(path))
-                throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
-                    "table structure manually",
-                    format);
+        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
+    };
 
-            return createReadBuffer(path, false, "File", -1, compression_method, context);
-        };
-
-        try
-        {
-            return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
-        }
-        catch (...)
-        {
-            if (paths.size() == 1 || !read_buffer_creator_was_used)
-                throw;
-
-            exception_messages += getCurrentExceptionMessage(false) + "\n";
-        }
-    }
-
-    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:\n{}", exception_messages);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
 }
 
 bool StorageFile::isColumnOriented() const
@@ -544,7 +528,6 @@ public:
             Chunk chunk;
             if (reader->pull(chunk))
             {
-                //Columns columns = res.getColumns();
                 UInt64 num_rows = chunk.getNumRows();
 
                 /// Enrich with virtual columns.
