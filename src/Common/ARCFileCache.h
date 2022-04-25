@@ -95,21 +95,21 @@ private:
 
         ~LRUQueueDescriptor() = default;
 
-        size_t queue_size() const { return lru_queue.size(); }
+        size_t getQueueSize() const { return lru_queue.size(); }
 
-        size_t max_queue_size() const { return max_element_size; }
+        size_t getMaxQueueSize() const { return max_element_size; }
 
-        size_t max_space_bytes() const { return max_size; }
+        size_t getMaxSpaceBytes() const { return max_size; }
 
-        double max_space_megabytes() const { return 1.0 * max_size / (1024 * 1024); }
+        double getMaxSpaceMegaBytes() const { return 1.0 * max_size / (1024 * 1024); }
 
-        size_t current_space_bytes() const { return current_size; }
+        size_t getCurrentSpaceBytes() const { return current_size; }
 
-        double current_space_megabytes() const { return 1.0 * current_size / (1024 * 1024); }
+        double getCurrentSpaceMegaBytes() const { return 1.0 * current_size / (1024 * 1024); }
 
-        void increase_space_bytes(int size) { current_size += size; }
+        void incrementSpaceBytes(int size) { current_size += size; }
 
-        void increase_max_space_bytes(int size) { max_size += size; }
+        void incrementMaxSpaceBytes(int size) { max_size += size; }
 
         LRUQueue & queue() { return lru_queue; }
     };
@@ -148,7 +148,7 @@ private:
     void reduceSizeToDownloaded(
         const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock) override;
 
-    size_t availableSize() const { return max_size - (low_queue.current_space_bytes() + high_queue.current_space_bytes()); }
+    size_t availableSize() const { return max_size - (low_queue.getCurrentSpaceBytes() + high_queue.getCurrentSpaceBytes()); }
 
     void loadCacheInfoIntoMemory();
 

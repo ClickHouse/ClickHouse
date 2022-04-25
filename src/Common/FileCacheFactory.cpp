@@ -72,11 +72,9 @@ FileCachePtr FileCacheFactory::getOrCreate(const std::string & cache_base_path, 
         caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
         return cache;
     }
-    else /// set default with ARC
+    else /// No relevant cache algorithm was found.
     {
-        auto cache = std::make_shared<LRUFileCache>(cache_base_path, file_cache_settings);
-        caches.emplace(cache_base_path, CacheData(cache, file_cache_settings));
-        return cache;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No cache method found by : {}", file_cache_settings.cache_method);
     }
 }
 

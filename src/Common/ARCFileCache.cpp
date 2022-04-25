@@ -411,8 +411,8 @@ bool ARCFileCache::tryReserve(
 {
     auto removed_size = 0;
     auto & queue = desc_.queue();
-    size_t queue_size = desc_.queue_size();
-    assert(queue_size <= desc_.max_queue_size());
+    size_t queue_size = desc_.getQueueSize();
+    assert(queue_size <= desc_.getMaxQueueSize());
 
     /// Since space reservation is incremental, cache cell already exists if it's state is EMPTY.
     /// And it cache cell does not exist on startup -- as we first check for space and then add a cell.
@@ -425,8 +425,8 @@ bool ARCFileCache::tryReserve(
 
     auto is_overflow = [&]
     {
-        return (desc_.current_space_bytes() + size - removed_size > desc_.max_space_bytes())
-            || (desc_.max_queue_size() != 0 && queue_size > desc_.max_queue_size());
+        return (desc_.getCurrentSpaceBytes() + size - removed_size > desc_.getMaxSpaceBytes())
+            || (desc_.getMaxQueueSize() != 0 && queue_size > desc_.getMaxQueueSize());
     };
 
     std::vector<FileSegmentCell *> to_evict;
@@ -493,9 +493,9 @@ bool ARCFileCache::tryReserve(
 
     int increase_size = 0;
     increase_size += size - removed_size;
-    desc_.increase_space_bytes(increase_size);
+    desc_.incrementSpaceBytes(increase_size);
 
-    if (desc_.current_space_bytes() > (1ull << 63))
+    if (desc_.getCurrentSpaceBytes() > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
     return true;
@@ -737,7 +737,7 @@ ARCFileCache::Stat ARCFileCache::getStat()
     std::lock_guard cache_lock(mutex);
 
     Stat stat{
-        .size = (low_queue.queue_size() + high_queue.queue_size()),
+        .size = (low_queue.getQueueSize() + high_queue.getQueueSize()),
         .available = availableSize(),
         .downloaded_size = 0,
         .downloading_size = 0,
@@ -834,25 +834,25 @@ bool ARCFileCache::canMoveCellToHighQueue(const FileSegmentCell & cell) const
 bool ARCFileCache::tryMoveLowToHigh(const FileSegmentCell & cell, std::lock_guard<std::mutex> & cache_lock)
 {
     int increase_size = 0;
-    if (high_queue.max_space_bytes() < max_high_space_size)
+    if (high_queue.getMaxSpaceBytes() < max_high_space_size)
     {
-        increase_size = std::min(cell.size(), max_high_space_size - high_queue.max_space_bytes());
-        high_queue.increase_max_space_bytes(increase_size);
-        low_queue.increase_max_space_bytes(0 - increase_size);
+        increase_size = std::min(cell.size(), max_high_space_size - high_queue.getMaxSpaceBytes());
+        high_queue.incrementMaxSpaceBytes(increase_size);
+        low_queue.incrementMaxSpaceBytes(0 - increase_size);
     }
 
     if (tryReserve(high_queue, cell.file_segment->key(), cell.file_segment->offset(), cell.size(), cache_lock))
     {
         cell.is_low = false;
         high_queue.queue().splice(high_queue.queue().end(), low_queue.queue(), *cell.queue_iterator);
-        low_queue.increase_space_bytes(0 - cell.size());
+        low_queue.incrementSpaceBytes(0 - cell.size());
         return true;
     }
     else
     {
         /// rollback
-        high_queue.increase_max_space_bytes(0 - increase_size);
-        low_queue.increase_max_space_bytes(increase_size);
+        high_queue.incrementMaxSpaceBytes(0 - increase_size);
+        low_queue.incrementMaxSpaceBytes(increase_size);
         return false;
     }
 }
