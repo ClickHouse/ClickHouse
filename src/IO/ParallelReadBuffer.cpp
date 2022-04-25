@@ -222,7 +222,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 
             Buffer buffer = read_worker->reader->buffer();
             size_t bytes_to_copy = std::min(buffer.size(), read_worker->bytes_left);
-            Segment new_segment(bytes_to_copy, &arena);
+            Memory<> new_segment(bytes_to_copy);
             memcpy(new_segment.data(), buffer.begin(), bytes_to_copy);
             read_worker->reader->ignore(bytes_to_copy);
             read_worker->bytes_left -= bytes_to_copy;
