@@ -700,9 +700,7 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
 
     # FIXME (kssenii) temporary disabled
     if instance.is_built_with_address_sanitizer():
-        pytest.skip(
-            "Temporary disabled (FIXME)"
-        )
+        pytest.skip("Temporary disabled (FIXME)")
 
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
