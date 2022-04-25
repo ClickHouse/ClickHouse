@@ -176,11 +176,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             return active_parts_set.getContainingPart(part->info) != part->name;
         };
 
-        auto new_end_it = std::remove_if(active_parts.begin(), active_parts.end(), remove_pred);
-        active_parts.erase(new_end_it, active_parts.end());
+        std::erase_if(active_parts, remove_pred);
 
-        new_end_it = std::remove_if(outdated_parts.begin(), outdated_parts.end(), remove_pred);
-        outdated_parts.erase(new_end_it, outdated_parts.end());
+        std::erase_if(outdated_parts, remove_pred);
 
         std::merge(active_parts.begin(), active_parts.end(),
                    outdated_parts.begin(), outdated_parts.end(),
