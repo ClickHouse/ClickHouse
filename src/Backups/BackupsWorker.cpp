@@ -25,7 +25,7 @@ size_t BackupsWorker::add(const String & backup_name, BackupStatus status, const
 {
     std::lock_guard lock{mutex};
 
-    UInt64 task_id = ++current_task_id;
+    size_t task_id = ++current_task_id;
     size_t pos;
     auto it = entries_by_name.find(backup_name);
     if (it != entries_by_name.end())
@@ -51,7 +51,7 @@ size_t BackupsWorker::add(const String & backup_name, BackupStatus status, const
     return task_id;
 }
 
-void BackupsWorker::update(UInt64 task_id, BackupStatus status, const String & error)
+void BackupsWorker::update(size_t task_id, BackupStatus status, const String & error)
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_task_id.find(task_id);
@@ -63,7 +63,7 @@ void BackupsWorker::update(UInt64 task_id, BackupStatus status, const String & e
     entry.timestamp = std::time(nullptr);
 }
 
-BackupsWorker::Entry BackupsWorker::getEntry(UInt64 task_id) const
+BackupsWorker::Entry BackupsWorker::getEntry(size_t task_id) const
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_task_id.find(task_id);

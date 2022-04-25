@@ -2,6 +2,7 @@
 
 #include <Backups/IRestoreCoordination.h>
 #include <map>
+#include <mutex>
 #include <unordered_map>
 
 

@@ -3,6 +3,8 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Common/ZooKeeper/Common.h>
 #include <map>
+#include <mutex>
+
 
 namespace DB
 {

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Backups/IBackupCoordination.h>
 #include <Common/ZooKeeper/Common.h>
 #include <map>
