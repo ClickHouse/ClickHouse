@@ -1,5 +1,5 @@
 ---
-toc_priority: 36
+sidebar_position: 36
 ---
 
 # covarPop {#covarpop}
