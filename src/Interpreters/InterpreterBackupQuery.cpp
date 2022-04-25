@@ -166,9 +166,7 @@ namespace
 
         if (backup_settings.async)
         {
-            ThreadFromGlobalPool thread{
-                &executeBackupSync, query, task_id, context, backup_info, backup_settings, /* no_throw = */ true};
-            thread.detach(); /// TODO: Remove this !!! Move that thread to BackupsWorker instead
+            BackupsWorker::instance().run([query, task_id, context, backup_info, backup_settings]{ executeBackupSync(query, task_id, context, backup_info, backup_settings, /* no_throw = */ true); });
         }
         else
         {
@@ -188,8 +186,7 @@ namespace
 
         if (restore_settings.async)
         {
-            ThreadFromGlobalPool thread{&executeRestoreSync, query, task_id, context, backup_info, restore_settings, /* no_throw = */ true};
-            thread.detach(); /// TODO: Remove this !!! Move that thread to BackupsWorker instead
+            BackupsWorker::instance().run([query, task_id, context, backup_info, restore_settings]{ executeRestoreSync(query, task_id, context, backup_info, restore_settings, /* no_throw = */ true); });
         }
         else
         {

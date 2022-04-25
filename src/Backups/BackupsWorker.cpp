@@ -1,5 +1,6 @@
 #include <Backups/BackupsWorker.h>
 #include <Common/Exception.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -14,6 +15,11 @@ BackupsWorker & BackupsWorker::instance()
     static BackupsWorker the_instance;
     return the_instance;
 }
+
+BackupsWorker::BackupsWorker()
+{
+}
+
 
 size_t BackupsWorker::add(const String & backup_name, BackupStatus status, const String & error)
 {
@@ -70,6 +76,21 @@ std::vector<BackupsWorker::Entry> BackupsWorker::getEntries() const
 {
     std::lock_guard lock{mutex};
     return entries;
+}
+
+void BackupsWorker::run(std::function<void()> && task)
+{
+    thread_pool.scheduleOrThrowOnError(std::move(task));
+}
+
+void BackupsWorker::shutdown()
+{
+    size_t num_active_tasks = thread_pool.active();
+    if (!num_active_tasks)
+        return;
+    LOG_INFO(&Poco::Logger::get("BackupsWorker"), "Waiting for {} backup or restore tasks to be finished", num_active_tasks);
+    thread_pool.wait();
+    LOG_INFO(&Poco::Logger::get("BackupsWorker"), "All backup and restore tasks have finished");
 }
 
 }
