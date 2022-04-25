@@ -1,6 +1,6 @@
 ---
-toc_priority: 36
-toc_title: Comparison
+sidebar_position: 36
+sidebar_label: Comparison
 ---
 
 # Comparison Functions {#comparison-functions}
