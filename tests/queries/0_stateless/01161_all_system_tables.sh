@@ -14,10 +14,9 @@ LIMIT=10000
 
 function run_selects()
 {
-    # NOTE sistem.dist1 is from 01129_dict_get_join_lose_constness, let's ignore it
     thread_num=$1
     readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT database || '.' || name FROM system.tables
-    WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name!='zookeeper' and name!='merge_tree_metadata_cache' and name != 'dict1'
+    WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name!='zookeeper' and name!='merge_tree_metadata_cache'
     AND sipHash64(name || toString($RAND)) % $THREADS = $thread_num")
 
     for t in "${tables_arr[@]}"
