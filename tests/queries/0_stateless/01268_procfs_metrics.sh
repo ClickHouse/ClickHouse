@@ -51,3 +51,5 @@ do
 done
 
 echo "Test OK"
+
+clickhouse_test_wait_queries 60
