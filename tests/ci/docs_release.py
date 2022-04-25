@@ -34,19 +34,23 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    docker_image = get_image_with_version(temp_path, 'clickhouse/docs-release')
+    docker_image = get_image_with_version(temp_path, "clickhouse/docs-release")
 
-    test_output = os.path.join(temp_path, 'docs_release_log')
+    test_output = os.path.join(temp_path, "docs_release_log")
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
     token = CLOUDFLARE_TOKEN
-    cmd = "docker run --cap-add=SYS_PTRACE --volume=$SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent " \
-          f"-e CLOUDFLARE_TOKEN={token} --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
+    cmd = (
+        "docker run --cap-add=SYS_PTRACE --volume=$SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent "
+        f"-e CLOUDFLARE_TOKEN={token} --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
+    )
 
-    run_log_path = os.path.join(test_output, 'runlog.log')
+    run_log_path = os.path.join(test_output, "runlog.log")
 
-    with open(run_log_path, 'w', encoding='utf-8') as log, SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+    with open(run_log_path, "w", encoding="utf-8") as log, SSHKey(
+        "ROBOT_CLICKHOUSE_SSH_KEY"
+    ):
         with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as process:
             retcode = process.wait()
             if retcode == 0:
@@ -70,10 +74,10 @@ if __name__ == "__main__":
         for f in files:
             path = os.path.join(test_output, f)
             additional_files.append(path)
-            with open(path, 'r', encoding='utf-8') as check_file:
+            with open(path, "r", encoding="utf-8") as check_file:
                 for line in check_file:
                     if "ERROR" in line:
-                        lines.append((line.split(':')[-1], "FAIL"))
+                        lines.append((line.split(":")[-1], "FAIL"))
         if lines:
             status = "failure"
             description = "Found errors in docs"
@@ -82,9 +86,13 @@ if __name__ == "__main__":
         else:
             lines.append(("Non zero exit code", "FAIL"))
 
-    s3_helper = S3Helper('https://s3.amazonaws.com')
+    s3_helper = S3Helper("https://s3.amazonaws.com")
 
-    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME)
+    report_url = upload_results(
+        s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME
+    )
     print("::notice ::Report url: {report_url}")
     commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=NAME, description=description, state=status, target_url=report_url)
+    commit.create_status(
+        context=NAME, description=description, state=status, target_url=report_url
+    )

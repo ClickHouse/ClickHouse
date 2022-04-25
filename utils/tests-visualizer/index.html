@@ -84,14 +84,14 @@ let render_data_query = `
     SELECT groupArray([d, n, fail]) FROM
     (
         SELECT n, check_start_time::Date - start_date AS d, max(test_status LIKE 'F%' OR test_status LIKE 'E%') AS fail
-        FROM "gh-data".checks
+        FROM "default".checks
 
         INNER JOIN
         (
             SELECT test_name, toUInt16(rowNumberInAllBlocks()) AS n FROM
             (
                 SELECT DISTINCT test_name
-                FROM "gh-data".checks
+                FROM "default".checks
                 WHERE match(test_name, '^\\d+_') AND check_name ILIKE '%stateless%' AND check_start_time > now() - INTERVAL 1 DAY
                 ORDER BY test_name
             )
@@ -112,7 +112,7 @@ let test_names_query = `
     SELECT test_name, toUInt16(rowNumberInAllBlocks()) AS n FROM
     (
         SELECT DISTINCT test_name
-        FROM "gh-data".checks
+        FROM "default".checks
         WHERE match(test_name, '^\\d+_') AND check_name ILIKE '%stateless%' AND check_start_time > now() - INTERVAL 1 DAY
         ORDER BY test_name
     ) FORMAT JSONCompact`;
@@ -144,7 +144,7 @@ let test_names_query = `
 
 async function loadDataByQuery(query) {
     const response = await fetch(
-        "https://play-ci.clickhouse.com?user=play&add_http_cors_header=1",
+        "https://play.clickhouse.com?user=play&add_http_cors_header=1",
         { method: "POST", body: query }
     )
     if (!response.ok) throw new Error(`Data download failed\nHTTP status ${response.status}`);

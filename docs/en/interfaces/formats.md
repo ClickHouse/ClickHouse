@@ -1,6 +1,6 @@
 ---
-toc_priority: 21
-toc_title: Input and Output Formats
+sidebar_position: 21
+sidebar_label: Input and Output Formats
 ---
 
 # Formats for Input and Output Data {#formats}
@@ -764,8 +764,9 @@ CREATE TABLE IF NOT EXISTS example_table
 -   If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
 -   If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
-!!! note "Warning"
-    When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
+:::warning
+When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
+:::
 
 ### Selecting Data {#selecting-data}
 
@@ -787,8 +788,9 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
-!!! note "Note"
-    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
+:::info    
+Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
+:::
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
@@ -1340,8 +1342,9 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-!!! note "Warning"
-    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
+:::warning    
+Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
+:::
 
 ## Parquet {#data-format-parquet}
 

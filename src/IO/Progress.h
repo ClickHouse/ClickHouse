@@ -56,7 +56,7 @@ struct FileProgress
     size_t read_bytes;
     size_t total_bytes_to_read;
 
-    FileProgress(size_t read_bytes_, size_t total_bytes_to_read_ = 0) : read_bytes(read_bytes_), total_bytes_to_read(total_bytes_to_read_) {}
+    explicit FileProgress(size_t read_bytes_, size_t total_bytes_to_read_ = 0) : read_bytes(read_bytes_), total_bytes_to_read(total_bytes_to_read_) {}
 };
 
 

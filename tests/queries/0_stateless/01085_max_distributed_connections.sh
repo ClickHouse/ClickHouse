@@ -18,6 +18,6 @@ while [[ $i -lt $retries ]]; do
     # 10 less then 20 seconds (20 streams), but long enough to cover possible load peaks
     # "$@" left to pass manual options (like --experimental_use_processors 0) during manual testing
 
-    timeout 10s ${CLICKHOUSE_CLIENT} "${opts[@]}" "$@" && break
+    clickhouse_client_timeout 10s ${CLICKHOUSE_CLIENT} "${opts[@]}" "$@" && break
     ((++i))
 done

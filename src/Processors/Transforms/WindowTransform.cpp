@@ -488,7 +488,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset)
         }
     }
 
-    return std::tuple{x, offset};
+    return std::tuple<RowNumber, int64_t>{x, offset};
 }
 
 auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
@@ -505,7 +505,7 @@ auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
     assert(oo == 0);
 #endif
 
-    return std::tuple{x, o};
+    return std::tuple<RowNumber, int64_t>{x, o};
 }
 
 
@@ -1999,7 +1999,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        const auto supertype = getLeastSupertype({argument_types[0], argument_types[2]});
+        const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
         if (!supertype)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

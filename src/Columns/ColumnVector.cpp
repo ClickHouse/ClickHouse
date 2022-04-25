@@ -228,7 +228,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
             if (s >= 256 && s <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
                 PaddedPODArray<ValueWithIndex<T>> pairs(s);
-                for (UInt32 i = 0; i < UInt32(s); ++i)
+                for (UInt32 i = 0; i < static_cast<UInt32>(s); ++i)
                     pairs[i] = {data[i], i};
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, reverse, res.data());
@@ -381,7 +381,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 {
     size_t size = data.size();
     if (size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     auto res = this->create();
     Container & res_data = res->getData();
@@ -450,7 +450,7 @@ void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
 {
     size_t size = data.size();
     if (size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;

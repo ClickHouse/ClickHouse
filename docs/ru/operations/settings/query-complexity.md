@@ -1,6 +1,6 @@
 ---
-toc_priority: 59
-toc_title: "Ограничения на сложность запроса"
+sidebar_position: 59
+sidebar_label: "Ограничения на сложность запроса"
 ---
 
 # Ограничения на сложность запроса {#restrictions-on-query-complexity}

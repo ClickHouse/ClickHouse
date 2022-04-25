@@ -423,6 +423,10 @@ void ColumnArray::reserve(size_t n)
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
 }
 
+void ColumnArray::ensureOwnership()
+{
+    getData().ensureOwnership();
+}
 
 size_t ColumnArray::byteSize() const
 {
@@ -604,7 +608,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
 {
     size_t col_size = getOffsets().size();
     if (col_size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
 
     if (0 == col_size)
         return ColumnArray::create(data);
@@ -672,7 +676,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
 {
     size_t size = getOffsets().size();
     if (size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     if (size == 0)
         return ColumnArray::create(data);
@@ -1183,6 +1187,14 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
 void ColumnArray::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
+}
+
+size_t ColumnArray::getNumberOfDimensions() const
+{
+    const auto * nested_array = checkAndGetColumn<ColumnArray>(*data);
+    if (!nested_array)
+        return 1;
+    return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
 }

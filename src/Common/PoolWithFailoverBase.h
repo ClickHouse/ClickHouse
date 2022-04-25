@@ -395,8 +395,8 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
 
         if (delta >= 0)
         {
-            const UInt64 MAX_BITS = sizeof(UInt64) * CHAR_BIT;
-            size_t shift_amount = MAX_BITS;
+            const UInt64 max_bits = sizeof(UInt64) * CHAR_BIT;
+            size_t shift_amount = max_bits;
             /// Divide error counts by 2 every decrease_error_period seconds.
             if (decrease_error_period)
                 shift_amount = delta / decrease_error_period;
@@ -405,7 +405,7 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
             if (shift_amount)
                 last_decrease_time = current_time;
 
-            if (shift_amount >= MAX_BITS)
+            if (shift_amount >= max_bits)
             {
                 for (auto & state : states)
                 {

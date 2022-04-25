@@ -146,7 +146,6 @@ private:
     /// Clean useless log files in a background thread
     void cleanLogThread();
 
-private:
     const std::string changelogs_dir;
     const uint64_t rotate_interval;
     const bool force_sync;
