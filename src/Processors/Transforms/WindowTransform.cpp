@@ -1,4 +1,3 @@
-#include <cstdint>
 #include <Processors/Transforms/WindowTransform.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
