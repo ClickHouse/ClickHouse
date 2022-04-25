@@ -75,7 +75,7 @@ private:
         writeChar(':', out);
         writeIntText(location.line, out);
 
-        if (frame)
+        if (frame && frame->name != nullptr)
         {
             writeChar(':', out);
             int status = 0;

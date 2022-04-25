@@ -127,8 +127,8 @@ public:
     using Container = PaddedPODArray<ValueType>;
 
 private:
-    ColumnVector() {}
-    ColumnVector(const size_t n) : data(n) {}
+    ColumnVector() = default;
+    explicit ColumnVector(const size_t n) : data(n) {}
     ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
 

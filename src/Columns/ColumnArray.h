@@ -60,7 +60,8 @@ public:
         return ColumnArray::create(nested_column->assumeMutable());
     }
 
-    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
+    template <typename ... Args>
+    requires (IsMutableColumns<Args ...>::value)
     static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
 
     /** On the index i there is an offset to the beginning of the i + 1 -th element. */
@@ -107,6 +108,7 @@ public:
     void updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
+    void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
@@ -157,7 +159,7 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (auto rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
+        if (const auto * rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
             return data->structureEquals(*rhs_concrete->data);
         return false;
     }
@@ -167,6 +169,8 @@ public:
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
+
+    size_t getNumberOfDimensions() const;
 
 private:
     WrappedPtr data;

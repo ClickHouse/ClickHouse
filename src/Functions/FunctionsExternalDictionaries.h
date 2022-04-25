@@ -195,7 +195,7 @@ public:
           *  that is the initiator of a distributed query,
           *  in the case when the function will be invoked for real data only at the remote servers.
           * This feature is controversial and implemented specially
-          *  for backward compatibility with the case in Yandex Banner System.
+          *  for backward compatibility with the case in the Banner System application.
           */
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -897,7 +897,9 @@ private:
                 result = std::move(dictionary_get_result_column);
             }
             else
-                result = ColumnNullable::create(std::move(dictionary_get_result_column), std::move(is_key_in_dictionary_column_mutable));
+            {
+                result = ColumnNullable::create(dictionary_get_result_column, std::move(is_key_in_dictionary_column_mutable));
+            }
         }
 
         return result;

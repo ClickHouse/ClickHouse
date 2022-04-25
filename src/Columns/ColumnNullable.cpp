@@ -545,6 +545,11 @@ void ColumnNullable::reserve(size_t n)
     getNullMapData().reserve(n);
 }
 
+void ColumnNullable::ensureOwnership()
+{
+    getNestedColumn().ensureOwnership();
+}
+
 size_t ColumnNullable::byteSize() const
 {
     return getNestedColumn().byteSize() + getNullMapColumn().byteSize();

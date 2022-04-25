@@ -26,6 +26,9 @@ public:
         OpenMode open_mode = OpenMode::WRITE;
         BackupInfo backup_info;
         std::optional<BackupInfo> base_backup_info;
+        String compression_method;
+        int compression_level = -1;
+        String password;
         ContextPtr context;
     };
 

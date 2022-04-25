@@ -1,6 +1,6 @@
 ---
-toc_priority: 50
-toc_title: cluster
+sidebar_position: 50
+sidebar_label: cluster
 ---
 
 # cluster, clusterAllReplicas {#cluster-clusterallreplicas}
@@ -9,8 +9,9 @@ Allows to access all shards in an existing cluster which configured in `remote_s
 
 `clusterAllReplicas` function — same as `cluster`, but all replicas are queried. Each replica in a cluster is used as a separate shard/connection.
 
-!!! note "Note"
-    All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
+:::note    
+All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
+:::
 
 **Syntax**
 

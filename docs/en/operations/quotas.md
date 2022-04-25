@@ -1,6 +1,6 @@
 ---
-toc_priority: 51
-toc_title: Quotas
+sidebar_position: 51
+sidebar_label: Quotas
 ---
 
 # Quotas {#quotas}

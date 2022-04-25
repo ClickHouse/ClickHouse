@@ -85,7 +85,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
@@ -135,7 +135,7 @@ protected:
 
 private:
     static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
-            const String name, const String type, UInt64 default_value);
+            String name, String type, UInt64 default_value);
 
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 

@@ -229,6 +229,11 @@ void ColumnMap::reserve(size_t n)
     nested->reserve(n);
 }
 
+void ColumnMap::ensureOwnership()
+{
+    nested->ensureOwnership();
+}
+
 size_t ColumnMap::byteSize() const
 {
     return nested->byteSize();

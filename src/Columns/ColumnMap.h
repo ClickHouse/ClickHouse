@@ -36,7 +36,8 @@ public:
     static Ptr create(const ColumnPtr & column) { return ColumnMap::create(column->assumeMutable()); }
     static Ptr create(ColumnPtr && arg) { return create(arg); }
 
-    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
+    template <typename ... Args>
+    requires (IsMutableColumns<Args ...>::value)
     static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
 
     std::string getName() const override;
@@ -82,6 +83,7 @@ public:
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
     void reserve(size_t n) override;
+    void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;

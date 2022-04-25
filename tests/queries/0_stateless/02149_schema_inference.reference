@@ -1,17 +1,17 @@
 TSV
-c1	Nullable(String)					
+c1	Nullable(Float64)					
 c2	Nullable(String)					
-c3	Nullable(String)					
-c4	Nullable(String)					
-42	Some string	[1, 2, 3, 4]	(1, 2, 3)
-42	abcd	[]	(4, 5, 6)
+c3	Array(Nullable(Float64))					
+c4	Tuple(Nullable(Float64), Nullable(Float64), Nullable(Float64))					
+42	Some string	[1,2,3,4]	(1,2,3)
+42	abcd	[]	(4,5,6)
 TSVWithNames
-number	Nullable(String)					
+number	Nullable(Float64)					
 string	Nullable(String)					
-array	Nullable(String)					
-tuple	Nullable(String)					
-42	Some string	[1, 2, 3, 4]	(1, 2, 3)
-42	abcd	[]	(4, 5, 6)
+array	Array(Nullable(Float64))					
+tuple	Tuple(Nullable(Float64), Nullable(Float64), Nullable(Float64))					
+42	Some string	[1,2,3,4]	(1,2,3)
+42	abcd	[]	(4,5,6)
 CSV
 c1	Nullable(Float64)					
 c2	Nullable(String)					
@@ -38,49 +38,49 @@ JSONCompactEachRow
 c1	Nullable(Float64)					
 c2	Array(Tuple(Nullable(Float64), Nullable(String)))					
 c3	Map(String, Nullable(Float64))					
-c4	Nullable(UInt8)					
-42.42	[(1,'String'),(2,'abcd')]	{'key':42,'key2':24}	1
+c4	Nullable(Bool)					
+42.42	[(1,'String'),(2,'abcd')]	{'key':42,'key2':24}	true
 c1	Nullable(Float64)					
 c2	Array(Tuple(Nullable(Float64), Nullable(String)))					
 c3	Map(String, Nullable(Float64))					
-c4	Nullable(UInt8)					
+c4	Nullable(Bool)					
 \N	[(1,'String'),(2,NULL)]	{'key':NULL,'key2':24}	\N
-32	[(2,'String 2'),(3,'hello')]	{'key3':4242,'key4':2424}	1
+32	[(2,'String 2'),(3,'hello')]	{'key3':4242,'key4':2424}	true
 JSONCompactEachRowWithNames
 a	Nullable(Float64)					
 b	Array(Tuple(Nullable(Float64), Nullable(String)))					
 c	Map(String, Nullable(Float64))					
-d	Nullable(UInt8)					
-42.42	[(1,'String'),(2,'abcd')]	{'key':42,'key2':24}	1
+d	Nullable(Bool)					
+42.42	[(1,'String'),(2,'abcd')]	{'key':42,'key2':24}	true
 JSONEachRow
-d	Nullable(UInt8)					
+a	Nullable(Float64)					
 b	Array(Tuple(Nullable(Float64), Nullable(String)))					
 c	Map(String, Nullable(Float64))					
+d	Nullable(Bool)					
+42.42	[(1,'String'),(2,'abcd')]	{'key':42,'key2':24}	true
 a	Nullable(Float64)					
-1	[(1,'String'),(2,'abcd')]	{'key':42,'key2':24}	42.42
-d	Nullable(UInt8)					
 b	Array(Tuple(Nullable(Float64), Nullable(String)))					
 c	Map(String, Nullable(Float64))					
-a	Nullable(Float64)					
+d	Nullable(Bool)					
 \N	[(1,'String'),(2,NULL)]	{'key':NULL,'key2':24}	\N
-1	[(2,'String 2'),(3,'hello')]	{'key3':4242,'key4':2424}	32
+32	[(2,'String 2'),(3,'hello')]	{'key3':4242,'key4':2424}	true
+a	Nullable(Float64)					
 b	Nullable(String)					
 c	Array(Nullable(Float64))					
-a	Nullable(Float64)					
-s1	[]	1
-\N	[2]	2
-\N	[]	\N
-\N	[]	\N
-\N	[3]	\N
+1	s1	[]
+2	\N	[2]
+\N	\N	[]
+\N	\N	[]
+\N	\N	[3]
 TSKV
+a	Nullable(Float64)					
 b	Nullable(String)					
-c	Nullable(String)					
-a	Nullable(String)					
-s1	\N	1
-}	[2]	2
-\N	\N	\N
-\N	\N	\N
-\N	[3]	\N
+c	Array(Nullable(Float64))					
+1	s1	[]
+2	}	[2]
+\N	\N	[]
+\N	\N	[]
+\N	\N	[3]
 Values
 c1	Nullable(Float64)					
 c2	Nullable(String)					
@@ -96,7 +96,7 @@ c5	Tuple(Array(Nullable(Float64)), Array(Tuple(Nullable(Float64), Nullable(Strin
 42.42	\N	[1,NULL,3]	(1,NULL)	([1,2],[(3,'4'),(5,'6')])
 \N	Some string	[10]	(1,2)	([],[])
 Regexp
-c1	Nullable(String)					
+c1	Nullable(Float64)					
 c2	Nullable(String)					
 c3	Nullable(String)					
 42	Some string 1	[([1, 2, 3], String 1), ([], String 1)]

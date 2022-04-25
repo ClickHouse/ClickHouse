@@ -1,12 +1,14 @@
+SET log_queries = 1;
+
 DROP TABLE IF EXISTS t_async_insert_02193_1;
 
 CREATE TABLE t_async_insert_02193_1 (id UInt32, s String) ENGINE = Memory;
 
-INSERT INTO t_async_insert_02193_1 FORMAT CSV SETTINGS async_insert = 1
+INSERT INTO t_async_insert_02193_1 SETTINGS async_insert = 1 FORMAT CSV
 1,aaa
 ;
 
-INSERT INTO t_async_insert_02193_1 FORMAT Values SETTINGS async_insert = 1 (2, 'bbb');
+INSERT INTO t_async_insert_02193_1 SETTINGS async_insert = 1 FORMAT Values (2, 'bbb');
 
 SET async_insert = 1;
 

@@ -1,6 +1,6 @@
 ---
-toc_priority: 31
-toc_title: "Синтаксис"
+sidebar_position: 31
+sidebar_label: "Синтаксис"
 ---
 
 # Синтаксис {#syntax}
@@ -150,7 +150,7 @@ expr AS alias
 
         Например, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-        В функции [CAST](../sql_reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
+        В функции [CAST](../sql-reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
 
 -   `expr` — любое выражение, которое поддерживает ClickHouse.
 
