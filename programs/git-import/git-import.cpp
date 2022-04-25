@@ -1231,5 +1231,5 @@ try
 catch (...)
 {
     std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
-    throw;
+    return DB::getCurrentExceptionCode();
 }

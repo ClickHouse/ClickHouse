@@ -9,6 +9,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -134,7 +135,8 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
 
 static bool needVisitChild(const ASTPtr & child)
 {
-    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>());
+    /// exclude interpolate elements - they are not subject for normalization and will be processed in filling transform
+    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>() || child->as<ASTInterpolateElement>());
 }
 
 /// special visitChildren() for ASTSelectQuery

@@ -53,7 +53,7 @@ String Range::toString() const
 
 
 /// Example: for `Hello\_World% ...` string it returns `Hello_World`, and for `%test%` returns an empty string.
-static String extractFixedPrefixFromLikePattern(const String & like_pattern)
+String extractFixedPrefixFromLikePattern(const String & like_pattern)
 {
     String fixed_prefix;
 

@@ -214,10 +214,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskRestartProxy::readFile(
     return std::make_unique<RestartAwareReadBuffer>(*this, std::move(impl));
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskRestartProxy::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskRestartProxy::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
 {
     ReadLock lock (mutex);
-    auto impl = DiskDecorator::writeFile(path, buf_size, mode);
+    auto impl = DiskDecorator::writeFile(path, buf_size, mode, settings);
     return std::make_unique<RestartAwareWriteBuffer>(*this, std::move(impl));
 }
 
@@ -303,6 +303,24 @@ bool DiskRestartProxy::checkUniqueId(const String & id) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::checkUniqueId(id);
+}
+
+String DiskRestartProxy::getCacheBasePath() const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getCacheBasePath();
+}
+
+std::vector<String> DiskRestartProxy::getRemotePaths(const String & path) const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getRemotePaths(path);
+}
+
+void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getRemotePathsRecursive(path, paths_map);
 }
 
 void DiskRestartProxy::restart()

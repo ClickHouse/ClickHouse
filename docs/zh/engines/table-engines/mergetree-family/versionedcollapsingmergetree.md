@@ -8,7 +8,7 @@ toc_title: "版本折叠MergeTree"
 这个引擎:
 
 -   允许快速写入不断变化的对象状态。
--   删除后台中的旧对象状态。 这显着降低了存储体积。
+-   删除后台中的旧对象状态。 这显著降低了存储体积。
 
 请参阅部分 [崩溃](#table_engines_versionedcollapsingmergetree) 有关详细信息。
 

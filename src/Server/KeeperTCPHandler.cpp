@@ -171,7 +171,7 @@ struct SocketInterruptablePollWrapper
 
             if (rc >= 1 && poll_buf[0].revents & POLLIN)
                 socket_ready = true;
-            if (rc >= 1 && poll_buf[1].revents & POLLIN)
+            if (rc >= 2 && poll_buf[1].revents & POLLIN)
                 fd_ready = true;
 #endif
         }
@@ -415,6 +415,13 @@ void KeeperTCPHandler::runImpl()
             log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
+                if (in->eof())
+                {
+                    LOG_DEBUG(log, "Client closed connection, session id #{}", session_id);
+                    keeper_dispatcher->finishSession(session_id);
+                    break;
+                }
+
                 auto [received_op, received_xid] = receiveRequest();
                 packageReceived();
                 log_long_operation("Receiving request");

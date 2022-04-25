@@ -922,7 +922,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP);
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
     std::optional<CurrentThread::QueryScope> query_scope;
 

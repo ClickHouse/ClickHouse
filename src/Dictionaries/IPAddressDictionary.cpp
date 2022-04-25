@@ -288,8 +288,8 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
 {
     validateKeyTypes(key_types);
 
-    const auto first_column = key_columns.front();
-    const auto rows = first_column->size();
+    const auto & first_column = key_columns.front();
+    const size_t rows = first_column->size();
 
     auto result = ColumnUInt8::create(rows);
     auto & out = result->getData();
@@ -613,8 +613,8 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
-    const auto first_column = key_columns.front();
-    const auto rows = first_column->size();
+    const auto & first_column = key_columns.front();
+    const size_t rows = first_column->size();
     auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
 
     if (const auto * ipv4_col = std::get_if<IPv4Container>(&ip_column))
@@ -694,8 +694,8 @@ void IPAddressDictionary::getItemsImpl(
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
-    const auto first_column = key_columns.front();
-    const auto rows = first_column->size();
+    const auto & first_column = key_columns.front();
+    const size_t rows = first_column->size();
 
     // special case for getBlockInputStream
     if (unlikely(key_columns.size() == 2))

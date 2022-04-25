@@ -473,17 +473,10 @@ else ()
     if (INSTALL_STRIPPED_BINARIES)
         clickhouse_strip_binary(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${STRIPPED_BINARIES_OUTPUT} BINARY_PATH clickhouse)
     else()
+        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${STRIPPED_BINARIES_OUTPUT})
         install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif()
 endif()
-
-if (NOT INSTALL_STRIPPED_BINARIES)
-    # Install dunny debug directory
-    # TODO: move logic to every place where clickhouse_strip_binary is used
-    add_custom_command(TARGET clickhouse POST_BUILD COMMAND echo > .empty )
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/.empty" DESTINATION ${CMAKE_INSTALL_LIBDIR}/debug/.empty)
-endif()
-
 
 if (ENABLE_TESTS)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)

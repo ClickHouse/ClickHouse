@@ -4,12 +4,12 @@ SELECT
     firstSignificantSubdomain('http://pochemu.net-domena.ru') AS why;
 
 SELECT
-    firstSignificantSubdomain('ftp://www.yandex.com.tr/news.html'),
-    firstSignificantSubdomain('https://www.yandex.ua/news.html'),
-    firstSignificantSubdomain('magnet:yandex.abc'),
-    firstSignificantSubdomain('ftp://www.yandex.co.uk/news.html'),
-    firstSignificantSubdomain('https://api.www3.static.dev.ввв.яндекс.рф'),
-    firstSignificantSubdomain('//www.yandex.com.tr/news.html');
+    firstSignificantSubdomain('ftp://www.meta.com.ua/news.html'),
+    firstSignificantSubdomain('https://www.bigmir.net/news.html'),
+    firstSignificantSubdomain('magnet:ukr.abc'),
+    firstSignificantSubdomain('ftp://www.yahoo.co.jp/news.html'),
+    firstSignificantSubdomain('https://api.www3.static.dev.ввв.гугл.ком'),
+    firstSignificantSubdomain('//www.meta.com.ua/news.html');
 
 SELECT
     firstSignificantSubdomain('http://hello.canada.c'),

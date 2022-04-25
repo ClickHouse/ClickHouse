@@ -227,7 +227,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         future_merged_part,
         settings);
 
-    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
+    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
@@ -241,7 +241,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,
-            storage.merging_params);
+            storage.merging_params,
+            NO_TRANSACTION_PTR);
 
 
     /// Adjust priority
@@ -264,7 +265,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// Task is not needed
     merge_task.reset();
 
-    storage.merger_mutator.renameMergedTemporaryPart(part, parts, transaction_ptr.get());
+    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, transaction_ptr.get());
 
     try
     {
@@ -279,14 +280,17 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
             LOG_ERROR(log,
-                "{}. Data after merge is not byte-identical to data on another replicas. There could be several"
-                " reasons: 1. Using newer version of compression library after server update. 2. Using another"
-                " compression method. 3. Non-deterministic compression algorithm (highly unlikely). 4."
-                " Non-deterministic merge algorithm due to logical error in code. 5. Data corruption in memory due"
-                " to bug in code. 6. Data corruption in memory due to hardware issue. 7. Manual modification of"
-                " source data after server startup. 8. Manual modification of checksums stored in ZooKeeper. 9."
-                " Part format related settings like 'enable_mixed_granularity_parts' are different on different"
-                " replicas. We will download merged part from replica to force byte-identical result.",
+                "{}. Data after merge is not byte-identical to data on another replicas. There could be several reasons:"
+                " 1. Using newer version of compression library after server update."
+                " 2. Using another compression method."
+                " 3. Non-deterministic compression algorithm (highly unlikely)."
+                " 4. Non-deterministic merge algorithm due to logical error in code."
+                " 5. Data corruption in memory due to bug in code."
+                " 6. Data corruption in memory due to hardware issue."
+                " 7. Manual modification of source data after server startup."
+                " 8. Manual modification of checksums stored in ZooKeeper."
+                " 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas."
+                " We will download merged part from replica to force byte-identical result.",
                 getCurrentExceptionMessage(false));
 
             write_part_log(ExecutionStatus::fromCurrentException());

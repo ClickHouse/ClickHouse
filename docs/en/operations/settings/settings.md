@@ -519,6 +519,33 @@ Possible values:
 
 Default value: `1`.
 
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
+
+Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
+
+Example:
+
+```sql
+INSERT INTO FUNCTION null('foo String') SETTINGS max_threads=1 VALUES ('bar');
+```
+
+But the following query will work only with `allow_settings_after_format_in_insert`:
+
+```sql
+SET allow_settings_after_format_in_insert=1;
+INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
+```
+
+Possible values:
+
+-   0 — Disallow.
+-   1 — Allow.
+
+Default value: `0`.
+
+!!! note "Warning"
+    Use this setting only for backward compatibility if your use cases depend on old syntax.
+
 ## input_format_skip_unknown_fields {#settings-input-format-skip-unknown-fields}
 
 Enables or disables skipping insertion of extra data.
@@ -1061,6 +1088,15 @@ Result:
 │ QueryFinish │ SELECT 1; │
 └─────────────┴───────────┘
 ```
+
+## log_processors_profiles {#settings-log_processors_profiles}
+
+Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
+
+See also:
+
+-   [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
+-   [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
 
 ## max_insert_block_size {#settings-max_insert_block_size}
 
@@ -4220,10 +4256,36 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled. The wait time equal shutdown_wait_unfinished config.
 
-Default value: 0.
+Default value: `0`.
 
 ## shutdown_wait_unfinished
 
 The waiting time in seconds for currently handled connections when shutdown server.
 
-Default Value: 5.
+Default Value: `5`.
+
+## max_guaranteed_memory_usage
+
+Maximum guaranteed memory usage for processing of single query.
+It represents soft limit in case when hard limit is reached on user level.
+Zero means unlimited.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `0`.
+
+## memory_usage_overcommit_max_wait_microseconds
+
+Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
+If the timeout is reached and memory is not freed, an exception is thrown.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `0`.
+
+## max_guaranteed_memory_usage_for_user
+
+Maximum guaranteed memory usage for processing all concurrently running queries for the user.
+It represents soft limit in case when hard limit is reached on global level.
+Zero means unlimited.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `0`.

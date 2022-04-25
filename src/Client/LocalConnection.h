@@ -47,6 +47,7 @@ struct LocalQueryState
     bool sent_extremes = false;
     bool sent_progress = false;
     bool sent_profile_info = false;
+    bool sent_profile_events = false;
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;

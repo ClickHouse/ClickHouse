@@ -335,7 +335,11 @@ const ProjectionDescription & ProjectionsDescription::get(const String & project
 {
     auto it = map.find(projection_name);
     if (it == map.end())
-        throw Exception("There is no projection " + projection_name + " in table", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+    {
+        String exception_message = fmt::format("There is no projection {} in table", projection_name);
+        appendHintsMessage(exception_message, projection_name);
+        throw Exception(exception_message, ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+    }
 
     return *(it->second);
 }
@@ -376,11 +380,23 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     {
         if (if_exists)
             return;
-        throw Exception("There is no projection " + projection_name + " in table.", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+
+        String exception_message = fmt::format("There is no projection {} in table", projection_name);
+        appendHintsMessage(exception_message, projection_name);
+        throw Exception(exception_message, ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
     }
 
     projections.erase(it->second);
     map.erase(it);
+}
+
+std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
+{
+    std::vector<String> names;
+    names.reserve(map.size());
+    for (const auto & pair : map)
+        names.push_back(pair.first);
+    return names;
 }
 
 ExpressionActionsPtr

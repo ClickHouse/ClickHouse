@@ -98,8 +98,6 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
     /// Skip prefix before names and types.
     format_reader->skipPrefixBeforeHeader();
 
-    /// This is a bit of abstraction leakage, but we need it in parallel parsing:
-    /// we check if this InputFormat is working with the "real" beginning of the data.
     if (with_names)
     {
         if (format_settings.with_names_use_header)
@@ -295,12 +293,13 @@ void RowInputFormatWithNamesAndTypes::setReadBuffer(ReadBuffer & in_)
 
 FormatWithNamesAndTypesSchemaReader::FormatWithNamesAndTypesSchemaReader(
     ReadBuffer & in_,
-    size_t max_rows_to_read_,
+    const FormatSettings & format_settings,
     bool with_names_,
     bool with_types_,
     FormatWithNamesAndTypesReader * format_reader_,
-    DataTypePtr default_type_)
-    : IRowSchemaReader(in_, max_rows_to_read_, default_type_), with_names(with_names_), with_types(with_types_), format_reader(format_reader_)
+    DataTypePtr default_type_,
+    bool allow_bools_as_numbers_)
+    : IRowSchemaReader(in_, format_settings, default_type_, allow_bools_as_numbers_), with_names(with_names_), with_types(with_types_), format_reader(format_reader_)
 {
 }
 

@@ -48,7 +48,7 @@ public:
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override;
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
@@ -63,6 +63,9 @@ public:
     void truncateFile(const String & path, size_t size) override;
     String getUniqueId(const String & path) const override;
     bool checkUniqueId(const String & id) const override;
+    String getCacheBasePath() const override;
+    std::vector<String> getRemotePaths(const String & path) const override;
+    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 
     void restart();
 

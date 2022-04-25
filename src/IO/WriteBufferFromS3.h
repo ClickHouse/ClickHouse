@@ -4,16 +4,20 @@
 
 #if USE_AWS_S3
 
-#    include <memory>
-#    include <vector>
-#    include <list>
-#    include <base/logger_useful.h>
-#    include <base/types.h>
+#include <memory>
+#include <vector>
+#include <list>
+#include <base/logger_useful.h>
+#include <base/types.h>
 
-#    include <IO/BufferWithOwnMemory.h>
-#    include <IO/WriteBuffer.h>
+#include <Common/ThreadPool.h>
+#include <Common/FileCache_fwd.h>
+#include <Common/FileSegment.h>
 
-#    include <aws/core/utils/memory/stl/AWSStringStream.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/WriteBuffer.h>
+
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
 
 namespace Aws::S3
 {
@@ -30,6 +34,7 @@ namespace DB
 {
 
 using ScheduleFunc = std::function<void(std::function<void()>)>;
+class WriteBufferFromFile;
 
 /**
  * Buffer to write a data to a S3 object with specified bucket and key.
@@ -51,7 +56,9 @@ public:
         size_t max_single_part_upload_size_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ScheduleFunc schedule_ = {});
+        ScheduleFunc schedule_ = {},
+        const String & blob_name = "",
+        FileCachePtr cache_ = nullptr);
 
     ~WriteBufferFromS3() override;
 
@@ -81,6 +88,8 @@ private:
 
     void waitForReadyBackGroundTasks();
     void waitForAllBackGroundTasks();
+
+    bool cacheEnabled() const;
 
     String bucket;
     String key;
@@ -113,6 +122,12 @@ private:
     std::condition_variable bg_tasks_condvar;
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
+
+    const String blob_name;
+    FileCachePtr cache;
+    size_t current_download_offset = 0;
+    std::optional<FileSegmentsHolder> file_segments_holder;
+    static void finalizeCacheIfNeeded(std::optional<FileSegmentsHolder> &);
 };
 
 }
