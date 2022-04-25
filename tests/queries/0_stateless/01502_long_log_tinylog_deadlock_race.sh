@@ -88,3 +88,5 @@ test_with_engine Log
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t2"
+
+clickhouse_test_wait_queries 60
