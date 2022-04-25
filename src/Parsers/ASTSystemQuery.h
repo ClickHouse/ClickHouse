@@ -90,7 +90,7 @@ public:
     String disk;
     UInt64 seconds{};
 
-    /// Values for `drop fileystem cache` system query.
+    /// Values for `drop filesystem cache` system query.
     String filesystem_cache_path;
     bool force_removal = false;
 
