@@ -123,7 +123,7 @@ int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, const SortCursorImp
 
 bool ALWAYS_INLINE totallyLess(SortCursorImpl & lhs, SortCursorImpl & rhs)
 {
-    /// The last row of this cursor is no larger than the first row of the another cursor.
+    /// The last row of left cursor is less than the current row of the right cursor.
     int cmp = compareCursors(lhs, lhs.rows - 1, rhs, rhs.getRow());
     return cmp < 0;
 }
@@ -159,9 +159,9 @@ void addIndexColumn(const Columns & columns, ColumnUInt64 & indices, Chunk & res
     }
 }
 
-bool sameNext(const SortCursorImpl & impl)
+bool sameNext(const SortCursorImpl & impl, std::optional<size_t> pos_opt = {})
 {
-    size_t pos = impl.getRow();
+    size_t pos = pos_opt.value_or(impl.getRow());
     for (size_t i = 0; i < impl.sort_columns_size; ++i)
     {
         const auto & col = *impl.sort_columns[i];
@@ -188,57 +188,50 @@ size_t nextDistinct(SortCursorImpl & impl)
 
 }
 
-FullMergeJoinCursor::CursorWithBlock & FullMergeJoinCursor::getCurrent()
+const Chunk & FullMergeJoinCursor::getCurrent() const
 {
-    while (current != inputs.end() && !current->cursor.isValid())
-        current++;
-
-    return current != inputs.end() ? *current : empty_cursor;
+    return current_chunk;
 }
 
-void FullMergeJoinCursor::addChunk(Chunk && chunk)
+Chunk FullMergeJoinCursor::detach()
+{
+    cursor = SortCursorImpl();
+    return std::move(current_chunk);
+}
+
+void FullMergeJoinCursor::setChunk(Chunk && chunk)
 {
     assert(!recieved_all_blocks);
     if (!chunk)
     {
         recieved_all_blocks = true;
+        detach();
         return;
     }
 
-    dropBlocksUntilCurrent();
-    inputs.emplace_back(sample_block, desc, std::move(chunk));
-
-    if (current == inputs.end())
-    {
-        current = std::prev(inputs.end());
-    }
+    current_chunk = std::move(chunk);
+    cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), desc);
 }
 
-void FullMergeJoinCursor::dropBlocksUntilCurrent()
+bool FullMergeJoinCursor::fullyCompleted() const
 {
-    while (current != inputs.end() && !current->cursor.isValid())
-        current++;
-
-    inputs.erase(inputs.begin(), current);
-}
-
-bool FullMergeJoinCursor::fullyCompleted()
-{
-    return !getCurrent()->isValid() && recieved_all_blocks;
+    return !cursor.isValid() && recieved_all_blocks;
 }
 
 MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinPtr table_join_,
-    const Blocks & input_headers)
+    const Blocks & input_headers,
+    size_t max_block_size_)
     : table_join(table_join_)
+    , max_block_size(max_block_size_)
     , log(&Poco::Logger::get("MergeJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
         throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
 
     auto strictness = table_join->getTableJoin().strictness();
-    if (strictness != ASTTableJoin::Strictness::Any)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for strictness != ANY");
+    if (strictness != ASTTableJoin::Strictness::Any && strictness != ASTTableJoin::Strictness::All)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for strictness {}", strictness);
 
     auto kind = table_join->getTableJoin().kind();
     if (!isInner(kind) && !isLeft(kind) && !isRight(kind) && !isFull(kind))
@@ -250,13 +243,13 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     cursors.push_back(createCursor(input_headers[1], join_on.key_names_right));
 }
 
-
-static ColumnPtr replicateRow(const IColumn & column, size_t num)
+static ColumnPtr replicateRow(const IColumn & column, size_t pos, size_t num)
 {
-    assert(column.size() == 1);
     MutableColumnPtr res = column.cloneEmpty();
-    res->insertManyFrom(column, 0, num);
-    return std::move(res);
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} replicateRow {} | {} | {}", __FILE__, __LINE__, column.dumpStructure(), pos, num);
+    res->insertManyFrom(column, pos, num);
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} replicateRow >>> {} | {} | {}", __FILE__, __LINE__, res->dumpStructure(), pos, num);
+    return res;
 }
 
 static void copyColumnsResized(const Chunk & chunk, size_t start, size_t size, Chunk & result_chunk)
@@ -266,14 +259,17 @@ static void copyColumnsResized(const Chunk & chunk, size_t start, size_t size, C
     {
         if (col->empty())
         {
+            /// add defaults
             result_chunk.addColumn(col->cloneResized(size));
         }
         else if (col->size() == 1)
         {
-            result_chunk.addColumn(replicateRow(*col, size));
+            /// copy same row n times
+            result_chunk.addColumn(replicateRow(*col, 0, size));
         }
         else
         {
+            /// cut column
             assert(start + size <= col->size());
             result_chunk.addColumn(col->cut(start, size));
         }
@@ -288,14 +284,14 @@ static Chunk createBlockWithDefaults(const Chunk & lhs, const Chunk & rhs, size_
     return result;
 }
 
-static Chunk createBlockWithDefaults(const Chunk & lhs, FullMergeJoinCursor::CursorWithBlock & rhs)
+static Chunk createBlockWithDefaults(const Chunk & lhs, FullMergeJoinCursor & rhs)
 {
     size_t start = rhs->getRow();
     size_t num_rows = rhs->rowsLeft();
     return createBlockWithDefaults(lhs, rhs.detach(), start, num_rows);
 }
 
-static Chunk createBlockWithDefaults(FullMergeJoinCursor::CursorWithBlock & lhs, const Chunk & rhs)
+static Chunk createBlockWithDefaults(FullMergeJoinCursor & lhs, const Chunk & rhs)
 {
     size_t start = lhs->getRow();
     size_t num_rows = lhs->rowsLeft();
@@ -349,7 +345,9 @@ void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
     }
 
     prepareChunk(input.chunk);
-    cursors[source_num]->addChunk(std::move(input.chunk));
+    cursors[source_num]->setChunk(std::move(input.chunk));
+
+    // stat.max_blocks_loaded = std::max(stat.max_blocks_loaded, std::max(cursors[0]->blocksCount(), cursors[1]->blocksCount()));
 }
 
 static Chunk getRowFromChunk(const Chunk & chunk, size_t pos)
@@ -359,11 +357,192 @@ static Chunk getRowFromChunk(const Chunk & chunk, size_t pos)
     return result;
 }
 
+static void ALWAYS_INLINE addRange(PaddedPODArray<UInt64> & left_map, size_t start, size_t end)
+{
+    assert(end > start);
+    for (size_t i = start; i < end; ++i)
+        left_map.push_back(i);
+}
+
+static void ALWAYS_INLINE addMany(PaddedPODArray<UInt64> & left_map, size_t idx, size_t num)
+{
+    for (size_t i = 0; i < num; ++i)
+        left_map.push_back(idx);
+}
+
 template <JoinKind kind>
-static std::unique_ptr<AnyJoinState> anyJoinImpl(FullMergeJoinCursor::CursorWithBlock & left_cursor,
-                                                 FullMergeJoinCursor::CursorWithBlock & right_cursor,
-                                                 PaddedPODArray<UInt64> & left_map,
-                                                 PaddedPODArray<UInt64> & right_map)
+struct AllJoinImpl
+{
+    constexpr static bool enabled = isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind);
+
+    static void join(FullMergeJoinCursor & left_cursor,
+                     FullMergeJoinCursor & right_cursor,
+                     size_t max_block_size,
+                     PaddedPODArray<UInt64> & left_map,
+                     PaddedPODArray<UInt64> & right_map,
+                     std::unique_ptr<AllJoinState> & state)
+    {
+        size_t num_rows = isLeft(kind) ? left_cursor->rowsLeft() :
+                        isRight(kind) ? right_cursor->rowsLeft() :
+                        std::min(left_cursor->rowsLeft(), right_cursor->rowsLeft());
+
+        if constexpr (isLeft(kind) || isInner(kind))
+            right_map.reserve(num_rows);
+
+        if constexpr (isRight(kind) || isInner(kind))
+            left_map.reserve(num_rows);
+
+        size_t rpos = std::numeric_limits<size_t>::max();
+        size_t lpos = std::numeric_limits<size_t>::max();
+        int cmp = 0;
+        assert(left_cursor->isValid() && right_cursor->isValid());
+        while (left_cursor->isValid() && right_cursor->isValid())
+        {
+            lpos = left_cursor->getRow();
+            rpos = right_cursor->getRow();
+
+            cmp = compareCursors(left_cursor.cursor, right_cursor.cursor);
+            if (cmp == 0)
+            {
+                size_t lnum = nextDistinct(left_cursor.cursor);
+                size_t rnum = nextDistinct(right_cursor.cursor);
+
+                bool all_fit_in_block = std::max(left_map.size(), right_map.size()) + lnum * rnum <= max_block_size;
+                bool have_all_ranges = left_cursor.cursor.isValid() && right_cursor.cursor.isValid();
+                if (all_fit_in_block && have_all_ranges)
+                {
+                    /// fast path if all joined rows fit in one block
+                    for (size_t i = 0; i < rnum; ++i)
+                    {
+                        addRange(left_map, lpos, left_cursor.cursor.getRow());
+                        addMany(right_map, rpos + i, lnum);
+                    }
+                }
+                else
+                {
+                    state = std::make_unique<AllJoinState>(left_cursor.cursor, lpos, right_cursor.cursor, rpos);
+                    state->addRange(0, left_cursor.getCurrent().clone(), lpos, lnum);
+                    state->addRange(1, right_cursor.getCurrent().clone(), rpos, rnum);
+                    return;
+                }
+            }
+            else if (cmp < 0)
+            {
+                size_t num = nextDistinct(left_cursor.cursor);
+                right_map.resize_fill(right_map.size() + num, right_cursor->rows);
+                for (size_t i = lpos; i < left_cursor->getRow(); ++i)
+                    left_map.push_back(i);
+            }
+            else
+            {
+                size_t num = nextDistinct(right_cursor.cursor);
+                left_map.resize_fill(left_map.size() + num, left_cursor->rows);
+                for (size_t i = rpos; i < right_cursor->getRow(); ++i)
+                    right_map.push_back(i);
+            }
+        }
+    }
+};
+
+template <template<JoinKind> class Impl, typename ... Args>
+void dispatchKind(JoinKind kind, Args && ... args)
+{
+    if (Impl<JoinKind::Inner>::enabled && kind == JoinKind::Inner)
+        return Impl<JoinKind::Inner>::join(std::forward<Args>(args)...);
+    else if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
+        return Impl<JoinKind::Left>::join(std::forward<Args>(args)...);
+    else if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
+        return Impl<JoinKind::Right>::join(std::forward<Args>(args)...);
+    else if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
+        return Impl<JoinKind::Full>::join(std::forward<Args>(args)...);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
+
+    __builtin_unreachable();
+}
+
+MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
+{
+    if (all_join_state && all_join_state->finished())
+    {
+        all_join_state.reset();
+    }
+
+    if (all_join_state)
+    {
+        /// Accumulate blocks with same key in all_join_state
+        for (size_t i = 0; i < cursors.size(); ++i)
+        {
+            if (cursors[i]->cursor.isValid() && all_join_state->left_key.equals(cursors[i]->cursor))
+            {
+                size_t pos = cursors[i]->cursor.getRow();
+                size_t num = nextDistinct(cursors[i]->cursor);
+                all_join_state->addRange(i, cursors[i]->getCurrent().clone(), pos, num);
+            }
+        }
+
+        for (size_t i = 0; i < cursors.size(); ++i)
+        {
+            if (!cursors[i]->cursor.isValid() && !cursors[i]->fullyCompleted())
+            {
+                return Status(i);
+            }
+        }
+        /// If current position is valid, then we've found new key, can join accumulated data
+
+        /// join all rows with current key
+        MutableColumns result_cols;
+        for (size_t i = 0; i < 2; ++i)
+        {
+            for (const auto & col : sample_chunks[i].getColumns())
+                result_cols.push_back(col->cloneEmpty());
+        }
+
+        size_t total_rows = 0;
+        while (total_rows < max_block_size)
+        {
+            const auto & left_range = all_join_state->getLeft();
+            const auto & right_range = all_join_state->getRight();
+
+            total_rows += left_range.length;
+
+            size_t i = 0;
+            /// Copy left block
+            for (const auto & col : left_range.chunk.getColumns())
+                result_cols[i++]->insertRangeFrom(*col, left_range.begin, left_range.length);
+            /// And replicate current right column
+            for (const auto & col : right_range.chunk.getColumns())
+                result_cols[i++]->insertManyFrom(*col, right_range.current, left_range.length);
+            bool valid = all_join_state->next();
+            if (!valid)
+                break;
+        }
+
+        if (total_rows)
+            return Status(Chunk(std::move(result_cols), total_rows));
+    }
+
+    auto left_map = ColumnUInt64::create();
+    auto right_map = ColumnUInt64::create();
+    size_t prev_pos[] = {cursors[0]->cursor.getRow(), cursors[1]->cursor.getRow()};
+
+    dispatchKind<AllJoinImpl>(kind, *cursors[0], *cursors[1], max_block_size, left_map->getData(), right_map->getData(), all_join_state);
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}  left_map->size({}) == right_map->size({})",
+        __FILE__, __LINE__,  left_map->size(), right_map->size());
+    assert(left_map->empty() || right_map->empty() || left_map->size() == right_map->size());
+    size_t num_result_rows = std::max(left_map->size(), right_map->size());
+
+    Chunk result;
+    addIndexColumn(cursors[0]->getCurrent().getColumns(), *left_map, result, prev_pos[0], num_result_rows);
+    addIndexColumn(cursors[1]->getCurrent().getColumns(), *right_map, result, prev_pos[1], num_result_rows);
+    return Status(std::move(result));
+}
+
+
+template <JoinKind kind>
+static void anyJoinImpl(FullMergeJoinCursor & left_cursor, FullMergeJoinCursor & right_cursor,
+                                         PaddedPODArray<UInt64> & left_map, PaddedPODArray<UInt64> & right_map,
+                                         AnyJoinState & state)
 {
     static_assert(kind == JoinKind::Left || kind == JoinKind::Right || kind == JoinKind::Inner, "Invalid join kind");
 
@@ -379,8 +558,8 @@ static std::unique_ptr<AnyJoinState> anyJoinImpl(FullMergeJoinCursor::CursorWith
 
     size_t rpos = std::numeric_limits<size_t>::max();
     size_t lpos = std::numeric_limits<size_t>::max();
-    int cmp = 0;
     assert(left_cursor->isValid() && right_cursor->isValid());
+    int cmp = 0;
     while (left_cursor->isValid() && right_cursor->isValid())
     {
         lpos = left_cursor->getRow();
@@ -423,41 +602,42 @@ static std::unique_ptr<AnyJoinState> anyJoinImpl(FullMergeJoinCursor::CursorWith
         }
     }
 
-    std::unique_ptr<AnyJoinState> result = std::make_unique<AnyJoinState>();
+    /// Remember index of last joined row to propagate it to next block
 
+    state.setValue({});
     if (!left_cursor->isValid())
     {
-        Chunk value = cmp == 0 ? getRowFromChunk(right_cursor.input, rpos): Chunk{};
-        result->setLeft(left_cursor.cursor, lpos, std::move(value));
-
+        state.set(0, left_cursor.cursor);
+        if (cmp == 0 && isLeft(kind))
+            state.setValue(getRowFromChunk(right_cursor.getCurrent(), rpos));
     }
 
     if (!right_cursor->isValid())
     {
-        Chunk value = cmp == 0 ? getRowFromChunk(left_cursor.input, lpos): Chunk{};
-        result->setRight(right_cursor.cursor, rpos, std::move(value));
+        state.set(1, right_cursor.cursor);
+        if (cmp == 0 && isRight(kind))
+            state.setValue(getRowFromChunk(left_cursor.getCurrent(), lpos));
     }
-
-    return result;
 }
 
-static std::unique_ptr<AnyJoinState> anyJoinDispatch(JoinKind kind,
-                                                     FullMergeJoinCursor::CursorWithBlock & left_cursor,
-                                                     FullMergeJoinCursor::CursorWithBlock & right_cursor,
+static void anyJoinDispatch(JoinKind kind,
+                                                     FullMergeJoinCursor & left_cursor,
+                                                     FullMergeJoinCursor & right_cursor,
                                                      PaddedPODArray<UInt64> & left_map,
-                                                     PaddedPODArray<UInt64> & right_map)
+                                                     PaddedPODArray<UInt64> & right_map,
+                                                     AnyJoinState & state)
 {
     if (isInner(kind))
     {
-        return anyJoinImpl<JoinKind::Inner>(left_cursor, right_cursor, left_map, right_map);
+        return anyJoinImpl<JoinKind::Inner>(left_cursor, right_cursor, left_map, right_map, state);
     }
     else if (isLeft(kind))
     {
-        return anyJoinImpl<JoinKind::Left>(left_cursor, right_cursor, left_map, right_map);
+        return anyJoinImpl<JoinKind::Left>(left_cursor, right_cursor, left_map, right_map, state);
     }
     else if (isRight(kind))
     {
-        return anyJoinImpl<JoinKind::Right>(left_cursor, right_cursor, left_map, right_map);
+        return anyJoinImpl<JoinKind::Right>(left_cursor, right_cursor, left_map, right_map, state);
     }
     else
     {
@@ -466,68 +646,68 @@ static std::unique_ptr<AnyJoinState> anyJoinDispatch(JoinKind kind,
     __builtin_unreachable();
 }
 
-static std::pair<size_t, size_t> handleAnyJoinState(std::unique_ptr<AnyJoinState::Row> & state, FullMergeJoinCursor::CursorWithBlock & current)
+static bool handleAnyJoinState(JoinKind kind,
+                               size_t source_num,
+                               AnyJoinState & state,
+                               FullMergeJoinCursor & current,
+                               const Chunk & sample_chunk,
+                               Chunk & result)
 {
-    if (!state)
-        return {};
-
-    if (state->equals(current.cursor))
+    bool has_more = state.keys[source_num].equals(current.cursor);
+    if (has_more)
     {
         size_t start_pos = current->getRow();
-        size_t num = nextDistinct(current.cursor);
+        size_t length = nextDistinct(current.cursor);
+        if (length && isLeft(kind) && source_num == 0)
+            result = createBlockWithDefaults(current.getCurrent(), state.value ? state.value : sample_chunk, start_pos, length);
+        if (length && isRight(kind) && source_num == 1)
+            result = createBlockWithDefaults(state.value ? state.value : sample_chunk, current.getCurrent(), start_pos, length);
 
-        /// We've found row with other key, no need to skip any rows with current key.
+        /// We've found row with other key, no need to skip more rows with current key
         if (current->isValid())
-            state.reset();
-
-        return std::make_pair(start_pos, num);
+            has_more = false;
     }
-    else
-    {
-        state.reset();
-    }
-    return {};
+    return !has_more;
 }
 
 MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin(JoinKind kind)
 {
-    if (any_join_state)
+    if (!any_join_state.empty())
     {
-        auto & left_current = cursors[0]->getCurrent();
-        Chunk right_chunk = (any_join_state->left && any_join_state->left->value) ? any_join_state->left->value.clone() : sample_chunks[1].clone();
-        if (auto [start, length] = handleAnyJoinState(any_join_state->left, left_current); length > 0 && isLeft(kind))
-        {
-            return Status(createBlockWithDefaults(left_current.input, right_chunk, start, length));
-        }
+        Chunk result;
 
-        auto & right_current = cursors[1]->getCurrent();
-        Chunk left_chunk = (any_join_state->right && any_join_state->right->value) ? any_join_state->right->value.clone() : sample_chunks[0].clone();
-        if (auto [start, length] = handleAnyJoinState(any_join_state->right, right_current); length > 0 && isRight(kind))
-        {
-            return Status(createBlockWithDefaults(left_chunk, right_current.input, start, length));
-        }
+        bool left_finished = handleAnyJoinState(kind, 0, any_join_state, *cursors[0], sample_chunks[1], result);
+        if (left_finished)
+            any_join_state.keys[0].reset();
+
+        bool right_finished = handleAnyJoinState(kind, 1, any_join_state, *cursors[1], sample_chunks[0], result);
+        if (right_finished)
+            any_join_state.keys[1].reset();
+
+        if (result)
+            return Status(std::move(result));
     }
 
-    auto & current_left = cursors[0]->getCurrent();
-    if (!current_left->isValid())
+    auto & current_left = cursors[0]->cursor;
+    if (!current_left.isValid())
         return Status(0);
 
-    auto & current_right = cursors[1]->getCurrent();
-    if (!current_right->isValid())
+    auto & current_right = cursors[1]->cursor;
+    if (!current_right.isValid())
         return Status(1);
 
     auto left_map = ColumnUInt64::create();
     auto right_map = ColumnUInt64::create();
-    size_t prev_pos[] = {current_left->getRow(), current_right->getRow()};
+    size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
 
-    any_join_state = anyJoinDispatch(kind, current_left, current_right, left_map->getData(), right_map->getData());
+    anyJoinDispatch(kind, *cursors[0], *cursors[1], left_map->getData(), right_map->getData(), any_join_state);
 
     assert(left_map->empty() || right_map->empty() || left_map->size() == right_map->size());
     size_t num_result_rows = std::max(left_map->size(), right_map->size());
 
     Chunk result;
-    addIndexColumn(current_left.input.getColumns(), *left_map, result, prev_pos[0], num_result_rows);
-    addIndexColumn(current_right.input.getColumns(), *right_map, result, prev_pos[1], num_result_rows);
+    addIndexColumn(cursors[0]->getCurrent().getColumns(), *left_map, result, prev_pos[0], num_result_rows);
+    addIndexColumn(cursors[1]->getCurrent().getColumns(), *right_map, result, prev_pos[1], num_result_rows);
     return Status(std::move(result));
 }
 
@@ -537,51 +717,48 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::mergeImpl()
     auto strictness = table_join->getTableJoin().strictness();
 
     LOG_DEBUG(log, "XXXX: merge, {} {}", kind, strictness);
-    if (required_input.has_value())
-    {
-        size_t r = required_input.value();
-        required_input = {};
-        return Status(r);
-    }
 
-    if (!cursors[0]->getCurrent()->isValid() && !cursors[0]->fullyCompleted())
+    if (!cursors[0]->cursor.isValid() && !cursors[0]->fullyCompleted())
         return Status(0);
 
-    if (!cursors[1]->getCurrent()->isValid() && !cursors[1]->fullyCompleted())
+    if (!cursors[1]->cursor.isValid() && !cursors[1]->fullyCompleted())
         return Status(1);
 
     if (cursors[0]->fullyCompleted() || cursors[1]->fullyCompleted())
     {
         if (!cursors[0]->fullyCompleted() && isLeftOrFull(kind))
-            return Status(createBlockWithDefaults(cursors[0]->getCurrent(), sample_chunks[1]));
+            return Status(createBlockWithDefaults(*cursors[0], sample_chunks[1]));
 
         if (!cursors[1]->fullyCompleted() && isRightOrFull(kind))
-            return Status(createBlockWithDefaults(sample_chunks[0], cursors[1]->getCurrent()));
+            return Status(createBlockWithDefaults(sample_chunks[0], *cursors[1]));
 
         return Status({}, true);
     }
 
-    if (int cmp = totallyCompare(cursors[0]->getCurrent().cursor, cursors[1]->getCurrent().cursor); cmp != 0)
+    if (int cmp = totallyCompare(cursors[0]->cursor, cursors[1]->cursor); cmp != 0)
     {
         if (cmp < 0)
         {
             if (isLeftOrFull(kind))
-                return Status(createBlockWithDefaults(cursors[0]->getCurrent(), sample_chunks[1]));
-            cursors[0]->getCurrent().detach();
+                return Status(createBlockWithDefaults(*cursors[0], sample_chunks[1]));
+            cursors[0]->detach();
             return Status(0);
         }
 
         if (cmp > 0)
         {
             if (isRightOrFull(kind))
-                return Status(createBlockWithDefaults(sample_chunks[0], cursors[1]->getCurrent()));
-            cursors[1]->getCurrent().detach();
+                return Status(createBlockWithDefaults(sample_chunks[0], *cursors[1]));
+            cursors[1]->detach();
             return Status(1);
         }
     }
 
     if (strictness == ASTTableJoin::Strictness::Any)
         return anyJoin(kind);
+
+    if (strictness == ASTTableJoin::Strictness::All)
+        return allJoin(kind);
 
     throw Exception("Unsupported strictness: " + toString(strictness), ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -590,8 +767,9 @@ MergeJoinTransform::MergeJoinTransform(
         JoinPtr table_join,
         const Blocks & input_headers,
         const Block & output_header,
+        size_t max_block_size,
         UInt64 limit_hint)
-    : IMergingTransform<MergeJoinAlgorithm>(input_headers, output_header, true, limit_hint, table_join, input_headers)
+    : IMergingTransform<MergeJoinAlgorithm>(input_headers, output_header, true, limit_hint, table_join, input_headers, max_block_size)
     , log(&Poco::Logger::get("MergeJoinTransform"))
 {
     LOG_TRACE(log, "Will use MergeJoinTransform");
