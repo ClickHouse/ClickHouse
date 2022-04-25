@@ -452,10 +452,10 @@ void FileSegment::completeBatchAndResetDownloader()
 
 void FileSegment::complete(State state)
 {
-    assertNotDetached();
-
     std::lock_guard cache_lock(cache->mutex);
     std::lock_guard segment_lock(mutex);
+
+    assertNotDetached();
 
     bool is_downloader = isDownloaderImpl(segment_lock);
     if (!is_downloader)
