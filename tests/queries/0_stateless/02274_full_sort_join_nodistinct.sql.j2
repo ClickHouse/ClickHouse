@@ -15,7 +15,7 @@ INSERT INTO tn2 VALUES (1, 'val11'), (1, 'val12'), (NULL, 'val22'), (NULL, 'val2
 
 SET join_algorithm = 'full_sorting_merge';
 
-{%  for block_size in range (1, table_size + 1) -%}
+{% for block_size in range (1, table_size + 1) -%}
 
 SET max_block_size = {{ block_size }};
 

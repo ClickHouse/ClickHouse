@@ -39,51 +39,159 @@ class FullMergeJoinCursor;
 using FullMergeJoinCursorPtr = std::unique_ptr<FullMergeJoinCursor>;
 
 
+
+/// Used instead of storing previous block
+struct JoinKeyRow
+{
+    std::vector<ColumnPtr> row;
+
+    JoinKeyRow() = default;
+
+    explicit JoinKeyRow(const SortCursorImpl & impl_, size_t pos)
+    {
+        row.reserve(impl_.sort_columns.size());
+        for (const auto & col : impl_.sort_columns)
+        {
+            auto new_col = col->cloneEmpty();
+            new_col->insertFrom(*col, pos);
+            row.push_back(std::move(new_col));
+        }
+    }
+
+    void reset()
+    {
+        row.clear();
+    }
+
+    bool equals(const SortCursorImpl & impl) const
+    {
+        if (row.empty())
+            return false;
+
+        assert(this->row.size() == impl.sort_columns_size);
+        for (size_t i = 0; i < impl.sort_columns_size; ++i)
+        {
+            int cmp = this->row[i]->compareAt(0, impl.getRow(), *impl.sort_columns[i], impl.desc[i].nulls_direction);
+            if (cmp != 0)
+                return false;
+        }
+        return true;
+    }
+};
+
 struct AnyJoinState : boost::noncopyable
 {
-    /// Used instead of storing previous block
-    struct Row
+    AnyJoinState() = default;
+
+    void set(size_t source_num, const SortCursorImpl & cursor)
     {
-        std::vector<ColumnPtr> row_key;
-        Chunk value;
+        assert(cursor.rows);
+        keys[source_num] = JoinKeyRow(cursor, cursor.rows - 1);
+    }
 
-        explicit Row(const SortCursorImpl & impl_, size_t pos, Chunk value_)
-            : value(std::move(value_))
+    void setValue(Chunk value_)
+    {
+        value = std::move(value_);
+    }
+
+    bool empty() const
+    {
+        return keys[0].row.empty() && keys[1].row.empty();
+    }
+
+    JoinKeyRow keys[2];
+    Chunk value;
+};
+
+struct AllJoinState : boost::noncopyable
+{
+    struct Range
+    {
+        Range() = default;
+
+        explicit Range(Chunk chunk_, size_t begin_, size_t length_)
+            : begin(begin_)
+            , length(length_)
+            , current(begin_)
+            , chunk(std::move(chunk_))
         {
-            row_key.reserve(impl_.sort_columns.size());
-            for (const auto & col : impl_.sort_columns)
-            {
-                auto new_col = col->cloneEmpty();
-                new_col->insertFrom(*col, pos);
-                row_key.push_back(std::move(new_col));
-            }
+            assert(length > 0 && begin + length <= chunk.getNumRows());
         }
 
-        bool equals(const SortCursorImpl & impl) const
-        {
-            assert(this->row_key.size() == impl.sort_columns_size);
-            for (size_t i = 0; i < impl.sort_columns_size; ++i)
-            {
-                int cmp = this->row_key[i]->compareAt(0, impl.getRow(), *impl.sort_columns[i], impl.desc[i].nulls_direction);
-                if (cmp != 0)
-                    return false;
-            }
-            return true;
-        }
+        size_t begin;
+        size_t length;
+
+        size_t current;
+        Chunk chunk;
     };
 
-    void setLeft(const SortCursorImpl & impl_, size_t pos, Chunk value)
+    AllJoinState(const SortCursorImpl & lcursor, size_t lpos,
+                 const SortCursorImpl & rcursor, size_t rpos)
+        : left_key(lcursor, lpos)
+        , right_key(rcursor, rpos)
     {
-        left = std::make_unique<Row>(impl_, pos, std::move(value));
     }
 
-    void setRight(const SortCursorImpl & impl_, size_t pos, Chunk value)
+    void addRange(size_t source_num, Chunk chunk, size_t begin, size_t length)
     {
-        right = std::make_unique<Row>(impl_, pos, std::move(value));
+        if (source_num == 0)
+            left.emplace_back(std::move(chunk), begin, length);
+        else
+            right.emplace_back(std::move(chunk), begin, length);
     }
 
-    std::unique_ptr<Row> left;
-    std::unique_ptr<Row> right;
+    bool next()
+    {
+        assert(!left.empty() && !right.empty());
+
+        if (finished())
+            return false;
+
+        bool has_next_right = nextRight();
+        if (has_next_right)
+            return true;
+
+        return nextLeft();
+    }
+
+    bool finished() const { return lidx >= left.size(); }
+
+    bool nextLeft()
+    {
+        lidx += 1;
+        return lidx < left.size();
+    }
+
+    bool nextRight()
+    {
+        /// cycle through right rows
+        right[ridx].current += 1;
+        if (right[ridx].current >= right[ridx].begin + right[ridx].length)
+        {
+            /// reset current row index to the beginning, because range will be accessed again
+            right[ridx].current = right[ridx].begin;
+            ridx += 1;
+            if (ridx >= right.size())
+            {
+                ridx = 0;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    const Range & getLeft() const { return left[lidx]; }
+    const Range & getRight() const { return right[ridx]; }
+
+    std::vector<Range> left;
+    std::vector<Range> right;
+
+    /// Left and right types can be different because of nullable
+    JoinKeyRow left_key;
+    JoinKeyRow right_key;
+
+    size_t lidx = 0;
+    size_t ridx = 0;
 };
 
 /*
@@ -93,53 +201,27 @@ struct AnyJoinState : boost::noncopyable
 class FullMergeJoinCursor : boost::noncopyable
 {
 public:
-    struct CursorWithBlock : boost::noncopyable
-    {
-        CursorWithBlock() = default;
-
-        CursorWithBlock(const Block & header, const SortDescription & desc_, Chunk && chunk)
-            : input(std::move(chunk))
-            , cursor(header, input.getColumns(), desc_)
-        {
-        }
-
-        Chunk detach()
-        {
-            cursor = SortCursorImpl();
-            return std::move(input);
-        }
-
-        SortCursorImpl * operator-> () { return &cursor; }
-        const SortCursorImpl * operator-> () const { return &cursor; }
-
-        Chunk input;
-        SortCursorImpl cursor;
-    };
-
-    using CursorList = std::list<CursorWithBlock>;
-    using CursorListIt = CursorList::iterator;
-
     explicit FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_)
         : sample_block(sample_block_.cloneEmpty())
         , desc(description_)
-        , current(inputs.end())
     {
     }
 
-    bool fullyCompleted();
-    void addChunk(Chunk && chunk);
-    CursorWithBlock & getCurrent();
+    bool fullyCompleted() const;
+    void setChunk(Chunk && chunk);
+    const Chunk & getCurrent() const;
+    Chunk detach();
+
+    SortCursorImpl * operator-> () { return &cursor; }
+    const SortCursorImpl * operator-> () const { return &cursor; }
+
+    SortCursorImpl cursor;
 
 private:
-    void dropBlocksUntilCurrent();
-
     Block sample_block;
     SortDescription desc;
 
-    CursorList inputs;
-    CursorListIt current;
-    CursorWithBlock empty_cursor;
-
+    Chunk current_chunk;
     bool recieved_all_blocks = false;
 };
 
@@ -150,7 +232,7 @@ private:
 class MergeJoinAlgorithm final : public IMergingAlgorithm
 {
 public:
-    explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers);
+    explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
 
     virtual void initialize(Inputs inputs) override;
     virtual void consume(Input & input, size_t source_num) override;
@@ -164,27 +246,36 @@ public:
 
     void onFinish(double seconds)
     {
-        LOG_TRACE(log, "Finished pocessing in {} seconds - left: {} blocks, {} rows; right: {} blocks, {} rows",
-            seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1]);
+        LOG_TRACE(log,
+            "Finished pocessing in {} seconds"
+            ", left: {} blocks, {} rows; right: {} blocks, {} rows"
+            ", max blocks loaded to memory: {}",
+            seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],
+            stat.max_blocks_loaded);
     }
 
 private:
     Status mergeImpl();
 
     Status anyJoin(ASTTableJoin::Kind kind);
+    Status allJoin(ASTTableJoin::Kind kind);
 
     std::vector<FullMergeJoinCursorPtr> cursors;
     std::vector<Chunk> sample_chunks;
 
-    std::optional<size_t> required_input = std::nullopt;
-    std::unique_ptr<AnyJoinState> any_join_state;
+    AnyJoinState any_join_state;
+    std::unique_ptr<AllJoinState> all_join_state;
 
     JoinPtr table_join;
+
+    size_t max_block_size;
 
     struct Statistic
     {
         size_t num_blocks[2] = {0, 0};
         size_t num_rows[2] = {0, 0};
+
+        size_t max_blocks_loaded = 0;
     };
     Statistic stat;
 
@@ -198,6 +289,7 @@ public:
         JoinPtr table_join,
         const Blocks & input_headers,
         const Block & output_header,
+        size_t max_block_size,
         UInt64 limit_hint = 0);
 
     String getName() const override { return "MergeJoinTransform"; }

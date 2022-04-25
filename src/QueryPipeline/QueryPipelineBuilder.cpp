@@ -336,8 +336,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines2(
     size_t max_block_size,
     Processors * collected_processors)
 {
-    UNUSED(max_block_size);
-
     left->checkInitializedAndNotCompleted();
     right->checkInitializedAndNotCompleted();
 
@@ -349,7 +347,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines2(
 
     Blocks inputs = {left->getHeader(), right->getHeader()};
 
-    auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header);
+    auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
 
     auto result = mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     return result;
