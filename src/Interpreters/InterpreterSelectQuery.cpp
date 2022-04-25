@@ -617,7 +617,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    auto query_cache_key = CacheKey{query_ptr, source_header, context->getSettingsRef()};
+    auto query_cache_key = CacheKey{query_ptr, source_header, context->getSettingsRef(), std::nullopt};
     if (context->getSettingsRef().share_query_cache) {
         query_cache_key.username = context->getUserName();
     }
