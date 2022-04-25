@@ -50,15 +50,8 @@ namespace
         std::vector<size_t> getShards() const
         {
             std::vector<size_t> res;
-            constexpr std::string_view shard_prefix = "shard";
-            for (const String & shard_dir : backup.listFiles(""))
-            {
-                if (shard_dir.starts_with(shard_prefix))
-                {
-                    size_t shard_index = parse<UInt64>(shard_dir.substr(shard_prefix.size()));
-                    res.push_back(shard_index);
-                }
-            }
+            for (const String & shard_index : backup.listFiles("shards/"))
+                res.push_back(parse<UInt64>(shard_index));
             if (res.empty())
                 res.push_back(1);
             return res;
@@ -67,17 +60,10 @@ namespace
         std::vector<size_t> getReplicas(size_t shard_index) const
         {
             std::vector<size_t> res;
-            constexpr std::string_view replica_prefix = "replica";
-            for (const String & replica_dir : backup.listFiles(fmt::format("shard{}/", shard_index)))
-            {
-                    if (replica_dir.starts_with(replica_prefix))
-                    {
-                        size_t replica_index = parse<UInt64>(replica_dir.substr(replica_prefix.size()));
-                        res.push_back(replica_index);
-                    }
-            }
+            for (const String & replica_index : backup.listFiles(fmt::format("shards/{}/replicas/", shard_index)))
+                res.push_back(parse<UInt64>(replica_index));
             if (res.empty())
-            res.push_back(1);
+                res.push_back(1);
             return res;
         }
 
@@ -85,8 +71,8 @@ namespace
         {
             std::vector<String> res;
 
-            insertAtEnd(res, backup.listFiles(fmt::format("shard{}/replica{}/metadata/", shard_index, replica_index)));
-            insertAtEnd(res, backup.listFiles(fmt::format("shard{}/metadata/", shard_index)));
+            insertAtEnd(res, backup.listFiles(fmt::format("shards/{}/replicas/{}/metadata/", shard_index, replica_index)));
+            insertAtEnd(res, backup.listFiles(fmt::format("shards/{}/metadata/", shard_index)));
             insertAtEnd(res, backup.listFiles(fmt::format("metadata/")));
 
             boost::range::remove_erase_if(
@@ -112,8 +98,8 @@ namespace
             std::vector<String> res;
 
             String escaped_database_name = escapeForFileName(database_name);
-            insertAtEnd(res, backup.listFiles(fmt::format("shard{}/replica{}/metadata/{}/", shard_index, replica_index, escaped_database_name)));
-            insertAtEnd(res, backup.listFiles(fmt::format("shard{}/metadata/{}/", shard_index, escaped_database_name)));
+            insertAtEnd(res, backup.listFiles(fmt::format("shards/{}/replicas/{}/metadata/{}/", shard_index, replica_index, escaped_database_name)));
+            insertAtEnd(res, backup.listFiles(fmt::format("shards/{}/metadata/{}/", shard_index, escaped_database_name)));
             insertAtEnd(res, backup.listFiles(fmt::format("metadata/{}/", escaped_database_name)));
 
             boost::range::remove_erase_if(
@@ -138,10 +124,10 @@ namespace
         String getMetadataPath(const DatabaseAndTableName & table_name, size_t shard_index, size_t replica_index) const
         {
             String escaped_table_name = escapeForFileName(table_name.first) + "/" + escapeForFileName(table_name.second);
-            String path1 = fmt::format("shard{}/replica{}/metadata/{}.sql", shard_index, replica_index, escaped_table_name);
+            String path1 = fmt::format("shards/{}/replicas/{}/metadata/{}.sql", shard_index, replica_index, escaped_table_name);
             if (backup.fileExists(path1))
                 return path1;
-            String path2 = fmt::format("shard{}/metadata/{}.sql", shard_index, escaped_table_name);
+            String path2 = fmt::format("shards/{}/metadata/{}.sql", shard_index, escaped_table_name);
             if (backup.fileExists(path2))
                 return path2;
             String path3 = fmt::format("metadata/{}.sql", escaped_table_name);
@@ -151,10 +137,10 @@ namespace
         String getMetadataPath(const String & database_name, size_t shard_index, size_t replica_index) const
         {
             String escaped_database_name = escapeForFileName(database_name);
-            String path1 = fmt::format("shard{}/replica{}/metadata/{}.sql", shard_index, replica_index, escaped_database_name);
+            String path1 = fmt::format("shards/{}/replicas/{}/metadata/{}.sql", shard_index, replica_index, escaped_database_name);
             if (backup.fileExists(path1))
                 return path1;
-            String path2 = fmt::format("shard{}/metadata/{}.sql", shard_index, escaped_database_name);
+            String path2 = fmt::format("shards/{}/metadata/{}.sql", shard_index, escaped_database_name);
             if (backup.fileExists(path2))
                 return path2;
             String path3 = fmt::format("metadata/{}.sql", escaped_database_name);
@@ -164,10 +150,10 @@ namespace
         String getDataPath(const DatabaseAndTableName & table_name, size_t shard_index, size_t replica_index) const
         {
             String escaped_table_name = escapeForFileName(table_name.first) + "/" + escapeForFileName(table_name.second);
-            if (backup.fileExists(fmt::format("shard{}/replica{}/metadata/{}.sql", shard_index, replica_index, escaped_table_name)))
-                return fmt::format("shard{}/replica{}/data/{}/", shard_index, replica_index, escaped_table_name);
-            if (backup.fileExists(fmt::format("shard{}/metadata/{}.sql", shard_index, escaped_table_name)))
-                return fmt::format("shard{}/data/{}/", shard_index, escaped_table_name);
+            if (backup.fileExists(fmt::format("shards/{}/replicas/{}/metadata/{}.sql", shard_index, replica_index, escaped_table_name)))
+                return fmt::format("shards/{}/replicas/{}/data/{}/", shard_index, replica_index, escaped_table_name);
+            if (backup.fileExists(fmt::format("shards/{}/metadata/{}.sql", shard_index, escaped_table_name)))
+                return fmt::format("shards/{}/data/{}/", shard_index, escaped_table_name);
             return fmt::format("data/{}/", escaped_table_name);
         }
 
