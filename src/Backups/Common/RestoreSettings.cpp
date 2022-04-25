@@ -69,10 +69,10 @@ namespace
     M(Bool, allow_different_table_def) \
     M(Bool, allow_different_database_def) \
     M(Bool, async) \
-    M(UInt64, shard) \
-    M(UInt64, replica) \
-    M(UInt64, shard_in_backup) \
-    M(UInt64, replica_in_backup) \
+    M(UInt64, shard_num) \
+    M(UInt64, replica_num) \
+    M(UInt64, shard_num_in_backup) \
+    M(UInt64, replica_num_in_backup) \
     M(Bool, internal) \
     M(String, coordination_zk_path)
 

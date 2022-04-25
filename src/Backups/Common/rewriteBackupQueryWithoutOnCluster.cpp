@@ -31,8 +31,8 @@ rewriteBackupQueryWithoutOnCluster(const ASTBackupQuery & backup_query, const Wi
     auto backup_settings = BackupSettings::fromBackupQuery(backup_query);
     backup_settings.internal = true;
     backup_settings.async = false;
-    backup_settings.shard = params.shard_index;
-    backup_settings.replica = params.replica_index;
+    backup_settings.shard_num = params.shard_index;
+    backup_settings.replica_num = params.replica_index;
     auto new_query = std::static_pointer_cast<ASTBackupQuery>(backup_query.clone());
     new_query->cluster.clear();
     backup_settings.copySettingsToBackupQuery(*new_query);
@@ -47,8 +47,8 @@ rewriteRestoreQueryWithoutOnCluster(const ASTBackupQuery & restore_query, const 
     auto restore_settings = RestoreSettings::fromRestoreQuery(restore_query);
     restore_settings.internal = true;
     restore_settings.async = false;
-    restore_settings.shard = params.shard_index;
-    restore_settings.replica = params.replica_index;
+    restore_settings.shard_num = params.shard_index;
+    restore_settings.replica_num = params.replica_index;
     auto new_query = std::static_pointer_cast<ASTBackupQuery>(restore_query.clone());
     new_query->cluster.clear();
     restore_settings.copySettingsToRestoreQuery(*new_query);

@@ -74,8 +74,8 @@ namespace
                     worker.update(task_id, BackupStatus::MAKING_BACKUP);
 
                 DDLQueryOnClusterParams params;
-                params.shard_index = new_backup_settings.shard;
-                params.replica_index = new_backup_settings.replica;
+                params.shard_index = new_backup_settings.shard_num;
+                params.replica_index = new_backup_settings.replica_num;
                 params.allow_multiple_replicas = new_backup_settings.allow_storing_multiple_replicas;
                 auto res = executeDDLQueryOnCluster(new_query, context, params);
 
@@ -129,8 +129,8 @@ namespace
             if (!query.cluster.empty())
             {
                 DDLQueryOnClusterParams params;
-                params.shard_index = new_restore_settings.shard;
-                params.replica_index = new_restore_settings.replica;
+                params.shard_index = new_restore_settings.shard_num;
+                params.replica_index = new_restore_settings.replica_num;
                 auto res = executeDDLQueryOnCluster(new_query, context, params);
 
                 PullingPipelineExecutor executor(res.pipeline);

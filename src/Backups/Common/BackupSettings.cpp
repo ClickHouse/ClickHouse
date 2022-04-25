@@ -19,8 +19,8 @@ namespace ErrorCodes
     M(String, password) \
     M(Bool, structure_only) \
     M(Bool, async) \
-    M(UInt64, shard) \
-    M(UInt64, replica) \
+    M(UInt64, shard_num) \
+    M(UInt64, replica_num) \
     M(Bool, allow_storing_multiple_replicas) \
     M(Bool, internal) \
     M(String, coordination_zk_path)
