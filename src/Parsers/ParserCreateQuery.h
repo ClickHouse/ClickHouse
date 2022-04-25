@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Parsers/IParserBase.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IParserBase.h>
 #include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
-#include <Parsers/ASTLiteral.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -199,6 +200,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         default_specifier = "EPHEMERAL";
         if (!expr_parser.parse(pos, default_expression, expected) && type)
             default_expression = std::make_shared<ASTLiteral>(Field());
+        /// The default expression for EPHEMERAL should be ASTLiteral,
+        /// otherwise it will be crash in formatImpl.
+        if (!startsWith(default_expression->getID(), "Literal"))
+            return false;
     }
 
     if (require_type && !type && !default_expression)
