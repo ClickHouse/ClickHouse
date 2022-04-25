@@ -88,6 +88,9 @@ DatabaseReplicated::DatabaseReplicated(
     /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
     if (zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
+
+    if (!db_settings.collection_name.value.empty())
+        fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
 }
 
 String DatabaseReplicated::getFullReplicaName() const
@@ -191,22 +194,36 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         shards.back().emplace_back(unescapeForFileName(host_port));
     }
 
-    String username = db_settings.cluster_username;
-    String password = db_settings.cluster_password;
     UInt16 default_port = getContext()->getTCPPort();
-    bool secure = db_settings.cluster_secure_connection;
 
     bool treat_local_as_remote = false;
     bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
     return std::make_shared<Cluster>(
         getContext()->getSettingsRef(),
         shards,
-        username,
-        password,
+        cluster_auth_info.cluster_username,
+        cluster_auth_info.cluster_password,
         default_port,
         treat_local_as_remote,
         treat_local_port_as_remote,
-        secure);
+        cluster_auth_info.cluster_secure_connection,
+        /*priority=*/1,
+        database_name,
+        cluster_auth_info.cluster_secret);
+}
+
+
+void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config_ref)
+{
+    const auto & config_prefix = fmt::format("named_collections.{}", collection_name);
+
+    if (!config_ref.has(config_prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
+
+    cluster_auth_info.cluster_username = config_ref.getString(config_prefix + ".cluster_username", "");
+    cluster_auth_info.cluster_password = config_ref.getString(config_prefix + ".cluster_password", "");
+    cluster_auth_info.cluster_secret = config_ref.getString(config_prefix + ".cluster_secret", "");
+    cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
@@ -444,6 +461,10 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
 BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context)
 {
+
+    if (query_context->getCurrentTransaction() && query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed DDL queries inside transactions are not supported");
+
     if (is_readonly)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
 
@@ -657,7 +678,6 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 LOG_INFO(log, "Marked recovered {} as finished", entry_name);
         }
     }
-    current_zookeeper->set(replica_path + "/log_ptr", toString(max_log_ptr));
 }
 
 std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr)

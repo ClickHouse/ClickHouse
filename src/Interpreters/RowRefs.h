@@ -146,7 +146,7 @@ private:
 struct SortedLookupVectorBase
 {
     SortedLookupVectorBase() = default;
-    virtual ~SortedLookupVectorBase() { }
+    virtual ~SortedLookupVectorBase() = default;
 
     static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
 
@@ -154,7 +154,7 @@ struct SortedLookupVectorBase
     virtual void insert(const IColumn &, const Block *, size_t) = 0;
 
     // This needs to be synchronized internally
-    virtual std::tuple<decltype(RowRef::block), decltype(RowRef::row_num)> findAsof(const IColumn &, size_t) = 0;
+    virtual RowRef findAsof(const IColumn &, size_t) = 0;
 };
 
 

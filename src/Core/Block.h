@@ -60,21 +60,21 @@ public:
     ColumnWithTypeAndName & safeGetByPosition(size_t position);
     const ColumnWithTypeAndName & safeGetByPosition(size_t position) const;
 
-    ColumnWithTypeAndName* findByName(const std::string & name)
+    ColumnWithTypeAndName* findByName(const std::string & name, bool case_insensitive = false)
     {
         return const_cast<ColumnWithTypeAndName *>(
-            const_cast<const Block *>(this)->findByName(name));
+            const_cast<const Block *>(this)->findByName(name, case_insensitive));
     }
 
-    const ColumnWithTypeAndName * findByName(const std::string & name) const;
+    const ColumnWithTypeAndName * findByName(const std::string & name, bool case_insensitive = false) const;
 
-    ColumnWithTypeAndName & getByName(const std::string & name)
+    ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false)
     {
         return const_cast<ColumnWithTypeAndName &>(
-            const_cast<const Block *>(this)->getByName(name));
+            const_cast<const Block *>(this)->getByName(name, case_insensitive));
     }
 
-    const ColumnWithTypeAndName & getByName(const std::string & name) const;
+    const ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false) const;
 
     Container::iterator begin() { return data.begin(); }
     Container::iterator end() { return data.end(); }
@@ -83,7 +83,7 @@ public:
     Container::const_iterator cbegin() const { return data.cbegin(); }
     Container::const_iterator cend() const { return data.cend(); }
 
-    bool has(const std::string & name) const;
+    bool has(const std::string & name, bool case_insensitive = false) const;
 
     size_t getPositionByName(const std::string & name) const;
 

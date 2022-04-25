@@ -69,6 +69,7 @@ public:
     /// All below are parameters related to initial query.
 
     Interface interface = Interface::TCP;
+    bool is_secure = false;
 
     /// For tcp
     String os_user;

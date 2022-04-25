@@ -25,13 +25,23 @@ read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 env
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
+if [ "coverity" == "$COMBINED_OUTPUT" ]
+then
+    mkdir -p /opt/cov-analysis
+
+    wget --post-data "token=$COVERITY_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /opt/cov-analysis --strip-components 1
+    export PATH=$PATH:/opt/cov-analysis/bin
+    cov-configure --config ./coverity.config --template --comptype clangcc --compiler "$CC"
+    SCAN_WRAPPER="cov-build --config ./coverity.config --dir cov-int"
+fi
+
 cache_status
 # clear cache stats
 ccache --zero-stats ||:
 
 # No quotes because I want it to expand to nothing if empty.
-# shellcheck disable=SC2086
-ninja $NINJA_FLAGS clickhouse-bundle
+# shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
+$SCAN_WRAPPER ninja $NINJA_FLAGS clickhouse-bundle
 
 cache_status
 
@@ -89,6 +99,12 @@ then
     tar -cv -I pigz -f "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output
+fi
+
+if [ "coverity" == "$COMBINED_OUTPUT" ]
+then
+    tar -cv -I pigz -f "coverity-scan.tgz" cov-int
+    mv "coverity-scan.tgz" /output
 fi
 
 # Also build fuzzers if any sanitizer specified

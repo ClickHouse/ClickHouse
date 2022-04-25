@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-import datetime
 import logging
 import os.path as p
-import subprocess
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-from typing import Dict, Tuple, Union
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, ArgumentTypeError
+from typing import Dict, List, Tuple, Union
 
 from git_helper import Git, removeprefix
 
@@ -49,12 +47,16 @@ class ClickHouseVersion:
         patch: Union[int, str],
         revision: Union[int, str],
         git: Git,
+        tweak: str = None,
     ):
         self._major = int(major)
         self._minor = int(minor)
         self._patch = int(patch)
         self._revision = int(revision)
         self._git = git
+        self._tweak = None
+        if tweak is not None:
+            self._tweak = int(tweak)
         self._describe = ""
 
     def update(self, part: str) -> "ClickHouseVersion":
@@ -89,7 +91,7 @@ class ClickHouseVersion:
 
     @property
     def tweak(self) -> int:
-        return self._git.tweak
+        return self._tweak or self._git.tweak
 
     @property
     def revision(self) -> int:
@@ -129,6 +131,28 @@ class ClickHouseVersion:
             raise ValueError(f"version type {version_type} not in {VersionType.VALID}")
         self._describe = f"v{self.string}-{version_type}"
 
+    def __eq__(self, other) -> bool:
+        if not isinstance(self, type(other)):
+            return NotImplemented
+        return (
+            self.major == other.major
+            and self.minor == other.minor
+            and self.patch == other.patch
+            and self.tweak == other.tweak
+        )
+
+    def __lt__(self, other: "ClickHouseVersion") -> bool:
+        for part in ("major", "minor", "patch", "tweak"):
+            if getattr(self, part) < getattr(other, part):
+                return True
+            elif getattr(self, part) > getattr(other, part):
+                return False
+
+        return False
+
+    def __le__(self, other: "ClickHouseVersion") -> bool:
+        return self == other or self < other
+
 
 class VersionType:
     LTS = "lts"
@@ -136,6 +160,14 @@ class VersionType:
     STABLE = "stable"
     TESTING = "testing"
     VALID = (TESTING, PRESTABLE, STABLE, LTS)
+
+
+def validate_version(version: str):
+    parts = version.split(".")
+    if len(parts) != 4:
+        raise ValueError(f"{version} does not contain 4 parts")
+    for part in parts:
+        int(part)
 
 
 def get_abs_path(path: str) -> str:
@@ -176,6 +208,43 @@ def get_version_from_repo(
     )
 
 
+def get_version_from_string(version: str) -> ClickHouseVersion:
+    validate_version(version)
+    parts = version.split(".")
+    return ClickHouseVersion(parts[0], parts[1], parts[2], -1, git, parts[3])
+
+
+def get_version_from_tag(tag: str) -> ClickHouseVersion:
+    git.check_tag(tag)
+    tag = tag[1:].split("-")[0]
+    return get_version_from_string(tag)
+
+
+def version_arg(version: str) -> ClickHouseVersion:
+    version = removeprefix(version, "refs/tags/")
+    try:
+        return get_version_from_string(version)
+    except ValueError:
+        pass
+    try:
+        return get_version_from_tag(version)
+    except ValueError:
+        pass
+
+    raise ArgumentTypeError(f"version {version} does not match tag of plain version")
+
+
+def get_tagged_versions() -> List[ClickHouseVersion]:
+    versions = []
+    for tag in git.get_tags():
+        try:
+            version = get_version_from_tag(tag)
+            versions.append(version)
+        except Exception:
+            continue
+    return sorted(versions)
+
+
 def update_cmake_version(
     version: ClickHouseVersion,
     versions_path: str = FILE_WITH_VERSION_PATH,
@@ -183,22 +252,6 @@ def update_cmake_version(
     path_to_file = get_abs_path(versions_path)
     with open(path_to_file, "w", encoding="utf-8") as f:
         f.write(VERSIONS_TEMPLATE.format_map(version.as_dict()))
-
-
-def _update_changelog(repo_path: str, version: ClickHouseVersion):
-    cmd = """sed \
-        -e "s/[@]VERSION_STRING[@]/{version_str}/g" \
-        -e "s/[@]DATE[@]/{date}/g" \
-        -e "s/[@]AUTHOR[@]/clickhouse-release/g" \
-        -e "s/[@]EMAIL[@]/clickhouse-release@yandex-team.ru/g" \
-        < {in_path} > {changelog_path}
-    """.format(
-        version_str=version.string,
-        date=datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S") + " +0300",
-        in_path=p.join(repo_path, CHANGELOG_IN_PATH),
-        changelog_path=p.join(repo_path, CHANGELOG_PATH),
-    )
-    subprocess.check_call(cmd, shell=True)
 
 
 def update_contributors(
@@ -225,22 +278,10 @@ def update_contributors(
         cfd.write(content)
 
 
-def _update_dockerfile(repo_path: str, version: ClickHouseVersion):
-    version_str_for_docker = ".".join(
-        [str(version.major), str(version.minor), str(version.patch), "*"]
-    )
-    cmd = "ls -1 {path}/docker/*/Dockerfile | xargs sed -i -r -e 's/ARG version=.+$/ARG version='{ver}'/'".format(
-        path=repo_path, ver=version_str_for_docker
-    )
-    subprocess.check_call(cmd, shell=True)
-
-
-def update_version_local(repo_path, version, version_type="testing"):
+def update_version_local(version, version_type="testing"):
     update_contributors()
     version.with_description(version_type)
-    update_cmake_version(version, version_type)
-    _update_changelog(repo_path, version)
-    _update_dockerfile(repo_path, version)
+    update_cmake_version(version)
 
 
 def main():

@@ -105,7 +105,7 @@ void getProfileEvents(
         {"value", std::make_shared<DataTypeInt64>()},
     };
 
-     ColumnsWithTypeAndName temp_columns;
+    ColumnsWithTypeAndName temp_columns;
     for (auto const & name_and_type : column_names_and_types)
         temp_columns.emplace_back(name_and_type.type, name_and_type.name);
 

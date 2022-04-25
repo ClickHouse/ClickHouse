@@ -124,7 +124,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
 -   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 -   `--config-file` – The name of the configuration file.
--   `--secure` – If specified, will connect to server over secure connection.
+-   `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 -   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 -   `--hardware-utilization` — Print hardware utilization information in progress bar.
@@ -148,7 +148,12 @@ Example of a config file:
 <config>
     <user>username</user>
     <password>password</password>
-    <secure>False</secure>
+    <secure>true</secure>
+    <openSSL>
+      <client>
+        <caConfig>/etc/ssl/cert.pem</caConfig>
+      </client>
+    </openSSL>
 </config>
 ```
 

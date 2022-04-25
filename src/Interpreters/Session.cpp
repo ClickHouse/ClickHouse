@@ -243,7 +243,7 @@ void Session::shutdownNamedSessions()
     NamedSessionsStorage::instance().shutdown();
 }
 
-Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_)
+Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
       interface(interface_),
@@ -251,6 +251,7 @@ Session::Session(const ContextPtr & global_context_, ClientInfo::Interface inter
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
+    prepared_client_info->is_secure = is_secure;
 }
 
 Session::~Session()

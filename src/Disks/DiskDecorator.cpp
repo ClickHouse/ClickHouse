@@ -121,9 +121,9 @@ DiskDecorator::readFile(
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
 {
-    return delegate->writeFile(path, buf_size, mode);
+    return delegate->writeFile(path, buf_size, mode, settings);
 }
 
 void DiskDecorator::removeFile(const String & path)

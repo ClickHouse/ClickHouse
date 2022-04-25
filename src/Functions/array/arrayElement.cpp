@@ -146,7 +146,7 @@ public:
 
     void update(size_t from)
     {
-        sink_null_map[index] = bool(src_null_map && src_null_map[from]);
+        sink_null_map[index] = src_null_map && src_null_map[from];
         ++index;
     }
 

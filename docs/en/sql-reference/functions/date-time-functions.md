@@ -393,6 +393,13 @@ This is a generalization of other functions named `toStartOf*`. For example,
 `toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,
 `toStartOfInterval(t, INTERVAL 15 minute)` returns the same as `toStartOfFifteenMinutes(t)` etc.
 
+## toLastDayOfMonth {#toLastDayOfMonth}
+
+Rounds up a date or date with time to the last day of the month.
+Returns the date.
+
+Alias: `LAST_DAY`.
+
 ## toTime {#totime}
 
 Converts a date with time to a certain fixed date, while preserving the time.
