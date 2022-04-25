@@ -33,7 +33,7 @@ static void checkInput(const InputPort & input, const ProcessorPtr & processor)
     if (!input.isConnected())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot create QueryPipeline because {} has not connected input",
+            "Cannot create QueryPipeline because {} has disconnected input",
             processor->getName());
 }
 
@@ -42,7 +42,7 @@ static void checkOutput(const OutputPort & output, const ProcessorPtr & processo
     if (!output.isConnected())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot create QueryPipeline because {} has not connected output",
+            "Cannot create QueryPipeline because {} has disconnected output",
             processor->getName());
 }
 

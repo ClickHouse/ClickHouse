@@ -56,8 +56,8 @@ namespace
 
         /// Such default parameters were picked because they did good on some tests,
         /// though it still requires to fit parameters to achieve better result
-        auto learning_rate = Float64(1.0);
-        auto l2_reg_coef = Float64(0.5);
+        auto learning_rate = static_cast<Float64>(1.0);
+        auto l2_reg_coef = static_cast<Float64>(0.5);
         UInt64 batch_size = 15;
 
         std::string weights_updater_name = "Adam";

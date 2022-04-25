@@ -184,9 +184,7 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 
 }
 
-///
-/// SystemLogs
-///
+
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
     query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
@@ -275,9 +273,7 @@ void SystemLogs::shutdown()
         log->shutdown();
 }
 
-///
-/// SystemLog
-///
+
 template <typename LogElement>
 SystemLog<LogElement>::SystemLog(
     ContextPtr context_,
