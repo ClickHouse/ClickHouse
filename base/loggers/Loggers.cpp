@@ -1,29 +1,28 @@
 #include "Loggers.h"
 
 #include <iostream>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/Logger.h>
+#include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
 #include "OwnPatternFormatter.h"
 #include "OwnSplitChannel.h"
-#include <Poco/ConsoleChannel.h>
-#include <Poco/Logger.h>
-#include <Poco/Net/RemoteSyslogChannel.h>
 
 #ifdef WITH_TEXT_LOG
-    #include <Interpreters/TextLog.h>
+#    include <Interpreters/TextLog.h>
 #endif
 
 #include <filesystem>
 
 namespace fs = std::filesystem;
+bool DB::ExtendedLogMessage::log_format_json = false;
 
 namespace DB
 {
-    class SensitiveDataMasker;
+class SensitiveDataMasker;
 }
-
-bool log_format_json = false;
 
 // TODO: move to libcommon
 static std::string createDirectory(const std::string & file)
@@ -182,8 +181,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
     bool color_logs_by_default = isatty(STDERR_FILENO);
-    if (config.getBool("logger.console", false)
-        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
+    if (config.getBool("logger.console", false) || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
     {
         bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
 
@@ -200,9 +198,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log->setLevel(console_log_level);
         split->addChannel(log, "console");
     }
-    if (config.has("logger.format.json"))
+    if (config.has("logger.json"))
     {
-        log_format_json = true;
+        DB::ExtendedLogMessage::log_format_json = true;
     }
     split->open();
     logger.close();
@@ -263,8 +261,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     // Set level to console
     bool is_daemon = config.getBool("application.runAsDaemon", false);
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
-    if (config.getBool("logger.console", false)
-        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
+    if (config.getBool("logger.console", false) || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
         split->setLevel("console", log_level);
     else
         split->setLevel("console", 0);

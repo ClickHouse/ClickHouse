@@ -27,6 +27,7 @@ public:
 
     uint64_t thread_id = 0;
     std::string query_id;
+    static bool log_format_json;
 };
 
 

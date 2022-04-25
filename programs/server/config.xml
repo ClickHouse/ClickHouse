@@ -6,6 +6,7 @@
    or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
 <clickhouse>
+    <core_path>/opt/cores/</core_path>
     <logger>
         <!-- Possible levels [1]:
 
@@ -61,17 +62,15 @@
         </levels>
         -->
         <!-- Structured log formatting:
-        
         You can specify log format (for now, JSON only). In that case, the console log will be printed
         in JSON format.
         For example, like this below:
-        {"datetime":"2022.03.28 12:17:54.827035","thread_id":"790151","query_id":"2441139","priority":"Debug","source":"KeeperTCPHandler","message":"Received close event with xid 2147483647 for session id #7"}  
-        To enable JSON logging support, just uncomment <format> tag and add <json> tag. 
+        {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
+        To enable JSON logging support, just uncomment <json> tag. 
         Having the <json> tag will make it work. For better understanding/visibility, you can add "true" or "1".
         -->
-        <format>
-            <json>true</json>
-        </format>
+        <!-- <json>true</json> -->
+
     </logger>
 
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
@@ -977,13 +976,14 @@
     <!-- Uncomment to write text log into table.
          Text log contains all information from usual server log but stores it in structured and efficient way.
          The level of the messages that goes to the table can be limited (<level>), if not specified all messages will go to the table.
+    -->
     <text_log>
         <database>system</database>
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <level></level>
     </text_log>
-    -->
+    
 
     <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval. -->
     <metric_log>

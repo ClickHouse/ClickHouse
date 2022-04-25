@@ -1,10 +1,8 @@
 #include "OwnFormattingChannel.h"
+#include <iostream> //mallik--remove pls
 #include "OwnPatternFormatter.h"
-#include "Loggers.h"
-
 namespace DB
 {
-
 void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
 {
     if (pChannel && priority >= msg.base.getPriority())
@@ -12,7 +10,7 @@ void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
         if (pFormatter)
         {
             std::string text;
-            if (log_format_json)
+            if (DB::ExtendedLogMessage::log_format_json)
             {
                 pFormatter->formatExtendedJSON(msg, text);
             }
