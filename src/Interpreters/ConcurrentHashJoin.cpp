@@ -135,7 +135,7 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
-        std::lock_guard lokc(hash_join->mutex);
+        std::lock_guard lock(hash_join->mutex);
         res += hash_join->data->getTotalRowCount();
     }
     return res;
@@ -146,7 +146,7 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
-        std::lock_guard lokc(hash_join->mutex);
+        std::lock_guard lock(hash_join->mutex);
         res += hash_join->data->getTotalByteCount();
     }
     return res;
@@ -156,7 +156,7 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 {
     for (const auto & hash_join : hash_joins)
     {
-        std::lock_guard lokc(hash_join->mutex);
+        std::lock_guard lock(hash_join->mutex);
         if (!hash_join->data->alwaysReturnsEmptySet())
             return false;
     }
