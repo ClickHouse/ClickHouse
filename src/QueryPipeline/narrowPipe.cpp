@@ -1,8 +1,9 @@
+#include <QueryPipeline/narrowPipe.h>
+
 #include <random>
 #include <Common/thread_local_rng.h>
 #include <Processors/ConcatProcessor.h>
 #include <QueryPipeline/Pipe.h>
-#include "narrowBlockInputStreams.h"
 
 
 namespace DB
