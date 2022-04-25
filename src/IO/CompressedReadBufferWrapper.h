@@ -18,6 +18,8 @@ public:
 
     const ReadBuffer & getWrappedReadBuffer() const { return *in; }
 
+    void prefetch() override { in->prefetch(); }
+
 protected:
     std::unique_ptr<ReadBuffer> in;
 };

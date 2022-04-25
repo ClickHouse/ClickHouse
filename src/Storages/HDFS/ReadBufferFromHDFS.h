@@ -16,7 +16,6 @@
 
 namespace DB
 {
-
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */

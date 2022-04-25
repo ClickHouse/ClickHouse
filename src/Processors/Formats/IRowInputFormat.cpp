@@ -77,6 +77,7 @@ Chunk IRowInputFormat::generate()
     {
         RowReadExtension info;
         bool continue_reading = true;
+        // in->prefetch();
         for (size_t rows = 0; rows < params.max_block_size && continue_reading; ++rows)
         {
             try
