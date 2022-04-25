@@ -1,5 +1,5 @@
 ---
-toc_title: WITH
+sidebar_label: WITH
 ---
 
 # Секция WITH {#with-clause}

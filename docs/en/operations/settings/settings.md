@@ -1,3 +1,9 @@
+---
+sidebar_label: Settings
+sidebar_position: 52
+slug: /en/operations/settings/settings
+---
+
 # Settings {#settings}
 
 ## distributed_product_mode {#distributed-product-mode}
@@ -401,8 +407,9 @@ Default value: 1.
 
 When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv), [TabSeparated](../../interfaces/formats.md#tabseparated) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
-!!! note "Note"
-    When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
+:::note
+When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
+:::
 
 Possible values:
 
@@ -518,33 +525,6 @@ Possible values:
 -   1 — Default column value is inserted instead of `NULL`.
 
 Default value: `1`.
-
-## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
-
-Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
-
-Example:
-
-```sql
-INSERT INTO FUNCTION null('foo String') SETTINGS max_threads=1 VALUES ('bar');
-```
-
-But the following query will work only with `allow_settings_after_format_in_insert`:
-
-```sql
-SET allow_settings_after_format_in_insert=1;
-INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
-```
-
-Possible values:
-
--   0 — Disallow.
--   1 — Allow.
-
-Default value: `0`.
-
-!!! note "Warning"
-    Use this setting only for backward compatibility if your use cases depend on old syntax.
 
 ## input_format_skip_unknown_fields {#settings-input-format-skip-unknown-fields}
 
@@ -717,8 +697,9 @@ When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to t
 
 Changes behaviour of join operations with `ANY` strictness.
 
-!!! warning "Attention"
-    This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+:::warning
+This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+:::
 
 Possible values:
 
@@ -789,8 +770,9 @@ Default value: 64.
 
 Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
 
-!!! note "Warning"
-    Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
+:::warning
+Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
+:::
 
 When the legacy behaviour enabled:
 
@@ -1089,15 +1071,6 @@ Result:
 └─────────────┴───────────┘
 ```
 
-## log_processors_profiles {#settings-log_processors_profiles}
-
-Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
-
-See also:
-
--   [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
--   [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
-
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 The size of blocks (in a count of rows) to form for insertion into a table.
@@ -1173,8 +1146,9 @@ Higher values will lead to higher memory usage.
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
-!!! note "Warning"
-    This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::warning
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
 
 Don’t confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
@@ -1190,8 +1164,9 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
 
-!!! note "Warning"
-    This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::warning
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
 
 ## max_query_size {#settings-max_query_size}
 
@@ -1279,8 +1254,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
-!!! note "Note"
-    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::note
+60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
@@ -1299,8 +1275,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
-!!! note "Note"
-    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::note
+60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1462,8 +1439,9 @@ Possible values:
 
 Default value: 1.
 
-!!! warning "Warning"
-    Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+:::warning
+Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+:::
 
 ## totals_mode {#totals-mode}
 
@@ -1494,8 +1472,9 @@ This setting is useful for replicated tables with a sampling key. A query may be
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
-!!! warning "Warning"
-    This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+:::warning
+This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+:::
 
 ## compile_expressions {#compile-expressions}
 
@@ -1841,7 +1820,7 @@ ignoring check result for the source table, and will insert rows lost because of
 
 ## insert_deduplication_token {#insert_deduplication_token}
 
-The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree  
+The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
 user can avoid the same inserted data being deduplicated.
 
@@ -1867,7 +1846,7 @@ INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
 -- the next insert won't be deduplicated because insert_deduplication_token is different
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
 
--- the next insert will be deduplicated because insert_deduplication_token 
+-- the next insert will be deduplicated because insert_deduplication_token
 -- is the same as one of the previous
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
 
@@ -2147,8 +2126,9 @@ See also:
 -   [distributed_push_down_limit](#distributed-push-down-limit)
 -   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
 
-!!! note "Note"
-    Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
+:::note
+Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
+:::
 
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
@@ -2290,18 +2270,21 @@ Possible values:
 
 Default value: 0.
 
-!!! note "Note"
-    This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+:::note
+This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+:::
 
-!!! warning "Warning"
-    You should not rely on automatic batch splitting, since this may hurt performance.
+:::warning
+You should not rely on automatic batch splitting, since this may hurt performance.
+:::
 
 ## os_thread_priority {#setting-os-thread-priority}
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
 
-!!! warning "Warning"
-    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+:::warning
+To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+:::
 
 Possible values:
 
@@ -2575,9 +2558,10 @@ Possible values:
 
 Default value: `1`.
 
-!!! note "Note"
-    - with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
-    - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+:::note
+- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
+- with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+:::
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
@@ -3232,11 +3216,13 @@ Possible values:
 
 Default value: `0`.
 
-!!! warning "Warning"
-    Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
+:::warning
+Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
+:::
 
-!!! warning "Warning"
-    Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
+:::warning
+Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
+:::
 
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
@@ -3325,19 +3311,6 @@ Possible values:
 -   0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
 Default value: `16`.
-
-## max_insert_delayed_streams_for_parallel_write {#max-insert-delayed-streams-for-parallel-write}
-
-The maximum number of streams (columns) to delay final part flush.
-
-It makes difference only if underlying storage supports parallel write (i.e. S3), otherwise it will not give any benefit.
-
-Possible values:
-
--   Positive integer.
--   0 or 1 — Disabled.
-
-Default value: `1000` for S3 and `0` otherwise.
 
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 
@@ -4256,36 +4229,10 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled. The wait time equal shutdown_wait_unfinished config.
 
-Default value: `0`.
+Default value: 0.
 
 ## shutdown_wait_unfinished
 
 The waiting time in seconds for currently handled connections when shutdown server.
 
-Default Value: `5`.
-
-## max_guaranteed_memory_usage
-
-Maximum guaranteed memory usage for processing of single query.
-It represents soft limit in case when hard limit is reached on user level.
-Zero means unlimited.
-Read more about [memory overcommit](memory-overcommit.md).
-
-Default value: `0`.
-
-## memory_usage_overcommit_max_wait_microseconds
-
-Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
-If the timeout is reached and memory is not freed, an exception is thrown.
-Read more about [memory overcommit](memory-overcommit.md).
-
-Default value: `0`.
-
-## max_guaranteed_memory_usage_for_user
-
-Maximum guaranteed memory usage for processing all concurrently running queries for the user.
-It represents soft limit in case when hard limit is reached on global level.
-Zero means unlimited.
-Read more about [memory overcommit](memory-overcommit.md).
-
-Default value: `0`.
+Default Value: 5.
