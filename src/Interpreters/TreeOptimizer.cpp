@@ -21,6 +21,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -138,10 +139,18 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            else if (!function_factory.get(function->name, context)->isInjective({}))
+            else
             {
-                ++i;
-                continue;
+                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context);
+
+                if (!function_builder)
+                    function_builder = function_factory.get(function->name, context);
+
+                if (!function_builder->isInjective({}))
+                {
+                    ++i;
+                    continue;
+                }
             }
 
             /// copy shared pointer to args in order to ensure lifetime
