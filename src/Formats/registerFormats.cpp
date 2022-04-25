@@ -15,6 +15,9 @@ void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory);
 void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
+#if USE_HIVE
+void registerFileSegmentationEngineHiveText(FormatFactory & factory);
+#endif
 
 /// Formats for both input/output.
 
@@ -127,6 +130,10 @@ void registerFormats()
     registerFileSegmentationEngineJSONAsString(factory);
     registerFileSegmentationEngineJSONAsObject(factory);
     registerFileSegmentationEngineJSONCompactEachRow(factory);
+#if USE_HIVE
+    registerFileSegmentationEngineHiveText(factory);
+#endif
+
 
     registerInputFormatNative(factory);
     registerOutputFormatNative(factory);
