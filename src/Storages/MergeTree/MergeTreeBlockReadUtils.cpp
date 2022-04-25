@@ -52,7 +52,7 @@ bool injectRequiredColumnsRecursively(
         if (part->hasColumnFiles(column_in_part))
         {
             /// ensure each column is added only once
-            if (required_columns.count(column_name) == 0)
+            if (!required_columns.contains(column_name))
             {
                 columns.emplace_back(column_name);
                 required_columns.emplace(column_name);
@@ -162,7 +162,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         const ColumnPtr & column_data = from_update ? columns[pos]
                                                     : column_with_type_and_name.column;
 
-        if (!from_update && !names_set.count(column_name))
+        if (!from_update && !names_set.contains(column_name))
             continue;
 
         /// At least PREWHERE filter column might be const.
@@ -286,7 +286,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
                 for (auto & name : prewhere_info->row_level_filter->getRequiredColumnsNames())
                 {
-                    if (names.count(name) == 0)
+                    if (!names.contains(name))
                         pre_column_names.push_back(name);
                 }
             }
@@ -303,7 +303,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
         Names post_column_names;
         for (const auto & name : column_names)
-            if (!pre_name_set.count(name))
+            if (!pre_name_set.contains(name))
                 post_column_names.push_back(name);
 
         column_names = post_column_names;
