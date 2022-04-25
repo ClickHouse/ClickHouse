@@ -155,7 +155,7 @@ namespace
                     auto data_backup = info.storage->backupData(context, info.partitions);
                     if (!data_backup.empty())
                     {
-                        String data_path = PathsInBackup::getDataPath(*info.create_query, backup_settings.shard, backup_settings.replica);
+                        String data_path = PathsInBackup::getDataPath(*info.create_query, backup_settings.shard_num, backup_settings.replica_num);
                         for (auto & [path_in_backup, backup_entry] : data_backup)
                             res.emplace_back(data_path + path_in_backup, std::move(backup_entry));
                     }
@@ -286,7 +286,7 @@ namespace
         std::pair<String, BackupEntryPtr> makeBackupEntryForMetadata(const IAST & create_query) const
         {
             auto metadata_entry = std::make_unique<BackupEntryFromMemory>(serializeAST(create_query));
-            String metadata_path = PathsInBackup::getMetadataPath(create_query, backup_settings.shard, backup_settings.replica);
+            String metadata_path = PathsInBackup::getMetadataPath(create_query, backup_settings.shard_num, backup_settings.replica_num);
             return {metadata_path, std::move(metadata_entry)};
         }
 

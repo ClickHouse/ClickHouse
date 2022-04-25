@@ -30,11 +30,11 @@ struct BackupSettings
 
     /// 1-based shard index to store in the backup. 0 means all shards.
     /// Can only be used with BACKUP ON CLUSTER.
-    size_t shard = 0;
+    size_t shard_num = 0;
 
     /// 1-based replica index to store in the backup. 0 means all replicas (see also allow_storing_multiple_replicas).
     /// Can only be used with BACKUP ON CLUSTER.
-    size_t replica = 0;
+    size_t replica_num = 0;
 
     /// Allows storing in the backup of multiple replicas.
     bool allow_storing_multiple_replicas = false;
