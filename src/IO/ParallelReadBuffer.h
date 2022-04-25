@@ -70,8 +70,6 @@ private:
     void onBackgroundException();
     void finishAndWait();
 
-    SynchronizedArenaWithFreeLists arena;
-
     Memory<> current_segment;
 
     size_t max_working_readers;
