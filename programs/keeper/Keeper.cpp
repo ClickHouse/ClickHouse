@@ -341,7 +341,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
-    tiny_context.initializeKeeperDispatcher(/* start_async = */false);
+    tiny_context.initializeKeeperDispatcher(/* start_async = */ true);
     FourLetterCommandFactory::registerCommands(*tiny_context.getKeeperDispatcher());
 
     auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &

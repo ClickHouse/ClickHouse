@@ -192,7 +192,7 @@ Pipe::Pipe(Processors processors_) : processors(std::move(processors_))
                                 " has not connected input port", ErrorCodes::LOGICAL_ERROR);
 
             const auto * connected_processor = &port.getOutputPort().getProcessor();
-            if (set.count(connected_processor) == 0)
+            if (!set.contains(connected_processor))
                 throw Exception("Cannot create Pipe because processor " + processor->getName() +
                                 " has input port which is connected with unknown processor " +
                                 connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -207,7 +207,7 @@ Pipe::Pipe(Processors processors_) : processors(std::move(processors_))
             }
 
             const auto * connected_processor = &port.getInputPort().getProcessor();
-            if (set.count(connected_processor) == 0)
+            if (!set.contains(connected_processor))
                 throw Exception("Cannot create Pipe because processor " + processor->getName() +
                                 " has output port which is connected with unknown processor " +
                                 connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -791,7 +791,7 @@ void Pipe::transform(const Transformer & transformer)
                                 " has not connected input port", ErrorCodes::LOGICAL_ERROR);
 
             const auto * connected_processor = &port.getOutputPort().getProcessor();
-            if (set.count(connected_processor) == 0)
+            if (!set.contains(connected_processor))
                 throw Exception("Transformation of Pipe is not valid because processor " + processor->getName() +
                                 " has input port which is connected with unknown processor " +
                                 connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -806,7 +806,7 @@ void Pipe::transform(const Transformer & transformer)
             }
 
             const auto * connected_processor = &port.getInputPort().getProcessor();
-            if (set.count(connected_processor) == 0)
+            if (!set.contains(connected_processor))
                 throw Exception("Transformation of Pipe is not valid because processor " + processor->getName() +
                                 " has output port which is connected with unknown processor " +
                                 connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
