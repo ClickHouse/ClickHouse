@@ -18,11 +18,7 @@ if (ENABLE_CLANG_TIDY)
 
         # The variable CMAKE_CXX_CLANG_TIDY will be set inside src and base directories with non third-party code.
         # set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
-    elseif (FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
-        message(FATAL_ERROR "clang-tidy is not found")
     else ()
-        message(STATUS
-            "clang-tidy is not found.
-            This is normal - the tool is only used for code static analysis and isn't essential for the build.")
+        message(${RECONFIGURE_MESSAGE_LEVEL} "clang-tidy is not found")
     endif ()
 endif ()

@@ -417,7 +417,7 @@ if (COMPILER_CLANG)
     endif ()
 
 elseif (ENABLE_THINLTO)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with Clang")
 endif ()
 
 # Turns on all external libs like s3, kafka, ODBC, ...
