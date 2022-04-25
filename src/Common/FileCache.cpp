@@ -233,6 +233,88 @@ FileSegments LRUFileCache::splitRangeIntoCells(
     return file_segments;
 }
 
+void LRUFileCache::fillHolesWithEmptyFileSegments(
+    FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, std::lock_guard<std::mutex> & cache_lock)
+{
+    /// There are segments [segment1, ..., segmentN]
+    /// (non-overlapping, non-empty, ascending-ordered) which (maybe partially)
+    /// intersect with given range.
+
+    /// It can have holes:
+    /// [____________________]         -- requested range
+    ///     [____]  [_]   [_________]  -- intersecting cache [segment1, ..., segmentN]
+    ///
+    /// For each such hole create a cell with file segment state EMPTY.
+
+    auto it = file_segments.begin();
+    auto segment_range = (*it)->range();
+
+    size_t current_pos;
+    if (segment_range.left < range.left)
+    {
+        ///    [_______     -- requested range
+        /// [_______
+        /// ^
+        /// segment1
+
+        current_pos = segment_range.right + 1;
+        ++it;
+    }
+    else
+        current_pos = range.left;
+
+    while (current_pos <= range.right && it != file_segments.end())
+    {
+        segment_range = (*it)->range();
+
+        if (current_pos == segment_range.left)
+        {
+            current_pos = segment_range.right + 1;
+            ++it;
+            continue;
+        }
+
+        assert(current_pos < segment_range.left);
+
+        auto hole_size = segment_range.left - current_pos;
+
+        if (fill_with_detached_file_segments)
+        {
+            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
+            file_segment->detached = true;
+            file_segments.insert(it, file_segment);
+        }
+        else
+        {
+            file_segments.splice(it, splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
+        }
+
+        current_pos = segment_range.right + 1;
+        ++it;
+    }
+
+    if (current_pos <= range.right)
+    {
+        ///   ________]     -- requested range
+        ///   _____]
+        ///        ^
+        /// segmentN
+
+        auto hole_size = range.right - current_pos + 1;
+
+        if (fill_with_detached_file_segments)
+        {
+            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
+            file_segment->detached = true;
+            file_segments.insert(file_segments.end(), file_segment);
+        }
+        else
+        {
+            file_segments.splice(file_segments.end(), splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
+        }
+    }
+}
+
 FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t size)
 {
     assertInitialized();
@@ -254,66 +336,39 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
     }
     else
     {
-        /// There are segments [segment1, ..., segmentN]
-        /// (non-overlapping, non-empty, ascending-ordered) which (maybe partially)
-        /// intersect with given range.
-
-        /// It can have holes:
-        /// [____________________]         -- requested range
-        ///     [____]  [_]   [_________]  -- intersecting cache [segment1, ..., segmentN]
-        ///
-        /// For each such hole create a cell with file segment state EMPTY.
-
-        auto it = file_segments.begin();
-        auto segment_range = (*it)->range();
-
-        size_t current_pos;
-        if (segment_range.left < range.left)
-        {
-            ///    [_______     -- requested range
-            /// [_______
-            /// ^
-            /// segment1
-
-            current_pos = segment_range.right + 1;
-            ++it;
-        }
-        else
-            current_pos = range.left;
-
-        while (current_pos <= range.right && it != file_segments.end())
-        {
-            segment_range = (*it)->range();
-
-            if (current_pos == segment_range.left)
-            {
-                current_pos = segment_range.right + 1;
-                ++it;
-                continue;
-            }
-
-            assert(current_pos < segment_range.left);
-
-            auto hole_size = segment_range.left - current_pos;
-            file_segments.splice(it, splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
-
-            current_pos = segment_range.right + 1;
-            ++it;
-        }
-
-        if (current_pos <= range.right)
-        {
-            ///   ________]     -- requested range
-            ///   _____]
-            ///        ^
-            /// segmentN
-
-            auto hole_size = range.right - current_pos + 1;
-            file_segments.splice(file_segments.end(), splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
-        }
+        fillHolesWithEmptyFileSegments(file_segments, key, range, false, cache_lock);
     }
 
     assert(!file_segments.empty());
+    return FileSegmentsHolder(std::move(file_segments));
+}
+
+FileSegmentsHolder LRUFileCache::get(const Key & key, size_t offset, size_t size)
+{
+    assertInitialized();
+
+    FileSegment::Range range(offset, offset + size - 1);
+
+    std::lock_guard cache_lock(mutex);
+
+#ifndef NDEBUG
+    assertCacheCorrectness(key, cache_lock);
+#endif
+
+    /// Get all segments which intersect with the given range.
+    auto file_segments = getImpl(key, range, cache_lock);
+
+    if (file_segments.empty())
+    {
+        auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::EMPTY);
+        file_segment->detached = true;
+        file_segments = { file_segment };
+    }
+    else
+    {
+        fillHolesWithEmptyFileSegments(file_segments, key, range, true, cache_lock);
+    }
+
     return FileSegmentsHolder(std::move(file_segments));
 }
 

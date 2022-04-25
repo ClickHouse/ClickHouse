@@ -1,5 +1,5 @@
 ---
-toc_title: EXCEPT
+sidebar_label: EXCEPT
 ---
 
 # Секция EXCEPT {#except-clause}
