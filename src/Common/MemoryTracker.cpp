@@ -190,9 +190,8 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
     {
         bool need_to_throw = true;
-        bool try_to_free_memory = overcommit_tracker != nullptr && query_tracker != nullptr;
-        if (try_to_free_memory)
-            need_to_throw = overcommit_tracker->needToStopQuery(query_tracker, size);
+        if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr != nullptr && query_tracker != nullptr)
+            need_to_throw = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
 
         if (need_to_throw)
         {
@@ -311,8 +310,8 @@ void MemoryTracker::free(Int64 size)
             accounted_size += new_amount;
         }
     }
-    if (overcommit_tracker)
-        overcommit_tracker->tryContinueQueryExecutionAfterFree(accounted_size);
+    if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr)
+        overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(accounted_size);
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
