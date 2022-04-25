@@ -383,6 +383,7 @@ namespace
             auto cloned_create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query->clone());
             cloned_create_query->if_not_exists = (restore_settings->create_table == RestoreTableCreationMode::kCreateIfNotExists);
             InterpreterCreateQuery create_interpreter{cloned_create_query, context};
+            create_interpreter.setInternal(true);
             create_interpreter.execute();
         }
 

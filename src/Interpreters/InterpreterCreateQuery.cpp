@@ -985,7 +985,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 create.setDatabase(database_name);
                 guard->releaseTableLock();
-                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
+                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
             }
         }
 
@@ -1117,7 +1117,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();
-            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
+            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
         }
     }
 
