@@ -89,12 +89,15 @@ SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     const std::string & common_path_prefix_,
     const BlobsPathToSize & blobs_to_read_,
-    const ReadSettings & settings_)
+    const ReadSettings & settings_,
+    bool use_external_buffer_)
     : ReadBuffer(nullptr, 0)
     , common_path_prefix(common_path_prefix_)
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
+    , use_external_buffer(use_external_buffer_)
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
+
 {
 }
 

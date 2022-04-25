@@ -666,11 +666,12 @@ void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_informa
 {
     const ReadSettings read_settings;
     auto buffer = metadata_disk->readFile(RESTORE_FILE_NAME, read_settings, 512);
-    buffer->next();
-
-    try
+    if(buffer)
     {
-        std::map<String, String> properties;
+       buffer->next();
+       try
+       {
+           std::map<String, String> properties;
 
         while (buffer->hasPendingData())
         {
@@ -712,6 +713,7 @@ void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_informa
     {
         tryLogCurrentException(log, "Failed to read restore information");
         throw;
+    }
     }
 }
 

@@ -4104,9 +4104,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         assert(typeid_cast<ASTFunction *>(partition_ast.value.get()));
         assert(partition_ast.value->as<ASTFunction>()->name == "tuple");
         assert(partition_ast.value->as<ASTFunction>()->arguments);
-        bool empty_tuple = partition_ast.value->as<ASTFunction>()->arguments->children.empty();
-        if (!empty_tuple)
-            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+	auto args = partition_ast.value->as<ASTFunction>()->arguments;
+	bool empty_tuple = partition_ast.value->as<ASTFunction>()->arguments->children.empty();
+	if (!args || !empty_tuple)
+           throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
     }
     else if (fields_count == 1)
     {
