@@ -36,7 +36,7 @@ jobs:
 
       - name: Build
         run: |
-          sudo apt-get install -yq git cmake python ninja-build
+          sudo apt-get install -yq ninja-build
           sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
           mkdir build
           cd build
