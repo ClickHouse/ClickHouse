@@ -50,15 +50,12 @@ backup_id_counter = 0
 def new_backup_name():
     global backup_id_counter
     backup_id_counter += 1
-    return f"Disk('backups', '{backup_id_counter}.zip')"
+    return f"Disk('backups', '{backup_id_counter}')"
 
 
-def get_path_to_backup(instance, backup_name):
-    return os.path.join(
-        instance.path,
-        "backups",
-        backup_name.removeprefix("Disk('backups', '").removesuffix("')"),
-    )
+def get_path_to_backup(backup_name):
+    name = backup_name.split(",")[1].strip("')/ ")
+    return os.path.join(instance.cluster.instances_dir, "backups", name)
 
 
 def test_replicated_table():
@@ -78,7 +75,7 @@ def test_replicated_table():
 
     # Make backup on node 1.
     node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica=1"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=1"
     )
 
     # Drop table on both nodes.
@@ -114,7 +111,7 @@ def test_replicated_database():
     # Make backup.
     backup_name = new_backup_name()
     node1.query(
-        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica=2"
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2"
     )
 
     # Drop table on both nodes.
