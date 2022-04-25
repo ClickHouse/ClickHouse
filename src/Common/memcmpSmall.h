@@ -41,7 +41,26 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 {
     size_t min_size = std::min(a_size, b_size);
 
-    for (size_t offset = 0; offset < min_size; offset += 16)
+    size_t offset = 0;
+    for (; offset + 16 < min_size; offset += 32)
+    {
+        uint32_t mask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(a + offset)),
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(b + offset))));
+        mask = ~mask;
+
+        if (mask)
+        {
+            offset += __builtin_ctz(mask);
+
+            if (offset >= min_size)
+                break;
+
+            return detail::cmp(a[offset], b[offset]);
+        }
+    }
+
+    for (; offset < min_size; offset += 16)
     {
         uint16_t mask = _mm_cmp_epi8_mask(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
@@ -141,7 +160,26 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t size)
 {
-    for (size_t offset = 0; offset < size; offset += 16)
+    size_t offset = 0;
+    for (; offset + 16 < size; offset += 32)
+    {
+        uint32_t mask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(a + offset)),
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(b + offset))));
+        mask = ~mask;
+
+        if (mask)
+        {
+            offset += __builtin_ctz(mask);
+
+            if (offset >= size)
+                break;
+
+            return detail::cmp(a[offset], b[offset]);
+        }
+    }
+
+    for (; offset < size; offset += 16)
     {
         uint16_t mask = _mm_cmp_epi8_mask(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
@@ -259,7 +297,8 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 }
 
 #elif defined(__SSE2__) && !defined(MEMORY_SANITIZER)
-#include <emmintrin.h>
+#    include <emmintrin.h>
+#    include <immintrin.h>
 
 
 /** All functions works under the following assumptions:
@@ -274,7 +313,26 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 {
     size_t min_size = std::min(a_size, b_size);
 
-    for (size_t offset = 0; offset < min_size; offset += 16)
+    size_t offset = 0;
+    for (; offset + 16 < min_size; offset += 32)
+    {
+        uint32_t mask = _mm256_cmp_epi8_mask(
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(a + offset)),
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(b + offset)),
+            _MM_CMPINT_NE);
+
+        if (mask)
+        {
+            offset += __builtin_ctz(mask);
+
+            if (offset >= min_size)
+                break;
+
+            return detail::cmp(a[offset], b[offset]);
+        }
+    }
+
+    for (; offset < min_size; offset += 16)
     {
         uint16_t mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
@@ -377,7 +435,26 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t size)
 {
-    for (size_t offset = 0; offset < size; offset += 16)
+    size_t offset = 0;
+    for (; offset + 16 < size; offset += 32)
+    {
+        uint32_t mask = _mm256_cmp_epi8_mask(
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(a + offset)),
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(b + offset)),
+            _MM_CMPINT_NE);
+
+        if (mask)
+        {
+            offset += __builtin_ctz(mask);
+
+            if (offset >= size)
+                break;
+
+            return detail::cmp(a[offset], b[offset]);
+        }
+    }
+
+    for (; offset < size; offset += 16)
     {
         uint16_t mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
