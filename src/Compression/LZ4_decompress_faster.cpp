@@ -4,6 +4,7 @@
 #include <iostream>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
+#include <Common/CpuId.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -446,10 +447,16 @@ inline void copyOverlap32Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
         0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,  0,
     };
 
-    _mm256_storeu_si256(reinterpret_cast<__m256i *>(op),
-        _mm256_permutexvar_epi8(
-            _mm256_load_si256(reinterpret_cast<const __m256i *>(masks) + offset),
-            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(match))));
+    if (DB::Cpu::CpuFlagsCache::have_AVX512VBMI)
+    {
+        _mm256_storeu_si256(reinterpret_cast<__m256i *>(op),
+            _mm256_permutexvar_epi8(
+                _mm256_load_si256(reinterpret_cast<const __m256i *>(masks) + offset),
+                _mm256_loadu_si256(reinterpret_cast<const __m256i *>(match))));
+        match += masks[offset];
+    } else {
+        copyOverlap32(op, match, offset);
+    }
 #else
     copyOverlap32(op, match, offset);
 #endif
@@ -645,6 +652,8 @@ bool decompress(
             success = decompressImpl<8, true>(source, dest, source_size, dest_size);
         if (best_variant == 3)
             success = decompressImpl<32, false>(source, dest, source_size, dest_size);
+        if (best_variant == 4)
+            success = decompressImpl<32, true>(source, dest, source_size, dest_size);
 
         watch.stop();
 
