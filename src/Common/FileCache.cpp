@@ -567,15 +567,18 @@ void LRUFileCache::tryRemoveAll()
         auto & [key, offset] = *it++;
 
         auto * cell = getCell(key, offset, cache_lock);
+        if (!cell)
+           throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
+
         if (cell->releasable())
         {
             auto file_segment = cell->file_segment;
             if (file_segment)
             {
-                std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
-                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+               std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+               remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
             }
-        }
+        }   
     }
 }
 

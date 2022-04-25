@@ -28,7 +28,8 @@ public:
     ReadBufferFromRemoteFSGather(
         const std::string & common_path_prefix_,
         const BlobsPathToSize & blobs_to_read_,
-        const ReadSettings & settings_);
+        const ReadSettings & settings_,
+	bool use_external_buffer = false);
 
     String getFileName() const;
 
