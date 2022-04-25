@@ -51,31 +51,7 @@ public:
 
 private:
     /// Reader in progress with a list of read segments
-    struct ReadWorker
-    {
-        explicit ReadWorker(SeekableReadBufferPtr reader_) : reader(std::move(reader_)), range(reader->getRemainingReadRange())
-        {
-            assert(range.right);
-            bytes_left = *range.right - range.left + 1;
-        }
-
-        auto nextSegment()
-        {
-            assert(!segments.empty());
-            auto next_segment = std::move(segments.front());
-            segments.pop_front();
-            range.left += next_segment.size();
-            return next_segment;
-        }
-
-        SeekableReadBufferPtr reader;
-        std::deque<Memory<>> segments;
-        bool finished{false};
-        SeekableReadBuffer::Range range;
-        size_t bytes_left{0};
-        std::atomic_bool cancel{false};
-    };
-
+    struct ReadWorker;
     using ReadWorkerPtr = std::shared_ptr<ReadWorker>;
 
     /// First worker in deque have new data or processed all available amount
