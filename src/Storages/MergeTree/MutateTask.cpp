@@ -1898,9 +1898,6 @@ bool MutateTask::prepare()
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 
-    /// lightweight mutation dont not need to apply deleted mask, in order to keep logic row number for rows.
-    context_for_reading->setFromLightWeightMutation(true);
-
     if (!ctx->for_interpreter.empty())
     {
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
@@ -1990,13 +1987,11 @@ bool MutateTask::prepare()
     return true;
 }
 
-<<<<<<< HEAD
 const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
 {
     return ctx->hardlinked_files;
 }
 
-=======
 bool MutateTask::lightweight_prepare()
 {
     MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry);
@@ -2004,7 +1999,6 @@ bool MutateTask::lightweight_prepare()
     if (ctx->future_part->parts.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to mutate {} parts, not one. "
                                                    "This is a bug.", toString(ctx->future_part->parts.size()));
->>>>>>> Merge lightweight mutation to new MutateTask
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
     ctx->source_part = ctx->future_part->parts[0];

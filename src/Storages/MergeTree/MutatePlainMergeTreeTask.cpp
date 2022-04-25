@@ -85,7 +85,7 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 /// Only lightweight mutations have value lightweight_mutation bigger than 0
                 /// If commands are Ordinary, the value of lightweight_mutation is 0.
-                if (new_part->info.lightweight_mutation)
+                if (future_part->part_info.lightweight_mutation)
                 {
                     /// Only lightweight update commands can add REAL new part.
                     /// For faked empty part, no need to add.
