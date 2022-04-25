@@ -257,6 +257,11 @@ endif()
 
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+if (NOT BUILD_STANDALONE_KEEPER)
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
+else ()
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" OFF)
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
@@ -312,6 +317,15 @@ option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debu
 if (ENABLE_BUILD_PATH_MAPPING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
     set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+endif ()
+
+option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
+if (ENABLE_BUILD_PROFILING)
+     if (COMPILER_CLANG)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
+     else ()
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Build profiling is only available with CLang")
+     endif ()
 endif ()
 
 if (${CMAKE_VERSION} VERSION_LESS "3.12.4")

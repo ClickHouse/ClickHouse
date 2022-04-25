@@ -53,7 +53,8 @@ namespace
     }
 
     /// Checks that a path specified as parameters of File() is valid.
-    void checkPath(fs::path & path, const Poco::Util::AbstractConfiguration & config, const fs::path & data_dir) {
+    void checkPath(fs::path & path, const Poco::Util::AbstractConfiguration & config, const fs::path & data_dir)
+    {
         path = path.lexically_normal();
         if (path.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path to backup must not be empty");

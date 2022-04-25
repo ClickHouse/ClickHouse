@@ -7,6 +7,7 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Common/IntervalKind.h>
+#include <DataTypes/IDataType.h>
 
 class Collator;
 
