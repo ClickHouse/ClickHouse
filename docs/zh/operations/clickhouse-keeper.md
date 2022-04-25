@@ -7,8 +7,9 @@ sidebar_label: ClickHouse Keeper
 
 ClickHouse 服务为了 [副本](../engines/table-engines/mergetree-family/replication.md) 和 [分布式DDL](../sql-reference/distributed-ddl.md) 查询执行使用 [ZooKeeper](https://zookeeper.apache.org/) 协调系统. ClickHouse Keeper 和 ZooKeeper是相互兼容的，可互相替代.
 
-!!! warning "警告"
-    这个功能当前还在预发生产阶段. 我们只是在内部部分使用于生产环境和测试CI中.
+:::danger "警告"
+这个功能当前还在预发生产阶段. 我们只是在内部部分使用于生产环境和测试CI中.
+:::
 
 ## 实现细节 {#implementation-details}
 
@@ -18,8 +19,9 @@ ClickHouse Keeper 默认提供了一些保证和ZooKeeper是一样的 (线性写
 
 ClickHouse Keeper支持访问控制列表(ACL)的方式和[ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) 一样. ClickHouse Keeper支持相同的权限集合并且有完全相同的内置方案如：`world`, `auth`, `digest`, `host` and `ip`. 权限校验使用 `用户名:密码`方式配对. 密码通过Base64算法加密. 
 
-!!! info "注意"
-    不支持外部集成
+:::info "注意"
+不支持外部集成
+:::
 
 ## 配置 {#configuration}
 
