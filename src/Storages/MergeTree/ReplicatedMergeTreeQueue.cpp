@@ -213,7 +213,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
 {
     auto entry_virtual_parts = entry->getVirtualPartNames(format_version);
 
-    LOG_TEST(log, "Insert entry {} to queue with type {} with virtual parts [{}]", entry->znode_name, entry->typeToString(), fmt::join(entry_virtual_parts, ", "));
+    LOG_TEST(log, "Insert entry {} to queue with type {}", entry->znode_name, entry->getDescriptionForLogs(format_version));
 
     for (const String & virtual_part_name : entry_virtual_parts)
     {
@@ -293,9 +293,9 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 {
 
     auto entry_virtual_parts = entry->getVirtualPartNames(format_version);
-    LOG_TEST(log, "Removing {} entry {} from queue with type {} with virtual parts [{}]",
+    LOG_TEST(log, "Removing {} entry {} from queue with type {}",
              is_successful ? "successful" : "unsuccessful",
-             entry->znode_name, entry->typeToString(), fmt::join(entry_virtual_parts, ", "));
+             entry->znode_name, entry->getDescriptionForLogs(format_version));
     /// Update insert times.
     if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
     {
