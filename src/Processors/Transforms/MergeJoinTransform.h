@@ -26,11 +26,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
@@ -214,6 +209,8 @@ public:
     const SortCursorImpl * operator-> () const { return &cursor; }
 
     SortCursorImpl cursor;
+
+    const Block & sampleBlock() const { return sample_block; }
 
 private:
     Block sample_block;
