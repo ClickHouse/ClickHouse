@@ -118,6 +118,10 @@ KeeperServer::KeeperServer(
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 }
 
+/**
+ * Tiny wrapper around nuraft::raft_server which adds some functions
+ * necessary for recovery, mostly connected to config manipulation.
+ */
 struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
 {
     bool isClusterHealthy()
@@ -197,7 +201,7 @@ void KeeperServer::loadLatestConfig()
     }
 }
 
-void KeeperServer::recoveryMode(nuraft::raft_params & params)
+void KeeperServer::enterRecoveryMode(nuraft::raft_params & params)
 {
     LOG_WARNING(
         log,
@@ -218,10 +222,11 @@ void KeeperServer::recoveryMode(nuraft::raft_params & params)
 
 void KeeperServer::forceRecovery()
 {
+    // notify threads containing the lock that we want to enter recovery mode
     is_recovering = true;
-    std::lock_guard lock{server_mutex};
+    std::lock_guard lock{server_write_mutex};
     auto params = raft_instance->get_current_params();
-    recoveryMode(params);
+    enterRecoveryMode(params);
     raft_instance->setConfig(state_manager->load_config());
     raft_instance->update_params(params);
 }
@@ -263,7 +268,7 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
     }
 
     if (is_recovering)
-        recoveryMode(params);
+        enterRecoveryMode(params);
 
     nuraft::raft_server::init_options init_options;
 
@@ -383,7 +388,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForS
     for (const auto & [session_id, time, request] : requests_for_sessions)
         entries.push_back(getZooKeeperLogEntry(session_id, time, request));
 
-    std::lock_guard lock{server_mutex};
+    std::lock_guard lock{server_write_mutex};
     if (is_recovering)
         return nullptr;
 
@@ -462,7 +467,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // config is the same as the committed one
                 // Because we manually set the config to commit
                 // we need to call the reconfigure also
-                uint64_t log_idx = *static_cast<uint64_t*>(param->ctx);
+                uint64_t log_idx = *static_cast<uint64_t *>(param->ctx);
                 if (log_idx == state_manager->load_config()->get_log_idx())
                     raft_instance->forceReconfigure(state_manager->load_config());
                 break;
@@ -554,7 +559,7 @@ ConfigUpdateActions KeeperServer::getConfigurationDiff(const Poco::Util::Abstrac
 
     if (!diff.empty())
     {
-        std::lock_guard lock{server_mutex};
+        std::lock_guard lock{server_write_mutex};
         last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
     }
 
@@ -563,7 +568,7 @@ ConfigUpdateActions KeeperServer::getConfigurationDiff(const Poco::Util::Abstrac
 
 void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
 {
-    std::lock_guard lock{server_mutex};
+    std::lock_guard lock{server_write_mutex};
     if (is_recovering)
         return;
 
@@ -663,7 +668,6 @@ void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
 
 bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
 {
-    std::lock_guard lock{server_mutex};
     if (is_recovering)
         return false;
 

@@ -116,6 +116,8 @@ public:
         return server && server->checkInit();
     }
 
+    /// Is server accepting requests, i.e. connected to the cluster
+    /// and achieved quorum
     bool isServerActive() const;
 
     /// Registered in ConfigReloader callback. Add new configuration changes to
