@@ -23,7 +23,6 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/IColumn.h>
-#include <base/logger_useful.h>
 
 
 namespace DB::QueryPlanOptimizations
@@ -111,13 +110,17 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
     UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
+
     auto order_info = order_optimizer->getInputOrder(
             query_info.projection ? query_info.projection->desc->metadata : read_from_merge_tree->getStorageMetadata(),
             context,
             limit);
 
-    read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
-    sorting->convertToFinishSorting(order_info->order_key_prefix_descr);
+    if (order_info)
+    {
+        read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
+        sorting->convertToFinishSorting(order_info->order_key_prefix_descr);
+    }
 
     return 0;
 }
