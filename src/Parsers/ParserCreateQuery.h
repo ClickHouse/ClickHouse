@@ -135,6 +135,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_type{"TYPE"};
     ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
+    ParserLiteral literal_parser;
     ParserCodec codec_parser;
     ParserExpression expression_parser;
 
@@ -198,11 +199,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     else if (s_ephemeral.ignore(pos, expected))
     {
         default_specifier = "EPHEMERAL";
-        if (!expr_parser.parse(pos, default_expression, expected) && type)
+        if (!literal_parser.parse(pos, default_expression, expected) && type)
             default_expression = std::make_shared<ASTLiteral>(Field());
-        /// The default expression for EPHEMERAL should be ASTLiteral,
-        /// otherwise it will be crash in formatImpl.
-        if (!startsWith(default_expression->getID(), "Literal"))
+
+        if (!default_expression && !type)
             return false;
     }
 
