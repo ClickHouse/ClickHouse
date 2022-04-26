@@ -18,31 +18,30 @@ INSERT INTO t2
         'val' || toString(number) as s
     FROM numbers_mt({{ table_size - 3 }});
 
-SET join_algorithm = 'full_sorting_merge';
+-- SET join_algorithm = 'full_sorting_merge';
 
-{% for block_size in range (1, table_size + 1) -%}
+{% for kind in ['ALL', 'ANY'] -%}
+{% for block_size in range(1, table_size + 1) -%}
 
 SET max_block_size = {{ block_size }};
 
-SELECT 'simple cases, block size = {{ block_size }}';
-
-SELECT 'ANY INNER';
+SELECT '{{ kind }} INNER | bs = {{ block_size }}';
 SELECT t1.key, t2.key, empty(t1.s), empty(t2.s) FROM t1
-ANY INNER JOIN t2
+{{ kind }} INNER JOIN t2
 ON t1.key == t2.key
 ORDER BY t1.key, t2.key
 ;
 
-SELECT 'ANY LEFT';
+SELECT '{{ kind }} LEFT | bs = {{ block_size }}';
 SELECT t1.key, t2.key, t1.s, empty(t2.s) FROM t1
-ANY LEFT JOIN t2
+{{ kind }} LEFT JOIN t2
 ON t1.key == t2.key
 ORDER BY t1.key, t2.key, t1.s
 ;
 
-SELECT 'ANY RIGHT';
+SELECT '{{ kind }} RIGHT | bs = {{ block_size }}';
 SELECT t1.key, t2.key, empty(t1.s), t2.s FROM t1
-ANY RIGHT JOIN t2
+{{ kind }} RIGHT JOIN t2
 ON t1.key == t2.key
 ORDER BY t1.key, t2.key, t2.s
 ;
@@ -51,25 +50,25 @@ ORDER BY t1.key, t2.key, t2.s
 
 SET join_use_nulls = 1;
 
-SELECT 'simple cases: join_use_nulls';
-
-SELECT 'ANY INNER';
+SELECT '{{ kind }} INNER | join_use_nulls = 1';
 SELECT t1.key, t2.key, isNull(t1.s), isNull(t2.s) FROM t1
-ANY INNER JOIN t2
+{{ kind }} INNER JOIN t2
 ON t1.key == t2.key
 ORDER BY t1.key, t2.key
 ;
 
-SELECT 'ANY LEFT';
+SELECT '{{ kind }} LEFT | join_use_nulls = 1';
 SELECT t1.key, t2.key, t1.s, isNull(t2.s) FROM t1
-ANY LEFT JOIN t2
+{{ kind }} LEFT JOIN t2
 ON t1.key == t2.key
 ORDER BY t1.key, t2.key, t1.s
 ;
 
-SELECT 'ANY RIGHT';
+SELECT '{{ kind }} RIGHT | join_use_nulls = 1';
 SELECT t1.key, t2.key, isNull(t1.s), t2.s FROM t1
-ANY RIGHT JOIN t2
+{{ kind }} RIGHT JOIN t2
 ON t1.key == t2.key
 ORDER BY t1.key, t2.key, t2.s
 ;
+
+{% endfor -%}

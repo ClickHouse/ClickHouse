@@ -1,11 +1,12 @@
-simple cases, block size = 1
-ANY INNER
+ALL INNER | bs = 1
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 1
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -21,7 +22,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 1
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -34,14 +35,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 2
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 2
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 2
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -57,7 +61,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 2
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -70,14 +74,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 3
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 3
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 3
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -93,7 +100,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 3
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -106,14 +113,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 4
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 4
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 4
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -129,7 +139,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 4
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -142,14 +152,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 5
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 5
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 5
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -165,7 +178,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 5
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -178,14 +191,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 6
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 6
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 6
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -201,7 +217,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 6
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -214,14 +230,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 7
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 7
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 7
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -237,7 +256,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 7
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -250,14 +269,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 8
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 8
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 8
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -273,7 +295,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 8
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -286,14 +308,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 9
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 9
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 9
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -309,7 +334,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 9
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -322,14 +347,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 10
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 10
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 10
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -345,7 +373,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 10
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -358,14 +386,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 11
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 11
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 11
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -381,7 +412,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 11
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -394,14 +425,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 12
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 12
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 12
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -417,7 +451,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 12
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -430,14 +464,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 13
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 13
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 13
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -453,7 +490,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 13
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -466,14 +503,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 14
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 14
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 14
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -489,7 +529,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 14
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -502,14 +542,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases, block size = 15
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | bs = 15
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | bs = 15
 1	1	val5	0
 2	0	val9	1
 3	3	val10	0
@@ -525,7 +568,7 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	0	val6	1
-ANY RIGHT
+ALL RIGHT | bs = 15
 0	8	1	val2
 0	8	1	val4
 0	9	1	val5
@@ -538,14 +581,17 @@ ANY RIGHT
 7	7	0	val8
 13	13	0	val1
 14	14	0	val7
-simple cases: join_use_nulls
-ANY INNER
+14	14	0	val7
+14	14	0	val7
+ALL INNER | join_use_nulls = 1
 1	1	0	0
 3	3	0	0
 7	7	0	0
 13	13	0	0
 14	14	0	0
-ANY LEFT
+14	14	0	0
+14	14	0	0
+ALL LEFT | join_use_nulls = 1
 1	1	val5	0
 2	\N	val9	1
 3	3	val10	0
@@ -561,7 +607,569 @@ ANY LEFT
 14	14	val13	0
 14	14	val4	0
 15	\N	val6	1
-ANY RIGHT
+ALL RIGHT | join_use_nulls = 1
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+14	14	0	val7
+14	14	0	val7
+\N	8	1	val2
+\N	8	1	val4
+\N	9	1	val5
+\N	12	1	val0
+\N	12	1	val11
+\N	12	1	val3
+\N	12	1	val9
+ANY INNER | bs = 1
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 1
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 1
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 2
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 2
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 2
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 3
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 3
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 3
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 4
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 4
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 4
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 5
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 5
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 5
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 6
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 6
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 6
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 7
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 7
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 7
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 8
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 8
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 8
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 9
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 9
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 9
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 10
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 10
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 10
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 11
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 11
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 11
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 12
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 12
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 12
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 13
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 13
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 13
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 14
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 14
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 14
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | bs = 15
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | bs = 15
+1	1	val5	0
+2	\N	val9	\N
+3	3	val10	0
+4	\N	val12	\N
+5	\N	val11	\N
+6	\N	val7	\N
+7	7	val14	0
+10	\N	val3	\N
+10	\N	val8	\N
+11	\N	val0	\N
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	\N
+ANY RIGHT | bs = 15
+1	1	0	val6
+3	3	0	val10
+7	7	0	val8
+13	13	0	val1
+14	14	0	val7
+\N	8	\N	val2
+\N	8	\N	val4
+\N	9	\N	val5
+\N	12	\N	val0
+\N	12	\N	val11
+\N	12	\N	val3
+\N	12	\N	val9
+ANY INNER | join_use_nulls = 1
+1	1	0	0
+3	3	0	0
+7	7	0	0
+13	13	0	0
+14	14	0	0
+ANY LEFT | join_use_nulls = 1
+1	1	val5	0
+2	\N	val9	1
+3	3	val10	0
+4	\N	val12	1
+5	\N	val11	1
+6	\N	val7	1
+7	7	val14	0
+10	\N	val3	1
+10	\N	val8	1
+11	\N	val0	1
+13	13	val2	0
+14	14	val1	0
+14	14	val13	0
+14	14	val4	0
+15	\N	val6	1
+ANY RIGHT | join_use_nulls = 1
 1	1	0	val6
 3	3	0	val10
 7	7	0	val8

@@ -79,8 +79,9 @@ struct JoinKeyRow
     }
 };
 
-struct AnyJoinState : boost::noncopyable
+class AnyJoinState : boost::noncopyable
 {
+public:
     AnyJoinState() = default;
 
     void set(size_t source_num, const SortCursorImpl & cursor)
@@ -103,8 +104,9 @@ struct AnyJoinState : boost::noncopyable
     Chunk value;
 };
 
-struct AllJoinState : boost::noncopyable
+class AllJoinState : boost::noncopyable
 {
+public:
     struct Range
     {
         Range() = default;
@@ -127,8 +129,7 @@ struct AllJoinState : boost::noncopyable
 
     AllJoinState(const SortCursorImpl & lcursor, size_t lpos,
                  const SortCursorImpl & rcursor, size_t rpos)
-        : left_key(lcursor, lpos)
-        , right_key(rcursor, rpos)
+        : keys{JoinKeyRow(lcursor, lpos), JoinKeyRow(rcursor, rpos)}
     {
     }
 
@@ -156,6 +157,14 @@ struct AllJoinState : boost::noncopyable
 
     bool finished() const { return lidx >= left.size(); }
 
+    size_t blocksStored() const { return left.size() + right.size(); }
+    const Range & getLeft() const { return left[lidx]; }
+    const Range & getRight() const { return right[ridx]; }
+
+    /// Left and right types can be different because of nullable
+    JoinKeyRow keys[2];
+
+private:
     bool nextLeft()
     {
         lidx += 1;
@@ -179,16 +188,8 @@ struct AllJoinState : boost::noncopyable
         }
         return true;
     }
-
-    const Range & getLeft() const { return left[lidx]; }
-    const Range & getRight() const { return right[ridx]; }
-
     std::vector<Range> left;
     std::vector<Range> right;
-
-    /// Left and right types can be different because of nullable
-    JoinKeyRow left_key;
-    JoinKeyRow right_key;
 
     size_t lidx = 0;
     size_t ridx = 0;
@@ -236,13 +237,7 @@ public:
 
     virtual void initialize(Inputs inputs) override;
     virtual void consume(Input & input, size_t source_num) override;
-    virtual Status merge() override
-    {
-        Status result = mergeImpl();
-        LOG_TRACE(log, "XXXX: merge result: chunk: {}, required: {}, finished: {}",
-        result.chunk.getNumRows(), result.required_source, result.is_finished);
-        return result ;
-    }
+    virtual Status merge() override;
 
     void onFinish(double seconds)
     {
@@ -255,9 +250,10 @@ public:
     }
 
 private:
-    Status mergeImpl();
-
+    std::optional<Status> handleAnyJoinState();
     Status anyJoin(ASTTableJoin::Kind kind);
+
+    std::optional<Status> handleAllJoinState();
     Status allJoin(ASTTableJoin::Kind kind);
 
     std::vector<FullMergeJoinCursorPtr> cursors;
