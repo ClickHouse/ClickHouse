@@ -671,6 +671,21 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     return snapshot;
 }
 
+void FileSegment::detach(std::lock_guard<std::mutex> & segment_lock)
+{
+    bool has_finalized_state = download_state == State::DOWNLOADED
+        || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+        || download_state == State::SKIP_CACHE
+        || (download_state == State::EMPTY && detached);
+
+    detached = true;
+
+    if (!has_finalized_state)
+    {
+        complete(segment_lock);
+    }
+}
+
 FileSegmentsHolder::~FileSegmentsHolder()
 {
     /// In CacheableReadBufferFromRemoteFS file segment's downloader removes file segments from

@@ -144,6 +144,8 @@ public:
 
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
 
+    void detach(std::lock_guard<std::mutex> & segment_lock);
+
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
 
