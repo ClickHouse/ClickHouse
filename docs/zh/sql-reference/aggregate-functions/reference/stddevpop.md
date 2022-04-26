@@ -1,5 +1,5 @@
 ---
-toc_priority: 30
+sidebar_position: 30
 ---
 
 # stddevPop {#stddevpop}

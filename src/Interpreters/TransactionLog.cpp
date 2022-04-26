@@ -212,7 +212,7 @@ void TransactionLog::runUpdatingThread()
             if (stop_flag.load())
                 return;
 
-            if (!zookeeper)
+            if (getZooKeeper()->expired())
             {
                 auto new_zookeeper = global_context->getZooKeeper();
                 std::lock_guard lock{mutex};
@@ -222,16 +222,11 @@ void TransactionLog::runUpdatingThread()
             loadNewEntries();
             removeOldEntries();
         }
-        catch (const Coordination::Exception & e)
+        catch (const Coordination::Exception &)
         {
             tryLogCurrentException(log);
             /// TODO better backoff
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-            if (Coordination::isHardwareError(e.code))
-            {
-                std::lock_guard lock{mutex};
-                zookeeper.reset();
-            }
             log_updated_event->set();
         }
         catch (...)

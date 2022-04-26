@@ -61,6 +61,7 @@
 
 #if defined(OS_DARWIN)
 #   pragma GCC diagnostic ignored "-Wunused-macros"
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
@@ -132,7 +133,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     DB::writePODBinary(*info, out);
     DB::writePODBinary(signal_context, out);
     DB::writePODBinary(stack_trace, out);
-    DB::writeBinary(UInt32(getThreadId()), out);
+    DB::writeBinary(static_cast<UInt32>(getThreadId()), out);
     DB::writePODBinary(DB::current_thread, out);
 
     out.next();
@@ -435,7 +436,7 @@ static void sanitizerDeathCallback()
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
     DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
-    DB::writeBinary(UInt32(getThreadId()), out);
+    DB::writeBinary(static_cast<UInt32>(getThreadId()), out);
     DB::writeBinary(log_message, out);
     out.next();
 
