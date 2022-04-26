@@ -1,9 +1,168 @@
 block size = 1
-ANY INNER
+t1 ALL INNER JOIN t2 | bs = 1
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL LEFT JOIN t2 | bs = 1
+1	1	val1	5
+1	1	val1	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+3	3	val3	4
+t1 ALL RIGHT JOIN t2 | bs = 1
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+3	3	4	val3
+t1 ANY INNER JOIN t2 | bs = 1
 1	1	4	5
 2	2	5	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN t2 | bs = 1
 1	1	val1	5
 2	2	val21	5
 2	2	val22	5
@@ -13,7 +172,7 @@ ANY LEFT
 2	2	val26	5
 2	2	val27	5
 3	3	val3	4
-ANY RIGHT
+t1 ANY RIGHT JOIN t2 | bs = 1
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -24,10 +183,12 @@ ANY RIGHT
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-ANY INNER
+t1 ALL INNER JOIN tn2 | bs = 1
+1	1	4	5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ALL LEFT JOIN tn2 | bs = 1
+1	1	val1	5
 1	1	val1	5
 2	\N	val21	0
 2	\N	val22	0
@@ -37,7 +198,7 @@ ANY LEFT
 2	\N	val26	0
 2	\N	val27	0
 3	3	val3	4
-ANY RIGHT
+t1 ALL RIGHT JOIN tn2 | bs = 1
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -48,10 +209,36 @@ ANY RIGHT
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-ANY INNER
+t1 ANY INNER JOIN tn2 | bs = 1
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN tn2 | bs = 1
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+t1 ANY RIGHT JOIN tn2 | bs = 1
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+tn1 ALL INNER JOIN t2 | bs = 1
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN t2 | bs = 1
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	0	val21	0
@@ -61,7 +248,7 @@ ANY LEFT
 \N	0	val25	0
 \N	0	val26	0
 \N	0	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN t2 | bs = 1
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -72,10 +259,36 @@ ANY RIGHT
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-ANY INNER
+tn1 ANY INNER JOIN t2 | bs = 1
 1	1	4	5
 3	3	4	4
-ANY LEFT
+tn1 ANY LEFT JOIN t2 | bs = 1
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+tn1 ANY RIGHT JOIN t2 | bs = 1
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+tn1 ALL INNER JOIN tn2 | bs = 1
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN tn2 | bs = 1
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	\N	val21	0
@@ -85,7 +298,31 @@ ANY LEFT
 \N	\N	val25	0
 \N	\N	val26	0
 \N	\N	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN tn2 | bs = 1
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+tn1 ANY INNER JOIN tn2 | bs = 1
+1	1	4	5
+3	3	4	4
+tn1 ANY LEFT JOIN tn2 | bs = 1
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+tn1 ANY RIGHT JOIN tn2 | bs = 1
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -97,11 +334,170 @@ ANY RIGHT
 \N	\N	0	val27
 \N	\N	0	val28
 block size = 2
-ANY INNER
+t1 ALL INNER JOIN t2 | bs = 2
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL LEFT JOIN t2 | bs = 2
+1	1	val1	5
+1	1	val1	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+3	3	val3	4
+t1 ALL RIGHT JOIN t2 | bs = 2
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+3	3	4	val3
+t1 ANY INNER JOIN t2 | bs = 2
 1	1	4	5
 2	2	5	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN t2 | bs = 2
 1	1	val1	5
 2	2	val21	5
 2	2	val22	5
@@ -111,7 +507,7 @@ ANY LEFT
 2	2	val26	5
 2	2	val27	5
 3	3	val3	4
-ANY RIGHT
+t1 ANY RIGHT JOIN t2 | bs = 2
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -122,10 +518,12 @@ ANY RIGHT
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-ANY INNER
+t1 ALL INNER JOIN tn2 | bs = 2
+1	1	4	5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ALL LEFT JOIN tn2 | bs = 2
+1	1	val1	5
 1	1	val1	5
 2	\N	val21	0
 2	\N	val22	0
@@ -135,7 +533,7 @@ ANY LEFT
 2	\N	val26	0
 2	\N	val27	0
 3	3	val3	4
-ANY RIGHT
+t1 ALL RIGHT JOIN tn2 | bs = 2
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -146,10 +544,36 @@ ANY RIGHT
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-ANY INNER
+t1 ANY INNER JOIN tn2 | bs = 2
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN tn2 | bs = 2
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+t1 ANY RIGHT JOIN tn2 | bs = 2
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+tn1 ALL INNER JOIN t2 | bs = 2
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN t2 | bs = 2
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	0	val21	0
@@ -159,7 +583,7 @@ ANY LEFT
 \N	0	val25	0
 \N	0	val26	0
 \N	0	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN t2 | bs = 2
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -170,10 +594,36 @@ ANY RIGHT
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-ANY INNER
+tn1 ANY INNER JOIN t2 | bs = 2
 1	1	4	5
 3	3	4	4
-ANY LEFT
+tn1 ANY LEFT JOIN t2 | bs = 2
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+tn1 ANY RIGHT JOIN t2 | bs = 2
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+tn1 ALL INNER JOIN tn2 | bs = 2
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN tn2 | bs = 2
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	\N	val21	0
@@ -183,7 +633,31 @@ ANY LEFT
 \N	\N	val25	0
 \N	\N	val26	0
 \N	\N	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN tn2 | bs = 2
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+tn1 ANY INNER JOIN tn2 | bs = 2
+1	1	4	5
+3	3	4	4
+tn1 ANY LEFT JOIN tn2 | bs = 2
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+tn1 ANY RIGHT JOIN tn2 | bs = 2
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -195,11 +669,170 @@ ANY RIGHT
 \N	\N	0	val27
 \N	\N	0	val28
 block size = 3
-ANY INNER
+t1 ALL INNER JOIN t2 | bs = 3
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL LEFT JOIN t2 | bs = 3
+1	1	val1	5
+1	1	val1	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+3	3	val3	4
+t1 ALL RIGHT JOIN t2 | bs = 3
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+3	3	4	val3
+t1 ANY INNER JOIN t2 | bs = 3
 1	1	4	5
 2	2	5	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN t2 | bs = 3
 1	1	val1	5
 2	2	val21	5
 2	2	val22	5
@@ -209,7 +842,7 @@ ANY LEFT
 2	2	val26	5
 2	2	val27	5
 3	3	val3	4
-ANY RIGHT
+t1 ANY RIGHT JOIN t2 | bs = 3
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -220,10 +853,12 @@ ANY RIGHT
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-ANY INNER
+t1 ALL INNER JOIN tn2 | bs = 3
+1	1	4	5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ALL LEFT JOIN tn2 | bs = 3
+1	1	val1	5
 1	1	val1	5
 2	\N	val21	0
 2	\N	val22	0
@@ -233,7 +868,7 @@ ANY LEFT
 2	\N	val26	0
 2	\N	val27	0
 3	3	val3	4
-ANY RIGHT
+t1 ALL RIGHT JOIN tn2 | bs = 3
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -244,10 +879,36 @@ ANY RIGHT
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-ANY INNER
+t1 ANY INNER JOIN tn2 | bs = 3
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN tn2 | bs = 3
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+t1 ANY RIGHT JOIN tn2 | bs = 3
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+tn1 ALL INNER JOIN t2 | bs = 3
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN t2 | bs = 3
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	0	val21	0
@@ -257,7 +918,7 @@ ANY LEFT
 \N	0	val25	0
 \N	0	val26	0
 \N	0	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN t2 | bs = 3
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -268,10 +929,36 @@ ANY RIGHT
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-ANY INNER
+tn1 ANY INNER JOIN t2 | bs = 3
 1	1	4	5
 3	3	4	4
-ANY LEFT
+tn1 ANY LEFT JOIN t2 | bs = 3
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+tn1 ANY RIGHT JOIN t2 | bs = 3
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+tn1 ALL INNER JOIN tn2 | bs = 3
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN tn2 | bs = 3
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	\N	val21	0
@@ -281,7 +968,31 @@ ANY LEFT
 \N	\N	val25	0
 \N	\N	val26	0
 \N	\N	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN tn2 | bs = 3
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+tn1 ANY INNER JOIN tn2 | bs = 3
+1	1	4	5
+3	3	4	4
+tn1 ANY LEFT JOIN tn2 | bs = 3
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+tn1 ANY RIGHT JOIN tn2 | bs = 3
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -293,11 +1004,170 @@ ANY RIGHT
 \N	\N	0	val27
 \N	\N	0	val28
 block size = 4
-ANY INNER
+t1 ALL INNER JOIN t2 | bs = 4
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL LEFT JOIN t2 | bs = 4
+1	1	val1	5
+1	1	val1	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+3	3	val3	4
+t1 ALL RIGHT JOIN t2 | bs = 4
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+3	3	4	val3
+t1 ANY INNER JOIN t2 | bs = 4
 1	1	4	5
 2	2	5	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN t2 | bs = 4
 1	1	val1	5
 2	2	val21	5
 2	2	val22	5
@@ -307,7 +1177,7 @@ ANY LEFT
 2	2	val26	5
 2	2	val27	5
 3	3	val3	4
-ANY RIGHT
+t1 ANY RIGHT JOIN t2 | bs = 4
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -318,10 +1188,12 @@ ANY RIGHT
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-ANY INNER
+t1 ALL INNER JOIN tn2 | bs = 4
+1	1	4	5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ALL LEFT JOIN tn2 | bs = 4
+1	1	val1	5
 1	1	val1	5
 2	\N	val21	0
 2	\N	val22	0
@@ -331,7 +1203,7 @@ ANY LEFT
 2	\N	val26	0
 2	\N	val27	0
 3	3	val3	4
-ANY RIGHT
+t1 ALL RIGHT JOIN tn2 | bs = 4
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -342,10 +1214,36 @@ ANY RIGHT
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-ANY INNER
+t1 ANY INNER JOIN tn2 | bs = 4
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN tn2 | bs = 4
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+t1 ANY RIGHT JOIN tn2 | bs = 4
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+tn1 ALL INNER JOIN t2 | bs = 4
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN t2 | bs = 4
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	0	val21	0
@@ -355,7 +1253,7 @@ ANY LEFT
 \N	0	val25	0
 \N	0	val26	0
 \N	0	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN t2 | bs = 4
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -366,10 +1264,36 @@ ANY RIGHT
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-ANY INNER
+tn1 ANY INNER JOIN t2 | bs = 4
 1	1	4	5
 3	3	4	4
-ANY LEFT
+tn1 ANY LEFT JOIN t2 | bs = 4
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+tn1 ANY RIGHT JOIN t2 | bs = 4
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+tn1 ALL INNER JOIN tn2 | bs = 4
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN tn2 | bs = 4
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	\N	val21	0
@@ -379,7 +1303,31 @@ ANY LEFT
 \N	\N	val25	0
 \N	\N	val26	0
 \N	\N	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN tn2 | bs = 4
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+tn1 ANY INNER JOIN tn2 | bs = 4
+1	1	4	5
+3	3	4	4
+tn1 ANY LEFT JOIN tn2 | bs = 4
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+tn1 ANY RIGHT JOIN tn2 | bs = 4
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -391,11 +1339,170 @@ ANY RIGHT
 \N	\N	0	val27
 \N	\N	0	val28
 block size = 5
-ANY INNER
+t1 ALL INNER JOIN t2 | bs = 5
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL LEFT JOIN t2 | bs = 5
+1	1	val1	5
+1	1	val1	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+3	3	val3	4
+t1 ALL RIGHT JOIN t2 | bs = 5
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+3	3	4	val3
+t1 ANY INNER JOIN t2 | bs = 5
 1	1	4	5
 2	2	5	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN t2 | bs = 5
 1	1	val1	5
 2	2	val21	5
 2	2	val22	5
@@ -405,7 +1512,7 @@ ANY LEFT
 2	2	val26	5
 2	2	val27	5
 3	3	val3	4
-ANY RIGHT
+t1 ANY RIGHT JOIN t2 | bs = 5
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -416,10 +1523,12 @@ ANY RIGHT
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-ANY INNER
+t1 ALL INNER JOIN tn2 | bs = 5
+1	1	4	5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ALL LEFT JOIN tn2 | bs = 5
+1	1	val1	5
 1	1	val1	5
 2	\N	val21	0
 2	\N	val22	0
@@ -429,7 +1538,7 @@ ANY LEFT
 2	\N	val26	0
 2	\N	val27	0
 3	3	val3	4
-ANY RIGHT
+t1 ALL RIGHT JOIN tn2 | bs = 5
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -440,10 +1549,36 @@ ANY RIGHT
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-ANY INNER
+t1 ANY INNER JOIN tn2 | bs = 5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN tn2 | bs = 5
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+t1 ANY RIGHT JOIN tn2 | bs = 5
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+tn1 ALL INNER JOIN t2 | bs = 5
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN t2 | bs = 5
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	0	val21	0
@@ -453,7 +1588,7 @@ ANY LEFT
 \N	0	val25	0
 \N	0	val26	0
 \N	0	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN t2 | bs = 5
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -464,10 +1599,36 @@ ANY RIGHT
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-ANY INNER
+tn1 ANY INNER JOIN t2 | bs = 5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+tn1 ANY LEFT JOIN t2 | bs = 5
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+tn1 ANY RIGHT JOIN t2 | bs = 5
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+tn1 ALL INNER JOIN tn2 | bs = 5
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN tn2 | bs = 5
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	\N	val21	0
@@ -477,7 +1638,31 @@ ANY LEFT
 \N	\N	val25	0
 \N	\N	val26	0
 \N	\N	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN tn2 | bs = 5
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+tn1 ANY INNER JOIN tn2 | bs = 5
+1	1	4	5
+3	3	4	4
+tn1 ANY LEFT JOIN tn2 | bs = 5
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+tn1 ANY RIGHT JOIN tn2 | bs = 5
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -489,11 +1674,170 @@ ANY RIGHT
 \N	\N	0	val27
 \N	\N	0	val28
 block size = 6
-ANY INNER
+t1 ALL INNER JOIN t2 | bs = 6
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL LEFT JOIN t2 | bs = 6
+1	1	val1	5
+1	1	val1	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+3	3	val3	4
+t1 ALL RIGHT JOIN t2 | bs = 6
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+3	3	4	val3
+t1 ANY INNER JOIN t2 | bs = 6
 1	1	4	5
 2	2	5	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN t2 | bs = 6
 1	1	val1	5
 2	2	val21	5
 2	2	val22	5
@@ -503,7 +1847,7 @@ ANY LEFT
 2	2	val26	5
 2	2	val27	5
 3	3	val3	4
-ANY RIGHT
+t1 ANY RIGHT JOIN t2 | bs = 6
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -514,10 +1858,12 @@ ANY RIGHT
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-ANY INNER
+t1 ALL INNER JOIN tn2 | bs = 6
+1	1	4	5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ALL LEFT JOIN tn2 | bs = 6
+1	1	val1	5
 1	1	val1	5
 2	\N	val21	0
 2	\N	val22	0
@@ -527,7 +1873,7 @@ ANY LEFT
 2	\N	val26	0
 2	\N	val27	0
 3	3	val3	4
-ANY RIGHT
+t1 ALL RIGHT JOIN tn2 | bs = 6
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -538,10 +1884,36 @@ ANY RIGHT
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-ANY INNER
+t1 ANY INNER JOIN tn2 | bs = 6
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN tn2 | bs = 6
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+t1 ANY RIGHT JOIN tn2 | bs = 6
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+tn1 ALL INNER JOIN t2 | bs = 6
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN t2 | bs = 6
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	0	val21	0
@@ -551,7 +1923,7 @@ ANY LEFT
 \N	0	val25	0
 \N	0	val26	0
 \N	0	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN t2 | bs = 6
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -562,10 +1934,36 @@ ANY RIGHT
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-ANY INNER
+tn1 ANY INNER JOIN t2 | bs = 6
 1	1	4	5
 3	3	4	4
-ANY LEFT
+tn1 ANY LEFT JOIN t2 | bs = 6
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+tn1 ANY RIGHT JOIN t2 | bs = 6
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+tn1 ALL INNER JOIN tn2 | bs = 6
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN tn2 | bs = 6
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	\N	val21	0
@@ -575,7 +1973,31 @@ ANY LEFT
 \N	\N	val25	0
 \N	\N	val26	0
 \N	\N	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN tn2 | bs = 6
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+tn1 ANY INNER JOIN tn2 | bs = 6
+1	1	4	5
+3	3	4	4
+tn1 ANY LEFT JOIN tn2 | bs = 6
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+tn1 ANY RIGHT JOIN tn2 | bs = 6
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -587,11 +2009,170 @@ ANY RIGHT
 \N	\N	0	val27
 \N	\N	0	val28
 block size = 7
-ANY INNER
+t1 ALL INNER JOIN t2 | bs = 7
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL LEFT JOIN t2 | bs = 7
+1	1	val1	5
+1	1	val1	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+3	3	val3	4
+t1 ALL RIGHT JOIN t2 | bs = 7
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+3	3	4	val3
+t1 ANY INNER JOIN t2 | bs = 7
 1	1	4	5
 2	2	5	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN t2 | bs = 7
 1	1	val1	5
 2	2	val21	5
 2	2	val22	5
@@ -601,7 +2182,7 @@ ANY LEFT
 2	2	val26	5
 2	2	val27	5
 3	3	val3	4
-ANY RIGHT
+t1 ANY RIGHT JOIN t2 | bs = 7
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -612,10 +2193,12 @@ ANY RIGHT
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-ANY INNER
+t1 ALL INNER JOIN tn2 | bs = 7
+1	1	4	5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ALL LEFT JOIN tn2 | bs = 7
+1	1	val1	5
 1	1	val1	5
 2	\N	val21	0
 2	\N	val22	0
@@ -625,7 +2208,7 @@ ANY LEFT
 2	\N	val26	0
 2	\N	val27	0
 3	3	val3	4
-ANY RIGHT
+t1 ALL RIGHT JOIN tn2 | bs = 7
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -636,10 +2219,36 @@ ANY RIGHT
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-ANY INNER
+t1 ANY INNER JOIN tn2 | bs = 7
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN tn2 | bs = 7
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+t1 ANY RIGHT JOIN tn2 | bs = 7
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+tn1 ALL INNER JOIN t2 | bs = 7
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN t2 | bs = 7
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	0	val21	0
@@ -649,7 +2258,7 @@ ANY LEFT
 \N	0	val25	0
 \N	0	val26	0
 \N	0	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN t2 | bs = 7
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -660,10 +2269,36 @@ ANY RIGHT
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-ANY INNER
+tn1 ANY INNER JOIN t2 | bs = 7
 1	1	4	5
 3	3	4	4
-ANY LEFT
+tn1 ANY LEFT JOIN t2 | bs = 7
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+tn1 ANY RIGHT JOIN t2 | bs = 7
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+tn1 ALL INNER JOIN tn2 | bs = 7
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN tn2 | bs = 7
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	\N	val21	0
@@ -673,7 +2308,31 @@ ANY LEFT
 \N	\N	val25	0
 \N	\N	val26	0
 \N	\N	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN tn2 | bs = 7
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+tn1 ANY INNER JOIN tn2 | bs = 7
+1	1	4	5
+3	3	4	4
+tn1 ANY LEFT JOIN tn2 | bs = 7
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+tn1 ANY RIGHT JOIN tn2 | bs = 7
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -685,11 +2344,170 @@ ANY RIGHT
 \N	\N	0	val27
 \N	\N	0	val28
 block size = 8
-ANY INNER
+t1 ALL INNER JOIN t2 | bs = 8
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL LEFT JOIN t2 | bs = 8
+1	1	val1	5
+1	1	val1	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+3	3	val3	4
+t1 ALL RIGHT JOIN t2 | bs = 8
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+3	3	4	val3
+t1 ANY INNER JOIN t2 | bs = 8
 1	1	4	5
 2	2	5	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN t2 | bs = 8
 1	1	val1	5
 2	2	val21	5
 2	2	val22	5
@@ -699,7 +2517,7 @@ ANY LEFT
 2	2	val26	5
 2	2	val27	5
 3	3	val3	4
-ANY RIGHT
+t1 ANY RIGHT JOIN t2 | bs = 8
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -710,10 +2528,12 @@ ANY RIGHT
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-ANY INNER
+t1 ALL INNER JOIN tn2 | bs = 8
+1	1	4	5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ALL LEFT JOIN tn2 | bs = 8
+1	1	val1	5
 1	1	val1	5
 2	\N	val21	0
 2	\N	val22	0
@@ -723,7 +2543,7 @@ ANY LEFT
 2	\N	val26	0
 2	\N	val27	0
 3	3	val3	4
-ANY RIGHT
+t1 ALL RIGHT JOIN tn2 | bs = 8
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -734,10 +2554,36 @@ ANY RIGHT
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-ANY INNER
+t1 ANY INNER JOIN tn2 | bs = 8
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN tn2 | bs = 8
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+t1 ANY RIGHT JOIN tn2 | bs = 8
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+tn1 ALL INNER JOIN t2 | bs = 8
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN t2 | bs = 8
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	0	val21	0
@@ -747,7 +2593,7 @@ ANY LEFT
 \N	0	val25	0
 \N	0	val26	0
 \N	0	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN t2 | bs = 8
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -758,10 +2604,36 @@ ANY RIGHT
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-ANY INNER
+tn1 ANY INNER JOIN t2 | bs = 8
 1	1	4	5
 3	3	4	4
-ANY LEFT
+tn1 ANY LEFT JOIN t2 | bs = 8
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+tn1 ANY RIGHT JOIN t2 | bs = 8
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+tn1 ALL INNER JOIN tn2 | bs = 8
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN tn2 | bs = 8
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	\N	val21	0
@@ -771,7 +2643,31 @@ ANY LEFT
 \N	\N	val25	0
 \N	\N	val26	0
 \N	\N	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN tn2 | bs = 8
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+tn1 ANY INNER JOIN tn2 | bs = 8
+1	1	4	5
+3	3	4	4
+tn1 ANY LEFT JOIN tn2 | bs = 8
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+tn1 ANY RIGHT JOIN tn2 | bs = 8
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -783,11 +2679,170 @@ ANY RIGHT
 \N	\N	0	val27
 \N	\N	0	val28
 block size = 9
-ANY INNER
+t1 ALL INNER JOIN t2 | bs = 9
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL LEFT JOIN t2 | bs = 9
+1	1	val1	5
+1	1	val1	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+3	3	val3	4
+t1 ALL RIGHT JOIN t2 | bs = 9
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+3	3	4	val3
+t1 ANY INNER JOIN t2 | bs = 9
 1	1	4	5
 2	2	5	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN t2 | bs = 9
 1	1	val1	5
 2	2	val21	5
 2	2	val22	5
@@ -797,7 +2852,7 @@ ANY LEFT
 2	2	val26	5
 2	2	val27	5
 3	3	val3	4
-ANY RIGHT
+t1 ANY RIGHT JOIN t2 | bs = 9
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -808,10 +2863,12 @@ ANY RIGHT
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-ANY INNER
+t1 ALL INNER JOIN tn2 | bs = 9
+1	1	4	5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ALL LEFT JOIN tn2 | bs = 9
+1	1	val1	5
 1	1	val1	5
 2	\N	val21	0
 2	\N	val22	0
@@ -821,7 +2878,7 @@ ANY LEFT
 2	\N	val26	0
 2	\N	val27	0
 3	3	val3	4
-ANY RIGHT
+t1 ALL RIGHT JOIN tn2 | bs = 9
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -832,10 +2889,36 @@ ANY RIGHT
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-ANY INNER
+t1 ANY INNER JOIN tn2 | bs = 9
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN tn2 | bs = 9
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+t1 ANY RIGHT JOIN tn2 | bs = 9
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+tn1 ALL INNER JOIN t2 | bs = 9
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN t2 | bs = 9
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	0	val21	0
@@ -845,7 +2928,7 @@ ANY LEFT
 \N	0	val25	0
 \N	0	val26	0
 \N	0	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN t2 | bs = 9
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -856,10 +2939,36 @@ ANY RIGHT
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-ANY INNER
+tn1 ANY INNER JOIN t2 | bs = 9
 1	1	4	5
 3	3	4	4
-ANY LEFT
+tn1 ANY LEFT JOIN t2 | bs = 9
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+tn1 ANY RIGHT JOIN t2 | bs = 9
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+tn1 ALL INNER JOIN tn2 | bs = 9
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN tn2 | bs = 9
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	\N	val21	0
@@ -869,7 +2978,31 @@ ANY LEFT
 \N	\N	val25	0
 \N	\N	val26	0
 \N	\N	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN tn2 | bs = 9
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+tn1 ANY INNER JOIN tn2 | bs = 9
+1	1	4	5
+3	3	4	4
+tn1 ANY LEFT JOIN tn2 | bs = 9
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+tn1 ANY RIGHT JOIN tn2 | bs = 9
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -881,11 +3014,170 @@ ANY RIGHT
 \N	\N	0	val27
 \N	\N	0	val28
 block size = 10
-ANY INNER
+t1 ALL INNER JOIN t2 | bs = 10
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL LEFT JOIN t2 | bs = 10
+1	1	val1	5
+1	1	val1	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val21	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val22	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val23	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val24	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val25	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val26	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+2	2	val27	5
+3	3	val3	4
+t1 ALL RIGHT JOIN t2 | bs = 10
+1	1	4	val11
+1	1	4	val12
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val22
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val23
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val24
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val25
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val26
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val27
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+2	2	5	val28
+3	3	4	val3
+t1 ANY INNER JOIN t2 | bs = 10
 1	1	4	5
 2	2	5	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN t2 | bs = 10
 1	1	val1	5
 2	2	val21	5
 2	2	val22	5
@@ -895,7 +3187,7 @@ ANY LEFT
 2	2	val26	5
 2	2	val27	5
 3	3	val3	4
-ANY RIGHT
+t1 ANY RIGHT JOIN t2 | bs = 10
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -906,10 +3198,12 @@ ANY RIGHT
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-ANY INNER
+t1 ALL INNER JOIN tn2 | bs = 10
+1	1	4	5
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ALL LEFT JOIN tn2 | bs = 10
+1	1	val1	5
 1	1	val1	5
 2	\N	val21	0
 2	\N	val22	0
@@ -919,7 +3213,7 @@ ANY LEFT
 2	\N	val26	0
 2	\N	val27	0
 3	3	val3	4
-ANY RIGHT
+t1 ALL RIGHT JOIN tn2 | bs = 10
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -930,10 +3224,36 @@ ANY RIGHT
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-ANY INNER
+t1 ANY INNER JOIN tn2 | bs = 10
 1	1	4	5
 3	3	4	4
-ANY LEFT
+t1 ANY LEFT JOIN tn2 | bs = 10
+1	1	val1	5
+2	\N	val21	0
+2	\N	val22	0
+2	\N	val23	0
+2	\N	val24	0
+2	\N	val25	0
+2	\N	val26	0
+2	\N	val27	0
+3	3	val3	4
+t1 ANY RIGHT JOIN tn2 | bs = 10
+0	\N	0	val22
+0	\N	0	val23
+0	\N	0	val24
+0	\N	0	val25
+0	\N	0	val26
+0	\N	0	val27
+0	\N	0	val28
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+tn1 ALL INNER JOIN t2 | bs = 10
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN t2 | bs = 10
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	0	val21	0
@@ -943,7 +3263,7 @@ ANY LEFT
 \N	0	val25	0
 \N	0	val26	0
 \N	0	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN t2 | bs = 10
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -954,10 +3274,36 @@ ANY RIGHT
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-ANY INNER
+tn1 ANY INNER JOIN t2 | bs = 10
 1	1	4	5
 3	3	4	4
-ANY LEFT
+tn1 ANY LEFT JOIN t2 | bs = 10
+1	1	val1	5
+3	3	val3	4
+\N	0	val21	0
+\N	0	val22	0
+\N	0	val23	0
+\N	0	val24	0
+\N	0	val25	0
+\N	0	val26	0
+\N	0	val27	0
+tn1 ANY RIGHT JOIN t2 | bs = 10
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	2	0	val22
+\N	2	0	val23
+\N	2	0	val24
+\N	2	0	val25
+\N	2	0	val26
+\N	2	0	val27
+\N	2	0	val28
+tn1 ALL INNER JOIN tn2 | bs = 10
+1	1	4	5
+1	1	4	5
+3	3	4	4
+tn1 ALL LEFT JOIN tn2 | bs = 10
+1	1	val1	5
 1	1	val1	5
 3	3	val3	4
 \N	\N	val21	0
@@ -967,7 +3313,31 @@ ANY LEFT
 \N	\N	val25	0
 \N	\N	val26	0
 \N	\N	val27	0
-ANY RIGHT
+tn1 ALL RIGHT JOIN tn2 | bs = 10
+1	1	4	val11
+1	1	4	val12
+3	3	4	val3
+\N	\N	0	val22
+\N	\N	0	val23
+\N	\N	0	val24
+\N	\N	0	val25
+\N	\N	0	val26
+\N	\N	0	val27
+\N	\N	0	val28
+tn1 ANY INNER JOIN tn2 | bs = 10
+1	1	4	5
+3	3	4	4
+tn1 ANY LEFT JOIN tn2 | bs = 10
+1	1	val1	5
+3	3	val3	4
+\N	\N	val21	0
+\N	\N	val22	0
+\N	\N	val23	0
+\N	\N	val24	0
+\N	\N	val25	0
+\N	\N	val26	0
+\N	\N	val27	0
+tn1 ANY RIGHT JOIN tn2 | bs = 10
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
