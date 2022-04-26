@@ -1414,6 +1414,9 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     if (part_is_probably_removed_from_disk)
         return true;
 
+    if (state == State::Temporary)
+        return true;
+
     DiskPtr disk = volume->getDisk();
     if (!disk->exists(getFullRelativePath()))
         return true;
@@ -1772,6 +1775,7 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
 void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 {
     renameTo(getRelativePathForDetachedPart(prefix), true);
+    part_is_probably_removed_from_disk = true;
 }
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
