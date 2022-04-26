@@ -322,7 +322,7 @@ def process_benchmark_results(args):
     required_keys = {
         "dbms": ["result"],
         "hardware": ["result", "system", "system_full", "kind"],
-        "versions": ["version", "system"]
+        "versions": ["version", "system"],
     }
     for benchmark_kind in ["dbms", "hardware", "versions"]:
         results = []
