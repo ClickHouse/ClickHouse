@@ -76,14 +76,14 @@ def test_replicated_table():
 
     # Make backup on node 1.
     node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=1 SYNC"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=1"
     )
 
     # Drop table on both nodes.
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
 
     # Restore from backup on node2.
-    node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} SYNC")
+    node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV(
@@ -115,14 +115,14 @@ def test_replicated_database():
     # Make backup.
     backup_name = new_backup_name()
     node1.query(
-        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2 SYNC"
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2"
     )
 
     # Drop table on both nodes.
     node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
 
     # Restore from backup on node2.
-    node1.query(f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} SYNC")
+    node1.query(f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
 
     assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV(
@@ -147,12 +147,12 @@ def test_different_tables_on_nodes():
 
     backup_name = new_backup_name()
     node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS allow_storing_multiple_replicas = true SYNC"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS allow_storing_multiple_replicas = true"
     )
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
 
-    node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} SYNC")
+    node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
 
     assert node1.query("SELECT * FROM tbl") == TSV(
         [[1, "Don\\'t"], [2, "count"], [3, "your"], [4, "chickens"]]

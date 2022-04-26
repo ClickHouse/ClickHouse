@@ -290,11 +290,11 @@ namespace
 
     bool parseSyncOrAsync(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
     {
-        bool sync;
-        if (ParserKeyword{"SYNC"}.ignore(pos, expected))
-            sync = true;
-        else if (ParserKeyword{"ASYNC"}.ignore(pos, expected))
-            sync = false;
+        bool async;
+        if (ParserKeyword{"ASYNC"}.ignore(pos, expected))
+            async = true;
+        else if (ParserKeyword{"SYNC"}.ignore(pos, expected))
+            async = false;
         else
             return false;
 
@@ -304,8 +304,8 @@ namespace
             changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
         }
 
-        boost::remove_erase_if(changes, [](const SettingChange & change) { return change.name == "sync"; });
-        changes.emplace_back("sync", sync);
+        boost::remove_erase_if(changes, [](const SettingChange & change) { return change.name == "async"; });
+        changes.emplace_back("async", async);
 
         auto new_settings = std::make_shared<ASTSetQuery>();
         new_settings->changes = std::move(changes);

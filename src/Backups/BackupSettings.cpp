@@ -18,7 +18,7 @@ namespace ErrorCodes
     M(Int64, compression_level) \
     M(String, password) \
     M(Bool, structure_only) \
-    M(Bool, sync) \
+    M(Bool, async) \
     M(UInt64, shard_num) \
     M(UInt64, replica_num) \
     M(Bool, allow_storing_multiple_replicas) \
