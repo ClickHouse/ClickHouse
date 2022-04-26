@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -21,6 +22,9 @@ public:
     /// True if order of columns is important in format.
     /// Exceptions: JSON, TSKV.
     virtual bool hasStrictOrderOfColumns() const { return true; }
+
+    virtual bool needContext() const { return false; }
+    virtual void setContext(ContextPtr &) {}
 
     virtual ~ISchemaReader() = default;
 
