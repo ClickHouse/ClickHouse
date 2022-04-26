@@ -58,8 +58,8 @@ struct RestoreSettings : public StorageRestoreSettings
     /// Set `allow_different_database_def` to true to skip this check.
     bool allow_different_database_def = false;
 
-    /// Whether the RESTORE command must wait until the restoring has completed.
-    bool sync = false;
+    /// Whether the RESTORE command must return immediately without waiting until the restoring has completed.
+    bool async = false;
 
     /// 1-based shard index to restore from the backup. 0 means all shards.
     /// Can only be used with RESTORE ON CLUSTER.

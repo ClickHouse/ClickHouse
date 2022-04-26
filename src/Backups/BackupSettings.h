@@ -25,8 +25,8 @@ struct BackupSettings
     /// without the data of tables.
     bool structure_only = false;
 
-    /// Whether the BACKUP command must wait until the backup has completed.
-    bool sync = false;
+    /// Whether the BACKUP command must return immediately without waiting until the backup has completed.
+    bool async = false;
 
     /// 1-based shard index to store in the backup. 0 means all shards.
     /// Can only be used with BACKUP ON CLUSTER.
