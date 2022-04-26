@@ -5,8 +5,6 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <base/logger_useful.h>
 
-namespace fs = std::filesystem;
-
 
 namespace DB
 {

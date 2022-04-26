@@ -22,13 +22,10 @@
 #include <Storages/IStorage.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
+#include <base/sleep.h>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <filesystem>
-
-#include <base/sleep.h>
-
-namespace fs = std::filesystem;
 
 
 namespace DB
@@ -45,7 +42,7 @@ namespace
     class PathsInBackup
     {
     public:
-        PathsInBackup(const IBackup & backup_) : backup(backup_) {}
+        explicit PathsInBackup(const IBackup & backup_) : backup(backup_) {}
 
         std::vector<size_t> getShards() const
         {
@@ -312,10 +309,7 @@ namespace
 
             use_coordination_for_table_creation = true;
             replicated_database_zookeeper_path = replicated_db->getZooKeeperPath();
-            if (restore_coordination->acquireZkPathAndName(replicated_database_zookeeper_path, table_name.second))
-                return true;
-
-            return false;
+            return restore_coordination->acquireZkPathAndName(replicated_database_zookeeper_path, table_name.second);
         }
 
         void setTableCreationResult(IRestoreCoordination::Result res)

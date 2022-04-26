@@ -9,7 +9,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SETTING;
+    extern const int CANNOT_PARSE_BACKUP_SETTINGS;
 }
 
 /// List of backup settings except base_backup_name.
@@ -44,7 +44,7 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
             else
 
             LIST_OF_BACKUP_SETTINGS(GET_SETTINGS_FROM_BACKUP_QUERY_HELPER)
-            throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", setting.name);
+            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
         }
     }
 
@@ -61,7 +61,7 @@ void BackupSettings::copySettingsToBackupQuery(ASTBackupQuery & query) const
     static const BackupSettings default_settings;
 
 #define SET_SETTINGS_IN_BACKUP_QUERY_HELPER(TYPE, NAME) \
-    if (NAME != default_settings.NAME) \
+    if ((NAME) != default_settings.NAME) \
         query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME}));
 
     LIST_OF_BACKUP_SETTINGS(SET_SETTINGS_IN_BACKUP_QUERY_HELPER)

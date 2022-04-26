@@ -174,7 +174,7 @@ namespace
         changes.emplace_back("shard_num", params.shard_index);
         changes.emplace_back("replica_num", params.replica_index);
 
-        auto out_settings = std::shared_ptr<ASTSetQuery>();
+        auto out_settings = std::make_shared<ASTSetQuery>();
         out_settings->changes = std::move(changes);
         out_settings->is_standalone = false;
         return out_settings;
