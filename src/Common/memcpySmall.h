@@ -4,6 +4,7 @@
 
 #ifdef __SSE2__
 #include <emmintrin.h>
+#include <immintrin.h>
 
 
 /** memcpy function could work suboptimal if all the following conditions are met:
@@ -31,6 +32,16 @@ namespace detail
 {
     inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
     {
+        while (n > 16)
+        {
+            _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst),
+                _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src)));
+
+            dst += 32;
+            src += 32;
+            n -= 32;
+        }
+
         while (n > 0)
         {
             _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),

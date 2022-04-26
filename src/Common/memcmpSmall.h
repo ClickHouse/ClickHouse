@@ -316,10 +316,9 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
     size_t offset = 0;
     for (; offset + 16 < min_size; offset += 32)
     {
-        uint32_t mask = _mm256_cmp_epi8_mask(
+        uint32_t mask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(
             _mm256_loadu_si256(reinterpret_cast<const __m256i *>(a + offset)),
-            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(b + offset)),
-            _MM_CMPINT_NE);
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(b + offset))));
 
         if (mask)
         {
@@ -438,10 +437,9 @@ inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t siz
     size_t offset = 0;
     for (; offset + 16 < size; offset += 32)
     {
-        uint32_t mask = _mm256_cmp_epi8_mask(
+        uint32_t mask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(
             _mm256_loadu_si256(reinterpret_cast<const __m256i *>(a + offset)),
-            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(b + offset)),
-            _MM_CMPINT_NE);
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(b + offset))));
 
         if (mask)
         {
