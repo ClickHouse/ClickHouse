@@ -3676,10 +3676,10 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
 
     auto disk = getStoragePolicy()->getDiskByName(name);
-    parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
+    std::erase_if(parts, [&](auto part_ptr)
         {
             return part_ptr->volume->getDisk()->getName() == disk->getName();
-        }), parts.end());
+        });
 
     if (parts.empty())
     {
@@ -3724,7 +3724,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     if (parts.empty())
         throw Exception("Nothing to move (сheck that the partition exists).", ErrorCodes::NO_SUCH_DATA_PART);
 
-    parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
+    std::erase_if(parts, [&](auto part_ptr)
         {
             for (const auto & disk : volume->getDisks())
             {
@@ -3734,7 +3734,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
                 }
             }
             return false;
-        }), parts.end());
+        });
 
     if (parts.empty())
     {
@@ -4220,8 +4220,7 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
         return !part->version.isVisible(snapshot_version, current_tid);
     };
 
-    auto new_end_it = std::remove_if(maybe_visible_parts.begin(), maybe_visible_parts.end(), need_remove_pred);
-    maybe_visible_parts.erase(new_end_it, maybe_visible_parts.end());
+    std::erase_if(maybe_visible_parts, need_remove_pred);
     [[maybe_unused]] size_t visible_size = maybe_visible_parts.size();
 
 
@@ -5254,6 +5253,10 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     // Let's disable projection if there are any JOIN clauses.
     // TODO: We need a better identifier resolution mechanism for projection analysis.
     if (select_query->join())
+        return std::nullopt;
+
+    // INTERPOLATE expressions may include aliases, so aliases should be preserved
+    if (select_query->interpolate() && !select_query->interpolate()->children.empty())
         return std::nullopt;
 
     auto query_options = SelectQueryOptions(
@@ -6511,15 +6514,11 @@ ReservationPtr MergeTreeData::balancedReservation(
             }
 
             // Remove irrelevant parts.
-            covered_parts.erase(
-                std::remove_if(
-                    covered_parts.begin(),
-                    covered_parts.end(),
+            std::erase_if(covered_parts,
                     [min_bytes_to_rebalance_partition_over_jbod](const auto & part)
                     {
                         return !(part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod);
-                    }),
-                covered_parts.end());
+                    });
 
             // Include current submerging big parts which are not yet in `currently_submerging_big_parts`
             for (const auto & part : covered_parts)
