@@ -1058,7 +1058,13 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     /// Process the query that requires transferring data blocks to the server.
     const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
-        throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+    {
+        const auto & settings = global_context->getSettingsRef();
+        if (settings.throw_if_no_data_to_insert)
+            throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+        else
+            return;
+    }
 
     connection->sendQuery(
         connection_parameters.timeouts,
@@ -1109,6 +1115,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         progress_indication.setFileProgressCallback(global_context, true);
     }
 
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+
     /// If data fetched from file (maybe compressed file)
     if (parsed_insert_query->infile)
     {
@@ -1156,7 +1164,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                         global_context->getSettingsRef().max_block_size,
                         getNumberOfPhysicalCPUCores()
                     ),
-                parsed_query
+                parsed_query,
+                have_data_in_stdin
             );
         }
         catch (Exception & e)
@@ -1164,6 +1173,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             e.addMessage("data for INSERT was parsed from file");
             throw;
         }
+
+        if (have_data_in_stdin)
+            sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else if (parsed_insert_query->data)
     {
@@ -1171,7 +1183,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
         try
         {
-            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query);
+            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query, have_data_in_stdin);
+            if (have_data_in_stdin)
+                sendDataFromStdin(sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
         {
@@ -1187,29 +1201,14 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     }
     else if (!is_interactive)
     {
-        if (need_render_progress)
-        {
-            /// Add callback to track reading from fd.
-            std_in.setProgressCallback(global_context);
-        }
-
-        /// Send data read from stdin.
-        try
-        {
-            sendDataFrom(std_in, sample, columns_description_for_query, parsed_query);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("data for INSERT was parsed from stdin");
-            throw;
-        }
+        sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else
         throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 }
 
 
-void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
+void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data)
 {
     String current_format = insert_format;
 
@@ -1231,10 +1230,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         });
     }
 
-    sendDataFromPipe(std::move(pipe), parsed_query);
+    sendDataFromPipe(std::move(pipe), parsed_query, have_more_data);
 }
 
-void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query)
+void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_more_data)
+try
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
@@ -1264,7 +1264,34 @@ void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query)
         }
     }
 
-    connection->sendData({}, "", false);
+    if (!have_more_data)
+        connection->sendData({}, "", false);
+}
+catch (...)
+{
+    connection->sendCancel();
+    receiveEndOfQuery();
+    throw;
+}
+
+void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
+{
+    if (need_render_progress)
+    {
+        /// Add callback to track reading from fd.
+        std_in.setProgressCallback(global_context);
+    }
+
+    /// Send data read from stdin.
+    try
+    {
+        sendDataFrom(std_in, sample, columns_description, parsed_query);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("data for INSERT was parsed from stdin");
+        throw;
+    }
 }
 
 
@@ -1306,9 +1333,13 @@ bool ClientBase::receiveEndOfQuery()
                 onProgress(packet.progress);
                 break;
 
+            case Protocol::Server::ProfileEvents:
+                onProfileEvents(packet.block);
+                break;
+
             default:
                 throw NetException(
-                    "Unexpected packet from server (expected Exception, EndOfStream or Log, got "
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got "
                         + String(Protocol::Server::toString(packet.type)) + ")",
                     ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
         }
@@ -1382,7 +1413,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             apply_query_settings(*with_output->settings_ast);
 
         if (!connection->checkConnected())
+        {
+            auto poco_logs_level = Poco::Logger::parseLevel(config().getString("send_logs_level", "none"));
+            /// Print under WARNING also because it is used by clickhouse-test.
+            if (poco_logs_level >= Poco::Message::PRIO_WARNING)
+            {
+                fmt::print(stderr, "Connection lost. Reconnecting.\n");
+            }
             connect();
+        }
 
         ASTPtr input_function;
         if (insert && insert->select)
@@ -1456,7 +1495,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
     String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
-    std::optional<Exception> & current_exception)
+    std::unique_ptr<Exception> & current_exception)
 {
     if (!is_interactive && cancelled)
         return MultiQueryProcessingStage::QUERIES_END;
@@ -1494,7 +1533,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     }
     catch (Exception & e)
     {
-        current_exception.emplace(e);
+        current_exception.reset(e.clone());
         return MultiQueryProcessingStage::PARSING_EXCEPTION;
     }
 
@@ -1575,7 +1614,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
     String query_to_execute;
     ASTPtr parsed_query;
-    std::optional<Exception> current_exception;
+    std::unique_ptr<Exception> current_exception;
 
     while (true)
     {
@@ -1649,7 +1688,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 catch (...)
                 {
                     // Surprisingly, this is a client error. A server error would
-                    // have been reported w/o throwing (see onReceiveSeverException()).
+                    // have been reported without throwing (see onReceiveSeverException()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
@@ -1692,7 +1731,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     if (!test_hint.clientError() && !test_hint.serverError())
                     {
                         // No error was expected but it still occurred. This is the
-                        // default case w/o test hint, doesn't need additional
+                        // default case without test hint, doesn't need additional
                         // diagnostics.
                         error_matches_hint = false;
                     }
@@ -1919,7 +1958,7 @@ void ClientBase::runInteractive()
         {
             /// We don't need to handle the test hints in the interactive mode.
             std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-            client_exception = std::make_unique<Exception>(e);
+            client_exception.reset(e.clone());
         }
 
         if (client_exception)
