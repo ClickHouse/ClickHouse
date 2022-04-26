@@ -534,6 +534,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {
             if (e.code() != ErrorCodes::S3_ERROR && e.code() != ErrorCodes::ZERO_COPY_REPLICATION_ERROR)
                 throw;
+
             LOG_WARNING(log, fmt::runtime(e.message() + " Will retry fetching part without zero-copy."));
             /// Try again but without zero-copy
             return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
@@ -826,7 +827,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
                 /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
                 /// performing a poll with a not very large timeout.
                 /// And now we check it only between read chunks (in the `copyData` function).
-                disk->removeSharedRecursive(part_download_path, true);
+                disk->removeSharedRecursive(part_download_path, true, {});
                 throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
             }
 
@@ -850,7 +851,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
 
-    data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true);
+    data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true, {});
 
     LOG_DEBUG(log, "Download of part {} unique id {} metadata onto disk {} finished.",
         part_name, part_id, disk->getName());
