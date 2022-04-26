@@ -37,7 +37,7 @@ public:
 
     void remove(const Key & key) override;
 
-    void tryRemoveAll() override;
+    void remove(bool force_remove_unreleasable) override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
 
