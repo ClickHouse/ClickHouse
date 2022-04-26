@@ -44,9 +44,24 @@ public:
 
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
+    UInt32 compressReq(const char * source, UInt32 source_size, char * dest, UInt32 & req_id);
+    // Flush all asychronous request for compression
+    UInt32 compressFlush(UInt32 req_id, char * dest);
+    /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
+    // reqType is specific for HW decompressor:
+    //0 means sychronous request by default;
+    //1 means asychronous request, must be used in pair with decompressFlush;
+    //2 means SW decompressor instead of HW
+    UInt32 decompress(const char * source, UInt32 source_size, char * dest, UInt8 req_type = 0);
 
-    /// Decompress bytes from compressed source to dest. Dest should preallocate memory
-    UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
+    /// Flush all asychronous request for decompression
+    void decompressFlush(void);
+
+    /// Some codecs (QPL_deflate, for example) support asychronous request
+    virtual bool isAsyncSupported() const
+    {
+        return false;
+    }
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec
     virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const
@@ -95,9 +110,38 @@ protected:
     /// Actually compress data, without header
     virtual UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const = 0;
 
+    /// Asynchronous compression request to HW decompressor
+    virtual UInt32 doCompressDataReq(const char * source, UInt32 source_size, char * dest, UInt32 & req_id)
+    {
+        req_id = 0;
+        return doCompressData(source, source_size, dest);
+    }
+
+    /// Flush asynchronous request for compression
+    virtual UInt32 doCompressDataFlush(UInt32 req_id = 0)
+    {
+        return req_id;
+    }
+
     /// Actually decompress data without header
     virtual void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
 
+    /// Asynchronous decompression request to HW decompressor
+    virtual void doDecompressDataReq(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size)
+    {
+        doDecompressData(source, source_size, dest, uncompressed_size);
+    }
+
+    /// SW decompressor instead of HW
+    virtual void doDecompressDataSW(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+    {
+        doDecompressData(source, source_size, dest, uncompressed_size);
+    }
+
+    /// Flush asynchronous request for decompression
+    virtual void doDecompressDataFlush(void)
+    {
+    }
     /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
     void setCodecDescription(const String & name, const ASTs & arguments = {});
 
