@@ -1269,12 +1269,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
+                    if (expressions.join->supportParallelJoin())
+                    {
+                        joined_plan->addStep(std::make_unique<ResizeStreamsStep>(joined_plan->getCurrentDataStream(), max_streams));
+                    }
                     if (!analysis_result.optimize_read_in_order)
                     {
-                        if (expressions.join->supportParallelJoin())
-                        {
-                            joined_plan->addStep(std::make_unique<ResizeStreamsStep>(joined_plan->getCurrentDataStream(), max_streams));
-                        }
                         // If optimize_read_in_order = true, do not change the left pipeline's stream size.
                         // otherwise will make the result wrong for order by.
                         query_plan.addStep(std::make_unique<ResizeStreamsStep>(query_plan.getCurrentDataStream(), max_streams));
