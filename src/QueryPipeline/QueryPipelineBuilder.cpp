@@ -345,6 +345,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines2(
     if (left->pipe.output_ports.size() != 1 || right->pipe.output_ports.size() != 1)
         throw Exception("Join is supported only for pipelines with one output port", ErrorCodes::LOGICAL_ERROR);
 
+    if (left->hasTotals() || right->hasTotals())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
+
     Blocks inputs = {left->getHeader(), right->getHeader()};
 
     auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);

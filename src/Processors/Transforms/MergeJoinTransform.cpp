@@ -42,7 +42,7 @@ FullMergeJoinCursorPtr createCursor(const Block & block, const Names & columns)
     desc.reserve(columns.size());
     for (const auto & name : columns)
         desc.emplace_back(name);
-    return std::make_unique<FullMergeJoinCursor>(block, desc);
+    return std::make_unique<FullMergeJoinCursor>(materializeBlock(block), desc);
 }
 
 template <bool has_left_nulls, bool has_right_nulls>
@@ -227,22 +227,6 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
 
     const auto & join_on = table_join->getTableJoin().getOnlyClause();
 
-    for (const auto & key : join_on.key_names_left)
-    {
-        if (input_headers[0].getByName(key).type->lowCardinality() ||
-            input_headers[0].getByName(key).type->isLowCardinalityNullable())
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support low cardinality columns");
-        }
-    }
-    for (const auto & key : join_on.key_names_right)
-    {
-        if (input_headers[1].getByName(key).type->lowCardinality() ||
-            input_headers[1].getByName(key).type->isLowCardinalityNullable())
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support low cardinality columns");
-        }
-    }
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
@@ -303,20 +287,6 @@ static Chunk createBlockWithDefaults(FullMergeJoinCursor & lhs, const Chunk & rh
     return createBlockWithDefaults(lhs.detach(), rhs, start, num_rows);
 }
 
-void MergeJoinAlgorithm::initialize(Inputs inputs)
-{
-    if (inputs.size() != 2)
-        throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
-
-    LOG_DEBUG(log, "MergeJoinAlgorithm initialize, number of inputs: {}", inputs.size());
-
-    for (size_t i = 0; i < inputs.size(); ++i)
-    {
-        copyColumnsResized(inputs[i].chunk, 0, 0, sample_chunks.emplace_back());
-        consume(inputs[i], i);
-    }
-}
-
 static void prepareChunk(Chunk & chunk)
 {
     if (!chunk)
@@ -328,6 +298,21 @@ static void prepareChunk(Chunk & chunk)
         column = column->convertToFullColumnIfConst();
 
     chunk.setColumns(std::move(columns), num_rows);
+}
+
+void MergeJoinAlgorithm::initialize(Inputs inputs)
+{
+    if (inputs.size() != 2)
+        throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
+
+    LOG_DEBUG(log, "MergeJoinAlgorithm initialize, number of inputs: {}", inputs.size());
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        assert(inputs[i].chunk.getNumColumns() == cursors[i]->sampleBlock().columns());
+        prepareChunk(inputs[i].chunk);
+        copyColumnsResized(inputs[i].chunk, 0, 0, sample_chunks.emplace_back());
+        consume(inputs[i], i);
+    }
 }
 
 void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
@@ -418,6 +403,7 @@ struct AllJoinImpl
                 }
                 else
                 {
+                    assert(state == nullptr);
                     state = std::make_unique<AllJoinState>(left_cursor.cursor, lpos, right_cursor.cursor, rpos);
                     state->addRange(0, left_cursor.getCurrent().clone(), lpos, lnum);
                     state->addRange(1, right_cursor.getCurrent().clone(), rpos, rnum);

@@ -2,10 +2,18 @@
 
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Poco/Logger.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+    extern const int NOT_IMPLEMENTED;
+}
 
 /// Dummy class, actual joining is done by MergeTransform
 class FullSortingMergeJoin : public IJoin
@@ -22,8 +30,31 @@ public:
 
     bool addJoinedBlock(const Block & /* block */, bool /* check_limits */) override { __builtin_unreachable(); }
 
-    void checkTypesOfKeys(const Block & /* block */) const override
+    void checkTypesOfKeys(const Block & left_block) const override
     {
+        if (table_join->getClauses().size() != 1)
+            throw Exception("FullSortingMergeJoin supports only one join key", ErrorCodes::NOT_IMPLEMENTED);
+
+        const auto & onexpr = table_join->getOnlyClause();
+
+        for (size_t i = 0; i < onexpr.key_names_left.size(); ++i)
+        {
+            DataTypePtr left_type = left_block.getByName(onexpr.key_names_left[i]).type;
+            DataTypePtr right_type = right_sample_block.getByName(onexpr.key_names_right[i]).type;
+
+            if (!removeNullable(left_type)->equals(*removeNullable(right_type)))
+            {
+                DataTypePtr left_type_no_lc = removeNullable(recursiveRemoveLowCardinality(left_type));
+                DataTypePtr right_type_no_lc = removeNullable(recursiveRemoveLowCardinality(right_type));
+                /// if types equal after removing low cardinality, then it is ok and can be supported
+                bool equals_up_to_lc = left_type_no_lc->equals(*right_type_no_lc);
+                throw DB::Exception(
+                    equals_up_to_lc ? ErrorCodes::NOT_IMPLEMENTED : ErrorCodes::TYPE_MISMATCH,
+                    "Type mismatch of columns to JOIN by: {} :: {} at left, {} :: {} at right",
+                    onexpr.key_names_left[i], left_type->getName(),
+                    onexpr.key_names_right[i], right_type->getName());
+            }
+        }
     }
 
     /// Used just to get result header
