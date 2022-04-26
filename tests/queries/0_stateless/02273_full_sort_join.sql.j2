@@ -31,6 +31,13 @@ SET join_algorithm = 'full_sorting_merge';
 
 SET max_block_size = {{ block_size }};
 
+SELECT '{{ kind }} INNER USING | bs = {{ block_size }}';
+SELECT key, empty(t1.s), empty(t2.s) FROM t1
+{{ kind }} INNER JOIN t2
+USING (key)
+ORDER BY t1.key, t2.key
+;
+
 SELECT '{{ kind }} INNER | bs = {{ block_size }}';
 SELECT t1.key, t2.key, empty(t1.s), empty(t2.s) FROM t1
 {{ kind }} INNER JOIN t2

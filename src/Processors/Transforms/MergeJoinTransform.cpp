@@ -138,7 +138,7 @@ void addIndexColumn(const Columns & columns, ColumnUInt64 & indices, Chunk & res
                 limit = indices.size();
 
             assert(limit == indices.size());
-            /// rows where default value shold be inserted have index == size
+            /// rows where default value should be inserted have index == size
             /// add row with defaults to handle it
             auto tmp_col = col->cloneResized(col->size() + 1);
             ColumnPtr new_col = tmp_col->index(indices, limit);
@@ -226,6 +226,25 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for kind {}", kind);
 
     const auto & join_on = table_join->getTableJoin().getOnlyClause();
+
+    for (const auto & key : join_on.key_names_left)
+    {
+        if (input_headers[0].getByName(key).type->lowCardinality() ||
+            input_headers[0].getByName(key).type->isLowCardinalityNullable())
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support low cardinality columns");
+        }
+    }
+    for (const auto & key : join_on.key_names_right)
+    {
+        if (input_headers[1].getByName(key).type->lowCardinality() ||
+            input_headers[1].getByName(key).type->isLowCardinalityNullable())
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support low cardinality columns");
+        }
+    }
+    if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
     cursors.push_back(createCursor(input_headers[0], join_on.key_names_left));
     cursors.push_back(createCursor(input_headers[1], join_on.key_names_right));
@@ -667,7 +686,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin(JoinKind kind)
     if (!current_right.isValid())
         return Status(1);
 
-    /// join doen't build result block, but returns indices where result rows should be placed
+    /// join doesn't build result block, but returns indices where result rows should be placed
     auto left_map = ColumnUInt64::create();
     auto right_map = ColumnUInt64::create();
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
