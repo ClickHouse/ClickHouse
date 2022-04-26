@@ -419,14 +419,14 @@ TEST(ARCFileCache, get)
 
         assertRange(44, segments1[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
         assertRange(45, segments1[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
-        assertRange(45, segments1[2], DB::FileSegment::Range(15, 16), DB::FileSegment::State::DOWNLOADED);
-        assertRange(46, segments1[3], DB::FileSegment::Range(17, 20), DB::FileSegment::State::DOWNLOADED);
-        assertRange(47, segments1[4], DB::FileSegment::Range(21, 21), DB::FileSegment::State::DOWNLOADED);
-        assertRange(48, segments1[5], DB::FileSegment::Range(22, 22), DB::FileSegment::State::EMPTY);
-        assertRange(49, segments1[6], DB::FileSegment::Range(23, 23), DB::FileSegment::State::DOWNLOADED);
-        assertRange(50, segments1[7], DB::FileSegment::Range(24, 26), DB::FileSegment::State::EMPTY);
-        assertRange(51, segments1[8], DB::FileSegment::Range(27, 27), DB::FileSegment::State::DOWNLOADED);
-        assertRange(52, segments1[9], DB::FileSegment::Range(28, 29), DB::FileSegment::State::DOWNLOADED);
+        assertRange(46, segments1[2], DB::FileSegment::Range(15, 16), DB::FileSegment::State::DOWNLOADED);
+        assertRange(47, segments1[3], DB::FileSegment::Range(17, 20), DB::FileSegment::State::DOWNLOADED);
+        assertRange(48, segments1[4], DB::FileSegment::Range(21, 21), DB::FileSegment::State::DOWNLOADED);
+        assertRange(49, segments1[5], DB::FileSegment::Range(22, 22), DB::FileSegment::State::EMPTY);
+        assertRange(50, segments1[6], DB::FileSegment::Range(23, 23), DB::FileSegment::State::DOWNLOADED);
+        assertRange(51, segments1[7], DB::FileSegment::Range(24, 26), DB::FileSegment::State::EMPTY);
+        assertRange(52, segments1[8], DB::FileSegment::Range(27, 27), DB::FileSegment::State::DOWNLOADED);
+        assertRange(53, segments1[9], DB::FileSegment::Range(28, 29), DB::FileSegment::State::DOWNLOADED);
     }
 
     {
@@ -440,8 +440,8 @@ TEST(ARCFileCache, get)
         auto segments1 = fromHolder(holder1);
 
         ASSERT_EQ(segments1.size(), 3);
-        assertRange(52, segments1[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::EMPTY);
-        assertRange(53, segments1[1], DB::FileSegment::Range(10, 19), DB::FileSegment::State::EMPTY);
-        assertRange(54, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
+        assertRange(54, segments1[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::EMPTY);
+        assertRange(55, segments1[1], DB::FileSegment::Range(10, 19), DB::FileSegment::State::EMPTY);
+        assertRange(56, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
     }
 }
