@@ -103,11 +103,7 @@ public:
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
-    void passRemoteFileReaderIfEmpty(RemoteFileReaderPtr && remote_file_reader_);
-
-    /// Reset remote_file_reader in file segemtn and return the object to the caller.
-    /// Only downloading thread can successfully call this method, so thread-safety is guaranteed.
-    RemoteFileReaderPtr resetRemoteFileReader();
+    void resetRemoteFileReader();
 
     String getOrSetDownloader();
 
