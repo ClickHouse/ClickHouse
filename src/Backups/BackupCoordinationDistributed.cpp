@@ -74,6 +74,19 @@ namespace
         return std::pair{size, checksum};
     }
 
+    size_t extractCounterFromSequentialNodeName(const String & node_name)
+    {
+        size_t pos_before_counter = node_name.find_last_not_of("0123456789");
+        size_t counter_length = node_name.length() - 1 - pos_before_counter;
+        auto counter = std::string_view{node_name}.substr(node_name.length() - counter_length);
+        return parseFromString<UInt64>(counter);
+    }
+
+    String formatArchiveSuffix(size_t counter)
+    {
+        return fmt::format("{:03}", counter); /// Outputs 001, 002, 003, ...
+    }
+
     /// We try to store data to zookeeper several times due to possible version conflicts.
     constexpr size_t NUM_ATTEMPTS = 10;
 }
@@ -94,7 +107,6 @@ void BackupCoordinationDistributed::createRootNodes()
     zookeeper->createIfNotExists(zookeeper_path + "/file_names", "");
     zookeeper->createIfNotExists(zookeeper_path + "/file_infos", "");
     zookeeper->createIfNotExists(zookeeper_path + "/archive_suffixes", "");
-    zookeeper->createIfNotExists(zookeeper_path + "/current_archive_suffix", "0");
 }
 
 void BackupCoordinationDistributed::removeAllNodes()
@@ -225,30 +237,21 @@ std::optional<SizeAndChecksum> BackupCoordinationDistributed::getFileSizeAndChec
 String BackupCoordinationDistributed::getNextArchiveSuffix()
 {
     auto zookeeper = get_zookeeper();
-    for (size_t attempt = 0; attempt != NUM_ATTEMPTS; ++attempt)
-    {
-        Coordination::Stat stat;
-        String current_suffix_str = zookeeper->get(zookeeper_path + "/current_archive_suffix", &stat);
-        UInt64 current_suffix = parseFromString<UInt64>(current_suffix_str);
-        current_suffix_str = fmt::format("{:03}", ++current_suffix); /// Outputs 001, 002, 003, ...
-        Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/current_archive_suffix", current_suffix_str, stat.version));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/archive_suffixes/" + current_suffix_str, "", zkutil::CreateMode::Persistent));
-        Coordination::Responses responses;
-        auto code = zookeeper->tryMulti(ops, responses);
-        if (code == Coordination::Error::ZOK)
-            return current_suffix_str;
-        bool is_last_attempt = (attempt == NUM_ATTEMPTS - 1);
-        if ((responses[0]->error != Coordination::Error::ZBADVERSION) || is_last_attempt)
-            throw zkutil::KeeperMultiException(code, ops, responses);
-    }
-    __builtin_unreachable();
+    String path = zookeeper_path + "/archive_suffixes/a";
+    String path_created;
+    auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::PersistentSequential, path_created);
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException(code, path);
+    return formatArchiveSuffix(extractCounterFromSequentialNodeName(path_created));
 }
 
 Strings BackupCoordinationDistributed::getAllArchiveSuffixes() const
 {
     auto zookeeper = get_zookeeper();
-    return zookeeper->getChildren(zookeeper_path + "/archive_suffixes");
+    Strings node_names = zookeeper->getChildren(zookeeper_path + "/archive_suffixes");
+    for (auto & node_name : node_names)
+        node_name = formatArchiveSuffix(extractCounterFromSequentialNodeName(node_name));
+    return node_names;
 }
 
 void BackupCoordinationDistributed::drop()

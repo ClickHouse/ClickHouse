@@ -308,7 +308,7 @@ namespace
         ContextPtr context;
         BackupSettings backup_settings;
         DDLRenamingSettings renaming_settings;
-        std::map<String /* db_name_in_backup */, CreateDatabaseInfo> databases;
+        std::unordered_map<String /* db_name_in_backup */, CreateDatabaseInfo> databases;
         std::map<DatabaseAndTableName /* table_name_in_backup */, CreateTableInfo> tables;
     };
 }
