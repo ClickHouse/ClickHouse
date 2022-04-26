@@ -152,10 +152,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
 
         /// Unset settings
-        storage_children.erase(
-            std::remove_if(storage_children.begin(), storage_children.end(),
-                           [&](const ASTPtr & element) { return element.get() == ast_storage->settings; }),
-            storage_children.end());
+        std::erase_if(storage_children, [&](const ASTPtr & element) { return element.get() == ast_storage->settings; });
         ast_storage->settings = nullptr;
     }
     auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,

@@ -2,9 +2,6 @@
 option (ENABLE_CLANG_TIDY "Use clang-tidy static analyzer" OFF)
 
 if (ENABLE_CLANG_TIDY)
-    if (${CMAKE_VERSION} VERSION_LESS "3.6.0")
-        message(FATAL_ERROR "clang-tidy requires CMake version at least 3.6.")
-    endif()
 
     find_program (CLANG_TIDY_PATH NAMES "clang-tidy" "clang-tidy-14" "clang-tidy-13" "clang-tidy-12")
 
