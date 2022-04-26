@@ -40,7 +40,7 @@ TEST(ARCFileCache, get)
     auto key = cache.hash("key1");
 
     /// [0]
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder = cache.getOrSet(key, 0, 10); /// Add range [0, 9]
         auto segments = fromHolder(holder);
@@ -66,7 +66,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (0, 9, 1)
     /// [High]:
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         /// Want range [5, 14], but [0, 9] already in cache, so only [10, 14] will be put in cache.
         auto holder = cache.getOrSet(key, 5, 10);
@@ -85,7 +85,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (0, 9, 2)<-(10, 14, 1)
     /// [High]:
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder = cache.getOrSet(key, 9, 1); /// Get [9, 9]
         auto segments = fromHolder(holder);
@@ -96,7 +96,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (10, 14, 1)<-(0, 9, 3)
     /// [High]:
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder = cache.getOrSet(key, 9, 2); /// Get [9, 10]
         auto segments = fromHolder(holder);
@@ -108,7 +108,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (10, 14, 2)
     /// [High]: (0, 9, 4)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder = cache.getOrSet(key, 10, 1); /// Get [10, 10]
         auto segments = fromHolder(holder);
@@ -124,7 +124,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (10, 14, 3)<-(17, 20, 1)<-(24, 26, 1)<-(27, 27, 1)
     /// [High]: (0, 9, 4)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder = cache.getOrSet(key, 0, 26); /// Get [0, 25]
         auto segments = fromHolder(holder);
@@ -162,7 +162,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (17, 20, 2)<-(24, 26, 1)<-(15, 16, 1)<-(27, 27, 2)
     /// [High]: (0, 9, 5)<-(10, 14, 4)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder = cache.getOrSet(key, 12, 10); /// Get [12, 21]
         auto segments = fromHolder(holder);
@@ -185,7 +185,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (24, 26, 2)<-(27, 27, 2)<-(15, 16, 2)<-(17, 20, 3)<-(21, 21, 1)
     /// [High]: (0, 9, 5)<-(10, 14, 5)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     ASSERT_EQ(cache.getStat().size, 7);
     {
         auto holder = cache.getOrSet(key, 23, 5); /// Get [23, 27]
@@ -205,7 +205,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (15, 16, 2)<-(17, 20, 3)<-(21, 21, 1)<-(24, 26, 3)<-(27, 27, 3)<-(23, 23, 1)
     /// [High]: (0, 9, 5)<-(10, 14, 5)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder5 = cache.getOrSet(key, 2, 3); /// Get [2, 4]
         auto s5 = fromHolder(holder5);
@@ -251,7 +251,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (15, 16, 3)<-(17, 20, 4)<-(21, 21, 2)<-(23, 23, 3)<-(30, 31, 2)
     /// [High]: (0, 9, 7)<-(24, 26, 5)<-(27, 27, 5)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder = cache.getOrSet(key, 2, 3); /// Get [2, 4]
         auto segments = fromHolder(holder);
@@ -263,7 +263,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (15, 16, 3)<-(17, 20, 4)<-(21, 21, 2)<-(23, 23, 3)<-(30, 31, 2)
     /// [High]: (24, 26, 5)<-(27, 27, 5)<-(0, 9, 8)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder = cache.getOrSet(key, 25, 5); /// Get [25, 29]
         auto segments = fromHolder(holder);
@@ -327,7 +327,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (15, 16, 3)<-(17, 20, 4)<-(21, 21, 2)<-(23, 23, 3)<-(30, 31, 2)<-(28, 29, 1)
     /// [High]: (0, 9, 8)<-(24, 26, 7)<-(27, 27, 7)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         /// Now let's check the similar case but getting ERROR state after segment->wait(), when
         /// state is changed not manually via segment->complete(state) but from destructor of holder
@@ -402,7 +402,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (30, 31, 2)<-(28, 29, 1)<-(17, 20, 6)<-(10, 14, 1)
     /// [High]: (27, 27, 7)<-(0, 9, 10)<-(15, 16, 5)<-(21, 21, 4)<-(23, 23, 5)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         /// Test ARCCache::restore().
         auto cache2 = DB::ARCFileCache(cache_base_path, settings);
