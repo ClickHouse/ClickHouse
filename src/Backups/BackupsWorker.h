@@ -9,6 +9,8 @@
 namespace DB
 {
 
+/// Manager of backups and restores: executes backups and restores' threads in the background.
+/// Keeps information about backups and restores started in this session.
 class BackupsWorker
 {
 public:
