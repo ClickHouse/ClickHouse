@@ -12,7 +12,8 @@ namespace DB
 class CachingStep : public ITransformingStep
 {
 public:
-    CachingStep(const DataStream & input_stream_, LRUCache<CacheKey, Data, CacheKeyHasher> & cache_, const CacheKey & cache_key_);
+    CachingStep(const DataStream & input_stream_, LRUCache<CacheKey, Data, CacheKeyHasher> & cache_,
+                CacheKey cache_key_);
 
     String getName() const override { return "Caching"; }
 
@@ -20,7 +21,7 @@ public:
 
 private:
     LRUCache<CacheKey, Data, CacheKeyHasher> & cache;
-    const CacheKey & cache_key;
+    CacheKey cache_key;
 };
 
 }
