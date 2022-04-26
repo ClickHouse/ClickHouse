@@ -8,8 +8,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceFile
 
-# SOURCE = SourceFile("File", "localhost", "9000", "file_node", "9000", "", "")
-
 SOURCE = None
 cluster = None
 node = None
