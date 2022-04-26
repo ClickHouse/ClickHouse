@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -148,6 +149,9 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         BackupImpl::ArchiveParams archive_params;
         if (hasRegisteredArchiveFileExtension(path))
         {
+            if (params.is_internal_backup)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
+
             archive_params.archive_name = path.filename();
             path = path.parent_path();
             archive_params.compression_method = params.compression_method;
