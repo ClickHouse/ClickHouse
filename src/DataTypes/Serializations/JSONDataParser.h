@@ -48,7 +48,7 @@ private:
 
     void traverse(const Element & element, ParseContext & ctx);
     void traverseObject(const JSONObject & object, ParseContext & ctx);
-    void traverseArray(const JSONArray & object, ParseContext & ctx);
+    void traverseArray(const JSONArray & array, ParseContext & ctx);
     void traverseArrayElement(const Element & element, ParseArrayContext & ctx);
 
     static void fillMissedValuesInArrays(ParseArrayContext & ctx);
