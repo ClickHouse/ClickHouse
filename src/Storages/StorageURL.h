@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -121,40 +122,9 @@ private:
     OutputFormatPtr writer;
 };
 
-class StorageURL : public IStorageURLBase
+class StorageURL : public IStorageURLBase, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageURL> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageURL>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageURL(CreatePasskey, TArgs &&... args) : StorageURL{std::forward<TArgs>(args)...}
-    {
-    }
-
-    String getName() const override
-    {
-        return "URL";
-    }
-
-    Block getHeaderBlock(const Names & /*column_names*/, const StorageSnapshotPtr & storage_snapshot) const override
-    {
-        return storage_snapshot->metadata->getSampleBlock();
-    }
-
-    static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
-
-    static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
-
-protected:
     StorageURL(
         const String & uri_,
         const StorageID & table_id_,
@@ -169,6 +139,19 @@ protected:
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr);
 
+    String getName() const override
+    {
+        return "URL";
+    }
+
+    Block getHeaderBlock(const Names & /*column_names*/, const StorageSnapshotPtr & storage_snapshot) const override
+    {
+        return storage_snapshot->metadata->getSampleBlock();
+    }
+
+    static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
+
+    static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
 };
 
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -8,25 +9,9 @@ namespace DB
 class Context;
 
 /// Implements `roles` system table, which allows you to get information about roles.
-class StorageSystemRoles final : public IStorageSystemOneBlock<StorageSystemRoles>
+class StorageSystemRoles final : public IStorageSystemOneBlock<StorageSystemRoles>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemRoles> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemRoles>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemRoles(CreatePasskey, TArgs &&... args) : StorageSystemRoles{std::forward<TArgs>(args)...}
-    {
-    }
-
     std::string getName() const override { return "SystemRoles"; }
     static NamesAndTypesList getNamesAndTypes();
 

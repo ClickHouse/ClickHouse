@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <base/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/ShellCommandSource.h>
@@ -14,24 +15,16 @@ namespace DB
  * Executable storage that will start process for read.
  * ExecutablePool storage maintain pool of processes and take process from pool for read.
  */
-class StorageExecutable final : public IStorage
+class StorageExecutable final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageExecutable> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageExecutable>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageExecutable(CreatePasskey, TArgs &&... args) : StorageExecutable{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageExecutable(
+        const StorageID & table_id,
+        const String & format,
+        const ExecutableSettings & settings,
+        const std::vector<ASTPtr> & input_queries,
+        const ColumnsDescription & columns,
+        const ConstraintsDescription & constraints);
 
     String getName() const override
     {
@@ -49,16 +42,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned threads) override;
-
-protected:
-
-    StorageExecutable(
-        const StorageID & table_id,
-        const String & format,
-        const ExecutableSettings & settings,
-        const std::vector<ASTPtr> & input_queries,
-        const ColumnsDescription & columns,
-        const ConstraintsDescription & constraints);
 
 private:
     ExecutableSettings settings;

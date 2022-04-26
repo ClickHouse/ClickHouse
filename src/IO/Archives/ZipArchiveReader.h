@@ -3,6 +3,7 @@
 #include <Common/config.h>
 
 #if USE_MINIZIP
+#include <boost/noncopyable.hpp>
 #include <IO/Archives/IArchiveReader.h>
 #include <mutex>
 #include <vector>
@@ -15,24 +16,15 @@ class ReadBufferFromFileBase;
 class SeekableReadBuffer;
 
 /// Implementation of IArchiveReader for reading zip archives.
-class ZipArchiveReader : public IArchiveReader
+class ZipArchiveReader : public IArchiveReader, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<ZipArchiveReader> create(TArgs &&... args)
-    {
-        return std::make_shared<ZipArchiveReader>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
+    /// Constructs an archive's reader that will read from a file in the local filesystem.
+    explicit ZipArchiveReader(const String & path_to_archive_);
 
-    template <typename... TArgs>
-    explicit ZipArchiveReader(CreatePasskey, TArgs &&... args) : ZipArchiveReader{std::forward<TArgs>(args)...}
-    {
-    }
+    /// Constructs an archive's reader that will read by making a read buffer by using
+    /// a specified function.
+    ZipArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_);
 
     ~ZipArchiveReader() override;
 
@@ -58,13 +50,6 @@ public:
     void setPassword(const String & password_) override;
 
 private:
-    /// Constructs an archive's reader that will read from a file in the local filesystem.
-    explicit ZipArchiveReader(const String & path_to_archive_);
-
-    /// Constructs an archive's reader that will read by making a read buffer by using
-    /// a specified function.
-    ZipArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_);
-
     class ReadBufferFromZipArchive;
     class FileEnumeratorImpl;
     class HandleHolder;

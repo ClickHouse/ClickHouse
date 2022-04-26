@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include "IMySQLReadPacket.h"
@@ -15,28 +16,18 @@ namespace MySQLProtocol
 /* Writes and reads packets, keeping sequence-id.
  * Throws ProtocolError, if packet with incorrect sequence-id was received.
  */
-class PacketEndpoint
+class PacketEndpoint : boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<PacketEndpoint> create(TArgs &&... args)
-    {
-        return std::make_shared<PacketEndpoint>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit PacketEndpoint(CreatePasskey, TArgs &&... args) : PacketEndpoint{std::forward<TArgs>(args)...}
-    {
-    }
-
     uint8_t & sequence_id;
     ReadBuffer * in;
     WriteBuffer * out;
+
+    /// For writing.
+    PacketEndpoint(WriteBuffer & out_, uint8_t & sequence_id_);
+
+    /// For reading and writing.
+    PacketEndpoint(ReadBuffer & in_, WriteBuffer & out_, uint8_t & sequence_id_);
 
     MySQLPacketPayloadReadBuffer getPayload();
 
@@ -58,13 +49,6 @@ public:
 
     /// Converts packet to text. Is used for debug output.
     static String packetToText(const String & payload);
-
-protected:
-    /// For writing.
-    PacketEndpoint(WriteBuffer & out_, uint8_t & sequence_id_);
-
-    /// For reading and writing.
-    PacketEndpoint(ReadBuffer & in_, WriteBuffer & out_, uint8_t & sequence_id_);
 };
 
 using PacketEndpointPtr = std::shared_ptr<PacketEndpoint>;

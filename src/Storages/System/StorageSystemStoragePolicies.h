@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -13,24 +14,10 @@ class Context;
 
 /** Implements the system table `storage`, which allows you to get information about all disks.
 */
-class StorageSystemStoragePolicies final : public IStorage
+class StorageSystemStoragePolicies final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemStoragePolicies> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemStoragePolicies>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemStoragePolicies(CreatePasskey, TArgs &&... args) : StorageSystemStoragePolicies{std::forward<TArgs>(args)...}
-    {
-    }
+    explicit StorageSystemStoragePolicies(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemStoragePolicies"; }
 
@@ -44,9 +31,6 @@ public:
         unsigned num_streams) override;
 
     bool isSystemStorage() const override { return true; }
-
-protected:
-    explicit StorageSystemStoragePolicies(const StorageID & table_id_);
 };
 
 }

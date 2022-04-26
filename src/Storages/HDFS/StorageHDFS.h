@@ -4,6 +4,7 @@
 
 #if USE_HDFS
 
+#include <boost/noncopyable.hpp>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
@@ -15,24 +16,20 @@ namespace DB
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHDFS final : public IStorage, WithContext
+class StorageHDFS final : public IStorage, WithContext, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageHDFS> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageHDFS>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageHDFS(CreatePasskey, TArgs &&... args) : StorageHDFS{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageHDFS(
+        const String & uri_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        ContextPtr context_,
+        const String & compression_method_ = "",
+        bool distributed_processing_ = false,
+        ASTPtr partition_by = nullptr);
 
     String getName() const override { return "HDFS"; }
 
@@ -71,17 +68,6 @@ public:
 
 protected:
     friend class HDFSSource;
-    StorageHDFS(
-        const String & uri_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context_,
-        const String & compression_method_ = "",
-        bool distributed_processing_ = false,
-        ASTPtr partition_by = nullptr);
 
 private:
     std::vector<const String> uris;

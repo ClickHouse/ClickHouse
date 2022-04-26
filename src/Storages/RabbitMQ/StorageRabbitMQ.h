@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
@@ -17,24 +18,15 @@
 namespace DB
 {
 
-class StorageRabbitMQ final: public IStorage, WithContext
+class StorageRabbitMQ final: public IStorage, WithContext, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageRabbitMQ> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageRabbitMQ>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageRabbitMQ(CreatePasskey, TArgs &&... args) : StorageRabbitMQ{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageRabbitMQ(
+            const StorageID & table_id_,
+            ContextPtr context_,
+            const ColumnsDescription & columns_,
+            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
+            bool is_attach_);
 
     std::string getName() const override { return "RabbitMQ"; }
 
@@ -83,14 +75,6 @@ public:
 
     void incrementReader();
     void decrementReader();
-
-protected:
-    StorageRabbitMQ(
-            const StorageID & table_id_,
-            ContextPtr context_,
-            const ColumnsDescription & columns_,
-            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            bool is_attach_);
 
 private:
     ContextMutablePtr rabbitmq_context;

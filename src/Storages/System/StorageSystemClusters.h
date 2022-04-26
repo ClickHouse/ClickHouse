@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
@@ -15,25 +16,9 @@ class Cluster;
   *  that allows to obtain information about available clusters
   *  (which may be specified in Distributed tables).
   */
-class StorageSystemClusters final : public IStorageSystemOneBlock<StorageSystemClusters>
+class StorageSystemClusters final : public IStorageSystemOneBlock<StorageSystemClusters>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemClusters> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemClusters>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemClusters(CreatePasskey, TArgs &&... args) : StorageSystemClusters{std::forward<TArgs>(args)...}
-    {
-    }
-
     std::string getName() const override { return "SystemClusters"; }
 
     static NamesAndTypesList getNamesAndTypes();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
@@ -61,24 +62,17 @@ private:
   *  and also written to a file-backup, for recovery after a restart.
   * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
-class StorageSet final : public StorageSetOrJoinBase
+class StorageSet final : public StorageSetOrJoinBase, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSet> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSet>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSet(CreatePasskey, TArgs &&... args) : StorageSet{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageSet(
+        DiskPtr disk_,
+        const String & relative_path_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        bool persistent_);
 
     String getName() const override { return "Set"; }
 
@@ -96,16 +90,6 @@ private:
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;
     size_t getSize(ContextPtr) const override;
-
-protected:
-    StorageSet(
-        DiskPtr disk_,
-        const String & relative_path_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        bool persistent_);
 };
 
 }

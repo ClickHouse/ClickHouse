@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,25 +13,9 @@ class Context;
 /** Implements `functions`system table, which allows you to get a list
   * all normal and aggregate functions.
   */
-class StorageSystemFunctions final : public IStorageSystemOneBlock<StorageSystemFunctions>
+class StorageSystemFunctions final : public IStorageSystemOneBlock<StorageSystemFunctions>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemFunctions> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemFunctions>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemFunctions(CreatePasskey, TArgs &&... args) : StorageSystemFunctions{std::forward<TArgs>(args)...}
-    {
-    }
-
     std::string getName() const override { return "SystemFunctions"; }
 
     static NamesAndTypesList getNamesAndTypes();

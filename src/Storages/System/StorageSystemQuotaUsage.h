@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,25 +13,9 @@ struct QuotaUsage;
 /** Implements the `quota_usage` system table, which allows you to get information about
   * how the current user uses the quota.
   */
-class StorageSystemQuotaUsage final : public IStorageSystemOneBlock<StorageSystemQuotaUsage>
+class StorageSystemQuotaUsage final : public IStorageSystemOneBlock<StorageSystemQuotaUsage>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemQuotaUsage> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemQuotaUsage>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemQuotaUsage(CreatePasskey, TArgs &&... args) : StorageSystemQuotaUsage{std::forward<TArgs>(args)...}
-    {
-    }
-
     std::string getName() const override { return "SystemQuotaUsage"; }
     static NamesAndTypesList getNamesAndTypes();
 

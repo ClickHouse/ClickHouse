@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 
+#include <boost/noncopyable.hpp>
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
@@ -17,36 +18,9 @@ namespace DB
 
 class Context;
 
-class StorageS3Cluster : public IStorage
+class StorageS3Cluster : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageS3Cluster> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageS3Cluster>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageS3Cluster(CreatePasskey, TArgs &&... args) : StorageS3Cluster{std::forward<TArgs>(args)...}
-    {
-    }
-
-    std::string getName() const override { return "S3Cluster"; }
-
-    Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
-        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
-
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
-
-    NamesAndTypesList getVirtuals() const override;
-
-protected:
     StorageS3Cluster(
         const String & filename_,
         const String & access_key_id_,
@@ -58,6 +32,16 @@ protected:
         const ConstraintsDescription & constraints_,
         ContextPtr context_,
         const String & compression_method_);
+
+    std::string getName() const override { return "S3Cluster"; }
+
+    Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
+        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
+
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
+
+    NamesAndTypesList getVirtuals() const override;
 
 private:
     StorageS3::S3Configuration s3_configuration;

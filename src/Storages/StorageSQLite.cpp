@@ -172,7 +172,7 @@ void registerStorageSQLite(StorageFactory & factory)
 
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
 
-        return StorageSQLite::create(args.table_id, sqlite_db, database_path,
+        return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
                                      table_name, args.columns, args.constraints, args.getContext());
     },
     {

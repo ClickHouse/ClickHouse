@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/NullSource.h>
@@ -13,23 +14,18 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull final : public IStorage
+class StorageNull final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageNull> create(TArgs &&... args)
+    StorageNull(
+        const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
+        : IStorage(table_id_)
     {
-        return std::make_shared<StorageNull>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageNull(CreatePasskey, TArgs &&... args) : StorageNull{std::forward<TArgs>(args)...}
-    {
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(columns_description_);
+        storage_metadata.setConstraints(constraints_);
+        storage_metadata.setComment(comment);
+        setInMemoryMetadata(storage_metadata);
     }
 
     std::string getName() const override { return "Null"; }
@@ -67,19 +63,6 @@ public:
         return {0};
     }
 
-private:
-
-protected:
-    StorageNull(
-        const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
-        : IStorage(table_id_)
-    {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_description_);
-        storage_metadata.setConstraints(constraints_);
-        storage_metadata.setComment(comment);
-        setInMemoryMetadata(storage_metadata);
-    }
 };
 
 }

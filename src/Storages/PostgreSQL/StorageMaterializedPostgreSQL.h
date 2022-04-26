@@ -6,6 +6,7 @@
 #include "PostgreSQLReplicationHandler.h"
 #include "MaterializedPostgreSQLSettings.h"
 
+#include <boost/noncopyable.hpp>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -60,24 +61,24 @@ namespace DB
  *
 **/
 
-class StorageMaterializedPostgreSQL final : public IStorage, WithContext
+class StorageMaterializedPostgreSQL final : public IStorage, WithContext, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageMaterializedPostgreSQL> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageMaterializedPostgreSQL>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
+    StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,
+                                const String & postgres_database_name, const String & postgres_table_name);
 
-    template <typename... TArgs>
-    explicit StorageMaterializedPostgreSQL(CreatePasskey, TArgs &&... args) : StorageMaterializedPostgreSQL{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_,
+                                const String & postgres_database_name, const String & postgres_table_name);
+
+    StorageMaterializedPostgreSQL(
+        const StorageID & table_id_,
+        bool is_attach_,
+        const String & remote_database_name,
+        const String & remote_table_name,
+        const postgres::ConnectionInfo & connection_info,
+        const StorageInMemoryMetadata & storage_metadata,
+        ContextPtr context_,
+        std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
@@ -128,23 +129,6 @@ public:
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
     bool supportsFinal() const override { return true; }
-
-protected:
-    StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,
-                                const String & postgres_database_name, const String & postgres_table_name);
-
-    StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_,
-                                const String & postgres_database_name, const String & postgres_table_name);
-
-    StorageMaterializedPostgreSQL(
-        const StorageID & table_id_,
-        bool is_attach_,
-        const String & remote_database_name,
-        const String & remote_table_name,
-        const postgres::ConnectionInfo & connection_info,
-        const StorageInMemoryMetadata & storage_metadata,
-        ContextPtr context_,
-        std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
 private:
     static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(

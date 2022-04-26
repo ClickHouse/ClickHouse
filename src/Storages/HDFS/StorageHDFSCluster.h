@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 
+#include <boost/noncopyable.hpp>
 #include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/HDFS/StorageHDFS.h>
@@ -16,24 +17,17 @@ namespace DB
 
 class Context;
 
-class StorageHDFSCluster : public IStorage
+class StorageHDFSCluster : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageHDFSCluster> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageHDFSCluster>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageHDFSCluster(CreatePasskey, TArgs &&... args) : StorageHDFSCluster{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageHDFSCluster(
+        String cluster_name_,
+        const String & uri_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & compression_method_);
 
     std::string getName() const override { return "HDFSCluster"; }
 
@@ -44,16 +38,6 @@ public:
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     NamesAndTypesList getVirtuals() const override;
-
-protected:
-    StorageHDFSCluster(
-        String cluster_name_,
-        const String & uri_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & compression_method_);
 
 private:
     String cluster_name;

@@ -4,6 +4,7 @@
 #include <optional>
 #include <mutex>
 
+#include <boost/noncopyable.hpp>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 
@@ -17,27 +18,18 @@ namespace DB
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public IStorage
+class StorageMemory final : public IStorage, boost::noncopyable
 {
 friend class MemorySink;
 friend class MemoryRestoreTask;
 
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageMemory> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageMemory>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageMemory(CreatePasskey, TArgs &&... args) : StorageMemory{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageMemory(
+        const StorageID & table_id_,
+        ColumnsDescription columns_description_,
+        ConstraintsDescription constraints_,
+        const String & comment,
+        bool compress_ = false);
 
     String getName() const override { return "Memory"; }
 
@@ -136,14 +128,6 @@ private:
     std::atomic<size_t> total_size_rows = 0;
 
     bool compress;
-
-protected:
-    StorageMemory(
-        const StorageID & table_id_,
-        ColumnsDescription columns_description_,
-        ConstraintsDescription constraints_,
-        const String & comment,
-        bool compress_ = false);
 };
 
 }

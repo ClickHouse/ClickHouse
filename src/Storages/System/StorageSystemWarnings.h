@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,25 +12,9 @@ class Context;
 /** Implements system.warnings table that contains warnings about server configuration
   * to be displayed in clickhouse-client.
   */
-class StorageSystemWarnings final : public IStorageSystemOneBlock<StorageSystemWarnings>
+class StorageSystemWarnings final : public IStorageSystemOneBlock<StorageSystemWarnings>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemWarnings> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemWarnings>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemWarnings(CreatePasskey, TArgs &&... args) : StorageSystemWarnings{std::forward<TArgs>(args)...}
-    {
-    }
-
     std::string getName() const override { return "SystemWarnings"; }
 
     static NamesAndTypesList getNamesAndTypes();

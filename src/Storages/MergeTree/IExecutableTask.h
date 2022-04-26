@@ -3,6 +3,7 @@
 #include <memory>
 #include <functional>
 
+#include <boost/noncopyable.hpp>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -41,24 +42,17 @@ using ExecutableTaskPtr = std::shared_ptr<IExecutableTask>;
 /**
  * Some background operations won't represent a coroutines (don't want to be executed step-by-step). For this we have this wrapper.
  */
-class ExecutableLambdaAdapter : public IExecutableTask
+class ExecutableLambdaAdapter : public IExecutableTask, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<ExecutableLambdaAdapter> create(TArgs &&... args)
-    {
-        return std::make_shared<ExecutableLambdaAdapter>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit ExecutableLambdaAdapter(CreatePasskey, TArgs &&... args) : ExecutableLambdaAdapter{std::forward<TArgs>(args)...}
-    {
-    }
+    template <typename Job, typename Callback>
+    explicit ExecutableLambdaAdapter(
+        Job && job_to_execute_,
+        Callback && job_result_callback_,
+        StorageID id_)
+        : job_to_execute(job_to_execute_)
+        , job_result_callback(job_result_callback_)
+        , id(id_) {}
 
     bool executeStep() override
     {
@@ -75,15 +69,6 @@ public:
     }
 
 private:
-    template <typename Job, typename Callback>
-    explicit ExecutableLambdaAdapter(
-        Job && job_to_execute_,
-        Callback && job_result_callback_,
-        StorageID id_)
-        : job_to_execute(job_to_execute_)
-        , job_result_callback(job_result_callback_)
-        , id(id_) {}
-
     bool res = false;
     std::function<bool()> job_to_execute;
     IExecutableTask::TaskResultCallback job_result_callback;

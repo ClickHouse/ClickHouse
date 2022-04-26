@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
 
@@ -8,24 +9,10 @@ namespace DB
 /** Internal temporary storage for table function input(...)
   */
 
-class StorageInput final : public IStorage
+class StorageInput final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageInput> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageInput>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageInput(CreatePasskey, TArgs &&... args) : StorageInput{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageInput(const StorageID & table_id, const ColumnsDescription & columns_);
 
     String getName() const override { return "Input"; }
 
@@ -43,8 +30,5 @@ public:
 
 private:
     Pipe pipe;
-
-protected:
-    StorageInput(const StorageID & table_id, const ColumnsDescription & columns_);
 };
 }

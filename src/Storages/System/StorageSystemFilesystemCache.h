@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -28,32 +29,16 @@ namespace DB
  * FORMAT Vertical
  */
 
-class StorageSystemFilesystemCache final : public IStorageSystemOneBlock<StorageSystemFilesystemCache>
+class StorageSystemFilesystemCache final : public IStorageSystemOneBlock<StorageSystemFilesystemCache>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemFilesystemCache> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemFilesystemCache>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemFilesystemCache(CreatePasskey, TArgs &&... args) : StorageSystemFilesystemCache{std::forward<TArgs>(args)...}
-    {
-    }
+    explicit StorageSystemFilesystemCache(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemFilesystemCache"; }
 
     static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    explicit StorageSystemFilesystemCache(const StorageID & table_id_);
-
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 

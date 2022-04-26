@@ -4,6 +4,7 @@
 
 #if USE_MYSQL
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
@@ -21,24 +22,21 @@ namespace DB
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   * Read only.
   */
-class StorageMySQL final : public IStorage, WithContext
+class StorageMySQL final : public IStorage, WithContext, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageMySQL> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageMySQL>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageMySQL(CreatePasskey, TArgs &&... args) : StorageMySQL{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageMySQL(
+        const StorageID & table_id_,
+        mysqlxx::PoolWithFailover && pool_,
+        const std::string & remote_database_name_,
+        const std::string & remote_table_name_,
+        bool replace_query_,
+        const std::string & on_duplicate_clause_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        ContextPtr context_,
+        const MySQLSettings & mysql_settings_);
 
     std::string getName() const override { return "MySQL"; }
 
@@ -57,19 +55,6 @@ public:
 
 private:
     friend class StorageMySQLSink;
-
-    StorageMySQL(
-        const StorageID & table_id_,
-        mysqlxx::PoolWithFailover && pool_,
-        const std::string & remote_database_name_,
-        const std::string & remote_table_name_,
-        bool replace_query_,
-        const std::string & on_duplicate_clause_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context_,
-        const MySQLSettings & mysql_settings_);
 
     std::string remote_database_name;
     std::string remote_table_name;

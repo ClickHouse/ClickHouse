@@ -3220,7 +3220,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
 
     /// With this executor we can execute more tasks than threads we have
-    shared->merge_mutate_executor = MergeMutateBackgroundExecutor::create
+    shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
     (
         "MergeMutate",
         /*max_threads_count*/getSettingsRef().background_pool_size,
@@ -3231,7 +3231,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
         getSettingsRef().background_pool_size, max_merges_and_mutations);
 
-    shared->moves_executor = OrdinaryBackgroundExecutor::create
+    shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Move",
         getSettingsRef().background_move_pool_size,
@@ -3242,7 +3242,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}",
         getSettingsRef().background_move_pool_size, getSettingsRef().background_move_pool_size);
 
-    shared->fetch_executor = OrdinaryBackgroundExecutor::create
+    shared->fetch_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Fetch",
         getSettingsRef().background_fetches_pool_size,
@@ -3253,7 +3253,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}",
         getSettingsRef().background_fetches_pool_size, getSettingsRef().background_fetches_pool_size);
 
-    shared->common_executor = OrdinaryBackgroundExecutor::create
+    shared->common_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Common",
         getSettingsRef().background_common_pool_size,

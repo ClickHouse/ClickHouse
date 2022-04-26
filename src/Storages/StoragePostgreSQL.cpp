@@ -451,7 +451,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.getContext()->getSettingsRef().postgresql_connection_pool_size,
             args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-        return StoragePostgreSQL::create(
+        return std::make_shared<StoragePostgreSQL>(
             args.table_id,
             std::move(pool),
             configuration.table,

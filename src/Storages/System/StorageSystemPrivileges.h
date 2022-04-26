@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -8,25 +9,9 @@ namespace DB
 class Context;
 
 /// Implements `privileges` system table, which allows you to get information about access types.
-class StorageSystemPrivileges final : public IStorageSystemOneBlock<StorageSystemPrivileges>
+class StorageSystemPrivileges final : public IStorageSystemOneBlock<StorageSystemPrivileges>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemPrivileges> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemPrivileges>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemPrivileges(CreatePasskey, TArgs &&... args) : StorageSystemPrivileges{std::forward<TArgs>(args)...}
-    {
-    }
-
     std::string getName() const override { return "SystemPrivileges"; }
     static NamesAndTypesList getNamesAndTypes();
     static const std::vector<std::pair<String, Int16>> & getAccessTypeEnumValues();

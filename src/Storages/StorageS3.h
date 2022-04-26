@@ -11,6 +11,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
+#include <boost/noncopyable.hpp>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Poco/URI.h>
 #include <base/logger_useful.h>
@@ -117,24 +118,24 @@ private:
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 : public IStorage, WithContext
+class StorageS3 : public IStorage, WithContext, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageS3> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageS3>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageS3(CreatePasskey, TArgs &&... args) : StorageS3{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageS3(
+        const S3::URI & uri,
+        const String & access_key_id,
+        const String & secret_access_key,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const S3Settings::ReadWriteSettings & rw_settings_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        ContextPtr context_,
+        std::optional<FormatSettings> format_settings_,
+        const String & compression_method_ = "",
+        bool distributed_processing_ = false,
+        ASTPtr partition_by_ = nullptr);
 
     String getName() const override
     {
@@ -197,22 +198,6 @@ private:
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
     bool is_key_with_globs = false;
-
-    StorageS3(
-        const S3::URI & uri,
-        const String & access_key_id,
-        const String & secret_access_key,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const S3Settings::ReadWriteSettings & rw_settings_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context_,
-        std::optional<FormatSettings> format_settings_,
-        const String & compression_method_ = "",
-        bool distributed_processing_ = false,
-        ASTPtr partition_by_ = nullptr);
 
     static void updateS3Configuration(ContextPtr, S3Configuration &);
 

@@ -2,6 +2,7 @@
 
 #include <atomic>
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 
@@ -11,26 +12,49 @@ namespace DB
 struct DictionaryStructure;
 class TableFunctionDictionary;
 
-class StorageDictionary final : public IStorage, public WithContext
+class StorageDictionary final : public IStorage, public WithContext, boost::noncopyable
 {
 friend class TableFunctionDictionary;
 
-private:
-    struct CreatePasskey
+public:
+    /// Specifies where the table is located relative to the dictionary.
+    enum class Location
     {
+        /// Table was created automatically as an element of a database with the Dictionary engine.
+        DictionaryDatabase,
+
+        /// Table was created automatically along with a dictionary
+        /// and has the same database and name as the dictionary.
+        /// It provides table-like access to the dictionary.
+        /// User cannot drop that table.
+        SameDatabaseAndNameAsDictionary,
+
+        /// Table was created explicitly by a statement like
+        /// CREATE TABLE ... ENGINE=Dictionary
+        /// User chose the table's database and name and can drop that table.
+        Custom,
     };
 
-public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageDictionary> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageDictionary>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
+    StorageDictionary(
+        const StorageID & table_id_,
+        const String & dictionary_name_,
+        const ColumnsDescription & columns_,
+        const String & comment,
+        Location location_,
+        ContextPtr context_);
 
-    template <typename... TArgs>
-    explicit StorageDictionary(CreatePasskey, TArgs&&... args) : StorageDictionary{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageDictionary(
+        const StorageID & table_id_,
+        const String & dictionary_name_,
+        const DictionaryStructure & dictionary_structure,
+        const String & comment,
+        Location location_,
+        ContextPtr context_);
+
+    StorageDictionary(
+        const StorageID & table_id_,
+        LoadablesConfigurationPtr dictionary_configuration_,
+        ContextPtr context_);
 
     std::string getName() const override { return "Dictionary"; }
 
@@ -66,24 +90,6 @@ public:
 
     String getDictionaryName() const { return dictionary_name; }
 
-    /// Specifies where the table is located relative to the dictionary.
-    enum class Location
-    {
-        /// Table was created automatically as an element of a database with the Dictionary engine.
-        DictionaryDatabase,
-
-        /// Table was created automatically along with a dictionary
-        /// and has the same database and name as the dictionary.
-        /// It provides table-like access to the dictionary.
-        /// User cannot drop that table.
-        SameDatabaseAndNameAsDictionary,
-
-        /// Table was created explicitly by a statement like
-        /// CREATE TABLE ... ENGINE=Dictionary
-        /// User chose the table's database and name and can drop that table.
-        Custom,
-    };
-
 private:
     String dictionary_name;
     const Location location;
@@ -95,27 +101,6 @@ private:
     scope_guard remove_repository_callback;
 
     void removeDictionaryConfigurationFromRepository();
-
-    StorageDictionary(
-        const StorageID & table_id_,
-        const String & dictionary_name_,
-        const ColumnsDescription & columns_,
-        const String & comment,
-        Location location_,
-        ContextPtr context_);
-
-    StorageDictionary(
-        const StorageID & table_id_,
-        const String & dictionary_name_,
-        const DictionaryStructure & dictionary_structure,
-        const String & comment,
-        Location location_,
-        ContextPtr context_);
-
-    StorageDictionary(
-        const StorageID & table_id_,
-        LoadablesConfigurationPtr dictionary_configuration_,
-        ContextPtr context_);
 };
 
 }

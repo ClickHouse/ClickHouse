@@ -1089,7 +1089,7 @@ void registerStorageLog(StorageFactory & factory)
         String disk_name = getDiskName(*args.storage_def);
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
-        return StorageLog::create(
+        return std::make_shared<StorageLog>(
             args.engine_name,
             disk,
             args.relative_data_path,

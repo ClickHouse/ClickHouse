@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,25 +12,9 @@ class Context;
 
 /** Implements `zookeeper` system table, which allows you to view the data in ZooKeeper for debugging purposes.
   */
-class StorageSystemZooKeeper final : public IStorageSystemOneBlock<StorageSystemZooKeeper>
+class StorageSystemZooKeeper final : public IStorageSystemOneBlock<StorageSystemZooKeeper>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemZooKeeper> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemZooKeeper>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemZooKeeper(CreatePasskey, TArgs &&... args) : StorageSystemZooKeeper{std::forward<TArgs>(args)...}
-    {
-    }
-
     std::string getName() const override { return "SystemZooKeeper"; }
 
     static NamesAndTypesList getNamesAndTypes();

@@ -420,7 +420,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     ///  but it will contain single block (that is INSERT-ed into main table).
     /// InterpreterSelectQuery will do processing of alias columns.
     auto local_context = Context::createCopy(context);
-    local_context->addViewSource(StorageValues::create(
+    local_context->addViewSource(std::make_shared<StorageValues>(
         views_data.source_storage_id,
         views_data.source_metadata_snapshot->getColumns(),
         std::move(block),

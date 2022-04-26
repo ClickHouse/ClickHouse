@@ -663,7 +663,7 @@ void registerStorageStripeLog(StorageFactory & factory)
         String disk_name = getDiskName(*args.storage_def);
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
-        return StorageStripeLog::create(
+        return std::make_shared<StorageStripeLog>(
             disk,
             args.relative_data_path,
             args.table_id,

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <memory>
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
@@ -14,29 +15,13 @@ namespace DB
 class DictionarySource;
 
 class DictionarySourceCoordinator final : public std::enable_shared_from_this<DictionarySourceCoordinator>
+                                        , private boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<DictionarySourceCoordinator> create(TArgs &&... args)
-    {
-        return std::make_shared<DictionarySourceCoordinator>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit DictionarySourceCoordinator(CreatePasskey, TArgs &&... args) : DictionarySourceCoordinator{std::forward<TArgs>(args)...}
-    {
-    }
-
     using ReadColumnsFunc = std::function<Columns (const Strings &, const DataTypes &, const Columns &, const DataTypes &, const Columns &)>;
 
     Pipe read(size_t num_streams);
 
-private:
     explicit DictionarySourceCoordinator(
         std::shared_ptr<const IDictionary> dictionary_,
         const Names & column_names,
@@ -96,6 +81,8 @@ private:
     {
         initialize(column_names);
     }
+
+private:
 
     friend class DictionarySource;
 

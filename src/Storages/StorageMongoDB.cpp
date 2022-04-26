@@ -168,7 +168,7 @@ void registerStorageMongoDB(StorageFactory & factory)
     {
         auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
 
-        return StorageMongoDB::create(
+        return std::make_shared<StorageMongoDB>(
             args.table_id,
             configuration.host,
             configuration.port,

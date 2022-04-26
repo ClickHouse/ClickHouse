@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
 
@@ -10,24 +11,28 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge final : public IStorage, WithContext
+class StorageMerge final : public IStorage, WithContext, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageMerge> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageMerge>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
+    using DBToTableSetMap = std::map<String, std::set<String>>;
 
-    template <typename... TArgs>
-    explicit StorageMerge(CreatePasskey, TArgs &&... args) : StorageMerge{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageMerge(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const String & comment,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_,
+        const DBToTableSetMap & source_databases_and_tables_,
+        ContextPtr context_);
+
+    StorageMerge(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const String & comment,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_,
+        const String & source_table_regexp_,
+        ContextPtr context_);
 
     std::string getName() const override { return "Merge"; }
 
@@ -67,8 +72,6 @@ public:
     static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
 
 private:
-    using DBToTableSetMap = std::map<String, std::set<String>>;
-
     std::optional<OptimizedRegularExpression> source_database_regexp;
     std::optional<OptimizedRegularExpression> source_table_regexp;
     std::optional<DBToTableSetMap> source_databases_and_tables;
@@ -101,24 +104,6 @@ private:
     ColumnSizeByName getColumnSizes() const override;
 
 protected:
-    StorageMerge(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & comment,
-        const String & source_database_name_or_regexp_,
-        bool database_is_regexp_,
-        const DBToTableSetMap & source_databases_and_tables_,
-        ContextPtr context_);
-
-    StorageMerge(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & comment,
-        const String & source_database_name_or_regexp_,
-        bool database_is_regexp_,
-        const String & source_table_regexp_,
-        ContextPtr context_);
-
     struct AliasData
     {
         String name;

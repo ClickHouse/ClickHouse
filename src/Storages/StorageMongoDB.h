@@ -2,6 +2,7 @@
 
 #include <Poco/MongoDB/Connection.h>
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
@@ -12,24 +13,21 @@ namespace DB
  * Read only.
  */
 
-class StorageMongoDB final : public IStorage
+class StorageMongoDB final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageMongoDB> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageMongoDB>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageMongoDB(CreatePasskey, TArgs &&... args) : StorageMongoDB{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageMongoDB(
+        const StorageID & table_id_,
+        const std::string & host_,
+        uint16_t port_,
+        const std::string & database_name_,
+        const std::string & collection_name_,
+        const std::string & username_,
+        const std::string & password_,
+        const std::string & options_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment);
 
     std::string getName() const override { return "MongoDB"; }
 
@@ -45,19 +43,6 @@ public:
     static StorageMongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
-    StorageMongoDB(
-        const StorageID & table_id_,
-        const std::string & host_,
-        uint16_t port_,
-        const std::string & database_name_,
-        const std::string & collection_name_,
-        const std::string & username_,
-        const std::string & password_,
-        const std::string & options_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment);
-
     void connectIfNotConnected();
 
     const std::string host;

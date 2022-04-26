@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -98,28 +99,19 @@ using ASTPtr = std::shared_ptr<IAST>;
  *     Users need to take these duplicated results into account.
  */
 
-class StorageWindowView final : public IStorage, WithContext
+class StorageWindowView final : public IStorage, WithContext, boost::noncopyable
 {
     friend class TimestampTransformation;
     friend class WindowViewSource;
     friend class WatermarkTransform;
 
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageWindowView> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageWindowView>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageWindowView(CreatePasskey, TArgs &&... args) : StorageWindowView{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageWindowView(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns,
+        bool attach_);
 
     String getName() const override { return "WindowView"; }
 
@@ -255,12 +247,5 @@ private:
     StoragePtr getTargetStorage() const;
 
     Block & getHeader() const;
-
-    StorageWindowView(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns,
-        bool attach_);
 };
 }

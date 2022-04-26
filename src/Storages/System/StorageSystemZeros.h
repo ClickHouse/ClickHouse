@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <optional>
 #include <Storages/IStorage.h>
 
@@ -13,24 +14,12 @@ namespace DB
   * You could also specify a limit (how many zeros to give).
   * If multithreaded is specified, zeros will be generated in several streams.
   */
-class StorageSystemZeros final : public IStorage
+class StorageSystemZeros final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemZeros> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemZeros>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemZeros(CreatePasskey, TArgs &&... args) : StorageSystemZeros{std::forward<TArgs>(args)...}
-    {
-    }
+    /// If even_distribution is true, numbers are distributed evenly between streams.
+    /// Otherwise, streams concurrently increment atomic.
+    StorageSystemZeros(const StorageID & table_id_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt);
 
     std::string getName() const override { return "SystemZeros"; }
 
@@ -50,11 +39,6 @@ public:
 private:
     bool multithreaded;
     std::optional<UInt64> limit;
-
-protected:
-    /// If even_distribution is true, numbers are distributed evenly between streams.
-    /// Otherwise, streams concurrently increment atomic.
-    StorageSystemZeros(const StorageID & table_id_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt);
 };
 
 }

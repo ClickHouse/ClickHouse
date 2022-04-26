@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -8,24 +9,16 @@ namespace DB
 {
 /* Generates random data for given schema.
  */
-class StorageGenerateRandom final : public IStorage
+class StorageGenerateRandom final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageGenerateRandom> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageGenerateRandom>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageGenerateRandom(CreatePasskey, TArgs &&... args) : StorageGenerateRandom{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageGenerateRandom(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const String & comment,
+        UInt64 max_array_length,
+        UInt64 max_string_length,
+        std::optional<UInt64> random_seed);
 
     std::string getName() const override { return "GenerateRandom"; }
 
@@ -43,15 +36,6 @@ private:
     UInt64 max_array_length = 10;
     UInt64 max_string_length = 10;
     UInt64 random_seed = 0;
-
-protected:
-    StorageGenerateRandom(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & comment,
-        UInt64 max_array_length,
-        UInt64 max_string_length,
-        std::optional<UInt64> random_seed);
 };
 
 }

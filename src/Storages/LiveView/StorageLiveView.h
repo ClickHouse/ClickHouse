@@ -11,6 +11,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -48,28 +49,19 @@ class Pipe;
 using Pipes = std::vector<Pipe>;
 
 
-class StorageLiveView final : public IStorage, WithContext
+class StorageLiveView final : public IStorage, WithContext, boost::noncopyable
 {
 friend class LiveViewSource;
 friend class LiveViewEventsSource;
 friend class LiveViewSink;
 
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageLiveView> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageLiveView>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageLiveView(CreatePasskey, TArgs &&... args) : StorageLiveView{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageLiveView(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns,
+        const String & comment);
 
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
@@ -241,13 +233,6 @@ private:
 
     /// Must be called with mutex locked
     void scheduleNextPeriodicRefresh();
-
-    StorageLiveView(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns,
-        const String & comment);
 };
 
 }

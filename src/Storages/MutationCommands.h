@@ -5,6 +5,7 @@
 #include <memory>
 #include <unordered_map>
 
+#include <boost/noncopyable.hpp>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
@@ -71,28 +72,7 @@ struct MutationCommand
 /// Multiple mutation commands, possible from different ALTER queries
 class MutationCommands : public std::vector<MutationCommand>
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<MutationCommands> create(TArgs &&... args)
-    {
-        return std::make_shared<MutationCommands>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit MutationCommands(CreatePasskey, TArgs &&... args) : MutationCommands{std::forward<TArgs>(args)...}
-    {
-    }
-
-    // Unbeautiful ... we only want creation via create() but a few callers
-    // still instantiate this class directly. Need to check the performance
-    // impact if they are converted to create().
-    MutationCommands() = default;
-
     std::shared_ptr<ASTExpressionList> ast() const;
 
     void writeText(WriteBuffer & out) const;

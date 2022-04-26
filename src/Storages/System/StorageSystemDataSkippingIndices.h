@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -7,24 +8,10 @@ namespace DB
 {
 
 /// For system.data_skipping_indices table - describes the data skipping indices in tables, similar to system.columns.
-class StorageSystemDataSkippingIndices : public IStorage
+class StorageSystemDataSkippingIndices : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemDataSkippingIndices> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemDataSkippingIndices>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemDataSkippingIndices(CreatePasskey, TArgs &&... args) : StorageSystemDataSkippingIndices{std::forward<TArgs>(args)...}
-    {
-    }
+    explicit StorageSystemDataSkippingIndices(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemDataSkippingIndices"; }
 
@@ -38,9 +25,6 @@ public:
         unsigned num_streams) override;
 
     bool isSystemStorage() const override { return true; }
-
-protected:
-    explicit StorageSystemDataSkippingIndices(const StorageID & table_id_);
 };
 
 }

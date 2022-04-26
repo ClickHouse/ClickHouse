@@ -3,6 +3,7 @@
 #include <map>
 #include <shared_mutex>
 
+#include <boost/noncopyable.hpp>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Formats/IndexForNativeFormat.h>
@@ -18,28 +19,22 @@ struct IndexForNativeFormat;
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public IStorage
+class StorageStripeLog final : public IStorage, boost::noncopyable
 {
 friend class StripeLogSource;
 friend class StripeLogSink;
 friend class StripeLogRestoreTask;
 
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageStripeLog> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageStripeLog>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageStripeLog(CreatePasskey, TArgs &&... args) : StorageStripeLog{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageStripeLog(
+        DiskPtr disk_,
+        const String & relative_path_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        bool attach,
+        size_t max_compress_block_size_);
 
     ~StorageStripeLog() override;
 
@@ -68,17 +63,6 @@ public:
     bool hasDataToBackup() const override { return true; }
     BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
     RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings) override;
-
-protected:
-    StorageStripeLog(
-        DiskPtr disk_,
-        const String & relative_path_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        bool attach,
-        size_t max_compress_block_size_);
 
 private:
     using ReadLock = std::shared_lock<std::shared_timed_mutex>;

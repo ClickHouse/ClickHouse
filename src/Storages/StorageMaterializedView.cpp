@@ -462,7 +462,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
     factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)
     {
         /// Pass local_context here to convey setting for inner table
-        return StorageMaterializedView::create(
+        return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
             args.columns, args.attach, args.comment);
     });

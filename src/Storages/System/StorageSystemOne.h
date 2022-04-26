@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -14,24 +15,10 @@ class Context;
   * Used when the table is not specified in the query.
   * Analog of the DUAL table in Oracle and MySQL.
   */
-class StorageSystemOne final : public IStorage
+class StorageSystemOne final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemOne> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemOne>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemOne(CreatePasskey, TArgs &&... args) : StorageSystemOne{std::forward<TArgs>(args)...}
-    {
-    }
+    explicit StorageSystemOne(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemOne"; }
 
@@ -47,9 +34,6 @@ public:
     bool isSystemStorage() const override { return true; }
 
     bool supportsTransactions() const override { return true; }
-
-protected:
-    explicit StorageSystemOne(const StorageID & table_id_);
 };
 
 }

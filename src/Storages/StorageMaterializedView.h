@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST_fwd.h>
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -9,24 +10,16 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public IStorage, WithMutableContext
+class StorageMaterializedView final : public IStorage, WithMutableContext, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageMaterializedView> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageMaterializedView>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageMaterializedView(CreatePasskey, TArgs&&... args) : StorageMaterializedView{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageMaterializedView(
+        const StorageID & table_id_,
+        ContextPtr local_context,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns_,
+        bool attach_,
+        const String & comment);
 
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
@@ -122,15 +115,6 @@ private:
     bool has_inner_table = false;
 
     void checkStatementCanBeForwarded() const;
-
-protected:
-    StorageMaterializedView(
-        const StorageID & table_id_,
-        ContextPtr local_context,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns_,
-        bool attach_,
-        const String & comment);
 };
 
 }

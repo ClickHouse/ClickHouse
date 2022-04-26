@@ -1,28 +1,15 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
 
-class StorageSystemRemoteDataPaths : public IStorage
+class StorageSystemRemoteDataPaths : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemRemoteDataPaths> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemRemoteDataPaths>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemRemoteDataPaths(CreatePasskey, TArgs &&... args) : StorageSystemRemoteDataPaths{std::forward<TArgs>(args)...}
-    {
-    }
+    explicit StorageSystemRemoteDataPaths(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemRemoteDataPaths"; }
 
@@ -36,9 +23,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-protected:
-    explicit StorageSystemRemoteDataPaths(const StorageID & table_id_);
 };
 
 }

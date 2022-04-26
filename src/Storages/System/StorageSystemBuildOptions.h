@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,25 +12,8 @@ class Context;
 
 /** System table "build_options" with many params used for clickhouse building
   */
-class StorageSystemBuildOptions final : public IStorageSystemOneBlock<StorageSystemBuildOptions>
+class StorageSystemBuildOptions final : public IStorageSystemOneBlock<StorageSystemBuildOptions>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
-public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemBuildOptions> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemBuildOptions>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemBuildOptions(CreatePasskey, TArgs &&... args) : StorageSystemBuildOptions{std::forward<TArgs>(args)...}
-    {
-    }
-
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 

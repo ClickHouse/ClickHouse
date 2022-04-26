@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
@@ -8,24 +9,14 @@
 namespace DB
 {
 
-class StorageView final : public IStorage
+class StorageView final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageView> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageView>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageView(CreatePasskey, TArgs&&... args) : StorageView{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageView(
+        const StorageID & table_id_,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns_,
+        const String & comment);
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
@@ -60,13 +51,6 @@ public:
 
     static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
-
-protected:
-    StorageView(
-        const StorageID & table_id_,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns_,
-        const String & comment);
 };
 
 }

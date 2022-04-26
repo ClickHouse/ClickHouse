@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/Buffer_fwd.h>
@@ -27,26 +28,17 @@ struct StorageKafkaInterceptors;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public IStorage, WithContext
+class StorageKafka final : public IStorage, WithContext, boost::noncopyable
 {
     friend struct StorageKafkaInterceptors;
 
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageKafka> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageKafka>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageKafka(CreatePasskey, TArgs &&... args) : StorageKafka{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageKafka(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ColumnsDescription & columns_,
+        std::unique_ptr<KafkaSettings> kafka_settings_,
+        const String & collection_name_);
 
     std::string getName() const override { return "Kafka"; }
 
@@ -80,13 +72,6 @@ public:
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
     HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
-protected:
-    StorageKafka(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ColumnsDescription & columns_,
-        std::unique_ptr<KafkaSettings> kafka_settings_,
-        const String & collection_name_);
 
 private:
     // Configuration and state

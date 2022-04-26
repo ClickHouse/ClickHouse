@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -8,25 +9,9 @@ namespace DB
 class Context;
 
 /// Implements `settings_profiles` system table, which allows you to get information about profiles.
-class StorageSystemSettingsProfiles final : public IStorageSystemOneBlock<StorageSystemSettingsProfiles>
+class StorageSystemSettingsProfiles final : public IStorageSystemOneBlock<StorageSystemSettingsProfiles>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemSettingsProfiles> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemSettingsProfiles>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemSettingsProfiles(CreatePasskey, TArgs &&... args) : StorageSystemSettingsProfiles{std::forward<TArgs>(args)...}
-    {
-    }
-
     std::string getName() const override { return "SystemSettingsProfiles"; }
     static NamesAndTypesList getNamesAndTypes();
 

@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage.h>
 
+#include <boost/noncopyable.hpp>
 #include <base/logger_useful.h>
 
 #include <atomic>
@@ -15,22 +16,28 @@ class StorageFile final : public IStorage
 {
 friend class partitionedstoragefilesink;
 
-private:
-    struct CreatePasskey
+public:
+    struct CommonArguments : public WithContext
     {
+        StorageID table_id;
+        std::string format_name;
+        std::optional<FormatSettings> format_settings;
+        std::string compression_method;
+        const ColumnsDescription & columns;
+        const ConstraintsDescription & constraints;
+        const String & comment;
     };
 
-public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageFile> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageFile>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
+    /// From file descriptor
+    StorageFile(int table_fd_, CommonArguments args);
 
-    template <typename... TArgs>
-    explicit StorageFile(CreatePasskey, TArgs &&... args) : StorageFile{std::forward<TArgs>(args)...}
-    {
-    }
+    /// From user's file
+    StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args);
+
+    /// From table in database
+    StorageFile(const std::string & relative_table_dir_path, CommonArguments args);
+
+    explicit StorageFile(CommonArguments args);
 
     std::string getName() const override { return "File"; }
 
@@ -59,17 +66,6 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
-    struct CommonArguments : public WithContext
-    {
-        StorageID table_id;
-        std::string format_name;
-        std::optional<FormatSettings> format_settings;
-        std::string compression_method;
-        const ColumnsDescription & columns;
-        const ConstraintsDescription & constraints;
-        const String & comment;
-    };
-
     NamesAndTypesList getVirtuals() const override;
 
     static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
@@ -95,18 +91,7 @@ protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
 
-    /// From file descriptor
-    StorageFile(int table_fd_, CommonArguments args);
-
-    /// From user's file
-    StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args);
-
-    /// From table in database
-    StorageFile(const std::string & relative_table_dir_path, CommonArguments args);
-
 private:
-    explicit StorageFile(CommonArguments args);
-
     void setStorageMetadata(CommonArguments args);
 
     std::string format_name;

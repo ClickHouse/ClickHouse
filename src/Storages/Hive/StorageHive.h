@@ -7,6 +7,7 @@
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
+#include <boost/noncopyable.hpp>
 #include <base/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -22,24 +23,22 @@ class HiveSettings;
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHive final : public IStorage, WithContext
+class StorageHive final : public IStorage, WithContext, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageHive> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageHive>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
+    friend class StorageHiveSource;
 
-    template <typename... TArgs>
-    explicit StorageHive(CreatePasskey, TArgs &&... args) : StorageHive{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageHive(
+        const String & hive_metastore_url_,
+        const String & hive_database_,
+        const String & hive_table_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment_,
+        const ASTPtr & partition_by_ast_,
+        std::unique_ptr<HiveSettings> storage_settings_,
+        ContextPtr context_);
 
     String getName() const override { return "Hive"; }
 
@@ -69,20 +68,6 @@ public:
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
-
-protected:
-    friend class StorageHiveSource;
-    StorageHive(
-        const String & hive_metastore_url_,
-        const String & hive_database_,
-        const String & hive_table_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment_,
-        const ASTPtr & partition_by_ast_,
-        std::unique_ptr<HiveSettings> storage_settings_,
-        ContextPtr context_);
 
 private:
     using FileFormat = IHiveFile::FileFormat;

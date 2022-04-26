@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Common/RWLock.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
@@ -21,24 +22,23 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
   *
   * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin final : public StorageSetOrJoinBase
+class StorageJoin final : public StorageSetOrJoinBase, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageJoin> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageJoin>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageJoin(CreatePasskey, TArgs &&... args) : StorageJoin{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageJoin(
+        DiskPtr disk_,
+        const String & relative_path_,
+        const StorageID & table_id_,
+        const Names & key_names_,
+        bool use_nulls_,
+        SizeLimits limits_,
+        ASTTableJoin::Kind kind_,
+        ASTTableJoin::Strictness strictness_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        bool overwrite,
+        bool persistent_);
 
     String getName() const override { return "Join"; }
 
@@ -111,22 +111,6 @@ private:
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
-
-protected:
-    StorageJoin(
-        DiskPtr disk_,
-        const String & relative_path_,
-        const StorageID & table_id_,
-        const Names & key_names_,
-        bool use_nulls_,
-        SizeLimits limits_,
-        ASTTableJoin::Kind kind_,
-        ASTTableJoin::Strictness strictness_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        bool overwrite,
-        bool persistent_);
 };
 
 }

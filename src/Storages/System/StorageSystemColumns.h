@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -10,24 +11,10 @@ class Context;
 
 /** Implements system table 'columns', that allows to get information about columns for every table.
   */
-class StorageSystemColumns final : public IStorage
+class StorageSystemColumns final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemColumns> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemColumns>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemColumns(CreatePasskey, TArgs &&... args) : StorageSystemColumns{std::forward<TArgs>(args)...}
-    {
-    }
+    explicit StorageSystemColumns(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemColumns"; }
 
@@ -41,9 +28,6 @@ public:
         unsigned num_streams) override;
 
     bool isSystemStorage() const override { return true; }
-
-protected:
-    StorageSystemColumns(const StorageID & table_id_);
 };
 
 }

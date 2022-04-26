@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -10,25 +11,9 @@ namespace DB
 {
 
 /// Provides information about Graphite configuration.
-class StorageSystemGraphite final : public IStorageSystemOneBlock<StorageSystemGraphite>
+class StorageSystemGraphite final : public IStorageSystemOneBlock<StorageSystemGraphite>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemGraphite> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemGraphite>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemGraphite(CreatePasskey, TArgs &&... args) : StorageSystemGraphite{std::forward<TArgs>(args)...}
-    {
-    }
-
     std::string getName() const override { return "SystemGraphite"; }
 
     static NamesAndTypesList getNamesAndTypes();

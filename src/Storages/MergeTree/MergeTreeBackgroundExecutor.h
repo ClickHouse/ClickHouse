@@ -11,6 +11,7 @@
 
 #include <boost/circular_buffer.hpp>
 
+#include <boost/noncopyable.hpp>
 #include <base/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
@@ -155,40 +156,9 @@ private:
  *  So, when a Storage want to shutdown, it must wait until all its background operaions are finished.
  */
 template <class Queue>
-class MergeTreeBackgroundExecutor final
+class MergeTreeBackgroundExecutor final : boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<MergeTreeBackgroundExecutor<Queue>> create(TArgs &&... args)
-    {
-        return std::make_shared<MergeTreeBackgroundExecutor<Queue>>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit MergeTreeBackgroundExecutor(CreatePasskey, TArgs &&... args) : MergeTreeBackgroundExecutor{std::forward<TArgs>(args)...}
-    {
-    }
-
-    ~MergeTreeBackgroundExecutor()
-    {
-        wait();
-    }
-
-    bool trySchedule(ExecutableTaskPtr task);
-    void removeTasksCorrespondingToStorage(StorageID id);
-    void wait();
-
-private:
-    String name;
-    size_t threads_count{0};
-    size_t max_tasks_count{0};
-    CurrentMetrics::Metric metric;
-
     MergeTreeBackgroundExecutor(
         String name_,
         size_t threads_count_,
@@ -212,6 +182,21 @@ private:
         for (size_t number = 0; number < threads_count; ++number)
             pool.scheduleOrThrowOnError([this] { threadFunction(); });
     }
+
+    ~MergeTreeBackgroundExecutor()
+    {
+        wait();
+    }
+
+    bool trySchedule(ExecutableTaskPtr task);
+    void removeTasksCorrespondingToStorage(StorageID id);
+    void wait();
+
+private:
+    String name;
+    size_t threads_count{0};
+    size_t max_tasks_count{0};
+    CurrentMetrics::Metric metric;
 
     void routine(TaskRuntimeDataPtr item);
     void threadFunction();

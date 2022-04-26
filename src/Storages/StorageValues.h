@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -8,24 +9,11 @@ namespace DB
 /* One block storage used for values table function
  * It's structure is similar to IStorageSystemOneBlock
  */
-class StorageValues final : public IStorage
+class StorageValues final : public IStorage, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageValues> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageValues>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageValues(CreatePasskey, TArgs &&... args) : StorageValues{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageValues(
+        const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_, const NamesAndTypesList & virtuals_ = {});
 
     std::string getName() const override { return "Values"; }
 
@@ -52,10 +40,6 @@ public:
 private:
     Block res_block;
     NamesAndTypesList virtuals;
-
-protected:
-    StorageValues(
-        const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_, const NamesAndTypesList & virtuals_ = {});
 };
 
 }

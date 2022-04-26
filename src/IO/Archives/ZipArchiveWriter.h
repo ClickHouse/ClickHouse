@@ -3,6 +3,7 @@
 #include <Common/config.h>
 
 #if USE_MINIZIP
+#include <boost/noncopyable.hpp>
 #include <IO/Archives/IArchiveWriter.h>
 #include <mutex>
 
@@ -13,24 +14,14 @@ class WriteBuffer;
 class WriteBufferFromFileBase;
 
 /// Implementation of IArchiveWriter for writing zip archives.
-class ZipArchiveWriter : public IArchiveWriter
+class ZipArchiveWriter : public IArchiveWriter, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<ZipArchiveWriter> create(TArgs &&... args)
-    {
-        return std::make_shared<ZipArchiveWriter>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
+    /// Constructs an archive that will be written as a file in the local filesystem.
+    explicit ZipArchiveWriter(const String & path_to_archive_);
 
-    template <typename... TArgs>
-    explicit ZipArchiveWriter(CreatePasskey, TArgs &&... args) : ZipArchiveWriter{std::forward<TArgs>(args)...}
-    {
-    }
+    /// Constructs an archive that will be written by using a specified `archive_write_buffer_`.
+    ZipArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_);
 
     /// Destructors finalizes writing the archive.
     ~ZipArchiveWriter() override;
@@ -78,12 +69,6 @@ public:
     static void checkEncryptionIsEnabled();
 
 private:
-    /// Constructs an archive that will be written as a file in the local filesystem.
-    explicit ZipArchiveWriter(const String & path_to_archive_);
-
-    /// Constructs an archive that will be written by using a specified `archive_write_buffer_`.
-    ZipArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_);
-
     class WriteBufferFromZipArchive;
     class HandleHolder;
     using RawHandle = void *;

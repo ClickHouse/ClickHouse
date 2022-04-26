@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
@@ -14,25 +15,9 @@ class Context;
   *  which allows to get information about the current MergeTree settings.
   */
 template <bool replicated>
-class SystemMergeTreeSettings final : public IStorageSystemOneBlock<SystemMergeTreeSettings<replicated>>
+class SystemMergeTreeSettings final : public IStorageSystemOneBlock<SystemMergeTreeSettings<replicated>>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<SystemMergeTreeSettings> create(TArgs &&... args)
-    {
-        return std::make_shared<SystemMergeTreeSettings>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit SystemMergeTreeSettings(CreatePasskey, TArgs &&... args) : SystemMergeTreeSettings{std::forward<TArgs>(args)...}
-    {
-    }
-
     std::string getName() const override { return replicated ? "SystemReplicatedMergeTreeSettings" : "SystemMergeTreeSettings"; }
 
     static NamesAndTypesList getNamesAndTypes();

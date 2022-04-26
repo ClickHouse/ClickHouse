@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/FileLog/Buffer_fwd.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
@@ -24,24 +25,19 @@ namespace ErrorCodes
 
 class FileLogDirectoryWatcher;
 
-class StorageFileLog final : public IStorage, WithContext
+class StorageFileLog final : public IStorage, WithContext, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
 public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageFileLog> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageFileLog>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageFileLog(CreatePasskey, TArgs &&... args) : StorageFileLog{std::forward<TArgs>(args)...}
-    {
-    }
+    StorageFileLog(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ColumnsDescription & columns_,
+        const String & path_,
+        const String & metadata_base_path_,
+        const String & format_name_,
+        std::unique_ptr<FileLogSettings> settings,
+        const String & comment,
+        bool attach);
 
     using Files = std::vector<String>;
 
@@ -135,18 +131,6 @@ public:
     void wakeUp();
 
     const auto & getFileLogSettings() const { return filelog_settings; }
-
-protected:
-    StorageFileLog(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ColumnsDescription & columns_,
-        const String & path_,
-        const String & metadata_base_path_,
-        const String & format_name_,
-        std::unique_ptr<FileLogSettings> settings,
-        const String & comment,
-        bool attach);
 
 private:
     std::unique_ptr<FileLogSettings> filelog_settings;

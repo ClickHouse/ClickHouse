@@ -1,28 +1,12 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
-class StorageSystemFormats final : public IStorageSystemOneBlock<StorageSystemFormats>
+class StorageSystemFormats final : public IStorageSystemOneBlock<StorageSystemFormats>, boost::noncopyable
 {
-private:
-    struct CreatePasskey
-    {
-    };
-
-public:
-    template <typename... TArgs>
-    static std::shared_ptr<StorageSystemFormats> create(TArgs &&... args)
-    {
-        return std::make_shared<StorageSystemFormats>(CreatePasskey{}, std::forward<TArgs>(args)...);
-    }
-
-    template <typename... TArgs>
-    explicit StorageSystemFormats(CreatePasskey, TArgs &&... args) : StorageSystemFormats{std::forward<TArgs>(args)...}
-    {
-    }
-
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
