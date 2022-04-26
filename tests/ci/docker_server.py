@@ -16,6 +16,7 @@ from commit_status_helper import post_commit_status
 from docker_images_check import DockerImage
 from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from git_helper import Git
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
@@ -29,6 +30,7 @@ from version_helper import (
 
 TEMP_PATH = p.join(RUNNER_TEMP, "docker_images_check")
 BUCKETS = {"amd64": "package_release", "arm64": "package_aarch64"}
+git = Git(ignore_no_tags=True)
 
 
 class DelOS(argparse.Action):
@@ -48,7 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version",
         type=version_arg,
-        default=get_version_from_repo().string,
+        default=get_version_from_repo(git=git).string,
         help="a version to build, automaticaly got from version_helper, accepts either "
         "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
     )

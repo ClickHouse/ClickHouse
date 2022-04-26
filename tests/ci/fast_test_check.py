@@ -9,7 +9,7 @@ import sys
 from github import Github
 
 from env_helper import CACHES_PATH, TEMP_PATH
-from pr_info import PRInfo
+from pr_info import FORCE_TESTS_LABEL, PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
@@ -214,7 +214,7 @@ if __name__ == "__main__":
 
     # Refuse other checks to run if fast test failed
     if state != "success":
-        if "force-tests" in pr_info.labels and state != "error":
-            print("'force-tests' enabled, will report success")
+        if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
+            print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)
