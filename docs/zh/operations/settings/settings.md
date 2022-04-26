@@ -1,6 +1,7 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+sidebar_label: 设置
+sidebar_position: 52
+slug: /zh/operations/settings/settings
 ---
 
 # 设置 {#settings}
