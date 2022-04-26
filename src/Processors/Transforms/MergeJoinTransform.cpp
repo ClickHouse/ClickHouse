@@ -138,7 +138,8 @@ void addIndexColumn(const Columns & columns, ColumnUInt64 & indices, Chunk & res
                 limit = indices.size();
 
             assert(limit == indices.size());
-
+            /// rows where default value shold be inserted have index == size
+            /// add row with defaults to handle it
             auto tmp_col = col->cloneResized(col->size() + 1);
             ColumnPtr new_col = tmp_col->index(indices, limit);
             result.addColumn(std::move(new_col));
@@ -666,6 +667,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin(JoinKind kind)
     if (!current_right.isValid())
         return Status(1);
 
+    /// join doen't build result block, but returns indices where result rows should be placed
     auto left_map = ColumnUInt64::create();
     auto right_map = ColumnUInt64::create();
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
@@ -675,6 +677,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin(JoinKind kind)
     assert(left_map->empty() || right_map->empty() || left_map->size() == right_map->size());
     size_t num_result_rows = std::max(left_map->size(), right_map->size());
 
+    /// build result block from indices
     Chunk result;
     addIndexColumn(cursors[0]->getCurrent().getColumns(), *left_map, result, prev_pos[0], num_result_rows);
     addIndexColumn(cursors[1]->getCurrent().getColumns(), *right_map, result, prev_pos[1], num_result_rows);
@@ -684,7 +687,6 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin(JoinKind kind)
 IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 {
     auto kind = table_join->getTableJoin().kind();
-    auto strictness = table_join->getTableJoin().strictness();
 
     if (!cursors[0]->cursor.isValid() && !cursors[0]->fullyCompleted())
         return Status(0);
@@ -706,6 +708,7 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         return Status({}, true);
     }
 
+    /// check if blocks are not intersecting at all
     if (int cmp = totallyCompare(cursors[0]->cursor, cursors[1]->cursor); cmp != 0)
     {
         if (cmp < 0)
@@ -725,13 +728,15 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         }
     }
 
+    auto strictness = table_join->getTableJoin().strictness();
+
     if (strictness == ASTTableJoin::Strictness::Any)
         return anyJoin(kind);
 
     if (strictness == ASTTableJoin::Strictness::All)
         return allJoin(kind);
 
-    throw Exception("Unsupported strictness: " + toString(strictness), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported strictness '{}'", strictness);
 }
 
 MergeJoinTransform::MergeJoinTransform(
