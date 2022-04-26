@@ -356,6 +356,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
         settings->client,
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
+        version_id,
         settings->s3_settings.max_single_read_retries,
         context->getReadSettings());
 
