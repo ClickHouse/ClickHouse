@@ -8,7 +8,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
+    extern const int TYPE_MISMATCH;
+    extern const int INCORRECT_DATA;
+    extern const int EMPTY_DATA_PASSED;
 }
 
 static void chooseResultType(
@@ -36,7 +39,7 @@ static void chooseResultType(
             type = default_type;
         else
             throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                ErrorCodes::TYPE_MISMATCH,
                 "Automatically defined type {} for column {} in row {} differs from type defined by previous rows: {}",
                 type->getName(),
                 column_name,
@@ -51,7 +54,7 @@ static void checkTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, c
     {
         if (!default_type)
             throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
                 "Cannot determine table structure by first {} rows of data, because some columns contain only Nulls. To increase the maximum "
                 "number of rows to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference",
                 max_rows_to_read);
@@ -100,7 +103,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             break;
 
         if (new_data_types.size() != data_types.size())
-            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Rows have different amount of values");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Rows have different amount of values");
 
         for (size_t i = 0; i != data_types.size(); ++i)
         {
@@ -114,7 +117,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
 
     /// Check that we read at list one column.
     if (data_types.empty())
-        throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot read rows from the data");
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
     /// If column names weren't set, use default names 'c1', 'c2', ...
     if (column_names.empty())
@@ -126,7 +129,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     /// If column names were set, check that the number of names match the number of types.
     else if (column_names.size() != data_types.size())
         throw Exception(
-            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+            ErrorCodes::INCORRECT_DATA,
             "The number of column names {} differs with the number of types {}", column_names.size(), data_types.size());
 
     NamesAndTypesList result;
@@ -192,7 +195,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
 
     /// Check that we read at list one column.
     if (names_to_types.empty())
-        throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot read rows from the data");
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
     NamesAndTypesList result;
     for (auto & name : names_order)
