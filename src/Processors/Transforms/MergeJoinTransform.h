@@ -7,19 +7,19 @@
 #include <optional>
 #include <utility>
 #include <vector>
-#include <IO/ReadBuffer.h>
+
+#include <boost/core/noncopyable.hpp>
+
+#include <base/logger_useful.h>
+
 #include <Common/PODArray.h>
-#include "Columns/IColumn.h"
-#include "Core/Field.h"
-#include "Interpreters/IJoin.h"
+#include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
+#include <IO/ReadBuffer.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
-#include <base/logger_useful.h>
-#include <Core/SortCursor.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <boost/core/noncopyable.hpp>
 
 namespace Poco { class Logger; }
 
