@@ -2,26 +2,12 @@
 
 #include <Processors/ISource.h>
 #include <IO/ReadBuffer.h>
+#include <Interpreters/Context.h>
+#include <Formats/ColumnMapping.h>
 
 
 namespace DB
 {
-/// Used to pass info from header between different InputFormats in ParallelParsing
-struct ColumnMapping
-{
-    /// Non-atomic because there is strict `happens-before` between read and write access
-    /// See InputFormatParallelParsing
-    bool is_set{false};
-    /// Maps indexes of columns in the input file to indexes of table columns
-    using OptionalIndexes = std::vector<std::optional<size_t>>;
-    OptionalIndexes column_indexes_for_input_fields;
-
-    /// The list of column indexes that are not presented in input data.
-    std::vector<size_t> not_presented_columns;
-
-    /// The list of column names in input data. Needed for better exception messages.
-    std::vector<String> names_of_columns;
-};
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
@@ -67,6 +53,9 @@ public:
     void setCurrentUnitNumber(size_t current_unit_number_) { current_unit_number = current_unit_number_; }
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+
+    virtual bool needContext() const { return false; }
+    virtual void setContext(ContextPtr &) {}
 
 protected:
     ColumnMappingPtr column_mapping{};

@@ -36,7 +36,8 @@ public:
     void setReadBuffer(ReadBuffer & in_) override;
 
     /// TODO: remove context somehow.
-    void setContext(ContextPtr context_) { context = Context::createCopy(context_); }
+    void setContext(ContextPtr & context_) override { context = Context::createCopy(context_); }
+    bool needContext() const override { return true; }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
@@ -106,6 +107,7 @@ private:
     const FormatSettings format_settings;
     ParserExpression parser;
     bool first_row = true;
+    bool end_of_data = false;
 };
 
 }

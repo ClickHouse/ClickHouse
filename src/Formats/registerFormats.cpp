@@ -55,6 +55,8 @@ void registerInputFormatRawBLOB(FormatFactory & factory);
 void registerOutputFormatRawBLOB(FormatFactory & factory);
 void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
+void registerInputFormatCapnProto(FormatFactory & factory);
+void registerOutputFormatCapnProto(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -71,7 +73,6 @@ void registerOutputFormatNull(FormatFactory & factory);
 void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
-void registerOutputFormatCapnProto(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -79,7 +80,7 @@ void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatJSONAsString(FormatFactory & factory);
 void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
-void registerInputFormatCapnProto(FormatFactory & factory);
+void registerInputFormatMySQLDump(FormatFactory & factory);
 
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
@@ -113,6 +114,7 @@ void registerRegexpSchemaReader(FormatFactory & factory);
 void registerTSKVSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory);
+void registerMySQLSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -191,6 +193,7 @@ void registerFormats()
 #endif
 
     registerInputFormatCapnProto(factory);
+    registerInputFormatMySQLDump(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
@@ -219,6 +222,7 @@ void registerFormats()
     registerTSKVSchemaReader(factory);
     registerValuesSchemaReader(factory);
     registerTemplateSchemaReader(factory);
+    registerMySQLSchemaReader(factory);
 }
 
 }

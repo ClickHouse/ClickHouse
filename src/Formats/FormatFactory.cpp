@@ -148,6 +148,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
+    format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
+    format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -257,9 +259,9 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
     auto format = input_getter(buf, sample, params, format_settings);
 
-    /// It's a kludge. Because I cannot remove context from values format.
-    if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
-        values->setContext(context);
+    /// It's a kludge. Because we cannot remove context from values/mysqldump formats.
+    if (format->needContext())
+        format->setContext(context);
 
     return format;
 }
@@ -382,7 +384,13 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
         throw Exception("FormatFactory: Format " + name + " doesn't support schema inference.", ErrorCodes::LOGICAL_ERROR);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    return schema_reader_creator(buf, format_settings);
+    auto schema_reader = schema_reader_creator(buf, format_settings);
+
+    /// It's a kludge. Because we cannot remove context from MySQLDump format.
+    if (schema_reader->needContext())
+        schema_reader->setContext(context);
+
+    return schema_reader;
 }
 
 ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
