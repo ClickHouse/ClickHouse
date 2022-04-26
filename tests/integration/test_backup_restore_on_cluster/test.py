@@ -2,7 +2,7 @@ from time import sleep
 import pytest
 import os.path
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__)
@@ -70,6 +70,7 @@ def test_replicated_table():
     node2.query("INSERT INTO tbl VALUES (2, 'count')")
     node1.query("INSERT INTO tbl SETTINGS async_insert=true VALUES (3, 'your')")
     node2.query("INSERT INTO tbl SETTINGS async_insert=true VALUES (4, 'chickens')")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     backup_name = new_backup_name()
 
@@ -83,6 +84,7 @@ def test_replicated_table():
 
     # Restore from backup on node2.
     node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} SYNC")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV(
         [[1, "Don\\'t"], [2, "count"], [3, "your"], [4, "chickens"]]
@@ -101,12 +103,14 @@ def test_replicated_database():
     node1.query(
         "CREATE TABLE mydb.tbl(x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
-    assert node2.query("EXISTS mydb.tbl") == "1\n"
+
+    assert_eq_with_retry(node2, "EXISTS mydb.tbl", "1\n")
 
     node1.query("INSERT INTO mydb.tbl VALUES (1, 'Don''t')")
     node2.query("INSERT INTO mydb.tbl VALUES (2, 'count')")
     node1.query("INSERT INTO mydb.tbl VALUES (3, 'your')")
     node2.query("INSERT INTO mydb.tbl VALUES (4, 'chickens')")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
 
     # Make backup.
     backup_name = new_backup_name()
@@ -119,6 +123,7 @@ def test_replicated_database():
 
     # Restore from backup on node2.
     node1.query(f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} SYNC")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
 
     assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV(
         [[1, "Don\\'t"], [2, "count"], [3, "your"], [4, "chickens"]]
