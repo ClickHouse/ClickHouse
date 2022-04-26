@@ -46,7 +46,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_)
-    : SeekableReadBufferWithSize(nullptr, 0)
+    : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
@@ -208,7 +208,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     return offset;
 }
 
-std::optional<size_t> ReadBufferFromS3::getTotalSize()
+std::optional<size_t> ReadBufferFromS3::getFileSize()
 {
     if (file_size)
         return file_size;
@@ -307,7 +307,7 @@ off_t ReadBufferS3Factory::seek(off_t off, [[maybe_unused]] int whence)
     return off;
 }
 
-std::optional<size_t> ReadBufferS3Factory::getTotalSize()
+std::optional<size_t> ReadBufferS3Factory::getFileSize()
 {
     return object_size;
 }
