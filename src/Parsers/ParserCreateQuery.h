@@ -10,8 +10,6 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
-#include <Common/StringUtils/StringUtils.h>
-
 
 namespace DB
 {
