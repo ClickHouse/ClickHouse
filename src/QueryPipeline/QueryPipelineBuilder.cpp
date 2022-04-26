@@ -307,8 +307,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
     size_t max_block_size,
-    Processors * collected_processors,
-    size_t max_streams)
+    Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
     right->checkInitializedAndNotCompleted();
@@ -346,14 +345,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     ///                   ╞> FillingJoin ─> Resize ╣     ╞> Joining ─> (totals)
     /// (totals) ─────────┘                        ╙─────┘
 
-    // In some cases, left's streams is too smaller then max_streams. Keep it same as max_streams
-    // to make full use of cpu.
-    auto & num_streams = max_streams;
-    left->resize(num_streams);
+    auto num_streams = left->getNumStreams();
 
     if (join->supportParallelJoin() && !right->hasTotals())
     {
-        right->resize(num_streams);
         auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
             Processors processors;

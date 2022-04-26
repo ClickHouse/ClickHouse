@@ -15,11 +15,9 @@ JoinStep::JoinStep(
     const DataStream & left_stream_,
     const DataStream & right_stream_,
     JoinPtr join_,
-    size_t max_block_size_,
-    size_t max_streams_)
+    size_t max_block_size_)
     : join(std::move(join_))
     , max_block_size(max_block_size_)
-    , max_streams(max_streams_)
 {
     input_streams = {left_stream_, right_stream_};
     output_stream = DataStream
@@ -33,7 +31,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
-    return QueryPipelineBuilder::joinPipelines(std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, &processors, max_streams);
+    return QueryPipelineBuilder::joinPipelines(std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, &processors);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
