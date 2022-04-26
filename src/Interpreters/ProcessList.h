@@ -164,6 +164,11 @@ public:
         return &thread_group->memory_tracker;
     }
 
+    IAST::QueryKind getQueryKind() const
+    {
+        return query_kind;
+    }
+
     bool updateProgressIn(const Progress & value)
     {
         CurrentThread::updateProgressIn(value);

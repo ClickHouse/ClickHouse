@@ -68,6 +68,8 @@ public:
 
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
+    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
+
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(

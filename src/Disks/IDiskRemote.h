@@ -74,9 +74,10 @@ public:
     Metadata readMetadata(const String & path) const;
     Metadata readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const;
 
+    void readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
     void createAndStoreMetadata(const String & path, bool sync);
     void createUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
-    void readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
+    bool readUpdateStoreMetadataAndRemove(const String & path, bool sync, IDiskRemote::MetadataUpdater updater);
     void readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, IDiskRemote::MetadataUpdater updater);
 
     UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
@@ -103,15 +104,16 @@ public:
 
     bool removeFileIfExists(const String & path) override { return removeSharedFileIfExists(path, false); }
 
-    void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
+    void removeRecursive(const String & path) override { removeSharedRecursive(path, false, {}); }
+
 
     bool removeSharedFile(const String & path, bool delete_metadata_only) override;
 
     bool removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedFiles(const RemoveBatchRequest & files, bool delete_metadata_only) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
-    void removeSharedRecursive(const String & path, bool delete_metadata_only) override;
+    void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
@@ -166,7 +168,7 @@ protected:
 private:
     void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
 
-    void removeMetadataRecursive(const String & path, std::vector<String> & paths_to_remove);
+    void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
 
     bool tryReserve(UInt64 bytes);
 
@@ -178,10 +180,18 @@ private:
 
 using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
 
+/// Remote FS (S3, HDFS) metadata file layout:
+/// FS objects, their number and total size of all FS objects.
+/// Each FS object represents a file path in remote FS and its size.
 
-/// Minimum info, required to be passed to ReadIndirectBufferFromRemoteFS<T>
-struct RemoteMetadata
+struct IDiskRemote::Metadata
 {
+    using Updater = std::function<bool(IDiskRemote::Metadata & metadata)>;
+    /// Metadata file version.
+    static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
+    static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
+    static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
+
     /// Remote FS objects paths and their sizes.
     std::vector<BlobPathWithSize> remote_fs_objects;
 
@@ -190,22 +200,6 @@ struct RemoteMetadata
 
     /// Relative path to metadata file on local FS.
     const String metadata_file_path;
-
-    RemoteMetadata(const String & remote_fs_root_path_, const String & metadata_file_path_)
-        : remote_fs_root_path(remote_fs_root_path_), metadata_file_path(metadata_file_path_) {}
-};
-
-/// Remote FS (S3, HDFS) metadata file layout:
-/// FS objects, their number and total size of all FS objects.
-/// Each FS object represents a file path in remote FS and its size.
-
-struct IDiskRemote::Metadata : RemoteMetadata
-{
-    using Updater = std::function<bool(IDiskRemote::Metadata & metadata)>;
-    /// Metadata file version.
-    static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
-    static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
-    static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
 
     DiskPtr metadata_disk;
 
@@ -230,6 +224,7 @@ struct IDiskRemote::Metadata : RemoteMetadata
 
     static Metadata readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_);
     static bool readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    static bool readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
 
     static void createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
     static bool createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
