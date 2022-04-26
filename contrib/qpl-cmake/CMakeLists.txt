@@ -6,6 +6,7 @@ set (QPL_INCLUDE_DIRS
 )
 set (LOG_HW_INIT ON)
 set (EFFICIENT_WAIT ON)
+set (LIB_FUZZING_ENGINE ON)
 
 set (QPL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl")
 set (QPL_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/qpl")
