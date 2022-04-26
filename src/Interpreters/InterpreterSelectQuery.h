@@ -44,7 +44,7 @@ struct CacheKey
     ASTPtr ast;
     Block header;
     const Settings & settings;
-    std::optional<String> username;
+    const std::optional<String> & username;
 };
 struct CacheKeyHasher
 {

@@ -25,14 +25,14 @@ void CachingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
-        return std::make_shared<CachingTransform>(header, cache, query_ptr);
+        return std::make_shared<CachingTransform>(header, cache, cache_key);
     });
 }
 
-CachingStep::CachingStep(const DataStream & input_stream_, LRUCache<CacheKey, Data, CacheKeyHasher> & cache_, ASTPtr query_ptr_)
+CachingStep::CachingStep(const DataStream & input_stream_, LRUCache<CacheKey, Data, CacheKeyHasher> & cache_, const CacheKey& cache_key_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , cache(cache_)
-    , query_ptr(query_ptr_)
+    , cache_key(cache_key_)
 {}
 
 }

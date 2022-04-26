@@ -616,12 +616,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     sanitizeBlock(result_header, true);
 }
 
-void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
-{
-    auto query_cache_key = CacheKey{query_ptr, source_header, context->getSettingsRef(), std::nullopt};
-    if (context->getSettingsRef().share_query_cache) {
-        query_cache_key.username = context->getUserName();
-    }
+void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan) {
+    auto query_cache_key = CacheKey{query_ptr, source_header, context->getSettingsRef(),
+                                    context->getSettingsRef().share_query_cache
+                                    ? std::make_optional<String>(context->getUserName())
+                                    : std::optional<String>()};
+
     if (auto query_result = cache.get(query_cache_key);
         query_result && context->getSettingsRef().query_cache_passive_usage)
     {
@@ -637,7 +637,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     executeImpl(query_plan, std::move(input_pipe));
     if (context->getSettingsRef().query_cache_active_usage)
     {
-        auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_ptr);
+        auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_cache_key);
         caching_step->setStepDescription("Cache query result");
         query_plan.addStep(std::move(caching_step));
     }
