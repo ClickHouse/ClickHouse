@@ -565,7 +565,7 @@ public:
 
     /// NOTE: Assuming timezone offset is a multiple of 15 minutes.
     inline Time toStartOfMinute(Time t) const { return toStartOfMinuteInterval(t, 1); }
-    inline Time toStartOfFiveMinute(Time t) const { return toStartOfMinuteInterval(t, 5); }
+    inline Time toStartOfFiveMinutes(Time t) const { return toStartOfMinuteInterval(t, 5); }
     inline Time toStartOfFifteenMinutes(Time t) const { return toStartOfMinuteInterval(t, 15); }
     inline Time toStartOfTenMinutes(Time t) const { return toStartOfMinuteInterval(t, 10); }
     inline Time toStartOfHour(Time t) const { return roundDown(t, 3600); }
