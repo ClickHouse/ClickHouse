@@ -673,10 +673,12 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
 
 void FileSegment::detach(std::lock_guard<std::mutex> & segment_lock)
 {
+    if (detached)
+        return;
+
     bool has_finalized_state = download_state == State::DOWNLOADED
         || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION
-        || download_state == State::SKIP_CACHE
-        || (download_state == State::EMPTY && detached);
+        || download_state == State::SKIP_CACHE;
 
     detached = true;
 
