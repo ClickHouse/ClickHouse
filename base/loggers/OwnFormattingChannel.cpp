@@ -1,5 +1,4 @@
 #include "OwnFormattingChannel.h"
-#include <iostream> //mallik--remove pls
 #include "OwnPatternFormatter.h"
 namespace DB
 {

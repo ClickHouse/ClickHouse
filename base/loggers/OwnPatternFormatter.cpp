@@ -12,7 +12,7 @@ OwnPatternFormatter::OwnPatternFormatter(bool color_) : Poco::PatternFormatter("
 {
 }
 
-void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_ext, std::string & text) const
+void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_ext, std::string & text)
 {
     DB::WriteBufferFromString wb(text);
     const Poco::Message & msg = msg_ext.base;
