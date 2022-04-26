@@ -619,6 +619,7 @@ void ARCFileCache::remove(bool force_remove_unreleasable)
             }
         }
     }
+
     for (auto it = high_queue.queue().begin(); it != high_queue.queue().end();)
     {
         auto & [key, offset] = *it++;
