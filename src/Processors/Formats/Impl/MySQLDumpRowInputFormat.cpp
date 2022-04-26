@@ -317,7 +317,7 @@ static void skipEndOfRow(ReadBuffer & in, String & table_name)
     skipWhitespaceIfAny(in);
     if (!in.eof() && *in.position() == ';')
     {
-        /// ';' means end of INSERT query, skipp until data from
+        /// ';' means end of INSERT query, skip until data from
         /// next INSERT query into the same table or until EOF.
         ++in.position();
         if (skipToInsertQuery(table_name, in))
