@@ -11,8 +11,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SETTING;
-    extern const int CANNOT_PARSE_RESTORE_TABLE_CREATION_MODE;
+    extern const int CANNOT_PARSE_BACKUP_SETTINGS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -25,7 +25,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                String str = field.get<String>();
+                const String & str = field.get<const String &>();
                 if (str == "1" || boost::iequals(str, "true"))
                     value = RestoreTableCreationMode::kCreate;
                 else if (str == "0" || boost::iequals(str, "false"))
@@ -33,7 +33,7 @@ namespace
                 else if (boost::iequals(str, "if not exists"))
                     value = RestoreTableCreationMode::kCreateIfNotExists;
                 else throw Exception("Cannot parse creation mode from string '" + str + "'",
-                                     ErrorCodes::CANNOT_PARSE_RESTORE_TABLE_CREATION_MODE);
+                                     ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS);
             }
             else
             {
@@ -52,6 +52,7 @@ namespace
                 case RestoreTableCreationMode::kMustExist: return Field{false};
                 case RestoreTableCreationMode::kCreateIfNotExists: return Field{"if not exists"};
             }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreTableCreationMode: {}", static_cast<int>(value));
         }
 
         operator RestoreTableCreationMode() const { return value; }
@@ -94,7 +95,7 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
             else
 
             LIST_OF_RESTORE_SETTINGS(GET_SETTINGS_FROM_RESTORE_QUERY_HELPER)
-            throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", setting.name);
+            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
         }
     }
 
@@ -111,7 +112,7 @@ void RestoreSettings::copySettingsToRestoreQuery(ASTBackupQuery & query) const
     static const RestoreSettings default_settings;
 
 #define SET_SETTINGS_IN_RESTORE_QUERY_HELPER(TYPE, NAME) \
-    if (NAME != default_settings.NAME) \
+    if ((NAME) != default_settings.NAME) \
         query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME}));
 
     LIST_OF_RESTORE_SETTINGS(SET_SETTINGS_IN_RESTORE_QUERY_HELPER)

@@ -16,10 +16,7 @@ BackupsWorker & BackupsWorker::instance()
     return the_instance;
 }
 
-BackupsWorker::BackupsWorker()
-{
-}
-
+BackupsWorker::BackupsWorker() = default;
 
 size_t BackupsWorker::add(const String & backup_name, BackupStatus status, const String & error)
 {

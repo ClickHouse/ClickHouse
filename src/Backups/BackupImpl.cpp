@@ -182,12 +182,12 @@ void BackupImpl::open()
     if (open_mode == OpenMode::WRITE)
     {
         if (backup_exists)
-            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", getName());
+            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name);
     }
     else
     {
         if (!backup_exists)
-            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", getName());
+            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name);
     }
 
     if (open_mode == OpenMode::WRITE)
@@ -215,7 +215,7 @@ void BackupImpl::open()
             base_backup_uuid = base_backup->getUUID();
         else if (base_backup_uuid != base_backup->getUUID())
             throw Exception(ErrorCodes::WRONG_BASE_BACKUP, "Backup {}: The base backup {} has different UUID ({} != {})",
-                            getName(), base_backup->getName(), toString(base_backup->getUUID()), (base_backup_uuid ? toString(*base_backup_uuid) : ""));
+                            backup_name, base_backup->getName(), toString(base_backup->getUUID()), (base_backup_uuid ? toString(*base_backup_uuid) : ""));
     }
 }
 
@@ -322,7 +322,7 @@ void BackupImpl::readBackupMetadata()
 
     version = config->getUInt("version");
     if ((version < INITIAL_BACKUP_VERSION) || (version > CURRENT_BACKUP_VERSION))
-        throw Exception(ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", getName(), version);
+        throw Exception(ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", backup_name, version);
 
     timestamp = parse<LocalDateTime>(config->getString("timestamp")).to_time_t();
     uuid = parse<UUID>(config->getString("uuid"));
@@ -353,7 +353,7 @@ void BackupImpl::readBackupMetadata()
                     use_base = true;
 
                 if (info.base_size > info.size)
-                    throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Base size must not be greater than the size of entry {}", getName(), quoteString(info.file_name));
+                    throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Base size must not be greater than the size of entry {}", backup_name, quoteString(info.file_name));
 
                 if (use_base)
                 {
@@ -402,7 +402,7 @@ UInt64 BackupImpl::getFileSize(const String & file_name) const
     auto info = coordination->getFileInfo(file_name);
     if (!info)
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), quoteString(file_name));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
     return info->size;
 }
 
@@ -412,7 +412,7 @@ UInt128 BackupImpl::getFileChecksum(const String & file_name) const
     auto info = coordination->getFileInfo(file_name);
     if (!info)
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), quoteString(file_name));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
     return info->checksum;
 }
 
@@ -422,7 +422,7 @@ SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) con
     auto info = coordination->getFileInfo(file_name);
     if (!info)
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), quoteString(file_name));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
     return std::pair(info->size, info->checksum);
 }
 
@@ -440,7 +440,7 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
     auto info_opt = coordination->getFileInfo(size_and_checksum);
     if (!info_opt)
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), formatSizeAndChecksum(size_and_checksum));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, formatSizeAndChecksum(size_and_checksum));
 
     const auto & info = *info_opt;
     if (!info.size)
@@ -461,7 +461,7 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
         throw Exception(
             ErrorCodes::NO_BASE_BACKUP,
             "Backup {}: Entry {} is marked to be read from a base backup, but there is no base backup specified",
-            getName(), formatSizeAndChecksum(size_and_checksum));
+            backup_name, formatSizeAndChecksum(size_and_checksum));
     }
 
     if (!base_backup->fileExists(std::pair(info.base_size, info.base_checksum)))
@@ -469,7 +469,7 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
         throw Exception(
             ErrorCodes::WRONG_BASE_BACKUP,
             "Backup {}: Entry {} is marked to be read from a base backup, but doesn't exist there",
-            getName(), formatSizeAndChecksum(size_and_checksum));
+            backup_name, formatSizeAndChecksum(size_and_checksum));
     }
 
     auto base_entry = base_backup->readFile(std::pair{info.base_size, info.base_checksum});
@@ -497,7 +497,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     if (coordination->getFileInfo(file_name))
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", getName(), quoteString(file_name));
+            ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", backup_name, quoteString(file_name));
 
     FileInfo info;
     info.file_name = file_name;
