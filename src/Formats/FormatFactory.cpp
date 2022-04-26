@@ -202,10 +202,6 @@ InputFormatPtr FormatFactory::getInput(
             parallel_parsing = false;
     }
 
-    std::cout << "parallel_parsing:" << parallel_parsing << ", input_format_parallel_parsing:" << settings.input_format_parallel_parsing
-              << ", file_segmentation_engine:" << (file_segmentation_engine != nullptr) << ", max_threads:" << settings.max_threads
-              << std::endl;
-
     if (parallel_parsing)
     {
         const auto & input_getter = getCreators(name).input_creator;
@@ -225,7 +221,6 @@ InputFormatPtr FormatFactory::getInput(
         ParallelParsingInputFormat::Params params{
             buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
                context->getApplicationType() == Context::ApplicationType::SERVER};
-        // std::cout << "use parallel parsing for " << name << std::endl;
         return std::make_shared<ParallelParsingInputFormat>(params);
     }
 
