@@ -86,6 +86,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
@@ -170,7 +171,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
-        alter_commands.validate(metadata, getContext());
+        alter_commands.validate(table, getContext());
         alter_commands.prepare(metadata);
         table->checkAlterIsPossible(alter_commands, getContext());
         table->alter(alter_commands, getContext(), alter_lock);

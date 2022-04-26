@@ -145,17 +145,17 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
     if (!checksums.empty())
     {
         /// count.txt should be present even in non custom-partitioned parts
-        if (!checksums.files.count("count.txt"))
+        if (!checksums.files.contains("count.txt"))
             throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (require_part_metadata)
         {
-            if (!checksums.files.count(mrk_file_name))
+            if (!checksums.files.contains(mrk_file_name))
                 throw Exception(
                     ErrorCodes::NO_FILE_IN_DATA_PART,
                     "No marks file checksum for column in part {}",
                     data_part_storage->getFullPath());
-            if (!checksums.files.count(DATA_FILE_NAME_WITH_EXTENSION))
+            if (!checksums.files.contains(DATA_FILE_NAME_WITH_EXTENSION))
                 throw Exception(
                     ErrorCodes::NO_FILE_IN_DATA_PART,
                     "No data file checksum for in part {}",
@@ -202,6 +202,11 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
 bool MergeTreeDataPartCompact::isStoredOnRemoteDisk() const
 {
     return data_part_storage->isStoredOnRemoteDisk();
+}
+
+bool MergeTreeDataPartCompact::isStoredOnRemoteDiskWithZeroCopySupport() const
+{
+    return volume->getDisk()->supportZeroCopyReplication();
 }
 
 MergeTreeDataPartCompact::~MergeTreeDataPartCompact()

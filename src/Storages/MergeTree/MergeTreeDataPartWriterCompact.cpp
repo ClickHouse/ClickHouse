@@ -24,11 +24,13 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         default_codec_, settings_, index_granularity_)
     , plain_file(data_part_storage_builder->writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
-            settings.max_compress_block_size))
+            settings.max_compress_block_size,
+            settings_.query_write_settings))
     , plain_hashing(*plain_file)
     , marks_file(data_part_storage_builder->writeFile(
-        MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
-        4096))
+            MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
+            4096,
+            settings_.query_write_settings))
     , marks(*marks_file)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
@@ -44,7 +46,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Shared offsets for Nested type.
-        if (compressed_streams.count(stream_name))
+        if (compressed_streams.contains(stream_name))
             return;
 
         const auto & subtype = substream_path.back().data.type;
@@ -203,7 +205,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
 
             writeIntBinary(plain_hashing.count(), marks);
-            writeIntBinary(UInt64(0), marks);
+            writeIntBinary(static_cast<UInt64>(0), marks);
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), data_part->getSerialization(*name_and_type),
@@ -243,9 +245,9 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
         for (size_t i = 0; i < columns_list.size(); ++i)
         {
             writeIntBinary(plain_hashing.count(), marks);
-            writeIntBinary(UInt64(0), marks);
+            writeIntBinary(static_cast<UInt64>(0), marks);
         }
-        writeIntBinary(UInt64(0), marks);
+        writeIntBinary(static_cast<UInt64>(0), marks);
     }
 
     plain_file->next();

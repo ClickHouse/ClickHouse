@@ -301,14 +301,14 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         if (hashing_out.count() != size)
             throw Exception(
-                ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, 
-                "Unexpected size of file {}, expected {} got {}", 
-                std::string(fs::path(part->data_part_storage->getFullRelativePath()) / file_name), 
+                ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                "Unexpected size of file {}, expected {} got {}",
+                std::string(fs::path(part->data_part_storage->getFullRelativePath()) / file_name),
                 hashing_out.count(), size);
 
         writePODBinary(hashing_out.getHash(), out);
 
-        if (!file_names_without_checksums.count(file_name))
+        if (!file_names_without_checksums.contains(file_name))
             data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
     }
 
@@ -542,6 +542,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {
             if (e.code() != ErrorCodes::S3_ERROR && e.code() != ErrorCodes::ZERO_COPY_REPLICATION_ERROR)
                 throw;
+
             LOG_WARNING(log, fmt::runtime(e.message() + " Will retry fetching part without zero-copy."));
             /// Try again but without zero-copy
             return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
@@ -592,6 +593,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
     MergeTreeData::MutableDataPartPtr new_data_part =
         std::make_shared<MergeTreeDataPartInMemory>(data, part_name, data_part_storage);
+    new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
 
     for (auto i = 0ul; i < projections; ++i)
     {
@@ -624,7 +626,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             metadata_snapshot->projections.get(projection_name).metadata,
             block.getNamesAndTypesList(),
             {},
-            CompressionCodecFactory::instance().get("NONE", {}));
+            CompressionCodecFactory::instance().get("NONE", {}),
+            NO_TRANSACTION_PTR);
 
         part_out.write(block);
         part_out.finalizePart(new_projection_part, false);
@@ -648,7 +651,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
     MergedBlockOutputStream part_out(
         new_data_part, data_part_storage_builder, metadata_snapshot, block.getNamesAndTypesList(), {},
-        CompressionCodecFactory::instance().get("NONE", {}));
+        CompressionCodecFactory::instance().get("NONE", {}), NO_TRANSACTION_PTR);
 
     part_out.write(block);
     part_out.finalizePart(new_data_part, false);
@@ -790,6 +793,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     assertEOF(in);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, data_part_storage);
+    new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
@@ -888,11 +892,12 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     assertEOF(in);
 
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, data_part_storage);
+    new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
 
-    data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true);
+    data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true, {});
 
     LOG_DEBUG(log, "Download of part {} unique id {} metadata onto disk {} finished.",
         part_name, part_id, disk->getName());

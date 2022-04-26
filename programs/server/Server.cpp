@@ -1339,7 +1339,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
-
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
@@ -1503,11 +1502,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     else
     {
         /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(global_context, config().getInt("dns_cache_update_period", 15));
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
     }
 
 #if defined(OS_LINUX)
-    if (!TasksStatsCounters::checkIfAvailable())
+    auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
+    if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)
     {
         LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
             " neither clickhouse-server process has CAP_NET_ADMIN capability."
@@ -1517,6 +1518,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.",
             executable_path);
+    }
+    else
+    {
+        LOG_INFO(log, "Tasks stats provider: {}", TasksStatsCounters::metricsProviderString(tasks_stats_provider));
     }
 
     if (!hasLinuxCapability(CAP_SYS_NICE))
@@ -1638,6 +1643,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 server.start();
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
+
+            global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
 
@@ -1712,6 +1719,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     return Application::EXIT_OK;
 }
+
 
 void Server::createServers(
     Poco::Util::AbstractConfiguration & config,

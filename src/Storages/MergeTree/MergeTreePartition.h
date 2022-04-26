@@ -45,7 +45,7 @@ public:
     /// Store functions return write buffer with written but not finalized data.
     /// User must call finish() for returned object.
     [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const MergeTreeData & storage, const DataPartStorageBuilderPtr & data_part_storage_builder, MergeTreeDataPartChecksums & checksums) const;
-    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const Block & partition_key_sample, const DataPartStorageBuilderPtr & data_part_storage_builder, MergeTreeDataPartChecksums & checksums) const;
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const Block & partition_key_sample, const DataPartStorageBuilderPtr & data_part_storage_builder, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const;
 
     void assign(const MergeTreePartition & other) { value = other.value; }
 

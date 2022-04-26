@@ -94,7 +94,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     unsigned parts_to_move_by_ttl_rules = 0;
     double parts_to_move_total_size_bytes = 0.0;
 
-    MergeTreeData::DataPartsVector data_parts = data->getDataPartsVector();
+    MergeTreeData::DataPartsVector data_parts = data->getDataPartsVectorForInternalUsage();
 
     if (data_parts.empty())
         return false;
@@ -223,12 +223,16 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
             LOG_WARNING(log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone + relative_path));
             disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
         }
+
         disk->createDirectories(path_to_clone);
 
         cloned_part_storage = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
 
         if (!cloned_part_storage)
+        {
+            LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
             cloned_part_storage = part->data_part_storage->clone(path_to_clone, part->data_part_storage->getRelativePath(), log);
+        }
     }
     else
     {
@@ -239,6 +243,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->data_part_storage->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
+    cloned_part->loadVersionMetadata();
     cloned_part->modification_time = cloned_part->data_part_storage->getLastModified().epochTime();
     return cloned_part;
 
