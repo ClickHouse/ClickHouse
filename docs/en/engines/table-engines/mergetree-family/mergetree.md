@@ -669,6 +669,7 @@ Storage policies configuration markup:
                 <volume_name_1>
                     <disk>disk_name_from_disks_configuration</disk>
                     <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                    <load_balancing>round_robin</load_balancing>
                 </volume_name_1>
                 <volume_name_2>
                     <!-- configuration -->
@@ -696,6 +697,7 @@ Tags:
 -   `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved. 
 -   `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
 -   `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3).
+-   `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 
 Cofiguration examples:
 
