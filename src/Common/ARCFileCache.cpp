@@ -605,9 +605,7 @@ void ARCFileCache::remove(bool force_remove_unreleasable)
 
     std::lock_guard cache_lock(mutex);
 
-    for (auto it = low_queue.queue().begin(); it != low_queue.queue().end();)
-    {
-        auto & [key, offset] = *it++;
+    std::lock_guard cache_lock(mutex);
 
         auto * cell = getCell(key, offset, cache_lock);
         if (cell->releasable() || force_remove_unreleasable)
