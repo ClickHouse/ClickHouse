@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int CANNOT_USE_CACHE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -107,6 +108,12 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getRemoteFSReadBuffer(FileSe
                 return remote_fs_segment_reader;
 
             remote_fs_segment_reader = remote_file_reader_creator();
+
+            if (!remote_fs_segment_reader->supportsRightBoundedReads())
+                throw Exception(
+                    ErrorCodes::CANNOT_USE_CACHE,
+                    "Cache cannot be used with a ReadBuffer which does not support right bounded reads");
+
             file_segment->setRemoteFileReader(remote_fs_segment_reader);
 
             return remote_fs_segment_reader;

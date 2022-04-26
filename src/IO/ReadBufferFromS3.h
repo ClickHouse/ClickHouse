@@ -70,6 +70,8 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
+    bool supportsRightBoundedReads() const override { return true; }
+
 private:
     std::unique_ptr<ReadBuffer> initialize();
 
