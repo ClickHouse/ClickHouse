@@ -13,6 +13,18 @@
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <data_cache_path>./s3_cache/</data_cache_path>
             </s3_cache>
+            <s3_cache_with_arc>
+                <type>s3</type>
+                <endpoint>http://localhost:11111/test/00170_test/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <data_cache_method>ARC</data_cache_method>
+                <data_cache_enabled>1</data_cache_enabled>
+                <cache_enabled>0</cache_enabled>
+                <data_cache_max_size>22548578304</data_cache_max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <data_cache_path>./s3_cache/</data_cache_path>
+            </s3_cache_with_arc>
             <s3_cache_2>
                 <type>s3</type>
                 <endpoint>http://localhost:11111/test/00170_test/</endpoint>
@@ -32,6 +44,13 @@
                     </main>
                 </volumes>
             </s3_cache>
+            <s3_cache_with_arc>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_with_arc</disk>
+                    </main>
+                </volumes>
+            </s3_cache_with_arc>
             <s3_cache_2>
                 <volumes>
                     <main>
