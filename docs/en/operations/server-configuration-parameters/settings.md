@@ -544,6 +544,7 @@ Keys:
 -   `errorlog` – Error log file.
 -   `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 -   `count` – The number of archived log files that ClickHouse stores.
+-   `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 
 **Example**
 
@@ -554,6 +555,15 @@ Keys:
     <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
     <size>1000M</size>
     <count>10</count>
+</logger>
+```
+
+Writing to the console can be configured. Config example:
+
+``` xml
+<logger>
+    <level>information</level>
+    <console>1</console>
 </logger>
 ```
 
@@ -677,8 +687,8 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries related to MergeTree table.
-Queries may be limited by other settings: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+The maximum number of simultaneously processed queries.
+Note that other limits also apply: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users).
 
 :::note
 These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -694,7 +704,7 @@ Default value: `100`.
 **Example**
 
 ``` xml
-<max_concurrent_queries>100</max_concurrent_queries>
+<max_concurrent_queries>200</max_concurrent_queries>
 ```
 
 ## max_concurrent_insert_queries {#max-concurrent-insert-queries}
@@ -780,21 +790,6 @@ Default value: `0`.
 **See Also**
 
 -   [max_concurrent_queries](#max-concurrent-queries)
-
-## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
-
-The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting.
-
-Possible values:
-
--   Positive integer.
--   0 — Disabled.
-
-**Example**
-
-``` xml
-<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
-```
 
 ## max_connections {#max-connections}
 

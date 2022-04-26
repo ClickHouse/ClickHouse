@@ -1339,7 +1339,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
-
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
@@ -1508,7 +1507,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
 #if defined(OS_LINUX)
-    if (!TasksStatsCounters::checkIfAvailable())
+    auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
+    if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)
     {
         LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
             " neither clickhouse-server process has CAP_NET_ADMIN capability."
@@ -1518,6 +1518,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.",
             executable_path);
+    }
+    else
+    {
+        LOG_INFO(log, "Tasks stats provider: {}", TasksStatsCounters::metricsProviderString(tasks_stats_provider));
     }
 
     if (!hasLinuxCapability(CAP_SYS_NICE))

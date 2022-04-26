@@ -393,6 +393,8 @@ void FileSegment::complete(State state)
     std::lock_guard cache_lock(cache->mutex);
     std::lock_guard segment_lock(mutex);
 
+    assertNotDetached();
+
     bool is_downloader = isDownloaderImpl(segment_lock);
     if (!is_downloader)
     {
@@ -414,8 +416,6 @@ void FileSegment::complete(State state)
         setDownloaded(segment_lock);
 
     download_state = state;
-
-    assertNotDetached();
 
     try
     {
