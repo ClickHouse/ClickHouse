@@ -128,7 +128,6 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
     : SeekableReadBufferWithSize(nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_, read_until_position_))
 {
-    std::cout << "ReadBufferFromHDFS size:" << buf_size_ << std::endl;
 }
 
 std::optional<size_t> ReadBufferFromHDFS::getTotalSize()
