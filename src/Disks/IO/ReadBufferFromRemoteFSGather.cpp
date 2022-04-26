@@ -47,7 +47,7 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
     {
         return std::make_unique<ReadBufferFromS3>(
             client_ptr, bucket, remote_path, max_single_read_retries,
-            settings, /* use_external_buffer */true, /* offset */ 0, read_until_position, /* restricted_seek */true);
+            settings, /* offset */ 0, read_until_position, /* restricted_seek */true);
     };
 
     if (with_cache)
@@ -66,7 +66,7 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
 {
     current_path = path;
     return std::make_unique<ReadBufferFromAzureBlobStorage>(blob_container_client, path, max_single_read_retries,
-        max_single_download_retries, settings.remote_fs_buffer_size, /* use_external_buffer */true, read_until_position);
+        max_single_download_retries, settings.remote_fs_buffer_size, read_until_position);
 }
 #endif
 
@@ -74,7 +74,7 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
 SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path, size_t /* file_size */)
 {
     current_path = path;
-    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, /* use_external_buffer */true, read_until_position);
+    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, read_until_position);
 }
 
 
@@ -89,13 +89,11 @@ SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     const std::string & common_path_prefix_,
     const BlobsPathToSize & blobs_to_read_,
-    const ReadSettings & settings_,
-    bool use_external_buffer_)
+    const ReadSettings & settings_)
     : ReadBuffer(nullptr, 0)
     , common_path_prefix(common_path_prefix_)
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
-    , use_external_buffer(use_external_buffer_)
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
 
 {
