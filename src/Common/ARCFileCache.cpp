@@ -602,7 +602,23 @@ void LRUFileCache::remove(bool force_remove_unreleasable)
 
     std::lock_guard cache_lock(mutex);
 
-    for (auto it = queue.begin(); it != queue.end();)
+    for (auto it = low_queue.queue().begin(); it != low_queue.queue().end();)
+    {
+        auto & [key, offset] = *it++;
+
+        auto * cell = getCell(key, offset, cache_lock);
+        if (cell->releasable() || force_remove_unreleasable)
+        {
+            auto file_segment = cell->file_segment;
+            if (file_segment)
+            {
+                std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+                file_segment->detached = true;
+                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+            }
+        }
+    }
+    for (auto it = high_queue.queue().begin(); it != high_queue.queue().end();)
     {
         auto & [key, offset] = *it++;
 
