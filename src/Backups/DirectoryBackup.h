@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupImpl.h>
+#include <filesystem>
 
 
 namespace DB
@@ -25,13 +26,12 @@ public:
 private:
     bool backupExists() const override;
     void openImpl(OpenMode open_mode_) override;
-    void closeImpl(bool writing_finalized_) override;
+    void closeImpl(const Strings & written_files_, bool writing_finalized_) override;
     std::unique_ptr<ReadBuffer> readFileImpl(const String & file_name) const override;
     std::unique_ptr<WriteBuffer> writeFileImpl(const String & file_name) override;
 
     DiskPtr disk;
-    String path;
-    String dir_path; /// `path` without terminating slash
+    std::filesystem::path path;
 };
 
 }

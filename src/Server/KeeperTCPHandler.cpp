@@ -345,7 +345,11 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    if (keeper_dispatcher->checkInit() && keeper_dispatcher->hasLeader())
+    // we store the checks because they can change during the execution
+    // leading to weird results
+    const auto is_initialized = keeper_dispatcher->checkInit();
+    const auto has_leader = keeper_dispatcher->hasLeader();
+    if (is_initialized && has_leader)
     {
         try
         {
@@ -366,9 +370,9 @@ void KeeperTCPHandler::runImpl()
     else
     {
         String reason;
-        if (!keeper_dispatcher->checkInit() && !keeper_dispatcher->hasLeader())
+        if (!is_initialized && !has_leader)
             reason = "server is not initialized yet and no alive leader exists";
-        else if (!keeper_dispatcher->checkInit())
+        else if (!is_initialized)
             reason = "server is not initialized yet";
         else
             reason = "no alive leader exists";
