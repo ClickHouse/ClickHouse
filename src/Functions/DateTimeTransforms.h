@@ -467,17 +467,17 @@ struct ToStartOfNanosecondImpl
     using FactorTransform = ZeroTransform;
 };
 
-struct ToStartOfFiveMinuteImpl
+struct ToStartOfFiveMinutesImpl
 {
-    static constexpr auto name = "toStartOfFiveMinute";
+    static constexpr auto name = "toStartOfFiveMinutes";
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfFiveMinute(t.whole);
+        return time_zone.toStartOfFiveMinutes(t.whole);
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfFiveMinute(t);
+        return time_zone.toStartOfFiveMinutes(t);
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
