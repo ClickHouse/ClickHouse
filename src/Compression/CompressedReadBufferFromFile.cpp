@@ -91,6 +91,8 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
 size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 {
     size_t bytes_read = 0;
+    UInt8 req_type = 0;
+    bool readTail = false;
 
     /// If there are unread bytes in the buffer, then we copy needed to `to`.
     if (pos < working_buffer.end())
@@ -102,10 +104,22 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
 
-        size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+        size_t new_size_compressed = readCompressedDataBlockHold(size_decompressed, size_compressed_without_checksum);
+
+        if (new_size_compressed)
+        {
+            req_type = 1;
+        }
+        else
+        {
+            decompressFlush(); /// here switch to unhold block in compress_in, we must flush for previous blocks completely hold in compress_in
+            new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+            req_type = 0;
+        }
         size_compressed = 0; /// file_in no longer points to the end of the block in working_buffer.
+
         if (!new_size_compressed)
-            return bytes_read;
+            break;
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -113,9 +127,26 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         /// need to skip some bytes in decompressed data (seek happened before readBig call).
         if (nextimpl_working_buffer_offset == 0 && size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
         {
-            decompressTo(to + bytes_read, size_decompressed, size_compressed_without_checksum);
+            decompressTo(to + bytes_read, size_decompressed, size_compressed_without_checksum, req_type); //Async req
             bytes_read += size_decompressed;
             bytes += size_decompressed;
+        }
+        else if (nextimpl_working_buffer_offset > 0)
+        {
+            //Need to skip some bytes in decompressed data (seek happened before readBig call).
+            size_compressed = new_size_compressed;
+            bytes += offset();
+
+            /// This is for clang static analyzer.
+            assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+            memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
+            working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
+            decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
+
+            size_t size_partial = std::min((size_decompressed - nextimpl_working_buffer_offset), (n - bytes_read));
+            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+            nextimpl_working_buffer_offset = 0;
+            bytes_read += read(to + bytes_read, size_partial);
         }
         else
         {
@@ -128,16 +159,20 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
-            decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
-
-            /// Manually take nextimpl_working_buffer_offset into account, because we don't use
-            /// nextImpl in this method.
-            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
-            nextimpl_working_buffer_offset = 0;
-
-            bytes_read += read(to + bytes_read, n - bytes_read);
+            decompress(working_buffer, size_decompressed, size_compressed_without_checksum, 1);
+            readTail = true;
             break;
         }
+    }
+
+    decompressFlush();
+
+    if (readTail)
+    {
+        /// Manually take nextimpl_working_buffer_offset into account, because we don't use
+        /// nextImpl in this method.
+        pos = working_buffer.begin();
+        bytes_read += read(to + bytes_read, n - bytes_read);
     }
 
     return bytes_read;

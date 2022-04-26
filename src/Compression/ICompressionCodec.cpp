@@ -90,9 +90,35 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
     unalignedStore<UInt32>(&dest[5], source_size);
     return header_size + compressed_bytes_written;
 }
+UInt32 ICompressionCodec::compressReq(const char * source, UInt32 source_size, char * dest, UInt32 & req_id)
+{
+    assert(source != nullptr && dest != nullptr);
+    dest[0] = getMethodByte();
+    UInt8 header_size = getHeaderSize();
 
+    UInt32 res = doCompressDataReq(source, source_size, &dest[header_size], req_id);
+    if (res > 0)
+    {
+        unalignedStore<UInt32>(&dest[1], res + header_size);
+        unalignedStore<UInt32>(&dest[5], source_size);
+        return header_size + res;
+    }
+    else
+    {
+        unalignedStore<UInt32>(&dest[5], source_size);
+        return 0;
+    }
+}
 
-UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
+UInt32 ICompressionCodec::compressFlush(UInt32 req_id, char * dest)
+{
+    UInt32 compressed_bytes_written = doCompressDataFlush(req_id);
+    UInt8 header_size = getHeaderSize();
+    unalignedStore<UInt32>(&dest[1], compressed_bytes_written + header_size);
+    return header_size + compressed_bytes_written;
+}
+
+UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest, UInt8 req_type)
 {
     assert(source != nullptr && dest != nullptr);
 
@@ -106,9 +132,25 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Can't decompress data with codec byte {} using codec with byte {}", method, our_method);
 
     UInt32 decompressed_size = readDecompressedBlockSize(source);
-    doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
+    switch (req_type)
+    {
+        case 0:
+            doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
+            break;
+        case 1:
+            doDecompressDataReq(&source[header_size], source_size - header_size, dest, decompressed_size);
+            break;
+        case 2:
+            doDecompressDataSW(&source[header_size], source_size - header_size, dest, decompressed_size);
+            break;
+    }
 
     return decompressed_size;
+}
+
+void ICompressionCodec::decompressFlush(void)
+{
+    doDecompressDataFlush();
 }
 
 UInt32 ICompressionCodec::readCompressedBlockSize(const char * source)
