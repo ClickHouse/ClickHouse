@@ -725,7 +725,7 @@ Cofiguration examples:
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
 
-		<small_jbod_with_external_no_merges>
+        <small_jbod_with_external_no_merges>
             <volumes>
                 <main>
                     <disk>jbod1</disk>
