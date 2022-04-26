@@ -47,15 +47,16 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     const std::string & marks_path_,
     const std::string & marks_file_extension_,
     const CompressionCodecPtr & compression_codec_,
-    size_t max_compress_block_size_) :
+    size_t max_compress_block_size_,
+    const WriteSettings & query_write_settings) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
-    plain_file(data_part_storage_builder->writeFile(data_path_ + data_file_extension, max_compress_block_size_)),
+    plain_file(data_part_storage_builder->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
     compressed_buf(plain_hashing, compression_codec_, max_compress_block_size_),
     compressed(compressed_buf),
-    marks_file(data_part_storage_builder->writeFile(marks_path_ + marks_file_extension, 4096)), marks(*marks_file)
+    marks_file(data_part_storage_builder->writeFile(marks_path_ + marks_file_extension, 4096, query_write_settings)), marks(*marks_file)
 {
 }
 
@@ -156,7 +157,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 {
     if (metadata_snapshot->hasPrimaryKey())
     {
-        index_file_stream = data_part_storage_builder->writeFile("primary.idx", DBMS_DEFAULT_BUFFER_SIZE);
+        index_file_stream = data_part_storage_builder->writeFile("primary.idx", DBMS_DEFAULT_BUFFER_SIZE, query_write_settings);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 }
@@ -172,7 +173,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         data_part_storage_builder,
                         stream_name, index_helper->getSerializedFileExtension(),
                         stream_name, marks_file_extension,
-                        default_codec, settings.max_compress_block_size));
+                        default_codec, settings.max_compress_block_size, query_write_settings));
         skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
         skip_index_accumulated_marks.push_back(0);
     }

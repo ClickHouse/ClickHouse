@@ -7,7 +7,9 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
                 <data_cache_enabled>1</data_cache_enabled>
+                <cache_enabled>0</cache_enabled>
                 <data_cache_max_size>22548578304</data_cache_max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
             </s3_cache>
         </disks>
         <policies>

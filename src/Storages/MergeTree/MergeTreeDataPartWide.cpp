@@ -148,6 +148,11 @@ bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
     return data_part_storage->isStoredOnRemoteDisk();
 }
 
+bool MergeTreeDataPartWide::isStoredOnRemoteDiskWithZeroCopySupport() const
+{
+    return volume->getDisk()->supportZeroCopyReplication();
+}
+
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
 {
     removeIfNeeded();
@@ -170,13 +175,13 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                     String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
                     String bin_file_name = file_name + DATA_FILE_EXTENSION;
 
-                    if (!checksums.files.count(mrk_file_name))
+                    if (!checksums.files.contains(mrk_file_name))
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
                             "No {} file checksum for column {} in part {} ",
                             mrk_file_name, name_type.name, data_part_storage->getFullPath());
 
-                    if (!checksums.files.count(bin_file_name))
+                    if (!checksums.files.contains(bin_file_name))
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
                             "No {} file checksum for column {} in part ",
