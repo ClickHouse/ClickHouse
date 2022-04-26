@@ -68,7 +68,7 @@ namespace
     M(RestoreDatabaseCreationMode, create_database) \
     M(Bool, allow_different_table_def) \
     M(Bool, allow_different_database_def) \
-    M(Bool, async) \
+    M(Bool, sync) \
     M(UInt64, shard_num) \
     M(UInt64, replica_num) \
     M(UInt64, shard_num_in_backup) \

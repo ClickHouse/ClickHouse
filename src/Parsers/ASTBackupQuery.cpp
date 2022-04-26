@@ -166,11 +166,11 @@ namespace
             [](const SettingChange & change)
             {
                 const String & name = change.name;
-                return (name == "internal") || (name == "async") || (name == "shard_num") || (name == "replica_num");
+                return (name == "internal") || (name == "sync") || (name == "shard_num") || (name == "replica_num");
             });
 
         changes.emplace_back("internal", true);
-        changes.emplace_back("async", false);
+        changes.emplace_back("sync", true);
         changes.emplace_back("shard_num", params.shard_index);
         changes.emplace_back("replica_num", params.replica_index);
 

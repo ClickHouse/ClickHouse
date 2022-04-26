@@ -164,13 +164,13 @@ namespace
         if (!backup_settings.internal)
             task_id = BackupsWorker::instance().add(backup_info.toString(), BackupStatus::PREPARING);
 
-        if (backup_settings.async)
+        if (backup_settings.sync)
         {
-            BackupsWorker::instance().run([query, task_id, context, backup_info, backup_settings]{ executeBackupSync(query, task_id, context, backup_info, backup_settings, /* no_throw = */ true); });
+            executeBackupSync(query, task_id, context, backup_info, backup_settings, /* no_throw = */ false);
         }
         else
         {
-            executeBackupSync(query, task_id, context, backup_info, backup_settings, /* no_throw = */ false);
+            BackupsWorker::instance().run([query, task_id, context, backup_info, backup_settings]{ executeBackupSync(query, task_id, context, backup_info, backup_settings, /* no_throw = */ true); });
         }
         return task_id;
     }
@@ -184,13 +184,13 @@ namespace
         if (!restore_settings.internal)
             task_id = BackupsWorker::instance().add(backup_info.toString(), BackupStatus::RESTORING);
 
-        if (restore_settings.async)
+        if (restore_settings.sync)
         {
-            BackupsWorker::instance().run([query, task_id, context, backup_info, restore_settings]{ executeRestoreSync(query, task_id, context, backup_info, restore_settings, /* no_throw = */ true); });
+            executeRestoreSync(query, task_id, context, backup_info, restore_settings, /* no_throw = */ false);
         }
         else
         {
-            executeRestoreSync(query, task_id, context, backup_info, restore_settings, /* no_throw = */ false);
+            BackupsWorker::instance().run([query, task_id, context, backup_info, restore_settings]{ executeRestoreSync(query, task_id, context, backup_info, restore_settings, /* no_throw = */ true); });
         }
         return task_id;
     }
