@@ -524,6 +524,11 @@ if (TARGET ch_contrib::datasketches)
 endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::qpl)
+target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/qpl/include)
+set_source_files_properties(
+    Compression/CompressionCodecDeflate.cpp
+    PROPERTIES COMPILE_FLAGS "-mwaitpkg")
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 
