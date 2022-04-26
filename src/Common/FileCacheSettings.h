@@ -25,7 +25,7 @@ struct FileCacheSettings
 
     /// Just for ARC
     double size_ratio = REMOTE_FS_OBJECTS_ARC_CACHE_DEFAULT_SIZE_RATIO;
-    int move_threshold = REMOTE_FS_OBJECTS_ARC_CACHE_DEFAULT_MOVE_THRESHOLD;
+    size_t move_threshold = REMOTE_FS_OBJECTS_ARC_CACHE_DEFAULT_MOVE_THRESHOLD;
 
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };

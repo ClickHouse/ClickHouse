@@ -31,9 +31,10 @@ namespace
 ARCFileCache::ARCFileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_)
     : IFileCache(cache_base_path_, cache_settings_)
     , max_high_space_size((1.0 - cache_settings_.size_ratio) * cache_settings_.max_size)
+    , max_high_elem_size((1.0 - cache_settings_.size_ratio) * cache_settings_.max_elements)
     , move_threshold(cache_settings_.move_threshold)
     , low_queue(cache_settings_.max_size, cache_settings_.max_elements)
-    , high_queue(0, cache_settings_.max_elements)
+    , high_queue(0, 0)
     , log(&Poco::Logger::get("ARCFileCache"))
 {
 }
@@ -66,6 +67,8 @@ void ARCFileCache::useCell(const FileSegmentCell & cell, FileSegments & result, 
      */
     if (cell.queue_iterator)
     {
+        cell.hit_count++;
+
         if (cell.is_low)
         {
             if (canMoveCellToHighQueue(cell))
@@ -80,7 +83,6 @@ void ARCFileCache::useCell(const FileSegmentCell & cell, FileSegments & result, 
                 /// Still in low queue.
                 /// Move to the end of the low queue. The iterator remains valid.
                 low_queue.queue().splice(low_queue.queue().end(), low_queue.queue(), *cell.queue_iterator);
-                cell.hit_count++;
             }
         }
         else
@@ -425,7 +427,7 @@ bool ARCFileCache::tryReserve(
 
     auto is_overflow = [&]
     {
-        return (desc_.getCurrentSpaceBytes() + size - removed_size > desc_.getMaxSpaceBytes())
+        return (desc_.getSpaceBytes() + size - removed_size > desc_.getMaxSpaceBytes())
             || (desc_.getMaxQueueSize() != 0 && queue_size > desc_.getMaxQueueSize());
     };
 
@@ -495,7 +497,7 @@ bool ARCFileCache::tryReserve(
     increase_size += size - removed_size;
     desc_.incrementSpaceBytes(increase_size);
 
-    if (desc_.getCurrentSpaceBytes() > (1ull << 63))
+    if (desc_.getSpaceBytes() > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
     return true;
@@ -702,7 +704,10 @@ void ARCFileCache::loadCacheInfoIntoMemory()
                 {
                     auto * cell = addCell(key, offset, size, FileSegment::State::DOWNLOADED, cache_lock);
                     if (cell)
+                    {
+                        cell->hit_count = 0;
                         cells.push_back(cell);
+                    }
                 }
                 else
                 {
@@ -741,6 +746,16 @@ ARCFileCache::Stat ARCFileCache::getStat()
         .available = availableSize(),
         .downloaded_size = 0,
         .downloading_size = 0,
+
+        .low_space_bytes = low_queue.getSpaceBytes(),
+        .low_queue_size = low_queue.getQueueSize(),
+        .max_low_space_bytes = low_queue.getMaxSpaceBytes(),
+        .max_low_queue_size = low_queue.getMaxQueueSize(),
+
+        .high_space_bytes = high_queue.getSpaceBytes(),
+        .high_queue_size = high_queue.getQueueSize(),
+        .max_high_space_bytes = high_queue.getMaxSpaceBytes(),
+        .max_high_queue_size = high_queue.getMaxQueueSize(),
     };
 
     for (const auto & [key, offset] : low_queue.queue())
@@ -764,6 +779,7 @@ ARCFileCache::Stat ARCFileCache::getStat()
                 break;
         }
     }
+
     for (const auto & [key, offset] : high_queue.queue())
     {
         const auto * cell = getCell(key, offset, cache_lock);
@@ -833,12 +849,27 @@ bool ARCFileCache::canMoveCellToHighQueue(const FileSegmentCell & cell) const
 
 bool ARCFileCache::tryMoveLowToHigh(const FileSegmentCell & cell, std::lock_guard<std::mutex> & cache_lock)
 {
-    int increase_size = 0;
+    int increase_queue_size = 0;
+    int increase_space_bytes = 0;
+
     if (high_queue.getMaxSpaceBytes() < max_high_space_size)
     {
-        increase_size = std::min(cell.size(), max_high_space_size - high_queue.getMaxSpaceBytes());
-        high_queue.incrementMaxSpaceBytes(increase_size);
-        low_queue.incrementMaxSpaceBytes(0 - increase_size);
+        increase_space_bytes = std::min(cell.size(), max_high_space_size - high_queue.getMaxSpaceBytes());
+        high_queue.incrementMaxSpaceBytes(increase_space_bytes);
+        low_queue.incrementMaxSpaceBytes(0 - increase_space_bytes);
+    }
+
+    if (high_queue.getQueueSize() > high_queue.getMaxQueueSize())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Large cache queue size. There must be a bug");
+    }
+
+    /// Determine the need to adjust the size of the high queue
+    if ((high_queue.getQueueSize() == high_queue.getMaxQueueSize()) && (high_queue.getMaxQueueSize() < max_high_elem_size))
+    {
+        increase_queue_size = 1;
+        high_queue.incrementMaxQueueSize(increase_queue_size);
+        low_queue.incrementMaxQueueSize(0 - increase_queue_size);
     }
 
     if (tryReserve(high_queue, cell.file_segment->key(), cell.file_segment->offset(), cell.size(), cache_lock))
@@ -848,11 +879,12 @@ bool ARCFileCache::tryMoveLowToHigh(const FileSegmentCell & cell, std::lock_guar
         low_queue.incrementSpaceBytes(0 - cell.size());
         return true;
     }
-    else
+    else /// rollback
     {
-        /// rollback
-        high_queue.incrementMaxSpaceBytes(0 - increase_size);
-        low_queue.incrementMaxSpaceBytes(increase_size);
+        high_queue.incrementMaxSpaceBytes(0 - increase_space_bytes);
+        low_queue.incrementMaxSpaceBytes(increase_space_bytes);
+        high_queue.incrementMaxQueueSize(0 - increase_queue_size);
+        low_queue.incrementMaxQueueSize(increase_queue_size);
         return false;
     }
 }
@@ -888,6 +920,9 @@ String ARCFileCache::dumpStructure(const Key & key_)
     std::lock_guard cache_lock(mutex);
 
     WriteBufferFromOwnString result;
+
+    result << "Low:";
+
     for (auto it = low_queue.queue().begin(); it != low_queue.queue().end(); ++it)
     {
         auto [key, offset] = *it;
@@ -895,9 +930,12 @@ String ARCFileCache::dumpStructure(const Key & key_)
         {
             auto * cell = getCell(key, offset, cache_lock);
             result << (it != low_queue.queue().begin() ? ", " : "") << cell->file_segment->range().toString();
-            result << "(state: " << cell->file_segment->download_state << ")";
+            result << "(state: " << cell->file_segment->download_state << ", hit: " << cell->hit_count << ")";
         }
     }
+
+    result << "\nHigh:";
+
     for (auto it = high_queue.queue().begin(); it != high_queue.queue().end(); ++it)
     {
         auto [key, offset] = *it;
@@ -905,9 +943,11 @@ String ARCFileCache::dumpStructure(const Key & key_)
         {
             auto * cell = getCell(key, offset, cache_lock);
             result << (it != high_queue.queue().begin() ? ", " : "") << cell->file_segment->range().toString();
-            result << "(state: " << cell->file_segment->download_state << ")";
+            result << "(state: " << cell->file_segment->download_state << ", hit: " << cell->hit_count << ")";
         }
     }
+
+    result << "\n";
     return result.str();
 }
 

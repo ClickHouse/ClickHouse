@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <boost/noncopyable.hpp>
@@ -55,7 +56,7 @@ private:
     {
         mutable bool is_low = true;
 
-        mutable int hit_count = 0;
+        mutable size_t hit_count = 1;
 
         FileSegmentPtr file_segment;
 
@@ -103,13 +104,15 @@ private:
 
         double getMaxSpaceMegaBytes() const { return 1.0 * max_size / (1024 * 1024); }
 
-        size_t getCurrentSpaceBytes() const { return current_size; }
+        size_t getSpaceBytes() const { return current_size; }
 
-        double getCurrentSpaceMegaBytes() const { return 1.0 * current_size / (1024 * 1024); }
+        double getSpaceMegaBytes() const { return 1.0 * current_size / (1024 * 1024); }
 
         void incrementSpaceBytes(int size) { current_size += size; }
 
         void incrementMaxSpaceBytes(int size) { max_size += size; }
+
+        void incrementMaxQueueSize(int size) { max_element_size += size; }
 
         LRUQueue & queue() { return lru_queue; }
     };
@@ -120,7 +123,8 @@ private:
     CachedFiles files;
 
     size_t max_high_space_size;
-    int move_threshold;
+    size_t max_high_elem_size;
+    size_t move_threshold;
 
     LRUQueueDescriptor low_queue;
     LRUQueueDescriptor high_queue;
@@ -148,7 +152,7 @@ private:
     void reduceSizeToDownloaded(
         const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock) override;
 
-    size_t availableSize() const { return max_size - (low_queue.getCurrentSpaceBytes() + high_queue.getCurrentSpaceBytes()); }
+    size_t availableSize() const { return max_size - (low_queue.getSpaceBytes() + high_queue.getSpaceBytes()); }
 
     void loadCacheInfoIntoMemory();
 
@@ -173,6 +177,16 @@ public:
         size_t available;
         size_t downloaded_size;
         size_t downloading_size;
+
+        size_t low_space_bytes;
+        size_t low_queue_size;
+        size_t max_low_space_bytes;
+        size_t max_low_queue_size;
+
+        size_t high_space_bytes;
+        size_t high_queue_size;
+        size_t max_high_space_bytes;
+        size_t max_high_queue_size;
     };
 
     Stat getStat();
