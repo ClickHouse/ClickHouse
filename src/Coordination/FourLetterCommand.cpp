@@ -460,7 +460,7 @@ String IsReadOnlyCommand::run()
 String RecoveryCommand::run()
 {
     keeper_dispatcher.forceRecovery();
-    return "";
+    return "ok";
 }
 
 }

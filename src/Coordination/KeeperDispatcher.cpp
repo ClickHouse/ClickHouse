@@ -540,17 +540,18 @@ void KeeperDispatcher::updateConfigurationThread()
 
         try
         {
+            using namespace std::chrono_literals;
             if (!server->checkInit())
             {
                 LOG_INFO(log, "Server still not initialized, will not apply configuration until initialization finished");
-                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+                std::this_thread::sleep_for(5000ms);
                 continue;
             }
 
             if (server->isRecovering())
             {
                 LOG_INFO(log, "Server is recovering, will not apply configuration until recovery is finished");
-                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+                std::this_thread::sleep_for(5000ms);
                 continue;
             }
 

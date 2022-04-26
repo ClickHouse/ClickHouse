@@ -29,7 +29,11 @@ private:
     nuraft::ptr<KeeperRaftServer> raft_instance;
     nuraft::ptr<nuraft::asio_service> asio_service;
     nuraft::ptr<nuraft::rpc_listener> asio_listener;
-    mutable std::mutex server_mutex;
+    // because some actions can be applied
+    // when we are sure that there are no requests currently being
+    // processed (e.g. recovery) we do all write actions
+    // on raft_server under this mutex.
+    mutable std::mutex server_write_mutex;
 
     std::mutex initialized_mutex;
     std::atomic<bool> initialized_flag = false;
@@ -52,7 +56,7 @@ private:
 
     void loadLatestConfig();
 
-    void recoveryMode(nuraft::raft_params & params);
+    void enterRecoveryMode(nuraft::raft_params & params);
 
     std::atomic_bool is_recovering = false;
 
