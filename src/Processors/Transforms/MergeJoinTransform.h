@@ -38,8 +38,6 @@ class FullMergeJoinCursor;
 
 using FullMergeJoinCursorPtr = std::unique_ptr<FullMergeJoinCursor>;
 
-
-
 /// Used instead of storing previous block
 struct JoinKeyRow
 {
@@ -79,6 +77,7 @@ struct JoinKeyRow
     }
 };
 
+/// Remembers previous key if it was joined in previous block
 class AnyJoinState : boost::noncopyable
 {
 public:
@@ -90,20 +89,18 @@ public:
         keys[source_num] = JoinKeyRow(cursor, cursor.rows - 1);
     }
 
-    void setValue(Chunk value_)
-    {
-        value = std::move(value_);
-    }
+    void setValue(Chunk value_) { value = std::move(value_); }
 
-    bool empty() const
-    {
-        return keys[0].row.empty() && keys[1].row.empty();
-    }
+    bool empty() const { return keys[0].row.empty() && keys[1].row.empty(); }
 
+    /// current keys
     JoinKeyRow keys[2];
+
+    /// for LEFT/RIGHT join use previously joined row from other table.
     Chunk value;
 };
 
+/// Accumulate blocks with same key and cross-join them
 class AllJoinState : boost::noncopyable
 {
 public:
@@ -143,6 +140,7 @@ public:
 
     bool next()
     {
+        /// advance right to one row, when right finished, advance left to next block
         assert(!left.empty() && !right.empty());
 
         if (finished())
@@ -197,7 +195,6 @@ private:
 
 /*
  * Wrapper for SortCursorImpl
- * It is used to keep cursor for list of blocks.
  */
 class FullMergeJoinCursor : boost::noncopyable
 {
