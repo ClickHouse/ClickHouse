@@ -616,7 +616,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     sanitizeBlock(result_header, true);
 }
 
-void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan) {
+void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
+{
     auto query_cache_key = CacheKey{query_ptr, source_header, context->getSettingsRef(),
                                     context->getSettingsRef().share_query_cache
                                         ? std::make_optional<String>(context->getUserName())
