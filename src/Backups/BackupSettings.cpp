@@ -40,7 +40,7 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         {
 #define GET_SETTINGS_FROM_BACKUP_QUERY_HELPER(TYPE, NAME) \
             if (setting.name == #NAME) \
-                res.NAME = SettingField##TYPE{setting.value}; \
+                res.NAME = SettingField##TYPE{setting.value}.value; \
             else
 
             LIST_OF_BACKUP_SETTINGS(GET_SETTINGS_FROM_BACKUP_QUERY_HELPER)

@@ -54,8 +54,6 @@ namespace
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreTableCreationMode: {}", static_cast<int>(value));
         }
-
-        operator RestoreTableCreationMode() const { return value; }
     };
 
     using SettingFieldRestoreDatabaseCreationMode = SettingFieldRestoreTableCreationMode;
@@ -91,7 +89,7 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
         {
 #define GET_SETTINGS_FROM_RESTORE_QUERY_HELPER(TYPE, NAME) \
             if (setting.name == #NAME) \
-                res.NAME = SettingField##TYPE{setting.value}; \
+                res.NAME = SettingField##TYPE{setting.value}.value; \
             else
 
             LIST_OF_RESTORE_SETTINGS(GET_SETTINGS_FROM_RESTORE_QUERY_HELPER)
