@@ -19,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int EMPTY_DATA_PASSED;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -339,7 +338,7 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, ContextPtr & contex
     }
 
     if (!insert_query_present)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "There is no INSERT queries{} in MySQL dump file", table_name.empty() ? "" : " for table " + table_name);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file", table_name.empty() ? "" : " for table " + table_name);
 
     skipToDataInInsertQuery(in, column_names.empty() ? &column_names : nullptr);
 }
