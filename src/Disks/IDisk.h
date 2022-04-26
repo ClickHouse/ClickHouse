@@ -205,7 +205,7 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual bool removeSharedFileIfExists(const String & path, bool) { return removeFileIfExists(path); }
 
-    virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is not cache path"); }
+    virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
     virtual bool isCached() const { return false; }
 

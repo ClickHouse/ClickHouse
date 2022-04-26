@@ -88,7 +88,13 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     size_t bytes_read = 0;
     while (bytes_read < encrypted_buffer.size() && !in->eof())
     {
-        bytes_read += in->read(encrypted_buffer.data() + bytes_read, encrypted_buffer.size() - bytes_read);
+        size_t bytes_to_read = encrypted_buffer.size() - bytes_read;
+        if (read_until_position)
+        {
+            assert(*read_until_position > offset);
+            bytes_to_read = std::min<off_t>(bytes_to_read, *read_until_position - offset);
+        }
+        bytes_read += in->read(encrypted_buffer.data() + bytes_read, bytes_to_read);
     }
 
     /// The used cipher algorithms generate the same number of bytes in output as it were in input,
@@ -97,7 +103,13 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     encryptor.decrypt(encrypted_buffer.data(), bytes_read, working_buffer.begin());
 
     pos = working_buffer.begin();
+    offset += bytes_read;
     return true;
+}
+
+void ReadBufferFromEncryptedFile::setReadUntilPosition(size_t position)
+{
+    read_until_position = position;
 }
 
 }

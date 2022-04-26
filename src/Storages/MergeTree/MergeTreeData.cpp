@@ -1216,7 +1216,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
-            if (disk->isBroken())
+            if (disk->isBroken() || disk->isCached())
                 continue;
 
             if (!defined_disk_names.contains(disk_name) && disk->exists(relative_data_path))
