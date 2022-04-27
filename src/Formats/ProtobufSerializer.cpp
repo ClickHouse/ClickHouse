@@ -2280,7 +2280,7 @@ namespace
             {
                 bool is_group = (parent_field_descriptor->type() == FieldTypeId::TYPE_GROUP);
                 writer->endNestedMessage(parent_field_descriptor->number(), is_group,
-                    should_skip_if_empty || (google_wrappers_special_treatment && nullGoogleWrapper(row_num)));
+                    should_skip_if_empty || (google_wrappers_special_treatment && isNullGoogleWrapper(row_num)));
             }
             else if (has_envelope_as_parent)
             {
@@ -2322,9 +2322,9 @@ namespace
                             info.field_read = false;
                         else
                         {
-                            if (google_wrappers_special_treatment && nullableGoogleWrapper())
+                            if (google_wrappers_special_treatment && isNullableGoogleWrapper())
                             {
-                                auto * nullable_ser = reinterpret_cast<ProtobufSerializerNullable*>(info.field_serializer.get());
+                                auto * nullable_ser = dynamic_cast<ProtobufSerializerNullable*>(info.field_serializer.get());
                                 nullable_ser->insertNestedDefaults(row_num);
                             }
                             else
@@ -2413,12 +2413,12 @@ namespace
                 missing_columns_filler->addDefaults(mutable_columns, row_num);
         }
 
-        bool nullGoogleWrapper(size_t row_num)
+        bool isNullGoogleWrapper(size_t row_num)
         {
             return isGoogleWrapperField(parent_field_descriptor) && mutable_columns[0].get()->isNullAt(row_num);
         }
 
-        bool nullableGoogleWrapper()
+        bool isNullableGoogleWrapper()
         {
             return isGoogleWrapperField(parent_field_descriptor) && mutable_columns[0].get()->isNullable();
         }
