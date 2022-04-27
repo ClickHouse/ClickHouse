@@ -1,4 +1,4 @@
-# Integrating Rust libraries into ClickHouse.
+# Integrating Rust libraries
 
 Rust library integration will be described based on BLAKE3 hash-function integration.
 
