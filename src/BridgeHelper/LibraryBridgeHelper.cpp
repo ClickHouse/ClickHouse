@@ -11,7 +11,7 @@
 #include <Formats/FormatFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 #include <Core/Field.h>
 #include <Common/escapeForFileName.h>

@@ -2,8 +2,8 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
-#include <daemon/BaseDaemon.h>
-#include <daemon/SentryWriter.h>
+#include <Daemon/BaseDaemon.h>
+#include <Daemon/SentryWriter.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -29,8 +29,7 @@
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
 
-#include <base/logger_useful.h>
-#include <base/ErrorHandlers.h>
+#include <Common/ErrorHandlers.h>
 #include <base/argsToConfig.h>
 #include <base/getThreadId.h>
 #include <base/coverage.h>
@@ -52,10 +51,11 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
 #include <Common/setThreadName.h>
+#include <Common/logger_useful.h>
 #include <filesystem>
 
-#include <loggers/OwnFormattingChannel.h>
-#include <loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 
 #include <Common/config_version.h>
 

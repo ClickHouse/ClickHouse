@@ -10,8 +10,8 @@
 #include <filesystem>
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
-#include <base/logger_useful.h>
-#include <base/ErrorHandlers.h>
+#include <Common/logger_useful.h>
+#include <Common/ErrorHandlers.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
 #include <Poco/Net/NetException.h>

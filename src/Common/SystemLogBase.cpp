@@ -16,7 +16,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
 namespace DB

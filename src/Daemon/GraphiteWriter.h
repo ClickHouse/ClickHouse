@@ -5,7 +5,7 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketStream.h>
 #include <Poco/Util/Application.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 /// Writes to Graphite in the following format
