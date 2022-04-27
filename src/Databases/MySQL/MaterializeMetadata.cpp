@@ -16,6 +16,7 @@
 #include <IO/Operators.h>
 #include <filesystem>
 #include <base/FnTraits.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace fs = std::filesystem;
 
@@ -293,9 +294,27 @@ void MaterializeMetadata::startReplication(
     try
     {
         connection->query("FLUSH TABLES;").execute();
-        connection->query("FLUSH TABLES WITH READ LOCK;").execute();
 
+        if (materialized_tables_list.empty())
+        {
+            /// "FLUSH TABLES WITH READ LOCK" requires the SUPER privilege, which in RDS and some managed databases
+            /// is not supported even for the master user. However, we can use FLUSH TABLES table_names WITH READ LOCK.
+            std::unordered_set<String> base_tables_list;
+
+            /// Get only base tables (not views).
+            mysqlxx::UseQueryResult result_list = connection->query("SHOW FULL TABLES IN " + database + " WHERE Table_type = 'BASE TABLE'").use();
+
+            while (mysqlxx::Row row = result_list.fetch())
+                base_tables_list.insert(row[0].getString());
+
+            connection->query("FLUSH TABLES " + boost::algorithm::join(base_tables_list, ",") + " WITH READ LOCK;").execute();
+        }
+        else
+        {
+            connection->query("FLUSH TABLES " + boost::algorithm::join(materialized_tables_list, ",") + " WITH READ LOCK;").execute();
+        }
         locked_tables = true;
+
         fetchMasterStatus(connection);
         fetchMasterVariablesValue(connection);
         connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
