@@ -573,7 +573,7 @@ void LRUFileCache::remove(bool force_remove_unreleasable)
             if (file_segment)
             {
                 std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
-                file_segment->detach(segment_lock);
+                file_segment->detach(cache_lock, segment_lock);
                 remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
             }
         }
