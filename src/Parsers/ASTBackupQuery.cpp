@@ -140,21 +140,6 @@ namespace
         }
     }
 
-
-    void setDatabaseInElements(ASTBackupQuery::Elements & elements, const String & new_database)
-    {
-        for (auto & element : elements)
-        {
-            if (element.type == ASTBackupQuery::TABLE)
-            {
-                if (element.name.first.empty() && !element.name.second.empty() && !element.name_is_in_temp_db)
-                    element.name.first = new_database;
-                if (element.new_name.first.empty() && !element.name.second.empty() && !element.name_is_in_temp_db)
-                    element.new_name.first = new_database;
-            }
-        }
-    }
-
     ASTPtr rewriteSettingsWithoutOnCluster(ASTPtr settings, const WithoutOnClusterASTRewriteParams & params)
     {
         SettingsChanges changes;
@@ -179,6 +164,25 @@ namespace
         out_settings->is_standalone = false;
         return out_settings;
     }
+}
+
+
+void ASTBackupQuery::Element::setDatabase(const String & new_database)
+{
+    if (type == ASTBackupQuery::TABLE)
+    {
+        if (name.first.empty() && !name.second.empty() && !name_is_in_temp_db)
+            name.first = new_database;
+        if (new_name.first.empty() && !name.second.empty() && !name_is_in_temp_db)
+            new_name.first = new_database;
+    }
+}
+
+
+void ASTBackupQuery::setDatabase(ASTBackupQuery::Elements & elements, const String & new_database)
+{
+    for (auto & element : elements)
+        element.setDatabase(new_database);
 }
 
 
@@ -214,9 +218,8 @@ ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterAST
     auto new_query = std::static_pointer_cast<ASTBackupQuery>(clone());
     new_query->cluster.clear();
     new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
-    setDatabaseInElements(new_query->elements, params.default_database);
+    new_query->setDatabase(new_query->elements, params.default_database);
     return new_query;
 }
-
 
 }

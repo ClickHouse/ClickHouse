@@ -22,7 +22,4 @@ RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backu
 /// Executes restore tasks.
 void executeRestoreTasks(RestoreTasks && tasks, size_t num_threads);
 
-/// Returns the minimal count of replicas stored in the backup.
-size_t getMinCountOfReplicas(const IBackup & backup);
-
 }

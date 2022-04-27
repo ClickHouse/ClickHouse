@@ -107,8 +107,7 @@ namespace
         /// Prepares internal structures for making backup entries.
         void prepare(const ASTBackupQuery::Elements & elements)
         {
-            String current_database = context->getCurrentDatabase();
-            renaming_settings.setFromBackupQuery(elements, current_database);
+            renaming_settings.setFromBackupQuery(elements);
 
             for (const auto & element : elements)
             {
@@ -116,11 +115,7 @@ namespace
                 {
                     case ElementType::TABLE:
                     {
-                        const String & table_name = element.name.second;
-                        String database_name = element.name.first;
-                        if (database_name.empty())
-                            database_name = current_database;
-                        prepareToBackupTable(DatabaseAndTableName{database_name, table_name}, element.partitions);
+                        prepareToBackupTable(element.name, element.partitions);
                         break;
                     }
 

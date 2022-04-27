@@ -87,6 +87,7 @@ namespace
             }
             else
             {
+                new_query->setDatabase(context->getCurrentDatabase());
                 auto backup_entries = makeBackupEntries(context, new_query->elements, new_backup_settings);
 
                 if (!is_internal_backup)
@@ -139,6 +140,7 @@ namespace
             }
             else
             {
+                new_query->setDatabase(context->getCurrentDatabase());
                 auto restore_tasks = makeRestoreTasks(context, backup, new_query->elements, new_restore_settings);
                 executeRestoreTasks(std::move(restore_tasks), context->getSettingsRef().max_backup_threads);
             }
