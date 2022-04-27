@@ -1,14 +1,24 @@
 ## The Intel® QPL provides high performance implementations of data processing functions for existing hardware accelerator, and/or software path in case if hardware accelerator is not available.
 
-set (QPL_VERSION 0.1.21)
 set (QPL_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl")
 set (QPL_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl/sources")
 set (QPL_BINARY_DIR "${ClickHouse_SOURCE_DIR}/build/contrib/qpl")
 set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
 
-set (LOG_HW_INIT ON)
 set (EFFICIENT_WAIT ON)
 set (BLOCK_ON_FAULT ON)
+set (LOG_HW_INIT OFF)
+set (SANITIZE_MEMORY OFF)
+set (SANITIZE_THREADS OFF)
+set (LIB_FUZZING_ENGINE OFF)
+
+function(GetLibraryVersion _content _outputVar)
+    string(REGEX MATCHALL ".*Qpl VERSION+.* (.+).*LANGUAGES" VERSION_REGEX "${_content}")
+    SET(${_outputVar} ${CMAKE_MATCH_1} PARENT_SCOPE)
+endfunction()
+
+FILE(READ "${QPL_PROJECT_DIR}/CMakeLists.txt" HEADER_CONTENT)
+GetLibraryVersion("${HEADER_CONTENT}" QPL_VERSION)
 
 message(STATUS "Intel QPL version: ${QPL_VERSION}")
 
@@ -270,7 +280,7 @@ target_compile_options(middle_layer_lib
         PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:${QPL_WINDOWS_TOOLCHAIN_CPP_EMBEDDED_FLAGS}>)
 
 target_compile_definitions(middle_layer_lib
-        PUBLIC QPL_VERSION="${CMAKE_PROJECT_VERSION}"
+        PUBLIC QPL_VERSION="${QPL_VERSION}"
         PUBLIC $<$<C_COMPILER_ID:MSVC>:_ENABLE_EXTENDED_ALIGNED_STORAGE>
         PUBLIC $<$<BOOL:${LOG_HW_INIT}>:LOG_HW_INIT>
         PUBLIC $<$<BOOL:${EFFICIENT_WAIT}>:QPL_EFFICIENT_WAIT>
