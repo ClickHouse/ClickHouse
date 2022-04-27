@@ -298,29 +298,36 @@ TEST(ARCFileCache, get)
                 assertRange(36, segments_2[1], DB::FileSegment::Range(27, 27), DB::FileSegment::State::DOWNLOADED);
                 assertRange(37, segments_2[2], DB::FileSegment::Range(28, 29), DB::FileSegment::State::DOWNLOADING);
 
+                std::cerr << "thread_other_1\n";
                 ASSERT_TRUE(segments[2]->getOrSetDownloader() != DB::FileSegment::getCallerId());
                 ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADING);
 
+                std::cerr << "thread_other_2\n";
                 {
                     std::lock_guard lock(mutex);
                     lets_start_download = true;
                 }
+                std::cerr << "thread_other_3\n";
                 cv.notify_one();
-
+                std::cerr << "thread_other_4\n";
                 segments_2[2]->wait();
                 ASSERT_TRUE(segments_2[2]->state() == DB::FileSegment::State::DOWNLOADED);
+                std::cerr << "thread_other_5\n";
             });
-
+        std::cerr << "thread_1\n";
         {
             std::unique_lock lock(mutex);
             cv.wait(lock, [&] { return lets_start_download; });
         }
-
+        std::cerr << "thread_2\n";
         prepareAndDownload(segments[2]);
+        std::cerr << "thread_3\n";
         segments[2]->complete(DB::FileSegment::State::DOWNLOADED);
+        std::cerr << "thread_4\n";
         ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADED);
-
+        std::cerr << "thread_5\n";
         other_1.join();
+        std::cerr << "thread_6\n";
     }
 
     /// [11]
