@@ -92,32 +92,6 @@ void WriteBufferFromS3::nextImpl()
             ? CurrentThread::get().getThreadGroup()
             : MainThreadStatus::getInstance().getThreadGroup();
 
-    if (cacheEnabled())
-    {
-        auto cache_key = cache->hash(key);
-        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size));
-        current_download_offset += size;
-
-        size_t remaining_size = size;
-        auto & file_segments = file_segments_holder->file_segments;
-        for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end(); ++file_segment_it)
-        {
-            auto & file_segment = *file_segment_it;
-            size_t current_size = std::min(file_segment->range().size(), remaining_size);
-            remaining_size -= current_size;
-
-            if (file_segment->reserve(current_size))
-            {
-                file_segment->writeInMemory(working_buffer.begin(), current_size);
-            }
-            else
-            {
-                file_segments.erase(file_segment_it, file_segments.end());
-                break;
-            }
-        }
-    }
-
     ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
 
     last_part_size += offset();
@@ -128,6 +102,32 @@ void WriteBufferFromS3::nextImpl()
 
     if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
     {
+        if (cacheEnabled())
+        {
+            auto cache_key = cache->hash(key);
+            file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size));
+            current_download_offset += size;
+
+            size_t remaining_size = size;
+            auto & file_segments = file_segments_holder->file_segments;
+            for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end(); ++file_segment_it)
+            {
+                auto & file_segment = *file_segment_it;
+                size_t current_size = std::min(file_segment->range().size(), remaining_size);
+                remaining_size -= current_size;
+
+                if (file_segment->reserve(current_size))
+                {
+                    file_segment->writeInMemory(working_buffer.begin(), current_size);
+                }
+                else
+                {
+                    file_segments.erase(file_segment_it, file_segments.end());
+                    break;
+                }
+            }
+        }
+
         writePart();
 
         allocateBuffer();
