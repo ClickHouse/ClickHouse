@@ -307,9 +307,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
     size_t max_block_size,
-    Processors * collected_processors,
     size_t max_streams,
-    bool keep_left_read_in_order)
+    bool keep_left_read_in_order,
+    Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
     right->checkInitializedAndNotCompleted();

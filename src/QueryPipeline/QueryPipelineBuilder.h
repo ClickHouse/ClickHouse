@@ -101,9 +101,9 @@ public:
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr join,
         size_t max_block_size,
-        Processors * collected_processors = nullptr,
-        size_t max_streams = 0,
-        bool keep_left_read_in_order = true);
+        size_t max_streams,
+        bool keep_left_read_in_order,
+        Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
     /// Pipeline must have empty header, it should not generate any chunk.
