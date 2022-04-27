@@ -483,7 +483,7 @@ protected:
         Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
 
         auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
-        LOG_TRACE(logger, "Successfully retrieved credentials with AWS_ACCESS_KEY: {}", result.creds.GetAWSAccessKeyId());
+        LOG_TRACE(logger, "Successfully retrieved credentials.", result.creds.GetAWSAccessKeyId());
         credentials = result.creds;
     }
 
