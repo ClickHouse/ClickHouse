@@ -71,9 +71,14 @@ public:
         bool new_name_is_in_temp_db = false;
         ASTs partitions;
         std::set<String> except_list;
+
+        void setDatabase(const String & new_database);
     };
 
     using Elements = std::vector<Element>;
+    static void setDatabase(Elements & elements, const String & new_database);
+    void setDatabase(const String & new_database) { setDatabase(elements, new_database); }
+
     Elements elements;
 
     ASTPtr backup_name;

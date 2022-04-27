@@ -478,8 +478,7 @@ namespace
         {
             adjustIndicesOfSourceShardAndReplicaInBackup();
 
-            String current_database = context->getCurrentDatabase();
-            renaming_settings.setFromBackupQuery(elements, current_database);
+            renaming_settings.setFromBackupQuery(elements);
 
             for (const auto & element : elements)
             {
@@ -487,11 +486,7 @@ namespace
                 {
                     case ElementType::TABLE:
                     {
-                        const String & table_name = element.name.second;
-                        String database_name = element.name.first;
-                        if (database_name.empty())
-                            database_name = current_database;
-                        prepareToRestoreTable(DatabaseAndTableName{database_name, table_name}, element.partitions);
+                        prepareToRestoreTable(element.name, element.partitions);
                         break;
                     }
 
@@ -850,18 +845,6 @@ void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads)
         std::rethrow_exception(exception);
     else
         need_rollback_completed_tasks = false;
-}
-
-
-size_t getMinCountOfReplicas(const IBackup & backup)
-{
-    size_t min_count_of_replicas = static_cast<size_t>(-1);
-    for (size_t shard_index : PathsInBackup(backup).getShards())
-    {
-        size_t count_of_replicas = PathsInBackup(backup).getReplicas(shard_index).size();
-        min_count_of_replicas = std::min(min_count_of_replicas, count_of_replicas);
-    }
-    return min_count_of_replicas;
 }
 
 }
