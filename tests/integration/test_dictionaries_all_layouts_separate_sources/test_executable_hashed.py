@@ -33,7 +33,7 @@ def setup_module(module):
         cluster.executable_hashed_docker_hostname,
         cluster.executable_hashed_docker_port,
         cluster.executable_hashed_user,
-        cluster.executable_hashed_password
+        cluster.executable_hashed_password,
     )
 
     simple_tester = SimpleLayoutTester(test_name)
@@ -46,7 +46,6 @@ def setup_module(module):
     ranged_tester = RangedLayoutTester(test_name)
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
-
 
     main_configs = []
     main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))

@@ -9,7 +9,7 @@ from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layo
 from helpers.external_sources import SourceHTTP
 
 
-SOURCE  = None
+SOURCE = None
 cluster = None
 node = None
 simple_tester = None
@@ -34,7 +34,7 @@ def setup_module(module):
         cluster.http_docker_hostname,
         cluster.http_docker_port,
         cluster.http_user,
-        cluster.http_password
+        cluster.http_password,
     )
 
     simple_tester = SimpleLayoutTester(test_name)

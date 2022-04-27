@@ -33,7 +33,7 @@ def setup_module(module):
         cluster.executable_cache_docker_hostname,
         cluster.executable_cache_docker_port,
         cluster.executable_cache_user,
-        cluster.executable_cache_password
+        cluster.executable_cache_password,
     )
 
     simple_tester = SimpleLayoutTester(test_name)

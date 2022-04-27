@@ -33,7 +33,7 @@ def setup_module(module):
         cluster.clickhouse_remote_docker_hostname,
         cluster.clickhouse_remote_docker_port,
         cluster.clickhouse_remote_user,
-        cluster.clickhouse_remote_password
+        cluster.clickhouse_remote_password,
     )
 
     simple_tester = SimpleLayoutTester(test_name)
@@ -46,7 +46,6 @@ def setup_module(module):
     ranged_tester = RangedLayoutTester(test_name)
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
-
 
     main_configs = []
     main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))

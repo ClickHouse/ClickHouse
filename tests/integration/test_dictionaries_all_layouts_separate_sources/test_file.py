@@ -33,7 +33,7 @@ def setup_module(module):
         cluster.file_docker_hostname,
         cluster.file_docker_port,
         cluster.file_user,
-        cluster.file_password
+        cluster.file_password,
     )
 
     simple_tester = SimpleLayoutTester(test_name)
