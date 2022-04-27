@@ -892,6 +892,9 @@ public:
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
 
+    /** Used to disable global context initialized. */
+    void setBackgroundExecutorsInitialized(bool initialized);
+
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 

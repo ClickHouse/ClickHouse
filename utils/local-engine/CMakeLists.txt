@@ -193,7 +193,9 @@ target_compile_options(absl_int128 PRIVATE -fPIC)
 target_compile_options(absl_raw_hash_set PRIVATE -fPIC)
 target_compile_options(absl_raw_hash_set PRIVATE -fPIC)
 add_compile_options(-fPIC)
-
+if (ENABLE_JEMALLOC)
+    target_compile_options(_jemalloc PRIVATE -fPIC)
+endif()
 #target_compile_options(zstd PRIVATE -fPIC)
 
 #set(CPACK_PACKAGE_VERSION 0.1.0)

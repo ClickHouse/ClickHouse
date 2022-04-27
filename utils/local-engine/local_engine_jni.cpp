@@ -66,7 +66,6 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
 
 void JNI_OnUnload(JavaVM * vm, void * reserved)
 {
-    std::cerr << "JNI_OnUnload" << std::endl;
     JNIEnv * env;
     vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8);
 
@@ -330,6 +329,10 @@ jstring Java_io_glutenproject_vectorized_CHNativeBlock_nativeColumnType(JNIEnv *
     {
         type = "Long";
     }
+    else if (which.isUInt64())
+    {
+        type = "Long";
+    }
     else if (which.isInt8())
     {
         type = "Byte";
@@ -342,9 +345,16 @@ jstring Java_io_glutenproject_vectorized_CHNativeBlock_nativeColumnType(JNIEnv *
     {
         type = "String";
     }
+    else if (which.isAggregateFunction())
+    {
+        type = "Binary";
+    }
     else
     {
-        throw std::runtime_error("unsupported datatype " + std::string(block->getByPosition(position).type->getFamilyName()));
+        auto type_name = std::string(block->getByPosition(position).type->getFamilyName());
+        auto col_name = block->getByPosition(position).name;
+        LOG_ERROR(&Poco::Logger::get("jni"), "column {}, unsupported datatype {}", col_name, type_name);
+        throw std::runtime_error("unsupported datatype " + type_name);
     }
 
     return charTojstring(env, type.c_str());
@@ -467,11 +477,13 @@ jlong Java_io_glutenproject_vectorized_CHShuffleSplitterJniWrapper_nativeMake(JN
     std::vector<std::string> expr_vec;
     if (expr_list != nullptr)
     {
-        std::string exprs;
         int len = env->GetArrayLength(expr_list);
-        exprs.reserve(len);
-        env->GetByteArrayRegion(expr_list, 0, len, reinterpret_cast<jbyte *>(exprs.data()));
-        for (auto expr :stringSplit(exprs, ','))
+        auto * str =  reinterpret_cast<jbyte *>(new char[len]);
+        memset(str,0, len);
+        env->GetByteArrayRegion(expr_list, 0, len, str);
+        std::string exprs(str, str+len);
+        delete[] str;
+        for (const auto& expr :stringSplit(exprs, ','))
         {
             expr_vec.emplace_back(expr);
         }

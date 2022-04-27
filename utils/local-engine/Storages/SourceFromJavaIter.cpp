@@ -1,4 +1,5 @@
 #include "SourceFromJavaIter.h"
+#include<Processors/Transforms/AggregatingTransform.h>
 
 namespace local_engine
 {
@@ -17,12 +18,15 @@ DB::Chunk SourceFromJavaIter::generate()
         DB::Block * data = reinterpret_cast<DB::Block *>(byteArrayToLong(env, block));
         size_t rows = data->rows();
         auto chunk = DB::Chunk(data->mutateColumns(), rows);
-//        delete data;
+        auto info = std::make_shared<DB::AggregatedChunkInfo>();
+        info->is_overflows = data->info.is_overflows;
+        info->bucket_num = data->info.bucket_num;
+        chunk.setChunkInfo(info);
         return chunk;
     }
     else
     {
-        return DB::Chunk();
+        return {};
     }
 }
 SourceFromJavaIter::~SourceFromJavaIter()

@@ -16,7 +16,9 @@
 #include <Processors/Formats/Impl/ArrowBlockOutputFormat.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <QueryPipeline/Pipe.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -86,7 +88,7 @@ DB::QueryPlanPtr local_engine::SerializedPlanParser::parseMergeTreeTable(const s
     auto metadata = local_engine::buildMetaData(names_and_types_list, this->context);
     auto t_metadata = watch.elapsedMicroseconds();
     query_context.metadata = metadata;
-    auto storage = storageFactory.getStorage(DB::StorageID(merge_tree_table.database, merge_tree_table.table), [merge_tree_table, metadata]() -> local_engine::CustomStorageMergeTreePtr {
+    auto storage = storageFactory.getStorage(DB::StorageID(merge_tree_table.database, merge_tree_table.table), metadata->getColumns(), [merge_tree_table, metadata]() -> local_engine::CustomStorageMergeTreePtr {
                 auto  custom_storage_merge_tree = std::make_shared<local_engine::CustomStorageMergeTree>(
                     DB::StorageID(merge_tree_table.database, merge_tree_table.table),
                     merge_tree_table.relative_path,
@@ -256,6 +258,12 @@ DB::QueryPlanPtr local_engine::SerializedPlanParser::parseOp(const substrait::Re
                     }
                     required_columns.emplace_back(DB::NameWithAlias (name, name));
                 }
+                else if (expr.has_literal())
+                {
+                    auto const_col = parseArgument(actions_dag, expr);
+                    actions_dag->addOrReplaceInIndex(*const_col);
+                    required_columns.emplace_back(DB::NameWithAlias(const_col->result_name, const_col->result_name));
+                }
                 else
                 {
                     throw std::runtime_error("unsupported projection type");
@@ -336,7 +344,46 @@ DB::QueryPlanStepPtr local_engine::SerializedPlanParser::parseAggregate(DB::Quer
     auto expression_before_aggregate = std::make_unique<DB::ExpressionStep>(input, expression);
     plan.addStep(std::move(expression_before_aggregate));
 
-    // TODO need support grouping key
+    std::set<substrait::AggregationPhase> phase_set;
+    for (int i = 0; i < rel.measures_size(); ++i)
+    {
+        const auto & measure = rel.measures(i);
+        phase_set.emplace(measure.measure().phase());
+    }
+    if (phase_set.size() > 1)
+    {
+        throw std::runtime_error("two many aggregate phase!");
+    }
+    bool final=true;
+    if (phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE)
+        || phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INTERMEDIATE_TO_INTERMEDIATE))
+        final = false;
+
+    bool only_merge = phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INTERMEDIATE_TO_RESULT);
+
+
+    DB::ColumnNumbers keys = {};
+    if (rel.groupings_size() == 1)
+    {
+        for (auto group : rel.groupings(0).grouping_expressions())
+        {
+            if (group.has_selection() && group.selection().has_direct_reference())
+            {
+                keys.emplace_back(group.selection().direct_reference().struct_field().field());
+            }
+            else
+            {
+                throw std::runtime_error("unsupported group expression");
+
+            }
+        }
+    }
+    // only support one grouping or no grouping
+    else if (rel.groupings_size() != 0)
+    {
+        throw std::runtime_error("too many groupings");
+    }
+
     auto aggregates = DB::AggregateDescriptions();
     for (int i = 0; i < rel.measures_size(); ++i)
     {
@@ -346,25 +393,46 @@ DB::QueryPlanStepPtr local_engine::SerializedPlanParser::parseAggregate(DB::Quer
         auto function_name_idx = function_signature.find(":");
         assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
         auto function_name = function_signature.substr(0, function_name_idx);
-        agg.column_name = function_name +"(" + measure_names.at(i) + ")";
+        if (only_merge)
+        {
+            agg.column_name = measure_names.at(i);
+        }
+        else
+        {
+            agg.column_name = function_name +"(" + measure_names.at(i) + ")";
+        }
         agg.arguments = DB::ColumnNumbers{plan.getCurrentDataStream().header.getPositionByName(measure_names.at(i))};
         agg.argument_names = DB::Names{measure_names.at(i)};
         agg.function = ::getAggregateFunction(function_name, {plan.getCurrentDataStream().header.getByName(measure_names.at(i)).type});
         aggregates.push_back(agg);
     }
 
-    auto aggregating_step = std::make_unique<AggregatingStep>(
-        plan.getCurrentDataStream(),
-        this->getAggregateParam(plan.getCurrentDataStream().header, {}, aggregates),
-        true,
-        1000000,
-        1,
-        1,
-        1,
-        false,
-        nullptr,
-        DB::SortDescription());
-    return aggregating_step;
+
+    if (only_merge)
+    {
+        auto transform_params = std::make_shared<AggregatingTransformParams>(this->getMergedAggregateParam(plan.getCurrentDataStream().header, keys, aggregates), final);
+        return std::make_unique<DB::MergingAggregatedStep>(
+            plan.getCurrentDataStream(),
+            transform_params,
+            false,
+            1,
+            1);
+    }
+    else
+    {
+        auto aggregating_step = std::make_unique<AggregatingStep>(
+            plan.getCurrentDataStream(),
+            this->getAggregateParam(plan.getCurrentDataStream().header, keys, aggregates),
+            final,
+            1000000,
+            1,
+            1,
+            1,
+            false,
+            nullptr,
+            DB::SortDescription());
+        return aggregating_step;
+    }
 }
 
 DB::NamesAndTypesList local_engine::SerializedPlanParser::blockToNameAndTypeList(const DB::Block & header)
@@ -411,6 +479,7 @@ std::string local_engine::SerializedPlanParser::getFunctionName(std::string func
         }
         else
         {
+            LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "doesn't support function {}", function_signature);
             throw std::runtime_error("doesn't support function " + function_signature);
         }
     }
@@ -521,6 +590,7 @@ DB::QueryPlanPtr local_engine::SerializedPlanParser::parse(std::string & plan)
 {
     auto plan_ptr = std::make_unique<substrait::Plan>();
     plan_ptr->ParseFromString(plan);
+//    std::cerr << plan_ptr->DebugString() <<std::endl;
     return parse(std::move(plan_ptr));
 }
 void local_engine::SerializedPlanParser::initFunctionEnv()
@@ -604,7 +674,7 @@ void local_engine::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
                                                                                      .actions_settings = ExpressionActionsSettings{
                                                                                          .can_compile_expressions = true,
                                                                                          .min_count_to_compile_expression = 3,
-                                                                                     .compile_expressions = CompileExpressions::no
+                                                                                     .compile_expressions = CompileExpressions::yes
                                                                                     }});
     this->query_pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
     auto t_pipeline = stopwatch.elapsedMicroseconds();
