@@ -1,31 +1,15 @@
-FROM ubuntu:20.04 AS glibc-donor
+FROM ubuntu:20.04
 
-ARG TARGETARCH
-RUN arch=${TARGETARCH:-amd64} \
-    && case $arch in \
-        amd64) rarch=x86_64 ;; \
-        arm64) rarch=aarch64 ;; \
-    esac \
-    && ln -s "${rarch}-linux-gnu" /lib/linux-gnu
-
-
-FROM alpine
+# see https://github.com/moby/moby/issues/4032#issuecomment-192327844
+ARG DEBIAN_FRONTEND=noninteractive
 
 ENV LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
     LC_ALL=en_US.UTF-8 \
     TZ=UTC
 
-COPY --from=glibc-donor /lib/linux-gnu/libc.so.6 /lib/linux-gnu/libdl.so.2 /lib/linux-gnu/libm.so.6 /lib/linux-gnu/libpthread.so.0 /lib/linux-gnu/librt.so.1 /lib/linux-gnu/libnss_dns.so.2 /lib/linux-gnu/libnss_files.so.2 /lib/linux-gnu/libresolv.so.2 /lib/linux-gnu/ld-2.31.so /lib/
-COPY --from=glibc-donor /etc/nsswitch.conf /etc/
+COPY su-exec.c /su-exec.c
 COPY entrypoint.sh /entrypoint.sh
-
-ARG TARGETARCH
-RUN arch=${TARGETARCH:-amd64} \
-    && case $arch in \
-        amd64) mkdir -p /lib64 && ln -sf /lib/ld-2.31.so /lib64/ld-linux-x86-64.so.2 ;; \
-        arm64) ln -sf /lib/ld-2.31.so /lib/ld-linux-aarch64.so.1 ;; \
-    esac
 
 ARG REPOSITORY="https://s3.amazonaws.com/clickhouse-builds/22.4/31c367d3cd3aefd316778601ff6565119fe36682/package_release"
 ARG VERSION="22.4.1.917"
@@ -60,9 +44,28 @@ RUN arch=${TARGETARCH:-amd64} \
     && chown clickhouse:clickhouse /var/lib/clickhouse \
     && chown root:clickhouse /var/log/clickhouse-keeper \
     && chmod +x /entrypoint.sh \
-    && apk add --no-cache su-exec bash tzdata \
+    && apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        apt-transport-https \
+        ca-certificates \
+        dirmngr \
+        gnupg \
+        locales \
+        wget \
+        tzdata \
+    && apt-get install -y --no-install-recommends tcc libc-dev && \
+        tcc /su-exec.c -o /bin/su-exec && \
+        chown root:root /bin/su-exec && \
+        chmod 0755 /bin/su-exec && \
+        rm /su-exec.c && \
+        apt-get purge -y --auto-remove tcc libc-dev libc-dev-bin libc6-dev linux-libc-dev \
+    && apt-get clean \
     && cp /usr/share/zoneinfo/UTC /etc/localtime \
     && echo "UTC" > /etc/timezone \
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/debconf \
+        /tmp/* \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 
 
