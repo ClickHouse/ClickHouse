@@ -498,7 +498,11 @@ void FileSegment::complete(State state)
 void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 {
     std::lock_guard segment_lock(mutex);
+    completeUnlocked(cache_lock, segment_lock);
+}
 
+void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
+{
     if (download_state == State::SKIP_CACHE || detached)
         return;
 
@@ -671,7 +675,7 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     return snapshot;
 }
 
-void FileSegment::detach(std::lock_guard<std::mutex> & segment_lock)
+void FileSegment::detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
 {
     if (detached)
         return;
@@ -684,7 +688,7 @@ void FileSegment::detach(std::lock_guard<std::mutex> & segment_lock)
 
     if (!has_finalized_state)
     {
-        complete(segment_lock);
+        completeUnlocked(cache_lock, segment_lock);
     }
 }
 
