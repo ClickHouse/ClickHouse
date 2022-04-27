@@ -1,6 +1,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/ConsoleChannel.h>
+#include "Common/ZooKeeper/Types.h"
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/LineReader.h>
@@ -68,6 +69,40 @@ void testCreateList(zkutil::ZooKeeper & zk)
         if (children[i] != "d" + std::to_string(i + 1))
             throw std::runtime_error(fmt::format("Incorrect children #{} got {}, expected {}", i, children[i], "d" + std::to_string(i + 1)));
     }
+}
+
+template<typename T, typename U>
+void assert_eq(const T& left, const U& right) {
+    if (left != right) {
+        throw std::runtime_error("assert_eq failed");
+    }
+}
+
+template<typename T, typename U>
+T* assert_dynamic_cast(U* ptr) {
+    T* result = dynamic_cast<T*>(ptr);
+    if (result == nullptr) {
+        throw std::runtime_error("dynamic cast failed");
+    }
+    return result;
+}
+
+void testMultiRead(zkutil::ZooKeeper & zk)
+{
+    zk.create("/data/multiread", "", zkutil::CreateMode::Persistent);
+    zk.create("/data/multiread/d1", "a", zkutil::CreateMode::Persistent);
+    zk.create("/data/multiread/d2", "b", zkutil::CreateMode::Persistent);
+    zk.create("/data/multiread/d3", "c", zkutil::CreateMode::Persistent);
+    Coordination::Requests requests{
+        zkutil::makeGetRequest("/data/multiread/d2"),
+        zkutil::makeGetRequest("/data/multiread/d1"),
+        zkutil::makeGetRequest("/data/multiread/d3"),
+    };
+    auto resp = zk.multiRead(requests);
+    assert_eq(resp.size(), 3u);
+    assert_eq(assert_dynamic_cast<Coordination::GetResponse>(resp[0].get())->data, "b");
+    assert_eq(assert_dynamic_cast<Coordination::GetResponse>(resp[1].get())->data, "a");
+    assert_eq(assert_dynamic_cast<Coordination::GetResponse>(resp[3].get())->data, "c");
 }
 
 void testCreateSetVersionRequest(zkutil::ZooKeeper & zk)
@@ -353,6 +388,7 @@ int main(int argc, char *argv[])
         //testCreateList(zk);
         //testCreateSetVersionRequest(zk);
         //testMultiRequest(zk);
+        //testMultiRead(zk);
         //testCreateSetWatchEvent(zk);
         //testCreateListWatchEvent(zk);
         //tryConcurrentWatches(zk);

@@ -31,6 +31,7 @@ using AsyncResponses = std::vector<std::pair<std::string, std::future<R>>>;
 
 Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode);
 Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version);
+Coordination::RequestPtr makeGetRequest(const std::string & path);
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version);
 Coordination::RequestPtr makeCheckRequest(const std::string & path, int version);
 

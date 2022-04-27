@@ -209,6 +209,15 @@ public:
     /// Throws nothing (even session expired errors)
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
 
+    /// Performs several operations in a transaction.
+    /// Throws on every error.
+    Coordination::Responses multiRead(const Coordination::Requests & requests);
+    /// Throws only if some operation has returned an "unexpected" error
+    /// - an error that would cause the corresponding try- method to throw.
+    Coordination::Error tryMultiRead(const Coordination::Requests & requests, Coordination::Responses & responses);
+    /// Throws nothing (even session expired errors)
+    Coordination::Error tryMultiReadNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
+
     Int64 getClientID();
 
     /// Remove the node with the subtree. If someone concurrently adds or removes a node
@@ -324,6 +333,7 @@ private:
     Coordination::Error getChildrenImpl(
         const std::string & path, Strings & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
     Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error multiReadImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
 
     std::unique_ptr<Coordination::IKeeper> impl;

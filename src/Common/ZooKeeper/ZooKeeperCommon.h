@@ -275,6 +275,9 @@ struct ZooKeeperExistsResponse final : ExistsResponse, ZooKeeperResponse
 
 struct ZooKeeperGetRequest final : GetRequest, ZooKeeperRequest
 {
+    ZooKeeperGetRequest() = default;
+    explicit ZooKeeperGetRequest(const GetRequest & base) : GetRequest(base) {}
+
     OpNum getOpNum() const override { return OpNum::Get; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
@@ -434,7 +437,7 @@ struct ZooKeeperGetACLResponse final : GetACLResponse, ZooKeeperResponse
 
 struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 {
-    OpNum getOpNum() const override { return OpNum::Multi; }
+    OpNum getOpNum() const override;
     ZooKeeperMultiRequest() = default;
 
     ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls);
@@ -448,6 +451,10 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
     size_t bytesSize() const override { return MultiRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 
     void createLogElements(LogElements & elems) const override;
+
+    void checkOpKindOrThrow(OpKind kind);
+
+    std::optional<OpKind> op_kind;
 };
 
 struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse

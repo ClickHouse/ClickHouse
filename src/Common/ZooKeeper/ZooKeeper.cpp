@@ -667,6 +667,54 @@ Coordination::Error ZooKeeper::tryMulti(const Coordination::Requests & requests,
     return code;
 }
 
+Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses)
+{
+    try
+    {
+        return multiImpl(requests, responses);
+    }
+    catch (const Coordination::Exception & e)
+    {
+        return e.code;
+    }
+}
+
+
+Coordination::Error ZooKeeper::multiReadImpl(const Coordination::Requests & requests, Coordination::Responses & responses)
+{
+    // TODO: check zookeeper version and fallback to retry-loop of before 3.8.0
+    return multiImpl(requests, responses);
+}
+
+Coordination::Responses ZooKeeper::multiRead(const Coordination::Requests & requests)
+{
+    Coordination::Responses responses;
+    Coordination::Error code = multiReadImpl(requests, responses);
+    KeeperMultiException::check(code, requests, responses);
+    return responses;
+}
+
+Coordination::Error ZooKeeper::tryMultiRead(const Coordination::Requests & requests, Coordination::Responses & responses)
+{
+    Coordination::Error code = multiReadImpl(requests, responses);
+    if (code != Coordination::Error::ZOK && !Coordination::isUserError(code))
+        throw KeeperException(code);
+    return code;
+}
+
+Coordination::Error ZooKeeper::tryMultiReadNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses)
+{
+    try
+    {
+        return multiReadImpl(requests, responses);
+    }
+    catch (const Coordination::Exception & e)
+    {
+        return e.code;
+    }
+}
+
+
 
 void ZooKeeper::removeChildren(const std::string & path)
 {
@@ -1117,18 +1165,6 @@ std::future<Coordination::MultiResponse> ZooKeeper::asyncMulti(const Coordinatio
     return future;
 }
 
-Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses)
-{
-    try
-    {
-        return multiImpl(requests, responses);
-    }
-    catch (const Coordination::Exception & e)
-    {
-        return e.code;
-    }
-}
-
 void ZooKeeper::finalize(const String & reason)
 {
     impl->finalize(reason);
@@ -1200,6 +1236,13 @@ Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version
     auto request = std::make_shared<Coordination::RemoveRequest>();
     request->path = path;
     request->version = version;
+    return request;
+}
+
+Coordination::RequestPtr makeGetRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::GetRequest>();
+    request->path = path;
     return request;
 }
 

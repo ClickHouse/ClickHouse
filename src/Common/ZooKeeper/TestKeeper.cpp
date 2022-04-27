@@ -102,6 +102,8 @@ struct TestKeeperExistsRequest final : ExistsRequest, TestKeeperRequest
 struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 {
     TestKeeperGetRequest() = default;
+    explicit TestKeeperGetRequest(const GetRequest & base) : GetRequest(base) {}
+
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -143,20 +145,29 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
         {
             if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
+                checkOpKindOrThrow(true);
                 auto create = std::make_shared<TestKeeperCreateRequest>(*concrete_request_create);
                 requests.push_back(create);
             }
             else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
+                checkOpKindOrThrow(true);
                 requests.push_back(std::make_shared<TestKeeperRemoveRequest>(*concrete_request_remove));
             }
             else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
+                checkOpKindOrThrow(true);
                 requests.push_back(std::make_shared<TestKeeperSetRequest>(*concrete_request_set));
             }
             else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
+                checkOpKindOrThrow(true);
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
+            }
+            else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
+            {
+                checkOpKindOrThrow(false);
+                requests.push_back(std::make_shared<TestKeeperGetRequest>(*concrete_request_get));
             }
             else
                 throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
@@ -169,8 +180,18 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
             dynamic_cast<const TestKeeperRequest &>(*generic_request).processWatches(node_watches, list_watches);
     }
 
+    void checkOpKindOrThrow(bool is_write) {
+        if (op_kind.has_value() && op_kind.value() != is_write) {
+            throw Exception("Illegal mixing of read and write operations in multi request", Error::ZBADARGUMENTS);
+        } else {
+            op_kind = is_write;
+        }
+    }
+
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+
+    std::optional<bool> op_kind;
 };
 
 

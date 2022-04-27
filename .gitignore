@@ -149,3 +149,6 @@ website/package-lock.json
 /programs/server/metadata
 /programs/server/store
 
+# direnv config
+/.envrc
+/.direnv

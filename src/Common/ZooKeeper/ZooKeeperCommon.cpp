@@ -324,6 +324,7 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
     {
         if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
         {
+            checkOpKindOrThrow(OpKind::Transaction);
             auto create = std::make_shared<ZooKeeperCreateRequest>(*concrete_request_create);
             if (create->acls.empty())
                 create->acls = default_acls;
@@ -331,18 +332,34 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
         }
         else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
         {
+            checkOpKindOrThrow(OpKind::Transaction);
             requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
         }
         else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
         {
+            checkOpKindOrThrow(OpKind::Transaction);
             requests.push_back(std::make_shared<ZooKeeperSetRequest>(*concrete_request_set));
         }
         else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
         {
+            checkOpKindOrThrow(OpKind::Transaction);
             requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request_check));
+        }
+        else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
+        {
+            checkOpKindOrThrow(OpKind::Read);
+            requests.push_back(std::make_shared<ZooKeeperGetRequest>(*concrete_request_get));
         }
         else
             throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
+    }
+}
+
+OpNum ZooKeeperMultiRequest::getOpNum() const {
+    if (isReadRequest()) {
+        return OpNum::MultiRead;
+    } else {
+        return OpNum::Multi;
     }
 }
 
@@ -403,8 +420,15 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 
 bool ZooKeeperMultiRequest::isReadRequest() const
 {
-    /// Possibly we can do better
-    return false;
+    return op_kind == OpKind::Read;
+}
+
+void ZooKeeperMultiRequest::checkOpKindOrThrow(OpKind kind) {
+    if (op_kind.has_value() && op_kind.value() != kind) {
+        throw Exception("Illegal mixing of read and write operations in multi request", Error::ZBADARGUMENTS);
+    } else {
+        op_kind = kind;
+    }
 }
 
 void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)

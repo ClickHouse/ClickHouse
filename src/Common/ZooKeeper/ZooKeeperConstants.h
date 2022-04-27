@@ -14,6 +14,11 @@ static constexpr XID PING_XID  = -2;
 static constexpr XID AUTH_XID  = -4;
 static constexpr XID CLOSE_XID = 0x7FFFFFFF;
 
+enum class OpKind : int32_t {
+    Read = 1,
+    Transaction = 2,
+};
+
 enum class OpNum : int32_t
 {
     Close = -11,
@@ -31,6 +36,7 @@ enum class OpNum : int32_t
     List = 12,
     Check = 13,
     Multi = 14,
+    MultiRead = 22,
     Auth = 100,
     SessionID = 997, /// Special internal request
 };
@@ -51,6 +57,6 @@ static constexpr int32_t MAX_STRING_OR_ARRAY_SIZE = 1 << 28;  /// 256 MiB
 static constexpr int32_t DEFAULT_SESSION_TIMEOUT_MS = 30000;
 static constexpr int32_t DEFAULT_MIN_SESSION_TIMEOUT_MS = 10000;
 static constexpr int32_t DEFAULT_MAX_SESSION_TIMEOUT_MS = 100000;
-static constexpr int32_t DEFAULT_OPERATION_TIMEOUT_MS = 10000;
+static constexpr int32_t DEFAULT_OPERATION_TIMEOUT_MS = 100000;
 
 }
