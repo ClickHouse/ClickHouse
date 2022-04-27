@@ -86,7 +86,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     auto analyzer = std::make_unique<ExpressionAnalyzer>(query_info.query, query_info.syntax_analyzer_result, context);
 
     ManyExpressionActions order_by_elements_actions;
-    auto & window_desc = window->getWindowDescription();
+    const auto & window_desc = window->getWindowDescription();
 
     for (const auto & actions_dag : window_desc.partition_by_actions)
     {
