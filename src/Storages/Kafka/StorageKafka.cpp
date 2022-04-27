@@ -693,9 +693,14 @@ bool StorageKafka::streamToViews()
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
 
-    size_t rows = 0;
+    std::atomic_size_t rows = 0;
     {
         block_io.pipeline.complete(std::move(pipe));
+
+        // we need to read all consumers in parallel (sequential read may lead to situation
+        // when some of consumers are not used, and will break some Kafka consumer invariants)
+        block_io.pipeline.setNumThreads(stream_count);
+
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();

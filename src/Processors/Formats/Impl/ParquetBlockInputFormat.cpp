@@ -117,7 +117,7 @@ static void getFileReaderAndSchema(
     const FormatSettings & format_settings,
     std::atomic<int> & is_stopped)
 {
-    auto arrow_file = asArrowFile(in, format_settings, is_stopped);
+    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES);
     if (is_stopped)
         return;
     THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(std::move(arrow_file), arrow::default_memory_pool(), &file_reader));
