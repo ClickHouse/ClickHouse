@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT -nm -q "
     CREATE ROLE test_role_02242;
 "
 
-readonly REPEAT=1000
+readonly REPEAT=100
 
 function delete_user()
 {
@@ -60,13 +60,12 @@ export -f create_and_login_user
 export -f set_role
 
 
-TIMEOUT=0.1
+TIMEOUT=10
 
 for (( i = 0 ; i < 100; ++i ))
 do
     clickhouse_client_loop_timeout $TIMEOUT create_and_login_user 2> /dev/null &
     clickhouse_client_loop_timeout $TIMEOUT delete_user 2> /dev/null &
-    clickhouse_client_loop_timeout $TIMEOUT login_user 2> /dev/null &
     clickhouse_client_loop_timeout $TIMEOUT set_role 2> /dev/null &
 done
 
