@@ -30,35 +30,6 @@ namespace ErrorCodes
 }
 
 
-class HDFSPathKeeper : public RemoteFSPathKeeper
-{
-public:
-    using Chunk = std::vector<std::string>;
-    using Chunks = std::list<Chunk>;
-
-    explicit HDFSPathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
-
-    void addPath(const String & path) override
-    {
-        if (chunks.empty() || chunks.back().size() >= chunk_limit)
-        {
-            chunks.push_back(Chunks::value_type());
-            chunks.back().reserve(chunk_limit);
-        }
-        chunks.back().push_back(path.data());
-    }
-
-    void removePaths(Fn<void(Chunk &&)> auto && remove_chunk_func)
-    {
-        for (auto & chunk : chunks)
-            remove_chunk_func(std::move(chunk));
-    }
-
-private:
-    Chunks chunks;
-};
-
-
 DiskHDFS::DiskHDFS(
     const String & disk_name_,
     const String & hdfs_root_path_,
@@ -109,30 +80,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(create_metadata_callback), hdfs_path);
 }
 
-
-RemoteFSPathKeeperPtr DiskHDFS::createFSPathKeeper() const
+void DiskHDFS::removeFromRemoteFS(const std::vector<String> & paths)
 {
-    return std::make_shared<HDFSPathKeeper>(settings->objects_chunk_size_to_delete);
-}
+    for (const auto & hdfs_path : paths)
+    {
+        const size_t begin_of_path = hdfs_path.find('/', hdfs_path.find("//") + 2);
 
-
-void DiskHDFS::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
-{
-    auto * hdfs_paths_keeper = dynamic_cast<HDFSPathKeeper *>(fs_paths_keeper.get());
-    if (hdfs_paths_keeper)
-        hdfs_paths_keeper->removePaths([&](std::vector<std::string> && chunk)
-        {
-            for (const auto & hdfs_object_path : chunk)
-            {
-                const String & hdfs_path = hdfs_object_path;
-                const size_t begin_of_path = hdfs_path.find('/', hdfs_path.find("//") + 2);
-
-                /// Add path from root to file name
-                int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
-                if (res == -1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
-            }
-        });
+        /// Add path from root to file name
+        int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
+        if (res == -1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
+    }
 }
 
 bool DiskHDFS::checkUniqueId(const String & hdfs_uri) const

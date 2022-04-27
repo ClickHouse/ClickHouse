@@ -202,7 +202,7 @@ private:
     /// - WithMergeableStateAfterAggregationAndLimit
     /// - Complete
     ///
-    /// Some simple queries w/o GROUP BY/DISTINCT can use more optimal stage.
+    /// Some simple queries without GROUP BY/DISTINCT can use more optimal stage.
     ///
     /// Also in case of optimize_distributed_group_by_sharding_key=1 the queries
     /// with GROUP BY/DISTINCT sharding_key can also use more optimal stage.

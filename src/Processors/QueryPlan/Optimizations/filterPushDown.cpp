@@ -171,7 +171,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         Names allowed_inputs;
         for (const auto & column : array_join_header)
-            if (keys.count(column.name) == 0)
+            if (!keys.contains(column.name))
                 allowed_inputs.push_back(column.name);
 
         // for (const auto & name : allowed_inputs)
