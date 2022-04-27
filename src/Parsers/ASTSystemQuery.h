@@ -28,6 +28,7 @@ public:
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
+        DROP_FILESYSTEM_CACHE,
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
@@ -88,6 +89,10 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+
+    /// Values for `drop filesystem cache` system query.
+    String filesystem_cache_path;
+    bool force_removal = false;
 
     String getID(char) const override { return "SYSTEM query"; }
 

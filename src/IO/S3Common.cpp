@@ -86,7 +86,7 @@ public:
     void callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
     {
         const auto & [level, prio] = convertLogLevel(log_level);
-        if (tag_loggers.count(tag) > 0)
+        if (tag_loggers.contains(tag))
         {
             LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
         }
@@ -285,7 +285,7 @@ protected:
 
         auto credentials_view = credentials_doc.View();
         access_key = credentials_view.GetString("AccessKeyId");
-        LOG_TRACE(logger, "Successfully pulled credentials from EC2MetadataService with access key {}.", access_key);
+        LOG_TRACE(logger, "Successfully pulled credentials from EC2MetadataService with access key.");
 
         secret_key = credentials_view.GetString("SecretAccessKey");
         token = credentials_view.GetString("Token");
@@ -483,7 +483,7 @@ protected:
         Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
 
         auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
-        LOG_TRACE(logger, "Successfully retrieved credentials with AWS_ACCESS_KEY: {}", result.creds.GetAWSAccessKeyId());
+        LOG_TRACE(logger, "Successfully retrieved credentials.");
         credentials = result.creds;
     }
 

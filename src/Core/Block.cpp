@@ -46,7 +46,8 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different names of columns:\n"
             + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
-    if (!actual.type->equals(*expected.type))
+    if ((actual.type && !expected.type) || (!actual.type && expected.type)
+        || (actual.type && expected.type && !actual.type->equals(*expected.type)))
         return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different types:\n"
             + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
