@@ -29,7 +29,7 @@ public:
         const Block & header_,
         const Params & params_,
         const FormatSchemaInfo & schema_info_,
-        bool google_wrappers_special_treatment_);
+        bool flatten_google_wrappers_);
 
     String getName() const override { return "ProtobufListInputFormat"; }
 

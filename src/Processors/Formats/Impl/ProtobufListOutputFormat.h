@@ -28,7 +28,7 @@ public:
         const Block & header_,
         const RowOutputFormatParams & params_,
         const FormatSchemaInfo & schema_info_,
-        bool google_wrappers_special_treatment_);
+        bool defaults_for_nullable_google_wrappers_);
 
     String getName() const override { return "ProtobufListOutputFormat"; }
 

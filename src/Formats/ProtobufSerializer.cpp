@@ -3521,10 +3521,10 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const google::protobuf::Descriptor & message_descriptor,
     bool with_length_delimiter,
     bool with_envelope,
-    bool google_wrappers_special_treatment,
+    bool flatten_google_wrappers,
     ProtobufReader & reader)
 {
-    return ProtobufSerializerBuilder(reader).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope, google_wrappers_special_treatment);
+    return ProtobufSerializerBuilder(reader).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope, flatten_google_wrappers);
 }
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
@@ -3533,11 +3533,11 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const google::protobuf::Descriptor & message_descriptor,
     bool with_length_delimiter,
     bool with_envelope,
-    bool google_wrappers_special_treatment,
+    bool defaults_for_nullable_google_wrappers,
     ProtobufWriter & writer)
 {
     std::vector<size_t> missing_column_indices;
-    return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope, google_wrappers_special_treatment);
+    return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers);
 }
 
 NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor)

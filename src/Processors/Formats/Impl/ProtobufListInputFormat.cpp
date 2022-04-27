@@ -15,7 +15,7 @@ ProtobufListInputFormat::ProtobufListInputFormat(
     const Block & header_,
     const Params & params_,
     const FormatSchemaInfo & schema_info_,
-    bool google_wrappers_special_treatment_)
+    bool flatten_google_wrappers_)
     : IRowInputFormat(header_, in_, params_)
     , reader(std::make_unique<ProtobufReader>(in_))
     , serializer(ProtobufSerializer::create(
@@ -25,7 +25,7 @@ ProtobufListInputFormat::ProtobufListInputFormat(
         *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::Yes),
         /* with_length_delimiter = */ true,
         /* with_envelope = */ true,
-        google_wrappers_special_treatment_,
+        flatten_google_wrappers_,
          *reader))
 {
 }
@@ -77,7 +77,7 @@ void registerInputFormatProtobufList(FormatFactory & factory)
                 const FormatSettings & settings)
             {
                 return std::make_shared<ProtobufListInputFormat>(buf, sample, std::move(params),
-                    FormatSchemaInfo(settings, "Protobuf", true), settings.protobuf.google_wrappers_special_treatment);
+                    FormatSchemaInfo(settings, "Protobuf", true), settings.protobuf.input_flatten_google_wrappers);
             });
     factory.markFormatAsColumnOriented("ProtobufList");
 }
