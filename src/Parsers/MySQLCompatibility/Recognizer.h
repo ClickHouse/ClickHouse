@@ -27,6 +27,12 @@ public:
 	virtual ConvPtr Recognize(MySQLPtr node) const override;
 };
 
+class UseCommandRecognizer : public IRecognizer
+{
+public:
+	virtual ConvPtr Recognize(MySQLPtr node) const override;
+};
+
 class GenericRecognizer : public IRecognizer
 {
 public:
@@ -34,7 +40,8 @@ public:
 private:
 	std::vector<IRecognizerPtr> rules = {
 		std::make_shared<SetQueryRecognizer>(),
-		std::make_shared<SimpleSelectQueryRecognizer>()
+		std::make_shared<SimpleSelectQueryRecognizer>(),
+		std::make_shared<UseCommandRecognizer>()
 	};
 };
 

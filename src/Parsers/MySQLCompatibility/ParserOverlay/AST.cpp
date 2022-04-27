@@ -61,11 +61,11 @@ void AST::FromQuery(const std::string & query, ASTPtr & result, std::string & er
 std::string AST::PrintTree() const
 {
 	std::stringstream ss;
-	PrintTree(ss);
+	PrintTreeImpl(ss);
 	return ss.str();
 }
 
-void AST::PrintTree(std::stringstream & ss) const
+void AST::PrintTreeImpl(std::stringstream & ss) const
 {
 	ss << "(";
 	ss << rule_name << " ";
@@ -83,9 +83,39 @@ void AST::PrintTree(std::stringstream & ss) const
 		ss << "children = ";
 		for (const auto & x : children)
 		{
-			x->PrintTree(ss);
+			x->PrintTreeImpl(ss);
 		}
 	}
 	ss << ")";
 }
+
+std::string AST::PrintTerminalPaths() const
+{
+	std::stringstream ss;
+	std::vector<std::string> path;
+	PrintTerminalPathsImpl(ss, path);
+
+	return ss.str();
+}
+
+void AST::PrintTerminalPathsImpl(std::stringstream & ss, std::vector<std::string> & path) const
+{
+	path.push_back(rule_name);
+	for (const auto & term : terminals)
+	{
+		ss << term << ":\n";
+		ss << "=====\n";
+		for (const auto & name : path)
+		{
+			ss << name << "\n";
+		}
+		ss << "=====\n";
+	}
+	
+	for (const auto & child : children)
+		child->PrintTerminalPathsImpl(ss, path);
+	
+	path.pop_back();
+}
+
 }

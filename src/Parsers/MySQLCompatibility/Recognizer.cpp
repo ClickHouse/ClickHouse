@@ -18,6 +18,14 @@ ConvPtr SimpleSelectQueryRecognizer::Recognize(MySQLPtr node) const
 	return nullptr;
 }
 
+ConvPtr UseCommandRecognizer::Recognize(MySQLPtr node) const
+{
+	if (node->rule_name == "useCommand")
+		return std::make_shared<UseCommandCT>(node);
+	
+	return nullptr;
+}
+
 ConvPtr GenericRecognizer::Recognize(MySQLPtr node) const
 {
 	ConvPtr result = nullptr;
