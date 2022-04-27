@@ -54,7 +54,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
-#include <Processors/QueryPlan/ResizeStreamsStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -1269,22 +1268,14 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
-                    if (expressions.join->supportParallelJoin())
-                    {
-                        joined_plan->addStep(std::make_unique<ResizeStreamsStep>(joined_plan->getCurrentDataStream(), max_streams));
-                    }
-                    if (!analysis_result.optimize_read_in_order)
-                    {
-                        // If optimize_read_in_order = true, do not change the left pipeline's stream size.
-                        // otherwise will make the result wrong for order by.
-                        query_plan.addStep(std::make_unique<ResizeStreamsStep>(query_plan.getCurrentDataStream(), max_streams));
-                    }
 
                     QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                         query_plan.getCurrentDataStream(),
                         joined_plan->getCurrentDataStream(),
                         expressions.join,
-                        settings.max_block_size);
+                        settings.max_block_size,
+                        max_streams,
+                        analysis_result.optimize_read_in_order);
 
                     join_step->setStepDescription("JOIN");
                     std::vector<QueryPlanPtr> plans;

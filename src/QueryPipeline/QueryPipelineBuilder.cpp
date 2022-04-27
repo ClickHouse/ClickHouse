@@ -307,7 +307,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
     size_t max_block_size,
-    Processors * collected_processors)
+    Processors * collected_processors,
+    size_t max_streams,
+    bool keep_left_read_in_order)
 {
     left->checkInitializedAndNotCompleted();
     right->checkInitializedAndNotCompleted();
@@ -346,9 +348,15 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     /// (totals) ─────────┘                        ╙─────┘
 
     auto num_streams = left->getNumStreams();
+    if (!keep_left_read_in_order)
+    {
+        left->resize(max_streams);
+        num_streams = max_streams;
+    }
 
     if (join->supportParallelJoin() && !right->hasTotals())
     {
+        right->resize(max_streams);
         auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
             Processors processors;
