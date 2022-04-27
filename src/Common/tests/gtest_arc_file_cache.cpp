@@ -335,6 +335,7 @@ TEST(ARCFileCache, get)
             std::cerr << "point_1_7\n";
             other_1.join();
         }
+        std::cerr << "point_1_8\n";
     }
 
     /// [11]
