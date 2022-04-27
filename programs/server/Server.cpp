@@ -402,8 +402,10 @@ void Server::createServer(
 
     /// If we already have an active server for this listen_host/port_name, don't create it again
     for (const auto & server : servers)
+    {
         if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
             return;
+    }
 
     auto port = config.getInt(port_name);
     try
@@ -685,6 +687,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
     std::mutex servers_lock;
     std::vector<ProtocolServerAdapter> servers;
+    std::vector<ProtocolServerAdapter> updated_servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
     AsynchronousMetrics async_metrics(
@@ -698,6 +701,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             std::lock_guard lock(servers_lock);
             for (const auto & server : servers)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+            for (const auto & server : updated_servers)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
             return metrics;
         }
@@ -1193,7 +1198,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
                 std::lock_guard lock(servers_lock);
-                updateServers(*config, server_pool, async_metrics, servers);
+                updateServers(*config, server_pool, async_metrics, servers, updated_servers);
             }
 
             global_context->updateStorageConfiguration(*config);
@@ -1729,6 +1734,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     server.stop();
                     current_connections += server.currentConnections();
                 }
+                for (auto & server : updated_servers)
+                    current_connections += server.currentConnections();
             }
 
             if (current_connections)
@@ -1741,7 +1748,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 global_context->getProcessList().killAllQueries();
 
             if (current_connections)
+            {
                 current_connections = waitServersToFinish(servers, config().getInt("shutdown_wait_unfinished", 5));
+                current_connections += waitServersToFinish(updated_servers, config().getInt("shutdown_wait_unfinished", 5));
+            }
 
             if (current_connections)
                 LOG_INFO(log, "Closed connections. But {} remain."
@@ -2008,14 +2018,30 @@ void Server::updateServers(
     Poco::Util::AbstractConfiguration & config,
     Poco::ThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
-    std::vector<ProtocolServerAdapter> & servers)
+    std::vector<ProtocolServerAdapter> & servers,
+    std::vector<ProtocolServerAdapter> & updated_servers)
 {
     Poco::Logger * log = &logger();
-    /// Gracefully shutdown servers when their port is removed from config
+
     const auto listen_hosts = getListenHosts(config);
     const auto listen_try = getListenTry(config);
 
+    if (!updated_servers.empty())
+    {
+        std::erase_if(updated_servers, [&log](auto & server)
+        {
+            assert(server.isStopping());
+            size_t current_connections = server.currentConnections();
+            LOG_DEBUG(log, "Server {} (from one of previous reload): {} ({} connections)",
+                server.getDescription(),
+                !current_connections ? "finished" : "waiting",
+                current_connections);
+            return !current_connections;
+        });
+    }
+
     for (auto & server : servers)
+    {
         if (!server.isStopping())
         {
             bool has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
@@ -2026,25 +2052,23 @@ void Server::updateServers(
                 LOG_INFO(log, "Stopped listening for {}", server.getDescription());
             }
         }
-
-    createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers: */ true);
-
-    /// Remove servers once all their connections are closed
-    while (std::any_of(servers.begin(), servers.end(), [](const auto & server) { return server.isStopping(); }))
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        std::erase_if(servers, [&log](auto & server)
-        {
-            if (!server.isStopping())
-                return false;
-            auto is_finished = server.currentConnections() == 0;
-            if (is_finished)
-                LOG_DEBUG(log, "Server finished: {}", server.getDescription());
-            else
-                LOG_TRACE(log, "Waiting server to finish: {}", server.getDescription());
-            return is_finished;
-        });
     }
+
+    createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+
+    std::erase_if(servers, [&log, &updated_servers](auto & server)
+    {
+        if (!server.isStopping())
+            return false;
+        size_t current_connections = server.currentConnections();
+        LOG_DEBUG(log, "Server {}: {} ({} connections)",
+            server.getDescription(),
+            !current_connections ? "finished" : "waiting",
+            current_connections);
+        if (current_connections)
+            updated_servers.emplace_back(std::move(server));
+        return true;
+    });
 }
 
 }
