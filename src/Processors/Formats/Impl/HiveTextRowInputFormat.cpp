@@ -1,6 +1,4 @@
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/split.hpp>
 
 #if USE_HIVE
 
