@@ -17,7 +17,6 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/typeid_cast.h>
@@ -82,8 +81,6 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
-
-    auto analyzer = std::make_unique<ExpressionAnalyzer>(query_info.query, query_info.syntax_analyzer_result, context);
 
     ManyExpressionActions order_by_elements_actions;
     const auto & window_desc = window->getWindowDescription();
