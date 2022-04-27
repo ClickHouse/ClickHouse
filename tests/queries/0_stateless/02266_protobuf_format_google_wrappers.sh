@@ -8,8 +8,6 @@ SCHEMADIR=$CURDIR/format_schemas
 
 set -eo pipefail
 
-CLICKHOUSE_CLIENT="/home/jk/work/tools/ClickHouse/build/programs/${CLICKHOUSE_CLIENT}"
-
 PROTOBUF_FILE_NAME="02266_protobuf_format_google_wrappers"
 PROTOBUF_FILE_PATH="$SCHEMADIR/$PROTOBUF_FILE_NAME"
 
