@@ -12,7 +12,7 @@
 #include <boost/circular_buffer.hpp>
 
 #include <base/shared_ptr_helper.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Storages/MergeTree/IExecutableTask.h>

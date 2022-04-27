@@ -21,7 +21,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/setThreadName.h>

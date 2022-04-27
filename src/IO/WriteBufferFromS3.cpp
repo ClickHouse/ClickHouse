@@ -2,7 +2,7 @@
 
 #if USE_AWS_S3
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/FileCache.h>
 
 #include <IO/WriteBufferFromS3.h>

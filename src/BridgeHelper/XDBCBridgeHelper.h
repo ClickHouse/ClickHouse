@@ -10,10 +10,10 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
+#include <Common/logger_useful.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <base/logger_useful.h>
 #include <base/range.h>
-#include <Bridge/IBridgeHelper.h>
+#include <BridgeHelper/IBridgeHelper.h>
 
 #include <Common/config.h>
 

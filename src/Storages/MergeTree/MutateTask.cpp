@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
