@@ -21,10 +21,11 @@ public:
     }
 
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
 protected:
     int fd = -1;
+    void parseFirstArguments(const ASTPtr & arg, ContextPtr context) override;
+    String getFormatFromFirstArgument() override;
 
 private:
     StoragePtr getStorage(
