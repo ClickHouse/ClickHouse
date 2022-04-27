@@ -324,6 +324,8 @@ HDFSSource::HDFSSource(
     , file_iterator(file_iterator_)
     , columns_description(std::move(columns_description_))
 {
+    UNUSED(need_path_column);
+    UNUSED(need_file_column);
     initialize();
 }
 
