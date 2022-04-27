@@ -264,7 +264,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (15, 16, 3)<-(17, 20, 4)<-(21, 21, 2)<-(23, 23, 3)<-(30, 31, 2)
     /// [High]: (24, 26, 5)<-(27, 27, 5)<-(0, 9, 8)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder = cache.getOrSet(key, 25, 5); /// Get [25, 29]
         auto segments = fromHolder(holder);
@@ -281,11 +281,9 @@ TEST(ARCFileCache, get)
         std::mutex mutex;
         std::condition_variable cv;
 
-        std::cerr << "point_1_1\n";
         std::thread other_1(
             [&]
             {
-                std::cerr << "point_2_1\n";
                 DB::ThreadStatus thread_status_1;
                 auto query_context_1 = DB::Context::createCopy(getContext().context);
                 query_context_1->makeQueryContext();
@@ -301,41 +299,25 @@ TEST(ARCFileCache, get)
                 assertRange(36, segments_2[1], DB::FileSegment::Range(27, 27), DB::FileSegment::State::DOWNLOADED);
                 assertRange(37, segments_2[2], DB::FileSegment::Range(28, 29), DB::FileSegment::State::DOWNLOADING);
 
-                std::cerr << "point_2_2\n";
                 ASSERT_TRUE(segments[2]->getOrSetDownloader() != DB::FileSegment::getCallerId());
                 ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADING);
 
-                std::cerr << "point_2_3\n";
                 {
                     std::lock_guard lock(mutex);
                     lets_start_download = true;
                 }
-                std::cerr << "point_2_4\n";
                 cv.notify_one();
-                std::cerr << "point_2_5\n";
                 segments_2[2]->wait();
-                std::cerr << "point_2_6\n";
                 ASSERT_TRUE(segments_2[2]->state() == DB::FileSegment::State::DOWNLOADED);
-                std::cerr << "point_2_7\n";
             });
-        std::cerr << "point_1_2\n";
         {
             std::unique_lock lock(mutex);
             cv.wait(lock, [&] { return lets_start_download; });
         }
-        std::cerr << "point_1_3\n";
         prepareAndDownload(segments[2]);
-        std::cerr << "point_1_4\n";
         segments[2]->complete(DB::FileSegment::State::DOWNLOADED);
-        std::cerr << "point_1_5\n";
         ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADED);
-        std::cerr << "point_1_6\n";
-        if (other_1.joinable())
-        {
-            std::cerr << "point_1_7\n";
-            other_1.join();
-        }
-        std::cerr << "point_1_8\n";
+        other_1.join();
     }
 
     /// [11]
@@ -408,8 +390,7 @@ TEST(ARCFileCache, get)
         }
 
         holder.reset();
-        if (other_1.joinable())
-            other_1.join();
+        other_1.join();
         printRanges(segments);
         ASSERT_TRUE(segments[1]->state() == DB::FileSegment::State::DOWNLOADED);
     }
