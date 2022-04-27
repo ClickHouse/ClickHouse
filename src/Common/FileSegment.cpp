@@ -467,7 +467,8 @@ void FileSegment::complete(State state)
 
     if (state != State::DOWNLOADED
         && state != State::PARTIALLY_DOWNLOADED
-        && state != State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+        && state != State::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+        && state != State::EMPTY)
     {
         cv.notify_all();
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,

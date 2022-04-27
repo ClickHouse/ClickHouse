@@ -113,6 +113,7 @@ void WriteBufferFromS3::nextImpl()
             else
             {
                 file_segments.erase(file_segment_it, file_segments.end());
+                file_segment->complete(FileSegment::State::EMPTY);
                 break;
             }
         }
