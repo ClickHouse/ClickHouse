@@ -122,6 +122,8 @@ void WriteBufferFromS3::nextImpl()
                 }
                 else
                 {
+                    for (auto reset_segment_it = file_segment_it; reset_segment_it != file_segments.end(); ++reset_segment_it)
+                        (*reset_segment_it)->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                     file_segments.erase(file_segment_it, file_segments.end());
                     break;
                 }
