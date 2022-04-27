@@ -44,12 +44,11 @@ bool injectRequiredColumnsRecursively(
         if (alter_conversions.isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
-        auto column_in_part = NameAndTypePair(
-            column_name_in_part, column_in_storage->getSubcolumnName(),
-            column_in_storage->getTypeInStorage(), column_in_storage->type);
+        auto column_in_part = part->getColumns().tryGetByName(column_name_in_part);
 
-        /// column has files and hence does not require evaluation
-        if (part->hasColumnFiles(column_in_part))
+        if (column_in_part
+            && (!column_in_storage->isSubcolumn()
+                || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName())))
         {
             /// ensure each column is added only once
             if (!required_columns.contains(column_name))
