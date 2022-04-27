@@ -64,7 +64,7 @@ CompressionCodecDeflate::~CompressionCodecDeflate()
 {
     if (jobDecompAsyncMap.size() > 0)
     {
-        LOG_ERROR(log, "Exception -> find un-released job when CompressionCodecDeflate destory");
+        LOG_ERROR(log, "Exception -> find un-released job when CompressionCodecDeflate destroy");
         //doDecompressDataFlush();
         for (auto it : jobDecompAsyncMap)
         {

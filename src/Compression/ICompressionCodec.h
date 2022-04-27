@@ -45,19 +45,19 @@ public:
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
     UInt32 compressReq(const char * source, UInt32 source_size, char * dest, UInt32 & req_id);
-    // Flush all asychronous request for compression
+    // Flush all asynchronous request for compression
     UInt32 compressFlush(UInt32 req_id, char * dest);
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     // reqType is specific for HW decompressor:
-    //0 means sychronous request by default;
-    //1 means asychronous request, must be used in pair with decompressFlush;
+    //0 means synchronous request by default;
+    //1 means asynchronous request, must be used in pair with decompressFlush;
     //2 means SW decompressor instead of HW
     UInt32 decompress(const char * source, UInt32 source_size, char * dest, UInt8 req_type = 0);
 
-    /// Flush all asychronous request for decompression
+    /// Flush all asynchronous request for decompression
     void decompressFlush(void);
 
-    /// Some codecs (QPL_deflate, for example) support asychronous request
+    /// Some codecs (QPL_deflate, for example) support asynchronous request
     virtual bool isAsyncSupported() const
     {
         return false;
