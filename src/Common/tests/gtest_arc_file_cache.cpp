@@ -278,7 +278,9 @@ TEST(ARCFileCache, get)
         ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADING);
 
         prepareAndDownload(segments[2]);
+        std::cerr << "thread_3\n";
         segments[2]->complete(DB::FileSegment::State::DOWNLOADED);
+        std::cerr << "thread_4\n";
         ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADED);
     }
 
