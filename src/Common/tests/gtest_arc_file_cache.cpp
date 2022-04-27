@@ -264,7 +264,7 @@ TEST(ARCFileCache, get)
     /// [Low] : (15, 16, 3)<-(17, 20, 4)<-(21, 21, 2)<-(23, 23, 3)<-(30, 31, 2)
     /// [High]: (24, 26, 5)<-(27, 27, 5)<-(0, 9, 8)
     ///
-    dumpARCFileCache(key, cache);
+    /// dumpARCFileCache(key, cache);
     {
         auto holder = cache.getOrSet(key, 25, 5); /// Get [25, 29]
         auto segments = fromHolder(holder);
@@ -278,9 +278,7 @@ TEST(ARCFileCache, get)
         ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADING);
 
         prepareAndDownload(segments[2]);
-        std::cerr << "point_1_4\n";
         segments[2]->complete(DB::FileSegment::State::DOWNLOADED);
-        std::cerr << "point_1_5\n";
         ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADED);
     }
 
