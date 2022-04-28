@@ -25,40 +25,25 @@ $CLICKHOUSE_CLIENT -nm -q "
     CREATE ROLE test_role_02242;
 "
 
-readonly REPEAT=100
-
 function delete_user()
 {
-    local i
-    for (( i = 0; i < REPEAT; ++i ))
-    do
-        $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02242" ||:
-    done
+    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02242" ||:
 }
 
 function create_and_login_user()
 {
-    local i
-    for (( i = 0; i < REPEAT; ++i ))
-    do
-        $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02242" ||:
-        $CLICKHOUSE_CLIENT -u "test_user_02242" -q "SELECT version()" > /dev/null ||:
-    done
+    $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02242" ||:
+    $CLICKHOUSE_CLIENT -u "test_user_02242" -q "SELECT COUNT(*) FROM system.session_log WHERE user == 'test_user_02242'" > /dev/null ||:
 }
 
 function set_role()
 {
-    local i
-    for (( i = 0; i < REPEAT; ++i ))
-    do
-        $CLICKHOUSE_CLIENT -q "SET ROLE test_role_02242 TO test_user_02242" ||:
-    done
+    $CLICKHOUSE_CLIENT -q "SET ROLE test_role_02242 TO test_user_02242" ||:
 }
 
 export -f delete_user
 export -f create_and_login_user
 export -f set_role
-
 
 TIMEOUT=10
 
