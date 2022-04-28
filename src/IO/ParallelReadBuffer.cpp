@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, CallbackRunner schedule_, size_t max_working_readers_)
-    : SeekableReadBufferWithSize(nullptr, 0)
+    : SeekableReadBuffer(nullptr, 0)
     , max_working_readers(max_working_readers_)
     , schedule(std::move(schedule_))
     , reader_factory(std::move(reader_factory_))
@@ -33,6 +33,7 @@ bool ParallelReadBuffer::addReaderToPool(std::unique_lock<std::mutex> & /*buffer
 
     auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader)));
 
+    ++active_working_reader;
     schedule([this, worker = std::move(worker)]() mutable { readerThreadFunction(std::move(worker)); });
 
     return true;
@@ -115,10 +116,10 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     return offset;
 }
 
-std::optional<size_t> ParallelReadBuffer::getTotalSize()
+std::optional<size_t> ParallelReadBuffer::getFileSize()
 {
     std::lock_guard lock{mutex};
-    return reader_factory->getTotalSize();
+    return reader_factory->getFileSize();
 }
 
 off_t ParallelReadBuffer::getPosition()
@@ -203,18 +204,9 @@ bool ParallelReadBuffer::nextImpl()
 
 void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 {
-    {
-        std::lock_guard lock{mutex};
-        ++active_working_reader;
-    }
-
     SCOPE_EXIT({
-        std::lock_guard lock{mutex};
-        --active_working_reader;
-        if (active_working_reader == 0)
-        {
-            readers_done.notify_all();
-        }
+        if (active_working_reader.fetch_sub(1) == 1)
+            active_working_reader.notify_all();
     });
 
     try
@@ -269,8 +261,12 @@ void ParallelReadBuffer::finishAndWait()
 {
     emergency_stop = true;
 
-    std::unique_lock lock{mutex};
-    readers_done.wait(lock, [&] { return active_working_reader == 0; });
+    size_t active_readers = active_working_reader.load();
+    while (active_readers != 0)
+    {
+        active_working_reader.wait(active_readers);
+        active_readers = active_working_reader.load();
+    }
 }
 
 }

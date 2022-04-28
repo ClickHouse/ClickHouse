@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/StorageS3Settings.h>
 
 
 namespace DB
@@ -110,8 +111,8 @@ struct URLBasedDataSourceConfiguration
 
 struct StorageS3Configuration : URLBasedDataSourceConfiguration
 {
-    String access_key_id;
-    String secret_access_key;
+    S3Settings::AuthSettings auth_settings;
+    S3Settings::ReadWriteSettings rw_settings;
 };
 
 

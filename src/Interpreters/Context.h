@@ -7,6 +7,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/MultiVersion.h>
@@ -25,6 +26,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+
+#include <thread>
 #include <exception>
 
 
@@ -80,6 +83,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class SessionLog;
+class TransactionsInfoLog;
 class ProcessorsProfileLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
@@ -313,6 +317,7 @@ private:
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
 
+    inline static ContextPtr global_context_instance;
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
@@ -340,6 +345,11 @@ private:
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
 
+    MergeTreeTransactionPtr merge_tree_transaction;     /// Current transaction context. Can be inside session or query context.
+                                                        /// It's shared with all children contexts.
+    MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
+
+    /// Use copy constructor or createGlobal() instead
     Context();
     Context(const Context &);
     Context & operator=(const Context &);
@@ -634,6 +644,8 @@ public:
 
     ContextMutablePtr getGlobalContext() const;
 
+    static ContextPtr getGlobalContextInstance() { return global_context_instance; }
+
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
     {
@@ -803,6 +815,7 @@ public:
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
     std::shared_ptr<SessionLog> getSessionLog() const;
+    std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
@@ -890,6 +903,14 @@ public:
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
     /// Removes context of current distributed DDL.
     void resetZooKeeperMetadataTransaction();
+
+    void checkTransactionsAreAllowed(bool explicit_tcl_query = false) const;
+    void initCurrentTransaction(MergeTreeTransactionPtr txn);
+    void setCurrentTransaction(MergeTreeTransactionPtr txn);
+    MergeTreeTransactionPtr getCurrentTransaction() const;
+
+    bool isServerCompletelyStarted() const;
+    void setServerCompletelyStarted();
 
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;

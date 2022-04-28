@@ -1,6 +1,6 @@
 ---
-toc_priority: 17
-toc_title: WikiStat
+sidebar_position: 17
+sidebar_label: WikiStat
 ---
 
 # WikiStat {#wikistat}

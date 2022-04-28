@@ -679,7 +679,7 @@ bool StorageFileLog::streamToViews()
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto storage_snapshot = getStorageSnapshot(metadata_snapshot);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
 
     auto max_streams_number = std::min<UInt64>(filelog_settings->max_threads.value, file_infos.file_names.size());
     /// No files to parse
@@ -763,7 +763,7 @@ void registerStorageFileLog(StorageFactory & factory)
 
         if (!num_threads) /// Default
         {
-            num_threads = std::max(unsigned(1), physical_cpu_cores / 4);
+            num_threads = std::max(1U, physical_cpu_cores / 4);
             filelog_settings->set("max_threads", num_threads);
         }
         else if (num_threads > physical_cpu_cores)

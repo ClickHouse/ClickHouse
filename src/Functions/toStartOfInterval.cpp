@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Common/DateLUTImpl.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -20,6 +21,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 
@@ -217,7 +219,9 @@ namespace
         {
             if (scale_multiplier < 1000)
             {
-                Int64 t_milliseconds = t * (static_cast<Int64>(1000) / scale_multiplier);
+                Int64 t_milliseconds = 0;
+                if (common::mulOverflow(t, static_cast<Int64>(1000) / scale_multiplier, t_milliseconds))
+                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
                 if (likely(t >= 0))
                     return t_milliseconds / milliseconds * milliseconds;
                 else
@@ -252,7 +256,9 @@ namespace
         {
             if (scale_multiplier < 1000000)
             {
-                Int64 t_microseconds = t * (static_cast<Int64>(1000000) / scale_multiplier);
+                Int64 t_microseconds = 0;
+                if (common::mulOverflow(t, static_cast<Int64>(1000000) / scale_multiplier, t_microseconds))
+                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
                 if (likely(t >= 0))
                     return t_microseconds / microseconds * microseconds;
                 else
@@ -287,7 +293,9 @@ namespace
         {
             if (scale_multiplier < 1000000000)
             {
-                Int64 t_nanoseconds = t * (static_cast<Int64>(1000000000) / scale_multiplier);
+                Int64 t_nanoseconds = 0;
+                if (common::mulOverflow(t, (static_cast<Int64>(1000000000) / scale_multiplier), t_nanoseconds))
+                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
                 if (likely(t >= 0))
                     return t_nanoseconds / nanoseconds * nanoseconds;
                 else

@@ -1,10 +1,5 @@
 <clickhouse>
-    <!-- To make it fail earlier, we will limit max_server_memory_usage explicitly.
-
-         Also note, that usually it is enough 3Gi,
-         but TSan uses 2.8+- GiB of RAM w/o just at start,
-         so this limit had been increased to 4GB
-    -->
+    <!-- To make it fail earlier, we will limit max_server_memory_usage explicitly. -->
     <max_server_memory_usage>4000000000</max_server_memory_usage>
 
     <query_thread_log remove="remove"/>
