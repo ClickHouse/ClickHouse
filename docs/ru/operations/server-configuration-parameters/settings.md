@@ -1365,7 +1365,7 @@ TCP порт для защищённого обмена данными с кли
 
 ## user_defined_path {#server_configuration_parameters-user_defined_path}
 
-Каталог с определенными пользователем файлами. Используется для пользовательских SQL функций. [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
+Каталог с определенными пользователем файлами. Используется для пользовательских SQL функций [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
 
 **Example**
 
