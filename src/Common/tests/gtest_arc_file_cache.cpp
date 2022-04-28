@@ -11,7 +11,7 @@ static void dumpARCFileCache(const auto & key, DB::ARCFileCache & cache)
     std::cerr << ">" << print_count++ << "\n";
     std::cerr << "  > LowQueueSize   : " << stat.low_queue_size << "/" << stat.max_low_queue_size << "\n";
     std::cerr << "  > HighQueueSize  : " << stat.high_queue_size << "/" << stat.max_high_queue_size << "\n";
-    std::cerr << "  > LowSpaceBytes : " << stat.low_space_bytes << "/" << stat.max_low_space_bytes << "\n";
+    std::cerr << "  > LowSpaceBytes  : " << stat.low_space_bytes << "/" << stat.max_low_space_bytes << "\n";
     std::cerr << "  > HighSpaceBytes : " << stat.high_space_bytes << "/" << stat.max_high_space_bytes << "\n";
 
     std::cerr << cache.dumpStructure(key);
@@ -277,47 +277,9 @@ TEST(ARCFileCache, get)
         ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADING);
 
-        bool lets_start_download = false;
-        std::mutex mutex;
-        std::condition_variable cv;
-
-        std::thread other_1(
-            [&]
-            {
-                DB::ThreadStatus thread_status_1;
-                auto query_context_1 = DB::Context::createCopy(getContext().context);
-                query_context_1->makeQueryContext();
-                query_context_1->setCurrentQueryId("query_id_1");
-                DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
-                thread_status_1.attachQueryContext(query_context_1);
-
-                auto holder_2 = cache.getOrSet(key, 25, 5); /// Get [25, 29] once again.
-                auto segments_2 = fromHolder(holder_2);
-                ASSERT_EQ(segments.size(), 3);
-
-                assertRange(35, segments_2[0], DB::FileSegment::Range(24, 26), DB::FileSegment::State::DOWNLOADED);
-                assertRange(36, segments_2[1], DB::FileSegment::Range(27, 27), DB::FileSegment::State::DOWNLOADED);
-                assertRange(37, segments_2[2], DB::FileSegment::Range(28, 29), DB::FileSegment::State::DOWNLOADING);
-
-                ASSERT_TRUE(segments[2]->getOrSetDownloader() != DB::FileSegment::getCallerId());
-                ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADING);
-
-                {
-                    std::lock_guard lock(mutex);
-                    lets_start_download = true;
-                }
-                cv.notify_one();
-                segments_2[2]->wait();
-                ASSERT_TRUE(segments_2[2]->state() == DB::FileSegment::State::DOWNLOADED);
-            });
-        {
-            std::unique_lock lock(mutex);
-            cv.wait(lock, [&] { return lets_start_download; });
-        }
         prepareAndDownload(segments[2]);
         segments[2]->complete(DB::FileSegment::State::DOWNLOADED);
         ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADED);
-        other_1.join();
     }
 
     /// [11]
@@ -336,62 +298,17 @@ TEST(ARCFileCache, get)
         auto segments = fromHolder(*holder);
         ASSERT_EQ(segments.size(), 8);
 
-        assertRange(38, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
+        assertRange(35, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
 
-        assertRange(39, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::EMPTY);
+        assertRange(36, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::EMPTY);
         ASSERT_TRUE(segments[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         ASSERT_TRUE(segments[1]->state() == DB::FileSegment::State::DOWNLOADING);
 
-        assertRange(40, segments[2], DB::FileSegment::Range(15, 16), DB::FileSegment::State::DOWNLOADED);
+        assertRange(37, segments[2], DB::FileSegment::Range(15, 16), DB::FileSegment::State::DOWNLOADED);
 
-        bool lets_start_download = false;
-        std::mutex mutex;
-        std::condition_variable cv;
-
-        std::thread other_1(
-            [&]
-            {
-                DB::ThreadStatus thread_status_1;
-                auto query_context_1 = DB::Context::createCopy(getContext().context);
-                query_context_1->makeQueryContext();
-                query_context_1->setCurrentQueryId("query_id_1");
-                DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
-                thread_status_1.attachQueryContext(query_context_1);
-
-                auto holder_2 = cache.getOrSet(key, 3, 23); /// Get [3, 25] once again
-                auto segments_2 = fromHolder(*holder);
-                ASSERT_EQ(segments_2.size(), 8);
-
-                assertRange(41, segments_2[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
-                assertRange(42, segments_2[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADING);
-                assertRange(43, segments_2[2], DB::FileSegment::Range(15, 16), DB::FileSegment::State::DOWNLOADED);
-
-                ASSERT_TRUE(segments_2[1]->getDownloader() != DB::FileSegment::getCallerId());
-                ASSERT_TRUE(segments_2[1]->state() == DB::FileSegment::State::DOWNLOADING);
-
-                {
-                    std::lock_guard lock(mutex);
-                    lets_start_download = true;
-                }
-                cv.notify_one();
-
-                segments_2[1]->wait();
-                printRanges(segments_2);
-                ASSERT_TRUE(segments_2[1]->state() == DB::FileSegment::State::PARTIALLY_DOWNLOADED);
-
-                ASSERT_TRUE(segments_2[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
-                prepareAndDownload(segments_2[1]);
-                segments_2[1]->complete(DB::FileSegment::State::DOWNLOADED);
-            });
-
-        {
-            std::unique_lock lock(mutex);
-            cv.wait(lock, [&] { return lets_start_download; });
-        }
-
-        holder.reset();
-        other_1.join();
         printRanges(segments);
+        prepareAndDownload(segments[1]);
+        segments[1]->complete(DB::FileSegment::State::DOWNLOADED);
         ASSERT_TRUE(segments[1]->state() == DB::FileSegment::State::DOWNLOADED);
     }
 
@@ -414,16 +331,16 @@ TEST(ARCFileCache, get)
         auto segments1 = fromHolder(holder1);
         ASSERT_EQ(segments1.size(), 10);
 
-        assertRange(44, segments1[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
-        assertRange(45, segments1[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
-        assertRange(46, segments1[2], DB::FileSegment::Range(15, 16), DB::FileSegment::State::DOWNLOADED);
-        assertRange(47, segments1[3], DB::FileSegment::Range(17, 20), DB::FileSegment::State::DOWNLOADED);
-        assertRange(48, segments1[4], DB::FileSegment::Range(21, 21), DB::FileSegment::State::DOWNLOADED);
-        assertRange(49, segments1[5], DB::FileSegment::Range(22, 22), DB::FileSegment::State::EMPTY);
-        assertRange(50, segments1[6], DB::FileSegment::Range(23, 23), DB::FileSegment::State::DOWNLOADED);
-        assertRange(51, segments1[7], DB::FileSegment::Range(24, 26), DB::FileSegment::State::EMPTY);
-        assertRange(52, segments1[8], DB::FileSegment::Range(27, 27), DB::FileSegment::State::DOWNLOADED);
-        assertRange(53, segments1[9], DB::FileSegment::Range(28, 29), DB::FileSegment::State::DOWNLOADED);
+        assertRange(38, segments1[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
+        assertRange(39, segments1[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
+        assertRange(40, segments1[2], DB::FileSegment::Range(15, 16), DB::FileSegment::State::DOWNLOADED);
+        assertRange(41, segments1[3], DB::FileSegment::Range(17, 20), DB::FileSegment::State::DOWNLOADED);
+        assertRange(42, segments1[4], DB::FileSegment::Range(21, 21), DB::FileSegment::State::DOWNLOADED);
+        assertRange(43, segments1[5], DB::FileSegment::Range(22, 22), DB::FileSegment::State::EMPTY);
+        assertRange(4, segments1[6], DB::FileSegment::Range(23, 23), DB::FileSegment::State::DOWNLOADED);
+        assertRange(45, segments1[7], DB::FileSegment::Range(24, 26), DB::FileSegment::State::EMPTY);
+        assertRange(46, segments1[8], DB::FileSegment::Range(27, 27), DB::FileSegment::State::DOWNLOADED);
+        assertRange(47, segments1[9], DB::FileSegment::Range(28, 29), DB::FileSegment::State::DOWNLOADED);
     }
 
     {
@@ -437,8 +354,8 @@ TEST(ARCFileCache, get)
         auto segments1 = fromHolder(holder1);
 
         ASSERT_EQ(segments1.size(), 3);
-        assertRange(54, segments1[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::EMPTY);
-        assertRange(55, segments1[1], DB::FileSegment::Range(10, 19), DB::FileSegment::State::EMPTY);
-        assertRange(56, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
+        assertRange(48, segments1[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::EMPTY);
+        assertRange(49, segments1[1], DB::FileSegment::Range(10, 19), DB::FileSegment::State::EMPTY);
+        assertRange(50, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
     }
 }
