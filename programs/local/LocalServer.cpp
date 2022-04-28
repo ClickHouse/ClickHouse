@@ -558,9 +558,10 @@ void LocalServer::processConfig()
     global_context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size);
+        global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
