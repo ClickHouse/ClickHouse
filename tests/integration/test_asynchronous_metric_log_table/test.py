@@ -43,7 +43,9 @@ def test_event_time_microseconds_field(started_cluster):
         node1.query("""INSERT INTO replica.test VALUES (1, now())""")
         node1.query("SYSTEM FLUSH LOGS;")
 
-        test_query = "SELECT count() > 0 ? 'ok' : 'fail' FROM system.asynchronous_metric_log"
+        test_query = (
+            "SELECT count() > 0 ? 'ok' : 'fail' FROM system.asynchronous_metric_log"
+        )
         assert "ok\n" in node1.query(test_query)
     finally:
         cluster.shutdown()
