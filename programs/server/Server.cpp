@@ -945,6 +945,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         fs::create_directories(user_scripts_path);
     }
 
+    {
+        std::string user_defined_path = config().getString("user_defined_path", path / "user_defined/");
+        global_context->setUserDefinedPath(user_defined_path);
+        fs::create_directories(user_defined_path);
+    }
+
     /// top_level_domains_lists
     {
         const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
@@ -954,7 +960,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         fs::create_directories(path / "data/");
         fs::create_directories(path / "metadata/");
-        fs::create_directories(path / "user_defined/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(path / "metadata_dropped/");
