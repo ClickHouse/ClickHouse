@@ -713,18 +713,11 @@ Field FieldVisitorReplaceScalars::operator()(const Array & x) const
 size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x) const
 {
     const size_t size = x.size();
-    std::optional<size_t> dimensions;
-
+    size_t dimensions = 0;
     for (size_t i = 0; i < size; ++i)
-    {
-        size_t current_dimensions = applyVisitor(*this, x[i]);
-        if (!dimensions)
-            dimensions = current_dimensions;
-        else
-            dimensions = std::max(*dimensions, current_dimensions);
-    }
+        dimensions = std::max(dimensions, applyVisitor(*this, x[i]));
 
-    return 1 + dimensions.value_or(0);
+    return 1 + dimensions;
 }
 
 }
