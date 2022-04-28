@@ -82,7 +82,7 @@ void LRUFileCache::initialize()
     if (!is_initialized)
     {
         if (fs::exists(cache_base_path))
-            loadCacheInfoIntoMemory();
+            loadCacheInfoIntoMemory(cache_lock);
         else
             fs::create_directories(cache_base_path);
         is_initialized = true;
@@ -625,7 +625,7 @@ void LRUFileCache::remove(
     }
 }
 
-void LRUFileCache::loadCacheInfoIntoMemory()
+void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> &cache_lock)
 {
     Key key;
     UInt64 offset = 0;
