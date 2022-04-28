@@ -56,7 +56,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, ContextPtr conte
         }
         else
             throw Exception(
-                "The second argument of table function '" + getName() + "' mush be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
+                "The first argument of table function '" + getName() + "' mush be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
     }
 }
 
