@@ -620,11 +620,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey query_cache_key)
 {
+    auto settings = context->getSettingsRef();
     bool put_query_result_in_cache = false;
-    if (context->getSettingsRef().query_cache_active_usage)
+    if (settings.query_cache_active_usage)
     {
         std::lock_guard l(times_executed_mutex);
-        put_query_result_in_cache = ++times_executed[query_cache_key] > 3;
+        put_query_result_in_cache = ++times_executed[query_cache_key] > settings.min_query_runs_before_caching;
     }
     if (put_query_result_in_cache)
     {
