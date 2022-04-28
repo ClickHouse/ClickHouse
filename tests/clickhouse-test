@@ -2,6 +2,7 @@
 
 # pylint: disable=too-many-return-statements
 # pylint: disable=global-variable-not-assigned
+# pylint: disable=too-many-lines
 
 import enum
 import shutil
@@ -32,7 +33,7 @@ from time import time, sleep
 from errno import ESRCH
 
 try:
-    import termcolor
+    import termcolor  # type: ignore
 except ImportError:
     termcolor = None
 
@@ -78,7 +79,7 @@ class HTTPError(Exception):
         super().__init__(message)
 
     def __str__(self):
-        return "Code: {}. {}".format(self.code, self.message)
+        return f"Code: {self.code}. {self.message}"
 
 
 # Helpers to execute queries via HTTP interface.
@@ -228,10 +229,8 @@ def get_transactions_list(args):
         if args.replicated_database:
             return clickhouse_execute_json(
                 args,
-                """
-            SELECT materialize((hostName(), tcpPort())) as host, *
-            FROM clusterAllReplicas('test_cluster_database_replicated', system.transactions)
-            """,
+                "SELECT materialize((hostName(), tcpPort())) as host, * FROM "
+                "clusterAllReplicas('test_cluster_database_replicated', system.transactions)",
             )
         else:
             return clickhouse_execute_json(args, "select * from system.transactions")
@@ -454,7 +453,7 @@ class SettingsRandomizer:
     def get_random_settings():
         random_settings = []
         for setting, generator in SettingsRandomizer.settings.items():
-            random_settings.append(setting + "=" + str(generator()) + "")
+            random_settings.append(f"{setting}={generator()}")
         return random_settings
 
 
@@ -475,11 +474,11 @@ class TestResult:
         self.need_retry: bool = False
 
     def check_if_need_retry(self, args, stdout, stderr, runs_count):
-        if self.status != TestStatus.FAIL:
-            return
-        if not need_retry(args, stdout, stderr, self.total_time):
-            return
-        if MAX_RETRIES < runs_count:
+        if (
+            self.status != TestStatus.FAIL
+            or not need_retry(args, stdout, stderr, self.total_time)
+            or MAX_RETRIES < runs_count
+        ):
             return
         self.need_retry = True
 
@@ -522,8 +521,8 @@ class TestCase:
             os.environ.setdefault("CLICKHOUSE_DATABASE", database)
             os.environ.setdefault("CLICKHOUSE_TMP", suite_tmp_dir)
         else:
-            # If --database is not specified, we will create temporary database with unique name
-            # And we will recreate and drop it for each test
+            # If --database is not specified, we will create temporary database with
+            # unique name and we will recreate and drop it for each test
             def random_str(length=6):
                 alphabet = string.ascii_lowercase + string.digits
                 # NOTE: it is important not to use default random generator, since it shares state.
@@ -531,7 +530,7 @@ class TestCase:
                     random.SystemRandom().choice(alphabet) for _ in range(length)
                 )
 
-            database = "test_{suffix}".format(suffix=random_str())
+            database = f"test_{random_str()}"
 
             clickhouse_execute(
                 args,
@@ -553,6 +552,9 @@ class TestCase:
 
         return testcase_args
 
+    def cli_random_settings(self) -> str:
+        return " ".join([f"--{setting}" for setting in self.random_settings])
+
     def add_random_settings(self, args, client_options):
         if self.tags and "no-random-settings" in self.tags:
             return client_options
@@ -566,7 +568,7 @@ class TestCase:
                 self.base_url_params + "&" + "&".join(self.random_settings)
             )
 
-        new_options = " --allow_repeated_settings --" + " --".join(self.random_settings)
+        new_options = f" --allow_repeated_settings {self.cli_random_settings()}"
         os.environ["CLICKHOUSE_CLIENT_OPT"] = (
             self.base_client_options + new_options + " "
         )
@@ -583,12 +585,7 @@ class TestCase:
             return description
 
         return (
-            description
-            + "\n"
-            + "Settings used in the test: "
-            + "--"
-            + " --".join(self.random_settings)
-            + "\n"
+            f"{description}\nSettings used in the test: {self.cli_random_settings()}\n"
         )
 
     def __init__(self, suite, case: str, args, is_concurrent: bool):
@@ -601,9 +598,7 @@ class TestCase:
         self.case_file: str = os.path.join(suite.suite_path, case)
         (self.name, self.ext) = os.path.splitext(case)
 
-        file_suffix = (
-            ("." + str(os.getpid())) if is_concurrent and args.test_runs > 1 else ""
-        )
+        file_suffix = f".{os.getpid()}" if is_concurrent and args.test_runs > 1 else ""
         self.reference_file = self.get_reference_file(suite.suite_path, self.name)
         self.stdout_file = (
             os.path.join(suite.suite_tmp_path, self.name) + file_suffix + ".stdout"
@@ -772,14 +767,14 @@ class TestCase:
                     )
                     description += "\n"
 
-                description += "\nstdout:\n{}\n".format(stdout)
+                description += f"\nstdout:\n{stdout}\n"
                 return TestResult(
                     self.name, TestStatus.FAIL, reason, total_time, description
                 )
 
         if stderr:
             description += "\n{}\n".format("\n".join(stderr.splitlines()[:100]))
-            description += "\nstdout:\n{}\n".format(stdout)
+            description += f"\nstdout:\n{stdout}\n"
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -835,7 +830,7 @@ class TestCase:
                 stdout=PIPE,
                 universal_newlines=True,
             ).communicate()[0]
-            description += "\n{}\n".format(diff)
+            description += f"\n{diff}\n"
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -864,7 +859,7 @@ class TestCase:
         if left_queries_check:
             processlist = get_processlist_after_test(self.testcase_args)
             if processlist:
-                description += "\n{}\n".format(json.dumps(processlist, indent=4))
+                description += f"\n{json.dumps(processlist, indent=4)}\n"
                 return TestResult(
                     self.name,
                     TestStatus.FAIL,
@@ -883,7 +878,7 @@ class TestCase:
     @staticmethod
     def print_test_time(test_time) -> str:
         if args.print_time:
-            return " {0:.2f} sec.".format(test_time)
+            return f" {test_time:.2f} sec."
         else:
             return ""
 
@@ -904,11 +899,13 @@ class TestCase:
         return result
 
     @staticmethod
-    def send_test_name_failed(suite: str, case: str) -> bool:
+    def send_test_name_failed(suite: str, case: str):
         pid = os.getpid()
         clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'")
 
-    def run_single_test(self, server_logs_level, client_options):
+    def run_single_test(
+        self, server_logs_level, client_options
+    ) -> Tuple[Optional[Popen], str, str, float]:
         args = self.testcase_args
         client = args.testcase_client
         start_time = args.testcase_start_time
@@ -983,48 +980,26 @@ class TestCase:
         total_time = (datetime.now() - start_time).total_seconds()
 
         # Normalize randomized database names in stdout, stderr files.
-        os.system(
-            "LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(
-                test_db=database, file=self.stdout_file
-            )
-        )
+        os.system(f"LC_ALL=C sed -i -e 's/{database}/default/g' {self.stdout_file}")
         if args.hide_db_name:
-            os.system(
-                "LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(
-                    test_db=database, file=self.stderr_file
-                )
-            )
+            os.system(f"LC_ALL=C sed -i -e 's/{database}/default/g' {self.stderr_file}")
         if args.replicated_database:
-            os.system(
-                "LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {file}".format(
-                    file=self.stdout_file
-                )
-            )
-            os.system(
-                "LC_ALL=C sed -i -e 's|auto_{{replica}}||g' {file}".format(
-                    file=self.stdout_file
-                )
-            )
+            os.system(f"LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {self.stdout_file}")
+            os.system(f"LC_ALL=C sed -i -e 's|auto_{{replica}}||g' {self.stdout_file}")
 
         # Normalize hostname in stdout file.
         os.system(
-            "LC_ALL=C sed -i -e 's/{hostname}/localhost/g' {file}".format(
-                hostname=socket.gethostname(), file=self.stdout_file
-            )
+            f"LC_ALL=C sed -i -e 's/{socket.gethostname()}/localhost/g' {self.stdout_file}"
         )
 
-        stdout = (
-            open(self.stdout_file, "rb").read()
-            if os.path.exists(self.stdout_file)
-            else b""
-        )
-        stdout = str(stdout, errors="replace", encoding="utf-8")
-        stderr = (
-            open(self.stderr_file, "rb").read()
-            if os.path.exists(self.stderr_file)
-            else b""
-        )
-        stderr = str(stderr, errors="replace", encoding="utf-8")
+        stdout = ""
+        if os.path.exists(self.stdout_file):
+            with open(self.stdout_file, "rb") as stdfd:
+                stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
+        stderr = ""
+        if os.path.exists(self.stderr_file):
+            with open(self.stderr_file, "rb") as stdfd:
+                stderr = str(stdfd.read(), errors="replace", encoding="utf-8")
 
         return proc, stdout, stderr, total_time
 
@@ -1037,7 +1012,7 @@ class TestCase:
             if args.testname:
                 try:
                     self.send_test_name_failed(suite.suite, self.case)
-                except:
+                except Exception:
                     return TestResult(
                         self.name,
                         TestStatus.FAIL,
@@ -1084,7 +1059,7 @@ class TestCase:
                     args, self.get_description_from_exception_info(sys.exc_info())
                 ),
             )
-        except:
+        except Exception:
             return TestResult(
                 self.name,
                 TestStatus.UNKNOWN,
@@ -1098,7 +1073,7 @@ class TestCase:
 
 class TestSuite:
     @staticmethod
-    def tests_in_suite_key_func(item: str) -> int:
+    def tests_in_suite_key_func(item: str) -> float:
         if args.order == "random":
             return random.random()
 
@@ -1158,20 +1133,20 @@ class TestSuite:
         def parse_tags_from_line(line, comment_sign):
             if not line.startswith(comment_sign):
                 return None
-            tags_str = line[len(comment_sign) :].lstrip()
+            tags_str = line[len(comment_sign) :].lstrip()  # noqa: ignore E203
             tags_prefix = "Tags:"
             if not tags_str.startswith(tags_prefix):
                 return None
-            tags_str = tags_str[len(tags_prefix) :]
+            tags_str = tags_str[len(tags_prefix) :]  # noqa: ignore E203
             tags = tags_str.split(",")
             tags = {tag.strip() for tag in tags}
             return tags
 
-        def is_shebang(line):
+        def is_shebang(line: str) -> bool:
             return line.startswith("#!")
 
         def load_tags_from_file(filepath):
-            with open(filepath, "r") as file:
+            with open(filepath, "r", encoding="utf-8") as file:
                 try:
                     line = file.readline()
                     if is_shebang(line):
@@ -1197,7 +1172,7 @@ class TestSuite:
         self.suite_tmp_path: str = suite_tmp_path
         self.suite: str = suite
 
-        filter_func = lambda x: True
+        filter_func = lambda x: True  # noqa: ignore E731
 
         if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
             if args.run_by_hash_num > args.run_by_hash_total:
@@ -1319,8 +1294,7 @@ multiprocessing_manager = None
 restarted_tests = None
 
 
-# def run_tests_array(all_tests: List[str], num_tests: int, test_suite: TestSuite):
-def run_tests_array(all_tests_with_params):
+def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
     all_tests, num_tests, test_suite = all_tests_with_params
     global stop_time
     global exit_code
@@ -1397,19 +1371,16 @@ def run_tests_array(all_tests_with_params):
 
         try:
             description = ""
+            test_cace_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
             if not is_concurrent:
                 sys.stdout.flush()
-                sys.stdout.write(
-                    "{0:72}".format(removesuffix(test_case.name, ".gen", ".sql") + ": ")
-                )
+                sys.stdout.write(f"{test_cace_name:72}")
                 # This flush is needed so you can see the test name of the long
                 # running test before it will finish. But don't do it in parallel
                 # mode, so that the lines don't mix.
                 sys.stdout.flush()
             else:
-                description = "{0:72}".format(
-                    removesuffix(test_case.name, ".gen", ".sql") + ": "
-                )
+                description = f"{test_cace_name:72}"
 
             while True:
                 test_result = test_case.run(
@@ -1454,7 +1425,8 @@ def run_tests_array(all_tests_with_params):
         print(
             colored(
                 f"\nHaving {failures_total} errors! {passed_total} tests passed."
-                f" {skipped_total} tests skipped. {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
+                f" {skipped_total} tests skipped."
+                f" {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
                 f" ({multiprocessing.current_process().name}).",
                 args,
                 "red",
@@ -1592,7 +1564,7 @@ def check_table_column(args, database, table, column):
     )
 
 
-def suite_key_func(item: str) -> Union[int, Tuple[int, str]]:
+def suite_key_func(item: str) -> Union[float, Tuple[int, str]]:
     if args.order == "random":
         return random.random()
 
@@ -1626,13 +1598,10 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
         run_n = float(run_n)
         run_total = float(run_total)
         tests_n = len(test_suite.parallel_tests)
-        if run_total > tests_n:
-            run_total = tests_n
+        run_total = min(run_total, tests_n)
 
-        if jobs > tests_n:
-            jobs = tests_n
-        if jobs > run_total:
-            run_total = jobs
+        jobs = min(jobs, tests_n)
+        run_total = max(jobs, run_total)
 
         batch_size = max(1, len(test_suite.parallel_tests) // jobs)
         parallel_tests_array = []
@@ -1744,9 +1713,8 @@ def main(args):
             try:
                 clickhouse_execute(
                     args,
-                    "CREATE DATABASE IF NOT EXISTS "
-                    + db_name
-                    + get_db_engine(args, db_name),
+                    f"CREATE DATABASE IF NOT EXISTS {db_name} "
+                    f"{get_db_engine(args, db_name)}",
                 )
             except HTTPError as e:
                 total_time = (datetime.now() - start_time).total_seconds()
@@ -1805,7 +1773,7 @@ def main(args):
         print("\nSome tests were restarted:\n")
 
         for test_result in restarted_tests:
-            print("\n{0:72}: ".format(test_result.case_name))
+            print(f"\n{test_result.case_name:72}: ")
             # replace it with lowercase to avoid parsing retried tests as failed
             for status in TestStatus:
                 test_result.description = test_result.description.replace(
@@ -1876,13 +1844,15 @@ if __name__ == "__main__":
         "-b",
         "--binary",
         default="clickhouse",
-        help="Path to clickhouse (if monolithic build, clickhouse-server otherwise) binary or name of binary in PATH",
+        help="Path to clickhouse (if monolithic build, clickhouse-server otherwise) "
+        "binary or name of binary in PATH",
     )
 
     parser.add_argument(
         "-c",
         "--client",
-        help="Path to clickhouse-client (if split build, useless otherwise) binary of name of binary in PATH",
+        help="Path to clickhouse-client (if split build, useless otherwise) binary of "
+        "name of binary in PATH",
     )
 
     parser.add_argument("--extract_from_config", help="extract-from-config program")
@@ -2062,7 +2032,8 @@ if __name__ == "__main__":
         action="store_true",
         default=None,
         dest="shard",
-        help="Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)",
+        help="Run sharding related tests "
+        "(required to clickhouse-server listen 127.0.0.2 127.0.0.3)",
     )
     group.add_argument(
         "--no-shard",
@@ -2109,7 +2080,8 @@ if __name__ == "__main__":
 
     if not os.path.isdir(args.queries):
         print(
-            "Failed to detect path to the queries directory. Please specify it with '--queries' option.",
+            "Failed to detect path to the queries directory. Please specify it with "
+            "'--queries' option.",
             file=sys.stderr,
         )
         sys.exit(1)
