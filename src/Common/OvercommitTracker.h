@@ -95,7 +95,7 @@ private:
     {
         picked_tracker = nullptr;
         cancellation_state = QueryCancellationState::NONE;
-        freed_momory = 0;
+        freed_memory = 0;
         allow_release = true;
     }
 
@@ -111,7 +111,7 @@ private:
     // require this mutex to be locked, because they read list (or sublist)
     // of queries.
     std::mutex & global_mutex;
-    Int64 freed_momory;
+    Int64 freed_memory;
     Int64 required_memory;
 
     bool allow_release;
