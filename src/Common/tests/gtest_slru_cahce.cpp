@@ -1,8 +1,8 @@
 #include <iomanip>
 #include <iostream>
 #include <gtest/gtest.h>
-#include <Common/SLRUCache.h>
 #include <Common/CacheBase.h>
+#include <Common/SLRUCache.h>
 
 TEST(SLRUCache, set)
 {
@@ -111,7 +111,7 @@ TEST(SLRUCache, evictFromProtectedPart)
 
     slru_cache.set(2, std::make_shared<size_t>(5));
     slru_cache.set(2, std::make_shared<size_t>(5));
-    
+
     slru_cache.set(3, std::make_shared<size_t>(5));
 
     auto value = slru_cache.get(1);
@@ -127,8 +127,9 @@ TEST(SLRUCache, evictStreamProtected)
 
     slru_cache.set(2, std::make_shared<size_t>(3));
     slru_cache.set(2, std::make_shared<size_t>(3));
-    
-    for (int key = 3; key < 10; ++key) {
+
+    for (int key = 3; key < 10; ++key)
+    {
         slru_cache.set(key, std::make_shared<size_t>(1 + key % 5));
     }
 

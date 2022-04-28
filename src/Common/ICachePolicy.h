@@ -4,7 +4,6 @@
 
 namespace DB
 {
-
 template <typename T>
 struct TrivialWeightFunction
 {
@@ -17,7 +16,7 @@ struct TrivialWeightFunction
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
 class ICachePolicy
 {
-public:    
+public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;

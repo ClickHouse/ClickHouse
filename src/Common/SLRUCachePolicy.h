@@ -2,12 +2,12 @@
 
 #include <Common/ICachePolicy.h>
 
-#include <unordered_map>
 #include <list>
+#include <unordered_map>
 
 #include <base/logger_useful.h>
 
-namespace DB 
+namespace DB
 {
 
 /// Cache policy SLRU evicts entries which were used only once and are not used for a long time,
@@ -16,10 +16,10 @@ namespace DB
 /// of that value.
 /// Cache starts to evict entries when their total weight exceeds max_size.
 /// Value weight should not change after insertion.
-/// To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "SLRU" 
+/// To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "SLRU"
 /// and next parameters in the same order as in the constructor of the current class.
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
-class SLRUCachePolicy: public ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>
+class SLRUCachePolicy : public ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>
 {
 public:
     using Key = TKey;
@@ -38,8 +38,9 @@ public:
         , max_size(std::max(max_protected_size + 1, max_size_))
         {}
 
-    template<class... Args>
-    SLRUCachePolicy(OnWeightLossFunction on_weight_loss_function_, Args... args) : SLRUCachePolicy(args...) {
+    template <class... Args>
+    SLRUCachePolicy(OnWeightLossFunction on_weight_loss_function_, Args... args) : SLRUCachePolicy(args...)
+    {
         Base::on_weight_loss_function = on_weight_loss_function_;
     }
 
@@ -172,7 +173,7 @@ protected:
     size_t current_size = 0;
     const size_t max_protected_size;
     const size_t max_size;
-    
+
     WeightFunction weight_function;
 
     void removeOverflow(SLRUQueue & queue, const size_t max_weight_size, size_t & current_weight_size)
@@ -210,7 +211,8 @@ protected:
             --queue_size;
         }
 
-        if (current_weight_lost > 0) {
+        if (current_weight_lost > 0)
+        {
             Base::on_weight_loss_function(current_weight_lost);
         }
 

@@ -4,11 +4,11 @@
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
 
-#include <unordered_map>
-#include <memory>
-#include <chrono>
-#include <mutex>
 #include <atomic>
+#include <chrono>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
 
 #include <base/logger_useful.h>
 
@@ -16,7 +16,7 @@
 namespace DB
 {
 
-/// Thread-safe cache that evicts entries using special cache policy 
+/// Thread-safe cache that evicts entries using special cache policy
 /// (default policy evicts entries which are not used for a long time).
 /// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
 /// of that value.
@@ -32,28 +32,31 @@ public:
 
     CacheBase(size_t max_size) : CacheBase(default_cache_policy_name, max_size) {}
 
-    template<class... Args>
-    CacheBase(std::string cache_policy_name, Args... args) {
-        auto onWeightLossFunction = [&](size_t weight_loss) {
-            onRemoveOverflowWeightLoss(weight_loss);
-        };
+    template <class... Args>
+    CacheBase(std::string cache_policy_name, Args... args)
+    {
+        auto onWeightLossFunction = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 
-        if (cache_policy_name == "") {
+        if (cache_policy_name == "")
+        {
             cache_policy_name = default_cache_policy_name;
         }
-        
+
         policy_name = cache_policy_name;
 
         LOG_DEBUG(&Poco::Logger::get("CacheBase"), "Cache policy name \"{}\"", cache_policy_name);
-        if (cache_policy_name == "LRU") {
+        if (cache_policy_name == "LRU")
+        {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
             cache_policy = std::make_unique<LRUPolicy>(onWeightLossFunction, args...);
         }
-        else if (cache_policy_name == "SLRU") {
+        else if (cache_policy_name == "SLRU")
+        {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
             cache_policy = std::make_unique<SLRUPolicy>(onWeightLossFunction, args...);
         }
-        else {
+        else
+        {
             LOG_ERROR(&Poco::Logger::get("CacheBase"), "Undeclared cache policy name \"{}\"", cache_policy_name);
             abort();
         }
@@ -142,7 +145,7 @@ public:
 
         return std::make_pair(token->value, result);
     }
-    
+
     void getStats(size_t & out_hits, size_t & out_misses) const
     {
         std::lock_guard lock(mutex);
@@ -150,7 +153,7 @@ public:
         out_misses = misses;
     }
 
-    void reset() 
+    void reset()
     {
         std::lock_guard lock(mutex);
         insert_tokens.clear();
@@ -159,7 +162,7 @@ public:
         cache_policy->reset();
     }
 
-    void remove(const Key & key) 
+    void remove(const Key & key)
     {
         std::lock_guard lock(mutex);
         cache_policy->remove(key);
@@ -171,7 +174,7 @@ public:
         return cache_policy->weight();
     }
 
-    size_t count() const 
+    size_t count() const
     {
         std::lock_guard lock(mutex);
         return cache_policy->count();
@@ -193,11 +196,11 @@ private:
 
     std::unique_ptr<CachePolicy> cache_policy;
     String policy_name; // DELETE THIS FIELD (only for debug)
-    
+
     inline static const String default_cache_policy_name = "LRU";
 
-    std::atomic<size_t> hits {0};
-    std::atomic<size_t> misses {0};
+    std::atomic<size_t> hits{0};
+    std::atomic<size_t> misses{0};
 
     /// Represents pending insertion attempt.
     struct InsertToken
@@ -263,7 +266,7 @@ private:
     friend struct InsertTokenHolder;
 
     InsertTokenById insert_tokens;
-    
+
     /// Override this method if you want to track how much weight was lost in removeOverflow method.
     virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) {}
 };
