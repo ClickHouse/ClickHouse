@@ -1381,10 +1381,14 @@ def main(args):
                     break
             create_database_retries += 1
 
-    if args.database and args.database != "test":
-        create_common_database(args, args.database)
+    try:
+        if args.database and args.database != "test":
+            create_common_database(args, args.database)
 
-    create_common_database(args, "test")
+        create_common_database(args, "test")
+    except Exception as e:
+        print(f"Failed to create databases for tests: {e}")
+        server_died.set()
 
     total_tests_run = 0
 
