@@ -2,23 +2,22 @@
 
 #include <Common/ICachePolicy.h>
 
-#include <unordered_map>
 #include <list>
+#include <unordered_map>
 
 #include <base/logger_useful.h>
 
-namespace DB 
+namespace DB
 {
-
 /// Cache policy LRU evicts entries which are not used for a long time.
 /// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
 /// of that value.
 /// Cache starts to evict entries when their total weight exceeds max_size.
 /// Value weight should not change after insertion.
-/// To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "LRU" 
+/// To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "LRU"
 /// and next parameters in the same order as in the constructor of the current class.
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
-class LRUCachePolicy: public ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>
+class LRUCachePolicy : public ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>
 {
 public:
     using Key = TKey;
@@ -32,12 +31,13 @@ public:
       * max_elements_size == 0 means no elements size restrictions.
       */
     explicit LRUCachePolicy(size_t max_size_, size_t max_elements_size_ = 0)
-        : max_size(std::max(static_cast<size_t>(1), max_size_))
-        , max_elements_size(max_elements_size_)
-        {}
+        : max_size(std::max(static_cast<size_t>(1), max_size_)), max_elements_size(max_elements_size_)
+    {
+    }
 
-    template<class... Args>
-    LRUCachePolicy(OnWeightLossFunction on_weight_loss_function_, Args... args) : LRUCachePolicy(args...) {
+    template <class... Args>
+    LRUCachePolicy(OnWeightLossFunction on_weight_loss_function_, Args... args) : LRUCachePolicy(args...)
+    {
         Base::on_weight_loss_function = on_weight_loss_function_;
     }
 
@@ -144,7 +144,7 @@ protected:
     size_t current_size = 0;
     const size_t max_size;
     const size_t max_elements_size;
-    
+
     WeightFunction weight_function;
 
     void removeOverflow()

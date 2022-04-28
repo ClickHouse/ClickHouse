@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 
 #include <Common/LRUCache.h>
 
@@ -18,7 +18,7 @@ struct TrivialSLRUCacheWeightFunction
 
 
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialSLRUCacheWeightFunction<TMapped>>
-class SLRUCache: public LRUCache<TKey, TMapped, HashFunction, WeightFunction>
+class SLRUCache : public LRUCache<TKey, TMapped, HashFunction, WeightFunction>
 {
 public:
     using Key = TKey;
@@ -58,15 +58,9 @@ public:
         return cells.size();
     }
 
-    size_t maxSize() const
-    {
-        return max_size;
-    }
+    size_t maxSize() const { return max_size; }
 
-    size_t maxProtectedSize() const
-    {
-        return max_protected_size;
-    }
+    size_t maxProtectedSize() const { return max_protected_size; }
 
     void reset()
     {
@@ -108,7 +102,7 @@ private:
     size_t current_size = 0;
     const size_t max_protected_size;
     const size_t max_size;
-    
+
     WeightFunction weight_function;
 
     MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
@@ -225,7 +219,6 @@ private:
         }
     }
 
-    
     /// Override this method if you want to track how much weight was lost in removeOverflow method.
     virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) override {}
 };
