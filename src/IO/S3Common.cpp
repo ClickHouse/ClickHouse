@@ -779,12 +779,26 @@ namespace S3
         static constexpr auto OBS = "OBS";
         static constexpr auto OSS = "OSS";
 
-
         uri = uri_;
         storage_name = S3;
 
         if (uri.getHost().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
+
+        /// Extract object version ID from query string.
+        {
+            version_id = "";
+            const String version_key = "versionId=";
+            const auto query_string = uri.getQuery();
+
+            auto start = query_string.rfind(version_key);
+            if (start != std::string::npos)
+            {
+                start += version_key.length();
+                auto end = query_string.find_first_of('&', start);
+                version_id = query_string.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            }
+        }
 
         String name;
         String endpoint_authority_from_uri;
@@ -842,11 +856,14 @@ namespace S3
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
-    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, bool throw_on_error)
+    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
     {
         Aws::S3::Model::HeadObjectRequest req;
         req.SetBucket(bucket);
         req.SetKey(key);
+
+        if (!version_id.empty())
+            req.SetVersionId(version_id);
 
         Aws::S3::Model::HeadObjectOutcome outcome = client_ptr->HeadObject(req);
 

@@ -232,12 +232,14 @@ StorageS3Source::StorageS3Source(
     String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
+    const String & version_id_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     const size_t download_thread_num_)
     : SourceWithProgress(getHeader(sample_block_, requested_virtual_columns_))
     , WithContext(context_)
     , name(std::move(name_))
     , bucket(bucket_)
+    , version_id(version_id_)
     , format(format_)
     , columns_desc(columns_)
     , max_block_size(max_block_size_)
@@ -291,7 +293,7 @@ bool StorageS3Source::initialize()
 
 std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key)
 {
-    const size_t object_size = DB::S3::getObjectSize(client, bucket, key, false);
+    const size_t object_size = DB::S3::getObjectSize(client, bucket, key, version_id, false);
 
     auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
     const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
@@ -299,7 +301,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     if (!use_parallel_download || object_too_small)
     {
         LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
-        return std::make_unique<ReadBufferFromS3>(client, bucket, key, max_single_read_retries, getContext()->getReadSettings());
+        return std::make_unique<ReadBufferFromS3>(client, bucket, key, version_id, max_single_read_retries, getContext()->getReadSettings());
     }
 
     assert(object_size > 0);
@@ -311,7 +313,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     }
 
     auto factory = std::make_unique<ReadBufferS3Factory>(
-        client, bucket, key, download_buffer_size, object_size, max_single_read_retries, getContext()->getReadSettings());
+        client, bucket, key, version_id, download_buffer_size, object_size, max_single_read_retries, getContext()->getReadSettings());
     LOG_TRACE(
         log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}.", download_thread_num, object_size, download_buffer_size);
 
@@ -693,6 +695,7 @@ Pipe StorageS3::read(
             compression_method,
             s3_configuration.client,
             s3_configuration.uri.bucket,
+            s3_configuration.uri.version_id,
             iterator_wrapper,
             max_download_threads));
     }
@@ -966,7 +969,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
         first = false;
         return wrapReadBufferWithCompressionMethod(
             std::make_unique<ReadBufferFromS3>(
-                s3_configuration.client, s3_configuration.uri.bucket, key, s3_configuration.rw_settings.max_single_read_retries, ctx->getReadSettings()),
+                s3_configuration.client, s3_configuration.uri.bucket, key, s3_configuration.uri.version_id, s3_configuration.rw_settings.max_single_read_retries, ctx->getReadSettings()),
             chooseCompressionMethod(key, compression_method));
     };
 
