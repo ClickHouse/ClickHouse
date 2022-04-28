@@ -1,25 +1,25 @@
 #include "ShuffleSplitter.h"
 #include <filesystem>
 #include <fcntl.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/BrotliWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <IO/WriteHelpers.h>
+#include <Compression/CompressionFactory.h>
 #include <Functions/FunctionFactory.h>
+#include <IO/BrotliWriteBuffer.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteHelpers.h>
 #include <Parser/SerializedPlanParser.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
 
 namespace local_engine
 {
-void ShuffleSplitter::split(DB::Block& block)
+void ShuffleSplitter::split(DB::Block & block)
 {
     Stopwatch watch;
     watch.start();
     computeAndCountPartitionId(block);
     splitBlockByPartition(block);
-    split_result.total_write_time +=watch.elapsedNanoseconds();
+    split_result.total_write_time += watch.elapsedNanoseconds();
 }
 SplitResult ShuffleSplitter::stop()
 {
@@ -108,10 +108,9 @@ void ShuffleSplitter::spillPartition(size_t partition_id)
     watch.start();
     if (!partition_outputs[partition_id])
     {
-        partition_write_buffers[partition_id]
-            = getPartitionWriteBuffer(partition_id);
-        partition_outputs[partition_id] = std::make_unique<DB::NativeWriter>(
-            *partition_write_buffers[partition_id], 0, partition_buffer[partition_id].getHeader());
+        partition_write_buffers[partition_id] = getPartitionWriteBuffer(partition_id);
+        partition_outputs[partition_id]
+            = std::make_unique<DB::NativeWriter>(*partition_write_buffers[partition_id], 0, partition_buffer[partition_id].getHeader());
     }
     DB::Block result = partition_buffer[partition_id].releaseColumns();
     partition_outputs[partition_id]->write(result);
@@ -142,7 +141,7 @@ void ShuffleSplitter::mergePartitionFiles()
     data_write_buffer.close();
 }
 
-ShuffleSplitter::ShuffleSplitter(SplitOptions&& options_) : options(options_)
+ShuffleSplitter::ShuffleSplitter(SplitOptions && options_) : options(options_)
 {
     init();
 }
@@ -157,28 +156,32 @@ ShuffleSplitter::Ptr ShuffleSplitter::create(std::string short_name, SplitOption
     {
         return HashSplitter::create(std::move(options_));
     }
-    else if (short_name == "single") {
+    else if (short_name == "single")
+    {
         options_.partition_nums = 1;
         return RoundRobinSplitter::create(std::move(options_));
     }
     else
     {
-        throw "unsupported splitter " + short_name;
+        throw std::runtime_error("unsupported splitter " + short_name);
     }
 }
 
 std::string ShuffleSplitter::getPartitionTempFile(size_t partition_id)
 {
-    std::string dir = std::filesystem::path(options.local_tmp_dir)/"_shuffle_data"/std::to_string(options.map_id);
-    if (!std::filesystem::exists(dir)) std::filesystem::create_directories(dir);
-    return std::filesystem::path(dir)/std::to_string(partition_id);
+    std::string dir = std::filesystem::path(options.local_tmp_dir) / "_shuffle_data" / std::to_string(options.map_id);
+    if (!std::filesystem::exists(dir))
+        std::filesystem::create_directories(dir);
+    return std::filesystem::path(dir) / std::to_string(partition_id);
 }
 std::unique_ptr<DB::WriteBuffer> ShuffleSplitter::getPartitionWriteBuffer(size_t partition_id)
 {
     auto file = getPartitionTempFile(partition_id);
     if (partition_cached_write_buffers[partition_id] == nullptr)
-        partition_cached_write_buffers[partition_id] = std::make_unique<DB::WriteBufferFromFile>(file, DBMS_DEFAULT_BUFFER_SIZE, O_CREAT | O_WRONLY | O_APPEND);
-    if (!options.compress_method.empty() && std::find(compress_methods.begin(), compress_methods.end(), options.compress_method) != compress_methods.end())
+        partition_cached_write_buffers[partition_id]
+            = std::make_unique<DB::WriteBufferFromFile>(file, DBMS_DEFAULT_BUFFER_SIZE, O_CREAT | O_WRONLY | O_APPEND);
+    if (!options.compress_method.empty()
+        && std::find(compress_methods.begin(), compress_methods.end(), options.compress_method) != compress_methods.end())
     {
         auto codec = DB::CompressionCodecFactory::instance().get(boost::to_upper_copy(options.compress_method), {});
         return std::make_unique<DB::CompressedWriteBuffer>(*partition_cached_write_buffers[partition_id], codec);
@@ -251,35 +254,36 @@ void RoundRobinSplitter::computeAndCountPartitionId(DB::Block & block)
     split_result.total_compute_pid_time += watch.elapsedNanoseconds();
 }
 
-std::unique_ptr<ShuffleSplitter> RoundRobinSplitter::create(SplitOptions&& options_)
+std::unique_ptr<ShuffleSplitter> RoundRobinSplitter::create(SplitOptions && options_)
 {
-    return std::make_unique<RoundRobinSplitter>( std::move(options_));
+    return std::make_unique<RoundRobinSplitter>(std::move(options_));
 }
 
 std::unique_ptr<ShuffleSplitter> HashSplitter::create(SplitOptions && options_)
 {
-    return std::make_unique<HashSplitter>( std::move(options_));
+    return std::make_unique<HashSplitter>(std::move(options_));
 }
 
 void HashSplitter::computeAndCountPartitionId(DB::Block & block)
 {
     Stopwatch watch;
     watch.start();
+    ColumnsWithTypeAndName args;
+    for (auto &name : options.exprs)
+    {
+        args.emplace_back(block.getByName(name));
+    }
     if (!hash_function)
     {
         auto & factory = DB::FunctionFactory::instance();
         auto function = factory.get("murmurHash3_32", local_engine::SerializedPlanParser::global_context);
-        ColumnsWithTypeAndName args;
-        for (auto &name : options.exprs)
-        {
-            args.emplace_back(block.getByName(name));
-        }
+
         hash_function = function->build(args);
     }
     auto result_type = hash_function->getResultType();
-    auto hash_column = hash_function->execute(block.getColumnsWithTypeAndName(), result_type, block.rows(), false);
+    auto hash_column = hash_function->execute(args, result_type, block.rows(), false);
     partition_ids.clear();
-    for (size_t i=0; i < block.rows(); i++)
+    for (size_t i = 0; i < block.rows(); i++)
     {
         partition_ids.emplace_back(static_cast<UInt64>(hash_column->getUInt(i) % options.partition_nums));
     }
