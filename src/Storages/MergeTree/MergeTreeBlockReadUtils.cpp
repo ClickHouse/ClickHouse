@@ -44,15 +44,14 @@ bool injectRequiredColumnsRecursively(
         if (alter_conversions.isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
-        auto column_in_part = NameAndTypePair(
-            column_name_in_part, column_in_storage->getSubcolumnName(),
-            column_in_storage->getTypeInStorage(), column_in_storage->type);
+        auto column_in_part = part->getColumns().tryGetByName(column_name_in_part);
 
-        /// column has files and hence does not require evaluation
-        if (part->hasColumnFiles(column_in_part))
+        if (column_in_part
+            && (!column_in_storage->isSubcolumn()
+                || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName())))
         {
             /// ensure each column is added only once
-            if (required_columns.count(column_name) == 0)
+            if (!required_columns.contains(column_name))
             {
                 columns.emplace_back(column_name);
                 required_columns.emplace(column_name);
@@ -162,7 +161,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         const ColumnPtr & column_data = from_update ? columns[pos]
                                                     : column_with_type_and_name.column;
 
-        if (!from_update && !names_set.count(column_name))
+        if (!from_update && !names_set.contains(column_name))
             continue;
 
         /// At least PREWHERE filter column might be const.
@@ -286,7 +285,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
                 for (auto & name : prewhere_info->row_level_filter->getRequiredColumnsNames())
                 {
-                    if (names.count(name) == 0)
+                    if (!names.contains(name))
                         pre_column_names.push_back(name);
                 }
             }
@@ -303,7 +302,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
         Names post_column_names;
         for (const auto & name : column_names)
-            if (!pre_name_set.count(name))
+            if (!pre_name_set.contains(name))
                 post_column_names.push_back(name);
 
         column_names = post_column_names;

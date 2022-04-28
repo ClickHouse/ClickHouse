@@ -1,6 +1,6 @@
 ---
-toc_priority: 33
-toc_title: ReplacingMergeTree
+sidebar_position: 40
+sidebar_label:  ReplacingMergeTree
 ---
 
 # ReplacingMergeTree {#replacingmergetree}
@@ -29,8 +29,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of request parameters, see [statement description](../../../sql-reference/statements/create/table.md).
 
-!!! note "Attention"
-    Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
+:::warning
+Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
+:::
 
 **ReplacingMergeTree Parameters**
 
@@ -49,8 +50,9 @@ When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/t
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-!!! attention "Attention"
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+:::warning
+Do not use this method in new projects and, if possible, switch old projects to the method described above.
+:::
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

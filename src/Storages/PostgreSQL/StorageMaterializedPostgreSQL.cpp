@@ -352,7 +352,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
 
         ast_expression->name = "DateTime64";
         ast_expression->arguments = std::make_shared<ASTExpressionList>();
-        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(UInt32(6)));
+        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
         return ast_expression;
     }
 
