@@ -13,7 +13,7 @@ OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
     , picked_tracker(nullptr)
     , cancellation_state(QueryCancellationState::NONE)
     , global_mutex(global_mutex_)
-    , freed_momory(0)
+    , freed_memory(0)
     , required_memory(0)
     , allow_release(true)
 {}
@@ -68,12 +68,12 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
     LOG_DEBUG(getLogger(), "Memory was{} freed within timeout", (timeout ? " not" : ""));
 
     required_memory -= amount;
-    auto still_need = required_per_thread[tracker]; // If enough memory is freed it will be 0
+    Int64 still_need = required_per_thread[tracker]; // If enough memory is freed it will be 0
     required_per_thread.erase(tracker);
 
     // If threads where not released since last call of this method,
     // we can release them now.
-    if (allow_release && required_memory <= freed_momory && still_need != 0)
+    if (allow_release && required_memory <= freed_memory && still_need != 0)
         releaseThreads();
 
     // All required amount of memory is free now and selected query to stop doesn't know about it.
@@ -88,8 +88,8 @@ void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
     std::lock_guard guard(overcommit_m);
     if (cancellation_state != QueryCancellationState::NONE)
     {
-        freed_momory += amount;
-        if (freed_momory >= required_memory)
+        freed_memory += amount;
+        if (freed_memory >= required_memory)
             releaseThreads();
     }
 }
@@ -110,7 +110,7 @@ void OvercommitTracker::releaseThreads()
 {
     for (auto & required : required_per_thread)
         required.second = 0;
-    freed_momory = 0;
+    freed_memory = 0;
     allow_release = false; // To avoid repeating call of this method in OvercommitTracker::needToStopQuery
     cv.notify_all();
 }
