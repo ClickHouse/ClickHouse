@@ -653,9 +653,7 @@ void FileSegment::assertNotDetached() const
 
 void FileSegment::assertDetachedStatus() const
 {
-    assert(
-        (download_state == State::EMPTY) || (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
-        || (download_state == State::SKIP_CACHE));
+    assert(download_state == State::EMPTY || hasFinalizedState());
 }
 
 FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & /* cache_lock */)
@@ -675,18 +673,21 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     return snapshot;
 }
 
+bool FileSegment::hasFinalizedState() const
+{
+    return download_state == State::DOWNLOADED
+        || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+        || download_state == State::SKIP_CACHE;
+}
+
 void FileSegment::detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
 {
     if (detached)
         return;
 
-    bool has_finalized_state = download_state == State::DOWNLOADED
-        || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION
-        || download_state == State::SKIP_CACHE;
-
     detached = true;
 
-    if (!has_finalized_state)
+    if (!hasFinalizedState())
     {
         completeUnlocked(cache_lock, segment_lock);
     }
