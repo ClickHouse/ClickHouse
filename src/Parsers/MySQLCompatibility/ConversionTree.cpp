@@ -7,6 +7,7 @@
 
 // SimpleSelectQuery
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -160,6 +161,37 @@ bool SimpleSelectQueryCT::setup()
 			}
 		}
 	}
+	
+	MySQLPtr limit_options = TreePath({
+			"limitClause",
+			"limitOptions"
+		}).evaluate(query_expr);
+	
+	if (limit_options != nullptr)
+	{
+		has_limit = true;
+		if (limit_options->terminals.empty())
+		{
+			limit_arg.row_count = std::stoi(limit_options->children[0]->terminals[0]);
+		} else
+		{
+			assert(limit_options->children.size() == 2);
+			const String limit_type = limit_options->terminals[0];
+			
+			int first_arg = std::stoi(limit_options->children[0]->terminals[0]);
+			int second_arg = std::stoi(limit_options->children[2]->terminals[0]);
+
+
+			if (limit_type[0] == ',')
+			{
+				limit_arg.offset = first_arg;
+				limit_arg.row_count = second_arg;
+			} else {
+				limit_arg.offset = second_arg;
+				limit_arg.row_count = first_arg;
+			}
+		}
+	}
 
 	MySQLPtr select_item_list = TreePath({
 			"selectItemList"
@@ -263,6 +295,20 @@ void SimpleSelectQueryCT::convert(CHPtr & ch_tree) const
 		}
 
 		select_node->setExpression(DB::ASTSelectQuery::Expression::ORDER_BY, std::move(order_by_list));
+	}
+
+	if (this->has_limit)
+	{
+		auto limit_length = std::make_shared<DB::ASTLiteral>(limit_arg.row_count);
+		select_node->setExpression(DB::ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
+
+		// FIXME: offest < 0 is valid?
+		if (limit_arg.offset != -1)
+		{
+			auto limit_offset = std::make_shared<DB::ASTLiteral>(limit_arg.offset);
+			select_node->setExpression(DB::ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
+		}
+
 	}
 
 	

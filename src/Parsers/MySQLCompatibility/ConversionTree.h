@@ -47,12 +47,20 @@ public:
 		DESC
 	};
 
+	struct LimitOption
+	{
+		int row_count = -1; // -1 <-> no row count
+		int offset = -1; // -1 <-> no offset
+	};
+
 	SimpleSelectQueryCT(MySQLPtr source) : IConversionTree(source) {}
 	virtual bool setup() override;
 	virtual void convert(CHPtr & ch_tree) const override;
 private:
 	bool has_order_by = false;
 	std::vector<std::pair<String, ORDER_BY_DIR> > order_by_args;
+	bool has_limit = false;
+	LimitOption limit_arg; // TODO: int is ok?
 	std::vector<String> columns;
 	std::vector<String> tables;
 };
