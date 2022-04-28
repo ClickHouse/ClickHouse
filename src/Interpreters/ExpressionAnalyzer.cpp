@@ -74,6 +74,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace
@@ -423,9 +424,17 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
     set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
 
+    auto cancellation_checker = getContext()->getQueryCancellationChecker();
+    UInt64 interactive_delay = getContext()->getQueryInteractiveDelay();
     Block block;
-    while (executor.pull(block))
+    while (executor.pull(block, interactive_delay))
     {
+        if (cancellation_checker && (*cancellation_checker)())
+            throw Exception(
+                ErrorCodes::QUERY_WAS_CANCELLED,
+                "Query '{}' was cancelled when building sets from subqueries for index analysis",
+                getContext()->getCurrentQueryId());
+
         if (block.rows() == 0)
             continue;
 

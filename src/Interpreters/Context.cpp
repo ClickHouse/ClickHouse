@@ -3174,7 +3174,7 @@ ReadTaskCallback Context::getReadTaskCallback() const
 
 void Context::setReadTaskCallback(ReadTaskCallback && callback)
 {
-    next_task_callback = callback;
+    next_task_callback = std::move(callback);
 }
 
 
@@ -3188,7 +3188,23 @@ MergeTreeReadTaskCallback Context::getMergeTreeReadTaskCallback() const
 
 void Context::setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback)
 {
-    merge_tree_read_task_callback = callback;
+    merge_tree_read_task_callback = std::move(callback);
+}
+
+std::optional<QueryCancellationChecker> Context::getQueryCancellationChecker() const
+{
+    return query_cancellation_checker;
+}
+
+UInt64 Context::getQueryInteractiveDelay() const
+{
+    return interactive_delay / 1000;
+}
+
+void Context::setQueryCancellationChecker(QueryCancellationChecker && checker, UInt64 interactive_delay_)
+{
+    query_cancellation_checker = std::move(checker);
+    interactive_delay = interactive_delay_;
 }
 
 PartUUIDsPtr Context::getIgnoredPartUUIDs() const

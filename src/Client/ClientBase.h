@@ -114,7 +114,7 @@ private:
     bool receiveEndOfQuery();
     void cancelQuery();
 
-    void onProgress(const Progress & value);
+    void onProgress(Progress & value);
     void onData(Block & block, ASTPtr parsed_query);
     void onLogData(Block & block);
     void onTotals(Block & block, ASTPtr parsed_query);
@@ -182,6 +182,7 @@ protected:
     String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
+    size_t send_cancel_after = 0; /// Send cancel packet after query has been executed for `send_cancel_after` milliseconds.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
@@ -219,6 +220,9 @@ protected:
     String prompt_by_server_display_name;
     String server_display_name;
 
+    /// Used to record progress values when no Data is received yet (output format isn't initialized)
+    /// It's related to scalar query execution during query planning.
+    Progress progress_before_query_start;
     ProgressIndication progress_indication;
     bool need_render_progress = true;
     bool need_render_profile_events = true;

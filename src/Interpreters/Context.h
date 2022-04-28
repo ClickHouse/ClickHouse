@@ -160,6 +160,7 @@ using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
+using QueryCancellationChecker = std::function<bool()>;
 
 #if USE_ROCKSDB
 class MergeTreeMetadataCache;
@@ -242,6 +243,9 @@ private:
     /// Used in parallel reading from replicas. A replica tells about its intentions to read
     /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
+    /// Used to check if TCP client cancels query during planing
+    std::optional<QueryCancellationChecker> query_cancellation_checker;
+    UInt64 interactive_delay = 0;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -923,6 +927,10 @@ public:
 
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
+
+    std::optional<QueryCancellationChecker> getQueryCancellationChecker() const;
+    UInt64 getQueryInteractiveDelay() const;
+    void setQueryCancellationChecker(QueryCancellationChecker && checker, UInt64 interactive_delay_);
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();

@@ -708,8 +708,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             /// Query was killed before execution
             if ((*process_list_entry)->isKilled())
-                throw Exception("Query '" + (*process_list_entry)->getInfo().client_info.current_query_id + "' is killed in pending state",
-                    ErrorCodes::QUERY_WAS_CANCELLED);
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "Query '{}' is killed in pending state",
+                    (*process_list_entry)->getInfo().client_info.current_query_id);
         }
 
         /// Hold element of process list till end of query execution.

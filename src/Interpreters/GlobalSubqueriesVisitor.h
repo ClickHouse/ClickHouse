@@ -174,6 +174,9 @@ public:
                 auto io = interpreter->execute();
                 io.pipeline.complete(std::move(table_out));
                 CompletedPipelineExecutor executor(io.pipeline);
+                auto cancellation_checker = getContext()->getQueryCancellationChecker();
+                if (cancellation_checker)
+                    executor.setCancelCallback(*cancellation_checker, getContext()->getQueryInteractiveDelay());
                 executor.execute();
             }
             else
