@@ -181,6 +181,7 @@ void HedgedConnections::sendQuery(
 
         replica.connection->sendQuery(timeouts, query, query_id, stage, &modified_settings, &client_info, with_pending_data);
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
+        replica.packet_receiver->setReceiveTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
     };
 
     for (auto & offset_status : offset_states)
