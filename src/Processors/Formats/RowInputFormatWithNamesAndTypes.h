@@ -124,8 +124,7 @@ public:
         bool with_names_,
         bool with_types_,
         FormatWithNamesAndTypesReader * format_reader_,
-        DataTypePtr default_type_ = nullptr,
-        bool allow_bools_as_numbers_ = false);
+        DataTypePtr default_type_ = nullptr);
 
     NamesAndTypesList readSchema() override;
 
