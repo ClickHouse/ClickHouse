@@ -1,6 +1,6 @@
 ---
-toc_priority: 67
-toc_title: Other
+sidebar_position: 67
+sidebar_label: Other
 ---
 
 # Other Functions {#other-functions}
@@ -729,8 +729,9 @@ neighbor(column, offset[, default_value])
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 
-!!! warning "Warning"
-    It can reach the neighbor rows only inside the currently processed data block.
+:::warning    
+It can reach the neighbor rows only inside the currently processed data block.
+:::
 
 The rows order used during the calculation of `neighbor` can differ from the order of rows returned to the user.
 To prevent that you can make a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
@@ -838,8 +839,9 @@ Result:
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
-!!! warning "Warning"
-    It can reach the previous row only inside the currently processed data block.
+:::warning    
+It can reach the previous row only inside the currently processed data block.
+:::
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 
@@ -921,9 +923,9 @@ Each event has a start time and an end time. The start time is included in the e
 The function calculates the total number of active (concurrent) events for each event start time.
 
 
-!!! warning "Warning"
-    Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception.
-    Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
+:::warning    
+Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception. Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
+:::
 
 **Syntax**
 
@@ -1609,8 +1611,9 @@ Result:
 
 Accumulates states of an aggregate function for each row of a data block.
 
-!!! warning "Warning"
-    The state is reset for each new data block.
+:::warning    
+The state is reset for each new data block.
+:::
 
 **Syntax**
 
@@ -2068,8 +2071,9 @@ Number of digits.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
- !!! note "Note"
-    For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
+:::note    
+For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
+:::
 
 **Example**
 
@@ -2498,42 +2502,4 @@ Result:
 ┌─zookeeperSessionUptime()─┐
 │                      286 │
 └──────────────────────────┘
-```
-
-## getTypeSerializationStreams {#getTypeSerializationStreams}
-
-return the serialization streams of data type.
-
-**Syntax**
-``` sql
-getTypeSerializationStreams(type_name)
-
-getTypeSerializationStreams(column)
-```
-
-**Arguments**
-- `type_name` - Name of data type to get its serialization paths. [String](../../sql-reference/data-types/string.md#string).
-- `column`       - any column which has a data type
-
-**Returned value**
-- List of serialization streams;
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-
-
-**Example**
-
-Query:
-
-``` sql
-SELECT getTypeSerializationStreams('Array(Array(Int8))')
-```
-
-Result:
-
-``` text
-┌───────────────────────getTypeSerializationStreams('Array(Array(Int8))')─────────────────────────────┐
-│ ['{ArraySizes}','{ArrayElements, ArraySizes}','{ArrayElements, ArrayElements, Regular}']            │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
