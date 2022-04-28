@@ -1234,6 +1234,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 }
 
 void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_more_data)
+try
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
@@ -1265,6 +1266,12 @@ void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_mo
 
     if (!have_more_data)
         connection->sendData({}, "", false);
+}
+catch (...)
+{
+    connection->sendCancel();
+    receiveEndOfQuery();
+    throw;
 }
 
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
@@ -1406,7 +1413,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             apply_query_settings(*with_output->settings_ast);
 
         if (!connection->checkConnected())
+        {
+            auto poco_logs_level = Poco::Logger::parseLevel(config().getString("send_logs_level", "none"));
+            /// Print under WARNING also because it is used by clickhouse-test.
+            if (poco_logs_level >= Poco::Message::PRIO_WARNING)
+            {
+                fmt::print(stderr, "Connection lost. Reconnecting.\n");
+            }
             connect();
+        }
 
         ASTPtr input_function;
         if (insert && insert->select)
