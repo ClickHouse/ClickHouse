@@ -627,13 +627,7 @@ Names Block::getDataTypeNames() const
 
 std::unordered_map<String, size_t> Block::getNamesToIndexesMap() const
 {
-    std::unordered_map<String, size_t> res;
-    res.reserve(columns());
-
-    for (size_t i = 0; i != data.size(); ++i)
-        res.emplace(data[i].name, i);
-
-    return res;
+    return index_by_name;
 }
 
 

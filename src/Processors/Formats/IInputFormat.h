@@ -55,9 +55,6 @@ public:
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
-    virtual bool needContext() const { return false; }
-    virtual void setContext(ContextPtr &) {}
-
 protected:
     ColumnMappingPtr column_mapping{};
 

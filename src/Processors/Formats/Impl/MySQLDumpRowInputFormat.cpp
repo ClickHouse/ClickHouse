@@ -262,7 +262,7 @@ static void skipToDataInInsertQuery(ReadBuffer & in, std::vector<String> * colum
     skipWhitespaceIfAny(in);
 }
 
-static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, ContextPtr & context, NamesAndTypesList & structure)
+static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesList & structure)
 {
     /// To extract structure from CREATE query we read it all into a string and parse using MySQLParser
     /// and then extract columns names and types from MySQLParser::ASTCreateDefines
@@ -270,11 +270,10 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, ContextPtr & c
     /// Now position is located in CREATE query after table name and we need to write the beginning of CREATE query.
     String create_query_str = "CREATE TABLE _dummy " + readUntilEndOfQuery(in);
     MySQLParser::ParserCreateQuery parser;
-    const Settings & settings = context->getSettingsRef();
     String error;
     const char * start = create_query_str.data();
     const char * end = create_query_str.data() + create_query_str.size();
-    ASTPtr query = tryParseQuery(parser, start, end, error, false, "MySQL create query", false, settings.max_query_size, settings.max_parser_depth);
+    ASTPtr query = tryParseQuery(parser, start, end, error, false, "MySQL create query", false, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     if (!query)
         return false;
 
@@ -324,14 +323,14 @@ static void skipEndOfRow(ReadBuffer & in, String & table_name)
     }
 }
 
-static void readFirstCreateAndInsertQueries(ReadBuffer & in, ContextPtr & context, String & table_name, NamesAndTypesList & structure_from_create, Names & column_names)
+static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name, NamesAndTypesList & structure_from_create, Names & column_names)
 {
     auto type = skipToInsertOrCreateQuery(table_name, in);
     bool insert_query_present = type == MySQLQueryType::INSERT;
     if (type == MySQLQueryType::CREATE)
     {
         /// If we have CREATE query, we can extract columns names and types from it.
-        if (tryToExtractStructureFromCreateQuery(in, context, structure_from_create))
+        if (tryToExtractStructureFromCreateQuery(in, structure_from_create))
             column_names = structure_from_create.getNames();
         skipQuery(in);
         insert_query_present = skipToInsertQuery(table_name, in);
@@ -347,7 +346,7 @@ void MySQLDumpRowInputFormat::readPrefix()
 {
     NamesAndTypesList structure_from_create;
     Names column_names;
-    readFirstCreateAndInsertQueries(*in, context, table_name, structure_from_create, column_names);
+    readFirstCreateAndInsertQueries(*in, table_name, structure_from_create, column_names);
 
     if (!column_names.empty() && format_settings.mysql_dump.map_column_names)
         column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
@@ -411,7 +410,7 @@ NamesAndTypesList MySQLDumpSchemaReader::readSchema()
 {
     NamesAndTypesList structure_from_create;
     Names column_names;
-    readFirstCreateAndInsertQueries(in, context, table_name, structure_from_create, column_names);
+    readFirstCreateAndInsertQueries(in, table_name, structure_from_create, column_names);
 
     if (!structure_from_create.empty())
         return structure_from_create;
