@@ -134,6 +134,7 @@ void WriteBufferFromS3::nextImpl()
         writePart();
 
         allocateBuffer();
+        file_segments_holder.reset();
     }
 
     waitForReadyBackGroundTasks();

@@ -651,7 +651,7 @@ void FileSegment::assertNotDetached() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Operation not allowed, file segment is detached");
 }
 
-void FileSegment::assertDetachedStatus() const
+void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex>  & /* segment_lock */) const
 {
     assert(download_state == State::EMPTY || hasFinalizedState());
 }
@@ -709,13 +709,22 @@ FileSegmentsHolder::~FileSegmentsHolder()
         if (!cache)
             cache = file_segment->cache;
 
-        if (file_segment->detached)
         {
-            /// This file segment is not owned by cache, so it will be destructed
-            /// at this point, therefore no completion required.
-            file_segment->assertDetachedStatus();
-            file_segment_it = file_segments.erase(current_file_segment_it);
-            continue;
+            bool detached = false;
+            {
+                std::lock_guard segment_lock(file_segment->mutex);
+                detached = file_segment->isDetached(segment_lock);
+                if (detached)
+                    file_segment->assertDetachedStatus(segment_lock);
+            }
+            if (detached)
+            {
+                /// This file segment is not owned by cache, so it will be destructed
+                /// at this point, therefore no completion required.
+                file_segment_it = file_segments.erase(current_file_segment_it);
+                continue;
+            }
+
         }
 
         try
