@@ -26,7 +26,6 @@ if (CMAKE_CROSSCOMPILING)
     elseif (OS_LINUX OR OS_ANDROID)
         if (ARCH_AARCH64)
             # FIXME: broken dependencies
-            set (ENABLE_GRPC OFF CACHE INTERNAL "")
             set (ENABLE_SENTRY OFF CACHE INTERNAL "")
         elseif (ARCH_PPC64LE)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
