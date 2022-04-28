@@ -19,6 +19,9 @@ ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
 # export CCACHE_LOGFILE=/build/ccache.log
 # export CCACHE_DEBUG=1
 
+# https://stackoverflow.com/a/71940133
+git config --global --add safe.directory '*'
+
 mkdir -p build/build_docker
 cd build/build_docker
 rm -f CMakeCache.txt

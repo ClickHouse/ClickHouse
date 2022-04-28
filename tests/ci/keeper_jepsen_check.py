@@ -26,7 +26,7 @@ from rerun_helper import RerunHelper
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 DESIRED_INSTANCE_COUNT = 3
-IMAGE_NAME = "clickhouse/keeper-jepsen-test"
+IMAGE_NAME = "altinityinfra/keeper-jepsen-test"
 CHECK_NAME = "ClickHouse Keeper Jepsen (actions)"
 
 

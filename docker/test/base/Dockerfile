@@ -1,7 +1,7 @@
 # rebuild in #33610
-# docker build -t clickhouse/test-base .
+# docker build -t altinityinfra/test-base .
 ARG FROM_TAG=latest
-FROM clickhouse/test-util:$FROM_TAG
+FROM altinityinfra/test-util:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"

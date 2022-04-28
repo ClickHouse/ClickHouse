@@ -20,7 +20,7 @@ from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
 
 
-DOCKER_IMAGE = "clickhouse/split-build-smoke-test"
+DOCKER_IMAGE = "altinityinfra/split-build-smoke-test"
 DOWNLOAD_RETRIES_COUNT = 5
 RESULT_LOG_NAME = "run.log"
 CHECK_NAME = "Split build smoke test (actions)"
@@ -147,4 +147,8 @@ if __name__ == "__main__":
         report_url,
         CHECK_NAME,
     )
+
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+
+    if state == "error":
+        sys.exit(1)

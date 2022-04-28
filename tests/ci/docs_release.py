@@ -34,7 +34,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    docker_image = get_image_with_version(temp_path, "clickhouse/docs-release")
+    docker_image = get_image_with_version(temp_path, "altinityinfra/docs-release")
 
     test_output = os.path.join(temp_path, "docs_release_log")
     if not os.path.exists(test_output):

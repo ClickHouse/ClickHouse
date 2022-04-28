@@ -40,7 +40,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    docker_image = get_image_with_version(IMAGES_PATH, "clickhouse/codebrowser")
+    docker_image = get_image_with_version(IMAGES_PATH, "altinityinfra/codebrowser")
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
     result_path = os.path.join(temp_path, "result_path")

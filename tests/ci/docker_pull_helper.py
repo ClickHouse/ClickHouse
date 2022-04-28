@@ -5,6 +5,7 @@ import json
 import time
 import subprocess
 import logging
+import traceback
 
 
 class DockerImage:
@@ -48,6 +49,7 @@ def get_images_with_versions(reports_path, required_image, pull=True):
         docker_images.append(docker_image)
 
     if pull:
+        latest_error = None
         for docker_image in docker_images:
             for i in range(10):
                 try:
@@ -60,7 +62,8 @@ def get_images_with_versions(reports_path, required_image, pull=True):
                     break
                 except Exception as ex:
                     time.sleep(i * 3)
-                    logging.info("Got execption pulling docker %s", ex)
+                    logging.info("Got exception pulling docker %s", ex)
+                    latest_error = traceback.format_exc()
             else:
                 raise Exception(
                     f"Cannot pull dockerhub for image docker pull {docker_image} because of {latest_error}"

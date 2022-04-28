@@ -1,7 +1,7 @@
 # rebuild in #33610
 # docker build -t clickhouse/stateless-test .
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM altinityinfra/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
@@ -32,7 +32,9 @@ RUN apt-get update -y \
             mysql-client=8.0* \
             postgresql-client \
             sqlite3 \
-            awscli
+            awscli \
+            rpm2cpio \
+            cpio
 
 RUN pip3 install numpy scipy pandas Jinja2
 
@@ -53,8 +55,7 @@ ARG TARGETARCH
 
 # Download Minio-related binaries
 RUN arch=${TARGETARCH:-amd64} \
-    && wget "https://dl.min.io/server/minio/release/linux-${arch}/minio" \
-    && chmod +x ./minio \
+    && wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio-20220103182258.0.0.x86_64.rpm" \
     && wget "https://dl.min.io/client/mc/release/linux-${arch}/mc" \
     && chmod +x ./mc
 

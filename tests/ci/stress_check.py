@@ -114,7 +114,7 @@ if __name__ == "__main__":
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/stress-test")
+    docker_image = get_image_with_version(reports_path, "altinityinfra/stress-test")
 
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):
@@ -175,3 +175,6 @@ if __name__ == "__main__":
         check_name,
     )
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+
+    if state == "error":
+        sys.exit(1)

@@ -20,7 +20,7 @@ from commit_status_helper import get_commit, post_commit_status
 from tee_popen import TeePopen
 from rerun_helper import RerunHelper
 
-IMAGE_NAME = "clickhouse/performance-comparison"
+IMAGE_NAME = "altinityinfra/performance-comparison"
 
 
 def get_run_command(
@@ -217,3 +217,6 @@ if __name__ == "__main__":
     post_commit_status(
         gh, pr_info.sha, check_name_with_group, message, status, report_url
     )
+
+    if status == "error":
+        sys.exit(1)

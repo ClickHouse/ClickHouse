@@ -24,7 +24,7 @@ from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickh
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
 
-IMAGE_NAME = "clickhouse/fuzzer"
+IMAGE_NAME = "altinityinfra/fuzzer"
 
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):

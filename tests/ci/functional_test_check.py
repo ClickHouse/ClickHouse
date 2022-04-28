@@ -48,9 +48,9 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
 
 def get_image_name(check_name):
     if "stateless" in check_name.lower():
-        return "clickhouse/stateless-test"
+        return "altinityinfra/stateless-test"
     if "stateful" in check_name.lower():
-        return "clickhouse/stateful-test"
+        return "altinityinfra/stateful-test"
     else:
         raise Exception(f"Cannot deduce image name based on check name {check_name}")
 
@@ -190,10 +190,12 @@ if __name__ == "__main__":
         run_by_hash_total = 0
         check_name_with_group = check_name
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
+    # Always re-run, even if it finished in previous run.
+    # gh = Github(get_best_robot_token())
+    # rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
+    # if rerun_helper.is_already_finished_by_status():
+    #     logging.info("Check is already finished according to github status, exiting")
+    #     sys.exit(0)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)

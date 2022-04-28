@@ -30,11 +30,23 @@ from kafka.protocol.admin import DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
 from kafka.admin import NewTopic
 
+from pathlib import Path
+from helpers.cluster import run_and_check
 
 # protoc --version
 # libprotoc 3.0.0
 # # to create kafka_pb2.py
 # protoc --python_out=. kafka.proto
+
+# Regenerate _pb2 files on each run, to make sure test doesn't depend installed protobuf version
+proto_dir = Path(__file__).parent / "clickhouse_path/format_schemas"
+gen_dir = Path(__file__).parent
+gen_dir.mkdir(exist_ok=True)
+run_and_check(
+    f"python3 -m grpc_tools.protoc -I{proto_dir!s} --python_out={gen_dir!s} --grpc_python_out={gen_dir!s} \
+    {proto_dir!s}/kafka.proto",
+    shell=True,
+)
 
 from . import kafka_pb2
 from . import social_pb2

@@ -57,6 +57,9 @@ class TestGit(unittest.TestCase):
                 with self.assertRaises(Exception):
                     setattr(self.git, tag_attr, tag)
 
+    def check_tag(self):
+        self.git.check_tag("v21.12.333.4567-altinitystable")
+
     def test_tweak(self):
         self.git.commits_since_tag = 0
         self.assertEqual(self.git.tweak, 1)
@@ -66,3 +69,6 @@ class TestGit(unittest.TestCase):
         self.assertEqual(self.git.tweak, 22224)
         self.git.commits_since_tag = 0
         self.assertEqual(self.git.tweak, 22222)
+
+if __name__ == '__main__':
+    unittest.main()

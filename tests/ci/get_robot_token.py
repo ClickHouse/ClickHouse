@@ -9,7 +9,14 @@ def get_parameter_from_ssm(name, decrypt=True, client=None):
     return client.get_parameter(Name=name, WithDecryption=decrypt)["Parameter"]["Value"]
 
 
-def get_best_robot_token(token_prefix_env_name="github_robot_token_", total_tokens=4):
+# Original CI code uses the "_original" version of this method. Each robot token is rate limited
+# and the original implementation selects the "best one". To make it simpler and iterate faster,
+# we are using only one robot and keeping the method signature. In the future we might reconsider
+# having multiple robot tokens
+def get_best_robot_token(token_prefix_env_name="github_robot_token", total_tokens=4):
+    return get_parameter_from_ssm(token_prefix_env_name)
+
+def get_best_robot_token_original(token_prefix_env_name="github_robot_token_", total_tokens=4):
     client = boto3.client("ssm", region_name="us-east-1")
     tokens = {}
     for i in range(1, total_tokens + 1):

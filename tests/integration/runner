@@ -19,7 +19,7 @@ CONFIG_DIR_IN_REPO = "programs/server"
 INTEGRATION_DIR_IN_REPO = "tests/integration"
 SRC_DIR_IN_REPO = "src"
 
-DIND_INTEGRATION_TESTS_IMAGE_NAME = "clickhouse/integration-tests-runner"
+DIND_INTEGRATION_TESTS_IMAGE_NAME = "altinityinfra/integration-tests-runner"
 
 def check_args_and_update_paths(args):
     if args.clickhouse_root:
@@ -226,23 +226,23 @@ if __name__ == "__main__":
     if args.docker_compose_images_tags is not None:
         for img_tag in args.docker_compose_images_tags:
             [image, tag] = img_tag.split(":")
-            if image == "clickhouse/mysql-golang-client":
+            if image == "altinityinfra/mysql-golang-client":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
-            elif image == "clickhouse/dotnet-client":
+            elif image == "altinityinfra/dotnet-client":
                 env_tags += "-e {}={} ".format("DOCKER_DOTNET_CLIENT_TAG", tag)
-            elif image == "clickhouse/mysql-java-client":
+            elif image == "altinityinfra/mysql-java-client":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
-            elif image == "clickhouse/mysql-js-client":
+            elif image == "altinityinfra/mysql-js-client":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_JS_CLIENT_TAG", tag)
-            elif image == "clickhouse/mysql-php-client":
+            elif image == "altinityinfra/mysql-php-client":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
-            elif image == "clickhouse/postgresql-java-client":
+            elif image == "altinityinfra/postgresql-java-client":
                 env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
-            elif image == "clickhouse/integration-test":
+            elif image == "altinityinfra/integration-test":
                 env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
-            elif image == "clickhouse/kerberized-hadoop":
+            elif image == "altinityinfra/kerberized-hadoop":
                 env_tags += "-e {}={} ".format("DOCKER_KERBERIZED_HADOOP_TAG", tag)
-            elif image == "clickhouse/kerberos-kdc":
+            elif image == "altinityinfra/kerberos-kdc":
                 env_tags += "-e {}={} ".format("DOCKER_KERBEROS_KDC_TAG", tag)
             else:
                 logging.info("Unknown image %s" % (image))

@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image-repo",
         type=str,
-        default="clickhouse/clickhouse-server",
+        default="altinityinfra/clickhouse-server",
         help="image name on docker hub",
     )
     parser.add_argument(
@@ -298,8 +298,8 @@ def main():
 
     if args.push:
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
-            "docker login --username 'robotclickhouse' --password-stdin",
-            input=get_parameter_from_ssm("dockerhub_robot_password"),
+            "docker login --username 'altinityinfra' --password-stdin",
+            input=get_parameter_from_ssm("dockerhub-password"),
             encoding="utf-8",
             shell=True,
         )

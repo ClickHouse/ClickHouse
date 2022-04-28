@@ -30,17 +30,17 @@ from tee_popen import TeePopen
 # When update, update
 # integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
 IMAGES = [
-    "clickhouse/integration-tests-runner",
-    "clickhouse/mysql-golang-client",
-    "clickhouse/mysql-java-client",
-    "clickhouse/mysql-js-client",
-    "clickhouse/mysql-php-client",
-    "clickhouse/postgresql-java-client",
-    "clickhouse/integration-test",
-    "clickhouse/kerberos-kdc",
-    "clickhouse/kerberized-hadoop",
-    "clickhouse/integration-helper",
-    "clickhouse/dotnet-client",
+    "altinityinfra/integration-tests-runner",
+    "altinityinfra/mysql-golang-client",
+    "altinityinfra/mysql-java-client",
+    "altinityinfra/mysql-js-client",
+    "altinityinfra/mysql-php-client",
+    "altinityinfra/postgresql-java-client",
+    "altinityinfra/integration-test",
+    "altinityinfra/kerberos-kdc",
+    "altinityinfra/kerberized-hadoop",
+    "altinityinfra/integration-helper",
+    "altinityinfra/dotnet-client",
 ]
 
 
@@ -146,10 +146,12 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
+    # Always re-run, even if it finished in previous run.
+    # gh = Github(get_best_robot_token())
+    # rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
+    # if rerun_helper.is_already_finished_by_status():
+    #     logging.info("Check is already finished according to github status, exiting")
+    #     sys.exit(0)
 
     images = get_images_with_versions(reports_path, IMAGES)
     images_with_versions = {i.name: i.version for i in images}
@@ -233,4 +235,8 @@ if __name__ == "__main__":
         report_url,
         check_name_with_group,
     )
+
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+
+    if state == "error":
+        sys.exit(1)

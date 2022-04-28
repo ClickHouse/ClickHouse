@@ -98,6 +98,7 @@ def get_counters(fname):
 
             # Lines like:
             #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+            #     [gw3] [ 40%] PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
             state = line_arr[-2]
             test_name = line_arr[-1]
 
@@ -255,17 +256,17 @@ class ClickhouseIntegrationTestsRunner:
     @staticmethod
     def get_images_names():
         return [
-            "clickhouse/dotnet-client",
-            "clickhouse/integration-helper",
-            "clickhouse/integration-test",
-            "clickhouse/integration-tests-runner",
-            "clickhouse/kerberized-hadoop",
-            "clickhouse/kerberos-kdc",
-            "clickhouse/mysql-golang-client",
-            "clickhouse/mysql-java-client",
-            "clickhouse/mysql-js-client",
-            "clickhouse/mysql-php-client",
-            "clickhouse/postgresql-java-client",
+            "altinityinfra/dotnet-client",
+            "altinityinfra/integration-helper",
+            "altinityinfra/integration-test",
+            "altinityinfra/integration-tests-runner",
+            "altinityinfra/kerberized-hadoop",
+            "altinityinfra/kerberos-kdc",
+            "altinityinfra/mysql-golang-client",
+            "altinityinfra/mysql-java-client",
+            "altinityinfra/mysql-js-client",
+            "altinityinfra/mysql-php-client",
+            "altinityinfra/postgresql-java-client",
         ]
 
     def _can_run_with(self, path, opt):
@@ -462,7 +463,7 @@ class ClickhouseIntegrationTestsRunner:
             "--docker-image-version",
         ):
             for img in self.get_images_names():
-                if img == "clickhouse/integration-tests-runner":
+                if img == "altinityinfra/integration-tests-runner":
                     runner_version = self.get_image_version(img)
                     logging.info(
                         "Can run with custom docker image version %s", runner_version
@@ -904,6 +905,16 @@ class ClickhouseIntegrationTestsRunner:
 
         if "(memory)" in self.params["context_name"]:
             result_state = "success"
+
+        for res in test_result:
+            # It's not easy to parse output of pytest
+            # Especially when test names may contain spaces
+            # Do not allow it to avoid obscure failures
+            if " " not in res[0]:
+                continue
+            logging.warning("Found invalid test name with space: %s", res[0])
+            status_text = "Found test with invalid name, see main log"
+            result_state = "failure"
 
         return result_state, status_text, test_result, []
 

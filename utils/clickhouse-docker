@@ -26,11 +26,11 @@ then
     # https://stackoverflow.com/a/39454426/1555175
     wget -nv https://registry.hub.docker.com/v1/repositories/clickhouse/clickhouse-server/tags -O -  | sed -e 's/[][]//g' -e 's/"//g' -e 's/ //g' | tr '}' '\n'  | awk -F: '{print $3}'
 else
-    docker pull clickhouse/clickhouse-server:${param}
+    docker pull altinityinfra/clickhouse-server:${param}
     tmp_dir=$(mktemp -d -t ci-XXXXXXXXXX) # older version require /nonexistent folder to exist to run clickhouse client :D
     chmod 777 ${tmp_dir}
     set -e
-    containerid=`docker run -v${tmp_dir}:/nonexistent -d clickhouse/clickhouse-server:${param}`
+    containerid=`docker run -v${tmp_dir}:/nonexistent -d altinityinfra/clickhouse-server:${param}`
     set +e
     while :
     do

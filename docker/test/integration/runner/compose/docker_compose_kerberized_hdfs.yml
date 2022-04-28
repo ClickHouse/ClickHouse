@@ -4,7 +4,7 @@ services:
   kerberizedhdfs1:
     cap_add:
       - DAC_READ_SEARCH
-    image: clickhouse/kerberized-hadoop:${DOCKER_KERBERIZED_HADOOP_TAG:-latest}
+    image: altinityinfra/kerberized-hadoop:${DOCKER_KERBERIZED_HADOOP_TAG:-latest}
     hostname: kerberizedhdfs1
     restart: always
     volumes:
@@ -22,7 +22,7 @@ services:
     entrypoint: /etc/bootstrap.sh -d
 
   hdfskerberos:
-    image: clickhouse/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
+    image: altinityinfra/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
     hostname: hdfskerberos
     volumes:
       - ${KERBERIZED_HDFS_DIR}/secrets:/tmp/keytab

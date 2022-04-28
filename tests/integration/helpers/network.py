@@ -248,7 +248,7 @@ class _NetworkManager:
                         time.sleep(i)
 
             image = subprocess.check_output(
-                "docker images -q clickhouse/integration-helper 2>/dev/null", shell=True
+                "docker images -q altinityinfra/integration-helper 2>/dev/null", shell=True
             )
             if not image.strip():
                 print("No network image helper, will try download")
@@ -257,16 +257,16 @@ class _NetworkManager:
                 for i in range(5):
                     try:
                         subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-                            "docker pull clickhouse/integration-helper", shell=True
+                            "docker pull altinityinfra/integration-helper", shell=True
                         )
                         break
                     except:
                         time.sleep(i)
                 else:
-                    raise Exception("Cannot pull clickhouse/integration-helper image")
+                    raise Exception("Cannot pull altinityinfra/integration-helper image")
 
             self._container = self._docker_client.containers.run(
-                "clickhouse/integration-helper",
+                "altinityinfra/integration-helper",
                 auto_remove=True,
                 command=("sleep %s" % self.container_exit_timeout),
                 # /run/xtables.lock passed inside for correct iptables --wait

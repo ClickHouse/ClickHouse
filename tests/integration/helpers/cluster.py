@@ -16,21 +16,29 @@ import traceback
 import urllib.parse
 import shlex
 import urllib3
-
-from cassandra.policies import RoundRobinPolicy
-import cassandra.cluster
-import psycopg2
-import pymongo
-import pymysql
 import requests
-from confluent_kafka.avro.cached_schema_registry_client import (
-    CachedSchemaRegistryClient,
-)
+
+try:
+    # Please, add modules that required for specific tests only here.
+    # So contributors will be able to run most tests locally
+    # without installing tons of unneeded packages that may be not so easy to install.
+    from cassandra.policies import RoundRobinPolicy
+    import cassandra.cluster
+    import psycopg2
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+    import pymongo
+    import pymysql
+    from confluent_kafka.avro.cached_schema_registry_client import (
+        CachedSchemaRegistryClient,
+    )
+    import meilisearch
+except Exception as e:
+    logging.warning(f"Cannot import some modules, some tests may not work: {e}")
+
 from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers import pytest_xdist_logging_to_separate_files
@@ -689,7 +697,7 @@ class ClickHouseCluster:
             binary_path = binary_path[: -len("-server")]
 
         env_variables["keeper_binary"] = binary_path
-        env_variables["image"] = "clickhouse/integration-test:" + self.docker_base_tag
+        env_variables["image"] = "altinityinfra/integration-test:" + self.docker_base_tag
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
         for i in range(1, 4):
@@ -1169,7 +1177,7 @@ class ClickHouseCluster:
         with_hive=False,
         hostname=None,
         env_variables=None,
-        image="clickhouse/integration-test",
+        image="altinityinfra/integration-test",
         tag=None,
         stay_alive=False,
         ipv4_address=None,
@@ -2643,7 +2651,7 @@ class ClickHouseInstance:
         copy_common_configs=True,
         hostname=None,
         env_variables=None,
-        image="clickhouse/integration-test",
+        image="altinityinfra/integration-test",
         tag="latest",
         stay_alive=False,
         ipv4_address=None,

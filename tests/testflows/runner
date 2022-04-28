@@ -14,7 +14,7 @@ DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../"))
 CURRENT_WORK_DIR = os.getcwd()
 CONTAINER_NAME = "clickhouse_testflows_tests"
 
-DIND_TESTFLOWS_TESTS_IMAGE_NAME = "clickhouse/testflows-runner"
+DIND_TESTFLOWS_TESTS_IMAGE_NAME = "altinityinfra/testflows-runner"
 
 def check_args_and_update_paths(args):
     if not os.path.isabs(args.binary):
