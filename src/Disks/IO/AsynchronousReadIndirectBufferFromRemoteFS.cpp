@@ -69,6 +69,10 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getInfoForLog()
     return impl->getInfoForLog();
 }
 
+std::optional<size_t> AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
+{
+    return impl->getFileSize();
+}
 
 bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 {
