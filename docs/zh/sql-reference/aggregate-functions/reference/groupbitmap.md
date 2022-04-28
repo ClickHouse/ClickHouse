@@ -1,5 +1,5 @@
 ---
-toc_priority: 128
+sidebar_position: 128
 ---
 
 # groupBitmap {#groupbitmap}

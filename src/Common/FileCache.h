@@ -42,7 +42,7 @@ public:
 
     virtual void remove(const Key & key) = 0;
 
-    virtual void tryRemoveAll() = 0;
+    virtual void remove(bool force_remove_unreleasable) = 0;
 
     static bool isReadOnly();
 
@@ -145,7 +145,7 @@ public:
 
     void remove(const Key & key) override;
 
-    void tryRemoveAll() override;
+    void remove(bool force_remove_unreleasable) override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
 
