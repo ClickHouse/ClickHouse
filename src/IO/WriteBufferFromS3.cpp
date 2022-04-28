@@ -112,6 +112,8 @@ void WriteBufferFromS3::nextImpl()
             }
             else
             {
+                for (auto reset_segment_it = file_segment_it; reset_segment_it != file_segments.end(); ++reset_segment_it)
+                    (*reset_segment_it)->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                 file_segments.erase(file_segment_it, file_segments.end());
                 break;
             }
@@ -368,7 +370,7 @@ void WriteBufferFromS3::completeMultipartUpload()
 void WriteBufferFromS3::makeSinglepartUpload()
 {
     auto size = temporary_buffer->tellp();
-    bool with_pool = bool(schedule);
+    bool with_pool = static_cast<bool>(schedule);
 
     LOG_TRACE(log, "Making single part upload. Bucket: {}, Key: {}, Size: {}, WithPool: {}", bucket, key, size, with_pool);
 
@@ -456,7 +458,7 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
 {
     auto outcome = client_ptr->PutObject(task.req);
-    bool with_pool = bool(schedule);
+    bool with_pool = static_cast<bool>(schedule);
 
     if (outcome.IsSuccess())
         LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
