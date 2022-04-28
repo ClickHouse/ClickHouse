@@ -8,10 +8,10 @@ namespace DB
 {
 
 /// Reads from the concatenation of multiple SeekableReadBuffer's
-class ConcatSeekableReadBuffer : public SeekableReadBufferWithSize
+class ConcatSeekableReadBuffer : public SeekableReadBuffer, public WithFileSize
 {
 public:
-    ConcatSeekableReadBuffer() : SeekableReadBufferWithSize(nullptr, 0) { }
+    ConcatSeekableReadBuffer() : SeekableReadBuffer(nullptr, 0) { }
     ConcatSeekableReadBuffer(std::unique_ptr<SeekableReadBuffer> buf1, size_t size1, std::unique_ptr<SeekableReadBuffer> buf2, size_t size2);
     ConcatSeekableReadBuffer(SeekableReadBuffer & buf1, size_t size1, SeekableReadBuffer & buf2, size_t size2);
 
@@ -21,7 +21,7 @@ public:
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
 
-    std::optional<size_t> getTotalSize() override { return total_size; }
+    std::optional<size_t> getFileSize() override { return total_size; }
 
 private:
     bool nextImpl() override;
