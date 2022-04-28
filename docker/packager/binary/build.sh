@@ -8,6 +8,8 @@ cache_status () {
     ccache --show-stats ||:
 }
 
+git config --global --add safe.directory /build
+
 mkdir -p build/cmake/toolchain/darwin-x86_64
 tar xJf MacOSX11.0.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
 ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
