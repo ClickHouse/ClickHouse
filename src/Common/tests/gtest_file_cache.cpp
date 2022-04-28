@@ -2,6 +2,8 @@
 
 namespace fs = std::filesystem;
 
+static bool need_to_print = false;
+
 fs::path caches_dir = fs::current_path() / "file_cache_test";
 String cache_base_path = caches_dir / "cache1" / "";
 
@@ -13,13 +15,16 @@ void assertRange(
 {
     auto range = file_segment->range();
 
-    std::cerr << fmt::format(
-        "\nAssert #{} : {} == {} (state: {} == {})\n",
-        assert_n,
-        range.toString(),
-        expected_range.toString(),
-        toString(file_segment->state()),
-        toString(expected_state));
+    if (need_to_print)
+    {
+        std::cerr << fmt::format(
+            "\nAssert #{} : {} == {} (state: {} == {})\n",
+            assert_n,
+            range.toString(),
+            expected_range.toString(),
+            toString(file_segment->state()),
+            toString(expected_state));
+    }
 
     ASSERT_EQ(range.left, expected_range.left);
     ASSERT_EQ(range.right, expected_range.right);
@@ -28,11 +33,14 @@ void assertRange(
 
 void printRanges(std::vector<DB::FileSegmentPtr> & segments)
 {
-    std::cerr << "\nHaving file segments: ";
-    for (const auto & segment : segments)
-        std::cerr << '\n'
-                  << segment->range().toString() << " (state: " + DB::FileSegment::stateToString(segment->state()) + ")"
-                  << "\n";
+    if (need_to_print)
+    {
+        std::cerr << "\nHaving file segments: ";
+        for (const auto & segment : segments)
+            std::cerr << '\n'
+                      << segment->range().toString() << " (state: " + DB::FileSegment::stateToString(segment->state()) + ")"
+                      << "\n";
+    }
 }
 
 std::vector<DB::FileSegmentPtr> fromHolder(const DB::FileSegmentsHolder & holder)
