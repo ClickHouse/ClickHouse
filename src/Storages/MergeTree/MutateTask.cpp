@@ -74,7 +74,7 @@ static void splitMutationCommands(
                     mutated_columns.emplace(column_name);
 
                 if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
-                     mutated_columns.emplace(command.column_name);
+                    mutated_columns.emplace(command.column_name);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
             {
@@ -144,6 +144,124 @@ static void splitMutationCommands(
             }
         }
     }
+}
+
+/// Get the columns list of the resulting part in the same order as storage_columns.
+static std::pair<NamesAndTypesList, SerializationInfoByName>
+getColumnsForNewDataPart(
+    MergeTreeData::DataPartPtr source_part,
+    const Block & updated_header,
+    NamesAndTypesList storage_columns,
+    const SerializationInfoByName & serialization_infos,
+    const MutationCommands & commands_for_removes)
+{
+    NameSet removed_columns;
+    NameToNameMap renamed_columns_to_from;
+    NameToNameMap renamed_columns_from_to;
+    ColumnsDescription part_columns(source_part->getColumns());
+
+    /// All commands are validated in AlterCommand so we don't care about order
+    for (const auto & command : commands_for_removes)
+    {
+        /// If we don't have this column in source part, than we don't need to materialize it
+        if (!part_columns.has(command.column_name))
+            continue;
+
+        if (command.type == MutationCommand::DROP_COLUMN)
+            removed_columns.insert(command.column_name);
+
+        if (command.type == MutationCommand::RENAME_COLUMN)
+        {
+            renamed_columns_to_from.emplace(command.rename_to, command.column_name);
+            renamed_columns_from_to.emplace(command.column_name, command.rename_to);
+        }
+    }
+
+    SerializationInfoByName new_serialization_infos;
+    for (const auto & [name, info] : serialization_infos)
+    {
+        if (removed_columns.contains(name))
+            continue;
+
+        auto it = renamed_columns_from_to.find(name);
+        if (it != renamed_columns_from_to.end())
+            new_serialization_infos.emplace(it->second, info);
+        else
+            new_serialization_infos.emplace(name, info);
+    }
+
+    /// In compact parts we read all columns, because they all stored in a
+    /// single file
+    if (!isWidePart(source_part))
+        return {updated_header.getNamesAndTypesList(), new_serialization_infos};
+
+    Names source_column_names = source_part->getColumns().getNames();
+    NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
+    for (auto it = storage_columns.begin(); it != storage_columns.end();)
+    {
+        if (updated_header.has(it->name))
+        {
+            auto updated_type = updated_header.getByName(it->name).type;
+            if (updated_type != it->type)
+                it->type = updated_type;
+            ++it;
+        }
+        else
+        {
+            if (!source_columns_name_set.contains(it->name))
+            {
+                /// Source part doesn't have column but some other column
+                /// was renamed to it's name.
+                auto renamed_it = renamed_columns_to_from.find(it->name);
+                if (renamed_it != renamed_columns_to_from.end()
+                    && source_columns_name_set.contains(renamed_it->second))
+                    ++it;
+                else
+                    it = storage_columns.erase(it);
+            }
+            else
+            {
+                /// Check that this column was renamed to some other name
+                bool was_renamed = renamed_columns_from_to.contains(it->name);
+                bool was_removed = removed_columns.contains(it->name);
+
+                /// If we want to rename this column to some other name, than it
+                /// should it's previous version should be dropped or removed
+                if (renamed_columns_to_from.contains(it->name) && !was_renamed && !was_removed)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Incorrect mutation commands, trying to rename column {} to {}, but part {} already has column {}", renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
+
+                /// Column was renamed and no other column renamed to it's name
+                /// or column is dropped.
+                if (!renamed_columns_to_from.contains(it->name) && (was_renamed || was_removed))
+                    it = storage_columns.erase(it);
+                else
+                    ++it;
+            }
+        }
+    }
+
+    return {storage_columns, new_serialization_infos};
+}
+
+
+static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies)
+{
+    if (!metadata_snapshot->hasAnyTTL())
+        return ExecuteTTLType::NONE;
+
+    bool has_ttl_expression = false;
+
+    for (const auto & dependency : dependencies)
+    {
+        if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
+            has_ttl_expression = true;
+
+        if (dependency.kind == ColumnDependency::TTL_TARGET)
+            return ExecuteTTLType::NORMAL;
+    }
+    return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
 
@@ -1337,7 +1455,7 @@ bool MutateTask::prepare()
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
-    auto [new_columns, new_infos] = MergeTreeDataMergerMutator::getColumnsForNewDataPart(
+    auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns,
         ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
 
@@ -1357,7 +1475,7 @@ bool MutateTask::prepare()
     ctx->execute_ttl_type = ExecuteTTLType::NONE;
 
     if (ctx->mutating_pipeline.initialized())
-        ctx->execute_ttl_type = MergeTreeDataMergerMutator::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
+        ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
