@@ -2786,4 +2786,9 @@ Chunk InterpreterSelectQuery::to_single_chunk(const Chunks& chunks)
     const size_t num_rows = result_columns[0]->size();
     return Chunk(std::move(result_columns), num_rows);
 }
+
+void InterpreterSelectQuery::dropQueryCache()
+{
+    cache.reset();
+}
 }
