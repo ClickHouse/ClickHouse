@@ -675,7 +675,7 @@ void ARCFileCache::loadCacheInfoIntoMemory()
     Key key;
     UInt64 offset;
     size_t size;
-    std::vector<FileSegmentCell *> cells;
+    std::vector<std::pair<LRUQueueIterator, std::weak_ptr<FileSegment>>> queue_entries;
 
     /// cache_base_path / key_prefix / key / offset
 
@@ -710,7 +710,7 @@ void ARCFileCache::loadCacheInfoIntoMemory()
                     if (cell)
                     {
                         cell->hit_count = 0;
-                        cells.push_back(cell);
+                        queue_entries.emplace_back(*cell->queue_iterator, cell->file_segment);
                     }
                 }
                 else
@@ -730,14 +730,16 @@ void ARCFileCache::loadCacheInfoIntoMemory()
 
     /// Shuffle cells to have random order in LRUQueue as at startup all cells have the same priority.
     pcg64 generator(randomSeed());
-    std::shuffle(cells.begin(), cells.end(), generator);
-    for (const auto & cell : cells)
+    std::shuffle(queue_entries.begin(), queue_entries.end(), generator);
+    for (const auto & [it, file_segment] : queue_entries)
     {
         /// Cell cache size changed and, for example, 1st file segment fits into cache
         /// and 2nd file segment will fit only if first was evicted, then first will be removed and
         /// cell is nullptr here.
-        if (cell)
-            low_queue.queue().splice(low_queue.queue().end(), low_queue.queue(), *cell->queue_iterator);
+        if (file_segment.expired())
+            continue;
+
+        low_queue.queue().splice(low_queue.queue().end(), low_queue.queue(), it);
     }
 }
 
