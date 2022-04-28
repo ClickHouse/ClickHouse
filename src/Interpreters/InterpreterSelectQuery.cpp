@@ -108,6 +108,8 @@ namespace ErrorCodes
 }
 
 LRUCache<CacheKey, Data, CacheKeyHasher> InterpreterSelectQuery::cache{100};
+std::unordered_map<CacheKey, size_t, CacheKeyHasher> InterpreterSelectQuery::times_executed;
+std::mutex InterpreterSelectQuery::times_executed_mutex;
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
 String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns) const
@@ -616,6 +618,23 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     sanitizeBlock(result_header, true);
 }
 
+void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey query_cache_key)
+{
+    bool put_query_result_in_cache = false;
+    if (context->getSettingsRef().query_cache_active_usage)
+    {
+        std::lock_guard l(times_executed_mutex);
+        put_query_result_in_cache = ++times_executed[query_cache_key] > 3;
+    }
+    if (put_query_result_in_cache)
+    {
+        auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(),
+                                                          cache, query_cache_key);
+        caching_step->setStepDescription("Cache query result");
+        query_plan.addStep(std::move(caching_step));
+    }
+}
+
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     auto query_cache_key = CacheKey{query_ptr, source_header, context->getSettingsRef(),
@@ -637,13 +656,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
         return;
     }
     executeImpl(query_plan, std::move(input_pipe));
-    if (context->getSettingsRef().query_cache_active_usage)
-    {
-        auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(),
-                                                                                cache, query_cache_key);
-        caching_step->setStepDescription("Cache query result");
-        query_plan.addStep(std::move(caching_step));
-    }
+    executePutInCache(query_plan, std::move(query_cache_key));
     /// We must guarantee that result structure is the same as in getSampleBlock()
     ///
     /// But if it's a projection query, plan header does not match result_header.

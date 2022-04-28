@@ -219,6 +219,7 @@ private:
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void
     executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
+    void executePutInCache(QueryPlan & query_plan, CacheKey cache_key);
 
     String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
 
@@ -280,6 +281,8 @@ private:
     PreparedSets prepared_sets;
 
     static LRUCache<CacheKey, Data, CacheKeyHasher> cache;
+    static std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
+    static std::mutex times_executed_mutex;
 };
 
 }
