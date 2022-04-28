@@ -65,6 +65,9 @@ The main parameters for each `<server>` are:
 -    `hostname` — Hostname where this server is placed.
 -    `port` — Port where this server listens for connections.
 
+:::note
+In the case of a change in the topology of your ClickHouse Keeper cluster (eg. replacing a server), please make sure to keep the mapping `server_id` to `hostname` consistent and avoid shuffling or reusing an existing `server_id` for different servers (eg. it can happen if your reply on automation scripts to deploy ClickHouse Keeper)
+:::
 
 Examples of configuration for quorum with three nodes can be found in [integration tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) with `test_keeper_` prefix. Example configuration for server #1:
 
