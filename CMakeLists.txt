@@ -44,7 +44,7 @@ enable_language(C CXX ASM)
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
-include (cmake/analysis.cmake)
+include (cmake/clang_tidy.cmake)
 include (cmake/git_status.cmake)
 
 # Ignore export() since we don't use it,
@@ -328,23 +328,9 @@ if (ENABLE_BUILD_PROFILING)
      endif ()
 endif ()
 
-if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
-    # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
-    # We will add C++ standard controlling flag in CMAKE_CXX_FLAGS manually for now.
-
-    if (COMPILER_GCC OR COMPILER_CLANG)
-        # to make numeric_limits<__int128> works with GCC
-        set (_CXX_STANDARD "gnu++2a")
-    else ()
-        set (_CXX_STANDARD "c++2a")
-    endif ()
-
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=${_CXX_STANDARD}")
-else ()
-    set (CMAKE_CXX_STANDARD 20)
-    set (CMAKE_CXX_EXTENSIONS ON) # Same as gnu++2a (ON) vs c++2a (OFF): https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html
-    set (CMAKE_CXX_STANDARD_REQUIRED ON)
-endif ()
+set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_EXTENSIONS ON) # Same as gnu++2a (ON) vs c++2a (OFF): https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html
+set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON)
@@ -431,7 +417,7 @@ if (COMPILER_CLANG)
     endif ()
 
 elseif (ENABLE_THINLTO)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with Clang")
 endif ()
 
 # Turns on all external libs like s3, kafka, ODBC, ...
