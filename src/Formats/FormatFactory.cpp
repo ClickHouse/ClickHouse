@@ -259,9 +259,9 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
     auto format = input_getter(buf, sample, params, format_settings);
 
-    /// It's a kludge. Because we cannot remove context from values/mysqldump formats.
-    if (format->needContext())
-        format->setContext(context);
+    /// It's a kludge. Because I cannot remove context from values format.
+    if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
+        values->setContext(context);
 
     return format;
 }
@@ -384,13 +384,7 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
         throw Exception("FormatFactory: Format " + name + " doesn't support schema inference.", ErrorCodes::LOGICAL_ERROR);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    auto schema_reader = schema_reader_creator(buf, format_settings);
-
-    /// It's a kludge. Because we cannot remove context from MySQLDump format.
-    if (schema_reader->needContext())
-        schema_reader->setContext(context);
-
-    return schema_reader;
+    return schema_reader_creator(buf, format_settings);
 }
 
 ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
