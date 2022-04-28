@@ -112,6 +112,7 @@ private:
     void receiveLogs(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQuery();
+    void cancelQuery();
 
     void onProgress(const Progress & value);
     void onData(Block & block, ASTPtr parsed_query);

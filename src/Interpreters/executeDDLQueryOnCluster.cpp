@@ -32,6 +32,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int INVALID_SHARD_ID;
+    extern const int NO_SUCH_REPLICA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -51,17 +53,7 @@ bool isSupportedAlterType(int type)
 }
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context)
-{
-    return executeDDLQueryOnCluster(query_ptr_, context, {});
-}
-
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const AccessRightsElements & query_requires_access)
-{
-    return executeDDLQueryOnCluster(query_ptr, context, AccessRightsElements{query_requires_access});
-}
-
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, AccessRightsElements && query_requires_access)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
@@ -94,12 +86,37 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     DDLWorker & ddl_worker = context->getDDLWorker();
 
     /// Enumerate hosts which will be used to send query.
-    Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
     std::vector<HostID> hosts;
-    for (const auto & shard : shards)
+    Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
+
+    auto collect_hosts_from_replicas = [&](size_t shard_index)
     {
-        for (const auto & addr : shard)
-            hosts.emplace_back(addr);
+        if (shard_index > shards.size())
+            throw Exception(ErrorCodes::INVALID_SHARD_ID, "Cluster {} doesn't have shard #{}", query->cluster, shard_index);
+        const auto & replicas = shards[shard_index - 1];
+        if (params.replica_index)
+        {
+            if (params.replica_index > replicas.size())
+                throw Exception(ErrorCodes::NO_SUCH_REPLICA, "Cluster {} doesn't have replica #{} in shard #{}", query->cluster, params.replica_index, shard_index);
+            hosts.emplace_back(replicas[params.replica_index - 1]);
+        }
+        else
+        {
+            if ((replicas.size() > 1) && !params.allow_multiple_replicas)
+                throw Exception("This query cannot be executed on multiple replicas", ErrorCodes::QUERY_IS_PROHIBITED);
+            for (const auto & addr : replicas)
+                hosts.emplace_back(addr);
+        }
+    };
+
+    if (params.shard_index)
+    {
+        collect_hosts_from_replicas(params.shard_index);
+    }
+    else
+    {
+        for (size_t shard_index = 1; shard_index <= shards.size(); ++shard_index)
+            collect_hosts_from_replicas(shard_index);
     }
 
     if (hosts.empty())
@@ -107,9 +124,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     /// The current database in a distributed query need to be replaced with either
     /// the local current database or a shard's default database.
+    AccessRightsElements access_to_check = params.access_to_check;
     bool need_replace_current_database = std::any_of(
-        query_requires_access.begin(),
-        query_requires_access.end(),
+        access_to_check.begin(),
+        access_to_check.end(),
         [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
 
     bool use_local_default_database = false;
@@ -137,18 +155,18 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
         if (use_local_default_database)
         {
-            query_requires_access.replaceEmptyDatabase(current_database);
+            access_to_check.replaceEmptyDatabase(current_database);
         }
         else
         {
-            for (size_t i = 0; i != query_requires_access.size();)
+            for (size_t i = 0; i != access_to_check.size();)
             {
-                auto & element = query_requires_access[i];
+                auto & element = access_to_check[i];
                 if (element.isEmptyDatabase())
                 {
-                    query_requires_access.insert(query_requires_access.begin() + i + 1, shard_default_databases.size() - 1, element);
+                    access_to_check.insert(access_to_check.begin() + i + 1, shard_default_databases.size() - 1, element);
                     for (size_t j = 0; j != shard_default_databases.size(); ++j)
-                        query_requires_access[i + j].replaceEmptyDatabase(shard_default_databases[j]);
+                        access_to_check[i + j].replaceEmptyDatabase(shard_default_databases[j]);
                     i += shard_default_databases.size();
                 }
                 else
@@ -161,7 +179,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config
-    context->checkAccess(query_requires_access);
+    context->checkAccess(access_to_check);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
