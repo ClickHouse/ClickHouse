@@ -180,7 +180,8 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
             dynamic_cast<const TestKeeperRequest &>(*generic_request).processWatches(node_watches, list_watches);
     }
 
-    void checkOpKindOrThrow(bool is_write) {
+    void checkOpKindOrThrow(bool is_write)
+    {
         if (op_kind.has_value() && op_kind.value() != is_write)
         {
             throw Exception("Illegal mixing of read and write operations in multi request", Error::ZBADARGUMENTS);
