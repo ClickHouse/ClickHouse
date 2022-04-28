@@ -190,7 +190,7 @@ func TestConfigFileFrameCopy(t *testing.T) {
 			"default-password.yaml": int64(132),
 			"config.yaml":           int64(42512),
 			"server-include.yaml":   int64(21),
-			"user-include.yaml":     int64(120),
+			"user-include.yaml":     int64(121),
 		}
 		var checkedFiles []string
 		for {
