@@ -24,7 +24,6 @@ OUTPUT_SETTING="output_format_protobuf_nullables_with_google_wrappers"
 
 SET_INPUT="SET $INPUT_SETTING = true;"
 SET_OUTPUT="SET $OUTPUT_SETTING = true;"
-SET_BOTH="$SET_INPUT $SET_OUTPUT"
 
 INITIAL_INSERT_VALUES="('str1',1),('',2),('str2',3)"
 MULTI_WRAPPER_VALUES="(0,1,2)"
