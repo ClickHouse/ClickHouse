@@ -1,6 +1,9 @@
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <IO/Operators.h>
+#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -135,9 +138,49 @@ namespace
                 format.ostr << ", ";
             settings->format(format);
         }
+    }
 
+
+    void setDatabaseInElements(ASTBackupQuery::Elements & elements, const String & new_database)
+    {
+        for (auto & element : elements)
+        {
+            if (element.type == ASTBackupQuery::TABLE)
+            {
+                if (element.name.first.empty() && !element.name.second.empty() && !element.name_is_in_temp_db)
+                    element.name.first = new_database;
+                if (element.new_name.first.empty() && !element.name.second.empty() && !element.name_is_in_temp_db)
+                    element.new_name.first = new_database;
+            }
+        }
+    }
+
+    ASTPtr rewriteSettingsWithoutOnCluster(ASTPtr settings, const WithoutOnClusterASTRewriteParams & params)
+    {
+        SettingsChanges changes;
+        if (settings)
+            changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
+
+        boost::remove_erase_if(
+            changes,
+            [](const SettingChange & change)
+            {
+                const String & name = change.name;
+                return (name == "internal") || (name == "async") || (name == "shard_num") || (name == "replica_num");
+            });
+
+        changes.emplace_back("internal", true);
+        changes.emplace_back("async", false);
+        changes.emplace_back("shard_num", params.shard_index);
+        changes.emplace_back("replica_num", params.replica_index);
+
+        auto out_settings = std::make_shared<ASTSetQuery>();
+        out_settings->changes = std::move(changes);
+        out_settings->is_standalone = false;
+        return out_settings;
     }
 }
+
 
 String ASTBackupQuery::getID(char) const
 {
@@ -157,6 +200,7 @@ void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, Fo
                 << (format.hilite ? hilite_none : "");
 
     formatElements(elements, kind, format);
+    formatOnCluster(format);
 
     format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (format.hilite ? hilite_none : "");
     backup_name->format(format);
@@ -164,5 +208,15 @@ void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, Fo
     if (settings || base_backup_name)
         formatSettings(settings, base_backup_name, format);
 }
+
+ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
+{
+    auto new_query = std::static_pointer_cast<ASTBackupQuery>(clone());
+    new_query->cluster.clear();
+    new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
+    setDatabaseInElements(new_query->elements, params.default_database);
+    return new_query;
+}
+
 
 }

@@ -53,6 +53,7 @@ Pipe StorageSystemRemoteDataPaths::read(
         {
             std::vector<IDisk::LocalPathWithRemotePaths> remote_paths_by_local_path;
             disk->getRemotePathsRecursive("store", remote_paths_by_local_path);
+            disk->getRemotePathsRecursive("data", remote_paths_by_local_path);
 
             FileCachePtr cache;
             auto cache_base_path = disk->getCacheBasePath();

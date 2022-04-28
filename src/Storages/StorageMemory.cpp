@@ -122,10 +122,11 @@ class MemorySink : public SinkToStorage
 public:
     MemorySink(
         StorageMemory & storage_,
-        const StorageMetadataPtr & metadata_snapshot_)
+        const StorageMetadataPtr & metadata_snapshot_,
+        ContextPtr context)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
-        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_))
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
     {
     }
 
@@ -201,7 +202,7 @@ StorageMemory::StorageMemory(
     setInMemoryMetadata(storage_metadata);
 }
 
-StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
+StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
@@ -271,9 +272,9 @@ Pipe StorageMemory::read(
 }
 
 
-SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    return std::make_shared<MemorySink>(*this, metadata_snapshot);
+    return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
 }
 
 
@@ -447,7 +448,7 @@ private:
         });
     }
 
-    std::unique_ptr<ReadBuffer> getReadBuffer(size_t index) override
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer(size_t index) override
     {
         initialize();
         return createReadBufferFromFileBase(file_paths[index], {});
@@ -552,7 +553,7 @@ private:
 };
 
 
-RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
+RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());

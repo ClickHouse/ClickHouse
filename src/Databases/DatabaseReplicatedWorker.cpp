@@ -319,7 +319,6 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
 void DatabaseReplicatedDDLWorker::initializeLogPointer(const String & processed_entry_name)
 {
     updateMaxDDLEntryID(processed_entry_name);
-    assert(max_id.load() == parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->replica_path) / "log_ptr")));
 }
 
 UInt32 DatabaseReplicatedDDLWorker::getLogPointer() const
