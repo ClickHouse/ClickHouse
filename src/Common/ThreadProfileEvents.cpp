@@ -67,6 +67,20 @@ namespace ProfileEvents
 namespace DB
 {
 
+const char * TasksStatsCounters::metricsProviderString(MetricsProvider provider)
+{
+    switch (provider)
+    {
+        case MetricsProvider::None:
+            return "none";
+        case MetricsProvider::Procfs:
+            return "procfs";
+        case MetricsProvider::Netlink:
+            return "netlink";
+    }
+    __builtin_unreachable();
+}
+
 bool TasksStatsCounters::checkIfAvailable()
 {
     return findBestAvailableProvider() != MetricsProvider::None;
