@@ -1657,14 +1657,14 @@ ProcessList::Element * Context::getProcessListElement() const
 }
 
 
-void Context::setUncompressedCache(size_t max_size_in_bytes)
+void Context::setUncompressedCache(size_t max_size_in_bytes, String uncompressed_cache_policy)
 {
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
         throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes, uncompressed_cache_policy);
 }
 
 

@@ -1,117 +1,85 @@
-#pragma once 
+#pragma once
 
-#include <Common/LRUCache.h>
+#include <Common/ICachePolicy.h>
 
-namespace DB
+#include <unordered_map>
+#include <list>
+
+#include <base/logger_useful.h>
+
+namespace DB 
 {
 
-template <typename T>
-struct TrivialSLRUCacheWeightFunction
-{
-    size_t operator()(const T &) const
-    {
-        return 1;
-    }
-};
-
-// TODO: rewrite all using of class LRUCache to class CacheBase with cache_policy = "SLRU"
-
-
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialSLRUCacheWeightFunction<TMapped>>
-class SLRUCache: public LRUCache<TKey, TMapped, HashFunction, WeightFunction>
+/// Cache policy SLRU evicts entries which were used only once and are not used for a long time,
+/// this policy protects entries which were used more then once from a sequential scan.
+/// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
+/// of that value.
+/// Cache starts to evict entries when their total weight exceeds max_size.
+/// Value weight should not change after insertion.
+/// To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "SLRU" 
+/// and next parameters in the same order as in the constructor of the current class.
+template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
+class SLRUCachePolicy: public ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>
 {
 public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-    using Base = LRUCache<Key, Mapped, HashFunction, WeightFunction>;
-    using Base::mutex;
 
-    SLRUCache(size_t max_size_, size_t max_protected_size_ = 0)
-        : Base(0)
-        , max_protected_size(max_protected_size_ != 0 ? max_protected_size_ : max_size_ / 2 + 1)
+    using Base = ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+    using typename Base::OnWeightLossFunction;
+
+    /** Initialize SLRUCachePolicy with max_size and max_protected_size.
+      * max_protected_size shows how many of the most frequently used entries will not be evicted after a sequential scan.
+      * max_protected_size == 0 means that the default protected size is equal to half of the total max size.
+      */
+    SLRUCachePolicy(size_t max_size_, size_t max_protected_size_ = 0)
+        : max_protected_size(max_protected_size_ != 0 ? max_protected_size_ : max_size_ / 2 + 1)
         , max_size(std::max(max_protected_size + 1, max_size_))
         {}
 
-    void remove(const Key & key)
-    {
-        std::lock_guard lock(mutex);
-        auto it = cells.find(key);
-        if (it == cells.end())
-            return;
-        auto & cell = it->second;
-        current_size -= cell.size;
-        auto & queue = cell.is_protected ? protected_queue : probationary_queue;
-        queue.erase(it);
-        cells.erase(it);
+    template<class... Args>
+    SLRUCachePolicy(OnWeightLossFunction on_weight_loss_function_, Args... args) : SLRUCachePolicy(args...) {
+        Base::on_weight_loss_function = on_weight_loss_function_;
     }
 
-    size_t weight() const
+    size_t weight() const override
     {
-        std::lock_guard lock(mutex);
         return current_size;
     }
 
-    size_t count() const
+    size_t count() const override
     {
-        std::lock_guard lock(mutex);
         return cells.size();
     }
 
-    size_t maxSize() const
+    size_t maxSize() const override
     {
         return max_size;
     }
 
-    size_t maxProtectedSize() const
-    {
-        return max_protected_size;
-    }
-
-    void reset()
-    {
-        std::lock_guard lock(mutex);
-        resetImpl();
-    }
-
-protected:
-    using SLRUQueue = std::list<Key>;
-    using SLRUQueueIterator = typename SLRUQueue::iterator;
-
-    struct Cell
-    {
-        bool is_protected;
-        MappedPtr value;
-        size_t size;
-        SLRUQueueIterator queue_iterator;
-    };
-
-    using Cells = std::unordered_map<Key, Cell, HashFunction>;
-
-    Cells cells;
-
-    void resetImpl()
+    void reset() override
     {
         cells.clear();
         probationary_queue.clear();
         protected_queue.clear();
         current_size = 0;
         current_protected_size = 0;
-        Base::resetImpl();
     }
 
-private:
-    SLRUQueue probationary_queue;
-    SLRUQueue protected_queue;
+    void remove(const Key & key) override
+    {
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return;
+        auto & cell = it->second;
+        current_size -= cell.size;
+        auto & queue = cell.is_protected ? protected_queue : probationary_queue;
+        queue.erase(cell.queue_iterator);
+        cells.erase(it);
+    }
 
-    size_t current_protected_size = 0;
-    size_t current_size = 0;
-    const size_t max_protected_size;
-    const size_t max_size;
-    
-    WeightFunction weight_function;
-
-    MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    MappedPtr get(const Key & key) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -137,7 +105,7 @@ private:
         return cell.value;
     }
 
-    void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    void set(const Key & key, const MappedPtr & mapped) override
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
@@ -181,6 +149,32 @@ private:
         removeOverflow(probationary_queue, max_size, current_size);
     }
 
+protected:
+    using SLRUQueue = std::list<Key>;
+    using SLRUQueueIterator = typename SLRUQueue::iterator;
+
+    SLRUQueue probationary_queue;
+    SLRUQueue protected_queue;
+
+    struct Cell
+    {
+        bool is_protected;
+        MappedPtr value;
+        size_t size;
+        SLRUQueueIterator queue_iterator;
+    };
+
+    using Cells = std::unordered_map<Key, Cell, HashFunction>;
+
+    Cells cells;
+
+    size_t current_protected_size = 0;
+    size_t current_size = 0;
+    const size_t max_protected_size;
+    const size_t max_size;
+    
+    WeightFunction weight_function;
+
     void removeOverflow(SLRUQueue & queue, const size_t max_weight_size, size_t & current_weight_size)
     {
         size_t current_weight_lost = 0;
@@ -193,7 +187,7 @@ private:
             auto it = cells.find(key);
             if (it == cells.end())
             {
-                LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
+                LOG_ERROR(&Poco::Logger::get("SLRUCache"), "SLRUCache became inconsistent. There must be a bug in it.");
                 abort();
             }
 
@@ -216,19 +210,16 @@ private:
             --queue_size;
         }
 
-        onRemoveOverflowWeightLoss(current_weight_lost);
+        if (current_weight_lost > 0) {
+            Base::on_weight_loss_function(current_weight_lost);
+        }
 
         if (current_size > (1ull << 63))
         {
-            LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
+            LOG_ERROR(&Poco::Logger::get("SLRUCache"), "SLRUCache became inconsistent. There must be a bug in it.");
             abort();
         }
     }
-
-    
-    /// Override this method if you want to track how much weight was lost in removeOverflow method.
-    virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) override {}
 };
-
 
 }

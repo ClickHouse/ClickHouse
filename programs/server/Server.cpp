@@ -1362,6 +1362,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     size_t max_cache_size = memory_amount * cache_size_to_ram_max_ratio;
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size > max_cache_size)
     {
@@ -1369,7 +1370,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_size);
+    global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());

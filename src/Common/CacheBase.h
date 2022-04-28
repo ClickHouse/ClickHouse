@@ -1,57 +1,69 @@
 #pragma once
 
+#include <Common/ICachePolicy.h>
+#include <Common/LRUCachePolicy.h>
+#include <Common/SLRUCachePolicy.h>
+
 #include <unordered_map>
-#include <list>
 #include <memory>
 #include <chrono>
 #include <mutex>
 #include <atomic>
 
-#include <Common/logger_useful.h>
-#include <base/defines.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
 {
 
-// TODO: rewrite all using of class LRUCache to class CacheBase with cache_policy = "LRU"
-
-template <typename T>
-struct TrivialLRUWeightFunction
-{
-    size_t operator()(const T &) const
-    {
-        return 1;
-    }
-};
-
-
-/// Thread-safe cache that evicts entries which are not used for a long time.
+/// Thread-safe cache that evicts entries using special cache policy 
+/// (default policy evicts entries which are not used for a long time).
 /// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
 /// of that value.
 /// Cache starts to evict entries when their total weight exceeds max_size.
 /// Value weight should not change after insertion.
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialLRUWeightFunction<TMapped>>
-class LRUCache
+template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
+class CacheBase
 {
 public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    /** Initialize LRUCache with max_size and max_elements_size.
-      * max_elements_size == 0 means no elements size restrictions.
-      */
-    explicit LRUCache(size_t max_size_, size_t max_elements_size_ = 0)
-        : max_size(std::max(static_cast<size_t>(1), max_size_))
-        , max_elements_size(max_elements_size_)
-        {}
+    CacheBase(size_t max_size) : CacheBase(default_cache_policy_name, max_size) {}
+
+    template<class... Args>
+    CacheBase(std::string cache_policy_name, Args... args) {
+        auto onWeightLossFunction = [&](size_t weight_loss) {
+            onRemoveOverflowWeightLoss(weight_loss);
+        };
+
+        if (cache_policy_name == "") {
+            cache_policy_name = default_cache_policy_name;
+        }
+        
+        policy_name = cache_policy_name;
+
+        LOG_DEBUG(&Poco::Logger::get("CacheBase"), "Cache policy name \"{}\"", cache_policy_name);
+        if (cache_policy_name == "LRU") {
+            using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+            cache_policy = std::make_unique<LRUPolicy>(onWeightLossFunction, args...);
+        }
+        else if (cache_policy_name == "SLRU") {
+            using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+            cache_policy = std::make_unique<SLRUPolicy>(onWeightLossFunction, args...);
+        }
+        else {
+            LOG_ERROR(&Poco::Logger::get("CacheBase"), "Undeclared cache policy name \"{}\"", cache_policy_name);
+            abort();
+        }
+    }
 
     MappedPtr get(const Key & key)
     {
         std::lock_guard lock(mutex);
 
-        auto res = getImpl(key);
+        auto res = cache_policy->get(key);
         if (res)
             ++hits;
         else
@@ -64,19 +76,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
-        setImpl(key, mapped);
-    }
-
-    void remove(const Key & key)
-    {
-        std::lock_guard lock(mutex);
-        auto it = cells.find(key);
-        if (it == cells.end())
-            return;
-        auto & cell = it->second;
-        current_size -= cell.size;
-        queue.erase(cell.queue_iterator);
-        cells.erase(it);
+        cache_policy->set(key, mapped);
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
@@ -90,11 +90,12 @@ public:
     template <typename LoadFunc>
     std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
     {
+        LOG_DEBUG(&Poco::Logger::get("CacheBase"), "Cache getOrSet. Cache policy name \"{}\"", policy_name);
         InsertTokenHolder token_holder;
         {
             std::lock_guard cache_lock(mutex);
 
-            auto val = getImpl(key);
+            auto val = cache_policy->get(key);
             if (val)
             {
                 ++hits;
@@ -132,7 +133,7 @@ public:
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
-            setImpl(key, token->value);
+            cache_policy->set(key, token->value);
             result = true;
         }
 
@@ -141,7 +142,7 @@ public:
 
         return std::make_pair(token->value, result);
     }
-
+    
     void getStats(size_t & out_hits, size_t & out_misses) const
     {
         std::lock_guard lock(mutex);
@@ -149,70 +150,65 @@ public:
         out_misses = misses;
     }
 
+    void reset() 
+    {
+        std::lock_guard lock(mutex);
+        insert_tokens.clear();
+        hits = 0;
+        misses = 0;
+        cache_policy->reset();
+    }
+
+    void remove(const Key & key) 
+    {
+        std::lock_guard lock(mutex);
+        cache_policy->remove(key);
+    }
+
     size_t weight() const
     {
         std::lock_guard lock(mutex);
-        return current_size;
+        return cache_policy->weight();
     }
 
-    size_t count() const
+    size_t count() const 
     {
         std::lock_guard lock(mutex);
-        return cells.size();
+        return cache_policy->count();
     }
 
     size_t maxSize() const
     {
-        return max_size;
-    }
-
-    void reset()
-    {
         std::lock_guard lock(mutex);
-        resetImpl();
+        return cache_policy->maxSize();
     }
 
-    virtual ~LRUCache() = default;
+    virtual ~CacheBase() = default;
 
 protected:
-    using LRUQueue = std::list<Key>;
-    using LRUQueueIterator = typename LRUQueue::iterator;
-
-    struct Cell
-    {
-        MappedPtr value;
-        size_t size;
-        LRUQueueIterator queue_iterator;
-    };
-
-    using Cells = std::unordered_map<Key, Cell, HashFunction>;
-
-    Cells cells TSA_GUARDED_BY(mutex);
-
     mutable std::mutex mutex;
 
-    void resetImpl()
-    {
-        queue.clear();
-        cells.clear();
-        insert_tokens.clear();
-        current_size = 0;
-        hits = 0;
-        misses = 0;
-    }
-
 private:
+    using CachePolicy = ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+
+    std::unique_ptr<CachePolicy> cache_policy;
+    String policy_name; // DELETE THIS FIELD (only for debug)
+    
+    inline static const String default_cache_policy_name = "LRU";
+
+    std::atomic<size_t> hits {0};
+    std::atomic<size_t> misses {0};
 
     /// Represents pending insertion attempt.
     struct InsertToken
     {
-        explicit InsertToken(LRUCache & cache_) : cache(cache_) {}
+        explicit InsertToken(CacheBase & cache_) : cache(cache_) {}
 
         std::mutex mutex;
-        bool cleaned_up TSA_GUARDED_BY(mutex) = false;
-        MappedPtr value TSA_GUARDED_BY(mutex);
+        bool cleaned_up = false; /// Protected by the token mutex
+        MappedPtr value; /// Protected by the token mutex
 
-        LRUCache & cache;
+        CacheBase & cache;
         size_t refcount = 0; /// Protected by the cache mutex
     };
 
@@ -230,7 +226,6 @@ private:
         InsertTokenHolder() = default;
 
         void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
-            TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             key = key_;
             token = token_;
@@ -238,7 +233,6 @@ private:
         }
 
         void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
-            TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             token->cache.insert_tokens.erase(*key);
             token->cleaned_up = true;
@@ -268,105 +262,8 @@ private:
 
     friend struct InsertTokenHolder;
 
-
-    InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
-
-    LRUQueue queue TSA_GUARDED_BY(mutex);
-
-    /// Total weight of values.
-    size_t current_size TSA_GUARDED_BY(mutex) = 0;
-    const size_t max_size;
-    const size_t max_elements_size;
-
-    std::atomic<size_t> hits {0};
-    std::atomic<size_t> misses {0};
-
-    const WeightFunction weight_function;
-
-    virtual MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
-    {
-        auto it = cells.find(key);
-        if (it == cells.end())
-        {
-            return MappedPtr();
-        }
-
-        Cell & cell = it->second;
-
-        /// Move the key to the end of the queue. The iterator remains valid.
-        queue.splice(queue.end(), queue, cell.queue_iterator);
-
-        return cell.value;
-    }
-
-    virtual void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
-    {
-        auto [it, inserted] = cells.emplace(std::piecewise_construct,
-            std::forward_as_tuple(key),
-            std::forward_as_tuple());
-
-        Cell & cell = it->second;
-
-        if (inserted)
-        {
-            try
-            {
-                cell.queue_iterator = queue.insert(queue.end(), key);
-            }
-            catch (...)
-            {
-                cells.erase(it);
-                throw;
-            }
-        }
-        else
-        {
-            current_size -= cell.size;
-            queue.splice(queue.end(), queue, cell.queue_iterator);
-        }
-
-        cell.value = mapped;
-        cell.size = cell.value ? weight_function(*cell.value) : 0;
-        current_size += cell.size;
-
-        removeOverflow();
-    }
-
-    void removeOverflow() TSA_REQUIRES(mutex)
-    {
-        size_t current_weight_lost = 0;
-        size_t queue_size = cells.size();
-
-        while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size)) && (queue_size > 1))
-        {
-            const Key & key = queue.front();
-
-            auto it = cells.find(key);
-            if (it == cells.end())
-            {
-                LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
-                abort();
-            }
-
-            const auto & cell = it->second;
-
-            current_size -= cell.size;
-            current_weight_lost += cell.size;
-
-            cells.erase(it);
-            queue.pop_front();
-            --queue_size;
-        }
-
-        onRemoveOverflowWeightLoss(current_weight_lost);
-
-        if (current_size > (1ull << 63))
-        {
-            LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
-            abort();
-        }
-    }
-
+    InsertTokenById insert_tokens;
+    
     /// Override this method if you want to track how much weight was lost in removeOverflow method.
     virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) {}
 };
