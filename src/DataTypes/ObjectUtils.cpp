@@ -107,6 +107,9 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
     if (WhichDataType(idx).isSimple())
         return DataTypeFactory::instance().get(String(magic_enum::enum_name(idx)));
 
+    if (WhichDataType(idx).isNothing())
+        return std::make_shared<DataTypeNothing>();
+
     if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
         return std::make_shared<DataTypeArray>(getDataTypeByColumn(column_array->getData()));
 

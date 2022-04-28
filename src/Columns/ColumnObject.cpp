@@ -334,7 +334,6 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
 void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t start, size_t length)
 {
     assert(src.isFinalized());
-
     const auto & src_column = src.data.back();
     const auto & src_type = src.least_common_type.get();
 
@@ -646,9 +645,18 @@ void ColumnObject::get(size_t n, Field & res) const
     }
 }
 
+void ColumnObject::insertFrom(const IColumn & src, size_t n)
+{
+    insert(src[n]);
+    finalize();
+}
+
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const auto & src_object = assert_cast<const ColumnObject &>(src);
+
+    if (!src_object.isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insertRangeFrom non-finalized ColumnObject");
 
     for (auto & entry : subcolumns)
     {
@@ -656,6 +664,16 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
             entry->data.insertRangeFrom(src_object.getSubcolumn(entry->path), start, length);
         else
             entry->data.insertManyDefaults(length);
+    }
+
+    for (const auto & entry : src_object.subcolumns)
+    {
+        if (!hasSubcolumn(entry->path))
+        {
+            addSubcolumn(entry->path, num_rows);
+            auto & subcolumn = getSubcolumn(entry->path);
+            subcolumn.insertRangeFrom(entry->data, start, length);
+        }
     }
 
     num_rows += length;
@@ -683,6 +701,36 @@ void ColumnObject::popBack(size_t length)
         entry->data.popBack(length);
 
     num_rows -= length;
+}
+
+template <typename Func>
+ColumnPtr ColumnObject::applyForSubcolumns(Func && func, std::string_view func_name) const
+{
+    if (!isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot {} non-finalized ColumnObject", func_name);
+
+    auto res = ColumnObject::create(is_nullable);
+    for (const auto & subcolumn : subcolumns)
+    {
+        auto new_subcolumn = func(subcolumn->data.getFinalizedColumn());
+        res->addSubcolumn(subcolumn->path, new_subcolumn->assumeMutable());
+    }
+    return res;
+}
+
+ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.permute(perm, limit); }, "permute");
+}
+
+ColumnPtr ColumnObject::filter(const Filter & filter, ssize_t result_size_hint) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.filter(filter, result_size_hint); }, "filter");
+}
+
+ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.index(indexes, limit); }, "index");
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const
