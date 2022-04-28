@@ -17,7 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_IDENTIFIER;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
@@ -39,20 +38,22 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, ContextPtr conte
         else if (*opt_name == "stderr")
             fd = STDERR_FILENO;
         else
-            throw Exception("Unknown identifier '" + *opt_name + "' in first arguments", ErrorCodes::UNKNOWN_IDENTIFIER);
+            filename = *opt_name;
     }
     else if (const auto * literal = arg->as<ASTLiteral>())
     {
         auto type = literal->value.getType();
-        if (type == Field::Types::Int64)
-            fd = static_cast<int>(literal->value.get<Int64>());
-        else if (type == Field::Types::UInt64)
-            fd = static_cast<int>(literal->value.get<UInt64>());
+        if (type == Field::Types::Int64 || type == Field::Types::UInt64)
+        {
+            fd = (type == Field::Types::Int64) ? static_cast<int>(literal->value.get<Int64>()) : static_cast<int>(literal->value.get<UInt64>());
+            if (fd < 0)
+                throw Exception("File descriptor must be non-negative", ErrorCodes::BAD_ARGUMENTS);
+        }
         else if (type == Field::Types::String)
         {
             filename = literal->value.get<String>();
             if (filename == "-")
-                fd = 0;
+                fd = STDIN_FILENO;
         }
         else
             throw Exception(
