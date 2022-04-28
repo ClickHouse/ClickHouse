@@ -2071,7 +2071,7 @@ bool MutateTask::lightweight_prepare()
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
-    auto [new_columns, new_infos] = MergeTreeDataMergerMutator::getColumnsForNewDataPart(
+    auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(
             ctx->source_part, ctx->updated_header, ctx->storage_columns,
             ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
 
