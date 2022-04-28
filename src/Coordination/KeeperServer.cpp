@@ -245,7 +245,7 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
 
     if (params.snapshot_distance_ < 10000)
         LOG_WARNING(log, "Very small snapshot_distance {} specified in coordination settings. "
-                    "It doesn't make sence to specify such small value, because it can lead to degraded performance and another issues.", params.snapshot_distance_);
+                    "It doesn't make sense to specify such small value, because it can lead to degraded performance and another issues.", params.snapshot_distance_);
 
     params.stale_log_gap_ = getValueOrMaxInt32AndLogWarning(coordination_settings->stale_log_gap, "stale_log_gap", log);
     params.fresh_log_gap_ = getValueOrMaxInt32AndLogWarning(coordination_settings->fresh_log_gap, "fresh_log_gap", log);
