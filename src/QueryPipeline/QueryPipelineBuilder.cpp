@@ -479,11 +479,9 @@ size_t QueryPipelineBuilder::getNumThreads() const
         LOG_DEBUG(adqm_log,"Current global num threads: {}",
                   context->getProcessList().getGlobalNumThreads());
         size_t current_global_num_threads = context->getProcessList().getGlobalNumThreads();
-        size_t globally_available_threads;
+        size_t globally_available_threads = 0;
         if (global_max_threads > current_global_num_threads)
             globally_available_threads = global_max_threads - current_global_num_threads;
-        else
-            globally_available_threads = 0;
         LOG_DEBUG(adqm_log,"Globally available threads: {}", globally_available_threads);
         num_threads = std::min(num_threads, globally_available_threads);
         LOG_DEBUG(adqm_log,"Recommended num threads: {}", num_threads);
