@@ -376,7 +376,7 @@ String FormatFactory::getContentType(
 SchemaReaderPtr FormatFactory::getSchemaReader(
     const String & name,
     ReadBuffer & buf,
-    ContextPtr context,
+    ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & schema_reader_creator = dict.at(name).schema_reader_creator;
@@ -395,7 +395,7 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
 
 ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     const String & name,
-    ContextPtr context,
+    ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & external_schema_reader_creator = dict.at(name).external_schema_reader_creator;
