@@ -57,11 +57,16 @@ XML_TEMPLATE = """
 
 """
 
-class Keeper():
-    def __init__(self, keeper_binary_path, server_id, client_port, workdir, with_thread_fuzzer):
+
+class Keeper:
+    def __init__(
+        self, keeper_binary_path, server_id, client_port, workdir, with_thread_fuzzer
+    ):
         self.keeper_binary_path = keeper_binary_path
         if not os.path.exists(self.keeper_binary_path):
-            raise Exception(f"Path for keeper binary doesn't exist {self.keeper_binary_path}")
+            raise Exception(
+                f"Path for keeper binary doesn't exist {self.keeper_binary_path}"
+            )
         self.server_id = server_id
         self.client_port = client_port
         self.workdir = workdir
@@ -83,9 +88,9 @@ class Keeper():
             config = XML_TEMPLATE.format(
                 client_port=self.client_port,
                 server_id=self.server_id,
-                data_dir = self.data_dir,
+                data_dir=self.data_dir,
             )
-            with open(self.config_path, 'w', encoding='utf-8') as f:
+            with open(self.config_path, "w", encoding="utf-8") as f:
                 f.write(config)
 
     def prepare(self):
@@ -95,27 +100,35 @@ class Keeper():
     def start(self):
         env = os.environ.copy()
         if self.with_thread_fuzzer:
-            env['THREAD_FUZZER_CPU_TIME_PERIOD_US'] = '1000'
-            env['THREAD_FUZZER_SLEEP_PROBABILITY'] = '0.1'
-            env['THREAD_FUZZER_SLEEP_TIME_US'] = '100000'
-            env['THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY'] = '1'
-            env['THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY'] = '1'
-            env['THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY'] = '1'
-            env['THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY'] = '1'
+            env["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
+            env["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
+            env["THREAD_FUZZER_SLEEP_TIME_US"] = "100000"
+            env["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+            env["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
+            env["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+            env["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
 
-            env['THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY'] = '0.001'
-            env['THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY'] = '0.001'
-            env['THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY'] = '0.001'
-            env['THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY'] = '0.001'
-            env['THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US'] = '10000'
-            env['THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US'] = '10000'
-            env['THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US'] = '10000'
-            env['THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US'] = '10000'
+            env["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+            env["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
+            env["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+            env["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.001"
+            env["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US"] = "10000"
+            env["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US"] = "10000"
+            env["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US"] = "10000"
+            env["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US"] = "10000"
 
-        self.process = subprocess.Popen([
-            self.keeper_binary_path, '--config', self.config_path,
-            '--log-file', f'{self.data_dir}/clickhouse-keeper.log',
-            '--errorlog-file', f'{self.data_dir}/clickhouse-keeper.err.log'], env=env)
+        self.process = subprocess.Popen(
+            [
+                self.keeper_binary_path,
+                "--config",
+                self.config_path,
+                "--log-file",
+                f"{self.data_dir}/clickhouse-keeper.log",
+                "--errorlog-file",
+                f"{self.data_dir}/clickhouse-keeper.err.log",
+            ],
+            env=env,
+        )
 
     def restart(self):
         print("Restarting keeper", self.server_id)
@@ -127,14 +140,15 @@ class Keeper():
             self.process.kill()
             self.process = None
 
-class KeeperBench():
+
+class KeeperBench:
     def __init__(self, bench_binary_path, client_ports):
         self.bench_binary_path = bench_binary_path
         self.client_ports = client_ports
         self.process = None
 
     def start(self):
-        hosts = ' '.join([f'--hosts localhost:{port}' for port in self.client_ports])
+        hosts = " ".join([f"--hosts localhost:{port}" for port in self.client_ports])
         cmd = f"{self.bench_binary_path} {hosts} --continue_on_errors -c 32 --generator create_small_data"
         self.process = subprocess.Popen(cmd, shell=True)
 
@@ -142,6 +156,7 @@ class KeeperBench():
         if self.process:
             self.process.kill()
             self.process = None
+
 
 def main(args):
     PORTS = [9181, 9182, 9183]
@@ -152,7 +167,11 @@ def main(args):
 
     keepers = []
     for (port, server_id) in zip(PORTS, SERVER_IDS):
-        keepers.append(Keeper(keeper_binary_path, server_id, port, workdir, args.with_thread_fuzzer))
+        keepers.append(
+            Keeper(
+                keeper_binary_path, server_id, port, workdir, args.with_thread_fuzzer
+            )
+        )
 
     bench = KeeperBench(keeper_bench_path, PORTS)
 
@@ -163,8 +182,9 @@ def main(args):
     time.sleep(10)
 
     bench.start()
+
     def signal_handler(sig, frame):
-        print('You pressed Ctrl+C!')
+        print("You pressed Ctrl+C!")
         for keeper in keepers:
             keeper.stop()
 
@@ -180,11 +200,19 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description='Simple tool to load three-nodes keeper')
-    parser.add_argument('--workdir', default='./keeper-overload-workdir', help='Path to workdir')
-    parser.add_argument('--keeper-binary-path', required=True, help='Path to keeper binary')
-    parser.add_argument('--keeper-bench-path', required=True, help='Path to keeper bench utility')
-    parser.add_argument('--with-thread-fuzzer', action='store_true', help='Path to keeper bench utility')
+    parser = ArgumentParser(description="Simple tool to load three-nodes keeper")
+    parser.add_argument(
+        "--workdir", default="./keeper-overload-workdir", help="Path to workdir"
+    )
+    parser.add_argument(
+        "--keeper-binary-path", required=True, help="Path to keeper binary"
+    )
+    parser.add_argument(
+        "--keeper-bench-path", required=True, help="Path to keeper bench utility"
+    )
+    parser.add_argument(
+        "--with-thread-fuzzer", action="store_true", help="Path to keeper bench utility"
+    )
 
     args = parser.parse_args()
 
