@@ -206,7 +206,7 @@ Note that ClickHouse uses forks of these libraries, see https://github.com/Click
 <td><a href="https://ccache.dev/" target="_blank">https://ccache.dev/</a></td>
 </tr>
 <tr>
-<td><a name="enable-clang-tidy"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/cmake/analysis.cmake#L2" rel="external nofollow noreferrer" target="_blank"><code class="syntax">ENABLE_CLANG_TIDY</code></a></td>
+<td><a name="enable-clang-tidy"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/cmake/clang_tidy.cmake#L2" rel="external nofollow noreferrer" target="_blank"><code class="syntax">ENABLE_CLANG_TIDY</code></a></td>
 <td><code class="syntax">OFF</code></td>
 <td>Use clang-tidy static analyzer</td>
 <td><a href="https://clang.llvm.org/extra/clang-tidy/" target="_blank">https://clang.llvm.org/extra/clang-tidy/</a></td>
