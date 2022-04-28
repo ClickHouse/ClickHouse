@@ -171,6 +171,9 @@ public:
 
     /// It will set shard_num and shard_count to the client_info
     void setProperClientInfo();
+    static void dropQueryCache() {
+        cache.reset();
+    }
 
 private:
     InterpreterSelectQuery(
