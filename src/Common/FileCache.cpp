@@ -625,7 +625,7 @@ void LRUFileCache::remove(
     }
 }
 
-void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> &cache_lock)
+void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock)
 {
     Key key;
     UInt64 offset = 0;
