@@ -4,3 +4,4 @@ requests
 sqlparse
 tenacity
 xmltodict
+pandas
