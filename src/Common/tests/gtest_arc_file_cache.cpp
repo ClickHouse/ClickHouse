@@ -280,7 +280,6 @@ TEST(ARCFileCache, get)
         prepareAndDownload(segments[2]);
         segments[2]->complete(DB::FileSegment::State::DOWNLOADED);
         ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADED);
-        other_1.join();
     }
 
     /// [11]
