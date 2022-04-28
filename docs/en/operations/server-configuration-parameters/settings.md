@@ -1386,7 +1386,7 @@ The directory with user scripts files. Used for Executable user defined function
 
 ## user_defined_path {#server_configuration_parameters-user_defined_path}
 
-The directory with user defined files. Used for SQL user defined functions. [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
+The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
 
 **Example**
 
