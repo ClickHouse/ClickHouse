@@ -37,8 +37,8 @@ struct AsynchronousMetricLogElement
     /// Otherwise the list will be constructed from LogElement::getNamesAndTypes and LogElement::getNamesAndAliases.
     static const char * getCustomColumnList()
     {
-        return "event_date Date CODEC(Delta, ZSTD), "
-               "event_time DateTime CODEC(Delta, ZSTD), "
+        return "event_date Date CODEC(Delta(2), ZSTD), "
+               "event_time DateTime CODEC(Delta(4), ZSTD), "
                "metric LowCardinality(String) CODEC(ZSTD), "
                "value Float64 CODEC(Gorilla, ZSTD(3))";
     }
