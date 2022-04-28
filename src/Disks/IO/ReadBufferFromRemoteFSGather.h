@@ -100,6 +100,7 @@ public:
     ReadBufferFromS3Gather(
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
+        const String & version_id_,
         const std::string & common_path_prefix_,
         const BlobsPathToSize & blobs_to_read_,
         size_t max_single_read_retries_,
@@ -107,6 +108,7 @@ public:
         : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
+        , version_id(version_id_)
         , max_single_read_retries(max_single_read_retries_)
     {
     }
@@ -116,6 +118,7 @@ public:
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
+    String version_id;
     UInt64 max_single_read_retries;
 };
 #endif
