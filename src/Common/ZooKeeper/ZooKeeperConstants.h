@@ -14,7 +14,8 @@ static constexpr XID PING_XID  = -2;
 static constexpr XID AUTH_XID  = -4;
 static constexpr XID CLOSE_XID = 0x7FFFFFFF;
 
-enum class OpKind : int32_t {
+enum class OpKind : int32_t
+{
     Read = 1,
     Transaction = 2,
 };

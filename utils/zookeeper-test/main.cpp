@@ -72,16 +72,20 @@ void testCreateList(zkutil::ZooKeeper & zk)
 }
 
 template<typename T, typename U>
-void assert_eq(const T& left, const U& right) {
-    if (left != right) {
+void assert_eq(const T& left, const U& right)
+{
+    if (left != right)
+    {
         throw std::runtime_error("assert_eq failed");
     }
 }
 
 template<typename T, typename U>
-T* assert_dynamic_cast(U* ptr) {
+T* assert_dynamic_cast(U* ptr)
+{
     T* result = dynamic_cast<T*>(ptr);
-    if (result == nullptr) {
+    if (result == nullptr)
+    {
         throw std::runtime_error("dynamic cast failed");
     }
     return result;

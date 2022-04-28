@@ -715,7 +715,6 @@ Coordination::Error ZooKeeper::tryMultiReadNoThrow(const Coordination::Requests 
 }
 
 
-
 void ZooKeeper::removeChildren(const std::string & path)
 {
     Strings children = getChildren(path);

@@ -355,10 +355,14 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
     }
 }
 
-OpNum ZooKeeperMultiRequest::getOpNum() const {
-    if (isReadRequest()) {
+OpNum ZooKeeperMultiRequest::getOpNum() const
+{
+    if (isReadRequest())
+    {
         return OpNum::MultiRead;
-    } else {
+    }
+    else
+    {
         return OpNum::Multi;
     }
 }
@@ -423,10 +427,14 @@ bool ZooKeeperMultiRequest::isReadRequest() const
     return op_kind == OpKind::Read;
 }
 
-void ZooKeeperMultiRequest::checkOpKindOrThrow(OpKind kind) {
-    if (op_kind.has_value() && op_kind.value() != kind) {
+void ZooKeeperMultiRequest::checkOpKindOrThrow(OpKind kind)
+{
+    if (op_kind.has_value() && op_kind.value() != kind)
+    {
         throw Exception("Illegal mixing of read and write operations in multi request", Error::ZBADARGUMENTS);
-    } else {
+    }
+    else
+    {
         op_kind = kind;
     }
 }
