@@ -327,7 +327,7 @@ private:
             /// NOTE: This still require memory allocations and mutex lock inside logger.
             ///       BTW we can also print it to stderr using write syscalls.
 
-            std::stringstream bare_stacktrace;
+            std::stringstream bare_stacktrace; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             bare_stacktrace << "Stack trace:";
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
                 bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
@@ -620,7 +620,7 @@ void BaseDaemon::initialize(Application & self)
     if (config().has("umask"))
     {
         std::string umask_str = config().getString("umask");
-        std::stringstream stream;
+        std::stringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         stream << umask_str;
         stream >> std::oct >> umask_num;
     }
