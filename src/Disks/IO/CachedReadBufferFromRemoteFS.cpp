@@ -46,7 +46,6 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
 
 void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
 {
-
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         file_segments_holder.emplace(cache->get(cache_key, offset, size));
