@@ -945,6 +945,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         fs::create_directories(user_scripts_path);
     }
 
+    {
+        std::string user_defined_path = config().getString("user_defined_path", path / "user_defined/");
+        global_context->setUserDefinedPath(user_defined_path);
+        fs::create_directories(user_defined_path);
+    }
+
     /// top_level_domains_lists
     {
         const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
@@ -954,7 +960,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         fs::create_directories(path / "data/");
         fs::create_directories(path / "metadata/");
-        fs::create_directories(path / "user_defined/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(path / "metadata_dropped/");
@@ -1118,6 +1123,59 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
+
+            /// Reload the number of threads for global pools.
+            /// Note: If you specified it in the top level config (not it config of default profile)
+            /// then ClickHouse will use it exactly.
+            /// This is done for backward compatibility.
+            if (global_context->areBackgroundExecutorsInitialized() && (config->has("background_pool_size") || config->has("background_merges_mutations_concurrency_ratio")))
+            {
+                auto new_pool_size = config->getUInt64("background_pool_size", 16);
+                auto new_ratio = config->getUInt64("background_merges_mutations_concurrency_ratio", 2);
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_move_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_move_pool_size");
+                global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_fetches_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_fetches_pool_size");
+                global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_common_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_common_pool_size");
+                global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (config->has("background_buffer_flush_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_buffer_flush_schedule_pool_size");
+                global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_schedule_pool_size");
+                global_context->getSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_message_broker_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_message_broker_schedule_pool_size");
+                global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_distributed_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_distributed_schedule_pool_size");
+                global_context->getDistributedSchedulePool().increaseThreadsCount(new_pool_size);
+            }
 
             if (!initial_loading)
             {
@@ -1339,7 +1397,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
-
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
@@ -1508,7 +1565,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
 #if defined(OS_LINUX)
-    if (!TasksStatsCounters::checkIfAvailable())
+    auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
+    if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)
     {
         LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
             " neither clickhouse-server process has CAP_NET_ADMIN capability."
@@ -1518,6 +1576,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.",
             executable_path);
+    }
+    else
+    {
+        LOG_INFO(log, "Tasks stats provider: {}", TasksStatsCounters::metricsProviderString(tasks_stats_provider));
     }
 
     if (!hasLinuxCapability(CAP_SYS_NICE))

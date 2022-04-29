@@ -78,12 +78,15 @@ LRUFileCache::LRUFileCache(const String & cache_base_path_, const FileCacheSetti
 
 void LRUFileCache::initialize()
 {
-    if (fs::exists(cache_base_path))
-        loadCacheInfoIntoMemory();
-    else
-        fs::create_directories(cache_base_path);
-
-    is_initialized = true;
+    std::lock_guard cache_lock(mutex);
+    if (!is_initialized)
+    {
+        if (fs::exists(cache_base_path))
+            loadCacheInfoIntoMemory(cache_lock);
+        else
+            fs::create_directories(cache_base_path);
+        is_initialized = true;
+    }
 }
 
 void LRUFileCache::useCell(
@@ -555,7 +558,7 @@ void LRUFileCache::remove(const Key & key)
         fs::remove(key_path);
 }
 
-void LRUFileCache::tryRemoveAll()
+void LRUFileCache::remove(bool force_remove_unreleasable)
 {
     /// Try remove all cached files by cache_base_path.
     /// Only releasable file segments are evicted.
@@ -567,12 +570,13 @@ void LRUFileCache::tryRemoveAll()
         auto & [key, offset] = *it++;
 
         auto * cell = getCell(key, offset, cache_lock);
-        if (cell->releasable())
+        if (cell->releasable() || force_remove_unreleasable)
         {
             auto file_segment = cell->file_segment;
             if (file_segment)
             {
                 std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+                file_segment->detach(cache_lock, segment_lock);
                 remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
             }
         }
@@ -621,14 +625,12 @@ void LRUFileCache::remove(
     }
 }
 
-void LRUFileCache::loadCacheInfoIntoMemory()
+void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock)
 {
-    std::lock_guard cache_lock(mutex);
-
     Key key;
     UInt64 offset = 0;
     size_t size = 0;
-    std::vector<FileSegmentCell *> cells;
+    std::vector<std::pair<LRUQueueIterator, std::weak_ptr<FileSegment>>> queue_entries;
 
     /// cache_base_path / key_prefix / key / offset
 
@@ -661,7 +663,7 @@ void LRUFileCache::loadCacheInfoIntoMemory()
                 {
                     auto * cell = addCell(key, offset, size, FileSegment::State::DOWNLOADED, cache_lock);
                     if (cell)
-                        cells.push_back(cell);
+                        queue_entries.emplace_back(*cell->queue_iterator, cell->file_segment);
                 }
                 else
                 {
@@ -676,14 +678,16 @@ void LRUFileCache::loadCacheInfoIntoMemory()
 
     /// Shuffle cells to have random order in LRUQueue as at startup all cells have the same priority.
     pcg64 generator(randomSeed());
-    std::shuffle(cells.begin(), cells.end(), generator);
-    for (const auto & cell : cells)
+    std::shuffle(queue_entries.begin(), queue_entries.end(), generator);
+    for (const auto & [it, file_segment] : queue_entries)
     {
         /// Cell cache size changed and, for example, 1st file segment fits into cache
         /// and 2nd file segment will fit only if first was evicted, then first will be removed and
         /// cell is nullptr here.
-        if (cell)
-            queue.splice(queue.end(), queue, *cell->queue_iterator);
+        if (file_segment.expired())
+            continue;
+
+        queue.splice(queue.end(), queue, it);
     }
 }
 

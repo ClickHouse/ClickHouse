@@ -34,6 +34,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Interpreters/RewriteCountDistinctVisitor.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -160,17 +161,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names_)
     : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
-{
-}
-
-InterpreterSelectQuery::InterpreterSelectQuery(
-    const ASTPtr & query_ptr_,
-    ContextPtr context_,
-    const SelectQueryOptions & options_,
-    PreparedSets prepared_sets_)
-    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, {}, {}, std::move(prepared_sets_))
-{
-}
+{}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -187,6 +178,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const StorageMetadataPtr & metadata_snapshot_,
     const SelectQueryOptions & options_)
     : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_)
+{}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextPtr context_,
+    const SelectQueryOptions & options_,
+    SubqueriesForSets subquery_for_sets_,
+    PreparedSets prepared_sets_)
+    : InterpreterSelectQuery(
+        query_ptr_, context_, std::nullopt, nullptr, options_, {}, {}, std::move(subquery_for_sets_), std::move(prepared_sets_))
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
@@ -275,6 +276,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names,
     const StorageMetadataPtr & metadata_snapshot_,
+    SubqueriesForSets subquery_for_sets_,
     PreparedSets prepared_sets_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
     : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
@@ -282,6 +284,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , input_pipe(std::move(input_pipe_))
     , log(&Poco::Logger::get("InterpreterSelectQuery"))
     , metadata_snapshot(metadata_snapshot_)
+    , subquery_for_sets(std::move(subquery_for_sets_))
     , prepared_sets(std::move(prepared_sets_))
 {
     checkStackSize();
@@ -312,6 +315,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     query_info.original_query = query_ptr->clone();
+
+    if (settings.count_distinct_optimization)
+    {
+        RewriteCountDistinctFunctionMatcher::Data data_rewrite_countdistinct;
+        RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
+    }
 
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols);
 
@@ -403,9 +412,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     StorageView * view = nullptr;
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
-
-    /// Reuse already built sets for multiple passes of analysis
-    SubqueriesForSets subquery_for_sets;
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
@@ -570,7 +576,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         /// Reuse already built sets for multiple passes of analysis
         subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
-        prepared_sets = query_info.sets.empty() ? query_analyzer->getPreparedSets() : query_info.sets;
+        prepared_sets = std::move(query_analyzer->getPreparedSets());
 
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
@@ -654,9 +660,14 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         auto & query = getSelectQuery();
         query_analyzer->makeSetsForIndex(query.where());
         query_analyzer->makeSetsForIndex(query.prewhere());
-        query_info.sets = query_analyzer->getPreparedSets();
+        query_info.sets = std::move(query_analyzer->getPreparedSets());
+        query_info.subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
 
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
+
+        /// query_info.sets is used for further set index analysis. Use copy instead of move.
+        query_analyzer->getPreparedSets() = query_info.sets;
+        query_analyzer->getSubqueriesForSets() = std::move(query_info.subquery_for_sets);
     }
 
     /// Do I need to perform the first part of the pipeline?
@@ -904,7 +915,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
                 col_set.insert(column.name);
             }
             for (const auto & column : result_block)
-                if (col_set.count(column.name) == 0)
+                if (!col_set.contains(column.name))
                     source_columns.emplace_back(column.name, column.type);
         }
 
@@ -1668,6 +1679,20 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     }
 }
 
+void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
+{
+    context->getClientInfo().collaborate_with_initiator = true;
+    context->setMergeTreeReadTaskCallback(std::move(callback));
+}
+
+void InterpreterSelectQuery::setProperClientInfo()
+{
+    context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    assert(options.shard_count.has_value() && options.shard_num.has_value());
+    context->getClientInfo().count_participating_replicas = *options.shard_count;
+    context->getClientInfo().number_of_current_replica = *options.shard_num;
+}
+
 bool InterpreterSelectQuery::shouldMoveToPrewhere()
 {
     const Settings & settings = context->getSettingsRef();
@@ -1774,7 +1799,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             else
                 column_expr = std::make_shared<ASTIdentifier>(column);
 
-            if (required_columns_from_prewhere.count(column))
+            if (required_columns_from_prewhere.contains(column))
             {
                 required_columns_from_prewhere_expr->children.emplace_back(std::move(column_expr));
 
@@ -1802,7 +1827,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
                     continue;
 
-                if (columns_to_remove.count(column.name))
+                if (columns_to_remove.contains(column.name))
                     continue;
 
                 required_columns_all_expr->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
@@ -1826,7 +1851,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 prewhere_info->remove_prewhere_column = false;
 
         /// Remove columns which will be added by prewhere.
-        std::erase_if(required_columns, [&](const String & name) { return required_columns_after_prewhere_set.count(name) != 0; });
+        std::erase_if(required_columns, [&](const String & name) { return required_columns_after_prewhere_set.contains(name); });
 
         if (prewhere_info)
         {
@@ -1849,7 +1874,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
             /// Add physical columns required by prewhere actions.
             for (const auto & column : required_columns_from_prewhere)
-                if (required_aliases_from_prewhere.count(column) == 0)
+                if (!required_aliases_from_prewhere.contains(column))
                     if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
                         required_columns.push_back(column);
         }

@@ -108,7 +108,8 @@ def _exec_get_with_retry(url):
 
 
 WorkflowDescription = namedtuple(
-    "WorkflowDescription", ["run_id", "status", "rerun_url", "cancel_url", "conclusion"]
+    "WorkflowDescription",
+    ["run_id", "head_sha", "status", "rerun_url", "cancel_url", "conclusion"],
 )
 
 
@@ -160,6 +161,7 @@ def get_workflows_description_for_pull_request(
             workflow_descriptions.append(
                 WorkflowDescription(
                     run_id=workflow["id"],
+                    head_sha=workflow["head_sha"],
                     status=workflow["status"],
                     rerun_url=workflow["rerun_url"],
                     cancel_url=workflow["cancel_url"],
@@ -170,11 +172,9 @@ def get_workflows_description_for_pull_request(
     return workflow_descriptions
 
 
-def get_workflow_description_fallback(event_data) -> List[WorkflowDescription]:
-    pull_request_event = event_data["pull_request"]
+def get_workflow_description_fallback(pull_request_event) -> List[WorkflowDescription]:
     head_repo = pull_request_event["head"]["repo"]["full_name"]
     head_branch = pull_request_event["head"]["ref"]
-    head_sha = pull_request_event["head"]["sha"]
     print("Get last 500 workflows from API to search related there")
     # Fallback for a case of an already deleted branch and no workflows received
     request_url = f"{API_URL}/actions/runs?per_page=100"
@@ -213,16 +213,11 @@ def get_workflow_description_fallback(event_data) -> List[WorkflowDescription]:
         }
         for wf in workflows_data
     ]
-    if event_data["action"] == "synchronize":
-        print(f"Leave only workflows with SHA but {head_sha} for updated PR")
-        # Cancel all events with SHA different than current
-        workflows_data = list(
-            filter(lambda x: x["head_sha"] != head_sha, workflows_data)
-        )
 
     workflow_descriptions = [
         WorkflowDescription(
             run_id=wf["id"],
+            head_sha=wf["head_sha"],
             status=wf["status"],
             rerun_url=wf["rerun_url"],
             cancel_url=wf["cancel_url"],
@@ -238,6 +233,7 @@ def get_workflow_description(workflow_id) -> WorkflowDescription:
     workflow = _exec_get_with_retry(API_URL + f"/actions/runs/{workflow_id}")
     return WorkflowDescription(
         run_id=workflow["id"],
+        head_sha=workflow["head_sha"],
         status=workflow["status"],
         rerun_url=workflow["rerun_url"],
         cancel_url=workflow["cancel_url"],
@@ -281,7 +277,7 @@ def main(event):
         print("PR merged/closed or manually labeled 'do not test' will kill workflows")
         workflow_descriptions = get_workflows_description_for_pull_request(pull_request)
         workflow_descriptions = (
-            workflow_descriptions or get_workflow_description_fallback(event_data)
+            workflow_descriptions or get_workflow_description_fallback(pull_request)
         )
         urls_to_cancel = []
         for workflow_description in workflow_descriptions:
@@ -296,13 +292,14 @@ def main(event):
         print("PR is synchronized, going to stop old actions")
         workflow_descriptions = get_workflows_description_for_pull_request(pull_request)
         workflow_descriptions = (
-            workflow_descriptions or get_workflow_description_fallback(event_data)
+            workflow_descriptions or get_workflow_description_fallback(pull_request)
         )
         urls_to_cancel = []
         for workflow_description in workflow_descriptions:
             if (
                 workflow_description.status != "completed"
                 and workflow_description.conclusion != "cancelled"
+                and workflow_description.head_sha != pull_request["head"]["sha"]
             ):
                 urls_to_cancel.append(workflow_description.cancel_url)
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
@@ -311,7 +308,7 @@ def main(event):
         print("PR marked with can be tested label, rerun workflow")
         workflow_descriptions = get_workflows_description_for_pull_request(pull_request)
         workflow_descriptions = (
-            workflow_descriptions or get_workflow_description_fallback(event_data)
+            workflow_descriptions or get_workflow_description_fallback(pull_request)
         )
         if not workflow_descriptions:
             print("Not found any workflows")

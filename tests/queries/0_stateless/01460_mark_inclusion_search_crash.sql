@@ -7,6 +7,6 @@ INSERT INTO pk (x, y, z) VALUES (1, 11, 1235), (2, 11, 4395), (3, 22, 3545), (4,
 SET max_block_size = 1;
 SET max_rows_to_read = 5;
 
-SELECT toUInt32(x), y, z FROM pk WHERE (x >= toDateTime(100000)) AND (x <= toDateTime(3));
+SELECT toUInt32(x), y, z FROM pk WHERE (x >= toDateTime(100000)) AND (x <= toDateTime(90000));
 
 DROP TABLE IF EXISTS pk;
