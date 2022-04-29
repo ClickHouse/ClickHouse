@@ -186,11 +186,11 @@ func TestConfigFileFrameCopy(t *testing.T) {
 		require.Empty(t, errs)
 		i := 0
 		sizes := map[string]int64{
-			"users.yaml":            int64(1024),
+			"users.yaml":            int64(1023),
 			"default-password.yaml": int64(132),
 			"config.yaml":           int64(42512),
 			"server-include.yaml":   int64(21),
-			"user-include.yaml":     int64(121),
+			"user-include.yaml":     int64(120),
 		}
 		var checkedFiles []string
 		for {
