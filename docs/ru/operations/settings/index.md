@@ -1,6 +1,7 @@
 ---
 sidebar_label: Settings
 sidebar_position: 55
+slug: /ru/operations/settings/
 ---
 
 # Настройки {#session-settings-intro}
