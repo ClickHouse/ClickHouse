@@ -680,9 +680,21 @@ public:
         {
             // Round brackets can mean priority operator as well as function tuple()
             if (func_name == "tuple" && res.size() == 1)
+            {
                 op = std::move(res[0]);
+            }
             else
-                op = makeASTFunction(func_name, std::move(res));
+            {
+                auto func = makeASTFunction(func_name, std::move(res));
+
+                if (parameters)
+                {
+                    func->parameters = parameters;
+                    func->children.push_back(func->parameters);
+                }
+
+                op = func;
+            }
 
             return true;
         }
@@ -698,6 +710,10 @@ public:
 
     virtual bool parse(IParser::Pos & pos, Expected & expected, Action & action)
     {
+        if (isFinished())
+            return true;
+
+        // fix: layer_zero is basically end_bracket != TokenType::Whitespace
         if (!layer_zero && ParserToken(TokenType::Comma).ignore(pos, expected))
         {
             action = Action::OPERAND;
@@ -706,8 +722,22 @@ public:
 
         if (end_bracket != TokenType::Whitespace && ParserToken(end_bracket).ignore(pos, expected))
         {
-            finished = true;
-            return wrapLayer();
+            if (!wrapLayer())
+                return false;
+
+            // fix: move to other place, ()()() will work
+            if (end_bracket == TokenType::ClosingRoundBracket && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+            {
+                parameters = std::make_shared<ASTExpressionList>();
+                std::swap(parameters->children, result);
+                action = Action::OPERAND;
+            }
+            else
+            {
+                state = -1;
+            }
+
+            return true;
         }
 
         return true;
@@ -715,7 +745,7 @@ public:
 
     bool isFinished()
     {
-        return finished;
+        return state == -1;
     }
 
     int previousPriority()
@@ -748,6 +778,7 @@ public:
         Operator cur_op;
         while (popOperator(cur_op))
         {
+            // Special case for ternary operator
             if (cur_op.func_name == "if_pre")
                 return false;
 
@@ -804,14 +835,30 @@ public:
         return true;
     }
 
+    bool parseAlias(ASTPtr node)
+    {
+        if (result.empty())
+            return false;
+        /// FIXME: try to prettify this cast using `as<>()`
+        if (auto * ast_with_alias = node->as<ASTWithAlias>())
+        // if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(result.back().get()))
+            tryGetIdentifierNameInto(node, ast_with_alias->alias);
+        else
+            return false;
+
+        return true;
+    }
+
 protected:
     std::vector<Operator> operators;
     ASTs operands;
     ASTs result;
     TokenType end_bracket;
     String func_name;
-    bool finished = false;
+    int state = 0;
     bool layer_zero;
+
+    ASTPtr parameters;
 };
 
 
@@ -833,7 +880,7 @@ public:
                 if (ParserDataType().parse(pos, type_node, expected) && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     result[0] = createFunctionCast(result[0], type_node);
-                    finished = true;
+                    state = -1;
                     return true;
                 }
                 else
@@ -860,16 +907,13 @@ public:
 
                 result[0] = makeASTFunction("CAST", result[0], result[1]);
                 result.pop_back();
-                finished = true;
+                state = -1;
                 return true;
             }
         }
 
         return true;
     }
-
-private:
-    int state = 0;
 };
 
 class ExtractLayer : public Layer
@@ -909,7 +953,7 @@ public:
                     return false;
 
                 result[0] = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), result[0]);
-                finished = true;
+                state = -1;
                 return true;
             }
         }
@@ -918,7 +962,6 @@ public:
     }
 
 private:
-    int state = 0;
     IntervalKind interval_kind;
 };
 
@@ -966,16 +1009,13 @@ public:
                     return false;
 
                 result = {makeASTFunction("substring", result)};
-                finished = true;
+                state = -1;
                 return true;
             }
         }
 
         return true;
     }
-
-private:
-    int state = 0;
 };
 
 class PositionLayer : public Layer
@@ -1017,16 +1057,13 @@ public:
                 else
                     result = {makeASTFunction("position", result[1], result[0])};
 
-                finished = true;
+                state = -1;
                 return true;
             }
         }
 
         return true;
     }
-
-private:
-    int state = 0;
 };
 
 
@@ -1048,7 +1085,7 @@ public:
         subquery->children.push_back(node);
         result = {makeASTFunction("exists", subquery)};
 
-        finished = true;
+        state = -1;
 
         return true;
     }
@@ -1195,15 +1232,13 @@ public:
                     result.push_back(std::make_shared<ASTLiteral>(""));
                 }
 
-                finished = true;
+                state = -1;
             }
         }
 
         return true;
     }
 private:
-    int state = 0;
-
     bool trim_left;
     bool trim_right;
     bool char_override = false;
@@ -1266,14 +1301,13 @@ public:
 
                 result[0] = makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), result[0]);
                 result = {makeASTFunction(function_name, result[1], result[0])};
-                finished = true;
+                state = -1;
             }
         }
         return true;
     }
 
 private:
-    int state = 0;
     IntervalKind interval_kind;
     const char * function_name;
 };
@@ -1330,7 +1364,7 @@ public:
                     return false;
 
                 result = {makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), result[0], result[1])};
-                finished = true;
+                state = -1;
             }
         }
 
@@ -1338,7 +1372,6 @@ public:
     }
 
 private:
-    int state = 0;
     IntervalKind interval_kind;
 };
 
@@ -1383,7 +1416,7 @@ public:
                                 return false;
 
                             result = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr)};
-                            finished = true;
+                            state = -1;
                     }
                 }
             }
@@ -1398,7 +1431,7 @@ public:
                     return false;
 
                 result = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), result)};
-                finished = true;
+                state = -1;
             }
         }
 
@@ -1406,7 +1439,6 @@ public:
     }
 
 private:
-    int state = 0;
     IntervalKind interval_kind;
 };
 
@@ -1456,7 +1488,7 @@ public:
                     result = {makeASTFunction("caseWithExpression", result)};
                 else
                     result = {makeASTFunction("multiIf", result)};
-                finished = true;
+                state = -1;
             }
         }
 
@@ -1484,7 +1516,7 @@ public:
                 else
                     result = {makeASTFunction("multiIf", result)};
 
-                finished = true;
+                state = -1;
             }
         }
 
@@ -1492,7 +1524,6 @@ public:
     }
 
 private:
-    int state = 0;
     bool has_case_expr;
 };
 
@@ -1766,6 +1797,7 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else
         {
             next = Action::OPERAND;
+            ASTPtr tmp;
 
             /// Try to find operators from 'op_table'
             auto cur_op = op_table.begin();
@@ -1807,6 +1839,13 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     return false;
 
                 storage.back()->pushOperator(Operator("lambda", 2, 2));
+            }
+            else if (storage.size() > 1 && ParserAlias(false).parse(pos, tmp, expected))
+            {
+                if (!storage.back()->parse(pos, expected, next))
+                    return false;
+                if (!storage.back()->parseAlias(tmp))
+                    return false;
             }
             else if (pos->type == TokenType::Comma)
             {
