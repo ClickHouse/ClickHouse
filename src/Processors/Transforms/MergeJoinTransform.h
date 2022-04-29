@@ -250,6 +250,8 @@ private:
     std::optional<Status> handleAllJoinState();
     Status allJoin(ASTTableJoin::Kind kind);
 
+    Chunk createBlockWithDefaults(size_t source_num);
+
     std::vector<FullMergeJoinCursorPtr> cursors;
     std::vector<Chunk> sample_chunks;
 
