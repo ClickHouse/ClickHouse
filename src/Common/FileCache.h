@@ -92,11 +92,11 @@ public:
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
 
-    void addQueryRef(String & query_id);
+    void addQueryRef(const String & query_id);
 
-    void DecQueryRef(String & query_id);
+    void DecQueryRef(const String & query_id);
 
-    void updateQueryCacheLog(String &query_id, String &remote_fs_path, size_t hit_count, size_t miss_count);
+    void updateQueryCacheLog(const String &query_id, const String &remote_fs_path, size_t hit_count, size_t miss_count);
 
 protected:
     String cache_base_path;
