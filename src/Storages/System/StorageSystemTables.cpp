@@ -244,10 +244,30 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
-                        /// Fill the rest columns with defaults
+                        const auto & settings = context->getSettingsRef();
                         while (src_index < columns_mask.size())
-                            if (columns_mask[src_index++])
+                        {
+                            // total_rows
+                            if (src_index == 18 && columns_mask[src_index])
+                            {
+                                if (auto total_rows = table.second->totalRows(settings))
+                                    res_columns[res_index++]->insert(*total_rows);
+                                else
+                                    res_columns[res_index++]->insertDefault();
+                            }
+                            // total_bytes
+                            else if (src_index == 19 && columns_mask[src_index])
+                            {
+                                if (auto total_bytes = table.second->totalBytes(settings))
+                                    res_columns[res_index++]->insert(*total_bytes);
+                                else
+                                    res_columns[res_index++]->insertDefault();
+                            }
+                            /// Fill the rest columns with defaults
+                            else if (columns_mask[src_index])
                                 res_columns[res_index++]->insertDefault();
+                            src_index++;
+                        }
                     }
                 }
 

@@ -169,9 +169,13 @@ Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std:
     /// Sample block should not contain first row default values
     auto empty_sample_block = sample_block.cloneEmpty();
 
+    auto context_copy = Context::createCopy(context);
+    context_copy->makeQueryContext();
+
     if (configuration.is_local)
     {
-        builder.init(executeQuery(query, context, true).pipeline);
+
+        builder.init(executeQuery(query, context_copy, true).pipeline);
         auto converting = ActionsDAG::makeConvertingActions(
             builder.getHeader().getColumnsWithTypeAndName(),
             empty_sample_block.getColumnsWithTypeAndName(),
@@ -185,7 +189,7 @@ Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std:
     else
     {
         builder.init(Pipe(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context), false, false)));
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false)));
     }
 
     if (result_size_hint)

@@ -217,6 +217,14 @@ public:
 
 private:
     ColumnsContainer columns;
+
+    /// Subcolumns are not nested columns.
+    ///
+    /// Example of subcolumns:
+    /// - .size0 for Array
+    /// - .null  for Nullable
+    ///
+    /// While nested columns have form like foo.bar
     SubcolumnsContainter subcolumns;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
