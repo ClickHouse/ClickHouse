@@ -77,7 +77,8 @@ def test_groupBitmapAndState_on_distributed_table(start_cluster):
     for node in (node1, node2):
         result = node.query(
             "select bitmapCardinality(groupBitmapAndState(z)) FROM {};".format(
-                distributed_table_name)
+                distributed_table_name
+            )
         ).strip()
         assert result == expected
 
@@ -126,12 +127,14 @@ def test_groupBitmapAndState_on_different_version_nodes(start_cluster):
     # We will get wrong result when query distribute table if the cluster contains old version server
     result = node3.query(
         "select bitmapCardinality(groupBitmapAndState(z)) FROM {};".format(
-            distributed_table_name)
+            distributed_table_name
+        )
     ).strip()
     assert result == "10"
 
     result = node4.query(
         "select bitmapCardinality(groupBitmapAndState(z)) FROM {};".format(
-            distributed_table_name)
+            distributed_table_name
+        )
     ).strip()
     assert result == "1"
