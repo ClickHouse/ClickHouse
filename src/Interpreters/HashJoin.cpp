@@ -782,9 +782,8 @@ bool HashJoin::tryMergeBlocks(Block & source_block, bool check_limits[[maybe_unu
     {
         data->prepare_merged_blocks.emplace_back(source_block);
         if (!source_block)
-        {
             return merge_block(data->prepare_merged_blocks);
-        }
+
         if (!check_limits)
             return true;
         return table_join->sizeLimits().check(data->total_rows, data->total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -1557,7 +1556,8 @@ IColumn::Filter joinRightColumnsSwitchMultipleDisjuncts(
     BlocksList right_blocks,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
-    if (right_blocks.size() == 1) {
+    if (right_blocks.size() == 1)
+    {
         return mapv.size() > 1
             ? joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, has_null_map, true, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, right_blocks, used_flags)
             : joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, has_null_map, false, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, right_blocks, used_flags);
