@@ -808,7 +808,7 @@ void registerStorageFileLog(StorageFactory & factory)
         auto path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
         auto format = format_ast->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageFileLog::create(
+        return std::make_shared<StorageFileLog>(
             args.table_id,
             args.getContext(),
             args.columns,
