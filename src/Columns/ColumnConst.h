@@ -131,6 +131,11 @@ public:
         s += length;
     }
 
+    void insertIndicesFrom(std::vector<const IColumn *> &, std::vector<size_t> & rows) override
+    {
+        s += rows.size();
+    }
+
     void insert(const Field &) override
     {
         ++s;

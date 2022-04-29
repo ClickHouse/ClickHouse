@@ -185,8 +185,16 @@ public:
 
     virtual void insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> & rows)
     {
-        for (size_t i = 0; i < rows.size(); i++)
-            insertFrom(*src[i], rows[i]);
+        if (src.size() == 1)
+        {
+            for (size_t i = 0; i < rows.size(); i++)
+                insertFrom(*src[0], rows[i]);
+        }
+        else
+        {
+            for (size_t i = 0; i < rows.size(); i++)
+                insertFrom(*src[i], rows[i]);
+        }
     }
 
     /// Appends one element from other column with the same type multiple times.

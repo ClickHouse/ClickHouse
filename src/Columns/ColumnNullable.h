@@ -80,6 +80,7 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insert(const Field & x) override;
     void insertFrom(const IColumn & src, size_t n) override;
+    void insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> & rows) override;
 
     void insertFromNotNullable(const IColumn & src, size_t n);
     void insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length);

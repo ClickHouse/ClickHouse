@@ -262,6 +262,33 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 }
 
 template <is_decimal T>
+void ColumnDecimal<T>::insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> & rows)
+{
+    size_t old_size = data.size();
+    data.resize(old_size + rows.size());
+    const auto * indices_begin = rows.data();
+    if (src.size() == 1)
+    {
+        const ColumnDecimal * src_dec = assert_cast<const ColumnDecimal *>(src[0]);
+        for (size_t i = 0; i < rows.size(); i++)
+        {
+            data[old_size + i] = src_dec->getElement(*(indices_begin + i));
+        }
+    }
+    else
+    {
+        if (src.size() != rows.size())
+            throw Exception("columns size not equals rows size. ",
+                            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        for (size_t i = 0; i < rows.size(); i++)
+        {
+            const ColumnDecimal * src_dec = assert_cast<const ColumnDecimal *>(src[i]);
+            data[old_size + i] = src_dec->getElement(*(indices_begin + i));
+        }
+    }
+}
+
+template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = data.size();

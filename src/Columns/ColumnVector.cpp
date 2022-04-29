@@ -403,39 +403,6 @@ Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
 }
 
 template <typename T>
-void ColumnVector<T>::insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> & rows)
-{
-    size_t old_size = data.size();
-    data.reserve(old_size + rows.size());
-    const auto * indices_begin = rows.data();
-    if (src.size() == 1)
-    {
-        const ColumnVector * src_vec = assert_cast<const ColumnVector *>(src[0]);
-        for (size_t i = 0; i < rows.size(); i++)
-        {
-            auto row_data = src_vec->getElement(*(indices_begin + i));
-            data.emplace_back(row_data);
-        }
-    }
-    else
-    {
-        if (src.size() != rows.size())
-            throw Exception("columns size not equals rows size. ",
-                            ErrorCodes::PARAMETER_OUT_OF_BOUND);
-        size_t nums = rows.size();
-        std::vector<const ColumnVector *> src_vec;
-        src_vec.resize(nums);
-        for (size_t i = 0; i < nums; i++)
-            src_vec[i] = assert_cast<const ColumnVector *>(src[i]);
-        for (size_t i = 0; i < nums; i++)
-        {
-            auto row_data = src_vec[i]->getElement(*(indices_begin + i));
-            data.emplace_back(row_data);
-        }
-    }
-}
-
-template <typename T>
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
@@ -450,6 +417,35 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
     size_t old_size = data.size();
     data.resize(old_size + length);
     memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
+}
+
+template <typename T>
+void ColumnVector<T>::insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> & rows)
+{
+    size_t old_size = data.size();
+    data.resize(old_size + rows.size());
+    const auto * indices_begin = rows.data();
+    if (src.size() == 1)
+    {
+        const ColumnVector * src_vec = assert_cast<const ColumnVector *>(src[0]);
+        for (size_t i = 0; i < rows.size(); i++)
+        {
+            data[old_size + i] = src_vec->getElement(*(indices_begin + i));
+        }
+    }
+    else
+    {
+        if (src.size() != rows.size())
+            throw Exception("columns size not equals rows size. ",
+                            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        size_t nums = rows.size();
+        std::vector<const ColumnVector *> src_vec;
+        src_vec.resize(nums);
+        for (size_t i = 0; i < nums; i++)
+            src_vec[i] = assert_cast<const ColumnVector *>(src[i]);
+        for (size_t i = 0; i < nums; i++)
+            data[old_size + i] = src_vec[i]->getElement(*(indices_begin + i));
+    }
 }
 
 template <typename T>

@@ -143,6 +143,23 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     }
 }
 
+void ColumnString::insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> & rows)
+{
+    size_t col_size = src.size();
+    if (col_size == 1)
+    {
+        for (const auto & row : rows)
+            ColumnString::insertFrom(*src[0], row);
+    }
+    else
+    {
+        if (src.size() != rows.size())
+            throw Exception("Columns size should be equal to rows size.",
+                            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        for (size_t i = 0; i < rows.size(); i++)
+            ColumnString::insertFrom(*src[i], rows[i]);
+    }
+}
 
 ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
 {

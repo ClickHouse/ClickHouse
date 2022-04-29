@@ -174,6 +174,22 @@ void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t l
     getNestedColumn().insertRangeFrom(*nullable_col.nested_column, start, length);
 }
 
+void ColumnNullable::insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> &rows)
+{
+    std::vector<const IColumn *> src_null_map;
+    src_null_map.resize(src.size());
+    std::vector<const IColumn *> src_nested_column;
+    src_nested_column.resize(src.size());
+    for (size_t i = 0; i < src.size(); i++)
+    {
+        const ColumnNullable * nullable_col = assert_cast<const ColumnNullable *>(src[i]);
+        src_null_map[i] = nullable_col->null_map.get();
+        src_nested_column[i] = nullable_col->nested_column.get();
+    }
+    getNullMapColumn().insertIndicesFrom(src_null_map, rows);
+    getNestedColumn().insertIndicesFrom(src_nested_column, rows);
+}
+
 void ColumnNullable::insert(const Field & x)
 {
     if (x.isNull())

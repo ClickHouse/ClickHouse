@@ -304,9 +304,9 @@ public:
         data.push_back(DB::get<T>(x));
     }
 
-    void insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> & rows) override;
-
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+
+    void insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> & rows) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
