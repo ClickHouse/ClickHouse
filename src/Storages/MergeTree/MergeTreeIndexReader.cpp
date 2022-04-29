@@ -68,7 +68,7 @@ void MergeTreeIndexReader::seek(size_t mark)
 MergeTreeIndexGranulePtr MergeTreeIndexReader::read()
 {
     auto granule = index->createIndexGranule();
-    granule->deserializeBinary(*stream->data_buffer, version);
+    granule->deserializeBinary(*stream->getDataBuffer(), version);
     return granule;
 }
 
