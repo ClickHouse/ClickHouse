@@ -32,3 +32,5 @@ SELECT count() FROM system.filesystem_cache;
 
 SYSTEM DROP FILESYSTEM CACHE './s3_cache/';
 SELECT count() FROM system.filesystem_cache;
+
+EXPLAIN SYNTAX SYSTEM DROP FILESYSTEM CACHE './s3_cache/' FORCE;

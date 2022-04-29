@@ -581,9 +581,13 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
-String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const StorageSnapshotPtr & storage_snapshot) const
+String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(
+    const StorageSnapshotPtr & storage_snapshot, bool with_subcolumns) const
 {
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects().withSubcolumns();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+    if (with_subcolumns)
+        options.withSubcolumns();
+
     auto storage_columns = storage_snapshot->getColumns(options);
     MergeTreeData::AlterConversions alter_conversions;
     if (!parent_part)
@@ -1414,6 +1418,9 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     if (part_is_probably_removed_from_disk)
         return true;
 
+    if (state == State::Temporary)
+        return true;
+
     DiskPtr disk = volume->getDisk();
     if (!disk->exists(getFullRelativePath()))
         return true;
@@ -1772,6 +1779,7 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
 void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 {
     renameTo(getRelativePathForDetachedPart(prefix), true);
+    part_is_probably_removed_from_disk = true;
 }
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const

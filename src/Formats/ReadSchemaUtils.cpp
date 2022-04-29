@@ -54,7 +54,7 @@ ColumnsDescription readSchemaFromFormat(
     ReadBufferIterator & read_buffer_iterator,
     bool retry,
     ContextPtr & context,
-    std::unique_ptr<ReadBuffer> & buf_out)
+    std::unique_ptr<ReadBuffer> & buf)
 {
     NamesAndTypesList names_and_types;
     if (FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format_name))
@@ -73,7 +73,6 @@ ColumnsDescription readSchemaFromFormat(
     {
         std::string exception_messages;
         SchemaReaderPtr schema_reader;
-        std::unique_ptr<ReadBuffer> buf;
         while ((buf = read_buffer_iterator()))
         {
             if (buf->eof())
@@ -91,7 +90,6 @@ ColumnsDescription readSchemaFromFormat(
             {
                 schema_reader = FormatFactory::instance().getSchemaReader(format_name, *buf, context, format_settings);
                 names_and_types = schema_reader->readSchema();
-                buf_out = std::move(buf);
                 break;
             }
             catch (...)

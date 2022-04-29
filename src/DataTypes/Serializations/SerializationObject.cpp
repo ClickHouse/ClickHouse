@@ -30,39 +30,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Visitor that keeps @num_dimensions_to_keep dimensions in arrays
-/// and replaces all scalars or nested arrays to @replacement at that level.
-class FieldVisitorReplaceScalars : public StaticVisitor<Field>
-{
-public:
-    FieldVisitorReplaceScalars(const Field & replacement_, size_t num_dimensions_to_keep_)
-        : replacement(replacement_), num_dimensions_to_keep(num_dimensions_to_keep_)
-    {
-    }
-
-    template <typename T>
-    Field operator()(const T & x) const
-    {
-        if constexpr (std::is_same_v<T, Array>)
-        {
-            if (num_dimensions_to_keep == 0)
-                return replacement;
-
-            const size_t size = x.size();
-            Array res(size);
-            for (size_t i = 0; i < size; ++i)
-                res[i] = applyVisitor(FieldVisitorReplaceScalars(replacement, num_dimensions_to_keep - 1), x[i]);
-            return res;
-        }
-        else
-            return replacement;
-    }
-
-private:
-    const Field & replacement;
-    size_t num_dimensions_to_keep;
-};
-
 using Node = typename ColumnObject::Subcolumns::Node;
 
 /// Finds a subcolumn from the same Nested type as @entry and inserts
@@ -120,7 +87,6 @@ bool tryInsertDefaultFromNested(
 
     auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar, num_dimensions_to_keep), last_field);
     entry->data.insert(std::move(default_field));
-
     return true;
 }
 

@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
     extern const int NOT_A_LEADER;
+    extern const int TABLE_IS_READ_ONLY;
     extern const int KEEPER_EXCEPTION;
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -459,6 +460,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
         /// and consider query as executed with status "failed" and return true in other cases.
         bool no_sense_to_retry = e.code() != ErrorCodes::KEEPER_EXCEPTION &&
                                  e.code() != ErrorCodes::NOT_A_LEADER &&
+                                 e.code() != ErrorCodes::TABLE_IS_READ_ONLY &&
                                  e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
                                  e.code() != ErrorCodes::CANNOT_ALLOCATE_MEMORY &&
                                  e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
