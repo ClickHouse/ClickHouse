@@ -68,6 +68,8 @@ public:
 
         bool isFinalized() const;
         const DataTypePtr & getLeastCommonType() const { return least_common_type.get(); }
+        const DataTypePtr & getLeastCommonTypeBase() const { return least_common_type.getBase(); }
+        size_t getNumberOfDimensions() const { return least_common_type.getNumberOfDimensions(); }
 
         /// Checks the consistency of column's parts stored in @data.
         void checkTypes() const;
