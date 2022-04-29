@@ -1,10 +1,11 @@
+---
 name: DocsCheck
 
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
 
-on: # yamllint disable-line rule:truthy
+on:  # yamllint disable-line rule:truthy
   pull_request:
     types:
       - synchronize
@@ -15,6 +16,7 @@ on: # yamllint disable-line rule:truthy
     paths:
       - 'docs/**'
       - 'website/**'
+      - 'docker/docs/**'
 jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
