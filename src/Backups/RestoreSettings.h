@@ -87,7 +87,7 @@ struct RestoreSettings : public StorageRestoreSettings
     String coordination_zk_path;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
-    void copySettingsToRestoreQuery(ASTBackupQuery & query) const;
+    void copySettingsToQuery(ASTBackupQuery & query) const;
 };
 
 }
