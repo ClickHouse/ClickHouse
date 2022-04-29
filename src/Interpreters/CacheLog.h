@@ -26,6 +26,7 @@ struct CacheLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 /// [remote_file_path, [hit_count, miss_count]]
