@@ -38,7 +38,7 @@ protobuf_info() {
   settings_part="SETTINGS format_schema = '$PROTOBUF_FILE_PATH:$protobuf_class'"
 
   if [ "$input_or_output" == "input" ]; then
-    echo "$Ssettings_part $format_part"
+    echo "$settings_part $format_part"
   else
     echo "$format_part $settings_part"
   fi
