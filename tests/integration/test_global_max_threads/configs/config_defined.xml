@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <global_max_threads>50</global_max_threads>
+    <query_log>                                                                                         
+      <database>system</database>                                                                           
+      <table>query_log</table>                                                                              
+    </query_log>    
+</clickhouse>
