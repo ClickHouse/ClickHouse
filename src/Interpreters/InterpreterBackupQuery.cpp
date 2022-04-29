@@ -64,7 +64,7 @@ namespace
             if (!query.cluster.empty() && backup_settings.coordination_zk_path.empty())
                 new_backup_settings.coordination_zk_path = query.cluster.empty() ? "" : ("/clickhouse/backups/backup-" + toString(backup_uuid));
             std::shared_ptr<ASTBackupQuery> new_query = std::static_pointer_cast<ASTBackupQuery>(query.clone());
-            new_backup_settings.copySettingsToBackupQuery(*new_query);
+            new_backup_settings.copySettingsToQuery(*new_query);
 
             BackupMutablePtr backup = createBackup(backup_uuid, backup_info, new_backup_settings, context);
 
@@ -125,7 +125,7 @@ namespace
                     = query.cluster.empty() ? "" : ("/clickhouse/backups/restore-" + toString(restore_uuid));
             }
             std::shared_ptr<ASTBackupQuery> new_query = std::static_pointer_cast<ASTBackupQuery>(query.clone());
-            new_restore_settings.copySettingsToRestoreQuery(*new_query);
+            new_restore_settings.copySettingsToQuery(*new_query);
 
             if (!query.cluster.empty())
             {

@@ -48,7 +48,7 @@ struct BackupSettings
     String coordination_zk_path;
 
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
-    void copySettingsToBackupQuery(ASTBackupQuery & query) const;
+    void copySettingsToQuery(ASTBackupQuery & query) const;
 };
 
 }

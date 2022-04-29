@@ -21,6 +21,8 @@ namespace
     {
         RestoreTableCreationMode value;
 
+        explicit SettingFieldRestoreTableCreationMode(RestoreTableCreationMode value_) : value(value_) {}
+
         explicit SettingFieldRestoreTableCreationMode(const Field & field)
         {
             if (field.getType() == Field::Types::String)
@@ -100,7 +102,7 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
     return res;
 }
 
-void RestoreSettings::copySettingsToRestoreQuery(ASTBackupQuery & query) const
+void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
     query.base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
 
@@ -108,12 +110,19 @@ void RestoreSettings::copySettingsToRestoreQuery(ASTBackupQuery & query) const
     query_settings->is_standalone = false;
 
     static const RestoreSettings default_settings;
+    bool all_settings_are_default = true;
 
 #define SET_SETTINGS_IN_RESTORE_QUERY_HELPER(TYPE, NAME) \
     if ((NAME) != default_settings.NAME) \
-        query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME}));
+    { \
+        query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
+        all_settings_are_default = false; \
+    }
 
     LIST_OF_RESTORE_SETTINGS(SET_SETTINGS_IN_RESTORE_QUERY_HELPER)
+
+    if (all_settings_are_default)
+        query_settings = nullptr;
 
     query.settings = query_settings;
 }

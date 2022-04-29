@@ -51,7 +51,7 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
     return res;
 }
 
-void BackupSettings::copySettingsToBackupQuery(ASTBackupQuery & query) const
+void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
     query.base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
 
@@ -59,12 +59,19 @@ void BackupSettings::copySettingsToBackupQuery(ASTBackupQuery & query) const
     query_settings->is_standalone = false;
 
     static const BackupSettings default_settings;
+    bool all_settings_are_default = true;
 
 #define SET_SETTINGS_IN_BACKUP_QUERY_HELPER(TYPE, NAME) \
     if ((NAME) != default_settings.NAME) \
-        query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME}));
+    { \
+        query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
+        all_settings_are_default = false; \
+    }
 
     LIST_OF_BACKUP_SETTINGS(SET_SETTINGS_IN_BACKUP_QUERY_HELPER)
+
+    if (all_settings_are_default)
+        query_settings = nullptr;
 
     query.settings = query_settings;
 }
