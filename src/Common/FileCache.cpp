@@ -78,12 +78,15 @@ LRUFileCache::LRUFileCache(const String & cache_base_path_, const FileCacheSetti
 
 void LRUFileCache::initialize()
 {
-    if (fs::exists(cache_base_path))
-        loadCacheInfoIntoMemory();
-    else
-        fs::create_directories(cache_base_path);
-
-    is_initialized = true;
+    std::lock_guard cache_lock(mutex);
+    if (!is_initialized)
+    {
+        if (fs::exists(cache_base_path))
+            loadCacheInfoIntoMemory(cache_lock);
+        else
+            fs::create_directories(cache_base_path);
+        is_initialized = true;
+    }
 }
 
 void LRUFileCache::useCell(
@@ -622,10 +625,8 @@ void LRUFileCache::remove(
     }
 }
 
-void LRUFileCache::loadCacheInfoIntoMemory()
+void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock)
 {
-    std::lock_guard cache_lock(mutex);
-
     Key key;
     UInt64 offset = 0;
     size_t size = 0;
