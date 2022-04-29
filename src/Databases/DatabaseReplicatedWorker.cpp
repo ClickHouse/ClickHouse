@@ -89,8 +89,9 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
     auto zookeeper = getAndSetZooKeeper();
+    const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
     UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(database->replica_path + "/log_ptr"));
-    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(max_log_ptr_path));
     assert(our_log_ptr <= max_log_ptr);
 
     /// max_log_ptr is the number of the last successfully executed request on the initiator
@@ -99,22 +100,26 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
     if (our_log_ptr == max_log_ptr)
         return true;
 
-    /// We create an empty entry to a the log to reuse existing approach (a bit of copy-paste)
-    /// One big disadvantage is that it triggers other replicas to update their state which is not really needed
-    DDLLogEntry entry{};
-    auto entry_path = enqueueQueryImpl(current_zookeeper, entry, database, /*committed=*/true);
-    auto entry_name = entry_path.substr(entry_path.rfind('/') + 1);
-
-    LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
+    auto max_log = "log-" + toString(max_log_ptr);
+    LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
 
     std::unique_lock lock{mutex};
     bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
     {
-        assert(zookeeper->expired() || current_task <= entry_name);
-        return zookeeper->expired() || current_task == entry_name || stop_flag;
+        assert(zookeeper->expired() || current_task <= max_log);
+        return zookeeper->expired() || current_task == max_log || stop_flag;
     });
 
-    return processed;
+    if (!processed)
+        return false;
+
+    /// Lets now wait for max_log_ptr to be processed
+    Coordination::Stat stat;
+    auto event_ptr = std::make_shared<Poco::Event>();
+    zookeeper->get(max_log_ptr_path, &stat, event_ptr);
+
+
+    return event_ptr->tryWait(timeout_ms);
 }
 
 
