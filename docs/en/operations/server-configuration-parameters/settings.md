@@ -23,7 +23,7 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-:::warning    
+:::warning
 Don’t use it if you have just started using ClickHouse.
 :::
 
@@ -251,6 +251,23 @@ See also “[External dictionaries](../../sql-reference/dictionaries/external-di
 
 ``` xml
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
+```
+
+## user_defined_executable_functions_config {#server_configuration_parameters-user_defined_executable_functions_config}
+
+The path to the config file for executable user defined functions.
+
+Path:
+
+-   Specify the absolute path or the path relative to the server config file.
+-   The path can contain wildcards \* and ?.
+
+See also “[Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).”.
+
+**Example**
+
+``` xml
+<user_defined_executable_functions_config>*_dictionary.xml</user_defined_executable_functions_config>
 ```
 
 ## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
@@ -1355,6 +1372,16 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 
 ``` xml
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+```
+
+## user_scripts_path {#server_configuration_parameters-user_scripts_path}
+
+The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
+
+**Example**
+
+``` xml
+<user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
 ```
 
 ## users_config {#users-config}

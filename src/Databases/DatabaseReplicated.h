@@ -44,7 +44,7 @@ public:
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
-    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context);
+    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal = false);
 
     bool hasReplicationThread() const override { return true; }
 
@@ -54,6 +54,8 @@ public:
     String getReplicaName() const { return replica_name; }
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);
+
+    const String & getZooKeeperPath() const { return zookeeper_path; }
 
     /// Returns cluster consisting of database replicas
     ClusterPtr getCluster() const;
