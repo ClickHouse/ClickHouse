@@ -23,6 +23,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static String getQueryId()
+{
+    if (!CurrentThread::isInitialized() || !CurrentThread::get().getQueryContext() || CurrentThread::getQueryId().size == 0)
+        return "";
+    return CurrentThread::getQueryId().toString();
+}
+
 CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     const String & remote_fs_object_path_,
     FileCachePtr cache_,
@@ -41,17 +48,21 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , settings(settings_)
     , read_until_position(read_until_position_)
     , remote_file_reader_creator(remote_file_reader_creator_)
+    , query_id(getQueryId())
 {
-    if ((CurrentThread::get().getQueryContext()->getSettingsRef().enable_cache_log) && (CurrentThread::getQueryId().size))
-        cache->addQueryRef(CurrentThread::getQueryId().toString());
+    if (query_id.size() && (CurrentThread::get().getQueryContext()->getSettingsRef().enable_cache_log))
+    {
+        enable_logging = true;
+        cache->addQueryRef(query_id);
+    }
 }
 
 CachedReadBufferFromRemoteFS::~CachedReadBufferFromRemoteFS()
 {
-    if ((CurrentThread::get().getQueryContext()->getSettingsRef().enable_cache_log) && (CurrentThread::getQueryId().size))
+    if (enable_logging)
     {
-        cache->updateQueryCacheLog(CurrentThread::getQueryId().toString(), remote_fs_object_path, cache_hit_count, cache_miss_count);
-        cache->DecQueryRef(CurrentThread::getQueryId().toString());
+        cache->updateQueryCacheLog(query_id, remote_fs_object_path, cache_hit_count, cache_miss_count);
+        cache->DecQueryRef(query_id);
     }
 }
 
