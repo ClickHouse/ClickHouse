@@ -29,10 +29,19 @@ INITIAL_INSERT_VALUES="('str1',1),('',2),('str2',3)"
 MULTI_WRAPPER_VALUES="(0,1,2)"
 
 # takes ClickHouse format and protobuf class as arguments
-format_settings() {
-  clickhouse_format="$1"
-  protobuf_class="$2"
-  echo "FORMAT $clickhouse_format SETTINGS format_schema = '$PROTOBUF_FILE_PATH:$protobuf_class'"
+protobuf_info() {
+  input_or_output="$1"
+  clickhouse_format="$2"
+  protobuf_class="$3"
+
+  format_part="FORMAT $clickhouse_format"
+  settings_part="SETTINGS format_schema = '$PROTOBUF_FILE_PATH:$protobuf_class'"
+
+  if [ "$input_or_output" == "input" ]; then
+    echo "$Ssettings_part $format_part"
+  else
+    echo "$format_part $settings_part"
+  fi
 }
 
 $CLICKHOUSE_CLIENT -n --query "
@@ -76,7 +85,7 @@ $CLICKHOUSE_CLIENT -n --query "
 
 echo
 echo "Protobuf representation of the second row:"
-$CLICKHOUSE_CLIENT -n --query "$SET_OUTPUT SELECT * FROM $MAIN_TABLE WHERE ref = 2 LIMIT 1 $(format_settings ProtobufSingle Message)" > "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT -n --query "$SET_OUTPUT SELECT * FROM $MAIN_TABLE WHERE ref = 2 LIMIT 1 $(protobuf_info output ProtobufSingle Message)" > "$BINARY_FILE_PATH"
 hexdump -C $BINARY_FILE_PATH
 
 echo
@@ -92,31 +101,31 @@ hexdump -C $MESSAGE_FILE_PATH
 
 echo
 echo "Insert proto message into table (Nullable(String), Int32):"
-$CLICKHOUSE_CLIENT -n --query "$SET_INPUT INSERT INTO $ROUNDTRIP_TABLE $(format_settings Protobuf Message)" < "$MESSAGE_FILE_PATH"
+$CLICKHOUSE_CLIENT -n --query "$SET_INPUT INSERT INTO $ROUNDTRIP_TABLE $(protobuf_info input Protobuf Message)" < "$MESSAGE_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM $ROUNDTRIP_TABLE"
 
 echo
 echo "Proto output of the table using Google wrapper:"
-$CLICKHOUSE_CLIENT -n --query "$SET_OUTPUT SELECT * FROM $ROUNDTRIP_TABLE $(format_settings Protobuf Message)" > "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT -n --query "$SET_OUTPUT SELECT * FROM $ROUNDTRIP_TABLE $(protobuf_info output Protobuf Message)" > "$BINARY_FILE_PATH"
 hexdump -C $BINARY_FILE_PATH
 
 echo
 echo "Proto output of the table without Google wrapper:"
-$CLICKHOUSE_CLIENT --query "SELECT * FROM $ROUNDTRIP_TABLE $(format_settings Protobuf MessageNoWrapper)" > "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM $ROUNDTRIP_TABLE $(protobuf_info output Protobuf MessageNoWrapper)" > "$BINARY_FILE_PATH"
 hexdump -C $BINARY_FILE_PATH
 
 echo
 echo "Insert proto message into table (Tuple(String), Int32)"
 echo "with disabled Google wrappers flattening:"
-$CLICKHOUSE_CLIENT --query "INSERT INTO $COMPATIBILITY_TABLE $(format_settings Protobuf Message)" < "$MESSAGE_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "INSERT INTO $COMPATIBILITY_TABLE $(protobuf_info input Protobuf Message)" < "$MESSAGE_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM $COMPATIBILITY_TABLE"
 
 echo
 echo "Insert $MULTI_WRAPPER_VALUES and reinsert using Google wrappers into:"
 echo "Table (Nullable(Int32), Nullable(Int32), Int32):"
 $CLICKHOUSE_CLIENT --query "INSERT INTO $MULTI_TABLE VALUES $MULTI_WRAPPER_VALUES"
-$CLICKHOUSE_CLIENT -n --query "$SET_OUTPUT SELECT * FROM $MULTI_TABLE $(format_settings Protobuf MessageMultiWrapper)" > "$BINARY_FILE_PATH"
-$CLICKHOUSE_CLIENT -n --query "$SET_INPUT INSERT INTO $MULTI_TABLE $(format_settings Protobuf MessageMultiWrapper)" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT -n --query "$SET_OUTPUT SELECT * FROM $MULTI_TABLE $(protobuf_info output Protobuf MessageMultiWrapper)" > "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT -n --query "$SET_INPUT INSERT INTO $MULTI_TABLE $(protobuf_info input Protobuf MessageMultiWrapper)" < "$BINARY_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM $MULTI_TABLE"
 
 rm "$BINARY_FILE_PATH"
