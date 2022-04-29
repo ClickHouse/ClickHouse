@@ -928,6 +928,7 @@ public:
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
+    bool areBackgroundExecutorsInitialized();
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;

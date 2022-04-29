@@ -89,15 +89,6 @@ class IColumn;
     M(Bool, extremes, false, "Calculate minimums and maximums of the result columns. They can be output in JSON-formats.", IMPORTANT) \
     M(Bool, use_uncompressed_cache, false, "Whether to use the cache of uncompressed blocks.", 0) \
     M(Bool, replace_running_query, false, "Whether the running request should be canceled with the same id as the new one.", 0) \
-    M(UInt64, background_buffer_flush_schedule_pool_size, 16, "Number of threads performing background flush for tables with Buffer engine. Only has meaning at server startup.", 0) \
-    M(UInt64, background_pool_size, 16, "Number of threads to perform merges and mutations in background. Only has meaning at server startup.", 0) \
-    M(Float, background_merges_mutations_concurrency_ratio, 2, "Ratio between a number of how many operations could be processed and a number threads to process them. Only has meaning at server startup.", 0) \
-    M(UInt64, background_move_pool_size, 8, "Number of threads performing background moves for tables. Only has meaning at server startup.", 0) \
-    M(UInt64, background_fetches_pool_size, 8, "Number of threads performing background fetches for replicated tables. Only has meaning at server startup.", 0) \
-    M(UInt64, background_common_pool_size, 8, "Number of threads for some lightweight tasks for replicated tables (like cleaning old parts etc.). Only has meaning at server startup.", 0) \
-    M(UInt64, background_schedule_pool_size, 128, "Number of threads performing background tasks for replicated tables, dns cache updates. Only has meaning at server startup.", 0) \
-    M(UInt64, background_message_broker_schedule_pool_size, 16, "Number of threads performing background tasks for message streaming. Only has meaning at server startup.", 0) \
-    M(UInt64, background_distributed_schedule_pool_size, 16, "Number of threads performing background tasks for distributed sends. Only has meaning at server startup.", 0) \
     M(UInt64, max_replicated_fetches_network_bandwidth_for_server, 0, "The maximum speed of data exchange over the network in bytes per second for replicated fetches. Zero means unlimited. Only has meaning at server startup.", 0) \
     M(UInt64, max_replicated_sends_network_bandwidth_for_server, 0, "The maximum speed of data exchange over the network in bytes per second for replicated sends. Zero means unlimited. Only has meaning at server startup.", 0) \
     M(Bool, stream_like_engine_allow_direct_select, false, "Allow direct SELECT query for Kafka, RabbitMQ and FileLog engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.", 0) \
@@ -612,6 +603,15 @@ class IColumn;
     MAKE_OBSOLETE(M, UInt64, partial_merge_join_optimizations, 0) \
     MAKE_OBSOLETE(M, MaxThreads, max_alter_threads, 0) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_projection_optimization, true) \
+    MAKE_OBSOLETE(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
+    MAKE_OBSOLETE(M, UInt64, background_pool_size, 16) \
+    MAKE_OBSOLETE(M, Float, background_merges_mutations_concurrency_ratio, 2) \
+    MAKE_OBSOLETE(M, UInt64, background_move_pool_size, 8) \
+    MAKE_OBSOLETE(M, UInt64, background_fetches_pool_size, 8) \
+    MAKE_OBSOLETE(M, UInt64, background_common_pool_size, 8) \
+    MAKE_OBSOLETE(M, UInt64, background_schedule_pool_size, 128) \
+    MAKE_OBSOLETE(M, UInt64, background_message_broker_schedule_pool_size, 16) \
+    MAKE_OBSOLETE(M, UInt64, background_distributed_schedule_pool_size, 16) \
     /** The section above is for obsolete settings. Do not add anything there. */
 
 

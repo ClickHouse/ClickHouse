@@ -898,6 +898,92 @@ Default value: `10000`.
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
+## background_pool_size {#background_pool_size}
+
+Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied  at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+
+Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+**Example**
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+## background_merges_mutations_concurrency_ratio {#background_merges_mutations_concurrency_ratio}
+
+Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example if the ratio equals to 2 and
+`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operation could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
+The same as for `background_pool_size` setting `background_merges_mutations_concurrency_ratio` could be applied from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 2.
+
+**Example**
+
+```xml
+<background_merges_mutations_concurrency_ratio>3</background_pbackground_merges_mutations_concurrency_ratio>
+```
+
+## background_move_pool_size {#background_move_pool_size}
+
+Sets the number of threads performing background moves for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_move_pool_size>36</background_move_pool_size>
+```
+
+## background_fetches_pool_size {#background_fetches_pool_size}
+
+Sets the number of threads performing background fetches for tables with ReplicatedMergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_fetches_pool_size>36</background_fetches_pool_size>
+```
+
+## background_common_pool_size {#background_common_pool_size}
+
+Sets the number of threads performing background non-specialized operations like cleaning the filesystem etc. for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_common_pool_size>36</background_common_pool_size>
+```
+
+
+
 ## merge_tree {#server_configuration_parameters-merge_tree}
 
 Fine tuning for tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
@@ -1659,4 +1745,3 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
-
