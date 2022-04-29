@@ -183,10 +183,10 @@ public:
     /// Could be used to concatenate columns.
     virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 
-    virtual void insertIndicesFrom(const IColumn & src, std::vector<size_t> & rows)
+    virtual void insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> & rows)
     {
         for (size_t i = 0; i < rows.size(); i++)
-            insertFrom(src, rows[i]);
+            insertFrom(*src[i], rows[i]);
     }
 
     /// Appends one element from other column with the same type multiple times.

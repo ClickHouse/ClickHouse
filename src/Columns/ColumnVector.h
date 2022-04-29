@@ -304,7 +304,7 @@ public:
         data.push_back(DB::get<T>(x));
     }
 
-    void insertIndicesFrom(const IColumn & src, std::vector<size_t> & rows) override;
+    void insertIndicesFrom(std::vector<const IColumn *> & src, std::vector<size_t> & rows) override;
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 

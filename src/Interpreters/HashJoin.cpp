@@ -1032,16 +1032,52 @@ public:
         }
     }
 
-    void appendManyFromBlock(const Block & block, std::vector<size_t> & row_nums)
+    template<bool just_one_right_block>
+    void appendManyFromBlock(std::vector<std::pair<const Block*, size_t>> result_pairs)
     {
-        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+        size_t nums = result_pairs.size();
+        if (nums == 0)
+            return;
+        if constexpr (just_one_right_block)
         {
-            auto column_from_block = block.getByPosition(right_indexes[j]);
-            if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
+            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             {
-                JoinCommon::changeLowCardinalityInplace(column_from_block);
+                std::vector<const IColumn *> prepared_columns;
+                std::vector<size_t> row_nums;
+                row_nums.resize(nums);
+                auto column_from_block = result_pairs[0].first->getByPosition(right_indexes[j]);
+                if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
+                {
+                    JoinCommon::changeLowCardinalityInplace(column_from_block);
+                }
+                prepared_columns.emplace_back(column_from_block.column.get());
+                for (size_t i = 0; i < nums; i++)
+                    row_nums[i] = result_pairs[i].second;
+                columns[j]->insertIndicesFrom(prepared_columns, row_nums);
             }
-            columns[j]->insertIndicesFrom(*column_from_block.column, row_nums);
+        }
+        else
+        {
+            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            {
+                std::vector<const IColumn *> prepared_columns;
+                prepared_columns.resize(nums);
+                std::vector<size_t> row_nums;
+                row_nums.resize(nums);
+                int i = 0;
+                for (const auto & result_pair : result_pairs)
+                {
+                    auto column_from_block = result_pair.first->getByPosition(right_indexes[j]);
+                    if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
+                    {
+                        JoinCommon::changeLowCardinalityInplace(column_from_block);
+                    }
+                    prepared_columns[i] = column_from_block.column.get();
+                    row_nums[i] = result_pair.second;
+                    ++i;
+                }
+                columns[j]->insertIndicesFrom(prepared_columns, row_nums);
+            }
         }
     }
 
@@ -1237,7 +1273,7 @@ void recordFoundRowAll(
     IColumn::Offset & current_offset,
     KnownRowsHolder<multiple_disjuncts> & known_rows [[maybe_unused]],
     JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]],
-    std::vector<size_t> & row_nums)
+    std::vector<std::pair<const Block*, size_t>> & result_pairs)
 {
     if constexpr (multiple_disjuncts)
     {
@@ -1245,9 +1281,10 @@ void recordFoundRowAll(
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            if (!known_rows.isKnown(std::make_pair(it->block, it->row_num)))
+            const auto result_pair = std::make_pair(it->block, it->row_num);
+            if (!known_rows.isKnown(result_pair))
             {
-                row_nums.emplace_back(it->row_num);
+                result_pairs.emplace_back(result_pair);
                 ++current_offset;
                 if (!new_known_rows_ptr)
                 {
@@ -1271,7 +1308,7 @@ void recordFoundRowAll(
     {
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            row_nums.emplace_back(it->row_num);
+            result_pairs.emplace_back(std::make_pair(it->block, it->row_num));
             ++current_offset;
         }
     }
@@ -1346,7 +1383,7 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
 
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
-template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool need_filter, bool has_null_map, bool multiple_disjuncts, bool just_on_right_block>
+template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool need_filter, bool has_null_map, bool multiple_disjuncts, bool just_one_right_block>
 NO_INLINE IColumn::Filter joinRightColumns(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
@@ -1358,12 +1395,11 @@ NO_INLINE IColumn::Filter joinRightColumns(
 
     constexpr auto fast_inner_join = (KIND == ASTTableJoin::Kind::Inner) &&
         !jf.add_missing &&
-        jf.is_all_join &&
-        just_on_right_block;
+        jf.is_all_join;
 
     size_t rows = added_columns.rows_to_add;
-    std::vector<size_t> row_nums;
-    row_nums.reserve(rows);
+    std::vector<std::pair<const Block*, size_t>> result_pairs;
+    result_pairs.reserve(rows);
 
     IColumn::Filter filter;
     if constexpr (need_filter)
@@ -1425,8 +1461,8 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     setUsed<need_filter>(filter, i);
                     used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
                     auto used_flags_opt = jf.need_flags ? &used_flags : nullptr;
-                    if (fast_inner_join)
-                        recordFoundRowAll<Map>(mapped, current_offset, known_rows, used_flags_opt, row_nums);
+                    if constexpr (fast_inner_join)
+                        recordFoundRowAll<Map>(mapped, current_offset, known_rows, used_flags_opt, result_pairs);
                     else
                         addFoundRowAll<Map, jf.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
                 }
@@ -1504,9 +1540,9 @@ NO_INLINE IColumn::Filter joinRightColumns(
         }
     }
 
-    if (fast_inner_join)
+    if constexpr (fast_inner_join)
     {
-        added_columns.appendManyFromBlock(*right_blocks.begin(), row_nums);
+        added_columns.appendManyFromBlock<just_one_right_block>(result_pairs);
     }
 
     added_columns.applyLazyDefaults();
