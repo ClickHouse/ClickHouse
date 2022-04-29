@@ -89,7 +89,6 @@ add_contrib (protobuf-cmake protobuf)
 add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
-add_contrib (faiss-cmake faiss)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -148,6 +147,20 @@ endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
+
+set (ENABLE_FAISS_DEFAULT ${ENABLE_LIBRARIES})
+option(ENABLE_FAISS "Enable Faiss indexes support" ${ENABLE_FAISS_DEFAULT})
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL 13)
+    message (WARNING "faiss disabled in non-Linux environments")
+    set (ENABLE_FAISS OFF)
+endif ()
+if (ENABLE_FAISS)
+    message("Use Faiss library")
+    add_contrib (faiss-cmake faiss)
+    add_contrib (openmp-cmake openmp)
+    add_contrib (blas-cmake blas)
+    add_contrib (lapack-cmake lapack)
+endif()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

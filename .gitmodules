@@ -265,6 +265,3 @@
 [submodule "contrib/faiss"]
 	path = contrib/faiss
 	url = https://github.com/facebookresearch/faiss.git
-[submodule "contrib/openmp"]
-	path = contrib/openmp
-	url = https://github.com/llvm/llvm-project.git
