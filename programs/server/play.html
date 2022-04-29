@@ -186,7 +186,7 @@
             color: var(--misc-text-color);
         }
 
-        #toggle-light, #toggle-dark
+        #toggle-light, #toggle-dark, #toggle-transpose
         {
             float: right;
             padding-right: 0.5rem;
@@ -373,6 +373,7 @@
         <span id="check-mark">✔</span>
         <span id="stats"></span>
         <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
+        <span id="toggle-transpose" title="Toggle vertical table format">⤵️</span>
     </div>
     <div id="data_div">
         <table class="monospace-table shadow" id="data-table"></table>
@@ -408,6 +409,8 @@
     /// if its request number does not equal to the current request number, response will be ignored.
     /// This is to avoid race conditions.
     let request_num = 0;
+
+    let last_response = null;
 
     /// Save query in history only if it is different.
     let previous_query = '';
@@ -548,6 +551,7 @@
 
     function clear()
     {
+        last_response = null;
         let table = document.getElementById('data-table');
         while (table.firstChild) {
             table.removeChild(table.lastChild);
@@ -597,6 +601,7 @@
     {
         clear();
 
+        last_response = response;
         let stats = document.getElementById('stats');
         const seconds = response.statistics.elapsed.toFixed(3);
         const rows = response.statistics.rows_read;
@@ -613,8 +618,54 @@
         }
     }
 
+    function renderTableTranspose(response)
+    {
+        let thead = document.createElement('thead');
+        let appendHeader = (text) => {
+            let th = document.createElement('th');
+            const name = document.createTextNode(text);
+            th.appendChild(name);
+            thead.appendChild(th);
+        };
+        appendHeader('column')
+        for (let row_idx in response.data) {
+            appendHeader(row_idx)
+        }
+
+        let tbody = document.createElement('tbody');
+        for (let col_idx in response.meta) {
+            let tr = document.createElement('tr');
+            {
+                let td = document.createElement('td');
+                td.className = 'right';
+                td.style.fontWeight = 'bold';
+                td.style.width = '0';
+                td.appendChild(document.createTextNode(response.meta[col_idx].name));
+                tr.appendChild(td);
+            }
+
+            for (let row_idx in response.data)
+            {
+                let td = document.createElement('td');
+                td.className = 'left';
+                let node = document.createTextNode(response.data[row_idx][col_idx]);
+                td.appendChild(node);
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+        let table = document.getElementById('data-table');
+        table.appendChild(tbody);
+        table.appendChild(thead);
+    }
+
     function renderTable(response)
     {
+        if (window.localStorage.getItem('transpose') === 'true' && response.data.length < 16) {
+            renderTableTranspose(response)
+            return;
+        }
+
         let thead = document.createElement('thead');
         for (let idx in response.meta) {
             let th = document.createElement('th');
@@ -787,6 +838,18 @@
         document.documentElement.setAttribute('data-theme', theme);
     }
 
+    function toggleTranspose() {
+        if (window.localStorage.getItem('transpose') === 'true') {
+            window.localStorage.setItem('transpose', 'false')
+        } else {
+            window.localStorage.setItem('transpose', 'true');
+        }
+
+        if (last_response) {
+            renderResult(last_response)
+        }
+    }
+
     /**
      * First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage,
      * otherwise we check OS preference
@@ -822,6 +885,10 @@
 
     document.getElementById('toggle-dark').onclick = function() {
         setColorTheme('dark');
+    }
+
+    document.getElementById('toggle-transpose').onclick = function() {
+        toggleTranspose();
     }
 </script>
 </html>
