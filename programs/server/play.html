@@ -620,18 +620,6 @@
 
     function renderTableTranspose(response)
     {
-        let thead = document.createElement('thead');
-        let appendHeader = (text) => {
-            let th = document.createElement('th');
-            const name = document.createTextNode(text);
-            th.appendChild(name);
-            thead.appendChild(th);
-        };
-        appendHeader('column')
-        for (let row_idx in response.data) {
-            appendHeader(row_idx)
-        }
-
         let tbody = document.createElement('tbody');
         for (let col_idx in response.meta) {
             let tr = document.createElement('tr');
@@ -656,7 +644,6 @@
         }
         let table = document.getElementById('data-table');
         table.appendChild(tbody);
-        table.appendChild(thead);
     }
 
     function renderTable(response)
