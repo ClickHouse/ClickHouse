@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/CommonCondition.h>
+#include <Storages/MergeTree/MergeTreeIndicesANNCondition.h>
 #include <method/hnsw.h>
 
 #include <algorithm>
@@ -107,8 +108,7 @@ struct MergeTreeIndexAggregatorSimpleHnsw final : IMergeTreeIndexAggregator
     similarity::ObjectVector data;
 };
 
-
-class MergeTreeIndexConditionSimpleHnsw final : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionSimpleHnsw final : public IMergeTreeIndexConditionAnn
 {
 public:
     MergeTreeIndexConditionSimpleHnsw(
@@ -120,11 +120,11 @@ public:
     
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 
-    std::optional<std::set<size_t>> getMaybeTrueGranules(MergeTreeIndexGranulePtr idx_granule) const override;
+    std::vector<bool> getUsefulGranules(MergeTreeIndexGranulePtr idx_granule) const override;
 
     ~MergeTreeIndexConditionSimpleHnsw() override = default;
 private:
-    DB::Condition::Common::CommonCondition condition;
+    Condition::CommonCondition condition;
     size_t granularity;
 };
 

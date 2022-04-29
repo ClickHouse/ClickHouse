@@ -7,9 +7,13 @@
 #include <optional>
 #include <vector>
 
-namespace DB::Condition::Common {
+namespace DB
+{
 
-class CommonCondition 
+namespace Condition
+{
+
+class CommonCondition
 {
 public:
     CommonCondition(const SelectQueryInfo & query_info,
@@ -27,21 +31,27 @@ public:
 
     String getMetric() const;
 
+    float getPForLpDistance() const;
+
 private:
     // Type of the vector to use as a target in the distance function
     using Target = std::vector<float>;
 
     // Extracted data from the query like WHERE L2Distance(column_name, target) < distance
-    struct ANNExpression {
+    struct ANNExpression
+    {
         Target target;
-        float distance;     
-        String meteic_name; // Metric name, maybe some Enum for all indices
-        String column_name; // Coloumn name stored in IndexGranule
+        float distance = -1.0;
+        String metric_name = "Unknown"; // Metric name, maybe some Enum for all indices
+        String column_name = "Unknown"; // Coloumn name stored in IndexGranule
+        float p_for_lp_dist = -1.0; // The P parametr for Lp Distance
     };
 
     using ANNExpressionOpt = std::optional<ANNExpression>;
-    struct RPNElement {
-        enum Function {
+    struct RPNElement
+    {
+        enum Function
+        {
             // l2 dist
             FUNCTION_DISTANCE,
 
@@ -61,7 +71,7 @@ private:
             FUNCTION_UNKNOWN,
         };
 
-        explicit RPNElement(Function function_ = FUNCTION_UNKNOWN) 
+        explicit RPNElement(Function function_ = FUNCTION_UNKNOWN)
         : function(function_), func_name("Unknown"), float_literal(std::nullopt), identifier(std::nullopt) {}
 
         Function function;
@@ -90,9 +100,11 @@ private:
      * WHERE DistFunc(column_name, tuple(float_1, float_2, ..., float_dim)) < float_literal */
     static bool matchRPNWhere(RPN & rpn, ANNExpression & expr);
 
-    // Util methods
-    static void panicIfWrongBuiltRPN [[noreturn]] (); 
+    /* Matches dist function, target vector, coloumn name */
+    static bool matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNExpression & expr, bool & identifier_found);
 
+    // Util methods
+    static void panicIfWrongBuiltRPN [[noreturn]] ();
     static String getIdentifierOrPanic(RPN::iterator& iter);
 
     static float getFloatLiteralOrPanic(RPN::iterator& iter);
@@ -110,5 +122,7 @@ private:
     bool index_is_useful{false};
 
 };
+
+}
 
 }

@@ -1,4 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
+#include <cstddef>
 #include <optional>
 #include <unordered_set>
 
@@ -7,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeIndicesANNCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1563,6 +1565,29 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
 
+            auto ann_condition  = std::dynamic_pointer_cast<IMergeTreeIndexConditionAnn>(condition);
+            if (ann_condition != nullptr){
+
+                auto result = ann_condition->getUsefulGranules(granule);
+                bool is_skipped = true;
+                for(size_t j = 0; j < index_granularity;++j){
+                    
+                    if (result[i]){
+                        is_skipped = false;
+                         MarkRange data_range(
+                            std::max(ranges[i].begin, index_mark * index_granularity + j),
+                            std::min(ranges[i].end, index_mark * index_granularity + j + 1));
+
+                            if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
+                                res.push_back(data_range);
+                            else
+                                res.back().end = data_range.end;
+                    }
+                }
+                if (is_skipped)
+                    ++granules_dropped;
+                continue;
+            }
             MarkRange data_range(
                     std::max(ranges[i].begin, index_mark * index_granularity),
                     std::min(ranges[i].end, (index_mark + 1) * index_granularity));
