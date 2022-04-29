@@ -89,8 +89,9 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
     auto zookeeper = getAndSetZooKeeper();
+    const auto our_log_ptr_path = database->zookeeper_path + "/log_ptr";
     const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
-    UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(database->replica_path + "/log_ptr"));
+    UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(max_log_ptr_path));
     assert(our_log_ptr <= max_log_ptr);
 
@@ -100,7 +101,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
     if (our_log_ptr == max_log_ptr)
         return true;
 
-    auto max_log = "log-" + toString(max_log_ptr);
+    auto max_log =  DDLTask::getLogEntryName(max_log_ptr);
     LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
 
     std::unique_lock lock{mutex};
@@ -116,8 +117,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
     /// Lets now wait for max_log_ptr to be processed
     Coordination::Stat stat;
     auto event_ptr = std::make_shared<Poco::Event>();
-    zookeeper->get(max_log_ptr_path, &stat, event_ptr);
-
+    zookeeper->get(our_log_ptr_path, &stat, event_ptr);
 
     return event_ptr->tryWait(timeout_ms);
 }

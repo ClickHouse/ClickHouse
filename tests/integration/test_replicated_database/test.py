@@ -825,7 +825,7 @@ def test_sync_replica(started_cluster):
                 settings=settings,
             )
 
-    dummy_node.query("SYSTEM SYNC DATABASE test_sync_database")
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA test_sync_database")
 
     assert dummy_node.query(
         "SELECT count() FROM system.tables where database='test_sync_database'"
@@ -834,3 +834,25 @@ def test_sync_replica(started_cluster):
     assert main_node.query(
         "SELECT count() FROM system.tables where database='test_sync_database'"
     ).strip() == str(number_of_tables)
+
+
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(dummy_node)
+
+        for i in range(number_of_tables, 2 * number_of_tables):
+            main_node.query(
+                "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n".format(
+                    i
+                ),
+                settings=settings,
+            )
+
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA test_sync_database ON CLUSTER test_sync_database")
+
+    assert dummy_node.query(
+        "SELECT count() FROM system.tables where database='test_sync_database'"
+    ).strip() == str(2 * number_of_tables)
+
+    assert main_node.query(
+        "SELECT count() FROM system.tables where database='test_sync_database'"
+    ).strip() == str(2 * number_of_tables)

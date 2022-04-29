@@ -438,7 +438,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::SYNC_REPLICA:
             syncReplica(query);
             break;
-        case Type::SYNC_DATABASE:
+        case Type::SYNC_DATABASE_REPLICA:
             syncReplicatedDatabase(query);
             break;
         case Type::FLUSH_DISTRIBUTED:
@@ -750,11 +750,11 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
         LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
         if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
         {
-            LOG_ERROR(log, "SYNC DATABASE {}: Timed out!", database_name);
+            LOG_ERROR(log, "SYNC DATABASE REPLICA {}: Timed out!", database_name);
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
                     "See the 'receive_timeout' setting", database_name);
         }
-        LOG_TRACE(log, "SYNC DATABASE {}: OK", database_name);
+        LOG_TRACE(log, "SYNC DATABASE REPLICA {}: OK", database_name);
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC REPLICATED DATABASE query is intended to work only with Replicated engine");
@@ -930,9 +930,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA);
             break;
         }
-        case Type::SYNC_DATABASE:
+        case Type::SYNC_DATABASE_REPLICA:
         {
-            required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE, query.getDatabase());
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, query.getDatabase());
             break;
         }
         case Type::FLUSH_DISTRIBUTED:
