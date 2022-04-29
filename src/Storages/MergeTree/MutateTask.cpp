@@ -80,20 +80,28 @@ static void splitMutationCommands(
             {
                 for_file_renames.push_back(command);
             }
-            else if (part_columns.has(command.column_name))
+            else if (bool has_column = part_columns.has(command.column_name), has_nested_column = part_columns.hasNested(command.column_name); has_column || has_nested_column)
             {
-                if (command.type == MutationCommand::Type::DROP_COLUMN)
+                if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
-                    mutated_columns.emplace(command.column_name);
+                    if (has_nested_column)
+                    {
+                        const auto & nested = part_columns.getNested(command.column_name);
+                        assert(!nested.empty());
+                        for (const auto & nested_column : nested)
+                            mutated_columns.emplace(nested_column.name);
+                    }
+                    else
+                        mutated_columns.emplace(command.column_name);
                 }
-                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+
+                if (command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
                     for_interpreter.push_back(
                     {
                         .type = MutationCommand::Type::READ_COLUMN,
                         .column_name = command.rename_to,
                     });
-                    mutated_columns.emplace(command.column_name);
                     part_columns.rename(command.column_name, command.rename_to);
                 }
             }
