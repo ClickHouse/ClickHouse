@@ -46,8 +46,8 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
     auto remote_file_reader_creator = [=, this]()
     {
         return std::make_unique<ReadBufferFromS3>(
-            client_ptr, bucket, remote_path, max_single_read_retries,
-            settings, /* offset */ 0, read_until_position, /* restricted_seek */true);
+            client_ptr, bucket, remote_path, version_id, max_single_read_retries,
+            settings, /* use_external_buffer */true, /* offset */ 0, read_until_position, /* restricted_seek */true);
     };
 
     if (with_cache)
@@ -66,7 +66,7 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
 {
     current_path = path;
     return std::make_unique<ReadBufferFromAzureBlobStorage>(blob_container_client, path, max_single_read_retries,
-        max_single_download_retries, settings.remote_fs_buffer_size, read_until_position);
+        max_single_download_retries, settings.remote_fs_buffer_size, /* use_external_buffer */true, read_until_position);
 }
 #endif
 
@@ -74,7 +74,7 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
 SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path, size_t /* file_size */)
 {
     current_path = path;
-    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, read_until_position);
+    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, /* use_external_buffer */true, read_until_position);
 }
 
 
@@ -95,7 +95,6 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
-
 {
 }
 
