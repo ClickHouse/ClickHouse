@@ -448,9 +448,11 @@ for query_index in queries_to_run:
         # already.
         run += 1
 
-        # We break if all the min stop conditions are met (arg.runs iterations)
-        # and at lest one of the max stop conditions is met (8 seconds or 500 iterations)
-        if run >= args.runs and (server_seconds >= 8 * len(this_query_connections) or run >= 500):
+        avg_time_per_server = server_seconds / len(this_query_connections)
+
+        # We break if all the min stop conditions are met (1 second arg.runs iterations)
+        # or at lest one of the max stop conditions is met (8 seconds or 500 iterations)
+        if (avg_time_per_server >= 1 and run >= args.runs) or (avg_time_per_server >= 8 or run >= 500):
             break
 
     client_seconds = time.perf_counter() - start_seconds
