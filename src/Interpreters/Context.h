@@ -369,6 +369,7 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getUserDefinedPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -380,6 +381,7 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
+    void setUserDefinedPath(const String & path);
 
     void addWarningMessage(const String & msg);
 
@@ -926,6 +928,7 @@ public:
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
+    bool areBackgroundExecutorsInitialized();
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;

@@ -144,6 +144,8 @@ public:
 
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
 
+    void detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
 
@@ -151,6 +153,9 @@ private:
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
     void assertNotDetached() const;
+    void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
+    bool hasFinalizedState() const;
+    bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return detached; }
 
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
@@ -165,6 +170,7 @@ private:
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
     void complete(std::lock_guard<std::mutex> & cache_lock);
+    void completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
 
     void completeImpl(
         std::lock_guard<std::mutex> & cache_lock,
