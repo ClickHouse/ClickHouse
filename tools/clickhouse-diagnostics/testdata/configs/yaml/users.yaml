@@ -1,4 +1,3 @@
-
 include_from: "../include/yaml/user-include.yaml"
 # Profiles of settings.
 profiles:
