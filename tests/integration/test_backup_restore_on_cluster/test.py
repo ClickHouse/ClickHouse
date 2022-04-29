@@ -158,3 +158,17 @@ def test_different_tables_on_nodes():
         [[1, "Don\\'t"], [2, "count"], [3, "your"], [4, "chickens"]]
     )
     assert node2.query("SELECT * FROM tbl") == TSV([-333, -222, -111, 0, 111])
+
+
+def test_backup_restore_on_single_replica():
+    node1.query("CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')")
+    node1.query("CREATE TABLE mydb.test (`name` String, `value` UInt32) ENGINE = ReplicatedMergeTree ORDER BY value")
+    node1.query("INSERT INTO mydb.test VALUES ('abc', 1), ('def', 2)")
+    node1.query("INSERT INTO mydb.test VALUES ('ghi', 3)")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP DATABASE mydb TO {backup_name}")
+
+    node1.query("DROP DATABASE mydb NO DELAY")
+
+    node1.query(f"RESTORE DATABASE mydb FROM {backup_name}")

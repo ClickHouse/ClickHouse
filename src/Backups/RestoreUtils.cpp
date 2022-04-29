@@ -7,6 +7,7 @@
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreTask.h>
 #include <Backups/RestoreCoordinationDistributed.h>
+#include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Common/escapeForFileName.h>
 #include <Databases/IDatabase.h>
@@ -471,6 +472,8 @@ namespace
         {
             if (!restore_settings.coordination_zk_path.empty())
                 restore_coordination = std::make_shared<RestoreCoordinationDistributed>(restore_settings.coordination_zk_path, [context=context] { return context->getZooKeeper(); });
+            else
+                restore_coordination = std::make_shared<RestoreCoordinationLocal>();
         }
 
         /// Prepares internal structures for making tasks for restoring.
