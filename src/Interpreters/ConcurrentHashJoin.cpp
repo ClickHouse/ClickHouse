@@ -83,9 +83,7 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & block, bool check_limits)
                 iter = pending_blocks.erase(iter);
             }
             else
-            {
                 iter++;
-            }
         }
     }
 
