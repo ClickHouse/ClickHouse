@@ -41,7 +41,7 @@ IFileCache::IFileCache(
 {
 }
 
-void IFileCache::addQueryRef(String & query_id)
+void IFileCache::addQueryRef(const String & query_id)
 {
     /// must be a query log
     if (query_id.size())
@@ -57,7 +57,7 @@ void IFileCache::addQueryRef(String & query_id)
     }
 }
 
-void IFileCache::DecQueryRef(String & query_id)
+void IFileCache::DecQueryRef(const String & query_id)
 {
     /// must be a query log
     if (query_id.size())
@@ -80,7 +80,7 @@ void IFileCache::DecQueryRef(String & query_id)
     }
 }
 
-void IFileCache::updateQueryCacheLog(String & query_id, String & remote_fs_path, size_t hit_count, size_t miss_count)
+void IFileCache::updateQueryCacheLog(const String & query_id, const String & remote_fs_path, size_t hit_count, size_t miss_count)
 {
     /// must be a query log
     if (query_id.size())
