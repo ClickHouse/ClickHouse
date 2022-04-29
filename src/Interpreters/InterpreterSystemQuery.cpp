@@ -751,13 +751,13 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
         if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
         {
             LOG_ERROR(log, "SYNC DATABASE REPLICA {}: Timed out!", database_name);
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: command timed out. " \
                     "See the 'receive_timeout' setting", database_name);
         }
         LOG_TRACE(log, "SYNC DATABASE REPLICA {}: OK", database_name);
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC REPLICATED DATABASE query is intended to work only with Replicated engine");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC DATABASE REPLICA query is intended to work only with Replicated engine");
 }
 
 
