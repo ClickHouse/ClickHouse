@@ -170,9 +170,7 @@ def substitute_parameters(query_templates, other_templates=[]):
 # Build a list of test queries, substituting parameters to query templates,
 test_queries = []
 for e in root.findall("query"):
-    new_queries = substitute_parameters(
-        [e.text]
-    )
+    new_queries = substitute_parameters([e.text])
     test_queries += new_queries
 
 # If we're given a list of queries to run, check that it makes sense.
@@ -452,7 +450,9 @@ for query_index in queries_to_run:
 
         # We break if all the min stop conditions are met (1 second arg.runs iterations)
         # or at lest one of the max stop conditions is met (8 seconds or 500 iterations)
-        if (avg_time_per_server >= 1 and run >= args.runs) or (avg_time_per_server >= 8 or run >= 500):
+        if (avg_time_per_server >= 1 and run >= args.runs) or (
+            avg_time_per_server >= 8 or run >= 500
+        ):
             break
 
     client_seconds = time.perf_counter() - start_seconds
