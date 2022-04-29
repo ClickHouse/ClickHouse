@@ -64,9 +64,21 @@ struct AggregateFunctionGroupArraySortedDataBase
             values.erase(--values.end());
     }
 
-    void merge(const AggregateFunctionGroupArraySortedDataBase & other)
+    void merge(const AggregateFunctionGroupArraySortedDataBase & other, Arena * arena)
     {
-        values.merge(Storage(other.values));
+        if constexpr (std::is_same_v<ValueType, StringRef>)
+        {
+            for (const auto value : other.values)
+            {
+                StringRef new_value = value;
+                new_value.data = const_cast<char *>(arena->insert(value.data, value.size));
+                values.insert(new_value);
+            }
+        }
+        else
+        {
+            values.merge(Storage(other.values));
+        }
         narrowDown();
     }
 
