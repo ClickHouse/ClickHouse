@@ -1384,6 +1384,16 @@ The directory with user scripts files. Used for Executable user defined function
 <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
 ```
 
+## user_defined_path {#server_configuration_parameters-user_defined_path}
+
+The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
+
+**Example**
+
+``` xml
+<user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
+```
+
 ## users_config {#users-config}
 
 Path to the file that contains:

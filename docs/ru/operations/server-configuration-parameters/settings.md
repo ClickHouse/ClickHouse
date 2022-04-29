@@ -1363,6 +1363,16 @@ TCP порт для защищённого обмена данными с кли
 <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
 ```
 
+## user_defined_path {#server_configuration_parameters-user_defined_path}
+
+Каталог с определенными пользователем файлами. Используется для пользовательских SQL функций [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
+
+**Example**
+
+``` xml
+<user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
+```
+
 ## users_config {#users-config}
 
 Путь к файлу, который содержит:
