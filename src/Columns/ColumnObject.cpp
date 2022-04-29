@@ -654,7 +654,6 @@ void ColumnObject::insertFrom(const IColumn & src, size_t n)
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const auto & src_object = assert_cast<const ColumnObject &>(src);
-
     if (!src_object.isFinalized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insertRangeFrom non-finalized ColumnObject");
 
@@ -670,7 +669,24 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
     {
         if (!hasSubcolumn(entry->path))
         {
-            addSubcolumn(entry->path, num_rows);
+            if (entry->path.hasNested())
+            {
+                const auto & base_type = entry->data.getLeastCommonTypeBase();
+                FieldInfo field_info
+                {
+                    .scalar_type = base_type,
+                    .have_nulls = base_type->isNullable(),
+                    .need_convert = false,
+                    .num_dimensions = entry->data.getNumberOfDimensions(),
+                };
+
+                addNestedSubcolumn(entry->path, field_info, num_rows);
+            }
+            else
+            {
+                addSubcolumn(entry->path, num_rows);
+            }
+
             auto & subcolumn = getSubcolumn(entry->path);
             subcolumn.insertRangeFrom(entry->data, start, length);
         }
