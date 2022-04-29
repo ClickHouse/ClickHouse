@@ -679,12 +679,15 @@ public:
         if (!func_name.empty())
         {
             // Round brackets can mean priority operator as well as function tuple()
-            if (func_name == "tuple" && res.size() == 1)
+            if (func_name == "tuple_" && res.size() == 1)
             {
                 op = std::move(res[0]);
             }
             else
             {
+                if (func_name == "tuple_")
+                    func_name = "tuple";
+
                 auto func = makeASTFunction(func_name, std::move(res));
 
                 if (parameters)
@@ -725,7 +728,7 @@ public:
             if (!wrapLayer())
                 return false;
 
-            // fix: move to other place, ()()() will work
+            // fix: move to other place, ()()() will work, aliases f(a as b)(c) - won't work
             if (end_bracket == TokenType::ClosingRoundBracket && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
             {
                 parameters = std::make_shared<ASTExpressionList>();
@@ -736,8 +739,6 @@ public:
             {
                 state = -1;
             }
-
-            return true;
         }
 
         return true;
@@ -839,9 +840,8 @@ public:
     {
         if (result.empty())
             return false;
-        /// FIXME: try to prettify this cast using `as<>()`
-        if (auto * ast_with_alias = node->as<ASTWithAlias>())
-        // if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(result.back().get()))
+
+        if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(result.back().get()))
             tryGetIdentifierNameInto(node, ast_with_alias->alias);
         else
             return false;
@@ -1769,7 +1769,7 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             else if (pos->type == TokenType::OpeningRoundBracket)
             {
                 next = Action::OPERAND;
-                storage.push_back(std::make_unique<Layer>(TokenType::ClosingRoundBracket, "tuple"));
+                storage.push_back(std::make_unique<Layer>(TokenType::ClosingRoundBracket, "tuple_"));
                 ++pos;
             }
             else if (pos->type == TokenType::OpeningSquareBracket)
@@ -1846,6 +1846,20 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     return false;
                 if (!storage.back()->parseAlias(tmp))
                     return false;
+
+                // duplicate code :(
+                if (storage.back()->isFinished())
+                {
+                    next = Action::OPERATOR;
+
+                    ASTPtr res;
+                    if (!storage.back()->getResult(res))
+                        return false;
+
+                    storage.pop_back();
+                    storage.back()->pushOperand(res);
+                    continue;
+                }
             }
             else if (pos->type == TokenType::Comma)
             {
