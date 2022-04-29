@@ -27,6 +27,7 @@ bool injectRequiredColumnsRecursively(
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::AlterConversions & alter_conversions,
     const MergeTreeData::DataPartPtr & part,
+    const GetColumnsOptions & options,
     Names & columns,
     NameSet & required_columns,
     NameSet & injected_columns)
@@ -36,7 +37,6 @@ bool injectRequiredColumnsRecursively(
     /// stages.
     checkStackSize();
 
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns().withExtendedObjects();
     auto column_in_storage = storage_snapshot->tryGetColumn(options, column_name);
     if (column_in_storage)
     {
@@ -44,12 +44,11 @@ bool injectRequiredColumnsRecursively(
         if (alter_conversions.isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
-        auto column_in_part = NameAndTypePair(
-            column_name_in_part, column_in_storage->getSubcolumnName(),
-            column_in_storage->getTypeInStorage(), column_in_storage->type);
+        auto column_in_part = part->getColumns().tryGetByName(column_name_in_part);
 
-        /// column has files and hence does not require evaluation
-        if (part->hasColumnFiles(column_in_part))
+        if (column_in_part
+            && (!column_in_storage->isSubcolumn()
+                || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName())))
         {
             /// ensure each column is added only once
             if (!required_columns.contains(column_name))
@@ -75,7 +74,9 @@ bool injectRequiredColumnsRecursively(
 
     bool result = false;
     for (const auto & identifier : identifiers)
-        result |= injectRequiredColumnsRecursively(identifier, storage_snapshot, alter_conversions, part, columns, required_columns, injected_columns);
+        result |= injectRequiredColumnsRecursively(
+            identifier, storage_snapshot, alter_conversions, part,
+            options, columns, required_columns, injected_columns);
 
     return result;
 }
@@ -86,6 +87,7 @@ NameSet injectRequiredColumns(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::DataPartPtr & part,
+    bool with_subcolumns,
     Names & columns)
 {
     NameSet required_columns{std::begin(columns), std::end(columns)};
@@ -96,16 +98,19 @@ NameSet injectRequiredColumns(
     if (!part->isProjectionPart())
         alter_conversions = storage.getAlterConversionsForPart(part);
 
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+    if (with_subcolumns)
+        options.withSubcolumns();
+
     for (size_t i = 0; i < columns.size(); ++i)
     {
         /// We are going to fetch only physical columns
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns().withExtendedObjects();
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no physical column or subcolumn {} in table", columns[i]);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
             columns[i], storage_snapshot, alter_conversions,
-            part, columns, required_columns, injected_columns);
+            part, options, columns, required_columns, injected_columns);
     }
 
     /** Add a column of the minimum size.
@@ -114,7 +119,7 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        const auto minimum_size_column_name = part->getColumnNameWithMinimumCompressedSize(storage_snapshot);
+        const auto minimum_size_column_name = part->getColumnNameWithMinimumCompressedSize(storage_snapshot, with_subcolumns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
         injected_columns.insert(columns.back());
@@ -264,13 +269,15 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
-    const PrewhereInfoPtr & prewhere_info)
+    const PrewhereInfoPtr & prewhere_info,
+    bool with_subcolumns)
 {
     Names column_names = required_columns;
     Names pre_column_names;
 
     /// inject columns required for defaults evaluation
-    bool should_reorder = !injectRequiredColumns(storage, storage_snapshot, data_part, column_names).empty();
+    bool should_reorder = !injectRequiredColumns(
+        storage, storage_snapshot, data_part, with_subcolumns, column_names).empty();
 
     if (prewhere_info)
     {
@@ -295,7 +302,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);
 
-        const auto injected_pre_columns = injectRequiredColumns(storage, storage_snapshot, data_part, pre_column_names);
+        const auto injected_pre_columns = injectRequiredColumns(
+            storage, storage_snapshot, data_part, with_subcolumns, pre_column_names);
+
         if (!injected_pre_columns.empty())
             should_reorder = true;
 
@@ -312,7 +321,10 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     MergeTreeReadTaskColumns result;
     NamesAndTypesList all_columns;
 
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects();
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
+    if (with_subcolumns)
+        options.withSubcolumns();
+
     result.pre_columns = storage_snapshot->getColumnsByNames(options, pre_column_names);
     result.columns = storage_snapshot->getColumnsByNames(options, column_names);
     result.should_reorder = should_reorder;

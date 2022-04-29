@@ -23,7 +23,7 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-:::warning    
+:::warning
 Don’t use it if you have just started using ClickHouse.
 :::
 
@@ -251,6 +251,23 @@ See also “[External dictionaries](../../sql-reference/dictionaries/external-di
 
 ``` xml
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
+```
+
+## user_defined_executable_functions_config {#server_configuration_parameters-user_defined_executable_functions_config}
+
+The path to the config file for executable user defined functions.
+
+Path:
+
+-   Specify the absolute path or the path relative to the server config file.
+-   The path can contain wildcards \* and ?.
+
+See also “[Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).”.
+
+**Example**
+
+``` xml
+<user_defined_executable_functions_config>*_dictionary.xml</user_defined_executable_functions_config>
 ```
 
 ## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
@@ -544,6 +561,7 @@ Keys:
 -   `errorlog` – Error log file.
 -   `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 -   `count` – The number of archived log files that ClickHouse stores.
+-   `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 
 **Example**
 
@@ -554,6 +572,15 @@ Keys:
     <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
     <size>1000M</size>
     <count>10</count>
+</logger>
+```
+
+Writing to the console can be configured. Config example:
+
+``` xml
+<logger>
+    <level>information</level>
+    <console>1</console>
 </logger>
 ```
 
@@ -677,8 +704,8 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries related to MergeTree table.
-Queries may be limited by other settings: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+The maximum number of simultaneously processed queries.
+Note that other limits also apply: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users).
 
 :::note
 These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -694,7 +721,7 @@ Default value: `100`.
 **Example**
 
 ``` xml
-<max_concurrent_queries>100</max_concurrent_queries>
+<max_concurrent_queries>200</max_concurrent_queries>
 ```
 
 ## max_concurrent_insert_queries {#max-concurrent-insert-queries}
@@ -780,21 +807,6 @@ Default value: `0`.
 **See Also**
 
 -   [max_concurrent_queries](#max-concurrent-queries)
-
-## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
-
-The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting.
-
-Possible values:
-
--   Positive integer.
--   0 — Disabled.
-
-**Example**
-
-``` xml
-<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
-```
 
 ## max_connections {#max-connections}
 
@@ -1360,6 +1372,16 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 
 ``` xml
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+```
+
+## user_scripts_path {#server_configuration_parameters-user_scripts_path}
+
+The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
+
+**Example**
+
+``` xml
+<user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
 ```
 
 ## users_config {#users-config}

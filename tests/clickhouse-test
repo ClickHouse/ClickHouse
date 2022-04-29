@@ -52,7 +52,7 @@ MESSAGES_TO_RETRY = [
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
     "DB::Exception: Cannot enqueue query",
-    "environment: line 1: wait_for: No record of process", # Something weird from bash internals, let's just retry
+    "line 1: wait_for: No record of process", # Something weird from bash internals, let's just retry
     "is executing longer than distributed_ddl_task_timeout" # FIXME
 ]
 
@@ -225,6 +225,7 @@ def get_processlist_after_test(args):
         FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
         WHERE
             query NOT LIKE '%system.processes%' AND
+            {'NOT is_all_data_sent AND' if args.suppport_system_processes_is_all_data_sent else ''}
             Settings['log_comment'] = '{log_comment}' AND
             current_database = '{database}'
         """)
@@ -234,6 +235,7 @@ def get_processlist_after_test(args):
         FROM system.processes
         WHERE
             query NOT LIKE '%system.processes%' AND
+            {'NOT is_all_data_sent AND' if args.suppport_system_processes_is_all_data_sent else ''}
             Settings['log_comment'] = '{log_comment}' AND
             current_database = '{database}'
         """)
@@ -356,6 +358,7 @@ class FailureReason(enum.Enum):
     RESULT_DIFF = "result differs with reference: "
     TOO_LONG = "Test runs too long (> 60s). Make it faster."
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
+    LEFT_QUERIES = "Queries left in background after the test finished:"
 
     # SKIPPED reasons
     DISABLED = "disabled"
@@ -671,6 +674,15 @@ class TestCase:
             # We're in Flaky Check mode, check the run time as well while we're at it.
             return TestResult(self.name, TestStatus.FAIL, FailureReason.TOO_LONG, total_time, description)
 
+        left_queries_check = args.no_left_queries_check is False
+        if self.tags and 'no-left-queries-check' in self.tags:
+            left_queries_check = False
+        if left_queries_check:
+            processlist = get_processlist_after_test(self.testcase_args)
+            if processlist:
+                description += "\n{}\n".format(json.dumps(processlist, indent=4))
+                return TestResult(self.name, TestStatus.FAIL, FailureReason.LEFT_QUERIES, total_time, description)
+
         if os.path.exists(self.stdout_file):
             os.remove(self.stdout_file)
         if os.path.exists(self.stderr_file):
@@ -746,16 +758,6 @@ class TestCase:
             maybe_passed = (proc.returncode == 0) and (proc.stderr is None) and (
                         proc.stdout is None or 'Exception' not in proc.stdout)
             need_drop_database = not maybe_passed
-
-        left_queries_check = args.no_left_queries_check is False
-        if self.tags and 'no-left-queries-check' in self.tags:
-            left_queries_check = False
-        if left_queries_check:
-            processlist = get_processlist_after_test(args)
-            if processlist:
-                print(colored(f"\nFound queries left in processlist after running {args.testcase_basename} (database={database}):", args, "red", attrs=["bold"]))
-                print(json.dumps(processlist, indent=4))
-                exit_code.value = 1
 
         if need_drop_database:
             seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
@@ -1233,6 +1235,12 @@ def collect_build_flags(args):
 
     return result
 
+def check_table_column(args, database, table, column):
+    return int(clickhouse_execute(args, f"""
+    SELECT count()
+    FROM system.columns
+    WHERE database = '{database}' AND table = '{table}' AND name = '{column}'
+    """)) > 0
 
 def suite_key_func(item: str) -> Union[int, Tuple[int, str]]:
     if args.order == 'random':
@@ -1336,6 +1344,7 @@ def main(args):
         raise Exception(msg)
 
     args.build_flags = collect_build_flags(args)
+    args.suppport_system_processes_is_all_data_sent = check_table_column(args, 'system', 'processes', 'is_all_data_sent')
 
     if args.skip:
         args.skip = set(args.skip)
@@ -1379,10 +1388,14 @@ def main(args):
                     break
             create_database_retries += 1
 
-    if args.database and args.database != "test":
-        create_common_database(args, args.database)
+    try:
+        if args.database and args.database != "test":
+            create_common_database(args, args.database)
 
-    create_common_database(args, "test")
+        create_common_database(args, "test")
+    except Exception as e:
+        print(f"Failed to create databases for tests: {e}")
+        server_died.set()
 
     total_tests_run = 0
 

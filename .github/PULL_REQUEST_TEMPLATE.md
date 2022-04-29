@@ -13,4 +13,4 @@
 ...
 
 
-> Information about CI checks: https://clickhouse.tech/docs/en/development/continuous-integration/
+> Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
