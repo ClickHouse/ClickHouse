@@ -41,12 +41,15 @@ ARCFileCache::ARCFileCache(const String & cache_base_path_, const FileCacheSetti
 
 void ARCFileCache::initialize()
 {
-    if (fs::exists(cache_base_path))
-        loadCacheInfoIntoMemory();
-    else
-        fs::create_directories(cache_base_path);
-
-    is_initialized = true;
+    std::lock_guard cache_lock(mutex);
+    if (!is_initialized)
+    {
+        if (fs::exists(cache_base_path))
+            loadCacheInfoIntoMemory(cache_lock);
+        else
+            fs::create_directories(cache_base_path);
+        is_initialized = true;
+    }
 }
 
 void ARCFileCache::useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock)
@@ -668,10 +671,8 @@ FileSegments ARCFileCache::getSnapshot() const
     return file_segments;
 }
 
-void ARCFileCache::loadCacheInfoIntoMemory()
+void ARCFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock)
 {
-    std::lock_guard cache_lock(mutex);
-
     Key key;
     UInt64 offset;
     size_t size;

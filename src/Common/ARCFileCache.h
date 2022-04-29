@@ -154,7 +154,7 @@ private:
 
     size_t availableSize() const { return max_size - (low_queue.getSpaceBytes() + high_queue.getSpaceBytes()); }
 
-    void loadCacheInfoIntoMemory();
+    void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
 
     FileSegments
     splitRangeIntoCells(const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
