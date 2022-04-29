@@ -1180,6 +1180,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
     :::note
     60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8).
     :::
+
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
 Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для [репликационных](../../engines/table-engines/mergetree-family/replication.md) отправок. Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth).
@@ -1200,6 +1201,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
     :::note
     60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8).
     :::
+
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 Таймаут в миллисекундах на соединение с удалённым сервером, для движка таблиц Distributed, если используются секции shard и replica в описании кластера.
@@ -2205,16 +2207,6 @@ SELECT * FROM test_table
 Возможные значения: 32 (32 байта) - 1073741824 (1 GiB)
 
 Значение по умолчанию: 32768 (32 KiB)
-
-## background_pool_size {#background_pool_size}
-
-Задает количество потоков для выполнения фоновых операций в движках таблиц (например, слияния в таблицах c движком [MergeTree](../../engines/table-engines/mergetree-family/index.md)). Настройка применяется при запуске сервера ClickHouse и не может быть изменена во пользовательском сеансе. Настройка позволяет управлять загрузкой процессора и диска. Чем меньше пул, тем ниже нагрузка на CPU и диск, при этом фоновые процессы работают с меньшей интенсивностью, что в конечном итоге может повлиять на производительность запросов, потому что сервер будет обрабатывать больше кусков.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
