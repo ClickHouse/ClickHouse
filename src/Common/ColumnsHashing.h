@@ -4,7 +4,7 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <Common/assert_cast.h>
 #include "Columns/IColumn.h"
 #include <base/unaligned.h>
@@ -193,7 +193,7 @@ public:
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
 
 private:
-    using Cache = LRUCache<DictionaryKey, CachedValues, DictionaryKeyHash>;
+    using Cache = CacheBase<DictionaryKey, CachedValues, DictionaryKeyHash>;
     Cache cache;
 };
 

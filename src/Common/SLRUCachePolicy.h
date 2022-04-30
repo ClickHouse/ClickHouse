@@ -33,9 +33,11 @@ public:
       * max_protected_size shows how many of the most frequently used entries will not be evicted after a sequential scan.
       * max_protected_size == 0 means that the default protected size is equal to half of the total max size.
       */
-    SLRUCachePolicy(size_t max_size_, size_t max_protected_size_ = 0)
-        : max_protected_size(max_protected_size_ != 0 ? max_protected_size_ : max_size_ / 2 + 1)
+    /// TODO: construct from special struct with cache policy parametrs (also with max_protected_size).
+    SLRUCachePolicy(size_t max_size_, size_t max_elements_size_ = 0)
+        : max_protected_size(max_size_ / 2)
         , max_size(std::max(max_protected_size + 1, max_size_))
+        , max_elements_size(max_elements_size_)
         {}
 
     template <class... Args>
@@ -101,7 +103,7 @@ public:
             protected_queue.splice(protected_queue.end(), probationary_queue, cell.queue_iterator);
         }
 
-        removeOverflow(protected_queue, max_protected_size, current_protected_size);
+        removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
 
         return cell.value;
     }
@@ -146,8 +148,8 @@ public:
         current_size += cell.size;
         current_protected_size += cell.is_protected ? cell.size : 0;
 
-        removeOverflow(protected_queue, max_protected_size, current_protected_size);
-        removeOverflow(probationary_queue, max_size, current_size);
+        removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
+        removeOverflow(probationary_queue, max_size, current_size, /*is_protected=*/false);
     }
 
 protected:
@@ -173,15 +175,26 @@ protected:
     size_t current_size = 0;
     const size_t max_protected_size;
     const size_t max_size;
+    const size_t max_elements_size;
 
     WeightFunction weight_function;
 
-    void removeOverflow(SLRUQueue & queue, const size_t max_weight_size, size_t & current_weight_size)
+    void removeOverflow(SLRUQueue & queue, const size_t max_weight_size, size_t & current_weight_size, bool is_protected)
     {
         size_t current_weight_lost = 0;
         size_t queue_size = queue.size();
 
-        while (current_weight_size > max_weight_size && queue_size > 1)
+        auto need_remove = [&]() -> bool
+        {
+            if (is_protected)
+            {
+                return current_weight_size > max_weight_size && queue_size > 1;
+            }
+            return ((max_elements_size != 0 && queue_size > max_elements_size)
+                || (current_weight_size > max_weight_size)) && (queue_size > 1);
+        };
+
+        while (need_remove())
         {
             const Key & key = queue.front();
 
@@ -211,7 +224,7 @@ protected:
             --queue_size;
         }
 
-        if (current_weight_lost > 0)
+        if (!is_protected)
         {
             Base::on_weight_loss_function(current_weight_lost);
         }

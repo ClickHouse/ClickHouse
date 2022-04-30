@@ -10,7 +10,7 @@
 #include <ThriftHiveMetastore.h>
 
 #include <base/types.h>
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <Common/PoolBase.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveFile.h>
@@ -135,7 +135,7 @@ private:
 
     void tryCallHiveClient(std::function<void(ThriftHiveMetastoreClientPool::Entry &)> func);
 
-    LRUCache<String, HiveTableMetadata> table_metadata_cache;
+    CacheBase<String, HiveTableMetadata> table_metadata_cache;
     ThriftHiveMetastoreClientPool client_pool;
 
     Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
