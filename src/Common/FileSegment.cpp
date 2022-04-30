@@ -224,7 +224,10 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
                         "Attempt to write {} bytes to offset: {}, but current download offset is {}",
                         size, offset_, download_offset);
 
-    assertNotDetached();
+    {
+        std::lock_guard segment_lock(mutex);
+        assertNotDetached(segment_lock);
+    }
 
     if (!cache_writer)
     {
@@ -273,9 +276,9 @@ void FileSegment::writeInMemory(const char * from, size_t size)
             ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
             "Not enough space is reserved. Available: {}, expected: {}", availableSize(), size);
 
-    assertNotDetached();
-
     std::lock_guard segment_lock(mutex);
+
+    assertNotDetached(segment_lock);
 
     if (cache_writer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache writer already initialized");
@@ -311,7 +314,7 @@ size_t FileSegment::finalizeWrite()
     if (size == 0)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Writing zero size is not allowed");
 
-    assertNotDetached();
+    assertNotDetached(segment_lock);
 
     try
     {
@@ -366,10 +369,10 @@ bool FileSegment::reserve(size_t size)
     if (!size)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
 
-    assertNotDetached();
-
     {
         std::lock_guard segment_lock(mutex);
+
+        assertNotDetached(segment_lock);
 
         auto caller_id = getCallerId();
         if (downloader_id != caller_id)
@@ -455,7 +458,7 @@ void FileSegment::complete(State state)
     std::lock_guard cache_lock(cache->mutex);
     std::lock_guard segment_lock(mutex);
 
-    assertNotDetached();
+    assertNotDetached(segment_lock);
 
     bool is_downloader = isDownloaderImpl(segment_lock);
     if (!is_downloader)
@@ -513,7 +516,7 @@ void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std
         setDownloaded(segment_lock);
     }
 
-    assertNotDetached();
+    assertNotDetached(segment_lock);
 
     if (download_state == State::DOWNLOADING || download_state == State::EMPTY)
     {
@@ -646,10 +649,10 @@ void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment
     assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
 }
 
-void FileSegment::assertNotDetached() const
+void FileSegment::assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const
 {
     if (detached)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Operation not allowed, file segment is detached ({})", getInfoForLog());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Operation not allowed, file segment is detached ({})", getInfoForLogImpl(segment_lock));
 }
 
 void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex>  & /* segment_lock */) const
@@ -693,7 +696,7 @@ void FileSegment::detach(std::lock_guard<std::mutex> & cache_lock, std::lock_gua
 
     detached = true;
 
-    LOG_TEST(log, "Detached file segment: {}", getInfoForLog());
+    LOG_TEST(log, "Detached file segment: {}", getInfoForLogImpl(segment_lock));
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()
