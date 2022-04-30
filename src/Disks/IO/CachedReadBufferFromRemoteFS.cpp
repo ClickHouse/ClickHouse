@@ -72,10 +72,10 @@ void CachedReadBufferFromRemoteFS::appendFilesystemCacheLog(
             elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_CACHE;
             break;
         case CachedReadBufferFromRemoteFS::ReadType::REMOTE_FS_READ_BYPASS_CACHE:
-            elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE;
+            elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_BYPASSING_CACHE;
             break;
         case CachedReadBufferFromRemoteFS::ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
-            elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_BYPASSING_CACHE;
+            elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE;
             break;
     }
 
