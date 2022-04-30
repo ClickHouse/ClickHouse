@@ -1,5 +1,9 @@
 #include <Backups/RestoreCoordinationLocal.h>
+#include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Common/Exception.h>
+#include <base/chrono_io.h>
+#include <base/logger_useful.h>
+#include <boost/range/adaptor/map.hpp>
 
 
 namespace DB
@@ -7,67 +11,110 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int TABLE_ALREADY_EXISTS;
+    extern const int FAILED_TO_RESTORE_METADATA_ON_OTHER_NODE;
     extern const int LOGICAL_ERROR;
 }
 
 
-RestoreCoordinationLocal::RestoreCoordinationLocal() = default;
+RestoreCoordinationLocal::RestoreCoordinationLocal()
+    : log(&Poco::Logger::get("RestoreCoordinationLocal"))
+{}
+
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::setOrGetPathInBackupForZkPath(const String & zk_path_, String & path_in_backup_)
+void RestoreCoordinationLocal::finishRestoringMetadata(const String & /* host_id */, const String & error_message_)
 {
-    std::lock_guard lock{mutex};
-    auto [it, inserted] = paths_in_backup_by_zk_path.try_emplace(zk_path_, path_in_backup_);
-    if (!inserted)
-        path_in_backup_ = it->second;
+    LOG_TRACE(log, "Finished restoring metadata{}", (error_message_.empty() ? "" : (" with error " + error_message_)));
 }
 
-bool RestoreCoordinationLocal::acquireZkPathAndName(const String & path_, const String & name_)
+void RestoreCoordinationLocal::waitHostsToRestoreMetadata(const Strings & /* host_ids_ */, std::chrono::seconds /* timeout_ */) const
 {
-    std::lock_guard lock{mutex};
-    acquired.emplace(std::pair{path_, name_}, std::nullopt);
-    return true;
 }
 
-void RestoreCoordinationLocal::setResultForZkPathAndName(const String & zk_path_, const String & name_, Result res_)
+void RestoreCoordinationLocal::setTableExistedInReplicatedDB(
+    const String & /* host_id_ */,
+    const String & database_name_,
+    const String & database_zk_path_,
+    const String & table_name_,
+    bool table_existed_)
 {
     std::lock_guard lock{mutex};
-    getResultRef(zk_path_, name_) = res_;
-    result_changed.notify_all();
-}
 
-bool RestoreCoordinationLocal::getResultForZkPathAndName(const String & zk_path_, const String & name_, Result & res_, std::chrono::milliseconds timeout_) const
-{
-    std::unique_lock lock{mutex};
-    auto value = getResultRef(zk_path_, name_);
-    if (value)
+    auto key = std::pair{database_zk_path_, table_name_};
+
+    auto it = table_existed_in_replicated_db.find(key);
+    if (it == table_existed_in_replicated_db.end())
     {
-        res_ = *value;
-        return true;
+        TableExistedStatus status;
+        status.table_name.first = database_name_;
+        status.table_name.second = table_name_;
+        status.table_existed = table_existed_;
+        table_existed_in_replicated_db.emplace(std::move(key), std::move(status));
+        return;
     }
-
-    bool waited = result_changed.wait_for(lock, timeout_, [this, zk_path_, name_] { return getResultRef(zk_path_, name_).has_value(); });
-    if (!waited)
-        return false;
-
-    res_ = *getResultRef(zk_path_, name_);
-    return true;
+    else
+    {
+        auto & status = it->second;
+        if (!table_existed_)
+            status.table_existed = false;
+    }
 }
 
-std::optional<IRestoreCoordination::Result> & RestoreCoordinationLocal::getResultRef(const String & zk_path_, const String & name_)
+void RestoreCoordinationLocal::checkTablesNotExistedInReplicatedDBs() const
 {
-    auto it = acquired.find(std::pair{zk_path_, name_});
-    if (it == acquired.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path ({}, {}) is not acquired", zk_path_, name_);
-    return it->second;
+    std::lock_guard lock{mutex};
+    for (const auto & status : table_existed_in_replicated_db | boost::adaptors::map_values)
+    {
+        if (status.table_existed)
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "{} already exists", formatTableNameOrTemporaryTableName(status.table_name));
+    }
 }
 
-const std::optional<IRestoreCoordination::Result> & RestoreCoordinationLocal::getResultRef(const String & zk_path_, const String & name_) const
+void RestoreCoordinationLocal::setReplicatedTableDataPath(const String & /* host_id_ */,
+                                                          const DatabaseAndTableName & table_name_,
+                                                          const String & table_zk_path_,
+                                                          const String & data_path_in_backup_)
 {
-    auto it = acquired.find(std::pair{zk_path_, name_});
-    if (it == acquired.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path ({}, {}) is not acquired", zk_path_, name_);
-    return it->second;
+    std::lock_guard lock{mutex};
+    auto it = replicated_table_data_paths.find(table_zk_path_);
+    if (it == replicated_table_data_paths.end())
+    {
+        ReplicatedTableDataPath new_info;
+        new_info.table_name = table_name_;
+        new_info.data_path_in_backup = data_path_in_backup_;
+        replicated_table_data_paths.emplace(table_zk_path_, std::move(new_info));
+        return;
+    }
+    else
+    {
+        auto & cur_info = it->second;
+        if (table_name_ < cur_info.table_name)
+        {
+            cur_info.table_name = table_name_;
+            cur_info.data_path_in_backup = data_path_in_backup_;
+        }
+    }
+}
+
+String RestoreCoordinationLocal::getReplicatedTableDataPath(const String & table_zk_path) const
+{
+    std::lock_guard lock{mutex};
+    auto it = replicated_table_data_paths.find(table_zk_path);
+    if (it == replicated_table_data_paths.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicated data path is not set for zk_path={}", table_zk_path);
+    return it->second.data_path_in_backup;
+}
+
+bool RestoreCoordinationLocal::startRestoringReplicatedTablePartition(const String & /* host_id_ */,
+                                                                      const DatabaseAndTableName & table_name_,
+                                                                      const String & table_zk_path_,
+                                                                      const String & partition_name_)
+{
+    std::lock_guard lock{mutex};
+    auto key = std::pair{table_zk_path_, partition_name_};
+    auto it = replicated_table_partitions.try_emplace(std::move(key), table_name_).first;
+    return it->second == table_name_;
 }
 
 }

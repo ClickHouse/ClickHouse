@@ -10,6 +10,9 @@ class ASTBackupQuery;
 
 struct StorageRestoreSettings
 {
+    /// Internal, should not be specified by user.
+    /// The current host's ID in the format 'escaped_host_name:port'.
+    String host_id;
 };
 
 /// How the RESTORE command will handle table/database existence.
@@ -81,10 +84,6 @@ struct RestoreSettings : public StorageRestoreSettings
 
     /// Internal, should not be specified by user.
     bool internal = false;
-
-    /// Internal, should not be specified by user.
-    /// The current host's ID in the format 'escaped_host_name:port'.
-    String host_id;
 
     /// Internal, should not be specified by user.
     /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.

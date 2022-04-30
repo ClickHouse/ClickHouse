@@ -8,6 +8,8 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/BackupsWorker.h>
 #include <Backups/RestoreUtils.h>
+#include <Backups/RestoreCoordinationDistributed.h>
+#include <Backups/RestoreCoordinationLocal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Common/Macros.h>
@@ -132,6 +134,12 @@ namespace
         auto & worker = BackupsWorker::instance();
         bool is_internal_restore = restore_settings.internal;
 
+        std::shared_ptr<IRestoreCoordination> restore_coordination;
+        SCOPE_EXIT({
+            if (!is_internal_restore && restore_coordination)
+                restore_coordination->drop();
+        });
+
         try
         {
             std::shared_ptr<ASTBackupQuery> new_query = std::static_pointer_cast<ASTBackupQuery>(query.clone());
@@ -151,6 +159,11 @@ namespace
                 }
                 new_restore_settings.copySettingsToQuery(*new_query);
             }
+
+            if (!restore_settings.coordination_zk_path.empty())
+                restore_coordination = std::make_shared<RestoreCoordinationDistributed>(restore_settings.coordination_zk_path, [context=context] { return context->getZooKeeper(); });
+            else
+                restore_coordination = std::make_shared<RestoreCoordinationLocal>();
 
             if (!query.cluster.empty())
             {
@@ -176,9 +189,8 @@ namespace
                 backup_open_params.password = restore_settings.password;
                 BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
-                auto restore_tasks = makeRestoreTasks(context, backup, new_query->elements, restore_settings);
-
-                executeRestoreTasks(std::move(restore_tasks), context->getSettingsRef().max_backup_threads);
+                auto restore_tasks = makeRestoreTasks(context, backup, new_query->elements, restore_settings, restore_coordination);
+                executeRestoreTasks(std::move(restore_tasks), context->getSettingsRef().max_backup_threads, restore_settings, restore_coordination, std::chrono::seconds(5));
             }
 
             if (!is_internal_restore)

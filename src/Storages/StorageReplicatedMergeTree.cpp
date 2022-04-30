@@ -73,6 +73,7 @@
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreTask.h>
 #include <Backups/IRestoreCoordination.h>
+#include <Backups/RestoreSettings.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -8211,24 +8212,28 @@ public:
         const std::unordered_set<String> & partition_ids_,
         const BackupPtr & backup_,
         const String & data_path_in_backup_,
+        const StorageRestoreSettings & restore_settings_,
         const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
         : query_context(query_context_)
         , storage(storage_)
         , partition_ids(partition_ids_)
         , backup(backup_)
         , data_path_in_backup(data_path_in_backup_)
+        , restore_settings(restore_settings_)
         , restore_coordination(restore_coordination_)
     {
     }
 
     RestoreTasks run() override
     {
-        String full_zk_path = storage->getZooKeeperName() + storage->getZooKeeperPath();
-        String adjusted_data_path_in_backup = data_path_in_backup;
-        restore_coordination->setOrGetPathInBackupForZkPath(full_zk_path, adjusted_data_path_in_backup);
-
         RestoreTasks restore_part_tasks;
-        Strings part_names = backup->listFiles(adjusted_data_path_in_backup);
+
+        String full_zk_path = storage->getZooKeeperName() + storage->getZooKeeperPath();
+        auto storage_id = storage->getStorageID();
+        DatabaseAndTableName table_name = {storage_id.database_name, storage_id.table_name};
+        std::unordered_map<String, bool> partitions_restored_by_us;
+
+        Strings part_names = backup->listFiles(data_path_in_backup);
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto sink = std::make_shared<ReplicatedMergeTreeSink>(*storage, metadata_snapshot, 0, 0, 0, false, false, query_context, /*is_attach*/true);
@@ -8242,11 +8247,20 @@ public:
             if (!partition_ids.empty() && !partition_ids.contains(part_info->partition_id))
                 continue;
 
-            if (!restore_coordination->acquireZkPathAndName(full_zk_path, part_info->partition_id))
+            auto it = partitions_restored_by_us.find(part_info->partition_id);
+            if (it == partitions_restored_by_us.end())
+            {
+                it = partitions_restored_by_us.emplace(
+                    part_info->partition_id,
+                    restore_coordination->startRestoringReplicatedTablePartition(
+                        restore_settings.host_id, table_name, full_zk_path, part_info->partition_id)).first;
+            }
+
+            if (!it->second)
                 continue; /// Other replica is already restoring this partition.
 
             restore_part_tasks.push_back(
-                std::make_unique<RestorePartTask>(storage, sink, part_name, *part_info, backup, adjusted_data_path_in_backup));
+                std::make_unique<RestorePartTask>(storage, sink, part_name, *part_info, backup, data_path_in_backup));
         }
         return restore_part_tasks;
     }
@@ -8257,6 +8271,7 @@ private:
     std::unordered_set<String> partition_ids;
     BackupPtr backup;
     String data_path_in_backup;
+    StorageRestoreSettings restore_settings;
     std::shared_ptr<IRestoreCoordination> restore_coordination;
 
     class RestorePartTask : public IRestoreTask
@@ -8358,7 +8373,7 @@ RestoreTaskPtr StorageReplicatedMergeTree::restoreData(
     const ASTs & partitions,
     const BackupPtr & backup,
     const String & data_path_in_backup,
-    const StorageRestoreSettings &,
+    const StorageRestoreSettings & restore_settings,
     const std::shared_ptr<IRestoreCoordination> & restore_coordination)
 {
     return std::make_unique<ReplicatedMergeTreeRestoreTask>(
@@ -8367,6 +8382,7 @@ RestoreTaskPtr StorageReplicatedMergeTree::restoreData(
         getPartitionIDsFromQuery(partitions, local_context),
         backup,
         data_path_in_backup,
+        restore_settings,
         restore_coordination);
 }
 

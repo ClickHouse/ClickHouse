@@ -162,4 +162,37 @@ std::pair<size_t, size_t> BackupSettings::Util::findShardNumAndReplicaNum(const 
     throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Cannot determine shard number or replica number, the current host {} is not found in the cluster's hosts", host_id);
 }
 
+Strings BackupSettings::Util::filterHostIDs(const std::vector<Strings> & cluster_host_ids, size_t only_shard_num, size_t only_replica_num)
+{
+    Strings collected_host_ids;
+
+    auto collect_replicas = [&](size_t shard_index)
+    {
+        const auto & shard = cluster_host_ids[shard_index - 1];
+        if (only_replica_num)
+        {
+            if (only_replica_num <= shard.size())
+                collected_host_ids.push_back(shard[only_replica_num - 1]);
+        }
+        else
+        {
+            for (size_t replica_index = 1; replica_index <= shard.size(); ++replica_index)
+                collected_host_ids.push_back(shard[replica_index - 1]);
+        }
+    };
+
+    if (only_shard_num)
+    {
+        if (only_shard_num <= cluster_host_ids.size())
+            collect_replicas(only_shard_num);
+    }
+    else
+    {
+        for (size_t shard_index = 1; shard_index <= cluster_host_ids.size(); ++shard_index)
+            collect_replicas(shard_index);
+    }
+
+    return collected_host_ids;
+}
+
 }
