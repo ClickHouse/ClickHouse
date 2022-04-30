@@ -243,21 +243,10 @@ def minify_website(args):
     css_out = f"{args.output_dir}/docs/css/base.css"
     os.makedirs(f"{args.output_dir}/docs/css")
 
-    if args.minify and False:  # TODO: return closure
-        command = (
-            f"purifycss -w '*algolia*' --min {css_in} '{args.output_dir}/*.html' "
-            f"'{args.output_dir}/docs/en/**/*.html' '{args.website_dir}/js/**/*.js' > {css_out}"
-        )
-        logging.info(css_in)
-        logging.info(command)
-        output = subprocess.check_output(command, shell=True)
-        logging.debug(output)
-
-    else:
-        command = f"cat {css_in}"
-        output = subprocess.check_output(command, shell=True)
-        with open(css_out, "wb+") as f:
-            f.write(output)
+    command = f"cat {css_in}"
+    output = subprocess.check_output(command, shell=True)
+    with open(css_out, "wb+") as f:
+        f.write(output)
 
     with open(css_out, "rb") as f:
         css_digest = hashlib.sha3_224(f.read()).hexdigest()[0:8]
