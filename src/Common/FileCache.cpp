@@ -41,57 +41,60 @@ IFileCache::IFileCache(
 {
 }
 
-void IFileCache::addQueryRef(const String & query_id)
+void IFileCache::addFilesystemCacheLogRef(const String & query_id)
 {
     /// must be a client query
-    assert(query_id.size());
+    assert(!query_id.empty());
 
     std::lock_guard cache_lock(logs_mutex);
     auto iter = cache_logs.find(query_id);
     if (iter == cache_logs.end())
     {
-        iter = cache_logs.insert({query_id, std::make_shared<CacheLogRecorder>()}).first;
-        iter->second->trace = std::make_shared<CacheFileTrace>();
+        iter = cache_logs.insert({query_id, std::make_shared<FilesystemCacheLogsRecorder>()}).first;
+        iter->second->logs = std::make_shared<FilesystemCacheLogs>();
     }
     iter->second->ref++;
 }
 
-void IFileCache::DecQueryRef(const String & query_id)
+void IFileCache::decFilesystemCacheLogRef(const String & query_id)
 {
     /// must be a client query
-    assert(query_id.size());
+    assert(!query_id.empty());
 
     std::lock_guard cache_lock(logs_mutex);
     auto iter = cache_logs.find(query_id);
     if (iter != cache_logs.end())
     {
-        iter->second->ref--;
-        if (!iter->second->ref)
+        const auto & query_record = iter->second;
+        query_record->ref--;
+
+        if (!query_record->ref)
         {
-            if (auto cache_log = Context::getGlobalContextInstance()->getCacheLog())
+            if (auto cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog())
             {
-                for (const auto &elem : *(iter->second->trace))
-                    cache_log->add(*(elem.second));
+                for (const auto & elem : *(query_record->logs))
+                    cache_log->add(*elem.second);
             }
             cache_logs.erase(iter);
         }
     }
 }
 
-void IFileCache::updateQueryCacheLog(const String & query_id, const String & remote_fs_path, size_t hit_count, size_t miss_count)
+void IFileCache::updateFilesystemCacheLog(const String & query_id, const String & remote_fs_path, size_t hit_count, size_t miss_count)
 {
     /// must be a client query
-    assert(query_id.size());
+    assert(!query_id.empty());
 
     std::lock_guard cache_lock(logs_mutex);
     auto iter = cache_logs.find(query_id);
     if (iter != cache_logs.end())
     {
-        auto trace = iter->second->trace;
-        auto elem = trace->find(remote_fs_path);
-        if (elem == trace->end())
+        auto logs = iter->second->logs;
+        auto elem = logs->find(remote_fs_path);
+        if (elem == logs->end())
         {
-            elem = trace->insert({remote_fs_path, std::make_shared<CacheLogElement>()}).first;
+            elem = logs->insert({remote_fs_path, std::make_shared<FilesystemCacheLogElement>()}).first;
+
             const auto current_time = std::chrono::system_clock::now();
             elem->second->event_time = std::chrono::system_clock::to_time_t(current_time);
             elem->second->query_id = query_id;

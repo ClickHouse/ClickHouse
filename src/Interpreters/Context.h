@@ -86,8 +86,7 @@ class ZooKeeperLog;
 class SessionLog;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
-struct CacheLogRecorder;
-class CacheLog;
+class FilesystemCacheLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -213,8 +212,6 @@ private:
 
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
-
-    std::shared_ptr<CacheLogRecorder> cache_log_recorder;
 
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
@@ -825,8 +822,7 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
 
-    std::shared_ptr<CacheLog> getCacheLog() const;
-    std::shared_ptr<CacheLogRecorder> getCacheRecorder() const;
+    std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.

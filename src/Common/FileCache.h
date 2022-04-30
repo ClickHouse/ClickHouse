@@ -10,7 +10,7 @@
 #include <boost/noncopyable.hpp>
 #include <map>
 
-#include <Interpreters/CacheLog.h>
+#include <Interpreters/FilesystemCacheLog.h>
 #include "FileCache_fwd.h"
 #include <Common/logger_useful.h>
 #include <Common/FileSegment.h>
@@ -31,7 +31,7 @@ friend struct FileSegmentsHolder;
 public:
     using Key = UInt128;
     using Downloader = std::unique_ptr<SeekableReadBuffer>;
-    using CacheLogs = std::unordered_map<String, std::shared_ptr<CacheLogRecorder>>;
+    using QueryCacheLogs = std::unordered_map<String, std::shared_ptr<FilesystemCacheLogsRecorder>>;
 
     IFileCache(
         const String & cache_base_path_,
@@ -92,11 +92,12 @@ public:
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
 
-    void addQueryRef(const String & query_id);
+    void addFilesystemCacheLogRef(const String & query_id);
 
-    void DecQueryRef(const String & query_id);
+    void decFilesystemCacheLogRef(const String & query_id);
 
-    void updateQueryCacheLog(const String &query_id, const String &remote_fs_path, size_t hit_count, size_t miss_count);
+    void recordFilesystemCacheLog(
+        const String & query_id, const String & remote_fs_path, std::pair<size_t, size_t> & range, FilesystemCacheLogElement::ReadType);
 
 protected:
     String cache_base_path;
@@ -110,7 +111,7 @@ protected:
 
     mutable std::mutex logs_mutex;
 
-    CacheLogs cache_logs;
+    QueryCacheLogs cache_logs;
 
     virtual bool tryReserve(
         const Key & key, size_t offset, size_t size,

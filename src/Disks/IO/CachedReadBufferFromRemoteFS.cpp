@@ -50,10 +50,10 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , remote_file_reader_creator(remote_file_reader_creator_)
     , query_id(getQueryId())
 {
-    if (query_id.size() && (CurrentThread::get().getQueryContext()->getSettingsRef().enable_cache_log))
+    if (!query_id.empty() && (CurrentThread::get().getQueryContext()->getSettingsRef().enable_cache_log))
     {
         enable_logging = true;
-        cache->addQueryRef(query_id);
+        cache->addFilesystemCacheLogRef(query_id);
     }
 }
 
@@ -61,8 +61,8 @@ CachedReadBufferFromRemoteFS::~CachedReadBufferFromRemoteFS()
 {
     if (enable_logging)
     {
-        cache->updateQueryCacheLog(query_id, remote_fs_object_path, cache_hit_count, cache_miss_count);
-        cache->DecQueryRef(query_id);
+        cache->updateFilesystemCacheLog(query_id, remote_fs_object_path, cache_hit_count, cache_miss_count);
+        cache->decFilesystemCacheLogRef(query_id);
     }
 }
 
@@ -103,7 +103,8 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getRemoteFSReadBuffer(FileSe
 {
     switch (read_type_)
     {
-        case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE: {
+        case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE: 
+        {
             /**
             * Each downloader is elected to download at most buffer_size bytes and then any other can
             * continue. The one who continues download should reuse download buffer.
@@ -130,7 +131,8 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getRemoteFSReadBuffer(FileSe
 
             return remote_fs_segment_reader;
         }
-        case ReadType::REMOTE_FS_READ_BYPASS_CACHE: {
+        case ReadType::REMOTE_FS_READ_BYPASS_CACHE: 
+        {
             /// Result buffer is owned only by current buffer -- not shareable like in the case above.
 
             if (remote_file_reader && remote_file_reader->getFileOffsetOfBufferEnd() == file_offset_of_buffer_end)
