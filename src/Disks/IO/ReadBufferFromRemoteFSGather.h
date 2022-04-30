@@ -29,7 +29,6 @@ public:
         const std::string & common_path_prefix_,
         const BlobsPathToSize & blobs_to_read_,
         const ReadSettings & settings_);
-
     String getFileName() const;
 
     void reset();
@@ -62,8 +61,6 @@ protected:
     BlobsPathToSize blobs_to_read;
 
     ReadSettings settings;
-
-    bool use_external_buffer;
 
     size_t read_until_position = 0;
 
