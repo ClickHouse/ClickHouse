@@ -31,7 +31,6 @@ friend struct FileSegmentsHolder;
 public:
     using Key = UInt128;
     using Downloader = std::unique_ptr<SeekableReadBuffer>;
-    using QueryCacheLogs = std::unordered_map<String, std::shared_ptr<FilesystemCacheLogsRecorder>>;
 
     IFileCache(
         const String & cache_base_path_,
@@ -92,13 +91,6 @@ public:
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
 
-    void addFilesystemCacheLogRef(const String & query_id);
-
-    void decFilesystemCacheLogRef(const String & query_id);
-
-    void recordFilesystemCacheLog(
-        const String & query_id, const String & remote_fs_path, std::pair<size_t, size_t> & range, FilesystemCacheLogElement::ReadType);
-
 protected:
     String cache_base_path;
     size_t max_size;
@@ -110,8 +102,6 @@ protected:
     mutable std::mutex mutex;
 
     mutable std::mutex logs_mutex;
-
-    QueryCacheLogs cache_logs;
 
     virtual bool tryReserve(
         const Key & key, size_t offset, size_t size,

@@ -4,7 +4,8 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
+#include <Interpreters/FilesystemCacheLog.h>
 
 namespace DB
 {
@@ -20,8 +21,6 @@ public:
         RemoteFSFileReaderCreator remote_file_reader_creator_,
         const ReadSettings & settings_,
         size_t read_until_position_);
-
-    ~CachedReadBufferFromRemoteFS() override;
 
     bool nextImpl() override;
 
@@ -66,6 +65,8 @@ private:
     size_t getTotalSizeToRead();
     bool completeFileSegmentAndGetNext();
 
+    void appendFilesystemCacheLog(const FileSegment::Range &file_segment_range, ReadType read_type);
+
     Poco::Logger * log;
     IFileCache::Key cache_key;
     String remote_fs_object_path;
@@ -75,9 +76,6 @@ private:
     size_t read_until_position;
     size_t file_offset_of_buffer_end = 0;
     size_t bytes_to_predownload = 0;
-
-    size_t cache_hit_count = 0;
-    size_t cache_miss_count = 0;
 
     RemoteFSFileReaderCreator remote_file_reader_creator;
 

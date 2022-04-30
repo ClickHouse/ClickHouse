@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNumber.h>
+#include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
@@ -46,16 +46,6 @@ struct FilesystemCacheLogElement
 
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }
-};
-
-using FilesystemCacheLogElementPtr = std::shared_ptr<FilesystemCacheLogElement>;
-using FilesystemCacheLogs = std::unordered_map<String, FilesystemCacheLogElementPtr>;
-using FilesystemCacheLogsPtr = std::shared_ptr<FilesystemCacheLogs>;
-
-struct FilesystemCacheLogsRecorder
-{
-    size_t ref = 0;
-    FilesystemCacheLogsPtr logs;
 };
 
 class FilesystemCacheLog : public SystemLog<FilesystemCacheLogElement>
