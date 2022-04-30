@@ -36,8 +36,8 @@ struct FilesystemCacheLogElement
     String query_id;
     String remote_file_path;
 
-    std::pair<size_t, size_t> file_segment_range;
-    ReadType read_type;
+    std::pair<size_t, size_t> file_segment_range{};
+    ReadType read_type{};
 
     static std::string name() { return "FilesystemCacheLog"; }
 

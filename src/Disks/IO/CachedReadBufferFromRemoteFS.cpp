@@ -58,13 +58,11 @@ void CachedReadBufferFromRemoteFS::appendFilesystemCacheLog(
 {
     FilesystemCacheLogElement elem
     {
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
         .query_id = query_id,
         .remote_file_path = remote_fs_object_path,
+        .file_segment_range = { file_segment_range.left, file_segment_range.right },
     };
-
-    const auto current_time = std::chrono::system_clock::now();
-    elem.event_time = std::chrono::system_clock::to_time_t(current_time);
-    elem.file_segment_range = std::make_pair(file_segment_range.left, file_segment_range.right);
 
     switch (type)
     {
