@@ -59,7 +59,7 @@ int mainEntryClickHouseGitImport(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeper(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_KEEPER
+#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
@@ -334,11 +334,24 @@ struct Checker
 #endif
 ;
 
+/// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables()
 {
-    /// The list is a selection from "man ld-linux". And one variable that is Mac OS X specific.
-    /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
-    for (const auto * var : {"LD_PRELOAD", "LD_LIBRARY_PATH", "LD_ORIGIN_PATH", "LD_AUDIT", "LD_DYNAMIC_WEAK", "DYLD_INSERT_LIBRARIES"})
+    std::initializer_list<const char *> harmful_env_variables = {
+        /// The list is a selection from "man ld-linux".
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "LD_ORIGIN_PATH",
+        "LD_AUDIT",
+        "LD_DYNAMIC_WEAK",
+        /// The list is a selection from "man dyld" (osx).
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+        "DYLD_VERSIONED_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+    };
+
+    for (const auto * var : harmful_env_variables)
     {
         if (const char * value = getenv(var); value && value[0])
         {

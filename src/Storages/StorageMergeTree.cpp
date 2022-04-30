@@ -1583,7 +1583,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction());
+        auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction(), {}, false);
         dst_parts.emplace_back(std::move(dst_part));
     }
 
@@ -1669,7 +1669,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, local_context->getCurrentTransaction());
+        auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, local_context->getCurrentTransaction(), {}, false);
         dst_parts.emplace_back(std::move(dst_part));
     }
 
@@ -1786,7 +1786,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 }
 
 
-RestoreTaskPtr StorageMergeTree::restoreData(ContextMutablePtr local_context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
+RestoreTaskPtr StorageMergeTree::restoreData(ContextMutablePtr local_context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
 {
     return restoreDataParts(getPartitionIDsFromQuery(partitions, local_context), backup, data_path_in_backup, &increment);
 }
