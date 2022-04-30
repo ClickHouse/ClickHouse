@@ -113,6 +113,9 @@ function restart
     # https://github.com/jemalloc/jemalloc/wiki/Getting-Started
     export MALLOC_CONF="confirm_conf:true"
 
+    # Temporary to measure effect GWP has on performance
+    export CLICKHOUSE_GWP_ASAN_OPTIONS="sample_rate=100,slot_size=512,max_simultaneous_allocations=512"
+
     set -m # Spawn servers in their own process groups
 
     local left_server_opts=(

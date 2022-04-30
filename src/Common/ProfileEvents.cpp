@@ -266,6 +266,8 @@
     M(WriteBufferFromS3Bytes, "Bytes written to S3.") \
     \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
+    M(GuardedPoolAllocations, "Number of times when allocation was satisfied from guarded pool.") \
+    M(GuardedPoolDeallocations, "Number of times when deallocation was from guarded pool.") \
     \
     M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)") \
     M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \

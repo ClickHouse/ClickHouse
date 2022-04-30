@@ -46,6 +46,8 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/GuardedPoolAllocator.h>
+#include <Common/GuardedPoolAllocatorCrashHandler.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
@@ -131,6 +133,9 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
+    if (auto * gwp_allocator = clickhouse_gwp_asan::getAllocator(); gwp_allocator)
+        gwp_allocator->stop();
 
     char buf[signal_pipe_buf_size];
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
@@ -287,6 +292,15 @@ private:
         DB::ThreadStatus * thread_ptr) const
     {
         DB::ThreadStatus thread_status;
+
+        if (auto * gwp_allocator = clickhouse_gwp_asan::getAllocator(); gwp_allocator)
+        {
+            clickhouse_gwp_asan::GuardedPoolAllocatorCrashHandler gwp_reporter(
+                gwp_allocator->getAllocatorState(), gwp_allocator->getMetadataRegion());
+
+            if (gwp_reporter.errorIsMine(reinterpret_cast<uintptr_t>(info.si_addr)))
+                gwp_reporter.dumpReport(reinterpret_cast<uintptr_t>(info.si_addr), thread_num);
+        }
 
         String query_id;
         String query;

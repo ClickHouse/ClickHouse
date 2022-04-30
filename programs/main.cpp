@@ -17,6 +17,9 @@
 
 #include "config_tools.h"
 
+#include <Common/GuardedPoolAllocator.h>
+#include <Common/GuardedPoolAllocatorOptions.h>
+
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
@@ -338,6 +341,22 @@ struct Checker
 #endif
 ;
 
+// static clickhouse_gwp_asan::GuardedPoolAllocator guarded_allocator;
+
+struct GuardedPoolAllocator
+{
+    GuardedPoolAllocator()
+    {
+        if (!clickhouse_gwp_asan::initOptions())
+        {
+            writeError("Error while parsing GWP-ASan options\n");
+            _Exit(1);
+        }
+        allocator.init(clickhouse_gwp_asan::getOptions());
+    }
+
+    clickhouse_gwp_asan::GuardedPoolAllocator allocator;
+} guarded_pool_allocator;
 
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
