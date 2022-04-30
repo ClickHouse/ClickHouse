@@ -2560,18 +2560,13 @@ std::shared_ptr<ProcessorsProfileLog> Context::getProcessorsProfileLog() const
     return shared->system_logs->processors_profile_log;
 }
 
-std::shared_ptr<CacheLog> Context::getCacheLog() const
+std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
 {
     auto lock = getLock();
     if (!shared->system_logs)
         return {};
 
     return shared->system_logs->cache_log;
-}
-
-std::shared_ptr<CacheLogRecorder> Context::getCacheRecorder() const
-{
-    return cache_log_recorder;
 }
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
