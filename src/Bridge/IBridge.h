@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
-#include <daemon/BaseDaemon.h>
+#include <Daemon/BaseDaemon.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/ServerApplication.h>

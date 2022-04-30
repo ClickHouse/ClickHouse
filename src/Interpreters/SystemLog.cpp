@@ -32,7 +32,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
 

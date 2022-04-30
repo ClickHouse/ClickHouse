@@ -10,7 +10,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>

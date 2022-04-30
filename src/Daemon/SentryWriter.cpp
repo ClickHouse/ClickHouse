@@ -1,4 +1,4 @@
-#include <daemon/SentryWriter.h>
+#include <Daemon/SentryWriter.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -6,7 +6,7 @@
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/getMemoryAmount.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>

@@ -11,7 +11,7 @@
 #include <map>
 
 #include "FileCache_fwd.h"
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/FileSegment.h>
 #include <Core/Types.h>
 
