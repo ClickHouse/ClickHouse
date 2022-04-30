@@ -26,7 +26,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <atomic>
 
 #include <thread>
 #include <exception>
