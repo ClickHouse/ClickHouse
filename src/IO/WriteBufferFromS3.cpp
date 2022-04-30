@@ -113,9 +113,16 @@ void WriteBufferFromS3::nextImpl()
             }
             else
             {
+                size_t upper_bound = file_segments.back()->range().right;
+                LOG_TRACE(
+                    log,
+                    "Space reservation failed, will skip caching for range: [{}, {}], current full range is [{}, {}]",
+                    file_segment->range().left, upper_bound, file_segments.front()->range().right, upper_bound);
+
                 for (auto reset_segment_it = file_segment_it; reset_segment_it != file_segments.end(); ++reset_segment_it)
                     (*reset_segment_it)->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                 file_segments.erase(file_segment_it, file_segments.end());
+
                 break;
             }
         }
@@ -134,8 +141,9 @@ void WriteBufferFromS3::nextImpl()
         writePart();
 
         allocateBuffer();
-        file_segments_holder.reset();
     }
+
+    file_segments_holder.reset();
 
     waitForReadyBackGroundTasks();
 }
@@ -272,14 +280,7 @@ void WriteBufferFromS3::writePart()
                 task->exception = std::current_exception();
             }
 
-            try
-            {
-                finalizeCacheIfNeeded(task->cache_files);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
+            finalizeCacheIfNeeded(task->cache_files);
 
             {
                 std::lock_guard lock(bg_tasks_mutex);
@@ -410,14 +411,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
                 put_object_task->exception = std::current_exception();
             }
 
-            try
-            {
-                finalizeCacheIfNeeded(put_object_task->cache_files);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
+            finalizeCacheIfNeeded(put_object_task->cache_files);
 
             {
                 std::lock_guard lock(bg_tasks_mutex);

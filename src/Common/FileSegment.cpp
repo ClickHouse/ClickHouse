@@ -586,6 +586,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
         downloader_id.clear();
     }
 
+    LOG_TEST(log, "Completed file segment: {}", getInfoForLogImpl(segment_lock));
     assertCorrectnessImpl(segment_lock);
 }
 
@@ -648,7 +649,7 @@ void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment
 void FileSegment::assertNotDetached() const
 {
     if (detached)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Operation not allowed, file segment is detached");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Operation not allowed, file segment is detached ({})", getInfoForLog());
 }
 
 void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex>  & /* segment_lock */) const
@@ -685,12 +686,14 @@ void FileSegment::detach(std::lock_guard<std::mutex> & cache_lock, std::lock_gua
     if (detached)
         return;
 
-    detached = true;
-
     if (!hasFinalizedState())
     {
         completeUnlocked(cache_lock, segment_lock);
     }
+
+    detached = true;
+
+    LOG_TEST(log, "Detached file segment: {}", getInfoForLog());
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()

@@ -20,6 +20,7 @@ using FileSegments = std::list<FileSegmentPtr>;
 
 class FileSegment : boost::noncopyable
 {
+
 friend class LRUFileCache;
 friend struct FileSegmentsHolder;
 
