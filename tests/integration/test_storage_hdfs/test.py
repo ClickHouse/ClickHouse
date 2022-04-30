@@ -541,6 +541,30 @@ def test_schema_inference_with_globs(started_cluster):
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
+    node1.query(
+        f"insert into table function hdfs('hdfs://hdfs1:9000/data3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
+    )
+
+    filename = "data{1,3}.jsoncompacteachrow"
+
+    result = node1.query_and_get_error(f"desc hdfs('hdfs://hdfs1:9000/{filename}')")
+
+    assert "All attempts to extract table structure from files failed" in result
+
+    node1.query(
+        f"insert into table function hdfs('hdfs://hdfs1:9000/data0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
+    )
+
+    url_filename = "data{0,1,2,3}.jsoncompacteachrow"
+
+    result = node1.query_and_get_error(
+        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')"
+    )
+
+    assert (
+        "Cannot extract table structure from JSONCompactEachRow format file" in result
+    )
+
 
 def test_insert_select_schema_inference(started_cluster):
     node1.query(

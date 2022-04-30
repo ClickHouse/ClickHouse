@@ -46,7 +46,6 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
 
 void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
 {
-
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         file_segments_holder.emplace(cache->get(cache_key, offset, size));
@@ -769,7 +768,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
     if (size == 0 && file_offset_of_buffer_end < read_until_position)
     {
         std::optional<size_t> cache_file_size;
-        if (auto * cache_file_reader = assert_cast<ReadBufferFromFile *>(implementation_buffer.get()))
+        if (auto * cache_file_reader = dynamic_cast<ReadBufferFromFile *>(implementation_buffer.get()))
             cache_file_size = cache_file_reader->size();
 
          throw Exception(ErrorCodes::LOGICAL_ERROR,

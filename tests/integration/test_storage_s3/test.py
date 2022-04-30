@@ -1325,6 +1325,46 @@ def test_schema_inference_from_globs(started_cluster):
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
+    instance.query(
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
+    )
+
+    url_filename = "test{1,3}.jsoncompacteachrow"
+
+    result = instance.query_and_get_error(
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
+    )
+
+    assert "All attempts to extract table structure from files failed" in result
+
+    result = instance.query_and_get_error(
+        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
+    )
+
+    assert "All attempts to extract table structure from files failed" in result
+
+    instance.query(
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
+    )
+
+    result = instance.query_and_get_error(
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
+    )
+
+    assert (
+        "Cannot extract table structure from JSONCompactEachRow format file" in result
+    )
+
+    url_filename = "test{0,1,2,3}.jsoncompacteachrow"
+
+    result = instance.query_and_get_error(
+        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
+    )
+
+    assert (
+        "Cannot extract table structure from JSONCompactEachRow format file" in result
+    )
+
 
 def test_signatures(started_cluster):
     bucket = started_cluster.minio_bucket

@@ -42,7 +42,7 @@
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
 #include <base/sleep.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Storages/LiveView/StorageBlocks.h>
 

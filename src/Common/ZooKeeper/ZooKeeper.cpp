@@ -76,7 +76,7 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
             auto & host_string = host.host;
             try
             {
-                bool secure = bool(startsWith(host_string, "secure://"));
+                bool secure = startsWith(host_string, "secure://");
 
                 if (secure)
                     host_string.erase(0, strlen("secure://"));
@@ -801,7 +801,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
     auto callback = [state](const Coordination::GetResponse & response)
     {
-        state->code = int32_t(response.error);
+        state->code = static_cast<int32_t>(response.error);
         if (state->code)
             state->event.set();
     };
@@ -810,7 +810,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     {
         if (!state->code)
         {
-            state->code = int32_t(response.error);
+            state->code = static_cast<int32_t>(response.error);
             if (!state->code)
                 state->event_type = response.type;
             state->event.set();
@@ -828,7 +828,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         if (!state->event.tryWait(1000))
             continue;
 
-        if (state->code == int32_t(Coordination::Error::ZNONODE))
+        if (state->code == static_cast<int32_t>(Coordination::Error::ZNONODE))
             return true;
 
         if (state->code)

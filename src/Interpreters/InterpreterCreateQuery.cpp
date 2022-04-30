@@ -72,7 +72,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -985,7 +985,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 create.setDatabase(database_name);
                 guard->releaseTableLock();
-                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
+                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
             }
         }
 
@@ -1117,7 +1117,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();
-            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
+            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
         }
     }
 
@@ -1271,7 +1271,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                            "Only table with Replicated engine or tables which does not store data on disk are allowed in Replicated database");
+                            "Only tables with a Replicated engine or tables which do not store data on disk are allowed in a Replicated database");
     }
 
     if (from_path && !res->storesDataOnDisk())
@@ -1503,7 +1503,9 @@ BlockIO InterpreterCreateQuery::execute()
     if (!create.cluster.empty())
     {
         prepareOnClusterQuery(create, getContext(), create.cluster);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess();
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     getContext()->checkAccess(getRequiredAccess());
