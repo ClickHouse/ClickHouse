@@ -65,7 +65,7 @@ private:
     size_t getTotalSizeToRead();
     bool completeFileSegmentAndGetNext();
 
-    void appendFilesystemCacheLog(const FileSegment::Range &file_segment_range, ReadType read_type);
+    void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range, ReadType read_type);
 
     Poco::Logger * log;
     IFileCache::Key cache_key;

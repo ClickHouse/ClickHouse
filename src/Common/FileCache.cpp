@@ -11,7 +11,6 @@
 #include <IO/Operators.h>
 #include <pcg-random/pcg_random.hpp>
 #include <filesystem>
-#include <Interpreters/Context.h>
 
 namespace fs = std::filesystem;
 

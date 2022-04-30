@@ -10,7 +10,6 @@
 #include <boost/noncopyable.hpp>
 #include <map>
 
-#include <Interpreters/FilesystemCacheLog.h>
 #include "FileCache_fwd.h"
 #include <Common/logger_useful.h>
 #include <Common/FileSegment.h>
