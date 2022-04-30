@@ -19,7 +19,6 @@ from mkdocs import config
 from mkdocs import exceptions
 import mkdocs.commands.build
 
-import amp
 import blog
 import mdx_clickhouse
 import redirects
@@ -112,7 +111,6 @@ def build_for_lang(lang, args):
                 events=args.events,
                 languages=languages,
                 includes_dir=os.path.join(os.path.dirname(__file__), "..", "_includes"),
-                is_amp=False,
                 is_blog=False,
             ),
         )
@@ -126,9 +124,6 @@ def build_for_lang(lang, args):
 
         if not args.skip_multi_page:
             mkdocs.commands.build.build(cfg)
-
-        if not args.skip_amp:
-            amp.build_amp(lang, args, cfg)
 
         if not args.skip_single_page:
             single_page.build_single_page_version(
@@ -198,7 +193,6 @@ if __name__ == "__main__":
     arg_parser.add_argument("--nav-limit", type=int, default="0")
     arg_parser.add_argument("--skip-multi-page", action="store_true")
     arg_parser.add_argument("--skip-single-page", action="store_true")
-    arg_parser.add_argument("--skip-amp", action="store_true")
     arg_parser.add_argument("--skip-website", action="store_true")
     arg_parser.add_argument("--skip-blog", action="store_true")
     arg_parser.add_argument("--skip-git-log", action="store_true")
@@ -242,10 +236,8 @@ if __name__ == "__main__":
         args.skip_multi_page = True
         args.skip_blog = True
         args.skip_website = True
-        args.skip_amp = True
 
-    if args.skip_git_log or args.skip_amp:
-        mdx_clickhouse.PatchedMacrosPlugin.skip_git_log = True
+    mdx_clickhouse.PatchedMacrosPlugin.skip_git_log = True
 
     from build import build
 
