@@ -50,20 +50,37 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , remote_file_reader_creator(remote_file_reader_creator_)
     , query_id(getQueryId())
 {
-    if (!query_id.empty() && (CurrentThread::get().getQueryContext()->getSettingsRef().enable_cache_log))
-    {
+    if (!query_id.empty() && (CurrentThread::get().getQueryContext()->getSettingsRef().enable_filesystem_cache_log))
         enable_logging = true;
-        cache->addFilesystemCacheLogRef(query_id);
-    }
 }
 
-CachedReadBufferFromRemoteFS::~CachedReadBufferFromRemoteFS()
+void CachedReadBufferFromRemoteFS::appendFilesystemCacheLog(
+    const FileSegment::Range & file_segment_range, CachedReadBufferFromRemoteFS::ReadType type)
 {
-    if (enable_logging)
+    FilesystemCacheLogElement elem
     {
-        cache->updateFilesystemCacheLog(query_id, remote_fs_object_path, cache_hit_count, cache_miss_count);
-        cache->decFilesystemCacheLogRef(query_id);
+        .query_id = query_id,
+        .remote_file_path = remote_fs_object_path,
+    };
+
+    const auto current_time = std::chrono::system_clock::now();
+    elem.event_time = std::chrono::system_clock::to_time_t(current_time);
+    elem.file_segment_range = std::make_pair(file_segment_range.left, file_segment_range.right);
+
+    switch(type)
+    {
+        case CachedReadBufferFromRemoteFS::ReadType::CACHED:
+            elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_CACHE;
+            break;
+        case CachedReadBufferFromRemoteFS::ReadType::REMOTE_FS_READ_BYPASS_CACHE:
+            elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE;
+            break;
+        case CachedReadBufferFromRemoteFS::ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
+            elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_BYPASSING_CACHE;
+            break;
     }
+
+    Context::getGlobalContextInstance()->getFilesystemCacheLog()->add(elem);
 }
 
 void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
@@ -103,8 +120,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getRemoteFSReadBuffer(FileSe
 {
     switch (read_type_)
     {
-        case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE: 
-        {
+        case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE: {
             /**
             * Each downloader is elected to download at most buffer_size bytes and then any other can
             * continue. The one who continues download should reuse download buffer.
@@ -131,8 +147,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getRemoteFSReadBuffer(FileSe
 
             return remote_fs_segment_reader;
         }
-        case ReadType::REMOTE_FS_READ_BYPASS_CACHE: 
-        {
+        case ReadType::REMOTE_FS_READ_BYPASS_CACHE: {
             /// Result buffer is owned only by current buffer -- not shareable like in the case above.
 
             if (remote_file_reader && remote_file_reader->getFileOffsetOfBufferEnd() == file_offset_of_buffer_end)
@@ -434,12 +449,9 @@ bool CachedReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
     implementation_buffer = getImplementationBuffer(*current_file_segment_it);
 
     if (read_type == ReadType::CACHED)
-    {
-        cache_hit_count++;
         (*current_file_segment_it)->incrementHitsCount();
-    }
-    else
-        cache_miss_count++;
+    if (enable_logging)
+        appendFilesystemCacheLog((*current_file_segment_it)->range(), read_type);
 
     LOG_TEST(log, "New segment: {}", (*current_file_segment_it)->range().toString());
     return true;
@@ -684,12 +696,10 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
         implementation_buffer = getImplementationBuffer(*current_file_segment_it);
 
         if (read_type == ReadType::CACHED)
-        {
-            cache_hit_count++;
             (*current_file_segment_it)->incrementHitsCount();
-        }
-        else
-            cache_miss_count++;
+
+        if (enable_logging)
+            appendFilesystemCacheLog((*current_file_segment_it)->range(), read_type);
     }
 
     assert(!internal_buffer.empty());

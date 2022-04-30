@@ -49,7 +49,7 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(query_id);
 
     columns[i++]->insert(remote_file_path);
-    columns[i++]->insert({file_segment_range.first, file_segment_range.second});
+    columns[i++]->insert(Tuple{file_segment_range.first, file_segment_range.second});
     columns[i++]->insert(typeToString(read_type));
 }
 
