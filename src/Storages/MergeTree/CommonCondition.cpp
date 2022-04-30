@@ -1,10 +1,23 @@
+#include <cstddef>
+#include <optional>
 #include <Parsers/ASTFunction.h>
 
+#include "Core/Block.h"
+#include "Core/Field.h"
 #include "IO/ReadBuffer.h"
 #include "Interpreters/Context_fwd.h"
+#include "Parsers/ASTExpressionList.h"
+#include "Parsers/ASTFunctionWithKeyValueArguments.h"
 #include "Parsers/ASTIdentifier.h"
 #include "Parsers/ASTIdentifier_fwd.h"
+#include "Parsers/ASTLiteral.h"
+#include "Parsers/ASTOrderByElement.h"
 #include "Parsers/ASTSelectQuery.h"
+#include "Parsers/ASTSetQuery.h"
+#include "Parsers/ASTTablesInSelectQuery.h"
+#include "Parsers/Access/ASTCreateUserQuery.h"
+#include "Parsers/Access/ASTRolesOrUsersSet.h"
+#include "Parsers/Access/ASTSettingsProfileElement.h"
 #include "Parsers/IAST_fwd.h"
 
 #include <Storages/MergeTree/CommonCondition.h>
@@ -16,6 +29,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace Condition
 {
@@ -34,32 +52,56 @@ bool CommonCondition::alwaysUnknownOrTrue() const
 
 float CommonCondition::getComparisonDistance() const
 {
-    return expression->distance;
+    if (where_query_type)
+    {
+        return ann_expr->distance;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported method for this query type");
 }
 
 std::vector<float> CommonCondition::getTargetVector() const
 {
-    return expression->target;
+    return ann_expr->target;
 }
 
 String CommonCondition::getColumnName() const
 {
-    return expression->column_name;
+    return ann_expr->column_name;
 }
 
 String CommonCondition::getMetric() const
 {
-    return expression->metric_name;
+    return ann_expr->metric_name;
 }
 
 size_t CommonCondition::getSpaceDim() const
 {
-    return expression->target.size();
+    return ann_expr->target.size();
 }
 
 float CommonCondition::getPForLpDistance() const
 {
-    return expression->p_for_lp_dist;
+    return ann_expr->p_for_lp_dist;
+}
+
+bool CommonCondition::queryHasWhereClause() const
+{
+    return where_query_type;
+}
+
+bool CommonCondition::queryHasOrderByClause() const
+{
+    return order_by_query_type && has_limit;
+}
+
+std::optional<UInt64> CommonCondition::getLimitLength() const
+{
+    return has_limit ? std::optional<UInt64>(limit_expr->length) : std::nullopt;
+}
+
+String CommonCondition::getSettingsStr() const
+{
+    return ann_index_params;
 }
 
 void CommonCondition::buildRPN(const SelectQueryInfo & query, ContextPtr context)
@@ -78,8 +120,30 @@ void CommonCondition::buildRPN(const SelectQueryInfo & query, ContextPtr context
         traverseAST(select.where(), rpn_where_clause);
     }
 
+    if (select.limitLength())
+    {
+        traverseAST(select.limitLength(), rpn_limit_clause);
+    }
+
+    if (select.settings())
+    {
+        parseSettings(select.settings());
+    }
+
+    if (select.orderBy())
+    {
+        if (const auto * expr_list = select.orderBy()->as<ASTExpressionList>())
+        {
+            if (const auto * order_by_element = expr_list->children.front()->as<ASTOrderByElement>())
+            {
+                traverseAST(order_by_element->children.front(), rpn_order_by_clause);
+            }
+        }
+    }
+
     std::reverse(rpn_prewhere_clause.begin(), rpn_prewhere_clause.end());
     std::reverse(rpn_where_clause.begin(), rpn_where_clause.end());
+    std::reverse(rpn_order_by_clause.begin(), rpn_order_by_clause.end());
 }
 
 void CommonCondition::traverseAST(const ASTPtr & node, RPN & rpn)
@@ -106,23 +170,13 @@ void CommonCondition::traverseAST(const ASTPtr & node, RPN & rpn)
 
 bool CommonCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
 {
-     // Firstly check if we have constants behind the node
+
+    if (const auto * order_by_element = node->as<ASTOrderByElement>())
     {
-        Field const_value;
-        DataTypePtr const_type;
+        out.function = RPNElement::FUNCTION_ORDER_BY_ELEMENT;
+        out.func_name = "order by elemnet";
 
-        if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
-        {
-            /// Check constant type (use Float64 because all Fields implementation contains Float64 (for Float32 too))
-            if (const_value.getType() == Field::Types::Float64)
-            {
-                out.function = RPNElement::FUNCTION_FLOAT_LITERAL;
-                out.float_literal.emplace(const_value.get<Float32>());
-                out.func_name = "Float literal";
-
-                return true;
-            }
-        }
+        return true;
     }
 
     if (const auto * function = node->as<ASTFunction>())
@@ -168,6 +222,52 @@ bool CommonCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
         return true;
     }
 
+     // Check if we have constants behind the node
+    {
+        Field const_value;
+        DataTypePtr const_type;
+
+        if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
+        {
+            /// Check constant type (use Float64 because all Fields implementation contains Float64 (for Float32 too))
+            if (const_value.getType() == Field::Types::Float64)
+            {
+                out.function = RPNElement::FUNCTION_FLOAT_LITERAL;
+                out.float_literal.emplace(const_value.get<Float32>());
+                out.func_name = "Float literal";
+                return true;
+            }
+            if (const_value.getType() == Field::Types::UInt64)
+            {
+                out.function = RPNElement::FUNCTION_INT_LITERAL;
+                out.int_literal.emplace(const_value.get<UInt64>());
+                out.func_name = "Int literal";
+                return true;
+            }
+            if (const_value.getType() == Field::Types::Int64)
+            {
+                out.function = RPNElement::FUNCTION_INT_LITERAL;
+                out.int_literal.emplace(const_value.get<Int64>());
+                out.func_name = "Int literal";
+                return true;
+            }
+            if (const_value.getType() == Field::Types::String)
+            {
+                out.function = RPNElement::FUNCTION_STRING;
+                out.identifier.emplace(const_value.get<String>());
+                out.func_name = "setting string";
+                return true;
+            }
+            if (const_value.getType() == Field::Types::Tuple)
+            {
+                out.function = RPNElement::FUNCTION_LITERAL_TUPLE;
+                out.tuple_literal = const_value.get<Tuple>();
+                out.func_name = "Tuple literal";
+                return true;
+            }
+        }
+    }
+
     return false;
  }
 
@@ -175,18 +275,86 @@ bool CommonCondition::matchAllRPNS()
 {
     ANNExpression expr_prewhere;
     ANNExpression expr_where;
+    ANNExpression expr_order_by;
+    LimitExpression expr_limit;
     bool prewhere_is_valid = matchRPNWhere(rpn_prewhere_clause, expr_prewhere);
     bool where_is_valid = matchRPNWhere(rpn_where_clause, expr_where);
+    bool limit_is_valid = matchRPNLimit(rpn_limit_clause, expr_limit);
+    bool order_by_is_valid = matchRPNOrderBy(rpn_order_by_clause, expr_order_by);
 
     // Unxpected situation
     if (prewhere_is_valid && where_is_valid)
     {
-        LOG_DEBUG(&Poco::Logger::get("CommonCondition"), "Have where and prewhere clause, unsupported query");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Have both where and prewhere valid clauses - is not supported");
+    }
+
+    if (prewhere_is_valid || where_is_valid)
+    {
+        ann_expr = std::move(where_is_valid ? expr_where : expr_prewhere);
+        where_query_type = true;
+    }
+    if (order_by_is_valid)
+    {
+        ann_expr = std::move(expr_order_by);
+        order_by_query_type = true;
+    }
+    if (limit_is_valid)
+    {
+        limit_expr = std::move(expr_limit);
+        has_limit = true;
+    }
+
+    if (where_query_type && (has_limit && order_by_query_type))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "The query with Valid Where Clause and valid OrderBy clause - is not supported");
+    }
+
+    return where_query_type || (has_limit && order_by_query_type);
+}
+
+bool CommonCondition::matchRPNLimit(RPN & rpn, LimitExpression & expr)
+{
+    if (rpn.size() != 1)
+    {
+        return false;
+    }
+    if (rpn.front().function == RPNElement::FUNCTION_INT_LITERAL)
+    {
+        expr.length = rpn.front().int_literal.value();
+        return true;
+    }
+    return false;
+}
+
+void CommonCondition::parseSettings(const ASTPtr & node)
+{
+    if (const auto * set = node->as<ASTSetQuery>())
+    {
+        for (const auto & change : set->changes)
+        {
+            if (change.name == "ann_index_params")
+            {
+                ann_index_params = change.value.get<String>();
+                return;
+            }
+        }
+    }
+    ann_index_params = "";
+}
+
+bool CommonCondition::matchRPNOrderBy(RPN & rpn, ANNExpression & expr)
+{
+    if (rpn.size() < 3)
+    {
         return false;
     }
 
-    expression = std::move(where_is_valid ? expr_where : expr_prewhere);
-    return prewhere_is_valid || where_is_valid;
+    auto iter = rpn.begin();
+    auto end = rpn.end();
+    bool identifier_found = false;
+
+    return CommonCondition::matchMainParts(iter, end, expr, identifier_found);
 }
 
 bool CommonCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end,
@@ -203,11 +371,12 @@ bool CommonCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end,
 
     if (expr.metric_name == "LpDistance")
     {
-        if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL)
+        if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL &&
+            iter->function != RPNElement::FUNCTION_INT_LITERAL)
         {
             return false;
         }
-        expr.p_for_lp_dist = getFloatLiteralOrPanic(iter);
+        expr.p_for_lp_dist = getFloatOrIntLiteralOrPanic(iter);
         ++iter;
     }
 
@@ -219,18 +388,27 @@ bool CommonCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end,
         ++iter;
     }
 
-    if (iter->function != RPNElement::FUNCTION_TUPLE)
+    if (iter->function == RPNElement::FUNCTION_TUPLE)
     {
-        return false;
+        ++iter;
     }
 
-    ++iter;
+    if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
+    {
+        for (const auto & value : iter->tuple_literal.value())
+        {
+            expr.target.emplace_back(value.get<float>());
+        }
+        ++iter;
+    }
+
 
     while (iter != end)
     {
-        if (iter->function == RPNElement::FUNCTION_FLOAT_LITERAL)
+        if (iter->function == RPNElement::FUNCTION_FLOAT_LITERAL ||
+            iter->function == RPNElement::FUNCTION_INT_LITERAL)
         {
-            expr.target.emplace_back(getFloatLiteralOrPanic(iter));
+            expr.target.emplace_back(getFloatOrIntLiteralOrPanic(iter));
         }
         else if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
         {
@@ -255,11 +433,6 @@ bool CommonCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end,
 bool CommonCondition::matchRPNWhere(RPN & rpn, ANNExpression & expr)
 {
     const size_t minimal_elemets_count = 6;// At least 6 AST nodes in querry
-    LOG_DEBUG(&Poco::Logger::get("CommonCondition"), "Rpn size is: = {}", rpn.size());
-    for (size_t i = 0; i < rpn.size(); ++i)
-    {
-        LOG_DEBUG(&Poco::Logger::get("CommonCondition"), "rpn[{}]:= {}", i, rpn[i].func_name);
-    }
     if (rpn.size() < minimal_elemets_count)
     {
         return false;
@@ -286,7 +459,7 @@ bool CommonCondition::matchRPNWhere(RPN & rpn, ANNExpression & expr)
             return false;
         }
 
-        expr.distance = getFloatLiteralOrPanic(iter);
+        expr.distance = getFloatOrIntLiteralOrPanic(iter);
         ++iter;
 
     }
@@ -336,18 +509,17 @@ String CommonCondition::getIdentifierOrPanic(RPN::iterator& iter)
     return identifier;
 }
 
-float CommonCondition::getFloatLiteralOrPanic(RPN::iterator& iter)
+float CommonCondition::getFloatOrIntLiteralOrPanic(RPN::iterator& iter)
 {
-    float literal = 0.0;
-    try
+    if (iter->float_literal.has_value())
     {
-        literal = iter->float_literal.value();
+        return iter->float_literal.value();
     }
-    catch (...)
+    if (iter->int_literal.has_value())
     {
-        CommonCondition::panicIfWrongBuiltRPN();
+        return static_cast<float>(iter->int_literal.value());
     }
-    return literal;
+    CommonCondition::panicIfWrongBuiltRPN();
 }
 
 void CommonCondition::panicIfWrongBuiltRPN()
