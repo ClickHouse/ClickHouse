@@ -439,8 +439,6 @@ void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    LOG_INFO(log, "Prepare Table for {} - {}", table_id.getDatabaseName(), table_id.getTableName());
-
     auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     if (table)
     {
