@@ -2,7 +2,6 @@
 #include <iostream>
 #include <gtest/gtest.h>
 #include <Common/CacheBase.h>
-#include <Common/SLRUCache.h>
 
 TEST(SLRUCache, set)
 {
