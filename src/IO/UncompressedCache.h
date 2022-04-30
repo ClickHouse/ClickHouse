@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/LRUCache.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>

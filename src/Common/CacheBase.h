@@ -30,10 +30,11 @@ public:
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    CacheBase(size_t max_size) : CacheBase(default_cache_policy_name, max_size) {}
+    CacheBase(size_t max_size, size_t max_elements_size = 0) : CacheBase(default_cache_policy_name, max_size, max_elements_size) {}
 
+    /// TODO: Rewrite "Args... args" to custom struct with fields for all cache policies.
     template <class... Args>
-    CacheBase(std::string cache_policy_name, Args... args)
+    CacheBase(String cache_policy_name, Args... args)
     {
         auto onWeightLossFunction = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 
@@ -197,7 +198,7 @@ private:
     std::unique_ptr<CachePolicy> cache_policy;
     String policy_name; // DELETE THIS FIELD (only for debug)
 
-    inline static const String default_cache_policy_name = "LRU";
+    inline static const String default_cache_policy_name = "SLRU";
 
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
