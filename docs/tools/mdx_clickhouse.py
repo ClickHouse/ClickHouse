@@ -103,7 +103,6 @@ def get_translations(dirname, lang):
 
 class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
     disabled = False
-    skip_git_log = False
 
     def on_config(self, config):
         super(PatchedMacrosPlugin, self).on_config(config)
@@ -141,16 +140,6 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
             lang = config.data["theme"]["language"]
             page.canonical_url = page.canonical_url.replace(f"/{lang}/", "/en/", 1)
 
-        if config.data["extra"].get("version_prefix") or config.data["extra"].get(
-            "single_page"
-        ):
-            return markdown
-        if self.skip_git_log:
-            return markdown
-        src_path = page.file.abs_src_path
-
-        # There was a code that determined the minimum and maximum modification dates for a page.
-        # It was removed due to being obnoxiously slow.
         return markdown
 
     def render_impl(self, markdown):

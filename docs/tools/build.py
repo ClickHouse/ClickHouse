@@ -195,7 +195,6 @@ if __name__ == "__main__":
     arg_parser.add_argument("--skip-single-page", action="store_true")
     arg_parser.add_argument("--skip-website", action="store_true")
     arg_parser.add_argument("--skip-blog", action="store_true")
-    arg_parser.add_argument("--skip-git-log", action="store_true")
     arg_parser.add_argument("--skip-docs", action="store_true")
     arg_parser.add_argument("--test-only", action="store_true")
     arg_parser.add_argument("--minify", action="store_true")
@@ -236,8 +235,6 @@ if __name__ == "__main__":
         args.skip_multi_page = True
         args.skip_blog = True
         args.skip_website = True
-
-    mdx_clickhouse.PatchedMacrosPlugin.skip_git_log = True
 
     from build import build
 
