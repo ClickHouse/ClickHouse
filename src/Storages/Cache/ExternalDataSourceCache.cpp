@@ -6,7 +6,7 @@
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <base/errnoToString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <Poco/Logger.h>
 #include <Common/ErrorCodes.h>

@@ -12,7 +12,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
