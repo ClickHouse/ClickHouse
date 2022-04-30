@@ -153,7 +153,7 @@ private:
     size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertNotDetached() const;
+    void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;
     void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
     bool hasFinalizedState() const;
     bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return detached; }
