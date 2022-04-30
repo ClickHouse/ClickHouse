@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 #include <Common/SystemLogBase.h>
 
 #include <Interpreters/StorageID.h>
@@ -82,8 +81,6 @@ struct SystemLogs
     std::shared_ptr<ProcessorsProfileLog> processors_profile_log;
 
     std::vector<ISystemLog *> logs;
-
-    Poco::Logger * sys_log = &Poco::Logger::get("SystemLogs");
 };
 
 

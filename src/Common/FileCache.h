@@ -100,8 +100,6 @@ protected:
 
     mutable std::mutex mutex;
 
-    mutable std::mutex logs_mutex;
-
     virtual bool tryReserve(
         const Key & key, size_t offset, size_t size,
         std::lock_guard<std::mutex> & cache_lock) = 0;
