@@ -39,7 +39,6 @@ MARKDOWN_EXTENSIONS = [
 
 class ClickHouseLinkMixin(object):
     def handleMatch(self, m, data):
-        single_page = os.environ.get("SINGLE_PAGE") == "1"
         try:
             el, start, end = super(ClickHouseLinkMixin, self).handleMatch(m, data)
         except IndexError:
@@ -51,13 +50,6 @@ class ClickHouseLinkMixin(object):
             if is_external:
                 if not href.startswith("https://clickhouse.com"):
                     el.set("rel", "external nofollow noreferrer")
-            elif single_page:
-                if "#" in href:
-                    el.set("href", "#" + href.split("#", 1)[1])
-                else:
-                    el.set(
-                        "href", "#" + href.replace("/index.md", "/").replace(".md", "/")
-                    )
         return el, start, end
 
 
