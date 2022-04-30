@@ -7,8 +7,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreTask.h>
-#include <Backups/RestoreCoordinationDistributed.h>
-#include <Backups/RestoreCoordinationLocal.h>
+#include <Backups/IRestoreCoordination.h>
 #include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Common/escapeForFileName.h>
 #include <Databases/IDatabase.h>
@@ -22,9 +21,9 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
-#include <base/sleep.h>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <filesystem>
@@ -191,7 +190,7 @@ namespace
             return {};
         }
 
-        bool isSequential() const override { return true; }
+        RestoreKind getRestoreKind() const override { return RestoreKind::METADATA; }
 
     private:
         void createDatabase()
@@ -245,7 +244,53 @@ namespace
     };
 
 
-    /// Restores a table and fills it with data.
+    class RestoreTableDataTask : public IRestoreTask
+    {
+    public:
+        RestoreTableDataTask(
+            ContextMutablePtr context_,
+            StoragePtr storage_,
+            const ASTs & partitions_,
+            const BackupPtr & backup_,
+            const String & data_path_in_backup_,
+            const RestoreSettingsPtr & restore_settings_,
+            const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
+            : context(context_)
+            , storage(storage_)
+            , partitions(partitions_)
+            , backup(backup_)
+            , data_path_in_backup(data_path_in_backup_)
+            , restore_settings(restore_settings_)
+            , restore_coordination(restore_coordination_)
+        {
+        }
+
+        RestoreTasks run() override
+        {
+            const auto * replicated_table = typeid_cast<const StorageReplicatedMergeTree *>(storage.get());
+            if (replicated_table)
+            {
+                data_path_in_backup = restore_coordination->getReplicatedTableDataPath(
+                    replicated_table->getZooKeeperName() + replicated_table->getZooKeeperPath());
+            }
+
+            RestoreTasks tasks;
+            tasks.emplace_back(storage->restoreData(context, partitions, backup, data_path_in_backup, *restore_settings, restore_coordination));
+            return tasks;
+        }
+
+    private:
+        ContextMutablePtr context;
+        StoragePtr storage;
+        ASTs partitions;
+        BackupPtr backup;
+        String data_path_in_backup;
+        RestoreSettingsPtr restore_settings;
+        std::shared_ptr<IRestoreCoordination> restore_coordination;
+    };
+
+
+    /// Restores a table.
     class RestoreTableTask : public IRestoreTask
     {
     public:
@@ -257,9 +302,13 @@ namespace
             const DatabaseAndTableName & table_name_in_backup_,
             const RestoreSettingsPtr & restore_settings_,
             const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
-            : context(context_), create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_)),
-              partitions(partitions_), backup(backup_), table_name_in_backup(table_name_in_backup_),
-              restore_settings(restore_settings_), restore_coordination(restore_coordination_)
+            : context(context_)
+            , create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_))
+            , partitions(partitions_)
+            , backup(backup_)
+            , table_name_in_backup(table_name_in_backup_)
+            , restore_settings(restore_settings_)
+            , restore_coordination(restore_coordination_)
         {
             table_name = DatabaseAndTableName{create_query->getDatabase(), create_query->getTable()};
             if (create_query->temporary)
@@ -268,93 +317,26 @@ namespace
 
         RestoreTasks run() override
         {
-            if (acquireTableCreation())
-            {
-                try
-                {
-                    createStorage();
-                    getStorage();
-                    checkStorageCreateQuery();
-                    setTableCreationResult(IRestoreCoordination::Result::SUCCEEDED);
-                }
-                catch (...)
-                {
-                    setTableCreationResult(IRestoreCoordination::Result::FAILED);
-                    throw;
-                }
-            }
-            else
-            {
-                waitForTableCreation();
-                getStorage();
-                checkStorageCreateQuery();
-            }
-
-            RestoreTasks tasks;
-            if (auto task = insertData())
-                tasks.push_back(std::move(task));
-            return tasks;
+            getDatabase();
+            createStorage();
+            getStorage();
+            checkStorageCreateQuery();
+            checkTableDataCompatible();
+            return insertData();
         }
 
-        bool isSequential() const override { return true; }
+        RestoreKind getRestoreKind() const override { return RestoreKind::METADATA; }
 
     private:
-        bool acquireTableCreation()
+        void getDatabase()
         {
-            if (restore_settings->create_table == RestoreTableCreationMode::kMustExist)
-                return true;
-
-            auto replicated_db
-                = typeid_cast<std::shared_ptr<const DatabaseReplicated>>(DatabaseCatalog::instance().getDatabase(table_name.first));
-            if (!replicated_db)
-                return true;
-
-            use_coordination_for_table_creation = true;
-            replicated_database_zookeeper_path = replicated_db->getZooKeeperPath();
-            return restore_coordination->acquireZkPathAndName(replicated_database_zookeeper_path, table_name.second);
-        }
-
-        void setTableCreationResult(IRestoreCoordination::Result res)
-        {
-            if (use_coordination_for_table_creation)
-                restore_coordination->setResultForZkPathAndName(replicated_database_zookeeper_path, table_name.second, res);
-        }
-
-        void waitForTableCreation()
-        {
-            if (!use_coordination_for_table_creation)
-                return;
-
-            IRestoreCoordination::Result res;
-            const auto & config = context->getConfigRef();
-            auto timeout = std::chrono::seconds(config.getUInt("backups.create_table_in_replicated_db_timeout", 10));
-            auto start_time = std::chrono::steady_clock::now();
-
-            if (!restore_coordination->getResultForZkPathAndName(replicated_database_zookeeper_path, table_name.second, res, timeout))
-                throw Exception(
-                    ErrorCodes::CANNOT_RESTORE_TABLE,
-                    "Waited too long ({}) for creating of {} on another replica",
-                    to_string(timeout),
-                    formatTableNameOrTemporaryTableName(table_name));
-
-            if (res == IRestoreCoordination::Result::FAILED)
-                throw Exception(
-                    ErrorCodes::CANNOT_RESTORE_TABLE,
-                    "Failed creating of {} on another replica",
-                    formatTableNameOrTemporaryTableName(table_name));
-
-            while (std::chrono::steady_clock::now() - start_time < timeout)
+            database = DatabaseCatalog::instance().getDatabase(table_name.first);
+            const auto * replicated_db = typeid_cast<DatabaseReplicated *>(database.get());
+            if (replicated_db)
             {
-                if (DatabaseCatalog::instance().tryGetDatabaseAndTable({table_name.first, table_name.second}, context).second)
-                    return;
-                sleepForMilliseconds(50);
+                is_replicated_database = true;
+                replicated_database_zk_path = replicated_db->getZooKeeperPath();
             }
-
-            throw Exception(
-                ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Waited too long ({}) for creating of {} on another replica",
-                to_string(timeout),
-                formatTableNameOrTemporaryTableName(table_name));
         }
 
         void createStorage()
@@ -363,62 +345,77 @@ namespace
                 return;
 
             auto cloned_create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query->clone());
-            cloned_create_query->if_not_exists = (restore_settings->create_table == RestoreTableCreationMode::kCreateIfNotExists);
+
+            if ((restore_settings->create_table == RestoreTableCreationMode::kCreate) && is_replicated_database)
+            {
+                bool table_existed = database->isTableExist(table_name.second, context);
+                restore_coordination->setTableExistedInReplicatedDB(
+                    restore_settings->host_id, table_name.first, replicated_database_zk_path, table_name.second, table_existed);
+            }
+
+            /// For creating tables in replicated databases we need to set "IF NOT EXISTS" in tables' definitions
+            /// (even if our mode is RestoreTableCreationMode::kCreate) because otherwise multiple nodes can try to create the same tables
+            /// again and failed with "Table already exists" because of a table could be created on other node and then replicated to this node.
+            /// To solve this problem we set "IF NOT EXISTS" here and after all nodes have finished restoring metadata we just check
+            /// if each such table was really created somewhere (see checkTablesNotExistedInReplicatedDBs() call).
+            cloned_create_query->if_not_exists
+                = (restore_settings->create_table == RestoreTableCreationMode::kCreateIfNotExists) || is_replicated_database;
+
             InterpreterCreateQuery create_interpreter{cloned_create_query, context};
             create_interpreter.setInternal(true);
             create_interpreter.execute();
         }
 
-        StoragePtr getStorage()
+        void getStorage()
         {
-            if (!storage)
-                std::tie(database, storage) = DatabaseCatalog::instance().getDatabaseAndTable({table_name.first, table_name.second}, context);
-            return storage;
-        }
+            storage = database->getTable(table_name.second, context);
+            storage_create_query = database->getCreateTableQuery(table_name.second, context);
 
-        ASTPtr getStorageCreateQuery()
-        {
-            if (!storage_create_query)
+            if (!restore_settings->structure_only)
             {
-                getStorage();
-                storage_create_query = database->getCreateTableQuery(table_name.second, context);
+                data_path_in_backup = PathsInBackup{*backup}.getDataPath(table_name_in_backup, restore_settings->shard_num_in_backup, restore_settings->replica_num_in_backup);
+                has_data = !backup->listFiles(data_path_in_backup).empty();
+
+                const auto * replicated_table = typeid_cast<const StorageReplicatedMergeTree *>(storage.get());
+                if (replicated_table)
+                {
+                    /// We need to be consistent when we're restoring replicated tables.
+                    /// It's allowed for a backup to contain multiple replicas of the same replicated table,
+                    /// and when we restore it we need to choose single data path in the backup to restore this table on each replica.
+                    /// That's why we use the restore coordination here: on restoring metadata stage each replica sets its own
+                    /// `data_path_in_backup` for same zookeeper path, and then the restore coordination choose one `data_path_in_backup`
+                    /// to use for restoring data.
+                    restore_coordination->setReplicatedTableDataPath(
+                        restore_settings->host_id,
+                        table_name_in_backup,
+                        replicated_table->getZooKeeperName() + replicated_table->getZooKeeperPath(),
+                        data_path_in_backup);
+                    has_data = true;
+                }
             }
-            return storage_create_query;
         }
 
         void checkStorageCreateQuery()
         {
-            if (restore_settings->allow_different_table_def)
-                return;
-
-            getStorageCreateQuery();
-            if (areTableDefinitionsSame(*create_query, *storage_create_query))
-                return;
-
-            throw Exception(
-                ErrorCodes::CANNOT_RESTORE_TABLE,
-                "The {} already exists but has a different definition: {}, "
-                "compare to its definition in the backup: {}",
-                formatTableNameOrTemporaryTableName(table_name),
-                serializeAST(*storage_create_query),
-                serializeAST(*create_query));
+            if (!restore_settings->allow_different_table_def && !areTableDefinitionsSame(*create_query, *storage_create_query))
+            {
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "The {} already exists but has a different definition: {}, "
+                    "compare to its definition in the backup: {}",
+                    formatTableNameOrTemporaryTableName(table_name),
+                    serializeAST(*storage_create_query),
+                    serializeAST(*create_query));
+            }
         }
 
-        bool hasData()
+        void checkTableDataCompatible()
         {
-            if (has_data)
-                return *has_data;
+            if (restore_settings->structure_only || !has_data)
+                return;
 
-            has_data = false;
-            if (restore_settings->structure_only)
-                return false;
-
-            data_path_in_backup = PathsInBackup{*backup}.getDataPath(table_name_in_backup, restore_settings->shard_num_in_backup, restore_settings->replica_num_in_backup);
-            if (backup->listFiles(data_path_in_backup).empty())
-                return false;
-
-            getStorageCreateQuery();
             if (!areTableDataCompatible(*create_query, *storage_create_query))
+            {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
                     "Cannot attach data of the {} in the backup to the existing {} because of they are not compatible. "
@@ -429,20 +426,17 @@ namespace
                     serializeAST(*create_query),
                     formatTableNameOrTemporaryTableName(table_name),
                     serializeAST(*storage_create_query));
-
-            /// We check for INSERT privilege only if we're going to write into table.
-            context->checkAccess(AccessType::INSERT, table_name.first, table_name.second);
-
-            has_data = true;
-            return true;
+            }
         }
 
-        RestoreTaskPtr insertData()
+        RestoreTasks insertData()
         {
-            if (!hasData())
+            if (restore_settings->structure_only || !has_data)
                 return {};
 
-            return storage->restoreData(context, partitions, backup, data_path_in_backup, *restore_settings, restore_coordination);
+            RestoreTasks tasks;
+            tasks.emplace_back(std::make_unique<RestoreTableDataTask>(context, storage, partitions, backup, data_path_in_backup, restore_settings, restore_coordination));
+            return tasks;
         }
 
         ContextMutablePtr context;
@@ -453,12 +447,12 @@ namespace
         DatabaseAndTableName table_name_in_backup;
         RestoreSettingsPtr restore_settings;
         std::shared_ptr<IRestoreCoordination> restore_coordination;
-        bool use_coordination_for_table_creation = false;
-        String replicated_database_zookeeper_path;
         DatabasePtr database;
+        bool is_replicated_database = false;
+        String replicated_database_zk_path;
         StoragePtr storage;
         ASTPtr storage_create_query;
-        std::optional<bool> has_data;
+        bool has_data = false;
         String data_path_in_backup;
     };
 
@@ -468,8 +462,8 @@ namespace
     class RestoreTasksBuilder
     {
     public:
-        RestoreTasksBuilder(ContextMutablePtr context_, const BackupPtr & backup_, const RestoreSettings & restore_settings_)
-            : context(context_), backup(backup_), restore_settings(restore_settings_)
+        RestoreTasksBuilder(ContextMutablePtr context_, const BackupPtr & backup_, const RestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
+            : context(context_), backup(backup_), restore_settings(restore_settings_), restore_coordination(restore_coordination_)
         {
         }
 
@@ -477,8 +471,6 @@ namespace
         void prepare(const ASTBackupQuery::Elements & elements)
         {
             calculateShardNumAndReplicaNumInBackup();
-            makeRestoreCoordination();
-
             renaming_settings.setFromBackupQuery(elements);
 
             for (const auto & element : elements)
@@ -557,14 +549,6 @@ namespace
 
             if (std::find(replicas_in_backup.begin(), replicas_in_backup.end(), restore_settings.replica_num_in_backup) == replicas_in_backup.end())
                 throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No replica #{} in backup", restore_settings.replica_num_in_backup);
-        }
-
-        void makeRestoreCoordination()
-        {
-            if (!restore_settings.coordination_zk_path.empty())
-                restore_coordination = std::make_shared<RestoreCoordinationDistributed>(restore_settings.coordination_zk_path, [context=context] { return context->getZooKeeper(); });
-            else
-                restore_coordination = std::make_shared<RestoreCoordinationLocal>();
         }
 
         /// Prepares to restore a single table and probably its database's definition.
@@ -712,76 +696,87 @@ namespace
         std::map<String /* new_db_name */, CreateDatabaseInfo> databases;
         std::map<DatabaseAndTableName /* new_table_name */, CreateTableInfo> tables;
     };
+}
 
 
-    /// Reverts completed restore tasks (in reversed order).
-    void rollbackRestoreTasks(RestoreTasks && restore_tasks)
+RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backup, const Elements & elements, const RestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination)
+{
+    try
     {
-        for (auto & restore_task : restore_tasks | boost::adaptors::reversed)
-        {
-            try
-            {
-                std::move(restore_task)->rollback();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("Restore", "Couldn't rollback changes after failed RESTORE");
-            }
-        }
+        RestoreTasksBuilder builder{context, backup, restore_settings, restore_coordination};
+        builder.prepare(elements);
+        return builder.makeTasks();
+    }
+    catch (...)
+    {
+        restore_coordination->finishRestoringMetadata(restore_settings.host_id, getCurrentExceptionMessage(false));
+        throw;
     }
 }
 
 
-RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backup, const Elements & elements, const RestoreSettings & restore_settings)
-{
-    RestoreTasksBuilder builder{context, backup, restore_settings};
-    builder.prepare(elements);
-    return builder.makeTasks();
-}
-
-
-void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads)
+void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads, const RestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination,
+                         std::chrono::seconds timeout_for_restoring_metadata)
 {
     if (!num_threads)
         num_threads = 1;
 
-    RestoreTasks completed_tasks;
-    bool need_rollback_completed_tasks = true;
-
-    SCOPE_EXIT({
-        if (need_rollback_completed_tasks)
-            rollbackRestoreTasks(std::move(completed_tasks));
-    });
-
     std::deque<std::unique_ptr<IRestoreTask>> sequential_tasks;
     std::deque<std::unique_ptr<IRestoreTask>> enqueued_tasks;
 
-    /// There are two kinds of restore tasks: sequential and non-sequential ones.
-    /// Sequential tasks are executed first and always in one thread.
-    for (auto & task : restore_tasks)
+    try
     {
-        if (task->isSequential())
-            sequential_tasks.push_back(std::move(task));
-        else
-            enqueued_tasks.push_back(std::move(task));
-    }
-
-    /// Sequential tasks.
-    while (!sequential_tasks.empty())
-    {
-        auto current_task = std::move(sequential_tasks.front());
-        sequential_tasks.pop_front();
-
-        RestoreTasks new_tasks = current_task->run();
-
-        completed_tasks.push_back(std::move(current_task));
-        for (auto & task : new_tasks)
+        /// There are two kinds of restore tasks: sequential and non-sequential ones.
+        /// Sequential tasks are executed first and always in one thread.
+        for (auto & task : restore_tasks)
         {
-            if (task->isSequential())
+            if (task->getRestoreKind() == IRestoreTask::RestoreKind::METADATA)
                 sequential_tasks.push_back(std::move(task));
             else
                 enqueued_tasks.push_back(std::move(task));
         }
+
+        /// Sequential tasks.
+        while (!sequential_tasks.empty())
+        {
+            auto current_task = std::move(sequential_tasks.front());
+            sequential_tasks.pop_front();
+
+            RestoreTasks new_tasks = current_task->run();
+
+            for (auto & task : new_tasks)
+            {
+                if (task->getRestoreKind() == IRestoreTask::RestoreKind::METADATA)
+                    sequential_tasks.push_back(std::move(task));
+                else
+                    enqueued_tasks.push_back(std::move(task));
+            }
+        }
+    }
+    catch (...)
+    {
+        restore_coordination->finishRestoringMetadata(restore_settings.host_id, getCurrentExceptionMessage(false));
+        throw;
+    }
+
+    /// We've finished restoring metadata, now we will wait for other replicas and shards to finish too.
+    /// We need this waiting because we're going to call some functions which requires data collected from other nodes too,
+    /// see IRestoreCoordination::checkTablesNotExistedInReplicatedDBs(), IRestoreCoordination::getReplicatedTableDataPath().
+    if (!restore_settings.host_id.empty())
+    {
+        restore_coordination->finishRestoringMetadata(restore_settings.host_id);
+        restore_coordination->waitHostsToRestoreMetadata(
+            BackupSettings::Util::filterHostIDs(
+                restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num),
+            timeout_for_restoring_metadata);
+    }
+
+    if (restore_settings.create_table == RestoreTableCreationMode::kCreate)
+    {
+        /// We changed table definitions to "CREATE IF NOT EXISTS" while we were creating tables in replicated databases.
+        /// Now because our mode is RestoreTableCreationMode::kCreate we need to check if each table was really created at least on
+        /// any replica.
+        restore_coordination->checkTablesNotExistedInReplicatedDBs();
     }
 
     /// Non-sequential tasks.
@@ -815,7 +810,7 @@ void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads)
         }
 
         assert(current_task);
-        threads.emplace_back([current_task, &mutex, &cond, &enqueued_tasks, &running_tasks, &completed_tasks, &exception]() mutable
+        threads.emplace_back([current_task, &mutex, &cond, &enqueued_tasks, &running_tasks, &exception]() mutable
         {
             {
                 std::lock_guard lock{mutex};
@@ -842,7 +837,6 @@ void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads)
 
                 if (!new_exception)
                 {
-                    completed_tasks.push_back(std::move(current_task_ptr));
                     enqueued_tasks.insert(
                         enqueued_tasks.end(), std::make_move_iterator(new_tasks.begin()), std::make_move_iterator(new_tasks.end()));
                 }
@@ -860,8 +854,6 @@ void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads)
 
     if (exception)
         std::rethrow_exception(exception);
-    else
-        need_rollback_completed_tasks = false;
 }
 
 }

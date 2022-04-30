@@ -63,6 +63,7 @@ struct BackupSettings
         static std::vector<Strings> clusterHostIDsFromAST(const IAST & ast);
         static ASTPtr clusterHostIDsToAST(const std::vector<Strings> & cluster_host_ids);
         static std::pair<size_t, size_t> findShardNumAndReplicaNum(const std::vector<Strings> & cluster_host_ids, const String & host_id);
+        static Strings filterHostIDs(const std::vector<Strings> & cluster_host_ids, size_t only_shard_num, size_t only_replica_num);
     };
 };
 
