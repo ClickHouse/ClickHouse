@@ -25,7 +25,7 @@ For the first time you’ll need to:
 #### 1. Install CLI tools from npm
 
 1. `sudo apt-get install npm` for Debian/Ubuntu or `brew install npm` on Mac OS X.
-2. `sudo npm install -g purify-css amphtml-validator`.
+2. `sudo npm install -g purify-css`.
 
 #### 2. Set up virtualenv
 
