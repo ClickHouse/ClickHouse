@@ -1,13 +1,10 @@
 import json
 import os
-from pydoc import cli
 from time import sleep
 import meilisearch
 from pymysql import NULL
 
 import pytest
-from sympy import true
-from helpers.client import QueryRuntimeException
 
 from helpers.cluster import ClickHouseCluster
 
