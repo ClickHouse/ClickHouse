@@ -44,7 +44,7 @@ public:
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
-    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context);
+    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal = false);
 
     bool hasReplicationThread() const override { return true; }
 
@@ -54,6 +54,8 @@ public:
     String getReplicaName() const { return replica_name; }
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);
+
+    const String & getZooKeeperPath() const { return zookeeper_path; }
 
     /// Returns cluster consisting of database replicas
     ClusterPtr getCluster() const;
@@ -75,6 +77,16 @@ private:
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
 
+    struct
+    {
+        String cluster_username{"default"};
+        String cluster_password;
+        String cluster_secret;
+        bool cluster_secure_connection{false};
+    } cluster_auth_info;
+
+    void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
+
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
 
     void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 max_log_ptr);
@@ -88,6 +100,11 @@ private:
 
     void createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper);
 
+    bool allowMoveTableToOtherDatabaseEngine(IDatabase & to_database) const override
+    {
+        return is_recovering && typeid_cast<DatabaseAtomic *>(&to_database);
+    }
+
     String zookeeper_path;
     String shard_name;
     String replica_name;
@@ -97,6 +114,7 @@ private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     std::atomic_bool is_readonly = true;
+    std::atomic_bool is_recovering = false;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
     UInt32 max_log_ptr_at_creation = 0;
 

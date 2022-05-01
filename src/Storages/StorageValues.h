@@ -31,6 +31,10 @@ public:
     {
         return virtuals;
     }
+
+    /// FIXME probably it should return false, but StorageValues is used in ExecutingInnerQueryFromViewTransform (whatever it is)
+    bool supportsTransactions() const override { return true; }
+
 private:
     Block res_block;
     NamesAndTypesList virtuals;

@@ -31,6 +31,7 @@ public:
 
     bool hasEvenlyDistributedRead() const override { return true; }
     bool isSystemStorage() const override { return true; }
+    bool supportsTransactions() const override { return true; }
 
 private:
     bool multithreaded;

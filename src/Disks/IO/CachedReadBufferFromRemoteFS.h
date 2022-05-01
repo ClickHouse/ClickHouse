@@ -4,7 +4,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -49,6 +49,8 @@ private:
     void predownload(FileSegmentPtr & file_segment);
 
     bool nextImplStep();
+
+    void assertCorrectness() const;
 
     enum class ReadType
     {
@@ -96,8 +98,12 @@ private:
             case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
                 return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
+        __builtin_unreachable();
     }
+
     size_t first_offset = 0;
+    String nextimpl_step_log_info;
+    String last_caller_id;
 };
 
 }

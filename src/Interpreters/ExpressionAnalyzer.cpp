@@ -9,6 +9,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/DumpASTNode.h>
+#include <Parsers/ASTInterpolateElement.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
@@ -100,20 +101,9 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
 {
     auto columns = select_query->select()->children;
 
-    const auto * group_by_expr_with_alias = dynamic_cast<const ASTWithAlias *>(argument.get());
-    if (group_by_expr_with_alias && !group_by_expr_with_alias->alias.empty())
-    {
-        for (const auto & column : columns)
-        {
-            const auto * col_with_alias = dynamic_cast<const ASTWithAlias *>(column.get());
-            if (col_with_alias)
-            {
-                const auto & alias = col_with_alias->alias;
-                if (!alias.empty() && alias == group_by_expr_with_alias->alias)
-                    return false;
-            }
-        }
-    }
+    const auto * expr_with_alias = dynamic_cast<const ASTWithAlias *>(argument.get());
+    if (expr_with_alias && !expr_with_alias->alias.empty())
+        return false;
 
     const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get());
     if (!ast_literal)
@@ -130,7 +120,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
                         pos, columns.size());
 
     const auto & column = columns[--pos];
-    if (typeid_cast<const ASTIdentifier *>(column.get()))
+    if (typeid_cast<const ASTIdentifier *>(column.get()) || typeid_cast<const ASTLiteral *>(column.get()))
     {
         argument = column->clone();
     }
@@ -220,6 +210,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     ContextPtr context_,
     size_t subquery_depth_,
     bool do_global,
+    bool is_explain,
     SubqueriesForSets subqueries_for_sets_,
     PreparedSets prepared_sets_)
     : WithContext(context_)
@@ -233,7 +224,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
     /// external_tables, subqueries_for_sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
-    initGlobalSubqueriesAndExternalTables(do_global);
+    initGlobalSubqueriesAndExternalTables(do_global, is_explain);
 
     auto temp_actions = std::make_shared<ActionsDAG>(sourceColumns());
     columns_after_array_join = getColumnsAfterArrayJoin(temp_actions, sourceColumns());
@@ -259,7 +250,7 @@ NamesAndTypesList ExpressionAnalyzer::getColumnsAfterArrayJoin(ActionsDAGPtr & a
     if (!array_join_expression_list)
         return src_columns;
 
-    getRootActionsNoMakeSet(array_join_expression_list, true, actions, false);
+    getRootActionsNoMakeSet(array_join_expression_list, actions, false);
 
     auto array_join = addMultipleArrayJoinAction(actions, is_array_join_left);
     auto sample_columns = actions->getResultColumns();
@@ -271,7 +262,7 @@ NamesAndTypesList ExpressionAnalyzer::getColumnsAfterArrayJoin(ActionsDAGPtr & a
 
     for (auto & column : actions->getResultColumns())
     {
-        if (syntax->array_join_result_to_source.count(column.name))
+        if (syntax->array_join_result_to_source.contains(column.name))
         {
             new_columns_after_array_join.emplace_back(column.name, column.type);
             added_columns.emplace(column.name);
@@ -279,7 +270,7 @@ NamesAndTypesList ExpressionAnalyzer::getColumnsAfterArrayJoin(ActionsDAGPtr & a
     }
 
     for (const auto & column : src_columns)
-        if (added_columns.count(column.name) == 0)
+        if (!added_columns.contains(column.name))
             new_columns_after_array_join.emplace_back(column.name, column.type);
 
     return new_columns_after_array_join;
@@ -294,7 +285,7 @@ NamesAndTypesList ExpressionAnalyzer::analyzeJoin(ActionsDAGPtr & actions, const
     const ASTTablesInSelectQueryElement * join = select_query->join();
     if (join)
     {
-        getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, actions, false);
+        getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), actions, false);
         auto sample_columns = actions->getNamesAndTypesList();
         syntax->analyzed_join->addJoinedColumnsAndCorrectTypes(sample_columns, true);
         actions = std::make_shared<ActionsDAG>(sample_columns);
@@ -332,14 +323,14 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
         {
             NameSet unique_keys;
             ASTs & group_asts = group_by_ast->children;
-            for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
+            for (ssize_t i = 0; i < static_cast<ssize_t>(group_asts.size()); ++i)
             {
                 ssize_t size = group_asts.size();
 
                 if (getContext()->getSettingsRef().enable_positional_arguments)
                     replaceForPositionalArguments(group_asts[i], select_query, ASTSelectQuery::Expression::GROUP_BY);
 
-                getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
+                getRootActionsNoMakeSet(group_asts[i], temp_actions, false);
 
                 const auto & column_name = group_asts[i]->getColumnName();
 
@@ -372,7 +363,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 NameAndTypePair key{column_name, node->result_type};
 
                 /// Aggregation keys are uniqued.
-                if (!unique_keys.count(key.name))
+                if (!unique_keys.contains(key.name))
                 {
                     unique_keys.insert(key.name);
                     aggregation_keys.push_back(key);
@@ -401,12 +392,12 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
 }
 
 
-void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
+void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain)
 {
     if (do_global)
     {
-        GlobalSubqueriesVisitor::Data subqueries_data(getContext(), subquery_depth, isRemoteStorage(),
-                                                   external_tables, subqueries_for_sets, has_global_subqueries);
+        GlobalSubqueriesVisitor::Data subqueries_data(
+            getContext(), subquery_depth, isRemoteStorage(), is_explain, external_tables, subqueries_for_sets, has_global_subqueries);
         GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
 }
@@ -416,7 +407,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 {
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
 
-    if (prepared_sets.count(set_key))
+    if (prepared_sets.contains(set_key))
         return; /// Already prepared.
 
     if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
@@ -509,33 +500,62 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 }
 
 
-void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts)
+void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
-    ActionsVisitor::Data visitor_data(getContext(), settings.size_limits_for_set, subquery_depth,
-                                   sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
-                                   no_subqueries, false, only_consts, !isRemoteStorage());
+    ActionsVisitor::Data visitor_data(
+        getContext(),
+        settings.size_limits_for_set,
+        subquery_depth,
+        sourceColumns(),
+        std::move(actions),
+        prepared_sets,
+        subqueries_for_sets,
+        no_makeset_for_subqueries,
+        false /* no_makeset */,
+        only_consts,
+        !isRemoteStorage() /* create_source_for_in */);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
 
 
-void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts)
+void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
-    ActionsVisitor::Data visitor_data(getContext(), settings.size_limits_for_set, subquery_depth,
-                                   sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
-                                   no_subqueries, true, only_consts, !isRemoteStorage());
+    ActionsVisitor::Data visitor_data(
+        getContext(),
+        settings.size_limits_for_set,
+        subquery_depth,
+        sourceColumns(),
+        std::move(actions),
+        prepared_sets,
+        subqueries_for_sets,
+        true /* no_makeset_for_subqueries, no_makeset implies no_makeset_for_subqueries */,
+        true /* no_makeset */,
+        only_consts,
+        !isRemoteStorage() /* create_source_for_in */);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
 
-void ExpressionAnalyzer::getRootActionsForHaving(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts)
+
+void ExpressionAnalyzer::getRootActionsForHaving(
+    const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
-    ActionsVisitor::Data visitor_data(getContext(), settings.size_limits_for_set, subquery_depth,
-                                   sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
-                                   no_subqueries, false, only_consts, true);
+    ActionsVisitor::Data visitor_data(
+        getContext(),
+        settings.size_limits_for_set,
+        subquery_depth,
+        sourceColumns(),
+        std::move(actions),
+        prepared_sets,
+        subqueries_for_sets,
+        no_makeset_for_subqueries,
+        false /* no_makeset */,
+        only_consts,
+        true /* create_source_for_in */);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -547,7 +567,7 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
     {
         AggregateDescription aggregate;
         if (node->arguments)
-            getRootActionsNoMakeSet(node->arguments, true, actions);
+            getRootActionsNoMakeSet(node->arguments, actions);
 
         aggregate.column_name = node->getColumnName();
 
@@ -746,8 +766,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         // Requiring a constant reference to a shared pointer to non-const AST
         // doesn't really look sane, but the visitor does indeed require it.
         // Hence we clone the node (not very sane either, I know).
-        getRootActionsNoMakeSet(window_function.function_node->clone(),
-            true, actions);
+        getRootActionsNoMakeSet(window_function.function_node->clone(), actions);
 
         const ASTs & arguments
             = window_function.function_node->arguments->children;
@@ -867,8 +886,7 @@ ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActi
     auto array_join = addMultipleArrayJoinAction(step.actions(), is_array_join_left);
     before_array_join = chain.getLastActions();
 
-    chain.steps.push_back(std::make_unique<ExpressionActionsChain::ArrayJoinStep>(
-            array_join, step.getResultColumns()));
+    chain.steps.push_back(std::make_unique<ExpressionActionsChain::ArrayJoinStep>(array_join, step.getResultColumns()));
 
     chain.addStep();
 
@@ -1058,7 +1076,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         /// TODO: add sampling and final execution to common chain.
         for (const auto & column : additional_required_columns)
         {
-            if (required_source_columns.count(column))
+            if (required_source_columns.contains(column))
                 step.addRequiredOutput(column);
         }
 
@@ -1066,7 +1084,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         NameSet name_set(names.begin(), names.end());
 
         for (const auto & column : sourceColumns())
-            if (required_source_columns.count(column.name) == 0)
+            if (!required_source_columns.contains(column.name))
                 name_set.erase(column.name);
 
         Names required_output(name_set.begin(), name_set.end());
@@ -1092,15 +1110,15 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
 
         for (const auto & column : sourceColumns())
         {
-            if (prewhere_input_names.count(column.name) == 0)
+            if (!prewhere_input_names.contains(column.name))
             {
                 columns.emplace_back(column.type, column.name);
                 unused_source_columns.emplace(column.name);
             }
         }
 
-        chain.steps.emplace_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(
-                std::make_shared<ActionsDAG>(std::move(columns))));
+        chain.steps.emplace_back(
+            std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(std::make_shared<ActionsDAG>(std::move(columns))));
         chain.steps.back()->additional_input = std::move(unused_source_columns);
         chain.getLastActions();
         chain.addStep();
@@ -1210,8 +1228,7 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
     // recursively together with (1b) as ASTFunction::window_definition.
     if (getSelectQuery()->window())
     {
-        getRootActionsNoMakeSet(getSelectQuery()->window(),
-            true /* no_subqueries */, step.actions());
+        getRootActionsNoMakeSet(getSelectQuery()->window(), step.actions());
     }
 
     for (const auto & [_, w] : window_descriptions)
@@ -1222,8 +1239,7 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
             // definitions (1a).
             // Requiring a constant reference to a shared pointer to non-const AST
             // doesn't really look sane, but the visitor does indeed require it.
-            getRootActionsNoMakeSet(f.function_node->clone(),
-                true /* no_subqueries */, step.actions());
+            getRootActionsNoMakeSet(f.function_node->clone(), step.actions());
 
             // (2b) Required function argument columns.
             for (const auto & a : f.function_node->arguments->children)
@@ -1299,7 +1315,9 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
             throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
 
         if (getContext()->getSettingsRef().enable_positional_arguments)
+        {
             replaceForPositionalArguments(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
+        }
     }
 
     getRootActions(select_query->orderBy(), only_types, step.actions());
@@ -1317,6 +1335,38 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
             with_fill = true;
     }
 
+    if (auto interpolate_list = select_query->interpolate())
+    {
+
+        NameSet select;
+        for (const auto & child : select_query->select()->children)
+            select.insert(child->getAliasOrColumnName());
+
+        /// collect columns required for interpolate expressions -
+        /// interpolate expression can use any available column
+        auto find_columns = [&step, &select](IAST * function)
+        {
+            auto f_impl = [&step, &select](IAST * fn, auto fi)
+            {
+                if (auto * ident = fn->as<ASTIdentifier>())
+                {
+                    /// exclude columns from select expression - they are already available
+                    if (!select.contains(ident->getColumnName()))
+                        step.addRequiredOutput(ident->getColumnName());
+                    return;
+                }
+                if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())
+                    for (const auto & ch : fn->children)
+                        fi(ch.get(), fi);
+                return;
+            };
+            f_impl(function, f_impl);
+        };
+
+        for (const auto & interpolate : interpolate_list->children)
+            find_columns(interpolate->as<ASTInterpolateElement>()->expr.get());
+    }
+
     if (optimize_read_in_order)
     {
         for (auto & child : select_query->orderBy()->children)
@@ -1332,7 +1382,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     if (with_fill)
     {
         for (const auto & column : step.getResultColumns())
-            if (!order_by_keys.count(column.name))
+            if (!order_by_keys.contains(column.name))
                 non_constant_inputs.insert(column.name);
     }
 
@@ -1348,15 +1398,17 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     if (!select_query->limitBy())
         return false;
 
-    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
+    /// Use columns for ORDER BY.
+    /// They could be required to do ORDER BY on the initiator in case of distributed queries.
+    ExpressionActionsChain::Step & step = chain.lastStep(chain.getLastStep().getRequiredColumns());
 
     getRootActions(select_query->limitBy(), only_types, step.actions());
 
-    NameSet aggregated_names;
-    for (const auto & column : aggregated_columns)
+    NameSet existing_column_names;
+    for (const auto & column : chain.getLastStep().getRequiredColumns())
     {
         step.addRequiredOutput(column.name);
-        aggregated_names.insert(column.name);
+        existing_column_names.insert(column.name);
     }
 
     auto & children = select_query->limitBy()->children;
@@ -1366,7 +1418,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
             replaceForPositionalArguments(child, select_query, ASTSelectQuery::Expression::LIMIT_BY);
 
         auto child_name = child->getColumnName();
-        if (!aggregated_names.count(child_name))
+        if (!existing_column_names.contains(child_name))
             step.addRequiredOutput(child_name);
     }
 
@@ -1385,7 +1437,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     for (const auto & ast : asts)
     {
         String result_name = ast->getAliasOrColumnName();
-        if (required_result_columns.empty() || required_result_columns.count(result_name))
+        if (required_result_columns.empty() || required_result_columns.contains(result_name))
         {
             std::string source_name = ast->getColumnName();
 
@@ -1456,7 +1508,7 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
             alias = name;
         result_columns.emplace_back(name, alias);
         result_names.push_back(alias);
-        getRootActions(ast, false, actions_dag);
+        getRootActions(ast, false /* no_makeset_for_subqueries */, actions_dag);
     }
 
     if (add_aliases)
@@ -1473,7 +1525,7 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
         /// We will not delete the original columns.
         for (const auto & column_name_type : sourceColumns())
         {
-            if (name_set.count(column_name_type.name) == 0)
+            if (!name_set.contains(column_name_type.name))
             {
                 result_names.push_back(column_name_type.name);
                 name_set.insert(column_name_type.name);
@@ -1496,7 +1548,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAn
 {
     auto actions = std::make_shared<ActionsDAG>(constant_inputs);
 
-    getRootActions(query, true, actions, true);
+    getRootActions(query, true /* no_makeset_for_subqueries */, actions, true /* only_consts */);
     return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
 }
 
@@ -1513,13 +1565,13 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
 }
 
 ExpressionAnalysisResult::ExpressionAnalysisResult(
-        SelectQueryExpressionAnalyzer & query_analyzer,
-        const StorageMetadataPtr & metadata_snapshot,
-        bool first_stage_,
-        bool second_stage_,
-        bool only_types,
-        const FilterDAGInfoPtr & filter_info_,
-        const Block & source_header)
+    SelectQueryExpressionAnalyzer & query_analyzer,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool first_stage_,
+    bool second_stage_,
+    bool only_types,
+    const FilterDAGInfoPtr & filter_info_,
+    const Block & source_header)
     : first_stage(first_stage_)
     , second_stage(second_stage_)
     , need_aggregate(query_analyzer.hasAggregation())
@@ -1707,7 +1759,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             // The output of this expression chain is the result of
             // SELECT (before "final projection" i.e. renaming the columns), so
             // we have to mark the expressions that are required in the output,
-            // again. We did it for the previous expression chain ("select w/o
+            // again. We did it for the previous expression chain ("select without
             // window functions") earlier, in appendSelect(). But that chain also
             // produced the expressions required to calculate window functions.
             // They are not needed in the final SELECT result. Knowing the correct

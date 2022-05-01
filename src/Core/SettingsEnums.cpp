@@ -149,4 +149,5 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
                         {"str", FormatSettings::MsgPackUUIDRepresentation::STR},
                         {"ext", FormatSettings::MsgPackUUIDRepresentation::EXT}})
 
+
 }

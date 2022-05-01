@@ -1,13 +1,13 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/CompressedReadBufferWrapper.h>
 
 
 namespace DB
 {
 
-class Bzip2ReadBuffer : public BufferWithOwnMemory<ReadBuffer>
+class Bzip2ReadBuffer : public CompressedReadBufferWrapper
 {
 public:
     explicit Bzip2ReadBuffer(
@@ -20,8 +20,6 @@ public:
 
 private:
     bool nextImpl() override;
-
-    std::unique_ptr<ReadBuffer> in;
 
     class Bzip2StateWrapper;
     std::unique_ptr<Bzip2StateWrapper> bz;
