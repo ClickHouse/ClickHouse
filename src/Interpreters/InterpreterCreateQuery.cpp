@@ -980,7 +980,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
 
-            if (auto* ptr = typeid_cast<DatabaseReplicated *>(database.get());
+            if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
                 ptr && !getContext()->getClientInfo().is_replicated_database_internal)
             {
                 create.setDatabase(database_name);
