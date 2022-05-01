@@ -44,11 +44,26 @@ struct BackupSettings
     bool internal = false;
 
     /// Internal, should not be specified by user.
+    /// The current host's ID in the format 'escaped_host_name:port'.
+    String host_id;
+
+    /// Internal, should not be specified by user.
+    /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.
+    std::vector<Strings> cluster_host_ids;
+
+    /// Internal, should not be specified by user.
     /// Path in Zookeeper used to coordinate a distributed backup created by BACKUP ON CLUSTER.
     String coordination_zk_path;
 
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
+
+    struct Util
+    {
+        static std::vector<Strings> clusterHostIDsFromAST(const IAST & ast);
+        static ASTPtr clusterHostIDsToAST(const std::vector<Strings> & cluster_host_ids);
+        static std::pair<size_t, size_t> findShardNumAndReplicaNum(const std::vector<Strings> & cluster_host_ids, const String & host_id);
+    };
 };
 
 }

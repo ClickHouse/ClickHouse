@@ -120,23 +120,35 @@ namespace
         }
     }
 
-    void formatSettings(const ASTPtr & settings, const ASTPtr & base_backup_name, const IAST::FormatSettings & format)
+    void formatSettings(const ASTPtr & settings, const ASTPtr & base_backup_name, const ASTPtr & cluster_host_ids, const IAST::FormatSettings & format)
     {
-        if (!settings && !base_backup_name)
+        if (!settings && !base_backup_name && !cluster_host_ids)
             return;
+
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
         bool empty = true;
+
         if (base_backup_name)
         {
             format.ostr << "base_backup = ";
             base_backup_name->format(format);
             empty = false;
         }
+
         if (settings)
         {
             if (!empty)
                 format.ostr << ", ";
             settings->format(format);
+            empty = false;
+        }
+
+        if (cluster_host_ids)
+        {
+            if (!empty)
+                format.ostr << ", ";
+            format.ostr << "cluster_host_ids = ";
+            cluster_host_ids->format(format);
         }
     }
 
@@ -151,13 +163,12 @@ namespace
             [](const SettingChange & change)
             {
                 const String & name = change.name;
-                return (name == "internal") || (name == "async") || (name == "shard_num") || (name == "replica_num");
+                return (name == "internal") || (name == "async") || (name == "host_id");
             });
 
         changes.emplace_back("internal", true);
         changes.emplace_back("async", false);
-        changes.emplace_back("shard_num", params.shard_index);
-        changes.emplace_back("replica_num", params.replica_index);
+        changes.emplace_back("host_id", params.host_id);
 
         auto out_settings = std::make_shared<ASTSetQuery>();
         out_settings->changes = std::move(changes);
@@ -210,7 +221,7 @@ void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, Fo
     backup_name->format(format);
 
     if (settings || base_backup_name)
-        formatSettings(settings, base_backup_name, format);
+        formatSettings(settings, base_backup_name, cluster_host_ids, format);
 }
 
 ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const

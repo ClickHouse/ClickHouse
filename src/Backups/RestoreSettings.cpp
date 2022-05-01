@@ -1,10 +1,11 @@
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupSettings.h>
 #include <Backups/RestoreSettings.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 
 namespace DB
@@ -61,7 +62,7 @@ namespace
     using SettingFieldRestoreDatabaseCreationMode = SettingFieldRestoreTableCreationMode;
 }
 
-/// List of restore settings except base_backup_name.
+/// List of restore settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_RESTORE_SETTINGS(M) \
     M(String, password) \
     M(Bool, structure_only) \
@@ -75,14 +76,12 @@ namespace
     M(UInt64, shard_num_in_backup) \
     M(UInt64, replica_num_in_backup) \
     M(Bool, internal) \
+    M(String, host_id) \
     M(String, coordination_zk_path)
 
 RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
 {
     RestoreSettings res;
-
-    if (query.base_backup_name)
-        res.base_backup_info = BackupInfo::fromAST(*query.base_backup_name);
 
     if (query.settings)
     {
@@ -99,13 +98,17 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
         }
     }
 
+    if (query.base_backup_name)
+        res.base_backup_info = BackupInfo::fromAST(*query.base_backup_name);
+
+    if (query.cluster_host_ids)
+        res.cluster_host_ids = BackupSettings::Util::clusterHostIDsFromAST(*query.cluster_host_ids);
+
     return res;
 }
 
 void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
-    query.base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
-
     auto query_settings = std::make_shared<ASTSetQuery>();
     query_settings->is_standalone = false;
 
@@ -125,6 +128,9 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
         query_settings = nullptr;
 
     query.settings = query_settings;
+
+    query.base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
+    query.cluster_host_ids = !cluster_host_ids.empty() ? BackupSettings::Util::clusterHostIDsToAST(cluster_host_ids) : nullptr;
 }
 
 }
