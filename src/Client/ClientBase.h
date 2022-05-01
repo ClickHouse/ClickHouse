@@ -146,7 +146,7 @@ private:
         std::vector<Arguments> & hosts_and_ports_arguments);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
-    void updateSuggest(const ASTCreateQuery & ast_create);
+    void updateSuggest(const ASTPtr & ast);
 
     void initQueryIdFormats();
 
