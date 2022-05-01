@@ -83,6 +83,14 @@ struct RestoreSettings : public StorageRestoreSettings
     bool internal = false;
 
     /// Internal, should not be specified by user.
+    /// The current host's ID in the format 'escaped_host_name:port'.
+    String host_id;
+
+    /// Internal, should not be specified by user.
+    /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.
+    std::vector<Strings> cluster_host_ids;
+
+    /// Internal, should not be specified by user.
     /// Path in Zookeeper used to coordinate restoring process while executing by RESTORE ON CLUSTER.
     String coordination_zk_path;
 

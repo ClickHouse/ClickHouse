@@ -88,7 +88,6 @@ namespace
         }
     };
 
-
     using Kind = ASTBackupQuery::Kind;
     using Element = ASTBackupQuery::Element;
     using Elements = ASTBackupQuery::Elements;
@@ -107,6 +106,7 @@ namespace
         /// Prepares internal structures for making backup entries.
         void prepare(const ASTBackupQuery::Elements & elements)
         {
+            calculateShardNumAndReplicaNumInBackup();
             renaming_settings.setFromBackupQuery(elements);
 
             for (const auto & element : elements)
@@ -150,7 +150,7 @@ namespace
                     auto data_backup = info.storage->backupData(context, info.partitions);
                     if (!data_backup.empty())
                     {
-                        String data_path = PathsInBackup::getDataPath(*info.create_query, backup_settings.shard_num, backup_settings.replica_num);
+                        String data_path = PathsInBackup::getDataPath(*info.create_query, shard_num_in_backup, replica_num_in_backup);
                         for (auto & [path_in_backup, backup_entry] : data_backup)
                             res.emplace_back(data_path + path_in_backup, std::move(backup_entry));
                     }
@@ -165,6 +165,19 @@ namespace
         }
 
     private:
+        void calculateShardNumAndReplicaNumInBackup()
+        {
+            size_t shard_num = 0;
+            size_t replica_num = 0;
+            if (!backup_settings.host_id.empty())
+            {
+                std::tie(shard_num, replica_num)
+                    = BackupSettings::Util::findShardNumAndReplicaNum(backup_settings.cluster_host_ids, backup_settings.host_id);
+            }
+            shard_num_in_backup = shard_num;
+            replica_num_in_backup = replica_num;
+        }
+
         /// Prepares to backup a single table and probably its database's definition.
         void prepareToBackupTable(const DatabaseAndTableName & table_name_, const ASTs & partitions_)
         {
@@ -281,7 +294,7 @@ namespace
         std::pair<String, BackupEntryPtr> makeBackupEntryForMetadata(const IAST & create_query) const
         {
             auto metadata_entry = std::make_unique<BackupEntryFromMemory>(serializeAST(create_query));
-            String metadata_path = PathsInBackup::getMetadataPath(create_query, backup_settings.shard_num, backup_settings.replica_num);
+            String metadata_path = PathsInBackup::getMetadataPath(create_query, shard_num_in_backup, replica_num_in_backup);
             return {metadata_path, std::move(metadata_entry)};
         }
 
@@ -302,6 +315,8 @@ namespace
 
         ContextPtr context;
         BackupSettings backup_settings;
+        size_t shard_num_in_backup = 0;
+        size_t replica_num_in_backup = 0;
         DDLRenamingSettings renaming_settings;
         std::unordered_map<String /* db_name_in_backup */, CreateDatabaseInfo> databases;
         std::map<DatabaseAndTableName /* table_name_in_backup */, CreateTableInfo> tables;

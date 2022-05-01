@@ -1,5 +1,6 @@
 #include <Backups/RestoreUtils.h>
 #include <Backups/BackupUtils.h>
+#include <Backups/BackupSettings.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/DDLCompareUtils.h>
 #include <Backups/DDLRenamingVisitor.h>
@@ -470,16 +471,13 @@ namespace
         RestoreTasksBuilder(ContextMutablePtr context_, const BackupPtr & backup_, const RestoreSettings & restore_settings_)
             : context(context_), backup(backup_), restore_settings(restore_settings_)
         {
-            if (!restore_settings.coordination_zk_path.empty())
-                restore_coordination = std::make_shared<RestoreCoordinationDistributed>(restore_settings.coordination_zk_path, [context=context] { return context->getZooKeeper(); });
-            else
-                restore_coordination = std::make_shared<RestoreCoordinationLocal>();
         }
 
         /// Prepares internal structures for making tasks for restoring.
         void prepare(const ASTBackupQuery::Elements & elements)
         {
-            adjustIndicesOfSourceShardAndReplicaInBackup();
+            calculateShardNumAndReplicaNumInBackup();
+            makeRestoreCoordination();
 
             renaming_settings.setFromBackupQuery(elements);
 
@@ -526,15 +524,23 @@ namespace
         }
 
     private:
-        void adjustIndicesOfSourceShardAndReplicaInBackup()
+        void calculateShardNumAndReplicaNumInBackup()
         {
+            size_t shard_num = 0;
+            size_t replica_num = 0;
+            if (!restore_settings.host_id.empty())
+            {
+                std::tie(shard_num, replica_num)
+                    = BackupSettings::Util::findShardNumAndReplicaNum(restore_settings.cluster_host_ids, restore_settings.host_id);
+            }
+
             auto shards_in_backup = PathsInBackup{*backup}.getShards();
             if (!restore_settings.shard_num_in_backup)
             {
                 if (shards_in_backup.size() == 1)
                     restore_settings.shard_num_in_backup = shards_in_backup[0];
                 else
-                    restore_settings.shard_num_in_backup = restore_settings.shard_num;
+                    restore_settings.shard_num_in_backup = shard_num;
             }
 
             if (std::find(shards_in_backup.begin(), shards_in_backup.end(), restore_settings.shard_num_in_backup) == shards_in_backup.end())
@@ -546,11 +552,19 @@ namespace
                 if (replicas_in_backup.size() == 1)
                     restore_settings.replica_num_in_backup = replicas_in_backup[0];
                 else
-                    restore_settings.replica_num_in_backup = restore_settings.replica_num;
+                    restore_settings.replica_num_in_backup = replica_num;
             }
 
             if (std::find(replicas_in_backup.begin(), replicas_in_backup.end(), restore_settings.replica_num_in_backup) == replicas_in_backup.end())
                 throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No replica #{} in backup", restore_settings.replica_num_in_backup);
+        }
+
+        void makeRestoreCoordination()
+        {
+            if (!restore_settings.coordination_zk_path.empty())
+                restore_coordination = std::make_shared<RestoreCoordinationDistributed>(restore_settings.coordination_zk_path, [context=context] { return context->getZooKeeper(); });
+            else
+                restore_coordination = std::make_shared<RestoreCoordinationLocal>();
         }
 
         /// Prepares to restore a single table and probably its database's definition.
