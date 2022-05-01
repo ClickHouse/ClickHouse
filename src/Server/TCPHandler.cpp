@@ -42,7 +42,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Compression/CompressionFactory.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <fmt/format.h>
 

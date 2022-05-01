@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Server/IServer.h>
-#include <daemon/BaseDaemon.h>
+#include <Daemon/BaseDaemon.h>
 #include "TinyContext.h"
 
 namespace Poco

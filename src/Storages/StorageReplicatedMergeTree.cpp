@@ -77,7 +77,7 @@
 #include <Poco/DirectoryIterator.h>
 
 #include <base/scope_guard.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>

@@ -17,12 +17,12 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Version.h>
 #include <base/types.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
-#include <daemon/GraphiteWriter.h>
+#include <Daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/StatusFile.h>
-#include <loggers/Loggers.h>
+#include <Loggers/Loggers.h>
 
 
 /// \brief Base class for applications that can run as daemons.
