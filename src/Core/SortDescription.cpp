@@ -1,4 +1,3 @@
-#include <base/logger_useful.h>
 #include <Core/SortDescription.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
