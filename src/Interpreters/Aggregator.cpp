@@ -68,7 +68,7 @@ public:
         const auto cache = getHashTableStatsCache(params, lock);
         if (const auto hint = cache->get(params.key))
         {
-            LOG_DEBUG(
+            LOG_TRACE(
                 &Poco::Logger::get("Aggregator"),
                 "An entry for key={} found in cache: sum_of_sizes={}, median_size={}",
                 params.key,
@@ -92,7 +92,7 @@ public:
         if (!hint || sum_of_sizes < hint->sum_of_sizes / 2 || hint->sum_of_sizes < sum_of_sizes || median_size < hint->median_size / 2
             || hint->median_size < median_size)
         {
-            LOG_DEBUG(
+            LOG_TRACE(
                 &Poco::Logger::get("Aggregator"),
                 "Statistics updated for key={}: new sum_of_sizes={}, median_size={}",
                 params.key,
