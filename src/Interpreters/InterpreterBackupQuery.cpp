@@ -17,7 +17,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

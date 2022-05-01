@@ -72,7 +72,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -1271,7 +1271,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                            "Only table with Replicated engine or tables which does not store data on disk are allowed in Replicated database");
+                            "Only tables with a Replicated engine or tables which do not store data on disk are allowed in a Replicated database");
     }
 
     if (from_path && !res->storesDataOnDisk())

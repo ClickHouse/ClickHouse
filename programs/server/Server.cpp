@@ -14,11 +14,11 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <base/defines.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
-#include <base/ErrorHandlers.h>
+#include <Common/ErrorHandlers.h>
 #include <base/getMemoryAmount.h>
 #include <base/getAvailableMemoryAmount.h>
 #include <base/errnoToString.h>
@@ -590,12 +590,13 @@ static void sanityChecks(Server * server)
             server->context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
 
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
-            server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
+            server->context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
 
         if (!logs_path.empty())
         {
-            if (!enoughSpaceInDirectory(fs::path(logs_path).parent_path(), 1ull << 30))
-                server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
+            auto logs_parent = fs::path(logs_path).parent_path();
+            if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
+                server->context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
         }
     }
     catch (...)

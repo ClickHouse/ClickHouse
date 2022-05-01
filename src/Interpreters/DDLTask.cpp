@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>

@@ -1,5 +1,5 @@
-#include <daemon/GraphiteWriter.h>
-#include <daemon/BaseDaemon.h>
+#include <Daemon/GraphiteWriter.h>
+#include <Daemon/BaseDaemon.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <base/getFQDNOrHostName.h>

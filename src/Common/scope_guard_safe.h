@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/scope_guard.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/LockMemoryExceptionInThread.h>
 
 /// Same as SCOPE_EXIT() but block the MEMORY_LIMIT_EXCEEDED errors.
@@ -35,7 +35,7 @@
     }                                                \
     catch (...)                                      \
     {                                                \
-        tryLogCurrentException(__PRETTY_FUNCTION__); \
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);    \
     }                                                \
 )
 
@@ -61,6 +61,6 @@
     }                                                             \
     catch (...)                                                   \
     {                                                             \
-        tryLogCurrentException(__PRETTY_FUNCTION__);              \
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);          \
     }                                                             \
 )
