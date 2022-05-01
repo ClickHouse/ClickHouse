@@ -120,6 +120,12 @@ public:
             type_indexes.insert(TypeIndex::Int64);
     }
 
+    void operator()(const bool &)
+    {
+        field_types.insert(FieldType::UInt64);
+        type_indexes.insert(TypeIndex::UInt8);
+    }
+
     void operator()(const Null &)
     {
         have_nulls = true;
