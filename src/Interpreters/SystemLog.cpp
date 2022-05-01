@@ -32,7 +32,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
 
@@ -153,10 +153,12 @@ std::shared_ptr<TSystemLog> createSystemLog(
         String ttl = config.getString(config_prefix + ".ttl", "");
         if (!ttl.empty())
             engine += " TTL " + ttl;
-        engine += " ORDER BY (event_date, event_time)";
+
+        engine += " ORDER BY ";
+        engine += TSystemLog::getDefaultOrderBy();
     }
 
-    // Validate engine definition grammatically to prevent some configuration errors
+    /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
     parseQuery(storage_parser, engine.data(), engine.data() + engine.size(),
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
@@ -182,9 +184,7 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 
 }
 
-///
-/// SystemLogs
-///
+
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
     query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
@@ -273,9 +273,7 @@ void SystemLogs::shutdown()
         log->shutdown();
 }
 
-///
-/// SystemLog
-///
+
 template <typename LogElement>
 SystemLog<LogElement>::SystemLog(
     ContextPtr context_,
@@ -519,10 +517,24 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->setDatabase(table_id.database_name);
     create->setTable(table_id.table_name);
 
-    auto ordinary_columns = LogElement::getNamesAndTypes();
-    auto alias_columns = LogElement::getNamesAndAliases();
     auto new_columns_list = std::make_shared<ASTColumns>();
-    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
+
+    if (const char * custom_column_list = LogElement::getCustomColumnList())
+    {
+        ParserColumnDeclarationList parser;
+        const Settings & settings = getContext()->getSettingsRef();
+
+        ASTPtr columns_list_raw = parseQuery(parser, custom_column_list, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
+        new_columns_list->set(new_columns_list->columns, columns_list_raw);
+    }
+    else
+    {
+        auto ordinary_columns = LogElement::getNamesAndTypes();
+        auto alias_columns = LogElement::getNamesAndAliases();
+
+        new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
+    }
+
     create->set(create->columns_list, new_columns_list);
 
     ParserStorageWithComment storage_parser;
@@ -544,7 +556,6 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
         storage_settings->loadFromQuery(*create->storage);
     }
-
 
     return create;
 }
