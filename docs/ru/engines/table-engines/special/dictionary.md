@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: Dictionary
+sidebar_position: 35
+sidebar_label: Dictionary
 ---
 
 # Dictionary {#dictionary}
