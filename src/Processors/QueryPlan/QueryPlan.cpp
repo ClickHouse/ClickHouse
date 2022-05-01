@@ -18,6 +18,9 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 
+#include <base/logger_useful.h>
+
+
 namespace DB
 {
 
@@ -75,6 +78,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     {
         const auto & step_header = inputs[i].header;
         const auto & plan_header = plans[i]->getCurrentDataStream().header;
+        // assert(root->step);
         if (!blocksHaveEqualStructure(step_header, plan_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -184,6 +188,8 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         if (next_child == frame.node->children.size())
         {
             bool limit_max_threads = frame.pipelines.empty();
+            LOG_TRACE(&Poco::Logger::get("QueryPlan"), "buildQueryPipeline: # of pipelines for frame {}", frame.pipelines.size());
+            LOG_TRACE(&Poco::Logger::get("QueryPlan"), "step description {}", frame.node->step->getStepDescription());
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
 
             if (limit_max_threads && max_threads)

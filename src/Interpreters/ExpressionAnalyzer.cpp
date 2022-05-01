@@ -66,6 +66,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
 
+#include <base/logger_useful.h>
+
+
 namespace DB
 {
 
@@ -1035,6 +1038,17 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain
 static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
 {
     ASTPtr expression_list = analyzed_join.rightKeysList();
+
+    LOG_TRACE(&Poco::Logger::get("createJoinedBlockActions"), "analyzed_join.rightKeysList {}", expression_list->dumpTree());
+
+    std::string names;
+    for (const auto & name : analyzed_join.columnsFromJoinedTable().getNames())
+        names += name + " ";
+
+    LOG_TRACE(&Poco::Logger::get("createJoinedBlockActions"), "names {}", names);
+
+
+
     auto syntax_result = TreeRewriter(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
@@ -1067,14 +1081,29 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     TableJoin & analyzed_join,
     SelectQueryOptions query_options)
 {
+    LOG_TRACE(&Poco::Logger::get("buildJoinedPlan"), "top");
     /// Actions which need to be calculated on joined block.
     auto joined_block_actions = createJoinedBlockActions(context, analyzed_join);
+    LOG_TRACE(&Poco::Logger::get("buildJoinedPlan"), ">>>>>");
+    LOG_TRACE(&Poco::Logger::get("buildJoinedPlan"), " joined_block_actions->getResultColumns() {}", Block(joined_block_actions->getResultColumns()).dumpStructure());
+    for (const auto & pr : joined_block_actions->getRequiredColumns().getNames())
+    {
+        LOG_TRACE(&Poco::Logger::get("buildJoinedPlan"), " pr {}", pr);
+    }
+    LOG_TRACE(&Poco::Logger::get("buildJoinedPlan"), "<<<<<");
     Names original_right_columns;
+
+
 
     NamesWithAliases required_columns_with_aliases = analyzed_join.getRequiredColumns(
         Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
+
     for (auto & pr : required_columns_with_aliases)
+    {
+        LOG_TRACE(&Poco::Logger::get("buildJoinedPlan"), " pr.first {}", pr.first);
         original_right_columns.push_back(pr.first);
+    }
+
 
     /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
         * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
@@ -1089,6 +1118,15 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
+
+    WriteBufferFromOwnString ss;
+    QueryPlan::ExplainPlanOptions epo;
+    epo.header = epo.actions = true;
+
+
+    joined_plan->explainPlan(ss, epo);
+    LOG_TRACE(&Poco::Logger::get("buildJoinedPlan"), "explain {}", ss.str());
+
     {
         auto sample_block = interpreter->getSampleBlock();
         auto rename_dag = std::make_unique<ActionsDAG>(sample_block.getColumnsWithTypeAndName());
@@ -1138,7 +1176,12 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
 
     for (auto & join_element : join_elements)
     {
+        LOG_TRACE(&Poco::Logger::get("SelectQueryExpressionAnalyzer"), "makeTableJoin: join_element dump tree {} ", join_element->dumpTree());
+
+
         auto joined_plan = buildJoinedPlan(getContext(), *join_element, *analyzed_join, query_options);
+        LOG_TRACE(&Poco::Logger::get("SelectQueryExpressionAnalyzer"), "makeTableJoin: join data stream {} ", joined_plan->getCurrentDataStream().header.dumpStructure());
+
 
         const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
         std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
@@ -1153,7 +1196,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
 
 
 
-    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plans[0]->getCurrentDataStream().header, getContext());
+    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plans[0]->getCurrentDataStream().header, getContext()); /* !!!! */
 
     /// Do not make subquery for join over dictionary.
     if (analyzed_join->getDictionaryReader())

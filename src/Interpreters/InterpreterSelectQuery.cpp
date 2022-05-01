@@ -658,7 +658,9 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     ///
     /// But if it's a projection query, plan header does not match result_header.
     /// TODO: add special stage for InterpreterSelectQuery?
-    if (!options.is_projection_query && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+
+#if 0
+    if ( !options.is_projection_query && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
@@ -676,6 +678,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
         query_plan.addTableLock(std::move(table_lock));
     if (storage)
         query_plan.addStorageHolder(storage);
+#endif
 }
 
 BlockIO InterpreterSelectQuery::execute()
@@ -1341,7 +1344,20 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 }
                 else if (expressions.join->isParallel())
                 {
+                    auto joined_plans = query_analyzer->getJoinedPlan();
+                    if (joined_plans.empty())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
+
+
                     DataStreams data_streams{query_plan.getCurrentDataStream()};
+                    // std::vector<QueryPlanPtr> plans;
+                    for (const auto & a_joined_plan : joined_plans)
+                    {
+                        LOG_TRACE(log, "parallel join data stream {} ", a_joined_plan->getCurrentDataStream().header.dumpStructure());
+                        data_streams.emplace_back(std::move(a_joined_plan->getCurrentDataStream()));
+                        // plans.emplace_back(std::make_unique<QueryPlan>(std::move(a_joined_plan)));
+                    }
+
 
                     QueryPlanStepPtr parallel_join_step = std::make_unique<ParallelJoinStep>(
                         data_streams, //query_plan.getCurrentDataStream(),
@@ -1349,7 +1365,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         settings.max_block_size);
 
                     parallel_join_step->setStepDescription("JOIN");
-                    query_plan.addStep(std::move(parallel_join_step));
+                    // query_plan.addStep(std::move(parallel_join_step));
+
+                    joined_plans.insert(std::begin(joined_plans), std::make_unique<QueryPlan>(std::move(query_plan)));
+
+                    query_plan = QueryPlan();
+
+                    LOG_TRACE(log, "parallel join for {} query plans", joined_plans.size());
+
+                    query_plan.unitePlans(std::move(parallel_join_step), std::move(joined_plans));
                 }
 
                 else

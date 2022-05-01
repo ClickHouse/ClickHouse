@@ -8,6 +8,8 @@
 
 #include <Common/JSONBuilder.h>
 
+#include <base/logger_useful.h>
+
 namespace DB
 {
 
@@ -34,6 +36,10 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr a
         getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
 {
+    // LOG_TRACE(&Poco::Logger::get("ExpressionStep"), "ctor out_header structure {}, input_stream_ structure {}",
+    //     ExpressionTransform::transformHeader(input_stream_.header, *actions_dag_).dumpStructure(), input_stream_.header.dumpStructure());
+    LOG_TRACE(&Poco::Logger::get("ExpressionStep"), "ctor out_header structure {}, input_stream_ structure {}",
+        output_stream->header.dumpStructure(), input_stream_.header.dumpStructure());
     /// Some columns may be removed by expression.
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
@@ -42,6 +48,7 @@ void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header
 {
     Block out_header = keep_header ? std::move(output_stream->header)
                                    : ExpressionTransform::transformHeader(input_stream.header, *actions_dag);
+    LOG_TRACE(&Poco::Logger::get("ExpressionStep"), "updateInputStream keep_header {}, out_header structure {}", keep_header, out_header.dumpStructure());
     output_stream = createOutputStream(
             input_stream,
             std::move(out_header),
@@ -62,6 +69,10 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
     {
+
+        LOG_TRACE(&Poco::Logger::get("ExpressionStep"), "transformPipeline from {} to {}", pipeline.getHeader().dumpStructure(), output_stream->header.dumpStructure());
+        assert(0);
+
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_stream->header.getColumnsWithTypeAndName(),

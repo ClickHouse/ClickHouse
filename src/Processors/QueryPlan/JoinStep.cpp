@@ -3,6 +3,9 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/IJoin.h>
 
+#include <base/logger_useful.h>
+
+
 namespace DB
 {
 
@@ -87,7 +90,7 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     });
 }
 
-    ParallelJoinStep::ParallelJoinStep(DataStreams input_streams_, JoinPtr join_, size_t /*max_threads_*/)
+ParallelJoinStep::ParallelJoinStep(DataStreams input_streams_, JoinPtr join_, size_t /*max_threads_*/)
     :  join(std::move(join_))
 //    , max_threads(max_threads_)
 {
@@ -104,12 +107,14 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
         }
     }
 
-
+    LOG_TRACE(&Poco::Logger::get("ParallelJoinStep"), "ctor: header structure {}", joined_header.dumpStructure());
 
     output_stream = DataStream
     {
         .header = joined_header // JoiningTransform::transformHeader(left_stream_.header, join),
     };
+
+    LOG_TRACE(&Poco::Logger::get("ParallelJoinStep"), "ctor: output_stream header structure {}", output_stream->header.dumpStructure());
 }
 
 QueryPipelineBuilderPtr ParallelJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)

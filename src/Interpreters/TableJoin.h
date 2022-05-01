@@ -304,6 +304,8 @@ public:
 
     bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join; }
     const DictionaryReader * getDictionaryReader() const { return dictionary_reader.get(); }
+
+    std::string dumpStructure() const;
 };
 
 }

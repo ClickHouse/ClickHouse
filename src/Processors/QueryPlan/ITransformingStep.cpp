@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <base/logger_useful.h>
+
 namespace DB
 {
 
@@ -19,6 +21,7 @@ DataStream ITransformingStep::createOutputStream(
     const DataStreamTraits & stream_traits)
 {
     DataStream output_stream{.header = std::move(output_header)};
+    // LOG_TRACE(&Poco::Logger::get("ITransformingStep"), "createOutputStream: header structure {}", output_stream.header.dumpStructure());
 
     if (stream_traits.preserves_distinct_columns)
         output_stream.distinct_columns = input_stream.distinct_columns;
