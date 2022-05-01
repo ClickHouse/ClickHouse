@@ -77,7 +77,8 @@ void CachedReadBufferFromRemoteFS::appendFilesystemCacheLog(
             break;
     }
 
-    Context::getGlobalContextInstance()->getFilesystemCacheLog()->add(elem);
+    if (auto cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog())
+        cache_log->add(elem);
 }
 
 void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
