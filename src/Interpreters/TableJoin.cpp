@@ -23,6 +23,8 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
+
+#include <IO/Operators.h>
 #include <Common/logger_useful.h>
 #include <algorithm>
 #include <string>
@@ -758,6 +760,32 @@ bool TableJoin::allowParallelHashJoin() const
     if (isSpecialStorage() || !oneDisjunct())
         return false;
     return true;
+}
+
+std::string TableJoin::dumpStructure() const
+{
+    WriteBufferFromOwnString out;
+    out << "# of clauses " << clauses.size() <<
+        ", # of key_asts_left " << key_asts_left.size() <<
+        ", # of key_asts_right " << key_asts_right.size() <<
+        ", columns_from_joined_table " << columns_from_joined_table.toString() <<
+        ", columns_added_by_join " << columns_added_by_join.toString() <<
+        ", # of original_names " << original_names.size() <<
+        ", requiredJoinedNames() ";
+
+    Names required_joined_columns = requiredJoinedNames();
+    for (const auto & a_column : required_joined_columns)
+    {
+        out << a_column << " ";
+    }
+    out << ", original names ";
+
+    for (const auto & a_name : original_names)
+    {
+        out << a_name.first << ":" <<  a_name.second << " ";
+    }
+
+    return out.str();
 }
 
 }

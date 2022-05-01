@@ -383,8 +383,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::parallelJoinPipeline
     }
 
     // transform->mk_ports();
+    //
 
-    return {};
+    return std::move(join_streams[1]);
 
 }
 

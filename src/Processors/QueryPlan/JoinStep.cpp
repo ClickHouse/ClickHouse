@@ -4,6 +4,9 @@
 #include <Interpreters/IJoin.h>
 #include <Common/typeid_cast.h>
 
+#include <Common/logger_useful.h>
+
+
 namespace DB
 {
 
@@ -144,12 +147,14 @@ ParallelJoinStep::ParallelJoinStep(DataStreams input_streams_, JoinPtr join_, si
         }
     }
 
-
+    LOG_TRACE(&Poco::Logger::get("ParallelJoinStep"), "ctor: header structure {}", joined_header.dumpStructure());
 
     output_stream = DataStream
     {
         .header = joined_header // JoiningTransform::transformHeader(left_stream_.header, join),
     };
+
+    LOG_TRACE(&Poco::Logger::get("ParallelJoinStep"), "ctor: output_stream header structure {}", output_stream->header.dumpStructure());
 }
 
 QueryPipelineBuilderPtr ParallelJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)

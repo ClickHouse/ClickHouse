@@ -319,6 +319,8 @@ public:
     bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
     std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
+
+  std::string dumpStructure() const;  // !!!
 };
 
 }

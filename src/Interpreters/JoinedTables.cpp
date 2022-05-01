@@ -320,11 +320,14 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         /// TODO This syntax does not support specifying a database name.
         if (table_to_join.database_and_table_name)
         {
+            auto str = table_to_join.database_and_table_name->dumpTree();
+            LOG_TRACE(&Poco::Logger::get("JoinedTables"), "makeTableJoin database_and_table_name {}", str);
 
             auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
             StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
             if (storage)
             {
+                LOG_TRACE(&Poco::Logger::get("JoinedTables"), "makeTableJoin storage");
                 if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
                 {
                     table_join->setStorageJoin(storage_join);
@@ -362,7 +365,12 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
 
     if (!table_join->isSpecialStorage() &&
         settings.enable_optimize_predicate_expression)
+    {
+        LOG_TRACE(&Poco::Logger::get("JoinedTables"), "calling replaceJoinedTable");
+
         replaceJoinedTable(select_query);
+    }
+
 
     return table_join;
 }

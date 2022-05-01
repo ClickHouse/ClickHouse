@@ -1212,9 +1212,23 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     const auto & settings = getContext()->getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
+    // {
+    //     WriteBufferFromOwnString out;
+    //     out << "source_columns_set ";
+    //     for (const auto & a_source_column : source_columns_set)
+    //     {
+    //         out << ":" << a_source_column;
+    //     }
+    //     LOG_TRACE(&Poco::Logger::get("TreeRewriter"), "analyzeSelect: {}", out.str());
+
+    // }
+
+
 
     if (table_join)
     {
+        LOG_TRACE(&Poco::Logger::get("TreeRewriter"), "analyzeSelect: table_join at the top {}", table_join->dumpStructure());
+
         result.analyzed_join = table_join;
         result.analyzed_join->resetCollected();
     }
@@ -1233,6 +1247,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         LOG_TRACE(&Poco::Logger::get("TreeRewriter"), "tables_with_columns.size() {}", tables_with_columns.size());
         NamesAndTypesList all_right_tables;
 
+        auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
+
         for (size_t right_col_ind = 1; right_col_ind < tables_with_columns.size(); ++right_col_ind)
         {
             // all_right_tables.insert(all_right_tables.begin(), tables_with_columns[right_col_ind].columns.begin(), tables_with_columns[right_col_ind].columns.end());
@@ -1240,7 +1256,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
             const auto & right_table = tables_with_columns[right_col_ind];  /* !!! */
 
-            auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
+            // auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
 
             // cols_from_joined = right_table.columns;
             cols_from_joined.insert(cols_from_joined.begin(), right_table.columns.begin(), right_table.columns.end());
@@ -1388,6 +1404,11 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     // remove outer braces in order by
     RewriteOrderByVisitor::Data data;
     RewriteOrderByVisitor(data).visit(query);
+    if (table_join)
+    {
+        LOG_TRACE(&Poco::Logger::get("TreeRewriter"), "analyzeSelect: table_join at the bottom {}", table_join->dumpStructure());
+    }
+
 
     return std::make_shared<const TreeRewriterResult>(result);
 }
