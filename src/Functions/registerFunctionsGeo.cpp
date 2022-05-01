@@ -60,6 +60,7 @@ void registerFunctionH3GetPentagonIndexes(FunctionFactory &);
 void registerFunctionH3GetUnidirectionalEdge(FunctionFactory &);
 void registerFunctionH3UnidirectionalEdgeIsValid(FunctionFactory &);
 void registerFunctionH3GetOriginIndexFromUnidirectionalEdge(FunctionFactory &);
+void registerFunctionH3GetDestinationIndexFromUnidirectionalEdge(FunctionFactory &);
 
 #endif
 
@@ -134,6 +135,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3GetUnidirectionalEdge(factory);
     registerFunctionH3UnidirectionalEdgeIsValid(factory);
     registerFunctionH3GetOriginIndexFromUnidirectionalEdge(factory);
+    registerFunctionH3GetDestinationIndexFromUnidirectionalEdge(factory);
 #endif
 
 #if USE_S2_GEOMETRY
