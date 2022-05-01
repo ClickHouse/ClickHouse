@@ -767,18 +767,18 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
 
     switch (query.type)
     {
-        case Type::SHUTDOWN: [[fallthrough]];
-        case Type::KILL: [[fallthrough]];
+        case Type::SHUTDOWN:
+        case Type::KILL:
         case Type::SUSPEND:
         {
             required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
-        case Type::DROP_DNS_CACHE: [[fallthrough]];
-        case Type::DROP_MARK_CACHE: [[fallthrough]];
-        case Type::DROP_MMAP_CACHE: [[fallthrough]];
+        case Type::DROP_DNS_CACHE:
+        case Type::DROP_MARK_CACHE:
+        case Type::DROP_MMAP_CACHE:
 #if USE_EMBEDDED_COMPILER
-        case Type::DROP_COMPILED_EXPRESSION_CACHE: [[fallthrough]];
+        case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #endif
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
@@ -788,20 +788,20 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
         }
-        case Type::RELOAD_DICTIONARY: [[fallthrough]];
-        case Type::RELOAD_DICTIONARIES: [[fallthrough]];
+        case Type::RELOAD_DICTIONARY:
+        case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
             break;
         }
-        case Type::RELOAD_MODEL: [[fallthrough]];
+        case Type::RELOAD_MODEL:
         case Type::RELOAD_MODELS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
             break;
         }
-        case Type::RELOAD_FUNCTION: [[fallthrough]];
+        case Type::RELOAD_FUNCTION:
         case Type::RELOAD_FUNCTIONS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_FUNCTION);
@@ -817,7 +817,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
             break;
         }
-        case Type::STOP_MERGES: [[fallthrough]];
+        case Type::STOP_MERGES:
         case Type::START_MERGES:
         {
             if (!query.table)
@@ -826,7 +826,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_MERGES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_TTL_MERGES: [[fallthrough]];
+        case Type::STOP_TTL_MERGES:
         case Type::START_TTL_MERGES:
         {
             if (!query.table)
@@ -835,7 +835,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_MOVES: [[fallthrough]];
+        case Type::STOP_MOVES:
         case Type::START_MOVES:
         {
             if (!query.table)
@@ -844,7 +844,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_MOVES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_FETCHES: [[fallthrough]];
+        case Type::STOP_FETCHES:
         case Type::START_FETCHES:
         {
             if (!query.table)
@@ -853,7 +853,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_FETCHES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_DISTRIBUTED_SENDS: [[fallthrough]];
+        case Type::STOP_DISTRIBUTED_SENDS:
         case Type::START_DISTRIBUTED_SENDS:
         {
             if (!query.table)
@@ -862,7 +862,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_REPLICATED_SENDS: [[fallthrough]];
+        case Type::STOP_REPLICATED_SENDS:
         case Type::START_REPLICATED_SENDS:
         {
             if (!query.table)
@@ -871,7 +871,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_REPLICATION_QUEUES: [[fallthrough]];
+        case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
         {
             if (!query.table)
@@ -920,11 +920,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
             break;
         }
-        case Type::STOP_LISTEN_QUERIES: break;
-        case Type::START_LISTEN_QUERIES: break;
-        case Type::STOP_THREAD_FUZZER: break;
-        case Type::START_THREAD_FUZZER: break;
-        case Type::UNKNOWN: break;
+        case Type::STOP_LISTEN_QUERIES:
+        case Type::START_LISTEN_QUERIES:
+        case Type::STOP_THREAD_FUZZER:
+        case Type::START_THREAD_FUZZER:
+        case Type::UNKNOWN:
         case Type::END: break;
     }
     return required_access;
