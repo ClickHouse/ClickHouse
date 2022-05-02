@@ -7,8 +7,11 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Interpreters/AggregationCommon.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <cctype>
+#include <memory>
 
 namespace DB 
 {
@@ -19,14 +22,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-
-class AggregateFunctionOrderBy final : IAggregateFunctionHelper<AggregateFunctionOrderBy> {
-private:
-	AggregateFunctionPtr nested_func;
-	size_t num_arguments;
-    mutable std::vector<MutableColumnPtr> data;
-    size_t number_of_arguments_for_sorting;
-    mutable std::vector<bool> bitmap;
+struct OrderByData {
+    std::vector<MutableColumnPtr> data;
+    std::vector<bool> bitmap;
+    size_t num_arguments;
+    size_t num_arguments_for_sorting;
 
     void parseString(String& s)
     {
@@ -50,45 +50,51 @@ private:
                 flag = !flag;
             }
         }
-        number_of_arguments_for_sorting = bitmap.size();
+        num_arguments_for_sorting = bitmap.size();
     }
 
-    std::vector<std::pair<size_t, size_t>> findEqualRanges(size_t curr_idx) { 
-        std::vector<std::pair<size_t, size_t>> ans;
-        ans.emplace_back(0, data[0]->size()); 
-        for (size_t i = 0; i != curr_idx; ++i) {
-            if (ans.empty()) {
-                return ans;
-            }
-            std::vector<std::pair<size_t, size_t>> tmp;
-            while (!ans.empty()) {
-                auto range = ans.back(); 
-                ans.pop_back();
-                flag = false;
-                size_t start;
-                size_t counter = 0;
-                Field prev = *(data[i])[range.first];
-                Field curr;
-                for (size_t j = range.first + 1, j <= range.second; ++j) {
-                    if (data[i]->get(j, curr) == prev) {
-                        counter += 1;
-                        if (!flag) {
-                            flag = true;
-                            start = j - 1;
-                        }
-                    } else {
-                        if (flag) {
-                            flag = false;
-                            tmp.emplace_back(start, start + counter);
-                            counter = 0;
-                        }
-                    }
-                }
-            }
-            ans = tmp;
+    OrderByData(String& param_str, const DataTypes& types)   
+    {
+        num_arguments = types.size();
+        parseString(param_str);
+        data.reserve(bitmap.size());
+        for (size_t i = 0; i != num_arguments; ++i) {
+            data.push_back(types[i]->createColumn());
         }
-        return ans;
     }
+
+    std::unique_ptr<IColumn*> sort() {
+        Permutation p;
+        for (size_t i = 0; i != data[0]->size(); ++i) {
+            p.push_back(i);
+        }
+
+        auto ptr = std::make_unique(new IColumn*[num_arguments - num_arguments_for_sorting]); 
+        EqualRanges er(1, std::pair<size_t, size_t>(0, data[0]->size()));
+
+        for (size_t i = num_arguments - num_arguments_for_sorting; i != num_arguments; ++i) {
+            data[i]->updatePermutation(
+                bitmap[i] ? IColumn::PermutationSortDirection::Ascending : IColumn::PermutationSortDirection::Descending,
+                IColumn::PermutationSortStability::Stable, 0, 1, p, er
+                );
+        }
+
+        for (size_t i = 0; i != num_arguments - num_arguments_for_sorting; ++i) {
+            Ptr permuted_column = data[i]->permute(p, 0);
+            *ptr[i] = permuted_column.get();
+        }
+
+        return ptr;
+    }
+};
+
+
+class AggregateFunctionOrderBy final : IAggregateFunctionHelper<AggregateFunctionOrderBy> {
+private:
+	AggregateFunctionPtr nested_func;
+    DataTypes types_;
+    size_t num_arguments;
+    String param_str;
 
 public:
 	AggregateFunctionOrderBy(AggregateFunctionPtr nested, const DataTypes & types, const Array & params_)
@@ -99,9 +105,11 @@ public:
             throw Exception("Aggregate function " + getName() + " require at least one parameter", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         if (params_[0].getType() != Field::Types::Which::String)
             throw Exception("First parameter for aggregate function " + getName() + " must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        parseString(params_[0].get());
-        if (num_arguments < number_of_arguments_for_sorting)
-            throw Exception("Aggregate function " + getName() + " require at several arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        param_str = params_[0].get();
+        types_.reserve(types.size());
+        for (size_t i = 0; i != types.size(); ++i) {
+            types_.push_back(types[i]->getPtr());
+        }
     }
 
 	String getName() const override
@@ -116,11 +124,13 @@ public:
 
     void create(AggregateDataPtr place) const override
     {
-        nested_func->create(place);
+        new(place) OrderByData(param_str, types_);    
+        nested_func->create(place + sizeof(OrderByData));
     }
 
     void destroy(AggregateDataPtr place) const noexcept override {
-        nested_func->destroy(place);
+        reinterpret_cast<OrderByData *>(place)->~OrderByData();
+        nested_func->destroy(place + sizeof(OrderByData));
     }
 
     size_t alignOfData() const override
@@ -132,55 +142,58 @@ public:
         return nested_func->hasTrivialDestructor();
     }
 
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override 
+    {
+        for (size_t i = 0; i != reinterpret_cast<const OrderByData *>(rhs)->data[0]->size(); ++i) { 
+            for (size_t j = 0; j != reinterpret_cast<const OrderByData *>(rhs)->data.size(); ++j) {
+                reinterpret_cast<OrderByData *>(place)->data[j]->insertFrom(*(reinterpret_cast<const OrderByData *>(rhs)->data[j]), i);
+            }         
+        }
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const override 
+    {
+        size_t column_size = reinterpret_cast<const OrderByData *>(place)->data[0]->size();
+        writeBinary(column_size, buf);
+        auto size = reinterpret_cast<const OrderByData *>(place)->data.size();
+        for (size_t i = 0; i != size; ++i) {
+            for (size_t j = 0; j != column_size; ++j) {
+                writeBinary((*reinterpret_cast<const OrderByData *>(place)->data[i])[j].get(), buf);
+            }
+        }
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const override
+    {
+        size_t column_size;
+        readBinary(column_size, buf);
+        auto size = reinterpret_cast<OrderByData *>(place)->data.size();
+        for (size_t i = 0; i != size; ++i) {
+            for (size_t j = 0; j != column_size; ++j) {
+                TypeIndexToType<reinterpret_cast<OrderByData *>(place)->data[i]->getDataType()> val; 
+                readBinary(val, buf);
+                Field f = val;
+                reinterpret_cast<OrderByData *>(place)->data[i]->insert(f);
+            }
+        }
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override 
     {
         for (size_t i = 0; i != num_arguments; ++i) {
-            if (data.size() <= i) {
-                data.push_back((*columns)[i].cloneEmpty());
-            }
-            data[i]->insertFrom((*columns)[i], row_num);
+            reinterpret_cast<OrderByData *>(place)->data[i]->insertFrom((*columns)[i], row_num);
         }               
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override 
     {
-        bool is_first_column_for_sorting = true;
-        size_t j = 0; 
-        for (size_t i = num_arguments - number_of_arguments_for_sorting; i != num_arguments; ++i) {
-            Permutation permutation;
-            for (size_t i = 0; i != data[0]->size(); ++i) {
-                permutation.push_back(i);
-            }
-            
-            IColumn::PermutationSortDirection directon;
-            if (bitmap[j])
-                directon = IColumn::PermutationSortDirection::Ascending
-            else
-                directon = IColumn::PermutationSortDirection::Descending
-            
-            if (!is_first_column_for_sorting) {
-                std::vector<std::pair<size_t, size_t>> ranges = findEqualRanges(i);
-                data[i]->updatePermutation(directon, IColumn::PermutationStability::Stable, 0, 1, permutation, ranges);
-            } else {
-                data[i]->getPermutation(directon, IColumn::PermutationStability::Stable, 0, 1, permutation);
-                is_first_column_for_sorting = false;
-            }
+        std::unique_ptr<IColumn **> columns = reinterpret_cast<OrderByData *>(place)->sort();
 
-            for (size_t h = num_arguments - number_of_arguments_for_sorting; i != num_arguments; ++i)
-                data[h] = IColumn::mutate(data[h]->permute(permutation, 0));
-            j += 1
+        for (size_t i = 0; i != (*columns)[0]->size(); ++i) {
+            nested_func->add(place + sizeof(OrderByData), columns.get(), i, arena);
         }
 
-        IColumn * columns[num_arguments - number_of_arguments_for_sorting];
-        for (size_t i = 0; i != num_arguments - number_of_arguments_for_sorting; ++i) {
-            columns[i] = data[i].get();
-        } 
-
-        for (size_t i = 0; i != data[0].size(); ++i) {
-            nested_func->add(place, columns, i, arena);
-        }
-
-        nested_func->insertResultInto(place, to, arena);
+        nested_func->insertResultInto(place + sizeof(OrderByData), to, arena);
     }
 };
 }
