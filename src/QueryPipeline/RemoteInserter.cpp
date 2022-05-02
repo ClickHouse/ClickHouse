@@ -1,7 +1,7 @@
 #include <QueryPipeline/RemoteInserter.h>
 
 #include <Client/Connection.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
