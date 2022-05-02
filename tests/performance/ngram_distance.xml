@@ -1,12 +1,7 @@
 <test>
-    <tags>
-        <tag>search</tag>
-    </tags>
-
     <settings>
         <max_memory_usage>20000000000</max_memory_usage>
     </settings>
-
 
     <substitutions>
         <substitution>

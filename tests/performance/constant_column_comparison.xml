@@ -1,8 +1,4 @@
 <test>
-    <tags>
-        <tag>comparison</tag>
-    </tags>
-
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < '']]></query>
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz']]></query>
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < 'http://some_url']]></query>
