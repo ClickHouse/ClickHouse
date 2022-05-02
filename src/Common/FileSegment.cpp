@@ -371,6 +371,8 @@ void FileSegment::completeBatchAndResetDownloader()
 {
     std::lock_guard segment_lock(mutex);
 
+    assertNotDetached(segment_lock);
+
     if (!isDownloaderImpl(segment_lock))
     {
         cv.notify_all();
@@ -583,15 +585,25 @@ void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment
     assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
 }
 
-void FileSegment::assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const
+void FileSegment::assertNotDetached(std::lock_guard<std::mutex> & /* segment_lock */) const
 {
     if (detached)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Operation not allowed, file segment is detached ({})", getInfoForLogImpl(segment_lock));
+    {
+        throw Exception(
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            "Cache file segment is in detached state, operation not allowed. "
+            "It can happen when cache was concurrently dropped with SYSTEM DROP FILESYSTEM CACHE FORCE. "
+            "Please, retry");
+    }
 }
 
-void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex>  & /* segment_lock */) const
+void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const
 {
-    assert(download_state == State::EMPTY || hasFinalizedState());
+    if (download_state != State::EMPTY && !hasFinalizedState())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Cache get into inconsistent state {}", getInfoForLogImpl(segment_lock));
+    }
 }
 
 FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & /* cache_lock */)
@@ -618,17 +630,14 @@ bool FileSegment::hasFinalizedState() const
         || download_state == State::SKIP_CACHE;
 }
 
-void FileSegment::detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
+void FileSegment::detach(std::lock_guard<std::mutex> & /* cache_lock */, std::lock_guard<std::mutex> & segment_lock)
 {
     if (detached)
         return;
 
-    if (!hasFinalizedState())
-    {
-        completeUnlocked(cache_lock, segment_lock);
-    }
-
     detached = true;
+    download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+    downloader_id.clear();
 
     LOG_TEST(log, "Detached file segment: {}", getInfoForLogImpl(segment_lock));
 }
