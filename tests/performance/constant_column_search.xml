@@ -1,8 +1,4 @@
 <test>
-    <tags>
-        <tag>search</tag>
-    </tags>
-
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE match(URL, ' *tranio\\.ru/spain/*/commercial/*') settings max_threads=5]]></query>
 
     <query><![CDATA[select countIf(position(URL, 'yandex') > 0), count(position(URL, 'google')) FROM hits_100m_single]]></query>
