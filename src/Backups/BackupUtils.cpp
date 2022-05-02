@@ -332,15 +332,14 @@ BackupEntries makeBackupEntries(const ContextPtr & context, const Elements & ele
 }
 
 
-void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, size_t num_threads)
+void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool)
 {
-    if (!num_threads || !backup->supportsWritingInMultipleThreads())
-        num_threads = 1;
-    std::vector<ThreadFromGlobalPool> threads;
-    size_t num_active_threads = 0;
+    size_t num_active_jobs = 0;
     std::mutex mutex;
-    std::condition_variable cond;
+    std::condition_variable event;
     std::exception_ptr exception;
+
+    bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
 
     for (auto & name_and_entry : backup_entries)
     {
@@ -351,14 +350,23 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
             std::unique_lock lock{mutex};
             if (exception)
                 break;
-            cond.wait(lock, [&] { return num_active_threads < num_threads; });
-            if (exception)
-                break;
-            ++num_active_threads;
+            ++num_active_jobs;
         }
 
-        threads.emplace_back([backup, &name, &entry, &mutex, &cond, &num_active_threads, &exception]()
+        auto job = [&]()
         {
+            SCOPE_EXIT({
+                std::lock_guard lock{mutex};
+                if (!--num_active_jobs)
+                    event.notify_all();
+            });
+
+            {
+                std::lock_guard lock{mutex};
+                if (exception)
+                    return;
+            }
+
             try
             {
                 backup->writeFile(name, std::move(entry));
@@ -369,17 +377,16 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
                 if (!exception)
                     exception = std::current_exception();
             }
+        };
 
-            {
-                std::lock_guard lock{mutex};
-                --num_active_threads;
-                cond.notify_all();
-            }
-        });
+        if (always_single_threaded || !thread_pool.trySchedule(job))
+            job();
     }
 
-    for (auto & thread : threads)
-        thread.join();
+    {
+        std::unique_lock lock{mutex};
+        event.wait(lock, [&] { return !num_active_jobs; });
+    }
 
     backup_entries.clear();
 

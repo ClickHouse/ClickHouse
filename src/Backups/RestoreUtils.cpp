@@ -715,12 +715,9 @@ RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backu
 }
 
 
-void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads, const RestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination,
+void executeRestoreTasks(RestoreTasks && restore_tasks, ThreadPool & thread_pool, const RestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination,
                          std::chrono::seconds timeout_for_restoring_metadata)
 {
-    if (!num_threads)
-        num_threads = 1;
-
     std::deque<std::unique_ptr<IRestoreTask>> sequential_tasks;
     std::deque<std::unique_ptr<IRestoreTask>> enqueued_tasks;
 
@@ -762,9 +759,9 @@ void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads, cons
     /// We've finished restoring metadata, now we will wait for other replicas and shards to finish too.
     /// We need this waiting because we're going to call some functions which requires data collected from other nodes too,
     /// see IRestoreCoordination::checkTablesNotExistedInReplicatedDBs(), IRestoreCoordination::getReplicatedTableDataPath().
+    restore_coordination->finishRestoringMetadata(restore_settings.host_id);
     if (!restore_settings.host_id.empty())
     {
-        restore_coordination->finishRestoringMetadata(restore_settings.host_id);
         restore_coordination->waitHostsToRestoreMetadata(
             BackupSettings::Util::filterHostIDs(
                 restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num),
@@ -780,38 +777,31 @@ void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads, cons
     }
 
     /// Non-sequential tasks.
-    std::unordered_map<IRestoreTask *, std::unique_ptr<IRestoreTask>> running_tasks;
-    std::vector<ThreadFromGlobalPool> threads;
+    size_t num_active_jobs = 0;
     std::mutex mutex;
-    std::condition_variable cond;
+    std::condition_variable event;
     std::exception_ptr exception;
 
     while (true)
     {
-        IRestoreTask * current_task = nullptr;
+        std::unique_ptr<IRestoreTask> current_task;
         {
             std::unique_lock lock{mutex};
-            cond.wait(lock, [&]
-            {
-                if (exception)
-                    return true;
-                if (enqueued_tasks.empty())
-                    return running_tasks.empty();
-                return (running_tasks.size() < num_threads);
-            });
-
-            if (exception || enqueued_tasks.empty())
+            event.wait(lock, [&] { return !enqueued_tasks.empty() || exception || !num_active_jobs; });
+            if ((enqueued_tasks.empty() && !num_active_jobs) || exception)
                 break;
-
-            auto current_task_ptr = std::move(enqueued_tasks.front());
-            current_task = current_task_ptr.get();
+            current_task = std::move(enqueued_tasks.front());
             enqueued_tasks.pop_front();
-            running_tasks[current_task] = std::move(current_task_ptr);
+            ++num_active_jobs;
         }
 
-        assert(current_task);
-        threads.emplace_back([current_task, &mutex, &cond, &enqueued_tasks, &running_tasks, &exception]() mutable
+        auto job = [current_task = std::shared_ptr<IRestoreTask>(std::move(current_task)), &enqueued_tasks, &num_active_jobs, &exception, &mutex, &event]() mutable
         {
+            SCOPE_EXIT({
+                --num_active_jobs;
+                event.notify_all();
+            });
+
             {
                 std::lock_guard lock{mutex};
                 if (exception)
@@ -819,38 +809,32 @@ void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads, cons
             }
 
             RestoreTasks new_tasks;
-            std::exception_ptr new_exception;
             try
             {
                 new_tasks = current_task->run();
             }
             catch (...)
             {
-                new_exception = std::current_exception();
+                std::lock_guard lock{mutex};
+                if (!exception)
+                    exception = std::current_exception();
             }
 
             {
                 std::lock_guard lock{mutex};
-                auto current_task_it = running_tasks.find(current_task);
-                auto current_task_ptr = std::move(current_task_it->second);
-                running_tasks.erase(current_task_it);
-
-                if (!new_exception)
-                {
-                    enqueued_tasks.insert(
-                        enqueued_tasks.end(), std::make_move_iterator(new_tasks.begin()), std::make_move_iterator(new_tasks.end()));
-                }
-
-                if (!exception)
-                    exception = new_exception;
-
-                cond.notify_all();
+                enqueued_tasks.insert(
+                    enqueued_tasks.end(), std::make_move_iterator(new_tasks.begin()), std::make_move_iterator(new_tasks.end()));
             }
-        });
+        };
+
+        if (!thread_pool.trySchedule(job))
+            job();
     }
 
-    for (auto & thread : threads)
-        thread.join();
+    {
+        std::unique_lock lock{mutex};
+        event.wait(lock, [&] { return !num_active_jobs; });
+    }
 
     if (exception)
         std::rethrow_exception(exception);

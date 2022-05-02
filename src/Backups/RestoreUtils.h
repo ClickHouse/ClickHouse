@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTBackupQuery.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -21,6 +22,6 @@ using ContextMutablePtr = std::shared_ptr<Context>;
 RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backup, const ASTBackupQuery::Elements & elements, const RestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination);
 
 /// Executes restore tasks.
-void executeRestoreTasks(RestoreTasks && tasks, size_t num_threads, const RestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination, std::chrono::seconds timeout_for_restoring_metadata);
+void executeRestoreTasks(RestoreTasks && tasks, ThreadPool & thread_pool, const RestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination, std::chrono::seconds timeout_for_restoring_metadata);
 
 }
