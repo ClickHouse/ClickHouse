@@ -1,4 +1,3 @@
-#include <Core/SortDescription.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
