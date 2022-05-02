@@ -37,7 +37,7 @@ public:
         if (!connection->hasReadPendingData() && !checkReceiveTimeout())
         {
             /// Receive timeout expired.
-            return Poco::Timespan();
+            return connection->getSocket()->getReceiveTimeout();
         }
 
         /// Resume fiber.
