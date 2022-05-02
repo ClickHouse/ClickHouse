@@ -8,10 +8,9 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
-SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_, bool reserve_memory_)
+SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
-    , reserve_memory(reserve_memory_)
 {
 }
 
@@ -95,13 +94,7 @@ void SquashingTransform::append(ReferenceType input_block)
         const auto source_column = input_block.getByPosition(i).column;
 
         auto mutable_column = IColumn::mutate(std::move(accumulated_block.getByPosition(i).column));
-
-        if (reserve_memory)
-        {
-            mutable_column->reserve(min_block_size_bytes);
-        }
         mutable_column->insertRangeFrom(*source_column, 0, source_column->size());
-
         accumulated_block.getByPosition(i).column = std::move(mutable_column);
     }
 }

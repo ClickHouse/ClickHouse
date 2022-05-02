@@ -849,8 +849,8 @@ Packet Connection::receivePacket()
 
         switch (res.type)
         {
-            case Protocol::Server::Data: [[fallthrough]];
-            case Protocol::Server::Totals: [[fallthrough]];
+            case Protocol::Server::Data:
+            case Protocol::Server::Totals:
             case Protocol::Server::Extremes:
                 res.block = receiveData();
                 return res;
