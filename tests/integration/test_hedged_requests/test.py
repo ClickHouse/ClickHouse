@@ -93,7 +93,7 @@ def check_settings(
     node_name,
     sleep_in_send_tables_status_ms,
     sleep_in_send_data_ms,
-    sleep_after_receiving_query_ms
+    sleep_after_receiving_query_ms,
 ):
     attempts = 0
     while attempts < 1000:
@@ -171,19 +171,19 @@ def update_configs(
         "node_1",
         node_1_sleep_in_send_tables_status,
         node_1_sleep_in_send_data,
-        node_1_sleep_after_receiving_query
+        node_1_sleep_after_receiving_query,
     )
     check_settings(
         "node_2",
         node_2_sleep_in_send_tables_status,
         node_2_sleep_in_send_data,
-        node_2_sleep_after_receiving_query
+        node_2_sleep_after_receiving_query,
     )
     check_settings(
         "node_3",
         node_3_sleep_in_send_tables_status,
         node_3_sleep_in_send_data,
-        node_3_sleep_after_receiving_query
+        node_3_sleep_after_receiving_query,
     )
 
 
