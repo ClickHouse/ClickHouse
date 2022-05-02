@@ -126,55 +126,23 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
         auto right_mark = marks_loader.getMark(right_mark_non_included);
         result_right_offset = right_mark.offset_in_compressed_file;
 
-        bool need_to_check_marks_from_the_right = false;
-
-        /// If the end of range is inside the block, we will need to read it too.
-        if (right_mark.offset_in_decompressed_block > 0)
-        {
-            need_to_check_marks_from_the_right = true;
-        }
-        else
-        {
-            size_t right_mark_included = right_mark_non_included - 1;
-            const MarkInCompressedFile & right_mark_included_in_file = marks_loader.getMark(right_mark_included);
-
-            /// Also, in LowCardinality dictionary several consecutive marks can point to
-            /// the same offset. So to get true bytes offset we have to get first
-            /// non-equal mark.
-            /// Example:
-            ///  Mark 186, points to [2003111, 0]
-            ///  Mark 187, points to [2003111, 0]
-            ///  Mark 188, points to [2003111, 0] <--- for example need to read until 188
-            ///  Mark 189, points to [2003111, 0] <--- not suitable, because have same offset
-            ///  Mark 190, points to [2003111, 0]
-            ///  Mark 191, points to [2003111, 0]
-            ///  Mark 192, points to [2081424, 0] <--- what we are looking for
-            ///  Mark 193, points to [2081424, 0]
-            ///  Mark 194, points to [2081424, 0]
-            if (right_mark_included_in_file.offset_in_compressed_file == result_right_offset)
-                need_to_check_marks_from_the_right = true;
-        }
-
         /// Let's go to the right and find mark with bigger offset in compressed file
-        if (need_to_check_marks_from_the_right)
+        bool found_bigger_mark = false;
+        for (size_t i = right_mark_non_included + 1; i < marks_count; ++i)
         {
-            bool found_bigger_mark = false;
-            for (size_t i = right_mark_non_included + 1; i < marks_count; ++i)
+            const auto & candidate_mark =  marks_loader.getMark(i);
+            if (result_right_offset < candidate_mark.offset_in_compressed_file)
             {
-                const auto & candidate_mark =  marks_loader.getMark(i);
-                if (result_right_offset < candidate_mark.offset_in_compressed_file)
-                {
-                    result_right_offset = candidate_mark.offset_in_compressed_file;
-                    found_bigger_mark = true;
-                    break;
-                }
+                result_right_offset = candidate_mark.offset_in_compressed_file;
+                found_bigger_mark = true;
+                break;
             }
+        }
 
-            if (!found_bigger_mark)
-            {
-                /// If there are no marks after the end of range, just use file size
-                result_right_offset = file_size;
-            }
+        if (!found_bigger_mark)
+        {
+            /// If there are no marks after the end of range, just use file size
+            result_right_offset = file_size;
         }
     }
     else if (right_mark_non_included == 0)

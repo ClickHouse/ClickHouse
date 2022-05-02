@@ -693,4 +693,26 @@ void finalizeObjectColumns(MutableColumns & columns)
             column_object->finalize();
 }
 
+Field FieldVisitorReplaceScalars::operator()(const Array & x) const
+{
+    if (num_dimensions_to_keep == 0)
+        return replacement;
+
+    const size_t size = x.size();
+    Array res(size);
+    for (size_t i = 0; i < size; ++i)
+        res[i] = applyVisitor(FieldVisitorReplaceScalars(replacement, num_dimensions_to_keep - 1), x[i]);
+    return res;
+}
+
+size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x) const
+{
+    const size_t size = x.size();
+    size_t dimensions = 0;
+    for (size_t i = 0; i < size; ++i)
+        dimensions = std::max(dimensions, applyVisitor(*this, x[i]));
+
+    return 1 + dimensions;
+}
+
 }
