@@ -23,14 +23,20 @@ namespace ErrorCodes
 class IndexAccess
 {
 public:
-    struct Value : std::vector<Field>
+    class Value : private std::vector<Field>
     {
+    public:
         using Base = std::vector<Field>;
         using Base::Base;
+        using Base::begin;
+        using Base::end;
+        using Base::operator[];
+        using Base::size;
 
         std::string toString() const { return fmt::format("({})", fmt::join(*this, ", ")); }
 
         bool operator<(const Value & other) const { return std::lexicographical_compare(begin(), end(), other.begin(), other.end()); }
+        bool operator>(const Value & other) const { return other < *this; }
     };
 
     explicit IndexAccess(const RangesInDataParts & parts_) : parts(parts_) { }
