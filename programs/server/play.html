@@ -416,8 +416,6 @@
     /// This is to avoid race conditions.
     let request_num = 0;
 
-    let last_response = null;
-
     /// Save query in history only if it is different.
     let previous_query = '';
 
@@ -557,7 +555,6 @@
 
     function clear()
     {
-        last_response = null;
         let table = document.getElementById('data-table');
         while (table.firstChild) {
             table.removeChild(table.lastChild);
@@ -607,7 +604,6 @@
     {
         clear();
 
-        last_response = response;
         let stats = document.getElementById('stats');
         const seconds = response.statistics.elapsed.toFixed(3);
         const rows = response.statistics.rows_read;
