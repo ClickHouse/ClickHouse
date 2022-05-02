@@ -89,7 +89,12 @@ def check_query(expected_replica, receive_timeout=300):
     assert query_time < 10
 
 
-def check_settings(node_name, sleep_in_send_tables_status_ms, sleep_in_send_data_ms, sleep_after_receiving_query_ms):
+def check_settings(
+    node_name,
+    sleep_in_send_tables_status_ms,
+    sleep_in_send_data_ms,
+    sleep_after_receiving_query_ms
+):
     attempts = 0
     while attempts < 1000:
         setting1 = NODES[node_name].http_query(
@@ -163,13 +168,22 @@ def update_configs(
     )
 
     check_settings(
-        "node_1", node_1_sleep_in_send_tables_status, node_1_sleep_in_send_data, node_1_sleep_after_receiving_query
+        "node_1",
+        node_1_sleep_in_send_tables_status,
+        node_1_sleep_in_send_data,
+        node_1_sleep_after_receiving_query
     )
     check_settings(
-        "node_2", node_2_sleep_in_send_tables_status, node_2_sleep_in_send_data, node_2_sleep_after_receiving_query
+        "node_2",
+        node_2_sleep_in_send_tables_status,
+        node_2_sleep_in_send_data,
+        node_2_sleep_after_receiving_query
     )
     check_settings(
-        "node_3", node_3_sleep_in_send_tables_status, node_3_sleep_in_send_data, node_3_sleep_after_receiving_query
+        "node_3",
+        node_3_sleep_in_send_tables_status,
+        node_3_sleep_in_send_data,
+        node_3_sleep_after_receiving_query
     )
 
 
@@ -326,5 +340,5 @@ def test_initial_receive_timeout(started_cluster):
     result = NODES["node"].query_and_get_error(
         "SELECT hostName(), id FROM distributed ORDER BY id LIMIT 1 SETTINGS receive_timeout=3"
     )
-    
+
     assert "SOCKET_TIMEOUT" in result
