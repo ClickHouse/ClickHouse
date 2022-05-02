@@ -11,7 +11,7 @@
 #include <map>
 
 #include "FileCache_fwd.h"
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/FileSegment.h>
 #include <Core/Types.h>
 
@@ -42,7 +42,7 @@ public:
 
     virtual void remove(const Key & key) = 0;
 
-    virtual void tryRemoveAll() = 0;
+    virtual void remove(bool force_remove_unreleasable) = 0;
 
     static bool isReadOnly();
 
@@ -71,6 +71,17 @@ public:
      * it is guaranteed that these file segments are not removed from cache.
      */
     virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) = 0;
+
+    /**
+     * Segments in returned list are ordered in ascending order and represent a full contiguous
+     * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
+     *
+     * If file segment has state EMPTY, then it is also marked as "detached". E.g. it is "detached"
+     * from cache (not owned by cache), and as a result will never change it's state and will be destructed
+     * with the destruction of the holder, while in getOrSet() EMPTY file segments can eventually change
+     * it's state (and become DOWNLOADED).
+     */
+    virtual FileSegmentsHolder get(const Key & key, size_t offset, size_t size) = 0;
 
     virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) = 0;
 
@@ -124,6 +135,8 @@ public:
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
 
+    FileSegmentsHolder get(const Key & key, size_t offset, size_t size) override;
+
     FileSegments getSnapshot() const override;
 
     FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
@@ -132,7 +145,7 @@ public:
 
     void remove(const Key & key) override;
 
-    void tryRemoveAll() override;
+    void remove(bool force_remove_unreleasable) override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
 
@@ -206,12 +219,15 @@ private:
 
     size_t availableSize() const { return max_size - current_size; }
 
-    void loadCacheInfoIntoMemory();
+    void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
 
     FileSegments splitRangeIntoCells(
         const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
 
     String dumpStructureImpl(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
+
+    void fillHolesWithEmptyFileSegments(
+        FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, std::lock_guard<std::mutex> & cache_lock);
 
 public:
     struct Stat

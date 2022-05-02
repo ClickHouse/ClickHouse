@@ -9,7 +9,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -712,14 +712,21 @@ void Changelog::flush()
         current_writer->flush(force_sync);
 }
 
+void Changelog::shutdown()
+{
+    if (!log_files_to_delete_queue.isFinished())
+        log_files_to_delete_queue.finish();
+
+    if (clean_log_thread.joinable())
+        clean_log_thread.join();
+}
+
 Changelog::~Changelog()
 {
     try
     {
         flush();
-        log_files_to_delete_queue.finish();
-        if (clean_log_thread.joinable())
-            clean_log_thread.join();
+        shutdown();
     }
     catch (...)
     {

@@ -29,7 +29,7 @@ createAggregateFunctionSumCount(const std::string & name, const DataTypes & argu
     assertUnary(name, argument_types);
 
     AggregateFunctionPtr res;
-    DataTypePtr data_type = argument_types[0];
+    const DataTypePtr & data_type = argument_types[0];
     if (!allowType(data_type))
         throw Exception("Illegal type " + data_type->getName() + " of argument for aggregate function " + name,
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
