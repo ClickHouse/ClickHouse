@@ -552,7 +552,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
                 for (const auto & f : value_field.get<Array>())
                 {
-                    if ((f.isNull() && !is_nullable) || f.IsDecimal(f.getType()))
+                    if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType()))
                         return false;
 
                     mutable_column->insert(convertFieldToType(f, *actual_type, value_type.get()));

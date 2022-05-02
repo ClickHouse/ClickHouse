@@ -1,5 +1,5 @@
 <clickhouse>
-    <timezone>Europe/Moscow</timezone>
+    <timezone>Etc/UTC</timezone>
     <listen_host>0.0.0.0</listen_host>
     <custom_settings_prefixes>custom_</custom_settings_prefixes>
     <path>/var/lib/clickhouse/</path>

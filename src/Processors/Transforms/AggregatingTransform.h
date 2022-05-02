@@ -10,15 +10,6 @@
 namespace DB
 {
 
-class AggregatedArenasChunkInfo : public ChunkInfo
-{
-public:
-    Arenas arenas;
-    AggregatedArenasChunkInfo(Arenas arenas_)
-        : arenas(std::move(arenas_))
-    {}
-};
-
 class AggregatedChunkInfo : public ChunkInfo
 {
 public:
@@ -83,7 +74,7 @@ struct ManyAggregatedData
     }
 };
 
-using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
+using AggregatingTransformParamsPtr = std::shared_ptr<const AggregatingTransformParams>;
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 
 /// Worker which merges buckets for two-level aggregation.

@@ -7,7 +7,7 @@ namespace DB
 {
 
 struct AggregatingTransformParams;
-using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
+using AggregatingTransformParamsPtr = std::shared_ptr<const AggregatingTransformParams>;
 
 /// WITH CUBE. See CubeTransform.
 class CubeStep : public ITransformingStep

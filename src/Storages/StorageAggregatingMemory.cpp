@@ -34,6 +34,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
+#include <mutex>
 
 
 namespace DB
@@ -178,7 +179,7 @@ static std::optional<AggregationKeyVisitor::Data> getFilterKeys(const Aggregator
     return data;
 }
 
-/// AggregatingOutputStream is used to feed data into Aggregator.
+/// AggregatingMemorySink is used to feed data into Aggregator.
 class AggregatingMemorySink : public SinkToStorage
 {
 public:
@@ -252,7 +253,7 @@ public:
 
     Pipe read(
         const Names & /*column_names*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
         SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -265,7 +266,7 @@ public:
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*to_stage*/,
-        const StorageMetadataPtr &,
+        const StorageSnapshotPtr &,
         SelectQueryInfo & /*info*/) const override
     {
         return QueryProcessingStage::WithMergeableState;
@@ -450,14 +451,14 @@ void StorageAggregatingMemory::startup()
 
 Pipe StorageAggregatingMemory::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     // TODO implement O(1) read by aggregation key
     auto filter_key = getFilterKeys(aggregator_transform_params->params, query_info);
@@ -486,30 +487,33 @@ Pipe StorageAggregatingMemory::read(
     }
 
     StoragePtr mergable_storage = StorageSource::create(getStorageID(), src_metadata_snapshot->getColumns(), source, std::move(lock));
-
-    InterpreterSelectQuery select(metadata_snapshot->getSelectQuery().inner_query, context, mergable_storage);
+    InterpreterSelectQuery select(storage_snapshot->metadata->getSelectQuery().inner_query, context, mergable_storage);
     return QueryPipelineBuilder::getPipe(select.buildQueryPipeline());
 }
 
 SinkToStoragePtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
+    std::shared_lock lock(rwlock);
     return std::make_shared<AggregatingMemorySink>(*this, metadata_snapshot, context);
 }
 
 void StorageAggregatingMemory::drop()
 {
     /// Drop aggregation state.
+    std::unique_lock lock(rwlock);
     many_data = nullptr;
 }
 
 void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
 {
     /// Assign fresh state.
+    std::unique_lock lock(rwlock);
     initState(context);
 }
 
 std::optional<UInt64> StorageAggregatingMemory::totalRows(const Settings &) const
 {
+    std::shared_lock lock(rwlock);
     if (!many_data)
         return 0;
 

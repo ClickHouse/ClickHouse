@@ -5,6 +5,7 @@ from rbac.requirements import *
 from rbac.helper.common import *
 import rbac.helper.errors as errors
 
+
 @TestSuite
 def dns_cache_privileges_granted_directly(self, node=None):
     """Check that a user is able to execute `SYSTEM DROP DNS CACHE` if and only if
@@ -17,10 +18,18 @@ def dns_cache_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=dns_cache,
-            examples=Examples("privilege grant_target_name user_name", [
-                tuple(list(row)+[user_name,user_name]) for row in dns_cache.examples
-            ], args=Args(name="check privilege={privilege}", format_name=True)))
+        Suite(
+            run=dns_cache,
+            examples=Examples(
+                "privilege grant_target_name user_name",
+                [
+                    tuple(list(row) + [user_name, user_name])
+                    for row in dns_cache.examples
+                ],
+                args=Args(name="check privilege={privilege}", format_name=True),
+            ),
+        )
+
 
 @TestSuite
 def dns_cache_privileges_granted_via_role(self, node=None):
@@ -38,28 +47,38 @@ def dns_cache_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=dns_cache,
-            examples=Examples("privilege grant_target_name user_name", [
-                tuple(list(row)+[role_name,user_name]) for row in dns_cache.examples
-            ], args=Args(name="check privilege={privilege}", format_name=True)))
+        Suite(
+            run=dns_cache,
+            examples=Examples(
+                "privilege grant_target_name user_name",
+                [
+                    tuple(list(row) + [role_name, user_name])
+                    for row in dns_cache.examples
+                ],
+                args=Args(name="check privilege={privilege}", format_name=True),
+            ),
+        )
+
 
 @TestOutline(Suite)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_DropCache_DNS("1.0"),
 )
-@Examples("privilege",[
-    ("ALL",),
-    ("SYSTEM",),
-    ("SYSTEM DROP CACHE",),
-    ("SYSTEM DROP DNS CACHE",),
-    ("DROP CACHE",),
-    ("DROP DNS CACHE",),
-    ("SYSTEM DROP DNS",),
-    ("DROP DNS",),
-])
+@Examples(
+    "privilege",
+    [
+        ("ALL",),
+        ("SYSTEM",),
+        ("SYSTEM DROP CACHE",),
+        ("SYSTEM DROP DNS CACHE",),
+        ("DROP CACHE",),
+        ("DROP DNS CACHE",),
+        ("SYSTEM DROP DNS",),
+        ("DROP DNS",),
+    ],
+)
 def dns_cache(self, privilege, grant_target_name, user_name, node=None):
-    """Run checks for `SYSTEM DROP DNS CACHE` privilege.
-    """
+    """Run checks for `SYSTEM DROP DNS CACHE` privilege."""
     exitcode, message = errors.not_enough_privileges(name=user_name)
 
     if node is None:
@@ -74,8 +93,12 @@ def dns_cache(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user is unable to execute SYSTEM DROP DNS CACHE"):
-            node.query("SYSTEM DROP DNS CACHE", settings = [("user", f"{user_name}")],
-                exitcode=exitcode, message=message)
+            node.query(
+                "SYSTEM DROP DNS CACHE",
+                settings=[("user", f"{user_name}")],
+                exitcode=exitcode,
+                message=message,
+            )
 
     with Scenario("SYSTEM DROP DNS CACHE with privilege"):
 
@@ -83,7 +106,7 @@ def dns_cache(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user is bale to execute SYSTEM DROP DNS CACHE"):
-            node.query("SYSTEM DROP DNS CACHE", settings = [("user", f"{user_name}")])
+            node.query("SYSTEM DROP DNS CACHE", settings=[("user", f"{user_name}")])
 
     with Scenario("SYSTEM DROP DNS CACHE with revoked privilege"):
 
@@ -94,8 +117,13 @@ def dns_cache(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user is unable to execute SYSTEM DROP DNS CACHE"):
-            node.query("SYSTEM DROP DNS CACHE", settings = [("user", f"{user_name}")],
-                exitcode=exitcode, message=message)
+            node.query(
+                "SYSTEM DROP DNS CACHE",
+                settings=[("user", f"{user_name}")],
+                exitcode=exitcode,
+                message=message,
+            )
+
 
 @TestSuite
 def mark_cache_privileges_granted_directly(self, node=None):
@@ -109,10 +137,18 @@ def mark_cache_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=mark_cache,
-            examples=Examples("privilege grant_target_name user_name", [
-                tuple(list(row)+[user_name,user_name]) for row in mark_cache.examples
-            ], args=Args(name="check privilege={privilege}", format_name=True)))
+        Suite(
+            run=mark_cache,
+            examples=Examples(
+                "privilege grant_target_name user_name",
+                [
+                    tuple(list(row) + [user_name, user_name])
+                    for row in mark_cache.examples
+                ],
+                args=Args(name="check privilege={privilege}", format_name=True),
+            ),
+        )
+
 
 @TestSuite
 def mark_cache_privileges_granted_via_role(self, node=None):
@@ -130,28 +166,38 @@ def mark_cache_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=mark_cache,
-            examples=Examples("privilege grant_target_name user_name", [
-                tuple(list(row)+[role_name,user_name]) for row in mark_cache.examples
-            ], args=Args(name="check privilege={privilege}", format_name=True)))
+        Suite(
+            run=mark_cache,
+            examples=Examples(
+                "privilege grant_target_name user_name",
+                [
+                    tuple(list(row) + [role_name, user_name])
+                    for row in mark_cache.examples
+                ],
+                args=Args(name="check privilege={privilege}", format_name=True),
+            ),
+        )
+
 
 @TestOutline(Suite)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_DropCache_Mark("1.0"),
 )
-@Examples("privilege",[
-    ("ALL",),
-    ("SYSTEM",),
-    ("SYSTEM DROP CACHE",),
-    ("SYSTEM DROP MARK CACHE",),
-    ("DROP CACHE",),
-    ("DROP MARK CACHE",),
-    ("SYSTEM DROP MARK",),
-    ("DROP MARKS",),
-])
+@Examples(
+    "privilege",
+    [
+        ("ALL",),
+        ("SYSTEM",),
+        ("SYSTEM DROP CACHE",),
+        ("SYSTEM DROP MARK CACHE",),
+        ("DROP CACHE",),
+        ("DROP MARK CACHE",),
+        ("SYSTEM DROP MARK",),
+        ("DROP MARKS",),
+    ],
+)
 def mark_cache(self, privilege, grant_target_name, user_name, node=None):
-    """Run checks for `SYSTEM DROP MARK CACHE` privilege.
-    """
+    """Run checks for `SYSTEM DROP MARK CACHE` privilege."""
     exitcode, message = errors.not_enough_privileges(name=user_name)
 
     if node is None:
@@ -166,8 +212,12 @@ def mark_cache(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user is unable to execute SYSTEM DROP MARK CACHE"):
-            node.query("SYSTEM DROP MARK CACHE", settings = [("user", f"{user_name}")],
-                exitcode=exitcode, message=message)
+            node.query(
+                "SYSTEM DROP MARK CACHE",
+                settings=[("user", f"{user_name}")],
+                exitcode=exitcode,
+                message=message,
+            )
 
     with Scenario("SYSTEM DROP MARK CACHE with privilege"):
 
@@ -175,7 +225,7 @@ def mark_cache(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user is bale to execute SYSTEM DROP MARK CACHE"):
-            node.query("SYSTEM DROP MARK CACHE", settings = [("user", f"{user_name}")])
+            node.query("SYSTEM DROP MARK CACHE", settings=[("user", f"{user_name}")])
 
     with Scenario("SYSTEM DROP MARK CACHE with revoked privilege"):
 
@@ -186,8 +236,13 @@ def mark_cache(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user is unable to execute SYSTEM DROP MARK CACHE"):
-            node.query("SYSTEM DROP MARK CACHE", settings = [("user", f"{user_name}")],
-                exitcode=exitcode, message=message)
+            node.query(
+                "SYSTEM DROP MARK CACHE",
+                settings=[("user", f"{user_name}")],
+                exitcode=exitcode,
+                message=message,
+            )
+
 
 @TestSuite
 def uncompressed_cache_privileges_granted_directly(self, node=None):
@@ -201,10 +256,18 @@ def uncompressed_cache_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=uncompressed_cache,
-            examples=Examples("privilege grant_target_name user_name", [
-                tuple(list(row)+[user_name,user_name]) for row in uncompressed_cache.examples
-            ], args=Args(name="check privilege={privilege}", format_name=True)))
+        Suite(
+            run=uncompressed_cache,
+            examples=Examples(
+                "privilege grant_target_name user_name",
+                [
+                    tuple(list(row) + [user_name, user_name])
+                    for row in uncompressed_cache.examples
+                ],
+                args=Args(name="check privilege={privilege}", format_name=True),
+            ),
+        )
+
 
 @TestSuite
 def uncompressed_cache_privileges_granted_via_role(self, node=None):
@@ -222,28 +285,38 @@ def uncompressed_cache_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=uncompressed_cache,
-            examples=Examples("privilege grant_target_name user_name", [
-                tuple(list(row)+[role_name,user_name]) for row in uncompressed_cache.examples
-            ], args=Args(name="check privilege={privilege}", format_name=True)))
+        Suite(
+            run=uncompressed_cache,
+            examples=Examples(
+                "privilege grant_target_name user_name",
+                [
+                    tuple(list(row) + [role_name, user_name])
+                    for row in uncompressed_cache.examples
+                ],
+                args=Args(name="check privilege={privilege}", format_name=True),
+            ),
+        )
+
 
 @TestOutline(Suite)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_DropCache_Uncompressed("1.0"),
 )
-@Examples("privilege",[
-    ("ALL",),
-    ("SYSTEM",),
-    ("SYSTEM DROP CACHE",),
-    ("SYSTEM DROP UNCOMPRESSED CACHE",),
-    ("DROP CACHE",),
-    ("DROP UNCOMPRESSED CACHE",),
-    ("SYSTEM DROP UNCOMPRESSED",),
-    ("DROP UNCOMPRESSED",),
-])
+@Examples(
+    "privilege",
+    [
+        ("ALL",),
+        ("SYSTEM",),
+        ("SYSTEM DROP CACHE",),
+        ("SYSTEM DROP UNCOMPRESSED CACHE",),
+        ("DROP CACHE",),
+        ("DROP UNCOMPRESSED CACHE",),
+        ("SYSTEM DROP UNCOMPRESSED",),
+        ("DROP UNCOMPRESSED",),
+    ],
+)
 def uncompressed_cache(self, privilege, grant_target_name, user_name, node=None):
-    """Run checks for `SYSTEM DROP UNCOMPRESSED CACHE` privilege.
-    """
+    """Run checks for `SYSTEM DROP UNCOMPRESSED CACHE` privilege."""
     exitcode, message = errors.not_enough_privileges(name=user_name)
 
     if node is None:
@@ -257,9 +330,15 @@ def uncompressed_cache(self, privilege, grant_target_name, user_name, node=None)
         with And("I grant the user USAGE privilege"):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
-        with Then("I check the user is unable to execute SYSTEM DROP UNCOMPRESSED CACHE"):
-            node.query("SYSTEM DROP UNCOMPRESSED CACHE", settings = [("user", f"{user_name}")],
-                exitcode=exitcode, message=message)
+        with Then(
+            "I check the user is unable to execute SYSTEM DROP UNCOMPRESSED CACHE"
+        ):
+            node.query(
+                "SYSTEM DROP UNCOMPRESSED CACHE",
+                settings=[("user", f"{user_name}")],
+                exitcode=exitcode,
+                message=message,
+            )
 
     with Scenario("SYSTEM DROP UNCOMPRESSED CACHE with privilege"):
 
@@ -267,7 +346,9 @@ def uncompressed_cache(self, privilege, grant_target_name, user_name, node=None)
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user is bale to execute SYSTEM DROP UNCOMPRESSED CACHE"):
-            node.query("SYSTEM DROP UNCOMPRESSED CACHE", settings = [("user", f"{user_name}")])
+            node.query(
+                "SYSTEM DROP UNCOMPRESSED CACHE", settings=[("user", f"{user_name}")]
+            )
 
     with Scenario("SYSTEM DROP UNCOMPRESSED CACHE with revoked privilege"):
 
@@ -277,25 +358,49 @@ def uncompressed_cache(self, privilege, grant_target_name, user_name, node=None)
         with And(f"I revoke {privilege} on the table"):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
-        with Then("I check the user is unable to execute SYSTEM DROP UNCOMPRESSED CACHE"):
-            node.query("SYSTEM DROP UNCOMPRESSED CACHE", settings = [("user", f"{user_name}")],
-                exitcode=exitcode, message=message)
+        with Then(
+            "I check the user is unable to execute SYSTEM DROP UNCOMPRESSED CACHE"
+        ):
+            node.query(
+                "SYSTEM DROP UNCOMPRESSED CACHE",
+                settings=[("user", f"{user_name}")],
+                exitcode=exitcode,
+                message=message,
+            )
+
 
 @TestFeature
 @Name("system drop cache")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_DropCache("1.0"),
     RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
+    RQ_SRS_006_RBAC_Privileges_None("1.0"),
 )
 def feature(self, node="clickhouse1"):
-    """Check the RBAC functionality of SYSTEM DROP CACHE.
-    """
+    """Check the RBAC functionality of SYSTEM DROP CACHE."""
     self.context.node = self.context.cluster.node(node)
 
-    Suite(run=dns_cache_privileges_granted_directly, setup=instrument_clickhouse_server_log)
-    Suite(run=dns_cache_privileges_granted_via_role, setup=instrument_clickhouse_server_log)
-    Suite(run=mark_cache_privileges_granted_directly, setup=instrument_clickhouse_server_log)
-    Suite(run=mark_cache_privileges_granted_via_role, setup=instrument_clickhouse_server_log)
-    Suite(run=uncompressed_cache_privileges_granted_directly, setup=instrument_clickhouse_server_log)
-    Suite(run=uncompressed_cache_privileges_granted_via_role, setup=instrument_clickhouse_server_log)
+    Suite(
+        run=dns_cache_privileges_granted_directly,
+        setup=instrument_clickhouse_server_log,
+    )
+    Suite(
+        run=dns_cache_privileges_granted_via_role,
+        setup=instrument_clickhouse_server_log,
+    )
+    Suite(
+        run=mark_cache_privileges_granted_directly,
+        setup=instrument_clickhouse_server_log,
+    )
+    Suite(
+        run=mark_cache_privileges_granted_via_role,
+        setup=instrument_clickhouse_server_log,
+    )
+    Suite(
+        run=uncompressed_cache_privileges_granted_directly,
+        setup=instrument_clickhouse_server_log,
+    )
+    Suite(
+        run=uncompressed_cache_privileges_granted_via_role,
+        setup=instrument_clickhouse_server_log,
+    )

@@ -2,7 +2,7 @@
 
 #include <Storages/IStorage.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -22,7 +22,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,

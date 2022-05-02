@@ -55,7 +55,9 @@ public:
         bool treat_local_as_remote,
         bool treat_local_port_as_remote,
         bool secure = false,
-        Int64 priority = 1);
+        Int64 priority = 1,
+        String cluster_name = "",
+        String cluster_secret = "");
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -63,7 +65,6 @@ public:
     /// is used to set a limit on the size of the timeout
     static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
-public:
     using SlotToShard = std::vector<UInt64>;
 
     struct Address
@@ -128,7 +129,9 @@ public:
             bool secure_ = false,
             Int64 priority_ = 1,
             UInt32 shard_index_ = 0,
-            UInt32 replica_index_ = 0);
+            UInt32 replica_index_ = 0,
+            String cluster_name = "",
+            String cluster_secret_ = "");
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -192,7 +195,6 @@ public:
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
         const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
 
-    public:
         ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;

@@ -9,35 +9,55 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', macros={'cluster': 'test1'}, with_zookeeper=True)
+node1 = cluster.add_instance("node1", macros={"cluster": "test1"}, with_zookeeper=True)
 # Check, that limits on max part size for merges doesn`t affect mutations
-node2 = cluster.add_instance('node2', macros={'cluster': 'test1'}, main_configs=["configs/merge_tree.xml"],
-                             with_zookeeper=True)
+node2 = cluster.add_instance(
+    "node2",
+    macros={"cluster": "test1"},
+    main_configs=["configs/merge_tree.xml"],
+    with_zookeeper=True,
+)
 
-node3 = cluster.add_instance('node3', macros={'cluster': 'test2'}, main_configs=["configs/merge_tree_max_parts.xml"],
-                             with_zookeeper=True)
-node4 = cluster.add_instance('node4', macros={'cluster': 'test2'}, main_configs=["configs/merge_tree_max_parts.xml"],
-                             with_zookeeper=True)
+node3 = cluster.add_instance(
+    "node3",
+    macros={"cluster": "test2"},
+    main_configs=["configs/merge_tree_max_parts.xml"],
+    with_zookeeper=True,
+)
+node4 = cluster.add_instance(
+    "node4",
+    macros={"cluster": "test2"},
+    main_configs=["configs/merge_tree_max_parts.xml"],
+    with_zookeeper=True,
+)
 
-node5 = cluster.add_instance('node5', macros={'cluster': 'test3'}, main_configs=["configs/merge_tree_max_parts.xml"])
+node5 = cluster.add_instance(
+    "node5",
+    macros={"cluster": "test3"},
+    main_configs=["configs/merge_tree_max_parts.xml"],
+)
 
 all_nodes = [node1, node2, node3, node4, node5]
+
 
 def prepare_cluster():
     for node in all_nodes:
         node.query("DROP TABLE IF EXISTS test_mutations SYNC")
 
     for node in [node1, node2, node3, node4]:
-        node.query("""
+        node.query(
+            """
         CREATE TABLE test_mutations(d Date, x UInt32, i UInt32)
         ENGINE ReplicatedMergeTree('/clickhouse/{cluster}/tables/test/test_mutations', '{instance}')
         ORDER BY x
         PARTITION BY toYYYYMM(d)
         SETTINGS number_of_free_entries_in_pool_to_execute_mutation=0
-        """)
+        """
+        )
 
     node5.query(
-        "CREATE TABLE test_mutations(d Date, x UInt32, i UInt32) ENGINE MergeTree() ORDER BY x PARTITION BY toYYYYMM(d)")
+        "CREATE TABLE test_mutations(d Date, x UInt32, i UInt32) ENGINE MergeTree() ORDER BY x PARTITION BY toYYYYMM(d)"
+    )
 
 
 @pytest.fixture(scope="module")
@@ -76,7 +96,7 @@ class Runner:
         # Each thread inserts a small random number of rows with random year, month 01 and day determined
         # by the thread number. The idea is to avoid spurious duplicates and to insert into a
         # nontrivial number of partitions.
-        month = '01'
+        month = "01"
         day = str(thread_num + 1).zfill(2)
         i = 1
         while not self.stop_ev.is_set():
@@ -89,15 +109,17 @@ class Runner:
                     self.currently_inserting_xs[x] += 1
 
             year = 2000 + random.randint(0, partitions_num)
-            date_str = '{year}-{month}-{day}'.format(year=year, month=month, day=day)
-            payload = ''
+            date_str = "{year}-{month}-{day}".format(year=year, month=month, day=day)
+            payload = ""
             for x in xs:
-                payload += '{date_str}	{x}	{i}\n'.format(date_str=date_str, x=x, i=i)
+                payload += "{date_str}	{x}	{i}\n".format(date_str=date_str, x=x, i=i)
                 i += 1
 
             try:
                 logging.debug(f"thread {thread_num}: insert for {date_str}: {xs}")
-                random.choice(self.nodes).query("INSERT INTO test_mutations FORMAT TSV", payload)
+                random.choice(self.nodes).query(
+                    "INSERT INTO test_mutations FORMAT TSV", payload
+                )
 
                 with self.mtx:
                     for x in xs:
@@ -124,7 +146,10 @@ class Runner:
                 if self.current_xs:
                     x = random.choice(list(self.current_xs.elements()))
 
-                    if self.currently_inserting_xs[x] == 0 and x not in self.currently_deleting_xs:
+                    if (
+                        self.currently_inserting_xs[x] == 0
+                        and x not in self.currently_deleting_xs
+                    ):
                         chosen = True
                         self.currently_deleting_xs.add(x)
                         to_delete_count = self.current_xs[x]
@@ -135,7 +160,9 @@ class Runner:
 
             try:
                 logging.debug(f"thread {thread_num}: delete {to_delete_count} * {x}")
-                random.choice(self.nodes).query("ALTER TABLE test_mutations DELETE WHERE x = {}".format(x))
+                random.choice(self.nodes).query(
+                    "ALTER TABLE test_mutations DELETE WHERE x = {}".format(x)
+                )
 
                 with self.mtx:
                     self.total_mutations += 1
@@ -157,7 +184,11 @@ def wait_for_mutations(nodes, number_of_mutations):
         time.sleep(0.8)
 
         def get_done_mutations(node):
-            return int(node.query("SELECT sum(is_done) FROM system.mutations WHERE table = 'test_mutations'").rstrip())
+            return int(
+                node.query(
+                    "SELECT sum(is_done) FROM system.mutations WHERE table = 'test_mutations'"
+                ).rstrip()
+            )
 
         if all([get_done_mutations(n) == number_of_mutations for n in nodes]):
             return True
@@ -195,32 +226,41 @@ def test_mutations(started_cluster):
     all_done = wait_for_mutations(nodes, runner.total_mutations)
     logging.debug(f"Total mutations: {runner.total_mutations}")
     for node in nodes:
-        logging.debug(node.query(
-            "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations' FORMAT TSVWithNames"))
+        logging.debug(
+            node.query(
+                "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations' FORMAT TSVWithNames"
+            )
+        )
     assert all_done
 
     expected_sum = runner.total_inserted_xs - runner.total_deleted_xs
     actual_sums = []
     for i, node in enumerate(nodes):
-        actual_sums.append(int(node.query("SELECT sum(x) FROM test_mutations").rstrip()))
+        actual_sums.append(
+            int(node.query("SELECT sum(x) FROM test_mutations").rstrip())
+        )
         assert actual_sums[i] == expected_sum
 
 
 @pytest.mark.parametrize(
-    ('nodes',),
+    ("nodes",),
     [
-        ([node5, ],),  # MergeTree
+        (
+            [
+                node5,
+            ],
+        ),  # MergeTree
         ([node3, node4],),  # ReplicatedMergeTree
-    ]
+    ],
 )
 def test_mutations_dont_prevent_merges(started_cluster, nodes):
     prepare_cluster()
 
     for year in range(2000, 2016):
-        rows = ''
-        date_str = '{}-01-{}'.format(year, random.randint(1, 10))
+        rows = ""
+        date_str = "{}-01-{}".format(year, random.randint(1, 10))
         for i in range(10):
-            rows += '{}	{}	{}\n'.format(date_str, random.randint(1, 10), i)
+            rows += "{}	{}	{}\n".format(date_str, random.randint(1, 10), i)
         nodes[0].query("INSERT INTO test_mutations FORMAT TSV", rows)
 
     # will run mutations of 16 parts in parallel, mutations will sleep for about 20 seconds
@@ -242,10 +282,16 @@ def test_mutations_dont_prevent_merges(started_cluster, nodes):
         t.join()
 
     for node in nodes:
-        logging.debug(node.query(
-            "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations' FORMAT TSVWithNames"))
-        logging.debug(node.query(
-            "SELECT partition, count(name), sum(active), sum(active*rows) FROM system.parts WHERE table ='test_mutations' GROUP BY partition FORMAT TSVWithNames"))
+        logging.debug(
+            node.query(
+                "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations' FORMAT TSVWithNames"
+            )
+        )
+        logging.debug(
+            node.query(
+                "SELECT partition, count(name), sum(active), sum(active*rows) FROM system.parts WHERE table ='test_mutations' GROUP BY partition FORMAT TSVWithNames"
+            )
+        )
 
     assert all_done, "All done"
     assert all([str(e).find("Too many parts") < 0 for e in runner.exceptions])

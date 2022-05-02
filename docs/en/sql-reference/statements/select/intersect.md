@@ -1,5 +1,5 @@
 ---
-toc_title: INTERSECT
+sidebar_label: INTERSECT
 ---
 
 # INTERSECT Clause {#intersect-clause}

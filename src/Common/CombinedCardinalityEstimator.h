@@ -314,7 +314,6 @@ private:
         address &= mask;
     }
 
-private:
     Small small;
     union
     {
