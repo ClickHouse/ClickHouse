@@ -46,13 +46,17 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
     // This may happen if no soft limit is set.
     if (picked_tracker == nullptr)
     {
+        // Here state can not be RUNNING, because it requires
+        // picked_tracker to be not null pointer.
         assert(cancellation_state == QueryCancellationState::SELECTED);
         cancellation_state = QueryCancellationState::NONE;
         return true;
     }
     if (picked_tracker == tracker)
     {
-        assert(cancellation_state == QueryCancellationState::SELECTED);
+        // Query of the provided as an argument memory tracker was chosen.
+        // It may happen even when current state is RUNNING, because
+        // ThreadStatus::~ThreadStatus may call MemoryTracker::alloc.
         cancellation_state = QueryCancellationState::RUNNING;
         return true;
     }
