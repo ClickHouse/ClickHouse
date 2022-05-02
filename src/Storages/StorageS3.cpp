@@ -999,7 +999,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
     ReadBufferIterator read_buffer_iterator = [&, first = false]() mutable -> std::unique_ptr<ReadBuffer>
     {
-        key = (*file_iterator)();
+        auto key = (*file_iterator)();
 
         if (key.empty())
         {
