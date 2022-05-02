@@ -12,7 +12,7 @@
 #include <Common/MemoryTracker.h>
 #include <base/argsToConfig.h>
 #include <base/LineReader.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <base/safeExit.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -44,6 +44,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -592,24 +593,33 @@ void ClientBase::initLogsOutputStream()
     }
 }
 
-void ClientBase::updateSuggest(const ASTCreateQuery & ast_create)
+void ClientBase::updateSuggest(const ASTPtr & ast)
 {
     std::vector<std::string> new_words;
 
-    if (ast_create.database)
-        new_words.push_back(ast_create.getDatabase());
-    new_words.push_back(ast_create.getTable());
-
-    if (ast_create.columns_list && ast_create.columns_list->columns)
+    if (auto * create = ast->as<ASTCreateQuery>())
     {
-        for (const auto & elem : ast_create.columns_list->columns->children)
+        if (create->database)
+            new_words.push_back(create->getDatabase());
+        new_words.push_back(create->getTable());
+
+        if (create->columns_list && create->columns_list->columns)
         {
-            if (const auto * column = elem->as<ASTColumnDeclaration>())
-                new_words.push_back(column->name);
+            for (const auto & elem : create->columns_list->columns->children)
+            {
+                if (const auto * column = elem->as<ASTColumnDeclaration>())
+                    new_words.push_back(column->name);
+            }
         }
     }
 
-    suggest->addWords(std::move(new_words));
+    if (const auto * create_function = ast->as<ASTCreateFunctionQuery>())
+    {
+        new_words.push_back(create_function->getFunctionName());
+    }
+
+    if (!new_words.empty())
+        suggest->addWords(std::move(new_words));
 }
 
 bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context)
@@ -640,13 +650,11 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     /// always means a problem, i.e. if table already exists, and it is no a
     /// huge problem if suggestion will be added even on error, since this is
     /// just suggestion.
-    if (auto * create = parsed_query->as<ASTCreateQuery>())
-    {
-        /// Do not update suggest, until suggestion will be ready
-        /// (this will avoid extra complexity)
-        if (suggest)
-            updateSuggest(*create);
-    }
+    ///
+    /// Do not update suggest, until suggestion will be ready
+    /// (this will avoid extra complexity)
+    if (suggest)
+        updateSuggest(parsed_query);
 
     /// An INSERT query may have the data that follows query text.
     /// Send part of the query without data, because data will be sent separately.
