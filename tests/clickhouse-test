@@ -147,6 +147,7 @@ def stop_tests():
     global restarted_tests
 
     with stop_tests_triggered_lock:
+        print("Stopping tests")
         if not stop_tests_triggered.is_set():
             stop_tests_triggered.set()
 
@@ -159,16 +160,10 @@ def stop_tests():
             restarted_tests = [*restarted_tests]
 
             # send signal to all processes in group to avoid hung check triggering
-            # (to avoid terminating clickhouse-test itself, a signal should be ignored)
+            # (to avoid terminating clickhouse-test itself, the signal should be ignored)
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
             os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
             signal.signal(signal.SIGTERM, signal.SIG_DFL)
-
-        # This message must be after the tests' messages are ended, otherwise
-        # it corrupts the output, example:
-        # 00993_system_parts_race_condition_drop_zookeeper:               Stopping tests
-        # [ FAIL ] 0.00 sec. - server died
-        print("Stopped tests")
 
 
 def get_db_engine(args, database_name):
@@ -1425,6 +1420,15 @@ def run_tests_array(all_tests_with_params):
                     break
                 restarted_tests.append(test_result)
 
+            # First print the description, than invoke the check result logic
+            description += test_result.description
+
+            if description and not description.endswith("\n"):
+                description += "\n"
+
+            sys.stdout.write(description)
+            sys.stdout.flush()
+
             if test_result.status == TestStatus.OK:
                 passed_total += 1
                 failures_chain = 0
@@ -1434,17 +1438,9 @@ def run_tests_array(all_tests_with_params):
                 if test_result.reason == FailureReason.SERVER_DIED:
                     server_died.set()
                     stop_tests()
-
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
-            description += test_result.description
-
-            if description and not description.endswith("\n"):
-                description += "\n"
-
-            sys.stdout.write(description)
-            sys.stdout.flush()
         except KeyboardInterrupt as e:
             print(colored("Break tests execution", args, "red"))
             stop_tests()
