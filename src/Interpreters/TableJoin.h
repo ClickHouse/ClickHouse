@@ -212,6 +212,7 @@ public:
             || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PARALLEL_HASH);
     }
 
+    bool joinUseNulls() const { return join_use_nulls; }
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
     size_t defaultMaxBytes() const { return default_max_bytes; }
