@@ -7,7 +7,7 @@ PUBLISH_DIR="${BASE_DIR}/../publish"
 BASE_DOMAIN="${BASE_DOMAIN:-content.clickhouse.com}"
 GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse-com-content.git}"
 GIT_PROD_URI="git@github.com:ClickHouse/clickhouse-website-content.git"
-EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---minify --verbose}"
+EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---verbose}"
 
 if [[ -z "$1" ]]
 then
@@ -19,7 +19,7 @@ then
     # Will make a repository with website content as the only commit.
     git init
     git remote add origin "${GIT_TEST_URI}"
-    git config user.email "robot-clickhouse@yandex-team.ru"
+    git config user.email "robot-clickhouse@clickhouse.com"
     git config user.name "robot-clickhouse"
 
     # Add files.

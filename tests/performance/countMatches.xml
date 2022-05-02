@@ -1,8 +1,4 @@
 <test>
-    <preconditions>
-        <table_exists>test.hits</table_exists>
-    </preconditions>
-
     <query>SELECT count() FROM test.hits WHERE NOT ignore(countMatches(URL, 'yandex'))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(countMatches(URL, 'yandex|google'))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(countMatches(URL, '(\\w+=\\w+)'))</query>
