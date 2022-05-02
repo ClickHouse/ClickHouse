@@ -165,17 +165,17 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
     for (auto const & query : process_list->processes)
     {
         if (query.isKilled())
-            return;
+            continue;
 
         Int64 user_soft_limit = 0;
         if (auto const * user_process_list = query.getUserProcessList())
             user_soft_limit = user_process_list->user_memory_tracker.getSoftLimit();
         if (user_soft_limit == 0)
-            return;
+            continue;
 
         auto * memory_tracker = query.getMemoryTracker();
         if (!memory_tracker)
-            return;
+            continue;
         auto ratio = memory_tracker->getOvercommitRatio(user_soft_limit);
         LOG_DEBUG(logger, "Query has ratio {}/{}", ratio.committed, ratio.soft_limit);
         if (current_ratio < ratio)
