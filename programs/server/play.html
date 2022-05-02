@@ -186,7 +186,7 @@
             color: var(--misc-text-color);
         }
 
-        #toggle-light, #toggle-dark, #toggle-transpose
+        #toggle-light, #toggle-dark
         {
             float: right;
             padding-right: 0.5rem;
@@ -233,7 +233,7 @@
             vertical-align: top;
         }
 
-        td.right
+        .right
         {
             text-align: right;
         }
@@ -270,6 +270,14 @@
         {
             white-space: pre-wrap;
             max-width: none;
+        }
+
+        td.transposed
+        {
+            max-width: none;
+            /* The content is cut unless you hover. */
+            overflow: auto;
+            white-space: pre-wrap;
         }
 
         /* The style for SQL NULL */
@@ -373,7 +381,6 @@
         <span id="check-mark">✔</span>
         <span id="stats"></span>
         <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
-        <span id="toggle-transpose" title="Toggle vertical table format">⤵️</span>
     </div>
     <div id="data_div">
         <table class="monospace-table shadow" id="data-table"></table>
@@ -618,26 +625,81 @@
         }
     }
 
-    function renderTableTranspose(response)
+    function renderCell(cell, col_idx, settings)
+    {
+        let td = document.createElement('td');
+
+        let is_null = (cell === null);
+        let is_link = false;
+
+        /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
+        let text;
+        if (is_null) {
+            text = 'ᴺᵁᴸᴸ';
+        } else if (typeof(cell) === 'object') {
+            text = JSON.stringify(cell);
+        } else {
+            text = cell;
+
+            /// If it looks like URL, create a link. This is for convenience.
+            if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
+                is_link = true;
+            }
+        }
+
+        let node = document.createTextNode(text);
+        if (is_link) {
+            let link = document.createElement('a');
+            link.appendChild(node);
+            link.href = text;
+            link.setAttribute('target', '_blank');
+            node = link;
+        }
+
+        if (settings.is_transposed) {
+            td.className = 'left transposed';
+        } else {
+            td.className = settings.column_is_number[col_idx] ? 'right' : 'left';
+        }
+        if (is_null) {
+            td.className += ' null';
+        }
+
+        /// If it's a number, render bar in background.
+        if (!settings.is_transposed && settings.column_need_render_bars[col_idx] && text > 0) {
+            const ratio = 100 * text / settings.column_maximums[col_idx];
+
+            let div = document.createElement('div');
+
+            div.style.width = '100%';
+            div.style.background = `linear-gradient(to right,
+                var(--bar-color) 0%, var(--bar-color) ${ratio}%,
+                transparent ${ratio}%, transparent 100%)`;
+
+            div.appendChild(node);
+            node = div;
+        }
+
+        td.appendChild(node);
+        return td;
+    }
+
+    function renderTableTransposed(response)
     {
         let tbody = document.createElement('tbody');
         for (let col_idx in response.meta) {
             let tr = document.createElement('tr');
             {
-                let td = document.createElement('td');
-                td.className = 'right';
-                td.style.fontWeight = 'bold';
-                td.style.width = '0';
-                td.appendChild(document.createTextNode(response.meta[col_idx].name));
-                tr.appendChild(td);
+                let th = document.createElement('th');
+                th.className = 'right';
+                th.style.width = '0';
+                th.appendChild(document.createTextNode(response.meta[col_idx].name));
+                tr.appendChild(th);
             }
-
             for (let row_idx in response.data)
             {
-                let td = document.createElement('td');
-                td.className = 'left';
-                let node = document.createTextNode(response.data[row_idx][col_idx]);
-                td.appendChild(node);
+                let cell = response.data[row_idx][col_idx];
+                const td = renderCell(cell, col_idx, {is_transposed: true});
                 tr.appendChild(td);
             }
             tbody.appendChild(tr);
@@ -648,8 +710,8 @@
 
     function renderTable(response)
     {
-        if (window.localStorage.getItem('transpose') === 'true' && response.data.length < 16) {
-            renderTableTranspose(response)
+        if (response.data.length == 1 && response.meta.length >= 5) {
+            renderTableTransposed(response)
             return;
         }
 
@@ -671,61 +733,20 @@
         const column_minimums = column_is_number.map((elem, idx) => elem ? Math.min(...response.data.map(row => Math.max(0, row[idx]))) : 0);
         const column_need_render_bars = column_is_number.map((elem, idx) => column_maximums[idx] > 0 && column_maximums[idx] > column_minimums[idx]);
 
+        const settings = {
+            is_transposed: false,
+            column_is_number: column_is_number,
+            column_maximums: column_maximums,
+            column_minimums: column_minimums,
+            column_need_render_bars: column_need_render_bars,
+        };
+
         let tbody = document.createElement('tbody');
         for (let row_idx in response.data) {
             let tr = document.createElement('tr');
             for (let col_idx in response.data[row_idx]) {
-                let td = document.createElement('td');
                 let cell = response.data[row_idx][col_idx];
-
-                let is_null = (cell === null);
-                let is_link = false;
-
-                /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
-                let text;
-                if (is_null) {
-                    text = 'ᴺᵁᴸᴸ';
-                } else if (typeof(cell) === 'object') {
-                    text = JSON.stringify(cell);
-                } else {
-                    text = cell;
-
-                    /// If it looks like URL, create a link. This is for convenience.
-                    if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
-                        is_link = true;
-                    }
-                }
-
-                let node = document.createTextNode(text);
-                if (is_link) {
-                    let link = document.createElement('a');
-                    link.appendChild(node);
-                    link.href = text;
-                    link.setAttribute('target', '_blank');
-                    node = link;
-                }
-
-                td.className = column_is_number[col_idx] ? 'right' : 'left';
-                if (is_null) {
-                    td.className += ' null';
-                }
-
-                /// If it's a number, render bar in background.
-                if (column_need_render_bars[col_idx] && text > 0) {
-                    const ratio = 100 * text / column_maximums[col_idx];
-
-                    let div = document.createElement('div');
-
-                    div.style.width = '100%';
-                    div.style.background = `linear-gradient(to right,
-                        var(--bar-color) 0%, var(--bar-color) ${ratio}%,
-                        transparent ${ratio}%, transparent 100%)`;
-
-                    div.appendChild(node);
-                    node = div;
-                }
-
-                td.appendChild(node);
+                const td = renderCell(cell, col_idx, settings);
                 tr.appendChild(td);
             }
             tbody.appendChild(tr);
@@ -825,22 +846,7 @@
         document.documentElement.setAttribute('data-theme', theme);
     }
 
-    function toggleTranspose() {
-        if (window.localStorage.getItem('transpose') === 'true') {
-            window.localStorage.setItem('transpose', 'false')
-        } else {
-            window.localStorage.setItem('transpose', 'true');
-        }
-
-        if (last_response) {
-            renderResult(last_response)
-        }
-    }
-
-    /**
-     * First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage,
-     * otherwise we check OS preference
-     */
+    /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
     let theme = current_url.searchParams.get('theme');
     if (['dark', 'light'].indexOf(theme) === -1) {
         theme = window.localStorage.getItem('theme');
@@ -872,10 +878,6 @@
 
     document.getElementById('toggle-dark').onclick = function() {
         setColorTheme('dark');
-    }
-
-    document.getElementById('toggle-transpose').onclick = function() {
-        toggleTranspose();
     }
 </script>
 </html>
