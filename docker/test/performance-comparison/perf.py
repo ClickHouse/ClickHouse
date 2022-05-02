@@ -256,20 +256,6 @@ for conn_index, c in enumerate(all_connections):
 
 reportStageEnd("settings")
 
-# Check tables that should exist. If they don't exist, just skip this test.
-tables = [e.text for e in root.findall("preconditions/table_exists")]
-for t in tables:
-    for c in all_connections:
-        try:
-            res = c.execute("select 1 from {} limit 1".format(t))
-        except:
-            exception_message = traceback.format_exception_only(*sys.exc_info()[:2])[-1]
-            skipped_message = " ".join(exception_message.split("\n")[:2])
-            print(f"skipped\t{tsv_escape(skipped_message)}")
-            sys.exit(0)
-
-reportStageEnd("preconditions")
-
 if not args.use_existing_tables:
     # Run create and fill queries. We will run them simultaneously for both
     # servers, to save time. The weird XML search + filter is because we want to
