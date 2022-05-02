@@ -20,8 +20,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct IIndexAccess
+class IndexAccess
 {
+public:
     struct Value : std::vector<Field>
     {
         using Base = std::vector<Field>;
@@ -32,21 +33,9 @@ struct IIndexAccess
         bool operator<(const Value & other) const { return std::lexicographical_compare(begin(), end(), other.begin(), other.end()); }
     };
 
-    virtual ~IIndexAccess() = default;
-
-    virtual Value getValue(size_t part_idx, size_t mark) const = 0;
-
-    virtual size_t getMarkRows(size_t part_idx, size_t mark) const = 0;
-
-    virtual size_t getTotalRowCount() const = 0;
-};
-
-class IndexAccess : public IIndexAccess
-{
-public:
     explicit IndexAccess(const RangesInDataParts & parts_) : parts(parts_) { }
 
-    Value getValue(size_t part_idx, size_t mark) const override
+    Value getValue(size_t part_idx, size_t mark) const
     {
         const auto & index = parts[part_idx].data_part->index;
         Value value(index.size());
@@ -60,12 +49,9 @@ public:
         return value;
     }
 
-    size_t getMarkRows(size_t part_idx, size_t mark) const override
-    {
-        return parts[part_idx].data_part->index_granularity.getMarkRows(mark);
-    }
+    size_t getMarkRows(size_t part_idx, size_t mark) const { return parts[part_idx].data_part->index_granularity.getMarkRows(mark); }
 
-    size_t getTotalRowCount() const override
+    size_t getTotalRowCount() const
     {
         return std::accumulate(
             parts.begin(), parts.end(), static_cast<size_t>(0), [](size_t sum, const auto & part) { return sum + part.getRowsCount(); });
@@ -78,7 +64,7 @@ private:
 class PartsSplitter
 {
 public:
-    using IndexValue = IIndexAccess::Value;
+    using IndexValue = IndexAccess::Value;
 
 private:
     struct RangeInDataPart : MarkRange
@@ -113,7 +99,7 @@ public:
         const KeyDescription & primary_key_,
         const RangesInDataParts & parts_,
         size_t max_num_streams,
-        std::unique_ptr<IIndexAccess> index_access_)
+        std::unique_ptr<IndexAccess> index_access_)
         : primary_key(primary_key_)
         , parts(parts_)
         , index_access(std::move(index_access_))
@@ -315,7 +301,7 @@ public:
 private:
     const KeyDescription & primary_key;
     const RangesInDataParts & parts;
-    const std::unique_ptr<IIndexAccess> index_access;
+    const std::unique_ptr<IndexAccess> index_access;
     const size_t rows_per_layer;
 };
 
