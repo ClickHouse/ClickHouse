@@ -58,6 +58,13 @@
                     </main>
                 </volumes>
             </s3_cache_2>
+            <s3_lru_cache>
+                <volumes>
+                    <main>
+                        <disk>s3_cache</disk>
+                    </main>
+                </volumes>
+            </s3_lru_cache>
         </policies>
     </storage_configuration>
 </clickhouse>
