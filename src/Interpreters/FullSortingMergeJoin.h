@@ -36,7 +36,6 @@ public:
             throw Exception("FullSortingMergeJoin supports only one join key", ErrorCodes::NOT_IMPLEMENTED);
 
         const auto & onexpr = table_join->getOnlyClause();
-
         for (size_t i = 0; i < onexpr.key_names_left.size(); ++i)
         {
             DataTypePtr left_type = left_block.getByName(onexpr.key_names_left[i]).type;
@@ -44,17 +43,17 @@ public:
 
             if (!removeNullable(left_type)->equals(*removeNullable(right_type)))
             {
-                DataTypePtr left_type_no_lc = removeNullable(recursiveRemoveLowCardinality(left_type));
-                DataTypePtr right_type_no_lc = removeNullable(recursiveRemoveLowCardinality(right_type));
-                /// if types equal after removing low cardinality, then it is ok and can be supported
-                bool equals_up_to_lc = left_type_no_lc->equals(*right_type_no_lc);
                 throw DB::Exception(
-                    equals_up_to_lc ? ErrorCodes::NOT_IMPLEMENTED : ErrorCodes::TYPE_MISMATCH,
+                    ErrorCodes::TYPE_MISMATCH,
                     "Type mismatch of columns to JOIN by: {} :: {} at left, {} :: {} at right",
                     onexpr.key_names_left[i], left_type->getName(),
                     onexpr.key_names_right[i], right_type->getName());
             }
         }
+
+        /// Key column can change nullability and it's not handled on type conversion stage, so algorithm shold be aware of it
+        if (table_join->hasUsing() && table_join->joinUseNulls())
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "FullSortingMergeJoin doesn't support USING with join_use_nulls");
     }
 
     /// Used just to get result header

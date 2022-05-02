@@ -23,21 +23,14 @@ SELECT * FROM t1 ASOF JOIN t2 ON t1.key = t2.key AND t1.val > t2.val; -- { serve
 
 SELECT * FROM t1 ANY JOIN t2 ON t1.key = t2.key SETTINGS any_join_distinct_right_table_keys = 1; -- { serverError NOT_IMPLEMENTED }
 
+SELECT * FROM t1 JOIN t2 USING (key) SETTINGS join_use_nulls = 1; -- { serverError NOT_IMPLEMENTED }
+
 SELECT * FROM ( SELECT key, sum(val) AS val FROM t1 GROUP BY key WITH TOTALS ) as t1
 JOIN ( SELECT key, sum(val) AS val FROM t2 GROUP BY key WITH TOTALS ) as t2 ON t1.key = t2.key; -- { serverError NOT_IMPLEMENTED }
 
 SELECT * FROM t1 JOIN ( SELECT key, sum(val) AS val FROM t2 GROUP BY key WITH TOTALS ) as t2 ON t1.key = t2.key; -- { serverError NOT_IMPLEMENTED }
 
 SELECT * FROM ( SELECT key, sum(val) AS val FROM t1 GROUP BY key WITH TOTALS ) as t1 JOIN t2 ON t1.key = t2.key; -- { serverError NOT_IMPLEMENTED }
-
-SELECT * FROM ( SELECT 'a' :: LowCardinality(String) AS key ) AS t1
-JOIN ( SELECT 'a' :: String AS key ) AS t2 ON t1.key = t2.key; -- { serverError NOT_IMPLEMENTED }
-
-SELECT * FROM ( SELECT 'a' :: LowCardinality(Nullable(String)) AS key ) AS t1
-JOIN ( SELECT 'a' :: String AS key ) AS t2 ON t1.key = t2.key; -- { serverError NOT_IMPLEMENTED }
-
-SELECT * FROM ( SELECT 'a' :: LowCardinality(Nullable(String)) AS key ) AS t1
-JOIN ( SELECT 'a' :: Nullable(String) AS key ) AS t2 ON t1.key = t2.key; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

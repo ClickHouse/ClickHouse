@@ -712,7 +712,7 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
     /// Create DAG to make columns nullable if needed
     if (make_nullable)
     {
-        /// Do not need to make nullable temporary columns that would be used only as join keys, but not shown to user
+        /// Do not need to make nullable temporary columns that would be used only as join keys, but is not visible to user
         NameSet cols_not_nullable;
         for (const auto & t : key_column_rename)
             cols_not_nullable.insert(t.second);
