@@ -82,6 +82,11 @@ struct RestoreSettings : public StorageRestoreSettings
     ///                    else it means the same as `replica`.
     size_t replica_num_in_backup = 0;
 
+    /// Allows RESTORE TABLE to insert data into non-empty tables.
+    /// This will mix earlier data in the table with the data extracted from the backup.
+    /// Setting "allow_non_empty_tables=true" thus can cause data duplication in the table, use with caution.
+    bool allow_non_empty_tables = false;
+
     /// Internal, should not be specified by user.
     bool internal = false;
 

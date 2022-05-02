@@ -56,6 +56,9 @@ public:
     BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
     RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (the correctness of names and paths is not verified)
@@ -82,8 +85,8 @@ private:
 
     /// Reads the marks file if it hasn't read yet.
     /// It is done lazily, so that with a large number of tables, the server starts quickly.
-    void loadMarks(std::chrono::seconds lock_timeout);
-    void loadMarks(const WriteLock &);
+    void loadMarks(std::chrono::seconds lock_timeout) const;
+    void loadMarks(const WriteLock &) const;
 
     /// Saves the marks file.
     void saveMarks(const WriteLock &);
@@ -113,7 +116,7 @@ private:
         size_t index;
         String name;
         String path;
-        Marks marks;
+        mutable Marks marks;
     };
 
     const String engine_name;
@@ -128,8 +131,8 @@ private:
     const bool use_marks_file;
 
     String marks_file_path;
-    std::atomic<bool> marks_loaded = false;
-    size_t num_marks_saved = 0;
+    mutable std::atomic<bool> marks_loaded = false;
+    mutable size_t num_marks_saved = 0;
 
     FileChecker file_checker;
 

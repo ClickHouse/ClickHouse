@@ -447,6 +447,20 @@ RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, 
     return getTargetTable()->restoreData(context_, partitions_, backup_, data_path_in_backup_, restore_settings_, restore_coordination_);
 }
 
+std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const
+{
+    if (!hasInnerTable())
+        return 0;
+    return getTargetTable()->totalRows(settings);
+}
+
+std::optional<UInt64> StorageMaterializedView::totalBytes(const Settings & settings) const
+{
+    if (!hasInnerTable())
+        return 0;
+    return getTargetTable()->totalBytes(settings);
+}
+
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
     if (has_inner_table)

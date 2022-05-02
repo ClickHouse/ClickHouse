@@ -323,6 +323,7 @@ namespace
             createStorage();
             getStorage();
             checkStorageCreateQuery();
+            checkTableIsEmpty();
             checkTableDataCompatible();
             return insertData();
         }
@@ -455,6 +456,49 @@ namespace
                     formatTableNameOrTemporaryTableName(table_name),
                     serializeAST(*storage_create_query),
                     serializeAST(*create_query));
+            }
+        }
+
+        void checkTableIsEmpty()
+        {
+            if (restore_settings->allow_non_empty_tables || restore_settings->structure_only || !has_data)
+                return;
+
+            bool empty = true;
+            if (auto total_rows = storage->totalRows(context->getSettingsRef()))
+                empty = (*total_rows == 0);
+            else if (auto total_bytes = storage->totalBytes(context->getSettingsRef()))
+                empty = (*total_bytes == 0);
+
+            if (empty)
+            {
+                /// If this is a replicated table new parts could be in its queue but not fetched yet.
+                /// In that case we consider the table as not empty.
+                if (auto * replicated_table = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
+                {
+                    StorageReplicatedMergeTree::Status status;
+                    replicated_table->getStatus(status, /* with_zk_fields = */ false);
+
+                    if (status.queue.inserts_in_queue)
+                    {
+                        empty = false;
+                    }
+                    else
+                    {
+                        /// Check total_rows again to be sure.
+                        if (auto total_rows = storage->totalRows(context->getSettingsRef()); *total_rows != 0)
+                            empty = false;
+                    }
+                }
+            }
+
+            if (!empty)
+            {
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore {} because it already contains some data. You can set structure_only=true or "
+                    "allow_non_empty_tables=true to overcome that in the way you want",
+                    formatTableNameOrTemporaryTableName(table_name));
             }
         }
 

@@ -11,8 +11,6 @@
 #include <Common/assert_cast.h>
 #include <boost/range/algorithm_ext/erase.hpp>
 
-#include <base/logger_useful.h>
-
 
 namespace DB
 {

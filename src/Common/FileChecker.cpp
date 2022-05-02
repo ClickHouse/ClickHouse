@@ -69,6 +69,15 @@ size_t FileChecker::getFileSize(const String & full_file_path) const
     return it->second;
 }
 
+UInt64 FileChecker::getTotalSize() const
+{
+    UInt64 total_size = 0;
+    for (auto size : map | boost::adaptors::map_values)
+        total_size += size;
+    return total_size;
+}
+
+
 CheckResults FileChecker::check() const
 {
     if (map.empty())

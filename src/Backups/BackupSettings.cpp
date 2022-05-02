@@ -6,8 +6,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <base/logger_useful.h>
-
 
 namespace DB
 {
