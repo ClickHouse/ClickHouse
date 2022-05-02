@@ -60,6 +60,11 @@ public:
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
 
+    void setReceiveTimeout(const Poco::Timespan & timeout)
+    {
+        receive_timeout.setRelative(timeout);
+    }
+
 private:
     /// When epoll file descriptor is ready, check if it's an expired timeout.
     /// Return false if receive timeout expired and socket is not ready, return true otherwise.
