@@ -331,13 +331,18 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 }
 
 
-static std::chrono::seconds getLockTimeout(ContextPtr context)
+static std::chrono::seconds getLockTimeout(const Settings & settings)
 {
-    const Settings & settings = context->getSettingsRef();
     Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
     if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
         lock_timeout = settings.max_execution_time.totalSeconds();
     return std::chrono::seconds{lock_timeout};
+}
+
+
+static std::chrono::seconds getLockTimeout(ContextPtr context)
+{
+    return getLockTimeout(context->getSettingsRef());
 }
 
 
@@ -424,7 +429,7 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 }
 
 
-void StorageStripeLog::loadIndices(std::chrono::seconds lock_timeout)
+void StorageStripeLog::loadIndices(std::chrono::seconds lock_timeout) const
 {
     if (indices_loaded)
         return;
@@ -439,7 +444,7 @@ void StorageStripeLog::loadIndices(std::chrono::seconds lock_timeout)
 }
 
 
-void StorageStripeLog::loadIndices(const WriteLock & /* already locked exclusively */)
+void StorageStripeLog::loadIndices(const WriteLock & /* already locked exclusively */) const
 {
     if (indices_loaded)
         return;
@@ -644,6 +649,31 @@ RestoreTaskPtr StorageStripeLog::restoreData(ContextMutablePtr context, const AS
 
     return std::make_unique<StripeLogRestoreTask>(
         typeid_cast<std::shared_ptr<StorageStripeLog>>(shared_from_this()), backup, data_path_in_backup, context);
+}
+
+
+std::optional<UInt64> StorageStripeLog::totalRows(const Settings & settings) const
+{
+    auto lock_timeout = getLockTimeout(settings);
+    loadIndices(lock_timeout);
+
+    ReadLock lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    size_t total_rows = 0;
+    for (const auto & block : indices.blocks)
+        total_rows += block.num_rows;
+    return total_rows;
+}
+
+std::optional<UInt64> StorageStripeLog::totalBytes(const Settings & settings) const
+{
+    ReadLock lock{rwlock, getLockTimeout(settings)};
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    return file_checker.getTotalSize();
 }
 
 

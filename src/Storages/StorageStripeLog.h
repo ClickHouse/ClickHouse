@@ -56,6 +56,9 @@ public:
     BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
     RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
 protected:
     StorageStripeLog(
         DiskPtr disk_,
@@ -73,8 +76,8 @@ private:
 
     /// Reads the index file if it hasn't read yet.
     /// It is done lazily, so that with a large number of tables, the server starts quickly.
-    void loadIndices(std::chrono::seconds lock_timeout);
-    void loadIndices(const WriteLock &);
+    void loadIndices(std::chrono::seconds lock_timeout) const;
+    void loadIndices(const WriteLock &) const;
 
     /// Saves the index file.
     void saveIndices(const WriteLock &);
@@ -92,9 +95,9 @@ private:
     String index_file_path;
     FileChecker file_checker;
 
-    IndexForNativeFormat indices;
-    std::atomic<bool> indices_loaded = false;
-    size_t num_indices_saved = 0;
+    mutable IndexForNativeFormat indices;
+    mutable std::atomic<bool> indices_loaded = false;
+    mutable size_t num_indices_saved = 0;
 
     const size_t max_compress_block_size;
 

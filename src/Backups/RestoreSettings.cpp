@@ -75,6 +75,7 @@ namespace
     M(UInt64, replica_num) \
     M(UInt64, shard_num_in_backup) \
     M(UInt64, replica_num_in_backup) \
+    M(Bool, allow_non_empty_tables) \
     M(Bool, internal) \
     M(String, host_id) \
     M(String, coordination_zk_path)

@@ -171,4 +171,34 @@ def test_backup_restore_on_single_replica():
 
     node1.query("DROP DATABASE mydb NO DELAY")
 
-    node1.query(f"RESTORE DATABASE mydb FROM {backup_name}")
+    # Cannot restore table because it already contains data on other replicas.
+    expected_error = "Cannot restore table mydb.test because it already contains some data"
+    assert expected_error in node1.query_and_get_error(f"RESTORE DATABASE mydb FROM {backup_name}")
+
+    # Can restore table with structure_only=true.
+    node1.query(f"RESTORE DATABASE mydb FROM {backup_name} SETTINGS structure_only=true")
+
+    node1.query("SYSTEM SYNC REPLICA mydb.test")
+    assert node1.query("SELECT * FROM mydb.test ORDER BY name") == TSV([['abc', 1], ['def', 2], ['ghi', 3]])
+
+    # Can restore table with allow_non_empty_tables=true.
+    node1.query("DROP DATABASE mydb NO DELAY")
+    node1.query(f"RESTORE DATABASE mydb FROM {backup_name} SETTINGS allow_non_empty_tables=true")
+
+    node1.query("SYSTEM SYNC REPLICA mydb.test")
+    assert node1.query("SELECT * FROM mydb.test ORDER BY name") == TSV([['abc', 1], ['abc', 1], ['def', 2], ['def', 2], ['ghi', 3], ['ghi', 3]])
+
+
+def test_table_with_parts_in_queue_considered_non_empty():
+    node1.query("CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')")
+    node1.query("CREATE TABLE mydb.test (`x` UInt32) ENGINE = ReplicatedMergeTree ORDER BY x")
+    node1.query("INSERT INTO mydb.test SELECT number AS x FROM numbers(10000000)")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP DATABASE mydb TO {backup_name}")
+
+    node1.query("DROP DATABASE mydb NO DELAY")
+
+    # Cannot restore table because it already contains data on other replicas.
+    expected_error = "Cannot restore table mydb.test because it already contains some data"
+    assert expected_error in node1.query_and_get_error(f"RESTORE DATABASE mydb FROM {backup_name}")
