@@ -151,7 +151,7 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
             ///  Mark 193, points to [2081424, 0]
             ///  Mark 194, points to [2081424, 0]
 
-            /// Also, in some cases, when one granule is not-atomically written (whish is possible at merges)
+            /// Also, in some cases, when one granule is not-atomically written (which is possible at merges)
             /// one granule may require reading of two dictionaries which starts from different marks.
             /// The only correct way is to take offset from at least next different granule from the right one.
 

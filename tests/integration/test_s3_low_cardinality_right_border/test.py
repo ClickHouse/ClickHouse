@@ -117,10 +117,18 @@ SETTINGS storage_policy = 's3',  min_bytes_for_wide_part = 0, index_granularity 
 
 def test_s3_right_border_2(started_cluster):
     node1.query("drop table if exists s3_low_cardinality")
-    node1.query("create table s3_low_cardinality (key UInt32, str_column LowCardinality(String)) engine = MergeTree order by (key) settings storage_policy = 's3', min_bytes_for_wide_part = 0, index_granularity = 8192, min_compress_block_size=1, merge_max_block_size=10000")
-    node1.query("insert into s3_low_cardinality select number, number % 8000 from numbers(8192)")
-    node1.query("insert into s3_low_cardinality select number = 0 ? 0 : (number + 8192 * 1), number % 8000 + 1 * 8192 from numbers(8192)")
-    node1.query("insert into s3_low_cardinality select number = 0 ? 0 : (number + 8192 * 2), number % 8000 + 2 * 8192 from numbers(8192)")
+    node1.query(
+        "create table s3_low_cardinality (key UInt32, str_column LowCardinality(String)) engine = MergeTree order by (key) settings storage_policy = 's3', min_bytes_for_wide_part = 0, index_granularity = 8192, min_compress_block_size=1, merge_max_block_size=10000"
+    )
+    node1.query(
+        "insert into s3_low_cardinality select number, number % 8000 from numbers(8192)"
+    )
+    node1.query(
+        "insert into s3_low_cardinality select number = 0 ? 0 : (number + 8192 * 1), number % 8000 + 1 * 8192 from numbers(8192)"
+    )
+    node1.query(
+        "insert into s3_low_cardinality select number = 0 ? 0 : (number + 8192 * 2), number % 8000 + 2 * 8192 from numbers(8192)"
+    )
     node1.query("optimize table s3_low_cardinality final")
     res = node1.query("select * from s3_low_cardinality where key = 9000")
-    assert(res == "9000\t9000\n")
+    assert res == "9000\t9000\n"
