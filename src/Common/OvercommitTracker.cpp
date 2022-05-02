@@ -11,11 +11,8 @@ constexpr std::chrono::microseconds ZERO_MICROSEC = 0us;
 OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
     : max_wait_time(ZERO_MICROSEC)
     , picked_tracker(nullptr)
-    , cancellation_state(QueryCancellationState::NONE)
+    , cancelation_state(QueryCancelationState::NONE)
     , global_mutex(global_mutex_)
-    , freed_memory(0)
-    , required_memory(0)
-    , allow_release(true)
 {}
 
 void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
@@ -24,12 +21,12 @@ void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
     max_wait_time = wait_time * 1us;
 }
 
-bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
+bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
 {
     // NOTE: Do not change the order of locks
     //
     // global_mutex must be acquired before overcommit_m, because
-    // method OvercommitTracker::onQueryStop(MemoryTracker *) is
+    // method OvercommitTracker::unsubscribe(MemoryTracker *) is
     // always called with already acquired global_mutex in
     // ProcessListEntry::~ProcessListEntry().
     std::unique_lock<std::mutex> global_lock(global_mutex);
@@ -39,80 +36,40 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
         return true;
 
     pickQueryToExclude();
-    assert(cancellation_state != QueryCancellationState::NONE);
+    assert(cancelation_state == QueryCancelationState::RUNNING);
     global_lock.unlock();
 
     // If no query was chosen we need to stop current query.
     // This may happen if no soft limit is set.
     if (picked_tracker == nullptr)
     {
-        assert(cancellation_state == QueryCancellationState::SELECTED);
-        cancellation_state = QueryCancellationState::NONE;
+        cancelation_state = QueryCancelationState::NONE;
         return true;
     }
     if (picked_tracker == tracker)
-    {
-        assert(cancellation_state == QueryCancellationState::SELECTED);
-        cancellation_state = QueryCancellationState::RUNNING;
         return true;
-    }
-
-    allow_release = true;
-
-    required_memory += amount;
-    required_per_thread[tracker] = amount;
-    bool timeout = !cv.wait_for(lk, max_wait_time, [this, tracker]()
+    bool timeout = !cv.wait_for(lk, max_wait_time, [this]()
     {
-        return required_per_thread[tracker] == 0 || cancellation_state == QueryCancellationState::NONE;
+        return cancelation_state == QueryCancelationState::NONE;
     });
-    LOG_DEBUG(getLogger(), "Memory was{} freed within timeout", (timeout ? " not" : ""));
-
-    required_memory -= amount;
-    Int64 still_need = required_per_thread[tracker]; // If enough memory is freed it will be 0
-    required_per_thread.erase(tracker);
-
-    // If threads where not released since last call of this method,
-    // we can release them now.
-    if (allow_release && required_memory <= freed_memory && still_need != 0)
-        releaseThreads();
-
-    // All required amount of memory is free now and selected query to stop doesn't know about it.
-    // As we don't need to free memory, we can continue execution of the selected query.
-    if (required_memory == 0 && cancellation_state == QueryCancellationState::SELECTED)
-        reset();
-    return timeout || still_need != 0;
+    if (timeout)
+        LOG_DEBUG(getLogger(), "Need to stop query because reached waiting timeout");
+    else
+        LOG_DEBUG(getLogger(), "Memory freed within timeout");
+    return timeout;
 }
 
-void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
-{
-    std::lock_guard guard(overcommit_m);
-    if (cancellation_state != QueryCancellationState::NONE)
-    {
-        freed_memory += amount;
-        if (freed_memory >= required_memory)
-            releaseThreads();
-    }
-}
-
-void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
+void OvercommitTracker::unsubscribe(MemoryTracker * tracker)
 {
     std::unique_lock<std::mutex> lk(overcommit_m);
     if (picked_tracker == tracker)
     {
         LOG_DEBUG(getLogger(), "Picked query stopped");
 
-        reset();
+        picked_tracker = nullptr;
+        cancelation_state = QueryCancelationState::NONE;
         cv.notify_all();
     }
-}
-
-void OvercommitTracker::releaseThreads()
-{
-    for (auto & required : required_per_thread)
-        required.second = 0;
-    freed_memory = 0;
-    allow_release = false; // To avoid repeating call of this method in OvercommitTracker::needToStopQuery
-    cv.notify_all();
 }
 
 UserOvercommitTracker::UserOvercommitTracker(DB::ProcessList * process_list, DB::ProcessListForUser * user_process_list_)
