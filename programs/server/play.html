@@ -279,6 +279,19 @@
             white-space: pre-wrap;
         }
 
+        td.empty-result
+        {
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        div.empty-result
+        {
+            opacity: 10%;
+            font-size: 7vw;
+            font-family: Liberation Sans, DejaVu Sans, sans-serif;
+        }
+
         /* The style for SQL NULL */
         .null
         {
@@ -697,6 +710,18 @@
                 const td = renderCell(cell, col_idx, {is_transposed: true});
                 tr.appendChild(td);
             }
+            if (response.data.length == 0 && col_idx == 0)
+            {
+                /// If result is empty, show this fact with a style.
+                let td = document.createElement('td');
+                td.rowSpan = response.meta.length;
+                td.className = 'empty-result';
+                let div = document.createElement('div');
+                div.appendChild(document.createTextNode("empty result"));
+                div.className = 'empty-result';
+                td.appendChild(div);
+                tr.appendChild(td);
+            }
             tbody.appendChild(tr);
         }
         let table = document.getElementById('data-table');
@@ -705,7 +730,7 @@
 
     function renderTable(response)
     {
-        if (response.data.length == 1 && response.meta.length >= 5) {
+        if (response.data.length <= 1 && response.meta.length >= 5) {
             renderTableTransposed(response)
             return;
         }
