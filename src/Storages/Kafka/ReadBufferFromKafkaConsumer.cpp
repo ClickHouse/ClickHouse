@@ -4,7 +4,7 @@
 
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <cppkafka/cppkafka.h>
 #include <boost/algorithm/string/join.hpp>

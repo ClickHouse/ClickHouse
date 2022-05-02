@@ -2,7 +2,7 @@
 
 #if USE_AWS_S3
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/FileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
@@ -95,6 +95,7 @@ void WriteBufferFromS3::nextImpl()
     if (cacheEnabled())
     {
         auto cache_key = cache->hash(key);
+
         file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size));
         current_download_offset += size;
 
@@ -133,6 +134,7 @@ void WriteBufferFromS3::nextImpl()
         writePart();
 
         allocateBuffer();
+        file_segments_holder.reset();
     }
 
     waitForReadyBackGroundTasks();
