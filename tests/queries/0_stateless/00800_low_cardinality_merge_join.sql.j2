@@ -1,4 +1,6 @@
-set join_algorithm = 'partial_merge';
+{% for join_algorithm in ['partial_merge', 'full_sorting_merge'] -%}
+
+set join_algorithm = '{{ join_algorithm }}';
 
 select * from (select dummy as val from system.one) s1 any left join (select dummy as val from system.one) s2 using val;
 select * from (select toLowCardinality(dummy) as val from system.one) s1 any left join (select dummy as val from system.one) s2 using val;
@@ -28,3 +30,5 @@ select * from (select toLowCardinality(number) as l from system.numbers limit 3)
 select * from (select toLowCardinality(toNullable(number)) as l from system.numbers limit 3) s1 any left join (select toLowCardinality(number) as r from system.numbers limit 3) s2 on l + 1 = r * 1;
 select * from (select toLowCardinality(number) as l from system.numbers limit 3) s1 any left join (select toLowCardinality(toNullable(number)) as r from system.numbers limit 3) s2 on l + 1 = r * 1;
 select * from (select toLowCardinality(toNullable(number)) as l from system.numbers limit 3) s1 any left join (select toLowCardinality(toNullable(number)) as r from system.numbers limit 3) s2 on l + 1 = r * 1;
+
+{% endfor -%}

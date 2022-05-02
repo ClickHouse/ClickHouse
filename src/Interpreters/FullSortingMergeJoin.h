@@ -35,13 +35,20 @@ public:
         if (table_join->getClauses().size() != 1)
             throw Exception("FullSortingMergeJoin supports only one join key", ErrorCodes::NOT_IMPLEMENTED);
 
+        /// Key column can change nullability and it's not handled on type conversion stage, so algorithm shold be aware of it
+        if (table_join->hasUsing() && table_join->joinUseNulls())
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "FullSortingMergeJoin doesn't support USING with join_use_nulls");
+
         const auto & onexpr = table_join->getOnlyClause();
         for (size_t i = 0; i < onexpr.key_names_left.size(); ++i)
         {
             DataTypePtr left_type = left_block.getByName(onexpr.key_names_left[i]).type;
             DataTypePtr right_type = right_sample_block.getByName(onexpr.key_names_right[i]).type;
 
-            if (!removeNullable(left_type)->equals(*removeNullable(right_type)))
+            bool type_equals
+                = table_join->hasUsing() ? left_type->equals(*right_type) : removeNullable(left_type)->equals(*removeNullable(right_type));
+
+            if (!type_equals)
             {
                 throw DB::Exception(
                     ErrorCodes::TYPE_MISMATCH,
@@ -50,10 +57,6 @@ public:
                     onexpr.key_names_right[i], right_type->getName());
             }
         }
-
-        /// Key column can change nullability and it's not handled on type conversion stage, so algorithm shold be aware of it
-        if (table_join->hasUsing() && table_join->joinUseNulls())
-            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "FullSortingMergeJoin doesn't support USING with join_use_nulls");
     }
 
     /// Used just to get result header
