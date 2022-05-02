@@ -44,7 +44,7 @@ enable_language(C CXX ASM)
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
-include (cmake/analysis.cmake)
+include (cmake/clang_tidy.cmake)
 include (cmake/git_status.cmake)
 
 # Ignore export() since we don't use it,
@@ -417,7 +417,7 @@ if (COMPILER_CLANG)
     endif ()
 
 elseif (ENABLE_THINLTO)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with Clang")
 endif ()
 
 # Turns on all external libs like s3, kafka, ODBC, ...

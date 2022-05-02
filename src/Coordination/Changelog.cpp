@@ -9,7 +9,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

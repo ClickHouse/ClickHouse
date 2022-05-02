@@ -1,6 +1,6 @@
 #include "ODBCBlockOutputStream.h"
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IOutputFormat.h>
