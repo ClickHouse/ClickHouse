@@ -712,21 +712,14 @@ void Changelog::flush()
         current_writer->flush(force_sync);
 }
 
-void Changelog::shutdown()
-{
-    if (!log_files_to_delete_queue.isFinished())
-        log_files_to_delete_queue.finish();
-
-    if (clean_log_thread.joinable())
-        clean_log_thread.join();
-}
-
 Changelog::~Changelog()
 {
     try
     {
         flush();
-        shutdown();
+        log_files_to_delete_queue.finish();
+        if (clean_log_thread.joinable())
+            clean_log_thread.join();
     }
     catch (...)
     {

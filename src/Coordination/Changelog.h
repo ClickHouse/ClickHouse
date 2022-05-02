@@ -121,8 +121,6 @@ public:
     /// Fsync latest log to disk and flush buffer
     void flush();
 
-    void shutdown();
-
     uint64_t size() const
     {
         return logs.size();

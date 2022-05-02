@@ -73,7 +73,7 @@ private:
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
 
-    std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
+    OvercommitTracker * overcommit_tracker = nullptr;
 
     bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
@@ -188,18 +188,13 @@ public:
 
     void setOvercommitTracker(OvercommitTracker * tracker) noexcept
     {
-        overcommit_tracker.store(tracker, std::memory_order_relaxed);
-    }
-
-    void resetOvercommitTracker() noexcept
-    {
-        overcommit_tracker.store(nullptr, std::memory_order_relaxed);
+        overcommit_tracker = tracker;
     }
 
     /// Reset the accumulated data
     void resetCounters();
 
-    /// Reset the accumulated data.
+    /// Reset the accumulated data and the parent.
     void reset();
 
     /// Reset current counter to a new value.

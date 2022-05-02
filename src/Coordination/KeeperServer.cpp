@@ -360,7 +360,7 @@ void KeeperServer::shutdownRaftServer()
 void KeeperServer::shutdown()
 {
     state_machine->shutdownStorage();
-    state_manager->flushAndShutDownLogStore();
+    state_manager->flushLogStore();
     shutdownRaftServer();
 }
 
