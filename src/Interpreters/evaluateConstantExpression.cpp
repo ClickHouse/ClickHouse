@@ -41,7 +41,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
     auto ast = node->clone();
 
-    if (ASTSubquery * subquery = ast->as<ASTSubquery>())
+    if (ast->as<ASTSubquery>() != nullptr)
     {
         /** For subqueries getColumnName if there are no alias will return __subquery_ + 'hash'.
           * If there is alias getColumnName for subquery will return alias.
