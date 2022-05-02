@@ -188,7 +188,7 @@ public:
 
     String next()
     {
-        size_t current_index = index.fetch_add(1);
+        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
         if (current_index >= keys.size())
             return "";
         return keys[current_index];
@@ -218,7 +218,7 @@ public:
 
     String next()
     {
-        size_t current_index = index.fetch_add(1);
+        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
         if (current_index >= read_tasks.size())
             return new_read_tasks_callback();
         return read_tasks[current_index];
