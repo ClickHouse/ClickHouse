@@ -1,26 +1,31 @@
 #include <Backups/RestoreUtils.h>
 #include <Backups/BackupUtils.h>
+#include <Backups/RestoreSettings.h>
 #include <Backups/DDLCompareUtils.h>
 #include <Backups/DDLRenamingVisitor.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreTask.h>
-#include <Backups/RestoreSettings.h>
+#include <Backups/RestoreCoordinationDistributed.h>
 #include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Common/escapeForFileName.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseReplicated.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <base/chrono_io.h>
+#include <base/insertAtEnd.h>
+#include <base/sleep.h>
 #include <boost/range/adaptor/reversed.hpp>
+#include <boost/range/algorithm_ext/erase.hpp>
 #include <filesystem>
-
-namespace fs = std::filesystem;
 
 
 namespace DB
@@ -29,10 +34,131 @@ namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_TABLE;
     extern const int CANNOT_RESTORE_DATABASE;
+    extern const int BACKUP_ENTRY_NOT_FOUND;
 }
 
 namespace
 {
+    class PathsInBackup
+    {
+    public:
+        explicit PathsInBackup(const IBackup & backup_) : backup(backup_) {}
+
+        std::vector<size_t> getShards() const
+        {
+            std::vector<size_t> res;
+            for (const String & shard_index : backup.listFiles("shards/"))
+                res.push_back(parse<UInt64>(shard_index));
+            if (res.empty())
+                res.push_back(1);
+            return res;
+        }
+
+        std::vector<size_t> getReplicas(size_t shard_index) const
+        {
+            std::vector<size_t> res;
+            for (const String & replica_index : backup.listFiles(fmt::format("shards/{}/replicas/", shard_index)))
+                res.push_back(parse<UInt64>(replica_index));
+            if (res.empty())
+                res.push_back(1);
+            return res;
+        }
+
+        std::vector<String> getDatabases(size_t shard_index, size_t replica_index) const
+        {
+            std::vector<String> res;
+
+            insertAtEnd(res, backup.listFiles(fmt::format("shards/{}/replicas/{}/metadata/", shard_index, replica_index)));
+            insertAtEnd(res, backup.listFiles(fmt::format("shards/{}/metadata/", shard_index)));
+            insertAtEnd(res, backup.listFiles(fmt::format("metadata/")));
+
+            boost::range::remove_erase_if(
+                res,
+                [](String & str)
+                {
+                    if (str.ends_with(".sql"))
+                    {
+                        str.resize(str.length() - strlen(".sql"));
+                        str = unescapeForFileName(str);
+                        return false;
+                    }
+                    return true;
+                });
+
+            std::sort(res.begin(), res.end());
+            res.erase(std::unique(res.begin(), res.end()), res.end());
+            return res;
+        }
+
+        std::vector<String> getTables(const String & database_name, size_t shard_index, size_t replica_index) const
+        {
+            std::vector<String> res;
+
+            String escaped_database_name = escapeForFileName(database_name);
+            insertAtEnd(res, backup.listFiles(fmt::format("shards/{}/replicas/{}/metadata/{}/", shard_index, replica_index, escaped_database_name)));
+            insertAtEnd(res, backup.listFiles(fmt::format("shards/{}/metadata/{}/", shard_index, escaped_database_name)));
+            insertAtEnd(res, backup.listFiles(fmt::format("metadata/{}/", escaped_database_name)));
+
+            boost::range::remove_erase_if(
+                res,
+                [](String & str)
+                {
+                    if (str.ends_with(".sql"))
+                    {
+                        str.resize(str.length() - strlen(".sql"));
+                        str = unescapeForFileName(str);
+                        return false;
+                    }
+                    return true;
+                });
+
+            std::sort(res.begin(), res.end());
+            res.erase(std::unique(res.begin(), res.end()), res.end());
+            return res;
+        }
+
+        /// Returns the path to metadata in backup.
+        String getMetadataPath(const DatabaseAndTableName & table_name, size_t shard_index, size_t replica_index) const
+        {
+            String escaped_table_name = escapeForFileName(table_name.first) + "/" + escapeForFileName(table_name.second);
+            String path1 = fmt::format("shards/{}/replicas/{}/metadata/{}.sql", shard_index, replica_index, escaped_table_name);
+            if (backup.fileExists(path1))
+                return path1;
+            String path2 = fmt::format("shards/{}/metadata/{}.sql", shard_index, escaped_table_name);
+            if (backup.fileExists(path2))
+                return path2;
+            String path3 = fmt::format("metadata/{}.sql", escaped_table_name);
+            return path3;
+        }
+
+        String getMetadataPath(const String & database_name, size_t shard_index, size_t replica_index) const
+        {
+            String escaped_database_name = escapeForFileName(database_name);
+            String path1 = fmt::format("shards/{}/replicas/{}/metadata/{}.sql", shard_index, replica_index, escaped_database_name);
+            if (backup.fileExists(path1))
+                return path1;
+            String path2 = fmt::format("shards/{}/metadata/{}.sql", shard_index, escaped_database_name);
+            if (backup.fileExists(path2))
+                return path2;
+            String path3 = fmt::format("metadata/{}.sql", escaped_database_name);
+            return path3;
+        }
+
+        String getDataPath(const DatabaseAndTableName & table_name, size_t shard_index, size_t replica_index) const
+        {
+            String escaped_table_name = escapeForFileName(table_name.first) + "/" + escapeForFileName(table_name.second);
+            if (backup.fileExists(fmt::format("shards/{}/replicas/{}/metadata/{}.sql", shard_index, replica_index, escaped_table_name)))
+                return fmt::format("shards/{}/replicas/{}/data/{}/", shard_index, replica_index, escaped_table_name);
+            if (backup.fileExists(fmt::format("shards/{}/metadata/{}.sql", shard_index, escaped_table_name)))
+                return fmt::format("shards/{}/data/{}/", shard_index, escaped_table_name);
+            return fmt::format("data/{}/", escaped_table_name);
+        }
+
+    private:
+        const IBackup & backup;
+    };
+
+
     using Kind = ASTBackupQuery::Kind;
     using Element = ASTBackupQuery::Element;
     using Elements = ASTBackupQuery::Elements;
@@ -48,12 +174,10 @@ namespace
         RestoreDatabaseTask(
             ContextMutablePtr context_,
             const ASTPtr & create_query_,
-            const RestoreSettingsPtr & restore_settings_,
-            bool ignore_if_database_def_differs_)
+            const RestoreSettingsPtr & restore_settings_)
             : context(context_)
             , create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_))
             , restore_settings(restore_settings_)
-            , ignore_if_database_def_differs(ignore_if_database_def_differs_)
         {
         }
 
@@ -70,9 +194,12 @@ namespace
     private:
         void createDatabase()
         {
-            /// We need to call clone() for `create_query` because the interpreter can decide
-            /// to change a passed AST a little bit.
-            InterpreterCreateQuery create_interpreter{create_query->clone(), context};
+            if (restore_settings->create_database == RestoreDatabaseCreationMode::kMustExist)
+                return;
+
+            auto cloned_create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query->clone());
+            cloned_create_query->if_not_exists = (restore_settings->create_database == RestoreDatabaseCreationMode::kCreateIfNotExists);
+            InterpreterCreateQuery create_interpreter{cloned_create_query, context};
             create_interpreter.execute();
         }
 
@@ -92,7 +219,7 @@ namespace
 
         void checkDatabaseCreateQuery()
         {
-            if (ignore_if_database_def_differs || !restore_settings->throw_if_database_def_differs)
+            if (restore_settings->allow_different_database_def)
                 return;
 
             getDatabaseCreateQuery();
@@ -111,7 +238,6 @@ namespace
         ContextMutablePtr context;
         std::shared_ptr<ASTCreateQuery> create_query;
         RestoreSettingsPtr restore_settings;
-        bool ignore_if_database_def_differs = false;
         DatabasePtr database;
         ASTPtr database_create_query;
     };
@@ -127,10 +253,11 @@ namespace
             const ASTs & partitions_,
             const BackupPtr & backup_,
             const DatabaseAndTableName & table_name_in_backup_,
-            const RestoreSettingsPtr & restore_settings_)
+            const RestoreSettingsPtr & restore_settings_,
+            const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
             : context(context_), create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_)),
               partitions(partitions_), backup(backup_), table_name_in_backup(table_name_in_backup_),
-              restore_settings(restore_settings_)
+              restore_settings(restore_settings_), restore_coordination(restore_coordination_)
         {
             table_name = DatabaseAndTableName{create_query->getDatabase(), create_query->getTable()};
             if (create_query->temporary)
@@ -139,9 +266,28 @@ namespace
 
         RestoreTasks run() override
         {
-            createStorage();
-            getStorage();
-            checkStorageCreateQuery();
+            if (acquireTableCreation())
+            {
+                try
+                {
+                    createStorage();
+                    getStorage();
+                    checkStorageCreateQuery();
+                    setTableCreationResult(IRestoreCoordination::Result::SUCCEEDED);
+                }
+                catch (...)
+                {
+                    setTableCreationResult(IRestoreCoordination::Result::FAILED);
+                    throw;
+                }
+            }
+            else
+            {
+                waitForTableCreation();
+                getStorage();
+                checkStorageCreateQuery();
+            }
+
             RestoreTasks tasks;
             if (auto task = insertData())
                 tasks.push_back(std::move(task));
@@ -151,11 +297,73 @@ namespace
         bool isSequential() const override { return true; }
 
     private:
+        bool acquireTableCreation()
+        {
+            if (restore_settings->create_table == RestoreTableCreationMode::kMustExist)
+                return true;
+
+            auto replicated_db
+                = typeid_cast<std::shared_ptr<const DatabaseReplicated>>(DatabaseCatalog::instance().getDatabase(table_name.first));
+            if (!replicated_db)
+                return true;
+
+            use_coordination_for_table_creation = true;
+            replicated_database_zookeeper_path = replicated_db->getZooKeeperPath();
+            return restore_coordination->acquireZkPathAndName(replicated_database_zookeeper_path, table_name.second);
+        }
+
+        void setTableCreationResult(IRestoreCoordination::Result res)
+        {
+            if (use_coordination_for_table_creation)
+                restore_coordination->setResultForZkPathAndName(replicated_database_zookeeper_path, table_name.second, res);
+        }
+
+        void waitForTableCreation()
+        {
+            if (!use_coordination_for_table_creation)
+                return;
+
+            IRestoreCoordination::Result res;
+            const auto & config = context->getConfigRef();
+            auto timeout = std::chrono::seconds(config.getUInt("backups.create_table_in_replicated_db_timeout", 10));
+            auto start_time = std::chrono::steady_clock::now();
+
+            if (!restore_coordination->getResultForZkPathAndName(replicated_database_zookeeper_path, table_name.second, res, timeout))
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Waited too long ({}) for creating of {} on another replica",
+                    to_string(timeout),
+                    formatTableNameOrTemporaryTableName(table_name));
+
+            if (res == IRestoreCoordination::Result::FAILED)
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Failed creating of {} on another replica",
+                    formatTableNameOrTemporaryTableName(table_name));
+
+            while (std::chrono::steady_clock::now() - start_time < timeout)
+            {
+                if (DatabaseCatalog::instance().tryGetDatabaseAndTable({table_name.first, table_name.second}, context).second)
+                    return;
+                sleepForMilliseconds(50);
+            }
+
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Waited too long ({}) for creating of {} on another replica",
+                to_string(timeout),
+                formatTableNameOrTemporaryTableName(table_name));
+        }
+
         void createStorage()
         {
-            /// We need to call clone() for `create_query` because the interpreter can decide
-            /// to change a passed AST a little bit.
-            InterpreterCreateQuery create_interpreter{create_query->clone(), context};
+            if (restore_settings->create_table == RestoreTableCreationMode::kMustExist)
+                return;
+
+            auto cloned_create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query->clone());
+            cloned_create_query->if_not_exists = (restore_settings->create_table == RestoreTableCreationMode::kCreateIfNotExists);
+            InterpreterCreateQuery create_interpreter{cloned_create_query, context};
+            create_interpreter.setInternal(true);
             create_interpreter.execute();
         }
 
@@ -178,7 +386,7 @@ namespace
 
         void checkStorageCreateQuery()
         {
-            if (!restore_settings->throw_if_table_def_differs)
+            if (restore_settings->allow_different_table_def)
                 return;
 
             getStorageCreateQuery();
@@ -203,7 +411,7 @@ namespace
             if (restore_settings->structure_only)
                 return false;
 
-            data_path_in_backup = getDataPathInBackup(table_name_in_backup);
+            data_path_in_backup = PathsInBackup{*backup}.getDataPath(table_name_in_backup, restore_settings->shard_num_in_backup, restore_settings->replica_num_in_backup);
             if (backup->listFiles(data_path_in_backup).empty())
                 return false;
 
@@ -231,7 +439,8 @@ namespace
         {
             if (!hasData())
                 return {};
-            return storage->restoreData(context, partitions, backup, data_path_in_backup, *restore_settings);
+
+            return storage->restoreData(context, partitions, backup, data_path_in_backup, *restore_settings, restore_coordination);
         }
 
         ContextMutablePtr context;
@@ -241,6 +450,9 @@ namespace
         BackupPtr backup;
         DatabaseAndTableName table_name_in_backup;
         RestoreSettingsPtr restore_settings;
+        std::shared_ptr<IRestoreCoordination> restore_coordination;
+        bool use_coordination_for_table_creation = false;
+        String replicated_database_zookeeper_path;
         DatabasePtr database;
         StoragePtr storage;
         ASTPtr storage_create_query;
@@ -255,11 +467,17 @@ namespace
     {
     public:
         RestoreTasksBuilder(ContextMutablePtr context_, const BackupPtr & backup_, const RestoreSettings & restore_settings_)
-            : context(context_), backup(backup_), restore_settings(restore_settings_) {}
+            : context(context_), backup(backup_), restore_settings(restore_settings_)
+        {
+            if (!restore_settings.coordination_zk_path.empty())
+                restore_coordination = std::make_shared<RestoreCoordinationDistributed>(restore_settings.coordination_zk_path, [context=context] { return context->getZooKeeper(); });
+        }
 
         /// Prepares internal structures for making tasks for restoring.
         void prepare(const ASTBackupQuery::Elements & elements)
         {
+            adjustIndicesOfSourceShardAndReplicaInBackup();
+
             String current_database = context->getCurrentDatabase();
             renaming_settings.setFromBackupQuery(elements, current_database);
 
@@ -296,30 +514,47 @@ namespace
         /// Makes tasks for restoring, should be called after prepare().
         RestoreTasks makeTasks() const
         {
-            /// Check that there are not `different_create_query`. (If it's set it means error.)
-            for (const auto & info : databases | boost::adaptors::map_values)
-            {
-                if (info.different_create_query)
-                    throw Exception(ErrorCodes::CANNOT_RESTORE_DATABASE,
-                                    "Cannot restore a database because two different create queries were generated for it: {} and {}",
-                                    serializeAST(*info.create_query), serializeAST(*info.different_create_query));
-            }
-
             auto restore_settings_ptr = std::make_shared<const RestoreSettings>(restore_settings);
 
             RestoreTasks res;
             for (const auto & info : databases | boost::adaptors::map_values)
-                res.push_back(std::make_unique<RestoreDatabaseTask>(context, info.create_query, restore_settings_ptr,
-                                                                    /* ignore_if_database_def_differs = */ !info.is_explicit));
+                res.push_back(std::make_unique<RestoreDatabaseTask>(context, info.create_query, restore_settings_ptr));
 
             /// TODO: We need to restore tables according to their dependencies.
             for (const auto & info : tables | boost::adaptors::map_values)
-                res.push_back(std::make_unique<RestoreTableTask>(context, info.create_query, info.partitions, backup, info.name_in_backup, restore_settings_ptr));
+                res.push_back(std::make_unique<RestoreTableTask>(context, info.create_query, info.partitions, backup, info.name_in_backup, restore_settings_ptr, restore_coordination));
 
             return res;
         }
 
     private:
+        void adjustIndicesOfSourceShardAndReplicaInBackup()
+        {
+            auto shards_in_backup = PathsInBackup{*backup}.getShards();
+            if (!restore_settings.shard_num_in_backup)
+            {
+                if (shards_in_backup.size() == 1)
+                    restore_settings.shard_num_in_backup = shards_in_backup[0];
+                else
+                    restore_settings.shard_num_in_backup = restore_settings.shard_num;
+            }
+
+            if (std::find(shards_in_backup.begin(), shards_in_backup.end(), restore_settings.shard_num_in_backup) == shards_in_backup.end())
+                throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No shard #{} in backup", restore_settings.shard_num_in_backup);
+
+            auto replicas_in_backup = PathsInBackup{*backup}.getReplicas(restore_settings.shard_num_in_backup);
+            if (!restore_settings.replica_num_in_backup)
+            {
+                if (replicas_in_backup.size() == 1)
+                    restore_settings.replica_num_in_backup = replicas_in_backup[0];
+                else
+                    restore_settings.replica_num_in_backup = restore_settings.replica_num;
+            }
+
+            if (std::find(replicas_in_backup.begin(), replicas_in_backup.end(), restore_settings.replica_num_in_backup) == replicas_in_backup.end())
+                throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No replica #{} in backup", restore_settings.replica_num_in_backup);
+        }
+
         /// Prepares to restore a single table and probably its database's definition.
         void prepareToRestoreTable(const DatabaseAndTableName & table_name_, const ASTs & partitions_)
         {
@@ -330,59 +565,12 @@ namespace
 
             /// Make a create query for this table.
             auto create_query = renameInCreateQuery(readCreateQueryFromBackup(table_name_));
-            create_query->if_not_exists = !restore_settings.throw_if_table_exists;
 
             CreateTableInfo info;
             info.create_query = create_query;
             info.name_in_backup = table_name_;
             info.partitions = partitions_;
             tables[new_table_name] = std::move(info);
-
-            /// If it's not system or temporary database then probably we need to restore the database's definition too.
-            if (!isSystemOrTemporaryDatabase(new_table_name.first))
-            {
-                if (!databases.contains(new_table_name.first))
-                {
-                    /// Add a create query for restoring the database if we haven't done it yet.
-                    std::shared_ptr<ASTCreateQuery> create_db_query;
-                    String db_name_in_backup = table_name_.first;
-                    if (hasCreateQueryInBackup(db_name_in_backup))
-                    {
-                        create_db_query = renameInCreateQuery(readCreateQueryFromBackup(db_name_in_backup));
-                    }
-                    else
-                    {
-                        create_db_query = std::make_shared<ASTCreateQuery>();
-                        db_name_in_backup.clear();
-                    }
-                    create_db_query->setDatabase(new_table_name.first);
-                    create_db_query->if_not_exists = true;
-
-                    CreateDatabaseInfo info_db;
-                    info_db.create_query = create_db_query;
-                    info_db.name_in_backup = std::move(db_name_in_backup);
-                    info_db.is_explicit = false;
-                    databases[new_table_name.first] = std::move(info_db);
-                }
-                else
-                {
-                    /// We already have added a create query for restoring the database,
-                    /// set `different_create_query` if it's not the same.
-                    auto & info_db = databases[new_table_name.first];
-                    if (!info_db.is_explicit && (info_db.name_in_backup != table_name_.first) && !info_db.different_create_query)
-                    {
-                        std::shared_ptr<ASTCreateQuery> create_db_query;
-                        if (hasCreateQueryInBackup(table_name_.first))
-                            create_db_query = renameInCreateQuery(readCreateQueryFromBackup(table_name_.first));
-                        else
-                            create_db_query = std::make_shared<ASTCreateQuery>();
-                        create_db_query->setDatabase(new_table_name.first);
-                        create_db_query->if_not_exists = true;
-                        if (!areDatabaseDefinitionsSame(*info_db.create_query, *create_db_query))
-                            info_db.different_create_query = create_db_query;
-                    }
-                }
-            }
         }
 
         /// Prepares to restore a database and all tables in it.
@@ -390,45 +578,39 @@ namespace
         {
             /// Check that we are not trying to restore the same database again.
             String new_database_name = renaming_settings.getNewDatabaseName(database_name_);
-            if (databases.contains(new_database_name) && databases[new_database_name].is_explicit)
+            if (databases.contains(new_database_name))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_DATABASE, "Cannot restore the database {} twice", backQuoteIfNeed(new_database_name));
 
-            Strings table_metadata_filenames = backup->listFiles("metadata/" + escapeForFileName(database_name_) + "/", "/");
+            Strings table_names = PathsInBackup{*backup}.getTables(database_name_, restore_settings.shard_num_in_backup, restore_settings.replica_num_in_backup);
+            bool has_tables_in_backup = !table_names.empty();
+            bool has_create_query_in_backup = hasCreateQueryInBackup(database_name_);
 
-            bool throw_if_no_create_database_query = table_metadata_filenames.empty();
-            if (throw_if_no_create_database_query && !hasCreateQueryInBackup(database_name_))
+            if (!has_create_query_in_backup && !has_tables_in_backup)
                 throw Exception(ErrorCodes::CANNOT_RESTORE_DATABASE, "Cannot restore the database {} because there is no such database in the backup", backQuoteIfNeed(database_name_));
 
             /// Of course we're not going to restore the definition of the system or the temporary database.
             if (!isSystemOrTemporaryDatabase(new_database_name))
             {
                 /// Make a create query for this database.
-                std::shared_ptr<ASTCreateQuery> create_db_query;
-                String db_name_in_backup = database_name_;
-                if (hasCreateQueryInBackup(db_name_in_backup))
+                std::shared_ptr<ASTCreateQuery> create_query;
+                if (has_create_query_in_backup)
                 {
-                    create_db_query = renameInCreateQuery(readCreateQueryFromBackup(db_name_in_backup));
+                    create_query = renameInCreateQuery(readCreateQueryFromBackup(database_name_));
                 }
                 else
                 {
-                    create_db_query = std::make_shared<ASTCreateQuery>();
-                    create_db_query->setDatabase(database_name_);
-                    db_name_in_backup.clear();
+                    create_query = std::make_shared<ASTCreateQuery>();
+                    create_query->setDatabase(database_name_);
                 }
 
-                create_db_query->if_not_exists = !restore_settings.throw_if_database_exists;
-
-                CreateDatabaseInfo info_db;
-                info_db.create_query = create_db_query;
-                info_db.name_in_backup = std::move(db_name_in_backup);
-                info_db.is_explicit = true;
-                databases[new_database_name] = std::move(info_db);
+                CreateDatabaseInfo info;
+                info.create_query = create_query;
+                databases[new_database_name] = std::move(info);
             }
 
             /// Restore tables in this database.
-            for (const String & table_metadata_filename : table_metadata_filenames)
+            for (const String & table_name : table_names)
             {
-                String table_name = unescapeForFileName(fs::path{table_metadata_filename}.stem());
                 if (except_list_.contains(table_name))
                     continue;
                 prepareToRestoreTable(DatabaseAndTableName{database_name_, table_name}, ASTs{});
@@ -438,10 +620,8 @@ namespace
         /// Prepares to restore all the databases contained in the backup.
         void prepareToRestoreAllDatabases(const std::set<String> & except_list_)
         {
-            Strings database_metadata_filenames = backup->listFiles("metadata/", "/");
-            for (const String & database_metadata_filename : database_metadata_filenames)
+            for (const String & database_name : PathsInBackup{*backup}.getDatabases(restore_settings.shard_num_in_backup, restore_settings.replica_num_in_backup))
             {
-                String database_name = unescapeForFileName(fs::path{database_metadata_filename}.stem());
                 if (except_list_.contains(database_name))
                     continue;
                 prepareToRestoreDatabase(database_name, std::set<String>{});
@@ -451,7 +631,7 @@ namespace
         /// Reads a create query for creating a specified table from the backup.
         std::shared_ptr<ASTCreateQuery> readCreateQueryFromBackup(const DatabaseAndTableName & table_name) const
         {
-            String create_query_path = getMetadataPathInBackup(table_name);
+            String create_query_path = PathsInBackup{*backup}.getMetadataPath(table_name, restore_settings.shard_num_in_backup, restore_settings.replica_num_in_backup);
             if (!backup->fileExists(create_query_path))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore the {} because there is no such table in the backup",
                                 formatTableNameOrTemporaryTableName(table_name));
@@ -466,7 +646,7 @@ namespace
         /// Reads a create query for creating a specified database from the backup.
         std::shared_ptr<ASTCreateQuery> readCreateQueryFromBackup(const String & database_name) const
         {
-            String create_query_path = getMetadataPathInBackup(database_name);
+            String create_query_path = PathsInBackup{*backup}.getMetadataPath(database_name, restore_settings.shard_num_in_backup, restore_settings.replica_num_in_backup);
             if (!backup->fileExists(create_query_path))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_DATABASE, "Cannot restore the database {} because there is no such database in the backup", backQuoteIfNeed(database_name));
             auto read_buffer = backup->readFile(create_query_path)->getReadBuffer();
@@ -480,7 +660,7 @@ namespace
         /// Whether there is a create query for creating a specified database in the backup.
         bool hasCreateQueryInBackup(const String & database_name) const
         {
-            String create_query_path = getMetadataPathInBackup(database_name);
+            String create_query_path = PathsInBackup{*backup}.getMetadataPath(database_name, restore_settings.shard_num_in_backup, restore_settings.replica_num_in_backup);
             return backup->fileExists(create_query_path);
         }
 
@@ -510,25 +690,15 @@ namespace
         struct CreateDatabaseInfo
         {
             ASTPtr create_query;
-            String name_in_backup;
-
-            /// Whether the creation of this database is specified explicitly, via RESTORE DATABASE or
-            /// RESTORE ALL DATABASES.
-            /// It's false if the creation of this database is caused by creating a table contained in it.
-            bool is_explicit = false;
-
-            /// If this is set it means the following error:
-            /// it means that for implicitly created database there were two different create query
-            /// generated so we cannot restore the database.
-            ASTPtr different_create_query;
         };
 
         ContextMutablePtr context;
         BackupPtr backup;
         RestoreSettings restore_settings;
+        std::shared_ptr<IRestoreCoordination> restore_coordination;
         DDLRenamingSettings renaming_settings;
-        std::map<String, CreateDatabaseInfo> databases;
-        std::map<DatabaseAndTableName, CreateTableInfo> tables;
+        std::map<String /* new_db_name */, CreateDatabaseInfo> databases;
+        std::map<DatabaseAndTableName /* new_table_name */, CreateTableInfo> tables;
     };
 
 
@@ -680,6 +850,18 @@ void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads)
         std::rethrow_exception(exception);
     else
         need_rollback_completed_tasks = false;
+}
+
+
+size_t getMinCountOfReplicas(const IBackup & backup)
+{
+    size_t min_count_of_replicas = static_cast<size_t>(-1);
+    for (size_t shard_index : PathsInBackup(backup).getShards())
+    {
+        size_t count_of_replicas = PathsInBackup(backup).getReplicas(shard_index).size();
+        min_count_of_replicas = std::min(min_count_of_replicas, count_of_replicas);
+    }
+    return min_count_of_replicas;
 }
 
 }
