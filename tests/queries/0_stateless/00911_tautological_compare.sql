@@ -23,11 +23,6 @@
 --         <tag>comparison</tag>
 --     </tags>
 
---     <preconditions>
---         <table_exists>hits_100m_single</table_exists>
---     </preconditions>
-
-
 --     <query short="1"><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < URL]]></query>
 --     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < PageCharset]]></query>
 --     <query short="1"><![CDATA[SELECT count() FROM hits_100m_single WHERE SearchPhrase < SearchPhrase SETTINGS max_threads = 2]]></query>
