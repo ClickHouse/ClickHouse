@@ -10,7 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <base/types.h>
 #include <Poco/Any.h>
@@ -86,7 +86,7 @@ public:
 namespace detail
 {
     template <typename UpdatableSessionPtr>
-    class ReadWriteBufferFromHTTPBase : public SeekableReadBufferWithSize, public WithFileName
+    class ReadWriteBufferFromHTTPBase : public SeekableReadBuffer, public WithFileName, public WithFileSize
     {
     public:
         using HTTPHeaderEntry = std::tuple<std::string, std::string>;
@@ -199,7 +199,7 @@ namespace detail
             }
         }
 
-        std::optional<size_t> getTotalSize() override
+        std::optional<size_t> getFileSize() override
         {
             if (read_range.end)
                 return *read_range.end - getRangeBegin();
@@ -270,7 +270,7 @@ namespace detail
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
             bool http_skip_not_found_url_ = false)
-            : SeekableReadBufferWithSize(nullptr, 0)
+            : SeekableReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
             , session {session_}
@@ -749,7 +749,7 @@ public:
         return off;
     }
 
-    std::optional<size_t> getTotalSize() override { return total_object_size; }
+    std::optional<size_t> getFileSize() override { return total_object_size; }
 
     String getFileName() const override { return uri.toString(); }
 

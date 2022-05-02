@@ -45,7 +45,7 @@
 #   include <boost/numeric/conversion/cast.hpp>
 #   include <boost/range/algorithm.hpp>
 #   include <boost/range/algorithm_ext/erase.hpp>
-#   include <base/logger_useful.h>
+#   include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -3362,12 +3362,12 @@ namespace
 
         switch (field_descriptor->type())
         {
-            case FieldTypeId::TYPE_SFIXED32: [[fallthrough]];
-            case FieldTypeId::TYPE_SINT32: [[fallthrough]];
+            case FieldTypeId::TYPE_SFIXED32:
+            case FieldTypeId::TYPE_SINT32:
             case FieldTypeId::TYPE_INT32:
                 return {field_descriptor->name(), std::make_shared<DataTypeInt32>()};
-            case FieldTypeId::TYPE_SFIXED64: [[fallthrough]];
-            case FieldTypeId::TYPE_SINT64: [[fallthrough]];
+            case FieldTypeId::TYPE_SFIXED64:
+            case FieldTypeId::TYPE_SINT64:
             case FieldTypeId::TYPE_INT64:
                 return {field_descriptor->name(), std::make_shared<DataTypeInt64>()};
             case FieldTypeId::TYPE_BOOL:
@@ -3376,13 +3376,13 @@ namespace
                 return {field_descriptor->name(), std::make_shared<DataTypeFloat32>()};
             case FieldTypeId::TYPE_DOUBLE:
                 return {field_descriptor->name(), std::make_shared<DataTypeFloat64>()};
-            case FieldTypeId::TYPE_UINT32: [[fallthrough]];
+            case FieldTypeId::TYPE_UINT32:
             case FieldTypeId::TYPE_FIXED32:
                 return {field_descriptor->name(), std::make_shared<DataTypeUInt32>()};
-            case FieldTypeId::TYPE_UINT64: [[fallthrough]];
+            case FieldTypeId::TYPE_UINT64:
             case FieldTypeId::TYPE_FIXED64:
                 return {field_descriptor->name(), std::make_shared<DataTypeUInt64>()};
-            case FieldTypeId::TYPE_BYTES: [[fallthrough]];
+            case FieldTypeId::TYPE_BYTES:
             case FieldTypeId::TYPE_STRING:
                 return {field_descriptor->name(), std::make_shared<DataTypeString>()};
             case FieldTypeId::TYPE_ENUM:
@@ -3403,7 +3403,7 @@ namespace
                 else
                     throw Exception("ClickHouse supports only 8-bit and 16-bit enums", ErrorCodes::BAD_ARGUMENTS);
             }
-            case FieldTypeId::TYPE_GROUP: [[fallthrough]];
+            case FieldTypeId::TYPE_GROUP:
             case FieldTypeId::TYPE_MESSAGE:
             {
                 const auto * message_descriptor = field_descriptor->message_type();
