@@ -20,8 +20,10 @@ using FileSegments = std::list<FileSegmentPtr>;
 
 class FileSegment : boost::noncopyable
 {
+
 friend class LRUFileCache;
 friend struct FileSegmentsHolder;
+friend class FileSegmentRangeWriter;
 
 public:
     using Key = UInt128;
@@ -104,8 +106,6 @@ public:
      */
     void writeInMemory(const char * from, size_t size);
 
-    size_t finalizeWrite();
-
     RemoteFileReaderPtr getRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
@@ -127,6 +127,8 @@ public:
     size_t getDownloadOffset() const;
 
     size_t getDownloadedSize() const;
+
+    size_t getAvailableSize() const;
 
     void completeBatchAndResetDownloader();
 
@@ -152,7 +154,7 @@ private:
     size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertNotDetached() const;
+    void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;
     void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
     bool hasFinalizedState() const;
     bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return detached; }
@@ -215,18 +217,62 @@ private:
     std::atomic<bool> is_downloaded{false};
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
+
+    bool is_write_through_cache = false;
 };
 
 struct FileSegmentsHolder : private boost::noncopyable
 {
+    FileSegmentsHolder() = default;
+
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
-    FileSegmentsHolder(FileSegmentsHolder && other) : file_segments(std::move(other.file_segments)) {}
+
+    FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
 
     ~FileSegmentsHolder();
+
+    void add(FileSegmentPtr && file_segment)
+    {
+        file_segments.push_back(file_segment);
+    }
 
     FileSegments file_segments{};
 
     String toString();
+};
+
+class FileSegmentRangeWriter
+{
+public:
+    FileSegmentRangeWriter(
+        IFileCache * cache_,
+        const FileSegment::Key & key_,
+        size_t max_file_segment_size_);
+
+    ~FileSegmentRangeWriter();
+
+    bool write(char * data, size_t size, size_t offset);
+
+    void finalize();
+
+    /// If exception happened on remote fs write, we consider current cache invalid.
+    void clearDownloaded();
+
+private:
+    void allocateFileSegment(size_t offset);
+
+    IFileCache * cache;
+    FileSegment::Key key;
+    size_t max_file_segment_size;
+
+    FileSegmentsHolder file_segments_holder;
+
+    std::weak_ptr<FileSegment> current_file_segment;
+    size_t current_file_segment_start_offset = 0;
+
+    bool finalized = false;
+
+    std::mutex mutex;
 };
 
 }

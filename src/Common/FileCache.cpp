@@ -412,21 +412,6 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     return &(it->second);
 }
 
-FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, size_t size)
-{
-    std::lock_guard cache_lock(mutex);
-
-    auto * cell = getCell(key, offset, cache_lock);
-    if (cell)
-        throw Exception(
-            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-            "Cache cell already exists for key `{}` and offset {}",
-            keyToStr(key), offset);
-
-    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, cache_lock);
-    return FileSegmentsHolder(std::move(file_segments));
-}
-
 bool LRUFileCache::tryReserve(
     const Key & key_, size_t offset_, size_t size, std::lock_guard<std::mutex> & cache_lock)
 {
@@ -800,6 +785,23 @@ std::vector<String> LRUFileCache::tryGetCachePaths(const Key & key)
     }
 
     return cache_paths;
+}
+
+FileSegmentPtr LRUFileCache::setDownloading(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+{
+    auto * cell = getCell(key, offset, cache_lock);
+    if (cell)
+        throw Exception(
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            "Cache cell already exists for key `{}` and offset {}",
+            keyToStr(key), offset);
+
+    cell = addCell(key, offset, size, FileSegment::State::DOWNLOADING, cache_lock);
+
+    if (!cell)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add a new cell for download");
+
+    return cell->file_segment;
 }
 
 LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRUQueue & queue_)
