@@ -1,7 +1,8 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>    // toString
-#include <base/logger_useful.h>
+#include <IO/WithFileName.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -165,6 +166,7 @@ Chunk IRowInputFormat::generate()
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
 
+        e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
         e.setLineNumber(total_rows);
         e.addMessage(verbose_diagnostic);
         throw;
@@ -188,7 +190,12 @@ Chunk IRowInputFormat::generate()
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
 
-        e.addMessage("(at row " + toString(total_rows) + ")\n" + verbose_diagnostic);
+        auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+        if (!file_name.empty())
+            e.addMessage(fmt::format("(in file/uri {})", file_name));
+
+        e.addMessage(fmt::format("(at row {})\n", total_rows));
+        e.addMessage(verbose_diagnostic);
         throw;
     }
 
