@@ -5,12 +5,11 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <boost/core/noncopyable.hpp>
-
-#include <base/logger_useful.h>
 
 #include <Common/PODArray.h>
 #include <Core/SortCursor.h>
@@ -251,7 +250,11 @@ private:
     Status allJoin(ASTTableJoin::Kind kind);
 
     Chunk createBlockWithDefaults(size_t source_num);
+    Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows);
 
+
+    /// For `USING` join key columns should have values from right side instead of defaults
+    std::unordered_map<size_t, size_t> left_to_right_key_remap;
     std::vector<FullMergeJoinCursorPtr> cursors;
     std::vector<Chunk> sample_chunks;
 

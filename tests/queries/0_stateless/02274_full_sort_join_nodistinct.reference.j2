@@ -183,6 +183,112 @@ t1 ANY RIGHT JOIN t2 | bs = {{ block_size }}
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
+t1 ALL FULL JOIN t2 | bs = {{ block_size }}
+1	1	4	5
+1	1	4	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+2	2	5	5
+3	3	4	4
+t1 ALL FULL JOIN USING t2 | bs = {{ block_size }}
+1	4	5
+1	4	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+2	5	5
+3	4	4
 t1 ALL INNER JOIN tn2 | bs = {{ block_size }}
 1	1	4	5
 1	1	4	5
@@ -233,6 +339,42 @@ t1 ANY RIGHT JOIN tn2 | bs = {{ block_size }}
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
+t1 ALL FULL JOIN tn2 | bs = {{ block_size }}
+0	\N	0	5
+0	\N	0	5
+0	\N	0	5
+0	\N	0	5
+0	\N	0	5
+0	\N	0	5
+0	\N	0	5
+1	1	4	5
+1	1	4	5
+2	\N	5	0
+2	\N	5	0
+2	\N	5	0
+2	\N	5	0
+2	\N	5	0
+2	\N	5	0
+2	\N	5	0
+3	3	4	4
+t1 ALL FULL JOIN USING tn2 | bs = {{ block_size }}
+1	4	5
+1	4	5
+2	5	0
+2	5	0
+2	5	0
+2	5	0
+2	5	0
+2	5	0
+2	5	0
+3	4	4
+\N	0	5
+\N	0	5
+\N	0	5
+\N	0	5
+\N	0	5
+\N	0	5
+\N	0	5
 tn1 ALL INNER JOIN t2 | bs = {{ block_size }}
 1	1	4	5
 1	1	4	5
@@ -283,6 +425,42 @@ tn1 ANY RIGHT JOIN t2 | bs = {{ block_size }}
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
+tn1 ALL FULL JOIN t2 | bs = {{ block_size }}
+1	1	4	5
+1	1	4	5
+3	3	4	4
+\N	0	5	0
+\N	0	5	0
+\N	0	5	0
+\N	0	5	0
+\N	0	5	0
+\N	0	5	0
+\N	0	5	0
+\N	2	0	5
+\N	2	0	5
+\N	2	0	5
+\N	2	0	5
+\N	2	0	5
+\N	2	0	5
+\N	2	0	5
+tn1 ALL FULL JOIN USING t2 | bs = {{ block_size }}
+1	4	5
+1	4	5
+2	0	5
+2	0	5
+2	0	5
+2	0	5
+2	0	5
+2	0	5
+2	0	5
+3	4	4
+\N	5	0
+\N	5	0
+\N	5	0
+\N	5	0
+\N	5	0
+\N	5	0
+\N	5	0
 tn1 ALL INNER JOIN tn2 | bs = {{ block_size }}
 1	1	4	5
 1	1	4	5
@@ -333,4 +511,40 @@ tn1 ANY RIGHT JOIN tn2 | bs = {{ block_size }}
 \N	\N	0	val26
 \N	\N	0	val27
 \N	\N	0	val28
+tn1 ALL FULL JOIN tn2 | bs = {{ block_size }}
+1	1	4	5
+1	1	4	5
+3	3	4	4
+\N	\N	0	5
+\N	\N	0	5
+\N	\N	0	5
+\N	\N	0	5
+\N	\N	0	5
+\N	\N	0	5
+\N	\N	0	5
+\N	\N	5	0
+\N	\N	5	0
+\N	\N	5	0
+\N	\N	5	0
+\N	\N	5	0
+\N	\N	5	0
+\N	\N	5	0
+tn1 ALL FULL JOIN USING tn2 | bs = {{ block_size }}
+1	4	5
+1	4	5
+3	4	4
+\N	0	5
+\N	0	5
+\N	0	5
+\N	0	5
+\N	0	5
+\N	0	5
+\N	0	5
+\N	5	0
+\N	5	0
+\N	5	0
+\N	5	0
+\N	5	0
+\N	5	0
+\N	5	0
 {% endfor -%}

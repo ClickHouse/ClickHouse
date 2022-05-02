@@ -363,7 +363,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage());
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), forceFullSortingMergeJoin());
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
             {
@@ -511,7 +511,7 @@ TableJoin::createConvertingActions(
     const ColumnsWithTypeAndName & left_sample_columns,
     const ColumnsWithTypeAndName & right_sample_columns)
 {
-    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage());
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), forceFullSortingMergeJoin());
 
     NameToNameMap left_key_column_rename;
     NameToNameMap right_key_column_rename;
@@ -568,7 +568,7 @@ TableJoin::createConvertingActions(
 }
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
+void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool strict)
 {
     if (!left_type_map.empty() || !right_type_map.empty())
         return;
@@ -593,39 +593,42 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
 
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
-        auto ltype = left_types.find(left_key_name);
-        auto rtype = right_types.find(right_key_name);
-        if (ltype == left_types.end() || rtype == right_types.end())
+        auto ltypeit = left_types.find(left_key_name);
+        auto rtypeit = right_types.find(right_key_name);
+        if (ltypeit == left_types.end() || rtypeit == right_types.end())
         {
             /// Name mismatch, give up
             left_type_map.clear();
             right_type_map.clear();
             return false;
         }
+        const auto & ltype = ltypeit->second;
+        const auto & rtype = rtypeit->second;
 
-        if (JoinCommon::typesEqualUpToNullability(ltype->second, rtype->second))
+        bool type_equals = strict ? ltype->equals(*rtype) : JoinCommon::typesEqualUpToNullability(ltype, rtype);
+        if (type_equals)
             return true;
 
         DataTypePtr common_type;
         try
         {
             /// TODO(vdimir): use getMostSubtype if possible
-            common_type = DB::getLeastSupertype(DataTypes{ltype->second, rtype->second});
+            common_type = DB::getLeastSupertype(DataTypes{ltype, rtype});
         }
         catch (DB::Exception & ex)
         {
             throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
-                "Can't infer common type for joined columns: {}: {} at left, {}: {} at right ({})",
-                left_key_name, ltype->second->getName(),
-                right_key_name, rtype->second->getName(),
+                "Can't infer common type for joined columns: {}: {} at left, {}: {} at right. {}",
+                left_key_name, ltype->getName(),
+                right_key_name, rtype->getName(),
                 ex.message());
         }
-        bool right_side_changed = !common_type->equals(*rtype->second);
-        if (right_side_changed && !allow_right)
+
+        if (!allow_right && !common_type->equals(*rtype))
         {
             throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
-                "Can't change type for right table: {}: {} -> {}",
-                right_key_name, rtype->second->getName(), common_type->getName());
+                "Can't change type for right table: {}: {} -> {}.",
+                right_key_name, rtype->getName(), common_type->getName());
         }
         left_type_map[left_key_name] = right_type_map[right_key_name] = common_type;
 

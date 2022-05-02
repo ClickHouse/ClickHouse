@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
@@ -83,7 +85,6 @@ ORDER BY t1.key1, t1.key2, t1.key3, t2.key1, t2.key2, t2.key3, t2.s
 {% endfor -%}
 {% endfor -%}
 
-
 {% for kind in ['ALL', 'ANY'] -%}
 
 SET join_use_nulls = 1;
@@ -131,3 +132,6 @@ ORDER BY t1.key1, t1.key2, t1.key3, t2.key1, t2.key2, t2.key3, t2.s
 ;
 
 {% endfor -%}
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
