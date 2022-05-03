@@ -7,7 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>

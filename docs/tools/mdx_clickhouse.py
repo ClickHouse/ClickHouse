@@ -39,7 +39,6 @@ MARKDOWN_EXTENSIONS = [
 
 class ClickHouseLinkMixin(object):
     def handleMatch(self, m, data):
-        single_page = os.environ.get("SINGLE_PAGE") == "1"
         try:
             el, start, end = super(ClickHouseLinkMixin, self).handleMatch(m, data)
         except IndexError:
@@ -51,13 +50,6 @@ class ClickHouseLinkMixin(object):
             if is_external:
                 if not href.startswith("https://clickhouse.com"):
                     el.set("rel", "external nofollow noreferrer")
-            elif single_page:
-                if "#" in href:
-                    el.set("href", "#" + href.split("#", 1)[1])
-                else:
-                    el.set(
-                        "href", "#" + href.replace("/index.md", "/").replace(".md", "/")
-                    )
         return el, start, end
 
 
@@ -103,7 +95,6 @@ def get_translations(dirname, lang):
 
 class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
     disabled = False
-    skip_git_log = False
 
     def on_config(self, config):
         super(PatchedMacrosPlugin, self).on_config(config)
@@ -141,16 +132,6 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
             lang = config.data["theme"]["language"]
             page.canonical_url = page.canonical_url.replace(f"/{lang}/", "/en/", 1)
 
-        if config.data["extra"].get("version_prefix") or config.data["extra"].get(
-            "single_page"
-        ):
-            return markdown
-        if self.skip_git_log:
-            return markdown
-        src_path = page.file.abs_src_path
-
-        # There was a code that determined the minimum and maximum modification dates for a page.
-        # It was removed due to being obnoxiously slow.
         return markdown
 
     def render_impl(self, markdown):

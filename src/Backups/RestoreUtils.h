@@ -13,6 +13,7 @@ using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
 using RestoreTasks = std::vector<RestoreTaskPtr>;
 struct RestoreSettings;
 class Context;
+using ContextPtr = std::shared_ptr<const Context>;
 using ContextMutablePtr = std::shared_ptr<Context>;
 
 /// Prepares restore tasks.
@@ -20,5 +21,8 @@ RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backu
 
 /// Executes restore tasks.
 void executeRestoreTasks(RestoreTasks && tasks, size_t num_threads);
+
+/// Returns the minimal count of replicas stored in the backup.
+size_t getMinCountOfReplicas(const IBackup & backup);
 
 }

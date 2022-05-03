@@ -26,7 +26,7 @@ public:
         const std::shared_ptr<TemporaryFileOnDisk> & temporary_file_ = {});
 
     UInt64 getSize() const override { return limit; }
-    std::unique_ptr<ReadBuffer> getReadBuffer() const override;
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
 
 private:
     const UInt64 limit;

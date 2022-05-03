@@ -17,6 +17,7 @@ public:
     , in(std::move(in_)) {}
 
     const ReadBuffer & getWrappedReadBuffer() const { return *in; }
+    ReadBuffer & getWrappedReadBuffer() { return *in; }
 
 protected:
     std::unique_ptr<ReadBuffer> in;
