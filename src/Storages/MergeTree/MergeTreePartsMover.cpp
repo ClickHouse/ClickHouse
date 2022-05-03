@@ -217,7 +217,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         /// Try zero-copy replication and fallback to default copy if it's not possible
         moving_part.part->assertOnDisk();
         String path_to_clone = fs::path(data->getRelativeDataPath()) / directory_to_move / "";
-        String relative_path = part->data_part_storage->getRelativePath();
+        String relative_path = part->data_part_storage->getPartDirectory();
         if (disk->exists(path_to_clone + relative_path))
         {
             LOG_WARNING(log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone + relative_path));
@@ -231,7 +231,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         if (!cloned_part_storage)
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
-            cloned_part_storage = part->data_part_storage->clone(path_to_clone, part->data_part_storage->getRelativePath(), log);
+            cloned_part_storage = part->data_part_storage->clone(path_to_clone, part->data_part_storage->getPartDirectory(), log);
         }
     }
     else

@@ -1921,7 +1921,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
         /// If DETACH clone parts to detached/ directory
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->data_part_storage->getRelativePath());
+            LOG_INFO(log, "Detaching {}", part->data_part_storage->getPartDirectory());
             part->makeCloneInDetached("", metadata_snapshot);
         }
     }
@@ -2565,7 +2565,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
         for (const auto & part : parts_to_remove_from_working_set)
         {
-            LOG_INFO(log, "Detaching {}", part->data_part_storage->getRelativePath());
+            LOG_INFO(log, "Detaching {}", part->data_part_storage->getPartDirectory());
             part->makeCloneInDetached("clone", metadata_snapshot);
         }
     }
