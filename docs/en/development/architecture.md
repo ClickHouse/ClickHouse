@@ -169,10 +169,12 @@ For queries and subsystems other than `Server` config is accessible using `Conte
 
 ## Threads and jobs {#threads-and-jobs}
 
-To execute queries and do side activities ClickHouse allocates threads from one of thread pools to avoid frequent thread creation and destruction. There are a few thread pools, which are selected depending on a purpose of a job:
+To execute queries and do side activities ClickHouse allocates threads from one of thread pools to avoid frequent thread creation and destruction. There are a few thread pools, which are selected depending on a purpose and structure of a job:
   * Server pool for incoming client sessions.
-  * IO thread pool for jobs that are mostly blocked on some IO and are not CPU-intensive.
   * Global thread pool for general purpose jobs, background activities and standalone threads.
+  * IO thread pool for jobs that are mostly blocked on some IO and are not CPU-intensive.
+  * Background pools for periodic tasks.
+  * Pools for preemptable tasks that can be split into steps.
 
 Server pool is a `Poco::ThreadPool` class instance defined in `Server::main()` method. It can have at most `max_connection` threads. Every thread is dedicated to a single active connection.
 
@@ -181,15 +183,17 @@ Global thread pool is `GlobalThreadPool` singleton class. To allocate thread fro
   * `max_thread_pool_free_size` - limit on idle thread count waiting for new jobs.
   * `thread_pool_queue_size` - limit on scheduled job count.
 
-IO thread pool is accessible via `IOThreadPool::get()` method. IO thread pool and global thread pool share implementation. It is configured in the same way as global pool with `max_io_thread_pool_size`, `max_io_thread_pool_free_size` and `io_thread_pool_queue_size` settings. The main purpose of IO thread pool is to avoid exhaustion of the global pool with IO jobs, which could prevent queries from fully utilizing CPU.
+Global pool is universal and all pools described below are implemented on top of it. This can be thought of as a hierarchy of pools. Any specialized pool takes its threads from the global pool using `ThreadPool` class. So the main purpose of any specialized pool is to apply limit on the number of simultaneous jobs and do job scheduling. If there are more jobs scheduled than threads in a pool, `ThreadPool` accumulates jobs in a queue with priorities. Each job has an integer priority. Default priority is zero. All jobs with higher priority values are started before any job with lower priority value. But there is no difference between already executing jobs, thus priority matters only when the pool in overloaded.
 
-If there are more jobs scheduled than threads in a pool (either global or IO), jobs are accumulated in a queue with priorities. Each job has an integer priority. Default priority is zero. All jobs with higher priority values are started before any job with lower priority value. But there is no difference between already executing jobs, thus priority matters only when there are more than `max_io_thread_pool_size` simultaneous jobs in the system.
+IO thread pool is implemented as a plain `ThreadPool` accessible via `IOThreadPool::get()` method. It is configured in the same way as global pool with `max_io_thread_pool_size`, `max_io_thread_pool_free_size` and `io_thread_pool_queue_size` settings. The main purpose of IO thread pool is to avoid exhaustion of the global pool with IO jobs, which could prevent queries from fully utilizing CPU.
+
+For periodic task execution there is `BackgroundSchedulePool` class. You can register tasks using `BackgroundSchedulePool::TaskHolder` objects and the pool ensures that no task runs two jobs at the same time. It also allows you to postpone task execution to a specific instant in the future or temporarily deactivate task. Global `Context` provides a few instances of this class for different purposes. For general purpose tasks `Context::getSchedulePool()` is used.
+
+There are also specialized thread pools for preemptable tasks. Such `IExecutableTask` task can be split into ordered sequence of jobs, called steps. To schedule these tasks in a manner allowing short tasks to be prioritied over long ones `MergeTreeBackgroundExecutor` is used. As name suggests it is used for background MergeTree related operations such as merges, mutations, fetches and moves. Pool instances are available using `Context::getCommonExecutor()` and other similar methods.
 
 No matter what pool is used for a job, at start `ThreadStatus` instance is created for this job. It encapsulates all per-thread information: thread id, query id, performance counters, resource consumption and many other useful data. Job can access it via thread local pointer by `CurrentThread::get()` call, so we do not need to pass it to every function.
 
 If thread is related to query execution, then the most important thing attached to `ThreadStatus` is query context `ContextPtr`. Every query has its master thread in the server pool. Master thread does the attachment by holding an `ThreadStatus::QueryScope query_scope(query_context)` object. Master thread also creates a thread group represented with `ThreadGroupStatus` object. Every additional thread that is allocated during this query execution is attached to its thread group by `CurrentThread::attachTo(thread_group)` call. Thread groups are used to aggregate profile event counters and track memory consumption by all threads dedicated to a single task (see `MemoryTracker` and `ProfileEvents::Counters` classes for more information).
-
-For periodic task execution there is `BackgroundSchedulePool` class. It allows you to postpone task execution to a specific instant in the future and limit the number of simultaneously running tasks. It takes threads from the global thread pool. Global context provides a few instances of this class for different purposes. For general purpose tasks `Context::getSchedulePool()` is used.
 
 ## Distributed Query Execution {#distributed-query-execution}
 
