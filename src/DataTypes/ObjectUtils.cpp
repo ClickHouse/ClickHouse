@@ -26,7 +26,7 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int LOGICAL_ERROR;
-    extern const int DUPLICATE_COLUMN;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 size_t getNumberOfDimensions(const IDataType & type)
@@ -180,6 +180,20 @@ static bool isPrefix(const PathInData::Parts & prefix, const PathInData::Parts &
     return true;
 }
 
+/// Returns true if there exists a prefix with matched names,
+/// but not matched structure (is Nested, number of dimensions).
+static bool hasDifferentStructureInPrefix(const PathInData::Parts & lhs, const PathInData::Parts & rhs)
+{
+    for (size_t i = 0; i < std::min(lhs.size(), rhs.size()); ++i)
+    {
+        if (lhs[i].key != rhs[i].key)
+            return false;
+        else if (lhs[i] != rhs[i])
+            return true;
+    }
+    return false;
+}
+
 void checkObjectHasNoAmbiguosPaths(const PathsInData & paths)
 {
     size_t size = paths.size();
@@ -189,8 +203,14 @@ void checkObjectHasNoAmbiguosPaths(const PathsInData & paths)
         {
             if (isPrefix(paths[i].getParts(), paths[j].getParts())
                 || isPrefix(paths[j].getParts(), paths[i].getParts()))
-                throw Exception(ErrorCodes::DUPLICATE_COLUMN,
+                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
                     "Data in Object has ambiguous paths: '{}' and '{}'",
+                    paths[i].getPath(), paths[j].getPath());
+
+            if (hasDifferentStructureInPrefix(paths[i].getParts(), paths[j].getParts()))
+                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+                    "Data in Object has ambiguous paths: '{}' and '{}'. "
+                    "Paths have prefixes matched by names, but different in structure",
                     paths[i].getPath(), paths[j].getPath());
         }
     }
