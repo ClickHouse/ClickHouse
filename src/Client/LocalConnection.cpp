@@ -410,7 +410,7 @@ Packet LocalConnection::receivePacket()
         {
             if (state->profile_info)
             {
-                packet.profile_info = std::move(*state->profile_info);
+                packet.profile_info = *state->profile_info;
                 state->profile_info.reset();
             }
             next_packet_type.reset();
