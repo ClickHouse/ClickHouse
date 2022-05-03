@@ -800,3 +800,37 @@ def test_server_uuid(started_cluster):
     main_node.restart_clickhouse()
     uuid1_after_restart = main_node.query("select serverUUID()")
     assert uuid1 == uuid1_after_restart
+
+
+def test_sync_replica(started_cluster):
+    main_node.query(
+        "CREATE DATABASE test_sync_database ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE test_sync_database ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
+    )
+
+    number_of_tables = 1000
+
+    settings = {"distributed_ddl_task_timeout": 0}
+
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(dummy_node)
+
+        for i in range(number_of_tables):
+            main_node.query(
+                "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n".format(
+                    i
+                ),
+                settings=settings,
+            )
+
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA test_sync_database")
+
+    assert dummy_node.query(
+        "SELECT count() FROM system.tables where database='test_sync_database'"
+    ).strip() == str(number_of_tables)
+
+    assert main_node.query(
+        "SELECT count() FROM system.tables where database='test_sync_database'"
+    ).strip() == str(number_of_tables)

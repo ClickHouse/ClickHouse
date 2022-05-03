@@ -6,7 +6,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

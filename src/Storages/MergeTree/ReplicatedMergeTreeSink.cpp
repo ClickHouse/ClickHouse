@@ -605,7 +605,7 @@ void ReplicatedMergeTreeSink::onStart()
 {
     /// Only check "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context);
 }
 
 void ReplicatedMergeTreeSink::onFinish()

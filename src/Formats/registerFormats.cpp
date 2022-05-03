@@ -15,6 +15,9 @@ void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory);
 void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
+#if USE_HIVE
+void registerFileSegmentationEngineHiveText(FormatFactory & factory);
+#endif
 
 /// Formats for both input/output.
 
@@ -72,6 +75,7 @@ void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
+void registerOutputFormatPrometheus(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -127,6 +131,10 @@ void registerFormats()
     registerFileSegmentationEngineJSONAsString(factory);
     registerFileSegmentationEngineJSONAsObject(factory);
     registerFileSegmentationEngineJSONCompactEachRow(factory);
+#if USE_HIVE
+    registerFileSegmentationEngineHiveText(factory);
+#endif
+
 
     registerInputFormatNative(factory);
     registerOutputFormatNative(factory);
@@ -181,6 +189,7 @@ void registerFormats()
     registerOutputFormatMarkdown(factory);
     registerOutputFormatPostgreSQLWire(factory);
     registerOutputFormatCapnProto(factory);
+    registerOutputFormatPrometheus(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);

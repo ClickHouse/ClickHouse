@@ -75,7 +75,11 @@ namespace
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
-std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match, size_t & total_bytes_to_read)
+void listFilesWithRegexpMatchingImpl(
+    const std::string & path_for_ls,
+    const std::string & for_match,
+    size_t & total_bytes_to_read,
+    std::vector<std::string> & result)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -86,10 +90,9 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
     auto regexp = makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash));
     re2::RE2 matcher(regexp);
 
-    std::vector<std::string> result;
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
     if (!fs::exists(prefix_without_globs))
-        return result;
+        return;
 
     const fs::directory_iterator end;
     for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
@@ -98,25 +101,34 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
         const bool looking_for_directory = next_slash != std::string::npos;
+
         /// Condition is_directory means what kind of path is it in current iteration of ls
-        if (!fs::is_directory(it->path()) && !looking_for_directory)
+        if (!it->is_directory() && !looking_for_directory)
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += fs::file_size(it->path());
+                total_bytes_to_read += it->file_size();
                 result.push_back(it->path().string());
             }
         }
-        else if (fs::is_directory(it->path()) && looking_for_directory)
+        else if (it->is_directory() && looking_for_directory)
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
-                Strings result_part = listFilesWithRegexpMatching(fs::path(full_path) / "", suffix_with_globs.substr(next_slash), total_bytes_to_read);
-                std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
+                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash), total_bytes_to_read, result);
             }
         }
     }
+}
+
+std::vector<std::string> listFilesWithRegexpMatching(
+    const std::string & path_for_ls,
+    const std::string & for_match,
+    size_t & total_bytes_to_read)
+{
+    std::vector<std::string> result;
+    listFilesWithRegexpMatchingImpl(path_for_ls, for_match, total_bytes_to_read, result);
     return result;
 }
 
@@ -126,7 +138,11 @@ std::string getTablePath(const std::string & table_dir_path, const std::string &
 }
 
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
-void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_dir_path, const std::string & table_path)
+void checkCreationIsAllowed(
+    ContextPtr context_global,
+    const std::string & db_dir_path,
+    const std::string & table_path,
+    bool can_be_directory)
 {
     if (context_global->getApplicationType() != Context::ApplicationType::SERVER)
         return;
@@ -135,8 +151,12 @@ void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_di
     if (!fileOrSymlinkPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside `{}`", table_path, db_dir_path);
 
-    if (fs::exists(table_path) && fs::is_directory(table_path))
-        throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+    if (can_be_directory)
+    {
+        auto table_path_stat = fs::status(table_path);
+        if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
+            throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+    }
 }
 
 std::unique_ptr<ReadBuffer> createReadBuffer(
@@ -204,6 +224,7 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
     String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
+    bool can_be_directory = true;
 
     if (path.find(PartitionedSink::PARTITION_ID_WILDCARD) != std::string::npos)
     {
@@ -212,18 +233,21 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     else if (path.find_first_of("*?{") == std::string::npos)
     {
         std::error_code error;
-        if (fs::exists(path))
-            total_bytes_to_read += fs::file_size(path, error);
+        size_t size = fs::file_size(path, error);
+        if (!error)
+            total_bytes_to_read += size;
 
         paths.push_back(path);
     }
     else
     {
+        /// We list only non-directory files.
         paths = listFilesWithRegexpMatching("/", path, total_bytes_to_read);
+        can_be_directory = false;
     }
 
     for (const auto & cur_path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, cur_path);
+        checkCreationIsAllowed(context, user_files_absolute_path, cur_path, can_be_directory);
 
     return paths;
 }
@@ -342,8 +366,11 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
     fs::create_directories(table_dir_path);
     paths = {getTablePath(table_dir_path, format_name)};
-    if (fs::exists(paths[0]))
-        total_bytes_to_read = fs::file_size(paths[0]);
+
+    std::error_code error;
+    size_t size = fs::file_size(paths[0], error);
+    if (!error)
+        total_bytes_to_read = size;
 
     setStorageMetadata(args);
 }
@@ -815,7 +842,7 @@ public:
     {
         auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
         PartitionedSink::validatePartitionKey(partition_path, true);
-        checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path);
+        checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
@@ -896,7 +923,7 @@ SinkToStoragePtr StorageFile::write(
 
             std::error_code error_code;
             if (!context->getSettingsRef().engine_file_truncate_on_insert && !is_path_with_globs
-                && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings) && fs::exists(paths.back())
+                && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
                 && fs::file_size(paths.back(), error_code) != 0 && !error_code)
             {
                 if (context->getSettingsRef().engine_file_allow_create_multiple_files)

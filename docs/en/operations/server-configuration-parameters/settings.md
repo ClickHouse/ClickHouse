@@ -23,7 +23,7 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-:::warning    
+:::warning
 Don’t use it if you have just started using ClickHouse.
 :::
 
@@ -251,6 +251,23 @@ See also “[External dictionaries](../../sql-reference/dictionaries/external-di
 
 ``` xml
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
+```
+
+## user_defined_executable_functions_config {#server_configuration_parameters-user_defined_executable_functions_config}
+
+The path to the config file for executable user defined functions.
+
+Path:
+
+-   Specify the absolute path or the path relative to the server config file.
+-   The path can contain wildcards \* and ?.
+
+See also “[Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).”.
+
+**Example**
+
+``` xml
+<user_defined_executable_functions_config>*_dictionary.xml</user_defined_executable_functions_config>
 ```
 
 ## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
@@ -881,6 +898,92 @@ Default value: `10000`.
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
+## background_pool_size {#background_pool_size}
+
+Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied  at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+
+Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+**Example**
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+## background_merges_mutations_concurrency_ratio {#background_merges_mutations_concurrency_ratio}
+
+Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example if the ratio equals to 2 and
+`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operation could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
+The same as for `background_pool_size` setting `background_merges_mutations_concurrency_ratio` could be applied from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 2.
+
+**Example**
+
+```xml
+<background_merges_mutations_concurrency_ratio>3</background_pbackground_merges_mutations_concurrency_ratio>
+```
+
+## background_move_pool_size {#background_move_pool_size}
+
+Sets the number of threads performing background moves for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_move_pool_size>36</background_move_pool_size>
+```
+
+## background_fetches_pool_size {#background_fetches_pool_size}
+
+Sets the number of threads performing background fetches for tables with ReplicatedMergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_fetches_pool_size>36</background_fetches_pool_size>
+```
+
+## background_common_pool_size {#background_common_pool_size}
+
+Sets the number of threads performing background non-specialized operations like cleaning the filesystem etc. for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_common_pool_size>36</background_common_pool_size>
+```
+
+
+
 ## merge_tree {#server_configuration_parameters-merge_tree}
 
 Fine tuning for tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
@@ -1357,6 +1460,26 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
+## user_scripts_path {#server_configuration_parameters-user_scripts_path}
+
+The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
+
+**Example**
+
+``` xml
+<user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
+```
+
+## user_defined_path {#server_configuration_parameters-user_defined_path}
+
+The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
+
+**Example**
+
+``` xml
+<user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
+```
+
 ## users_config {#users-config}
 
 Path to the file that contains:
@@ -1622,4 +1745,3 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
-

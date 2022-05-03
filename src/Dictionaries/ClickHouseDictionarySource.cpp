@@ -12,7 +12,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
@@ -169,9 +169,13 @@ Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std:
     /// Sample block should not contain first row default values
     auto empty_sample_block = sample_block.cloneEmpty();
 
+    /// Copy context because results of scalar subqueries potentially could be cached
+    auto context_copy = Context::createCopy(context);
+    context_copy->makeQueryContext();
+
     if (configuration.is_local)
     {
-        builder.init(executeQuery(query, context, true).pipeline);
+        builder.init(executeQuery(query, context_copy, true).pipeline);
         auto converting = ActionsDAG::makeConvertingActions(
             builder.getHeader().getColumnsWithTypeAndName(),
             empty_sample_block.getColumnsWithTypeAndName(),
@@ -185,7 +189,7 @@ Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std:
     else
     {
         builder.init(Pipe(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context), false, false)));
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false)));
     }
 
     if (result_size_hint)
@@ -202,17 +206,21 @@ Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std:
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
 {
     LOG_TRACE(log, "Performing invalidate query");
+
+    /// Copy context because results of scalar subqueries potentially could be cached
+    auto context_copy = Context::createCopy(context);
+    context_copy->makeQueryContext();
+
     if (configuration.is_local)
     {
-        auto query_context = Context::createCopy(context);
-        return readInvalidateQuery(executeQuery(request, query_context, true).pipeline);
+        return readInvalidateQuery(executeQuery(request, context_copy, true).pipeline);
     }
     else
     {
         /// We pass empty block to RemoteBlockInputStream, because we don't know the structure of the result.
         Block invalidate_sample_block;
         QueryPipeline pipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context), false, false));
+            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false));
         return readInvalidateQuery(std::move(pipeline));
     }
 }
