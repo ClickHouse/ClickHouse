@@ -5,30 +5,6 @@ sidebar_label: Server Settings
 
 # Server Settings {#server-settings}
 
-## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
-
-User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
-
-Given that, for example, dictionaries, can be out of sync across nodes, mutations that pull values from them are disallowed on replicated tables by default. Enabling this setting allows this behavior, making it the user's responsibility to ensure that the data used is in sync across all nodes.
-
-Default value: 0.
-
-**Example**
-
-``` xml
-<profiles>
-    <default>
-        <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
-        
-        <!-- ... -->
-    </default>
-
-    <!-- ... -->
-
-</profiles>
-```
-
-
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
 The interval in seconds before reloading built-in dictionaries.
