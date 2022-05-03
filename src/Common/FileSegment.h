@@ -160,6 +160,7 @@ private:
     bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return detached; }
     [[noreturn]] static void throwDetached();
 
+
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
     bool isDownloaderImpl(std::lock_guard<std::mutex> & segment_lock) const;

@@ -47,5 +47,15 @@ BlockIO::~BlockIO()
     reset();
 }
 
+void BlockIO::setAllDataSent() const
+{
+    /// The following queries does not have process_list_entry:
+    /// - internal
+    /// - SHOW PROCESSLIST
+    if (process_list_entry)
+        (*process_list_entry)->setAllDataSent();
+}
+
+
 }
 
