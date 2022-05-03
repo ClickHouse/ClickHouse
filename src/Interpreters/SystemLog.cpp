@@ -12,6 +12,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -194,6 +195,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     crash_log = createSystemLog<CrashLog>(global_context, "system", "crash_log", config, "crash_log");
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
     metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
+    cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log");
     asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
         global_context, "system", "asynchronous_metric_log", config,
         "asynchronous_metric_log");
@@ -235,6 +237,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(transactions_info_log.get());
     if (processors_profile_log)
         logs.emplace_back(processors_profile_log.get());
+    if (cache_log)
+        logs.emplace_back(cache_log.get());
 
     try
     {

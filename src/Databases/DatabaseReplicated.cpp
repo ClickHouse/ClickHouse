@@ -312,6 +312,11 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
     DatabaseReplicatedDDLWorker::enqueueQueryImpl(current_zookeeper, entry, this, true);
 }
 
+bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
+{
+    return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
+}
+
 void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
 {
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
