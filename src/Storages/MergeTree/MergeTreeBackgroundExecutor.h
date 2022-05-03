@@ -128,7 +128,7 @@ private:
 };
 
 /**
- *  Executor for a background MergeTree related operations such as merges, mutations, fetches an so on.
+ *  Executor for a background MergeTree related operations such as merges, mutations, fetches and so on.
  *  It can execute only successors of ExecutableTask interface.
  *  Which is a self-written coroutine. It suspends, when returns true from executeStep() method.
  *

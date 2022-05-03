@@ -220,7 +220,6 @@ InputFormatPtr FormatFactory::getInput(
             (ReadBuffer & input) -> InputFormatPtr
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
-
         ParallelParsingInputFormat::Params params{
             buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
                context->getApplicationType() == Context::ApplicationType::SERVER};
