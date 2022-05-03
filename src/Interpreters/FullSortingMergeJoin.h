@@ -35,7 +35,7 @@ public:
         if (table_join->getClauses().size() != 1)
             throw Exception("FullSortingMergeJoin supports only one join key", ErrorCodes::NOT_IMPLEMENTED);
 
-        /// Key column can change nullability and it's not handled on type conversion stage, so algorithm shold be aware of it
+        /// Key column can change nullability and it's not handled on type conversion stage, so algorithm should be aware of it
         if (table_join->hasUsing() && table_join->joinUseNulls())
             throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "FullSortingMergeJoin doesn't support USING with join_use_nulls");
 
