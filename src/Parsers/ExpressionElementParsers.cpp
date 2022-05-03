@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/DumpASTNode.h>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCollation.h>
