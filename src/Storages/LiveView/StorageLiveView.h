@@ -11,7 +11,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -49,7 +48,7 @@ class Pipe;
 using Pipes = std::vector<Pipe>;
 
 
-class StorageLiveView final : public IStorage, WithContext, boost::noncopyable
+class StorageLiveView final : public IStorage, WithContext
 {
 friend class LiveViewSource;
 friend class LiveViewEventsSource;

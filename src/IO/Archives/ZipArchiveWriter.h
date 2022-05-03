@@ -3,7 +3,6 @@
 #include <Common/config.h>
 
 #if USE_MINIZIP
-#include <boost/noncopyable.hpp>
 #include <IO/Archives/IArchiveWriter.h>
 #include <mutex>
 
@@ -14,7 +13,7 @@ class WriteBuffer;
 class WriteBufferFromFileBase;
 
 /// Implementation of IArchiveWriter for writing zip archives.
-class ZipArchiveWriter : public IArchiveWriter, boost::noncopyable
+class ZipArchiveWriter : public IArchiveWriter
 {
 public:
     /// Constructs an archive that will be written as a file in the local filesystem.

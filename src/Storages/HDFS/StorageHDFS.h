@@ -4,7 +4,6 @@
 
 #if USE_HDFS
 
-#include <boost/noncopyable.hpp>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
@@ -16,7 +15,7 @@ namespace DB
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHDFS final : public IStorage, WithContext, boost::noncopyable
+class StorageHDFS final : public IStorage, WithContext
 {
 public:
     StorageHDFS(

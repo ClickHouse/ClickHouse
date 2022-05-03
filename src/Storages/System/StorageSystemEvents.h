@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -11,7 +10,7 @@ class Context;
 
 /** Implements `events` system table, which allows you to obtain information for profiling.
   */
-class StorageSystemEvents final : public IStorageSystemOneBlock<StorageSystemEvents>, boost::noncopyable
+class StorageSystemEvents final : public IStorageSystemOneBlock<StorageSystemEvents>
 {
 public:
     std::string getName() const override { return "SystemEvents"; }

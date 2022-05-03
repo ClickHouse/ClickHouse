@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <optional>
 #include <Storages/IStorage.h>
 
@@ -23,7 +22,7 @@ class Context;
   *  In multithreaded case, if even_distributed is False, implementation with atomic is used,
   *     and result is always in [0 ... limit - 1] range.
   */
-class StorageSystemNumbers final : public IStorage, boost::noncopyable
+class StorageSystemNumbers final : public IStorage
 {
 public:
     /// If even_distribution is true, numbers are distributed evenly between streams.

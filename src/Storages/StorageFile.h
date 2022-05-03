@@ -3,7 +3,6 @@
 #include <Storages/IStorage.h>
 
 #include <Common/logger_useful.h>
-#include <boost/noncopyable.hpp>
 
 #include <atomic>
 #include <shared_mutex>

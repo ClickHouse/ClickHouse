@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,7 +11,7 @@ class Context;
 /** Implements system.warnings table that contains warnings about server configuration
   * to be displayed in clickhouse-client.
   */
-class StorageSystemWarnings final : public IStorageSystemOneBlock<StorageSystemWarnings>, boost::noncopyable
+class StorageSystemWarnings final : public IStorageSystemOneBlock<StorageSystemWarnings>
 {
 public:
     std::string getName() const override { return "SystemWarnings"; }

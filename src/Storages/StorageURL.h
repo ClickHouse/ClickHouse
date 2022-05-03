@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -122,7 +121,7 @@ private:
     OutputFormatPtr writer;
 };
 
-class StorageURL : public IStorageURLBase, boost::noncopyable
+class StorageURL : public IStorageURLBase
 {
 public:
     StorageURL(

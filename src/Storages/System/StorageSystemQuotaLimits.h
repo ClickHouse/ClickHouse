@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 class Context;
 
 /// Implements `quota_limits` system table, which allows you to get information about the limits set for quotas.
-class StorageSystemQuotaLimits final : public IStorageSystemOneBlock<StorageSystemQuotaLimits>, boost::noncopyable
+class StorageSystemQuotaLimits final : public IStorageSystemOneBlock<StorageSystemQuotaLimits>
 {
 public:
     std::string getName() const override { return "SystemQuotaLimits"; }

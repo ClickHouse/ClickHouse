@@ -2,7 +2,6 @@
 
 #include <Poco/MongoDB/Connection.h>
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
@@ -13,7 +12,7 @@ namespace DB
  * Read only.
  */
 
-class StorageMongoDB final : public IStorage, boost::noncopyable
+class StorageMongoDB final : public IStorage
 {
 public:
     StorageMongoDB(

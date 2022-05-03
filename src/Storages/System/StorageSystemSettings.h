@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,7 +11,7 @@ class Context;
 
 /** implements system table "settings", which allows to get information about the current settings.
   */
-class StorageSystemSettings final : public IStorageSystemOneBlock<StorageSystemSettings>, boost::noncopyable
+class StorageSystemSettings final : public IStorageSystemOneBlock<StorageSystemSettings>
 {
 public:
     std::string getName() const override { return "SystemSettings"; }

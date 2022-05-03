@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 {
 /* Generates random data for given schema.
  */
-class StorageGenerateRandom final : public IStorage, boost::noncopyable
+class StorageGenerateRandom final : public IStorage
 {
 public:
     StorageGenerateRandom(

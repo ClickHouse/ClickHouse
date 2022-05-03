@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST_fwd.h>
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -10,7 +9,7 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public IStorage, WithMutableContext, boost::noncopyable
+class StorageMaterializedView final : public IStorage, WithMutableContext
 {
 public:
     StorageMaterializedView(

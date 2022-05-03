@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -12,7 +11,7 @@ class Context;
 
 /** Implements the system table `tables`, which allows you to get information about all tables.
   */
-class StorageSystemTables final : public IStorage, boost::noncopyable
+class StorageSystemTables final : public IStorage
 {
 public:
     explicit StorageSystemTables(const StorageID & table_id_);

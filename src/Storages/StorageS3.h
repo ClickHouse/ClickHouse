@@ -11,7 +11,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
-#include <boost/noncopyable.hpp>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
@@ -120,7 +119,7 @@ private:
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 : public IStorage, WithContext, boost::noncopyable
+class StorageS3 : public IStorage, WithContext
 {
 public:
     StorageS3(

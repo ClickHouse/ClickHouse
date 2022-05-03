@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -13,7 +12,7 @@ namespace DB
 class Context;
 
 
-class StorageSystemMerges final : public IStorageSystemOneBlock<StorageSystemMerges>, boost::noncopyable
+class StorageSystemMerges final : public IStorageSystemOneBlock<StorageSystemMerges>
 {
 public:
     std::string getName() const override { return "SystemMerges"; }

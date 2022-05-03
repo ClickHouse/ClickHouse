@@ -2,7 +2,6 @@
 
 #include "config_core.h"
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -16,7 +15,7 @@ struct ExternalDataSourceConfiguration;
 /// A query to external database is passed to one replica on each shard, the result is united.
 /// Replicas on each shard have the same priority, traversed replicas are moved to the end of the queue.
 /// Similar approach is used for URL storage.
-class StorageExternalDistributed final : public DB::IStorage, boost::noncopyable
+class StorageExternalDistributed final : public DB::IStorage
 {
 public:
     enum class ExternalStorageEngine

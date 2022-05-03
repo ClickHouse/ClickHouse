@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -10,7 +9,7 @@ class Context;
 
 /** Implements the `quotas` system tables, which allows you to get information about quotas.
   */
-class StorageSystemQuotas final : public IStorageSystemOneBlock<StorageSystemQuotas>, boost::noncopyable
+class StorageSystemQuotas final : public IStorageSystemOneBlock<StorageSystemQuotas>
 {
 public:
     std::string getName() const override { return "SystemQuotas"; }

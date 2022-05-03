@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,7 +11,7 @@ class Context;
 
 /** System table "build_options" with many params used for clickhouse building
   */
-class StorageSystemBuildOptions final : public IStorageSystemOneBlock<StorageSystemBuildOptions>, boost::noncopyable
+class StorageSystemBuildOptions final : public IStorageSystemOneBlock<StorageSystemBuildOptions>
 {
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;

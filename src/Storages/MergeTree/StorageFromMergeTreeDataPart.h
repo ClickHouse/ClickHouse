@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -15,7 +14,7 @@ namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromMergeTreeDataPart final : public IStorage, boost::noncopyable
+class StorageFromMergeTreeDataPart final : public IStorage
 {
 public:
     /// Used in part mutation.

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/NullSource.h>
@@ -14,7 +13,7 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull final : public IStorage, boost::noncopyable
+class StorageNull final : public IStorage
 {
 public:
     StorageNull(

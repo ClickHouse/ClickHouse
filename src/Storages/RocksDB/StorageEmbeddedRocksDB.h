@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <shared_mutex>
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <rocksdb/status.h>
 
@@ -19,7 +18,7 @@ namespace DB
 
 class Context;
 
-class StorageEmbeddedRocksDB final : public IStorage, WithContext, boost::noncopyable
+class StorageEmbeddedRocksDB final : public IStorage, WithContext
 {
     friend class EmbeddedRocksDBSink;
 public:

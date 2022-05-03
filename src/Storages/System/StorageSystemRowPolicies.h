@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,7 +10,7 @@ class Context;
 
 
 /// Implements `row_policies` system table, which allows you to get information about row policies.
-class StorageSystemRowPolicies final : public IStorageSystemOneBlock<StorageSystemRowPolicies>, boost::noncopyable
+class StorageSystemRowPolicies final : public IStorageSystemOneBlock<StorageSystemRowPolicies>
 {
 public:
     std::string getName() const override { return "SystemRowPolicies"; }

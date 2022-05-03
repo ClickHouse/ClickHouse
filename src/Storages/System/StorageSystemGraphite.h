@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -11,7 +10,7 @@ namespace DB
 {
 
 /// Provides information about Graphite configuration.
-class StorageSystemGraphite final : public IStorageSystemOneBlock<StorageSystemGraphite>, boost::noncopyable
+class StorageSystemGraphite final : public IStorageSystemOneBlock<StorageSystemGraphite>
 {
 public:
     std::string getName() const override { return "SystemGraphite"; }

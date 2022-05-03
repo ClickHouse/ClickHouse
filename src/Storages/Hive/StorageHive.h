@@ -7,7 +7,6 @@
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
-#include <boost/noncopyable.hpp>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -23,7 +22,7 @@ class HiveSettings;
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHive final : public IStorage, WithContext, boost::noncopyable
+class StorageHive final : public IStorage, WithContext
 {
 public:
     friend class StorageHiveSource;

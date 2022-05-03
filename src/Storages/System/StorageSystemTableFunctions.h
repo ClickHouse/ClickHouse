@@ -1,13 +1,12 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
 
-class StorageSystemTableFunctions final : public IStorageSystemOneBlock<StorageSystemTableFunctions>, boost::noncopyable
+class StorageSystemTableFunctions final : public IStorageSystemOneBlock<StorageSystemTableFunctions>
 {
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

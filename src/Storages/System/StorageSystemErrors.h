@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -14,7 +13,7 @@ class Context;
  * Implements the `errors` system table, which shows the error code and the number of times it happens
  * (i.e. Exception with this code had been thrown).
  */
-class StorageSystemErrors final : public IStorageSystemOneBlock<StorageSystemErrors>, boost::noncopyable
+class StorageSystemErrors final : public IStorageSystemOneBlock<StorageSystemErrors>
 {
 public:
     std::string getName() const override { return "SystemErrors"; }

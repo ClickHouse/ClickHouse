@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -35,7 +34,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed final : public IStorage, WithContext, boost::noncopyable
+class StorageDistributed final : public IStorage, WithContext
 {
     friend class DistributedSink;
     friend class StorageDistributedDirectoryMonitor;

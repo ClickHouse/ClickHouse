@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
@@ -25,7 +24,7 @@ namespace DB
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree final : public MergeTreeData, boost::noncopyable
+class StorageMergeTree final : public MergeTreeData
 {
 public:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),

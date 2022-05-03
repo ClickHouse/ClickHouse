@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 class Context;
 
 /// Implements `settings_profiles` system table, which allows you to get information about profiles.
-class StorageSystemSettingsProfiles final : public IStorageSystemOneBlock<StorageSystemSettingsProfiles>, boost::noncopyable
+class StorageSystemSettingsProfiles final : public IStorageSystemOneBlock<StorageSystemSettingsProfiles>
 {
 public:
     std::string getName() const override { return "SystemSettingsProfiles"; }

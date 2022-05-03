@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
@@ -16,7 +15,7 @@ class Cluster;
   *  that allows to obtain information about available clusters
   *  (which may be specified in Distributed tables).
   */
-class StorageSystemClusters final : public IStorageSystemOneBlock<StorageSystemClusters>, boost::noncopyable
+class StorageSystemClusters final : public IStorageSystemOneBlock<StorageSystemClusters>
 {
 public:
     std::string getName() const override { return "SystemClusters"; }

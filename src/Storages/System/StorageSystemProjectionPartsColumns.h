@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/StorageSystemPartsBase.h>
 
 
@@ -13,7 +12,7 @@ class Context;
 /** Implements system table 'projection_parts_columns' which allows to get information about
  * columns in projection parts for tables of MergeTree family.
  */
-class StorageSystemProjectionPartsColumns final : public StorageSystemPartsBase, boost::noncopyable
+class StorageSystemProjectionPartsColumns final : public StorageSystemPartsBase
 {
 public:
     explicit StorageSystemProjectionPartsColumns(const StorageID & table_id_);

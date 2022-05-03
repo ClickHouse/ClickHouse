@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
 
@@ -9,7 +8,7 @@ namespace DB
 /** Internal temporary storage for table function input(...)
   */
 
-class StorageInput final : public IStorage, boost::noncopyable
+class StorageInput final : public IStorage
 {
 public:
     StorageInput(const StorageID & table_id, const ColumnsDescription & columns_);

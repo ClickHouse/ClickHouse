@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,7 +11,7 @@ class Context;
 
 /** Implements the `rocksdb` system table, which expose various rocksdb metrics.
   */
-class StorageSystemRocksDB final : public IStorageSystemOneBlock<StorageSystemRocksDB>, boost::noncopyable
+class StorageSystemRocksDB final : public IStorageSystemOneBlock<StorageSystemRocksDB>
 {
 public:
     std::string getName() const override { return "SystemRocksDB"; }

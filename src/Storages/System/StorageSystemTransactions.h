@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 
 class Context;
 
-class StorageSystemTransactions final : public IStorageSystemOneBlock<StorageSystemTransactions>, boost::noncopyable
+class StorageSystemTransactions final : public IStorageSystemOneBlock<StorageSystemTransactions>
 {
 public:
     String getName() const override { return "SystemTransactions"; }

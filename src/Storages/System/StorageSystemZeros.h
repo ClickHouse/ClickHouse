@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <optional>
 #include <Storages/IStorage.h>
 
@@ -14,7 +13,7 @@ namespace DB
   * You could also specify a limit (how many zeros to give).
   * If multithreaded is specified, zeros will be generated in several streams.
   */
-class StorageSystemZeros final : public IStorage, boost::noncopyable
+class StorageSystemZeros final : public IStorage
 {
 public:
     /// If even_distribution is true, numbers are distributed evenly between streams.

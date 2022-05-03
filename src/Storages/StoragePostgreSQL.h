@@ -3,7 +3,6 @@
 #include "config_core.h"
 
 #if USE_LIBPQXX
-#include <boost/noncopyable.hpp>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
@@ -17,7 +16,7 @@ class Logger;
 namespace DB
 {
 
-class StoragePostgreSQL final : public IStorage, boost::noncopyable
+class StoragePostgreSQL final : public IStorage
 {
 public:
     StoragePostgreSQL(

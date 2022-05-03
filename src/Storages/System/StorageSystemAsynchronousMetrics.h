@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -12,7 +11,7 @@ class Context;
 
 /** Implements system table asynchronous_metrics, which allows to get values of periodically (asynchronously) updated metrics.
   */
-class StorageSystemAsynchronousMetrics final : public IStorageSystemOneBlock<StorageSystemAsynchronousMetrics>, boost::noncopyable
+class StorageSystemAsynchronousMetrics final : public IStorageSystemOneBlock<StorageSystemAsynchronousMetrics>
 {
 public:
     StorageSystemAsynchronousMetrics(const StorageID & table_id_, const AsynchronousMetrics & async_metrics_);

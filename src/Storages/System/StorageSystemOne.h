@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -15,7 +14,7 @@ class Context;
   * Used when the table is not specified in the query.
   * Analog of the DUAL table in Oracle and MySQL.
   */
-class StorageSystemOne final : public IStorage, boost::noncopyable
+class StorageSystemOne final : public IStorage
 {
 public:
     explicit StorageSystemOne(const StorageID & table_id_);

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 class Context;
 
 /// Implements `grants` system table, which allows you to get information about grants.
-class StorageSystemGrants final : public IStorageSystemOneBlock<StorageSystemGrants>, boost::noncopyable
+class StorageSystemGrants final : public IStorageSystemOneBlock<StorageSystemGrants>
 {
 public:
     std::string getName() const override { return "SystemGrants"; }

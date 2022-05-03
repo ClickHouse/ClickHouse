@@ -1,12 +1,11 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
 
-class StorageSystemRemoteDataPaths : public IStorage, boost::noncopyable
+class StorageSystemRemoteDataPaths : public IStorage
 {
 public:
     explicit StorageSystemRemoteDataPaths(const StorageID & table_id_);

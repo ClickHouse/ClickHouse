@@ -3,7 +3,6 @@
 #include <base/UUID.h>
 #include <atomic>
 #include <pcg_random.hpp>
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
@@ -81,7 +80,7 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
-class StorageReplicatedMergeTree final : public MergeTreeData, boost::noncopyable
+class StorageReplicatedMergeTree final : public MergeTreeData
 {
 public:
     enum RenamingRestrictions

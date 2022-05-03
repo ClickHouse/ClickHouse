@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
@@ -18,7 +17,7 @@
 namespace DB
 {
 
-class StorageRabbitMQ final: public IStorage, WithContext, boost::noncopyable
+class StorageRabbitMQ final: public IStorage, WithContext
 {
 public:
     StorageRabbitMQ(

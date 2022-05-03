@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/StorageSystemPartsBase.h>
 
 
@@ -12,7 +11,7 @@ class Context;
 
 /** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
   */
-class StorageSystemParts final : public StorageSystemPartsBase, boost::noncopyable
+class StorageSystemParts final : public StorageSystemPartsBase
 {
 public:
     explicit StorageSystemParts(const StorageID & table_id_);

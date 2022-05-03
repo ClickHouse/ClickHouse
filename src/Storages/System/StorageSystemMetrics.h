@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,7 +11,7 @@ class Context;
 
 /** Implements `metrics` system table, which provides information about the operation of the server.
   */
-class StorageSystemMetrics final : public IStorageSystemOneBlock<StorageSystemMetrics>, boost::noncopyable
+class StorageSystemMetrics final : public IStorageSystemOneBlock<StorageSystemMetrics>
 {
 public:
     std::string getName() const override { return "SystemMetrics"; }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
@@ -9,7 +8,7 @@
 namespace DB
 {
 
-class StorageView final : public IStorage, boost::noncopyable
+class StorageView final : public IStorage
 {
 public:
     StorageView(

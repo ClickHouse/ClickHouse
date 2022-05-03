@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Common/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/ShellCommandSource.h>
@@ -15,7 +14,7 @@ namespace DB
  * Executable storage that will start process for read.
  * ExecutablePool storage maintain pool of processes and take process from pool for read.
  */
-class StorageExecutable final : public IStorage, boost::noncopyable
+class StorageExecutable final : public IStorage
 {
 public:
     StorageExecutable(

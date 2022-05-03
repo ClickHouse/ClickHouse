@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 /* One block storage used for values table function
  * It's structure is similar to IStorageSystemOneBlock
  */
-class StorageValues final : public IStorage, boost::noncopyable
+class StorageValues final : public IStorage
 {
 public:
     StorageValues(

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -8,7 +7,7 @@ namespace DB
 {
 
 /// For system.data_skipping_indices table - describes the data skipping indices in tables, similar to system.columns.
-class StorageSystemDataSkippingIndices : public IStorage, boost::noncopyable
+class StorageSystemDataSkippingIndices : public IStorage
 {
 public:
     explicit StorageSystemDataSkippingIndices(const StorageID & table_id_);

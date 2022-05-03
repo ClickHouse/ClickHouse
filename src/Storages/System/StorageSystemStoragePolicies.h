@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -14,7 +13,7 @@ class Context;
 
 /** Implements the system table `storage`, which allows you to get information about all disks.
 */
-class StorageSystemStoragePolicies final : public IStorage, boost::noncopyable
+class StorageSystemStoragePolicies final : public IStorage
 {
 public:
     explicit StorageSystemStoragePolicies(const StorageID & table_id_);

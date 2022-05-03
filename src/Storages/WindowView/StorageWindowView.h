@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -99,7 +98,7 @@ using ASTPtr = std::shared_ptr<IAST>;
  *     Users need to take these duplicated results into account.
  */
 
-class StorageWindowView final : public IStorage, WithContext, boost::noncopyable
+class StorageWindowView final : public IStorage, WithContext
 {
     friend class TimestampTransformation;
     friend class WindowViewSource;
