@@ -17,7 +17,16 @@
 #include <filesystem>
 
 namespace fs = std::filesystem;
-bool DB::ExtendedLogMessage::log_format_json = false;
+bool DB::ExtendedLogMessage::log_format_json;
+std::string DB::ExtendedLogMessage::key_date_time;
+std::string DB::ExtendedLogMessage::key_thread_name;
+std::string DB::ExtendedLogMessage::key_thread_id;
+std::string DB::ExtendedLogMessage::key_level;
+std::string DB::ExtendedLogMessage::key_query_id;
+std::string DB::ExtendedLogMessage::key_logger_name;
+std::string DB::ExtendedLogMessage::key_message;
+std::string DB::ExtendedLogMessage::key_source_file;
+std::string DB::ExtendedLogMessage::key_source_line;
 
 namespace DB
 {
@@ -200,7 +209,40 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (config.has("logger.json"))
     {
         DB::ExtendedLogMessage::log_format_json = true;
+        //json tag is there in config, but no custom key is provided by user.
+        //In that case, we will use default key names.
+        if (!config.has("logger.json.date_time") && !config.has("logger.json.thread_name") && !config.has("logger.json.thread_id")
+            && !config.has("logger.json.level") && !config.has("logger.json.query_id") && !config.has("logger.json.logger_name")
+            && !config.has("logger.json.message") && !config.has("logger.json.source_file") && !config.has("logger.json.source_line"))
+        {
+            DB::ExtendedLogMessage::key_date_time = "date_time";
+            DB::ExtendedLogMessage::key_thread_name = "thread_name";
+            DB::ExtendedLogMessage::key_thread_id = "thread_id";
+            DB::ExtendedLogMessage::key_level = "level";
+            DB::ExtendedLogMessage::key_query_id = "query_id";
+            DB::ExtendedLogMessage::key_logger_name = "logger_name";
+            DB::ExtendedLogMessage::key_message = "message";
+            DB::ExtendedLogMessage::key_source_file = "source_file";
+            DB::ExtendedLogMessage::key_source_line = "source_line";
+        }
+
+        else
+        {
+            if (config.has("logger.json.date_time"))
+            {
+                DB::ExtendedLogMessage::key_date_time = config.getString("logger.json.date_time");
+            }
+            else
+            {
+                DB::ExtendedLogMessage::key_date_time = "";
+            }
+        }
     }
+    else
+    {
+        DB::ExtendedLogMessage::log_format_json = false;
+    }
+
     split->open();
     logger.close();
     logger.setChannel(split);
