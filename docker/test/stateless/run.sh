@@ -141,6 +141,13 @@ else
     sudo clickhouse stop ||:
 fi
 
+
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    clickhouse-client --port 19000 -q "system shutdown" ||:
+    clickhouse-client --port 29000 -q "system shutdown" ||:
+    sleep 10
+fi
+
 grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
 
