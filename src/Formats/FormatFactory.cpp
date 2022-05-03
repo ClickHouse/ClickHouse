@@ -105,6 +105,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
+    format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
+    format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
     format_settings.regexp.escaping_rule = settings.format_regexp_escaping_rule;
     format_settings.regexp.regexp = settings.format_regexp;
     format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;
@@ -217,7 +219,6 @@ InputFormatPtr FormatFactory::getInput(
         auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
             (ReadBuffer & input) -> InputFormatPtr
             { return input_getter(input, sample, row_input_format_params, format_settings); };
-
 
         ParallelParsingInputFormat::Params params{
             buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
