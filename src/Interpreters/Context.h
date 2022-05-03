@@ -612,6 +612,7 @@ public:
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
+    const InterserverIOHandler & getInterserverIOHandler() const;
 
     /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
