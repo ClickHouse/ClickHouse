@@ -7,7 +7,6 @@
 #include <memory>
 #include <optional>
 
-#include <boost/noncopyable.hpp>
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
@@ -18,7 +17,7 @@ namespace DB
 
 class Context;
 
-class StorageS3Cluster : public IStorage, boost::noncopyable
+class StorageS3Cluster : public IStorage
 {
 public:
     StorageS3Cluster(

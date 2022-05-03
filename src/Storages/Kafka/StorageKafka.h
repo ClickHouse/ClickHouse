@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/Buffer_fwd.h>
@@ -28,7 +27,7 @@ struct StorageKafkaInterceptors;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public IStorage, WithContext, boost::noncopyable
+class StorageKafka final : public IStorage, WithContext
 {
     friend struct StorageKafkaInterceptors;
 

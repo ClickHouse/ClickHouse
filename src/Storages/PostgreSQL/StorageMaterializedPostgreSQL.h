@@ -6,7 +6,6 @@
 #include "PostgreSQLReplicationHandler.h"
 #include "MaterializedPostgreSQLSettings.h"
 
-#include <boost/noncopyable.hpp>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -61,7 +60,7 @@ namespace DB
  *
 **/
 
-class StorageMaterializedPostgreSQL final : public IStorage, WithContext, boost::noncopyable
+class StorageMaterializedPostgreSQL final : public IStorage, WithContext
 {
 public:
     StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,

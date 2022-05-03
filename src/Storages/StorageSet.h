@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
@@ -62,7 +61,7 @@ private:
   *  and also written to a file-backup, for recovery after a restart.
   * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
-class StorageSet final : public StorageSetOrJoinBase, boost::noncopyable
+class StorageSet final : public StorageSetOrJoinBase
 {
 public:
     StorageSet(

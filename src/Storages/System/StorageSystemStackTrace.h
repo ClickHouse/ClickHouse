@@ -3,7 +3,6 @@
 #ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
 
 #include <mutex>
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace Poco
@@ -20,7 +19,7 @@ class Context;
 /// Allows to introspect stack trace of all server threads.
 /// It acts like an embedded debugger.
 /// More than one instance of this table cannot be used.
-class StorageSystemStackTrace final : public IStorageSystemOneBlock<StorageSystemStackTrace>, boost::noncopyable
+class StorageSystemStackTrace final : public IStorageSystemOneBlock<StorageSystemStackTrace>
 {
 public:
     explicit StorageSystemStackTrace(const StorageID & table_id_);

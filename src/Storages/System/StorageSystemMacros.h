@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
@@ -13,7 +12,7 @@ class Context;
 
 /** Information about macros for introspection.
   */
-class StorageSystemMacros final : public IStorageSystemOneBlock<StorageSystemMacros>, boost::noncopyable
+class StorageSystemMacros final : public IStorageSystemOneBlock<StorageSystemMacros>
 {
 public:
     std::string getName() const override { return "SystemMacros"; }

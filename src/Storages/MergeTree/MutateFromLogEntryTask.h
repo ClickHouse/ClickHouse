@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
@@ -11,7 +10,7 @@
 namespace DB
 {
 
-class MutateFromLogEntryTask : public ReplicatedMergeMutateTaskBase, boost::noncopyable
+class MutateFromLogEntryTask : public ReplicatedMergeMutateTaskBase
 {
 public:
     template <typename Callback>

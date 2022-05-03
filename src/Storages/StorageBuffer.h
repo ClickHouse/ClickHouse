@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
@@ -41,7 +40,7 @@ namespace DB
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer final : public IStorage, WithContext, boost::noncopyable
+class StorageBuffer final : public IStorage, WithContext
 {
 friend class BufferSource;
 friend class BufferSink;

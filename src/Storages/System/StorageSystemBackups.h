@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -8,7 +7,7 @@ namespace DB
 {
 
 /// Implements `grants` system table, which allows you to get information about grants.
-class StorageSystemBackups final : public boost::noncopyable, public IStorageSystemOneBlock<StorageSystemBackups>
+class StorageSystemBackups final : public IStorageSystemOneBlock<StorageSystemBackups>
 {
 public:
     std::string getName() const override { return "SystemBackups"; }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 class Context;
 
 /// Implements `privileges` system table, which allows you to get information about access types.
-class StorageSystemPrivileges final : public IStorageSystemOneBlock<StorageSystemPrivileges>, boost::noncopyable
+class StorageSystemPrivileges final : public IStorageSystemOneBlock<StorageSystemPrivileges>
 {
 public:
     std::string getName() const override { return "SystemPrivileges"; }

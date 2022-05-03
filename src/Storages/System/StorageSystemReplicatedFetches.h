@@ -1,7 +1,6 @@
 #pragma once
 
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,7 +10,7 @@ namespace DB
 class Context;
 
 /// system.replicated_fetches table. Takes data from context.getReplicatedFetchList()
-class StorageSystemReplicatedFetches final : public IStorageSystemOneBlock<StorageSystemReplicatedFetches>, boost::noncopyable
+class StorageSystemReplicatedFetches final : public IStorageSystemOneBlock<StorageSystemReplicatedFetches>
 {
 public:
     std::string getName() const override { return "SystemReplicatedFetches"; }

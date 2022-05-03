@@ -4,7 +4,6 @@
 
 #if USE_MYSQL
 
-#include <boost/noncopyable.hpp>
 #include <Storages/StorageProxy.h>
 
 namespace DB
@@ -15,7 +14,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class StorageMaterializedMySQL final : public StorageProxy, boost::noncopyable
+class StorageMaterializedMySQL final : public StorageProxy
 {
 public:
     StorageMaterializedMySQL(const StoragePtr & nested_storage_, const IDatabase * database_);

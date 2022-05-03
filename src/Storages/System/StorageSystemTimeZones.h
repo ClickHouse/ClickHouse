@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,7 +10,7 @@ class Context;
 
 /** System table "time_zones" with list of timezones pulled from /contrib/cctz/testdata/zoneinfo
   */
-class StorageSystemTimeZones final : public IStorageSystemOneBlock<StorageSystemTimeZones>, boost::noncopyable
+class StorageSystemTimeZones final : public IStorageSystemOneBlock<StorageSystemTimeZones>
 {
 public:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;

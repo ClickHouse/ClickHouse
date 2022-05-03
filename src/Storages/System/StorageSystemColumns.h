@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,7 +10,7 @@ class Context;
 
 /** Implements system table 'columns', that allows to get information about columns for every table.
   */
-class StorageSystemColumns final : public IStorage, boost::noncopyable
+class StorageSystemColumns final : public IStorage
 {
 public:
     explicit StorageSystemColumns(const StorageID & table_id_);

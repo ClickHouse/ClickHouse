@@ -2,7 +2,6 @@
 
 #include <atomic>
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 
@@ -12,7 +11,7 @@ namespace DB
 struct DictionaryStructure;
 class TableFunctionDictionary;
 
-class StorageDictionary final : public IStorage, public WithContext, boost::noncopyable
+class StorageDictionary final : public IStorage, public WithContext
 {
 friend class TableFunctionDictionary;
 

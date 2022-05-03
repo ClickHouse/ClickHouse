@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 class Context;
 
 /// Implements `users_directories` system table, which allows you to get information about user directories.
-class StorageSystemUserDirectories final : public IStorageSystemOneBlock<StorageSystemUserDirectories>, boost::noncopyable
+class StorageSystemUserDirectories final : public IStorageSystemOneBlock<StorageSystemUserDirectories>
 {
 public:
     std::string getName() const override { return "SystemUserDirectories"; }

@@ -4,7 +4,6 @@
 #include <optional>
 #include <mutex>
 
-#include <boost/noncopyable.hpp>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 
@@ -18,7 +17,7 @@ namespace DB
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public IStorage, boost::noncopyable
+class StorageMemory final : public IStorage
 {
 friend class MemorySink;
 friend class MemoryRestoreTask;

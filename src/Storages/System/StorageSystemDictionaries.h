@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -10,7 +9,7 @@ namespace DB
 class Context;
 
 
-class StorageSystemDictionaries final : public IStorageSystemOneBlock<StorageSystemDictionaries>, boost::noncopyable
+class StorageSystemDictionaries final : public IStorageSystemOneBlock<StorageSystemDictionaries>
 {
 public:
     std::string getName() const override { return "SystemDictionaries"; }

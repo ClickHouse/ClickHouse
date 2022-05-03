@@ -3,7 +3,6 @@
 #include <map>
 #include <shared_mutex>
 
-#include <boost/noncopyable.hpp>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Formats/IndexForNativeFormat.h>
@@ -19,7 +18,7 @@ struct IndexForNativeFormat;
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public IStorage, boost::noncopyable
+class StorageStripeLog final : public IStorage
 {
 friend class StripeLogSource;
 friend class StripeLogSink;

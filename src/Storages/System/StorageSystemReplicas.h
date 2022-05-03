@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 
@@ -12,7 +11,7 @@ class Context;
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.
   */
-class StorageSystemReplicas final : public IStorage, boost::noncopyable
+class StorageSystemReplicas final : public IStorage
 {
 public:
     explicit StorageSystemReplicas(const StorageID & table_id_);

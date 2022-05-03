@@ -5,7 +5,6 @@
 #include <memory>
 #include <unordered_map>
 
-#include <boost/noncopyable.hpp>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>

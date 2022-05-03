@@ -7,7 +7,6 @@
 #include <memory>
 #include <optional>
 
-#include <boost/noncopyable.hpp>
 #include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/HDFS/StorageHDFS.h>
@@ -17,7 +16,7 @@ namespace DB
 
 class Context;
 
-class StorageHDFSCluster : public IStorage, boost::noncopyable
+class StorageHDFSCluster : public IStorage
 {
 public:
     StorageHDFSCluster(

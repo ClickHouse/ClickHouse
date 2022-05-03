@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/FileLog/Buffer_fwd.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
@@ -25,7 +24,7 @@ namespace ErrorCodes
 
 class FileLogDirectoryWatcher;
 
-class StorageFileLog final : public IStorage, WithContext, boost::noncopyable
+class StorageFileLog final : public IStorage, WithContext
 {
 public:
     StorageFileLog(

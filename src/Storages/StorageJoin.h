@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Common/RWLock.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
@@ -22,7 +21,7 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
   *
   * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin final : public StorageSetOrJoinBase, boost::noncopyable
+class StorageJoin final : public StorageSetOrJoinBase
 {
 public:
     StorageJoin(

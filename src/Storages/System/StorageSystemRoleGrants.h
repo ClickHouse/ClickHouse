@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 class Context;
 
 /// Implements `role_grants` system table, which allows you to get information about granted roles.
-class StorageSystemRoleGrants final : public IStorageSystemOneBlock<StorageSystemRoleGrants>, boost::noncopyable
+class StorageSystemRoleGrants final : public IStorageSystemOneBlock<StorageSystemRoleGrants>
 {
 public:
     std::string getName() const override { return "SystemRoleGrants"; }

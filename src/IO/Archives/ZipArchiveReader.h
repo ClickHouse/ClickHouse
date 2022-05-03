@@ -3,7 +3,6 @@
 #include <Common/config.h>
 
 #if USE_MINIZIP
-#include <boost/noncopyable.hpp>
 #include <IO/Archives/IArchiveReader.h>
 #include <mutex>
 #include <vector>
@@ -16,7 +15,7 @@ class ReadBufferFromFileBase;
 class SeekableReadBuffer;
 
 /// Implementation of IArchiveReader for reading zip archives.
-class ZipArchiveReader : public IArchiveReader, boost::noncopyable
+class ZipArchiveReader : public IArchiveReader
 {
 public:
     /// Constructs an archive's reader that will read from a file in the local filesystem.

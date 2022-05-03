@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
 
@@ -11,7 +10,7 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge final : public IStorage, WithContext, boost::noncopyable
+class StorageMerge final : public IStorage, WithContext
 {
 public:
     using DBToTableSetMap = std::map<String, std::set<String>>;

@@ -3,7 +3,6 @@
 #include <map>
 #include <shared_mutex>
 
-#include <boost/noncopyable.hpp>
 #include <Disks/IDisk.h>
 #include <Storages/IStorage.h>
 #include <Common/FileChecker.h>
@@ -19,7 +18,7 @@ namespace DB
   * Also implements TinyLog - a table engine that is suitable for small chunks of the log.
   * It differs from Log in the absence of mark files.
   */
-class StorageLog final : public IStorage, boost::noncopyable
+class StorageLog final : public IStorage
 {
     friend class LogSource;
     friend class LogSink;

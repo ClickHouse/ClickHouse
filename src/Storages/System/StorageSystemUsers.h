@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -9,7 +8,7 @@ namespace DB
 class Context;
 
 /// Implements `users` system table, which allows you to get information about users.
-class StorageSystemUsers final : public IStorageSystemOneBlock<StorageSystemUsers>, boost::noncopyable
+class StorageSystemUsers final : public IStorageSystemOneBlock<StorageSystemUsers>
 {
 public:
     std::string getName() const override { return "SystemUsers"; }

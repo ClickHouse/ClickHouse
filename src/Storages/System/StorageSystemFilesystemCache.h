@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -29,7 +28,7 @@ namespace DB
  * FORMAT Vertical
  */
 
-class StorageSystemFilesystemCache final : public IStorageSystemOneBlock<StorageSystemFilesystemCache>, boost::noncopyable
+class StorageSystemFilesystemCache final : public IStorageSystemOneBlock<StorageSystemFilesystemCache>
 {
 public:
     explicit StorageSystemFilesystemCache(const StorageID & table_id_);

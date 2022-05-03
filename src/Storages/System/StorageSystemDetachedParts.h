@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -12,7 +11,7 @@ namespace DB
   * We don't use StorageSystemPartsBase, because it introduces virtual _state
   * column and column aliases which we don't need.
   */
-class StorageSystemDetachedParts final : public IStorage, boost::noncopyable
+class StorageSystemDetachedParts final : public IStorage
 {
 public:
     explicit StorageSystemDetachedParts(const StorageID & table_id_);
