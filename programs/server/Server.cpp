@@ -87,6 +87,7 @@
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/CertificateReloader.h>
+#include <Server/RedisHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -2003,6 +2004,20 @@ void Server::createServers(
                 "Prometheus: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
                     context(), createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+        });
+
+        port_name = "redis_port";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port);
+            socket.setReceiveTimeout(Poco::Timespan());
+            socket.setSendTimeout(settings.send_timeout);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "Redis compatibility protocol: " + address.toString(),
+                std::make_unique<TCPServer>(new RedisHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
         });
     }
 
