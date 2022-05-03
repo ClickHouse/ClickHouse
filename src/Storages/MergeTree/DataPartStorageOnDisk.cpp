@@ -4,12 +4,14 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
 #include <base/logger_useful.h>
 #include <Disks/IStoragePolicy.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Storages/MergeTree/localBackup.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 
 namespace DB
 {
@@ -139,7 +141,8 @@ DataPartStorageIteratorPtr DataPartStorageOnDisk::iterateDirectory(const String 
 }
 
 void DataPartStorageOnDisk::remove(
-    bool keep_shared_data,
+    bool can_remove_shared_data,
+    const NameSet & names_not_to_remove,
     const MergeTreeDataPartChecksums & checksums, 
     std::list<ProjectionChecksums> projections,
     Poco::Logger * log) const
@@ -157,7 +160,7 @@ void DataPartStorageOnDisk::remove(
         LOG_WARNING(log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
         try
         {
-            disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
+            disk->removeSharedRecursive(fs::path(to) / "", !can_remove_shared_data, names_not_to_remove);
         }
         catch (...)
         {
@@ -188,12 +191,13 @@ void DataPartStorageOnDisk::remove(
         projection_directories.emplace(proj_dir_name);
     }
 
-    clearDirectory(to, keep_shared_data, checksums, projection_directories, log, false);
+    clearDirectory(to, can_remove_shared_data, names_not_to_remove, checksums, projection_directories, log, false);
 }
 
 void DataPartStorageOnDisk::clearDirectory(
     const std::string & dir,
-    bool keep_shared_data, 
+    bool can_remove_shared_data,
+    const NameSet & names_not_to_remove,
     const MergeTreeDataPartChecksums & checksums, 
     const std::unordered_set<String> & skip_directories, 
     Poco::Logger * log,
@@ -212,7 +216,7 @@ void DataPartStorageOnDisk::clearDirectory(
         }
 
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(dir) / "", keep_shared_data);
+        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
 
         return;
     }
@@ -244,7 +248,7 @@ void DataPartStorageOnDisk::clearDirectory(
         if (!is_projection)
             request.emplace_back(fs::path(dir) / "txn_version.txt", true);
 
-        disk->removeSharedFiles(request, keep_shared_data);
+        disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);
     }
     catch (...)
@@ -253,7 +257,7 @@ void DataPartStorageOnDisk::clearDirectory(
 
         LOG_ERROR(log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, dir), getCurrentExceptionMessage(false));
 
-        disk->removeSharedRecursive(fs::path(dir) / "", keep_shared_data);
+        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
     }
 }
 
@@ -314,14 +318,14 @@ std::string DataPartStorageOnDisk::getDiskPathForLogs() const
     return volume->getDisk()->getPath();
 }
 
-void DataPartStorageOnDisk::writeChecksums(const MergeTreeDataPartChecksums & checksums) const
+void DataPartStorageOnDisk::writeChecksums(const MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
 {
     std::string path = fs::path(root_path) / part_dir / "checksums.txt";
 
     try
     {
         {
-            auto out = volume->getDisk()->writeFile(path + ".tmp", 4096);
+            auto out = volume->getDisk()->writeFile(path + ".tmp", 4096, WriteMode::Rewrite, settings);
             checksums.write(*out);
         }
 
@@ -343,14 +347,14 @@ void DataPartStorageOnDisk::writeChecksums(const MergeTreeDataPartChecksums & ch
     }
 }
 
-void DataPartStorageOnDisk::writeColumns(const NamesAndTypesList & columns) const
+void DataPartStorageOnDisk::writeColumns(const NamesAndTypesList & columns, const WriteSettings & settings) const
 {
     std::string path = fs::path(root_path) / part_dir / "columns.txt";
 
     try
     {
         {
-            auto buf = volume->getDisk()->writeFile(path + ".tmp", 4096);
+            auto buf = volume->getDisk()->writeFile(path + ".tmp", 4096, WriteMode::Rewrite, settings);
             columns.writeText(*buf);
         }
 
@@ -372,6 +376,129 @@ void DataPartStorageOnDisk::writeColumns(const NamesAndTypesList & columns) cons
     }
 }
 
+void DataPartStorageOnDisk::writeVersionMetadata(const VersionMetadata & version, bool fsync_part_dir) const
+{
+    std::string path = fs::path(root_path) / part_dir / "txn_version.txt";
+    try
+    {
+        {
+            /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
+            /// so we create empty file at first (expecting that createFile throws if file already exists)
+            /// and then overwrite it.
+            auto buf = volume->getDisk()->writeFile(path + ".tmp", 4096);
+            version.write(*buf);
+            buf->finalize();
+            buf->sync();
+        }
+
+        SyncGuardPtr sync_guard;
+        if (fsync_part_dir)
+            sync_guard = volume->getDisk()->getDirectorySyncGuard(getFullRelativePath());
+        volume->getDisk()->replaceFile(path + ".tmp", path);
+
+    }
+    catch (...)
+    {
+        try
+        {
+            if (volume->getDisk()->exists(path + ".tmp"))
+                volume->getDisk()->removeFile(path + ".tmp");
+        }
+        catch (...)
+        {
+            tryLogCurrentException("DataPartStorageOnDisk");
+        }
+
+        throw;
+    }
+}
+
+void DataPartStorageOnDisk::appendCSNToVersionMetadata(const VersionMetadata & version, VersionMetadata::WhichCSN which_csn) const
+{
+    /// Small enough appends to file are usually atomic,
+    /// so we append new metadata instead of rewriting file to reduce number of fsyncs.
+    /// We don't need to do fsync when writing CSN, because in case of hard restart
+    /// we will be able to restore CSN from transaction log in Keeper.
+
+    std::string version_file_name = fs::path(root_path) / part_dir / "txn_version.txt";
+    DiskPtr disk = volume->getDisk();
+    auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
+    version.writeCSN(*out, which_csn);
+    out->finalize();
+}
+
+void DataPartStorageOnDisk::appendRemovalTIDToVersionMetadata(const VersionMetadata & version, bool clear) const
+{
+    String version_file_name = fs::path(root_path) / part_dir / "txn_version.txt";
+    DiskPtr disk = volume->getDisk();
+    auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
+    version.writeRemovalTID(*out, clear);
+    out->finalize();
+
+    /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
+    if (!clear)
+        out->sync();
+}
+
+static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
+{
+    size_t file_size = disk->getFileSize(path);
+    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
+}
+
+void DataPartStorageOnDisk::loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const
+{
+    std::string version_file_name = fs::path(root_path) / part_dir / "txn_version.txt";
+    String tmp_version_file_name = version_file_name + ".tmp";
+    DiskPtr disk = volume->getDisk();
+
+    auto remove_tmp_file = [&]()
+    {
+        auto last_modified = disk->getLastModified(tmp_version_file_name);
+        auto buf = openForReading(disk, tmp_version_file_name);
+        String content;
+        readStringUntilEOF(content, *buf);
+        LOG_WARNING(log, "Found file {} that was last modified on {}, has size {} and the following content: {}",
+                    tmp_version_file_name, last_modified.epochTime(), content.size(), content);
+        disk->removeFile(tmp_version_file_name);
+    };
+
+    if (disk->exists(version_file_name))
+    {
+        auto buf = openForReading(disk, version_file_name);
+        version.read(*buf);
+        if (disk->exists(tmp_version_file_name))
+            remove_tmp_file();
+        return;
+    }
+
+    /// Four (?) cases are possible:
+    /// 1. Part was created without transactions.
+    /// 2. Version metadata file was not renamed from *.tmp on part creation.
+    /// 3. Version metadata were written to *.tmp file, but hard restart happened before fsync.
+    /// 4. Fsyncs in storeVersionMetadata() work incorrectly.
+
+    if (!disk->exists(tmp_version_file_name))
+    {
+        /// Case 1.
+        /// We do not have version metadata and transactions history for old parts,
+        /// so let's consider that such parts were created by some ancient transaction
+        /// and were committed with some prehistoric CSN.
+        /// NOTE It might be Case 3, but version metadata file is written on part creation before other files,
+        /// so it's not Case 3 if part is not broken.
+        version.setCreationTID(Tx::PrehistoricTID, nullptr);
+        version.creation_csn = Tx::PrehistoricCSN;
+        return;
+    }
+
+    /// Case 2.
+    /// Content of *.tmp file may be broken, just use fake TID.
+    /// Transaction was not committed if *.tmp file was not renamed, so we should complete rollback by removing part.
+    version.setCreationTID(Tx::DummyTID, nullptr);
+    version.creation_csn = Tx::RolledBackCSN;
+    remove_tmp_file();
+}
+
 void DataPartStorageOnDisk::writeDeleteOnDestroyMarker(Poco::Logger * log) const
 {
     String marker_path = fs::path(root_path) / part_dir / "delete-on-destroy.txt";
@@ -384,6 +511,18 @@ void DataPartStorageOnDisk::writeDeleteOnDestroyMarker(Poco::Logger * log) const
     {
         LOG_ERROR(log, "{} (while creating DeleteOnDestroy marker: {})", e.what(), backQuote(fullPath(disk, marker_path)));
     }
+}
+
+void DataPartStorageOnDisk::removeDeleteOnDestroyMarker() const
+{
+    std::string delete_on_destroy_file_name = fs::path(root_path) / part_dir / "delete-on-destroy.txt";
+    volume->getDisk()->removeFileIfExists(delete_on_destroy_file_name);
+}
+
+void DataPartStorageOnDisk::removeVersionMetadata() const
+{
+    std::string version_file_name = fs::path(root_path) / part_dir / "txn_version.txt";
+    volume->getDisk()->removeFileIfExists(version_file_name);
 }
 
 void DataPartStorageOnDisk::checkConsistency(const MergeTreeDataPartChecksums & checksums) const
@@ -405,7 +544,7 @@ ReservationPtr DataPartStorageOnDisk::tryReserve(UInt64 bytes) const
     return volume->reserve(bytes);
 }
 
-void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync)
+void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir)
 {
     if (!exists())
         throw Exception(
@@ -450,7 +589,7 @@ void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logge
     // metadata_manager->updateAll(true);
 
     SyncGuardPtr sync_guard;
-    if (fsync)
+    if (fsync_part_dir)
         sync_guard = volume->getDisk()->getDirectorySyncGuard(getFullRelativePath());
 }
 
@@ -529,17 +668,20 @@ void DataPartStorageOnDisk::backup(
 DataPartStoragePtr DataPartStorageOnDisk::freeze(
     const std::string & to, 
     const std::string & dir_path,
-    std::function<void(const DiskPtr &)> save_metadata_callback) const
+    bool make_source_readonly,
+    std::function<void(const DiskPtr &)> save_metadata_callback,
+    bool copy_instead_of_hardlink) const
 {
     auto disk = volume->getDisk();
     disk->createDirectories(to);
 
-    localBackup(disk, getFullRelativePath(), fs::path(to) / dir_path);
+    localBackup(disk, getFullRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
 
     disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+    disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     return std::make_shared<DataPartStorageOnDisk>(single_disk_volume, to, dir_path);
@@ -583,9 +725,10 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageBuilderOnDisk::readFile(
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageBuilderOnDisk::writeFile(
     const String & path,
-    size_t buf_size)
+    size_t buf_size,
+    const WriteSettings & settings)
 {
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / path, buf_size);
+    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / path, buf_size, WriteMode::Rewrite, settings);
 }
 
 void DataPartStorageBuilderOnDisk::removeFile(const String & path)
@@ -600,7 +743,7 @@ void DataPartStorageBuilderOnDisk::removeRecursive()
 
 void DataPartStorageBuilderOnDisk::removeSharedRecursive(bool keep_in_remote_fs)
 {
-    volume->getDisk()->removeSharedRecursive(fs::path(root_path) / part_dir, keep_in_remote_fs);
+    volume->getDisk()->removeSharedRecursive(fs::path(root_path) / part_dir, keep_in_remote_fs, {});
 }
 
 SyncGuardPtr DataPartStorageBuilderOnDisk::getDirectorySyncGuard() const

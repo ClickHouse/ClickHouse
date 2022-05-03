@@ -3369,7 +3369,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             original_active_part->force_keep_shared_data = false;
 
             if (original_active_part->data_part_storage->supportZeroCopyReplication() &&
-                part_copy->data_part_storage->isStoredOnRemoteDiskWithZeroCopySupport() &&
+                part_copy->data_part_storage->supportZeroCopyReplication() &&
                 original_active_part->getUniqueId() == part_copy->getUniqueId())
             {
                 /// May be when several volumes use the same S3/HDFS storage
@@ -3505,8 +3505,8 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 {
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->data_part_storage->getLastModified().epochTime();
-    disk->removeFileIfExists(fs::path(full_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
-    disk->removeFileIfExists(fs::path(full_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
+    part->data_part_storage->removeDeleteOnDestroyMarker();
+    part->data_part_storage->removeVersionMetadata();
 }
 
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
@@ -5764,11 +5764,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
               std::string(fs::path(src_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
 
-    //localBackup(disk, src_part_path, dst_part_path, /* make_source_readonly */ false, {}, /* copy_instead_of_hardlinks */ copy_instead_of_hardlink);
-    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, {}, /* copy_instead_of_hardlinks */ copy_instead_of_hardlink);
-
-    disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
-    disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
+    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, /* copy_instead_of_hardlinks */ copy_instead_of_hardlink);
 
     auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
 
@@ -5777,7 +5773,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
         hardlinked_files->source_part_name = src_part->name;
         hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
 
-        for (auto it = disk->iterateDirectory(src_part_path); it->isValid(); it->next())
+        for (auto it = src_part->data_part_storage->iterate(); it->isValid(); it->next())
         {
             if (it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
                 hardlinked_files->hardlinks_from_source_part.insert(it->name());
@@ -5941,16 +5937,20 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
             src_part_path = part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot)->getFullRelativePath();
         }
 
-        auto new_storage = part->data_part_storage->freeze(
-            backup_part_path,
-            part->data_part_storage->getRelativePath(),
-            [this, &part, &backup_part_path](const DiskPtr & disk)
+        auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
         {
 
             // Store metadata for replicated table.
             // Do nothing for non-replocated.
             createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->data_part_storage->getRelativePath());
-        });
+        };
+
+        auto new_storage = part->data_part_storage->freeze(
+            backup_part_path,
+            part->data_part_storage->getRelativePath(),
+            /*make_source_readonly*/ true,
+            callback,
+            /*copy_instead_of_hardlink*/ false);
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{

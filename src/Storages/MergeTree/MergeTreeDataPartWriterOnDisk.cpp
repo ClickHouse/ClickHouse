@@ -157,7 +157,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 {
     if (metadata_snapshot->hasPrimaryKey())
     {
-        index_file_stream = data_part_storage_builder->writeFile("primary.idx", DBMS_DEFAULT_BUFFER_SIZE, query_write_settings);
+        index_file_stream = data_part_storage_builder->writeFile("primary.idx", DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 }
@@ -173,7 +173,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         data_part_storage_builder,
                         stream_name, index_helper->getSerializedFileExtension(),
                         stream_name, marks_file_extension,
-                        default_codec, settings.max_compress_block_size, query_write_settings));
+                        default_codec, settings.max_compress_block_size, settings.query_write_settings));
         skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
         skip_index_accumulated_marks.push_back(0);
     }

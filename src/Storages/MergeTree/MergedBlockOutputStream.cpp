@@ -194,7 +194,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
         {
-            auto count_out = data_part_storage_builder->writeFile("count.txt", 4096, WriteMode::Rewrite, settings);
+            auto count_out = data_part_storage_builder->writeFile("count.txt", 4096, settings);
             HashingWriteBuffer count_out_hashing(*count_out);
             writeIntText(rows_count, count_out_hashing);
             count_out_hashing.next();
@@ -208,7 +208,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         if (new_part->uuid != UUIDHelpers::Nil)
         {
-            auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, WriteMode::Rewrite, settings);
+            auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, settings);
             HashingWriteBuffer out_hashing(*out);
             writeUUIDText(new_part->uuid, out_hashing);
             checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
@@ -234,7 +234,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         }
 
         {
-            auto count_out = data_part_storage_builder->writeFile("count.txt", 4096, WriteMode::Rewrite, settings);
+            auto count_out = data_part_storage_builder->writeFile("count.txt", 4096, settings);
             HashingWriteBuffer count_out_hashing(*count_out);
             writeIntText(rows_count, count_out_hashing);
             count_out_hashing.next();
@@ -248,7 +248,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     if (!new_part->ttl_infos.empty())
     {
         /// Write a file with ttl infos in json format.
-        auto out = data_part_storage_builder->writeFile("ttl.txt", 4096, WriteMode::Rewrite, settings);
+        auto out = data_part_storage_builder->writeFile("ttl.txt", 4096, settings);
         HashingWriteBuffer out_hashing(*out);
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -259,7 +259,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     if (!new_part->getSerializationInfos().empty())
     {
-        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, WriteMode::Rewrite, settings);
+        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, settings);
         HashingWriteBuffer out_hashing(*out);
         new_part->getSerializationInfos().writeJSON(out_hashing);
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
@@ -270,7 +270,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     {
         /// Write a file with a description of columns.
-        auto out = data_part_storage_builder->writeFile("columns.txt", 4096, WriteMode::Rewrite, settings);
+        auto out = data_part_storage_builder->writeFile("columns.txt", 4096, settings);
         new_part->getColumns().writeText(*out);
         out->preFinalize();
         written_files.emplace_back(std::move(out));
@@ -278,7 +278,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     if (default_codec != nullptr)
     {
-        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, WriteMode::Rewrite, settings);
+        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, settings);
         DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
         out->preFinalize();
         written_files.emplace_back(std::move(out));
@@ -291,7 +291,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     {
         /// Write file with checksums.
-        auto out = data_part_storage_builder->writeFile("checksums.txt", WriteMode::Rewrite, settings);
+        auto out = data_part_storage_builder->writeFile("checksums.txt", 4096, settings);
         checksums.write(*out);
         out->preFinalize();
         written_files.emplace_back(std::move(out));

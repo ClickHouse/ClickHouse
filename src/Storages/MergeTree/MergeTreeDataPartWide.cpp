@@ -150,7 +150,7 @@ bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDiskWithZeroCopySupport() const
 {
-    return volume->getDisk()->supportZeroCopyReplication();
+    return data_part_storage->supportZeroCopyReplication();
 }
 
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
