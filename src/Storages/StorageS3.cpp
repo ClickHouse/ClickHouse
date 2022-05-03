@@ -1014,7 +1014,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
         }
       
         if (distributed_processing && read_keys_in_distributed_processing)
-            read_keys_in_distributed_processing->push_back(current_key);
+            read_keys_in_distributed_processing->push_back(key);
 
         first = false;
         return wrapReadBufferWithCompressionMethod(
