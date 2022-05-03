@@ -34,12 +34,12 @@ namespace
         if (only_shard_num)
         {
             if ((only_shard_num <= cluster_host_ids.size()) && (cluster_host_ids[only_shard_num - 1].size() > 1))
-                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Backup of multiple replicas is disabled, choose one replica with the replica_num setting or specify allow_storing_multiple_replicas=true");
+                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Backup of multiple replicas is disabled. Choose one replica with the replica_num setting or specify allow_storing_multiple_replicas=true");
         }
-        for (size_t i = 0; i != cluster_host_ids.size(); ++i)
+        for (const auto & shard : cluster_host_ids)
         {
-            if (cluster_host_ids[i].size() > 1)
-                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Backup of multiple replicas is disabled, choose one replica with the replica_num setting or specify allow_storing_multiple_replicas=true");
+            if (shard.size() > 1)
+                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Backup of multiple replicas is disabled. Choose one replica with the replica_num setting or specify allow_storing_multiple_replicas=true");
         }
     }
 

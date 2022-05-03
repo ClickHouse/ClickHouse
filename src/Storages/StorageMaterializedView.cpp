@@ -449,16 +449,22 @@ RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, 
 
 std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const
 {
-    if (!hasInnerTable())
-        return 0;
-    return getTargetTable()->totalRows(settings);
+    if (hasInnerTable())
+    {
+        if (auto table = tryGetTargetTable())
+            return table->totalRows(settings);
+    }
+    return {};
 }
 
 std::optional<UInt64> StorageMaterializedView::totalBytes(const Settings & settings) const
 {
-    if (!hasInnerTable())
-        return 0;
-    return getTargetTable()->totalBytes(settings);
+    if (hasInnerTable())
+    {
+        if (auto table = tryGetTargetTable())
+            return table->totalBytes(settings);
+    }
+    return {};
 }
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)

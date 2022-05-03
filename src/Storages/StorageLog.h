@@ -52,12 +52,12 @@ public:
     bool supportsSubcolumns() const override { return true; }
     ColumnSizeByName getColumnSizes() const override;
 
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
     bool hasDataToBackup() const override { return true; }
     BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
     RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
-
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
@@ -85,8 +85,8 @@ private:
 
     /// Reads the marks file if it hasn't read yet.
     /// It is done lazily, so that with a large number of tables, the server starts quickly.
-    void loadMarks(std::chrono::seconds lock_timeout) const;
-    void loadMarks(const WriteLock &) const;
+    void loadMarks(std::chrono::seconds lock_timeout);
+    void loadMarks(const WriteLock &);
 
     /// Saves the marks file.
     void saveMarks(const WriteLock &);
@@ -96,6 +96,9 @@ private:
 
     /// Saves the sizes of the data and marks files.
     void saveFileSizes(const WriteLock &);
+
+    /// Recalculates the number of rows stored in this table.
+    void updateTotalRows(const WriteLock &);
 
     /** Offsets to some row number in a file for column in table.
       * They are needed so that you can read the data in several threads.
@@ -116,7 +119,7 @@ private:
         size_t index;
         String name;
         String path;
-        mutable Marks marks;
+        Marks marks;
     };
 
     const String engine_name;
@@ -131,8 +134,11 @@ private:
     const bool use_marks_file;
 
     String marks_file_path;
-    mutable std::atomic<bool> marks_loaded = false;
-    mutable size_t num_marks_saved = 0;
+    std::atomic<bool> marks_loaded = false;
+    size_t num_marks_saved = 0;
+
+    std::atomic<UInt64> total_rows = 0;
+    std::atomic<UInt64> total_bytes = 0;
 
     FileChecker file_checker;
 

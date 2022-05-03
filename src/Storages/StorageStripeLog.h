@@ -52,12 +52,12 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
 
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
     bool hasDataToBackup() const override { return true; }
     BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
     RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
-
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 protected:
     StorageStripeLog(
@@ -76,8 +76,8 @@ private:
 
     /// Reads the index file if it hasn't read yet.
     /// It is done lazily, so that with a large number of tables, the server starts quickly.
-    void loadIndices(std::chrono::seconds lock_timeout) const;
-    void loadIndices(const WriteLock &) const;
+    void loadIndices(std::chrono::seconds lock_timeout);
+    void loadIndices(const WriteLock &);
 
     /// Saves the index file.
     void saveIndices(const WriteLock &);
@@ -88,6 +88,9 @@ private:
     /// Saves the sizes of the data and index files.
     void saveFileSizes(const WriteLock &);
 
+    /// Recalculates the number of rows stored in this table.
+    void updateTotalRows(const WriteLock &);
+
     const DiskPtr disk;
     String table_path;
 
@@ -95,9 +98,12 @@ private:
     String index_file_path;
     FileChecker file_checker;
 
-    mutable IndexForNativeFormat indices;
-    mutable std::atomic<bool> indices_loaded = false;
-    mutable size_t num_indices_saved = 0;
+    IndexForNativeFormat indices;
+    std::atomic<bool> indices_loaded = false;
+    size_t num_indices_saved = 0;
+
+    std::atomic<UInt64> total_rows = 0;
+    std::atomic<UInt64> total_bytes = 0;
 
     const size_t max_compress_block_size;
 
