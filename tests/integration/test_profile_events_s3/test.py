@@ -108,7 +108,7 @@ def get_query_stat(instance, hint):
     for event in events:
         ev = event.split("\t")
         if len(ev) == 2:
-            if ev[0].startswith("S3"):
+            if "S3" in ev[0]:
                 result[ev[0]] += int(ev[1])
     return result
 
