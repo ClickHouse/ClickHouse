@@ -412,6 +412,15 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     return &(it->second);
 }
 
+void LRUFileCache::removeCell(FileSegmentCell & cell, std::lock_guard<std::mutex> & /* cache_lock */)
+{
+    if (cell.queue_iterator)
+    {
+        current_size -= cell.size();
+        queue.erase(*cell.queue_iterator);
+    }
+}
+
 FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, size_t size)
 {
     std::lock_guard cache_lock(mutex);
@@ -512,10 +521,25 @@ bool LRUFileCache::tryReserve(
         }
     }
 
-    current_size += size - removed_size;
+    current_size += size;
     if (current_size > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
+#ifndef NDEBUG
+    size_t total_size = 0;
+    for (auto it = queue.begin(); it != queue.end(); ++it)
+    {
+        auto & [key, offset] = *it++;
+
+        auto * cell = getCell(key, offset, cache_lock);
+        if (!cell)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache is in inconsistent state: LRU queue contains entries with no cache cell");
+
+        total_size += cell->size();
+    }
+
+    assert(total_size == current_size);
+#endif
     return true;
 }
 
@@ -596,8 +620,7 @@ void LRUFileCache::remove(
     if (!cell)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
 
-    if (cell->queue_iterator)
-        queue.erase(*cell->queue_iterator);
+    removeCell(*cell, cache_lock);
 
     auto & offsets = files[key];
     offsets.erase(offset);
