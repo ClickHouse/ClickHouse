@@ -1,3 +1,10 @@
+# pylint: disable=wrong-import-order
+# pylint: disable=line-too-long
+# pylint: disable=redefined-builtin
+# pylint: disable=redefined-outer-name
+# pylint: disable=protected-access
+# pylint: disable=broad-except
+
 import contextlib
 import grpc
 import psycopg2
