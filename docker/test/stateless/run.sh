@@ -153,13 +153,12 @@ pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhous
 #   for files >64MB, we want this files to be compressed explicitly
 for table in query_log zookeeper_log trace_log transactions_info_log
 do
-    clickhouse-local --path /var/lib/clickhouse/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz &
+    clickhouse-local --path /var/lib/clickhouse/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        clickhouse-local --path /var/lib/clickhouse1/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.1.tsv.gz &
-        clickhouse-local --path /var/lib/clickhouse2/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.2.tsv.gz &
+        clickhouse-local --path /var/lib/clickhouse1/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.1.tsv.gz ||:
+        clickhouse-local --path /var/lib/clickhouse2/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.2.tsv.gz ||:
     fi
 done
-wait ||:
 
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
@@ -174,10 +173,9 @@ do
             order by samples desc
             settings allow_introspection_functions = 1
             format TabSeparated" \
-        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" &
+        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" ||:
 done
 
-wait ||:
 
 # Compressed (FIXME: remove once only github actions will be left)
 rm /var/log/clickhouse-server/clickhouse-server.log
