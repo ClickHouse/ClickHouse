@@ -386,7 +386,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
 
     if (files[key].contains(offset))
         throw Exception(
-            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            ErrorCodes::LOGICAL_ERROR,
             "Cache already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
             keyToStr(key), offset, size, dumpStructureImpl(key, cache_lock));
 
@@ -445,7 +445,7 @@ bool LRUFileCache::tryReserve(
 
         auto * cell = getCell(key, offset, cache_lock);
         if (!cell)
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cache became inconsistent. Key: {}, offset: {}", keyToStr(key), offset);
 
         size_t cell_size = cell->size();
@@ -576,7 +576,7 @@ void LRUFileCache::remove(
 
     auto * cell = getCell(key, offset, cache_lock);
     if (!cell)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
 
     if (cell->queue_iterator)
         queue.erase(*cell->queue_iterator);
@@ -692,7 +692,7 @@ LRUFileCache::Stat LRUFileCache::getStat()
     {
         const auto * cell = getCell(key, offset, cache_lock);
         if (!cell)
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cache became inconsistent. Key: {}, offset: {}", keyToStr(key), offset);
 
         switch (cell->file_segment->download_state)
@@ -727,13 +727,13 @@ void LRUFileCache::reduceSizeToDownloaded(
     auto * cell = getCell(key, offset, cache_lock);
 
     if (!cell)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "No cell found for key: {}, offset: {}", keyToStr(key), offset);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No cell found for key: {}, offset: {}", keyToStr(key), offset);
 
     const auto & file_segment = cell->file_segment;
 
     size_t downloaded_size = file_segment->downloaded_size;
     if (downloaded_size == file_segment->range().size())
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Nothing to reduce, file segment fully downloaded, key: {}, offset: {}", keyToStr(key), offset);
 
     cell->file_segment = std::make_shared<FileSegment>(offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED);
@@ -789,7 +789,7 @@ FileSegmentPtr LRUFileCache::setDownloading(const Key & key, size_t offset, size
     auto * cell = getCell(key, offset, cache_lock);
     if (cell)
         throw Exception(
-            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            ErrorCodes::LOGICAL_ERROR,
             "Cache cell already exists for key `{}` and offset {}",
             keyToStr(key), offset);
 

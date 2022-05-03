@@ -90,7 +90,10 @@ void WriteBufferFromS3::nextImpl()
     temporary_buffer->write(working_buffer.begin(), size);
 
     if (size && cacheEnabled())
+    {
         cache_writer.write(working_buffer.begin(), size, current_cache_write_offset);
+        ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
+    }
     current_cache_write_offset += size;
 
     ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()

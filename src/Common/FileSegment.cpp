@@ -217,7 +217,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
             "Not enough space is reserved. Available: {}, expected: {}", availableSize(), size);
 
     if (!isDownloader() && !is_write_through_cache)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Only downloader can do the downloading. (CallerId: {}, DownloaderId: {})",
                         getCallerId(), downloader_id);
 
@@ -310,7 +310,7 @@ bool FileSegment::reserve(size_t size)
         auto caller_id = getCallerId();
         bool is_downloader = caller_id == downloader_id;
         if (!is_downloader && !is_write_through_cache)
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Space can be reserved only by downloader (current: {}, expected: {})", caller_id, downloader_id);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Space can be reserved only by downloader (current: {}, expected: {})", caller_id, downloader_id);
 
         if (downloaded_size + size > range().size())
             throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
