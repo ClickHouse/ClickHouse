@@ -236,8 +236,8 @@
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
-            <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
+            <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
@@ -596,14 +596,14 @@
 
          To install and run JDBC bridge in background:
          * [Debian/Ubuntu]
-           export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
+           export MVN_URL=https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc-bridge/
            export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
            wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
            apt install --no-install-recommends -f ./clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
            clickhouse-jdbc-bridge &
 
          * [CentOS/RHEL]
-           export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
+           export MVN_URL=https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc-bridge/
            export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
            wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge-$PKG_VER-1.noarch.rpm
            yum localinstall -y clickhouse-jdbc-bridge-$PKG_VER-1.noarch.rpm

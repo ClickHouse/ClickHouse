@@ -348,7 +348,7 @@ QueryPipeline::QueryPipeline(std::shared_ptr<SinkToStorage> sink) : QueryPipelin
 void QueryPipeline::complete(std::shared_ptr<ISink> sink)
 {
     if (!pulling())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with chain");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with sink");
 
     drop(totals, processors);
     drop(extremes, processors);
