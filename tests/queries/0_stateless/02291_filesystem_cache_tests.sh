@@ -16,7 +16,7 @@ for NAME in $(find "$TESTS_DIR"/*.sql -print0 | xargs -0 -n 1 basename | LC_ALL=
 
     for storagePolicy in 's3_lru_cache' 's3_arc_cache'; do
         echo "Using storage policy: $storagePolicy"
-        cat $TEST_FILE | sed -e "s/storagePolicy/${storagePolicy}/" > $TMP_PATH
+        cat $TEST_FILE | sed -e "s/storagePolicy1/${storagePolicy}_1/" | sed -e "s/storagePolicy2/${storagePolicy}_2/"  > $TMP_PATH
         ${CLICKHOUSE_CLIENT} --queries-file $TMP_PATH
         rm $TMP_PATH
     done
