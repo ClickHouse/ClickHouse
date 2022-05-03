@@ -58,7 +58,7 @@ private:
     /// First worker in deque processed and flushed all data
     bool currentWorkerCompleted() const;
 
-    void handleEmergencyStop();
+    [[noreturn]] void handleEmergencyStop();
 
     void addReaders();
     bool addReaderToPool();
@@ -89,6 +89,7 @@ private:
     /// Triggered when new data available
     std::condition_variable next_condvar;
 
+    std::mutex exception_mutex;
     std::exception_ptr background_exception = nullptr;
     std::atomic_bool emergency_stop{false};
 
