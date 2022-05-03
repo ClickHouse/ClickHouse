@@ -1604,6 +1604,43 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 }
 
+TEST_P(CoordinationTest, ChangelogInsertThreeTimes)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./logs");
+    {
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+    }
+
+    {
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+    }
+
+    {
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+    }
+
+    {
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+    }
+
+}
 
 TEST_P(CoordinationTest, TestLogGap)
 {
