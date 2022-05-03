@@ -95,6 +95,7 @@ protected:
                                    const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context);
 
     virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) const;
+    virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}
 
     const String metadata_path;
     const String data_path;

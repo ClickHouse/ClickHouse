@@ -99,7 +99,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
-    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings) override;
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
