@@ -132,7 +132,10 @@ TEST(CheckSortedBlockInputStream, CheckBadLastRow)
     Chunk chunk;
     EXPECT_NO_THROW(executor.pull(chunk));
     EXPECT_NO_THROW(executor.pull(chunk));
+
+#ifndef ABORT_ON_LOGICAL_ERROR
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
+#endif
 }
 
 
