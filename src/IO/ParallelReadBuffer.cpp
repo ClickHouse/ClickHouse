@@ -1,6 +1,6 @@
 #include <IO/ParallelReadBuffer.h>
-#include <Common/logger_useful.h>
 #include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -167,8 +167,7 @@ void ParallelReadBuffer::handleEmergencyStop()
 {
     // this can only be called from the main thread when there is an exception
     assert(background_exception);
-    if (background_exception)
-        std::rethrow_exception(background_exception);
+    std::rethrow_exception(background_exception);
 }
 
 bool ParallelReadBuffer::nextImpl()
@@ -277,10 +276,10 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 
 void ParallelReadBuffer::onBackgroundException()
 {
+    std::lock_guard lock{exception_mutex};
     if (!background_exception)
-    {
         background_exception = std::current_exception();
-    }
+
     emergency_stop = true;
     next_condvar.notify_all();
 }
