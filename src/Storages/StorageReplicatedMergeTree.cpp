@@ -8312,7 +8312,8 @@ private:
             }
 
             auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-            auto part = storage->createPart(part_name, part_info, single_disk_volume, relative_temp_part_dir);
+            auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, relative_temp_part_dir);
+            auto part = storage->createPart(part_name, part_info, data_part_storage);
             /// TODO Transactions: Decide what to do with version metadata (if any). Let's just remove it for now.
             disk->removeFileIfExists(fs::path(temp_part_dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
             part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
