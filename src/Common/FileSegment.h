@@ -158,6 +158,7 @@ private:
     void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
     bool hasFinalizedState() const;
     bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return detached; }
+    [[noreturn]] static void throwDetached();
 
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
@@ -218,6 +219,7 @@ private:
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
     bool is_write_through_cache = false;
+    std::mutex detach_mutex;
 };
 
 struct FileSegmentsHolder : private boost::noncopyable
