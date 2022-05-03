@@ -4,7 +4,7 @@ SET max_memory_usage='20G';
 SET enable_filesystem_cache_on_write_operations = 0;
 
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_with_arc';
+CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='storagePolicy';
 INSERT INTO test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
 
 SET remote_filesystem_read_method='threadpool';

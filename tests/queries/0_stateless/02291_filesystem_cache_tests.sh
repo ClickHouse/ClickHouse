@@ -14,8 +14,7 @@ for NAME in $(find "$TESTS_DIR"/*.sql -print0 | xargs -0 -n 1 basename | LC_ALL=
     TEST_FILE=$TESTS_DIR/$NAME
     echo "Running tests from: $NAME"
 
-    #for storagePolicy in 's3_lru_cache' 's3_arc_cache'; do
-    for storagePolicy in 's3_lru_cache'; do
+    for storagePolicy in 's3_lru_cache' 's3_arc_cache'; do
         echo "Using storage policy: $storagePolicy"
         cat $TEST_FILE | sed -e "s/storagePolicy/${storagePolicy}/" > $TMP_PATH
         ${CLICKHOUSE_CLIENT} --queries-file $TMP_PATH
