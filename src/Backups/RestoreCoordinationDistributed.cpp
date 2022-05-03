@@ -21,23 +21,32 @@ namespace ErrorCodes
 
 namespace
 {
-    struct TableExistedStatus
+    struct TableInReplicatedDatabaseStatus
     {
+        String host_id;
         DatabaseAndTableName table_name;
-        bool table_existed = false;
+        bool ready = false;
+        String error_message;
+        size_t increment = 0;
 
         void write(WriteBuffer & out) const
         {
+            writeBinary(host_id, out);
             writeBinary(table_name.first, out);
             writeBinary(table_name.second, out);
-            writeBinary(table_existed, out);
+            writeBinary(ready, out);
+            writeBinary(error_message, out);
+            writeBinary(increment, out);
         }
 
         void read(ReadBuffer & in)
         {
+            readBinary(host_id, in);
             readBinary(table_name.first, in);
             readBinary(table_name.second, in);
-            readBinary(table_existed, in);
+            readBinary(ready, in);
+            readBinary(error_message, in);
+            readBinary(increment, in);
         }
     };
 
@@ -79,10 +88,10 @@ void RestoreCoordinationDistributed::createRootNodes()
     auto zookeeper = get_zookeeper();
     zookeeper->createAncestors(zookeeper_path);
     zookeeper->createIfNotExists(zookeeper_path, "");
-    zookeeper->createIfNotExists(zookeeper_path + "/hosts_metadata", "");
-    zookeeper->createIfNotExists(zookeeper_path + "/tables_existed", "");
-    zookeeper->createIfNotExists(zookeeper_path + "/data_paths", "");
-    zookeeper->createIfNotExists(zookeeper_path + "/partitions", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/tables_in_repl_databases", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/metadata_ready", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_tables_data_paths", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_tables_partitions", "");
 }
 
 void RestoreCoordinationDistributed::removeAllNodes()
@@ -91,21 +100,178 @@ void RestoreCoordinationDistributed::removeAllNodes()
     zookeeper->removeRecursive(zookeeper_path);
 }
 
+bool RestoreCoordinationDistributed::startCreatingTableInReplicatedDB(
+    const String & host_id_, const String & database_name_, const String & database_zk_path_, const String & table_name_)
+{
+    auto zookeeper = get_zookeeper();
+
+    String path = zookeeper_path + "/tables_in_repl_databases/" + escapeForFileName(database_zk_path_);
+    zookeeper->createIfNotExists(path, "");
+
+    TableInReplicatedDatabaseStatus status;
+    status.host_id = host_id_;
+    status.table_name = DatabaseAndTableName{database_name_, table_name_};
+    String status_str;
+    {
+        WriteBufferFromOwnString buf;
+        status.write(buf);
+        status_str = buf.str();
+    }
+
+    path += "/" + escapeForFileName(table_name_);
+
+    auto code = zookeeper->tryCreate(path, status_str, zkutil::CreateMode::Persistent);
+    if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+        throw zkutil::KeeperException(code, path);
+
+    return (code == Coordination::Error::ZOK);
+}
+
+/// Ends creating table in a replicated database, successfully or with an error.
+/// In the latter case `error_message` should be set.
+void RestoreCoordinationDistributed::finishCreatingTableInReplicatedDB(
+    const String & /* host_id_ */,
+    const String & database_name_,
+    const String & database_zk_path_,
+    const String & table_name_,
+    const String & error_message_)
+{
+    if (error_message_.empty())
+        LOG_TRACE(log, "Created table {}.{}", database_name_, table_name_);
+    else
+        LOG_TRACE(log, "Failed to created table {}.{}: {}", database_name_, table_name_, error_message_);
+
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/tables_in_repl_databases/" + escapeForFileName(database_zk_path_) + "/" + escapeForFileName(table_name_);
+
+    TableInReplicatedDatabaseStatus status;
+    String status_str = zookeeper->get(path);
+    {
+        ReadBufferFromString buf{status_str};
+        status.read(buf);
+    }
+
+    status.error_message = error_message_;
+    status.ready = error_message_.empty();
+
+    {
+        WriteBufferFromOwnString buf;
+        status.write(buf);
+        status_str = buf.str();
+    }
+
+    zookeeper->set(path, status_str);
+}
+
+/// Wait for another host to create a table in a replicated database.
+void RestoreCoordinationDistributed::waitForCreatingTableInReplicatedDB(
+    const String & /* database_name_ */, const String & database_zk_path_, const String & table_name_, std::chrono::seconds timeout_)
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/tables_in_repl_databases/" + escapeForFileName(database_zk_path_) + "/" + escapeForFileName(table_name_);
+
+    TableInReplicatedDatabaseStatus status;
+
+    std::atomic<bool> watch_set = false;
+    std::condition_variable watch_triggered_event;
+
+    auto watch_callback = [&](const Coordination::WatchResponse &)
+    {
+        watch_set = false; /// After it's triggered it's not set until we call getChildrenWatch() again.
+        watch_triggered_event.notify_all();
+    };
+
+    auto watch_triggered = [&] { return !watch_set; };
+
+    bool use_timeout = (timeout_.count() > 0);
+    std::chrono::steady_clock::duration time_left = timeout_;
+    std::mutex dummy_mutex;
+
+    while (!use_timeout || (time_left.count() > 0))
+    {
+        watch_set = true;
+        String status_str = zookeeper->getWatch(path, nullptr, watch_callback);
+        {
+            ReadBufferFromString buf{status_str};
+            status.read(buf);
+        }
+
+        if (!status.error_message.empty())
+            throw Exception(
+                ErrorCodes::FAILED_TO_RESTORE_METADATA_ON_OTHER_NODE,
+                "Host {} failed to create table {}.{}: {}", status.host_id, status.table_name.first, status.table_name.second, status.error_message);
+
+        if (status.ready)
+        {
+            LOG_TRACE(log, "Host {} created table {}.{}", status.host_id, status.table_name.first, status.table_name.second);
+            return;
+        }
+
+        LOG_TRACE(log, "Waiting for host {} to create table {}.{}", status.host_id, status.table_name.first, status.table_name.second);
+
+        std::chrono::steady_clock::time_point start_time;
+        if (use_timeout)
+            start_time = std::chrono::steady_clock::now();
+
+        bool waited;
+        {
+            std::unique_lock dummy_lock{dummy_mutex};
+            if (use_timeout)
+            {
+                waited = watch_triggered_event.wait_for(dummy_lock, time_left, watch_triggered);
+            }
+            else
+            {
+                watch_triggered_event.wait(dummy_lock, watch_triggered);
+                waited = true;
+            }
+        }
+
+        if (use_timeout)
+        {
+            time_left -= (std::chrono::steady_clock::now() - start_time);
+            if (time_left.count() < 0)
+                time_left = std::chrono::steady_clock::duration::zero();
+        }
+
+        if (!waited)
+            break;
+    }
+
+    if (watch_set)
+    {
+        /// Remove watch by triggering it.
+        ++status.increment;
+        WriteBufferFromOwnString buf;
+        status.write(buf);
+        zookeeper->set(path, buf.str());
+        std::unique_lock dummy_lock{dummy_mutex};
+        watch_triggered_event.wait_for(dummy_lock, timeout_, watch_triggered);
+    }
+
+    throw Exception(
+        ErrorCodes::FAILED_TO_RESTORE_METADATA_ON_OTHER_NODE,
+        "Host {} was unable to create table {}.{} in {}",
+        status.host_id,
+        status.table_name.first,
+        table_name_,
+        to_string(timeout_));
+}
+
 void RestoreCoordinationDistributed::finishRestoringMetadata(const String & host_id_, const String & error_message_)
 {
     LOG_TRACE(log, "Finished restoring metadata{}", (error_message_.empty() ? "" : (" with error " + error_message_)));
     auto zookeeper = get_zookeeper();
     if (error_message_.empty())
-        zookeeper->create(zookeeper_path + "/hosts_metadata/" + host_id_ + ":ready", "", zkutil::CreateMode::Persistent);
+        zookeeper->create(zookeeper_path + "/metadata_ready/" + host_id_ + ":ready", "", zkutil::CreateMode::Persistent);
     else
-        zookeeper->create(zookeeper_path + "/hosts_metadata/" + host_id_ + ":error", error_message_, zkutil::CreateMode::Persistent);
+        zookeeper->create(zookeeper_path + "/metadata_ready/" + host_id_ + ":error", error_message_, zkutil::CreateMode::Persistent);
 }
 
-void RestoreCoordinationDistributed::waitHostsToRestoreMetadata(const Strings & host_ids_, std::chrono::seconds timeout_) const
+void RestoreCoordinationDistributed::waitForAllHostsToRestoreMetadata(const Strings & host_ids_, std::chrono::seconds timeout_) const
 {
     auto zookeeper = get_zookeeper();
 
-    std::mutex mutex;
     bool all_hosts_ready = false;
     String not_ready_host_id;
     String error_host_id;
@@ -119,24 +285,19 @@ void RestoreCoordinationDistributed::waitHostsToRestoreMetadata(const Strings & 
         {
             if (set.contains(host_id + ":error"))
             {
-                std::lock_guard lock{mutex};
                 error_host_id = host_id;
-                error_message = zookeeper->get(zookeeper_path + "/hosts_metadata/" + host_id + ":error");
+                error_message = zookeeper->get(zookeeper_path + "/metadata_ready/" + host_id + ":error");
                 return;
             }
             if (!set.contains(host_id + ":ready"))
             {
-                std::lock_guard lock{mutex};
                 LOG_TRACE(log, "Waiting for host {} to restore its metadata", host_id);
                 not_ready_host_id = host_id;
                 return;
             }
         }
 
-        {
-            std::lock_guard lock{mutex};
-            all_hosts_ready = true;
-        }
+        all_hosts_ready = true;
     };
 
     std::atomic<bool> watch_set = false;
@@ -157,7 +318,7 @@ void RestoreCoordinationDistributed::waitHostsToRestoreMetadata(const Strings & 
     while (!use_timeout || (time_left.count() > 0))
     {
         watch_set = true;
-        Strings children = zookeeper->getChildrenWatch(zookeeper_path + "/hosts_metadata", nullptr, watch_callback);
+        Strings children = zookeeper->getChildrenWatch(zookeeper_path + "/metadata_ready", nullptr, watch_callback);
         process_nodes(children);
 
         if (!error_message.empty())
@@ -205,7 +366,7 @@ void RestoreCoordinationDistributed::waitHostsToRestoreMetadata(const Strings & 
     if (watch_set)
     {
         /// Remove watch by triggering it.
-        zookeeper->create(zookeeper_path + "/hosts_metadata/remove_watch-", "", zkutil::CreateMode::EphemeralSequential);
+        zookeeper->create(zookeeper_path + "/metadata_ready/remove_watch-", "", zkutil::CreateMode::EphemeralSequential);
         std::unique_lock dummy_lock{dummy_mutex};
         watch_triggered_event.wait_for(dummy_lock, timeout_, watch_triggered);
     }
@@ -217,59 +378,6 @@ void RestoreCoordinationDistributed::waitHostsToRestoreMetadata(const Strings & 
         to_string(timeout_));
 }
 
-void RestoreCoordinationDistributed::setTableExistedInReplicatedDB(const String & /* host_id_ */,
-                                                                   const String & database_name_,
-                                                                   const String & database_zk_path_,
-                                                                   const String & table_name_,
-                                                                   bool table_existed_)
-{
-    auto zookeeper = get_zookeeper();
-
-    String path = zookeeper_path + "/tables_existed/" + escapeForFileName(database_zk_path_);
-    zookeeper->createIfNotExists(path, "");
-
-    path += "/" + escapeForFileName(table_name_);
-
-    String status_str;
-    {
-        TableExistedStatus status;
-        status.table_name.first = database_name_;
-        status.table_name.second = table_name_;
-        status.table_existed = table_existed_;
-        WriteBufferFromOwnString buf;
-        status.write(buf);
-        status_str = buf.str();
-    }
-
-    auto code = zookeeper->tryCreate(path, status_str, zkutil::CreateMode::Persistent);
-    if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-        throw zkutil::KeeperException(code, path);
-
-    if (code == Coordination::Error::ZOK)
-        return;
-
-    if (!table_existed_)
-        zookeeper->set(path, status_str);
-}
-
-void RestoreCoordinationDistributed::checkTablesNotExistedInReplicatedDBs() const
-{
-    auto zookeeper = get_zookeeper();
-
-    for (const String & database_zk_path_escaped : zookeeper->getChildren(zookeeper_path + "/tables_existed"))
-    {
-        for (const String & table_name_escaped : zookeeper->getChildren(zookeeper_path + "/tables_existed/" + database_zk_path_escaped))
-        {
-            String status_str = zookeeper->get(zookeeper_path + "/tables_existed/" + database_zk_path_escaped + "/" + table_name_escaped);
-            TableExistedStatus status;
-            ReadBufferFromString buf{status_str};
-            status.read(buf);
-            if (status.table_existed)
-                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "{} already exists", formatTableNameOrTemporaryTableName(status.table_name));
-        }
-    }
-}
-
 void RestoreCoordinationDistributed::setReplicatedTableDataPath(
     const String & host_id_,
     const DatabaseAndTableName & table_name_,
@@ -277,7 +385,7 @@ void RestoreCoordinationDistributed::setReplicatedTableDataPath(
     const String & data_path_in_backup_)
 {
     auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/data_paths/" + escapeForFileName(table_zk_path_);
+    String path = zookeeper_path + "/repl_tables_data_paths/" + escapeForFileName(table_zk_path_);
 
     String new_info_str;
     {
@@ -312,7 +420,7 @@ void RestoreCoordinationDistributed::setReplicatedTableDataPath(
 String RestoreCoordinationDistributed::getReplicatedTableDataPath(const String & table_zk_path_) const
 {
     auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/data_paths/" + escapeForFileName(table_zk_path_);
+    String path = zookeeper_path + "/repl_tables_data_paths/" + escapeForFileName(table_zk_path_);
     String info_str = zookeeper->get(path);
     ReadBufferFromString buf{info_str};
     ReplicatedTableDataPath info;
@@ -320,7 +428,7 @@ String RestoreCoordinationDistributed::getReplicatedTableDataPath(const String &
     return info.data_path_in_backup;
 }
 
-bool RestoreCoordinationDistributed::startRestoringReplicatedTablePartition(
+bool RestoreCoordinationDistributed::startInsertingDataToPartitionInReplicatedTable(
     const String & host_id_,
     const DatabaseAndTableName & table_name_,
     const String & table_zk_path_,
@@ -328,7 +436,7 @@ bool RestoreCoordinationDistributed::startRestoringReplicatedTablePartition(
 {
     auto zookeeper = get_zookeeper();
 
-    String path = zookeeper_path + "/partitions/" + escapeForFileName(table_zk_path_);
+    String path = zookeeper_path + "/repl_tables_partitions/" + escapeForFileName(table_zk_path_);
     zookeeper->createIfNotExists(path, "");
 
     path += "/" + escapeForFileName(partition_name_);

@@ -301,7 +301,8 @@ namespace
             const BackupPtr & backup_,
             const DatabaseAndTableName & table_name_in_backup_,
             const RestoreSettingsPtr & restore_settings_,
-            const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
+            const std::shared_ptr<IRestoreCoordination> & restore_coordination_,
+            std::chrono::seconds timeout_for_restoring_metadata_)
             : context(context_)
             , create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_))
             , partitions(partitions_)
@@ -309,6 +310,7 @@ namespace
             , table_name_in_backup(table_name_in_backup_)
             , restore_settings(restore_settings_)
             , restore_coordination(restore_coordination_)
+            , timeout_for_restoring_metadata(timeout_for_restoring_metadata_)
         {
             table_name = DatabaseAndTableName{create_query->getDatabase(), create_query->getTable()};
             if (create_query->temporary)
@@ -345,25 +347,72 @@ namespace
                 return;
 
             auto cloned_create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query->clone());
+            cloned_create_query->if_not_exists = (restore_settings->create_table == RestoreTableCreationMode::kCreateIfNotExists);
 
-            if ((restore_settings->create_table == RestoreTableCreationMode::kCreate) && is_replicated_database)
+            /// We need a special processing for tables in replicated databases.
+            /// Because of the replication multiple nodes can try to restore the same tables again and failed with "Table already exists"
+            /// because of some table could be restored already on other node and then replicated to this node.
+            /// To solve this problem we use the restore coordination: the first node calls
+            /// IRestoreCoordination::startCreatingTableInReplicatedDB() and then for other nodes this function returns false which means
+            /// this table is already being created by some other node.
+            bool wait_instead_of_creating = false;
+            if (is_replicated_database)
+                wait_instead_of_creating = !restore_coordination->startCreatingTableInReplicatedDB(
+                    restore_settings->host_id, table_name.first, replicated_database_zk_path, table_name.second);
+
+            if (wait_instead_of_creating)
             {
-                bool table_existed = database->isTableExist(table_name.second, context);
-                restore_coordination->setTableExistedInReplicatedDB(
-                    restore_settings->host_id, table_name.first, replicated_database_zk_path, table_name.second, table_existed);
+                waitForReplicatedDatabaseToSyncTable();
             }
+            else
+            {
+                try
+                {
+                    InterpreterCreateQuery create_interpreter{cloned_create_query, context};
+                    create_interpreter.setInternal(true);
+                    create_interpreter.execute();
+                }
+                catch (...)
+                {
+                    if (is_replicated_database)
+                        restore_coordination->finishCreatingTableInReplicatedDB(
+                            restore_settings->host_id,
+                            table_name.first,
+                            replicated_database_zk_path,
+                            table_name.second,
+                            getCurrentExceptionMessage(false));
+                    throw;
+                }
 
-            /// For creating tables in replicated databases we need to set "IF NOT EXISTS" in tables' definitions
-            /// (even if our mode is RestoreTableCreationMode::kCreate) because otherwise multiple nodes can try to create the same tables
-            /// again and failed with "Table already exists" because of a table could be created on other node and then replicated to this node.
-            /// To solve this problem we set "IF NOT EXISTS" here and after all nodes have finished restoring metadata we just check
-            /// if each such table was really created somewhere (see checkTablesNotExistedInReplicatedDBs() call).
-            cloned_create_query->if_not_exists
-                = (restore_settings->create_table == RestoreTableCreationMode::kCreateIfNotExists) || is_replicated_database;
+                if (is_replicated_database)
+                    restore_coordination->finishCreatingTableInReplicatedDB(
+                        restore_settings->host_id, table_name.first, replicated_database_zk_path, table_name.second);
+            }
+        }
 
-            InterpreterCreateQuery create_interpreter{cloned_create_query, context};
-            create_interpreter.setInternal(true);
-            create_interpreter.execute();
+        void waitForReplicatedDatabaseToSyncTable()
+        {
+            if (!is_replicated_database)
+                return;
+
+            restore_coordination->waitForCreatingTableInReplicatedDB(table_name.first, replicated_database_zk_path, table_name.second);
+
+            auto start_time = std::chrono::steady_clock::now();
+            bool use_timeout = (timeout_for_restoring_metadata.count() > 0);
+            while (!database->isTableExist(table_name.second, context))
+            {
+                if (use_timeout && (std::chrono::steady_clock::now() - start_time) >= timeout_for_restoring_metadata)
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "Table {}.{} in the replicated database {} was not synced from another node in {}",
+                        table_name.first,
+                        table_name.second,
+                        table_name.first,
+                        to_string(timeout_for_restoring_metadata));
+                }
+                sleepForMilliseconds(50);
+            }
         }
 
         void getStorage()
@@ -447,6 +496,7 @@ namespace
         DatabaseAndTableName table_name_in_backup;
         RestoreSettingsPtr restore_settings;
         std::shared_ptr<IRestoreCoordination> restore_coordination;
+        std::chrono::seconds timeout_for_restoring_metadata;
         DatabasePtr database;
         bool is_replicated_database = false;
         String replicated_database_zk_path;
@@ -462,8 +512,17 @@ namespace
     class RestoreTasksBuilder
     {
     public:
-        RestoreTasksBuilder(ContextMutablePtr context_, const BackupPtr & backup_, const RestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
-            : context(context_), backup(backup_), restore_settings(restore_settings_), restore_coordination(restore_coordination_)
+        RestoreTasksBuilder(
+            ContextMutablePtr context_,
+            const BackupPtr & backup_,
+            const RestoreSettings & restore_settings_,
+            const std::shared_ptr<IRestoreCoordination> & restore_coordination_,
+            std::chrono::seconds timeout_for_restoring_metadata_)
+            : context(context_)
+            , backup(backup_)
+            , restore_settings(restore_settings_)
+            , restore_coordination(restore_coordination_)
+            , timeout_for_restoring_metadata(timeout_for_restoring_metadata_)
         {
         }
 
@@ -510,7 +569,7 @@ namespace
 
             /// TODO: We need to restore tables according to their dependencies.
             for (const auto & info : tables | boost::adaptors::map_values)
-                res.push_back(std::make_unique<RestoreTableTask>(context, info.create_query, info.partitions, backup, info.name_in_backup, restore_settings_ptr, restore_coordination));
+                res.push_back(std::make_unique<RestoreTableTask>(context, info.create_query, info.partitions, backup, info.name_in_backup, restore_settings_ptr, restore_coordination, timeout_for_restoring_metadata));
 
             return res;
         }
@@ -692,6 +751,7 @@ namespace
         BackupPtr backup;
         RestoreSettings restore_settings;
         std::shared_ptr<IRestoreCoordination> restore_coordination;
+        std::chrono::seconds timeout_for_restoring_metadata;
         DDLRenamingSettings renaming_settings;
         std::map<String /* new_db_name */, CreateDatabaseInfo> databases;
         std::map<DatabaseAndTableName /* new_table_name */, CreateTableInfo> tables;
@@ -699,11 +759,11 @@ namespace
 }
 
 
-RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backup, const Elements & elements, const RestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination)
+RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backup, const Elements & elements, const RestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination, std::chrono::seconds timeout_for_restoring_metadata)
 {
     try
     {
-        RestoreTasksBuilder builder{context, backup, restore_settings, restore_coordination};
+        RestoreTasksBuilder builder{context, backup, restore_settings, restore_coordination, timeout_for_restoring_metadata};
         builder.prepare(elements);
         return builder.makeTasks();
     }
@@ -762,18 +822,10 @@ void executeRestoreTasks(RestoreTasks && restore_tasks, ThreadPool & thread_pool
     restore_coordination->finishRestoringMetadata(restore_settings.host_id);
     if (!restore_settings.host_id.empty())
     {
-        restore_coordination->waitHostsToRestoreMetadata(
+        restore_coordination->waitForAllHostsToRestoreMetadata(
             BackupSettings::Util::filterHostIDs(
                 restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num),
             timeout_for_restoring_metadata);
-    }
-
-    if (restore_settings.create_table == RestoreTableCreationMode::kCreate)
-    {
-        /// We changed table definitions to "CREATE IF NOT EXISTS" while we were creating tables in replicated databases.
-        /// Now because our mode is RestoreTableCreationMode::kCreate we need to check if each table was really created at least on
-        /// any replica.
-        restore_coordination->checkTablesNotExistedInReplicatedDBs();
     }
 
     /// Non-sequential tasks.

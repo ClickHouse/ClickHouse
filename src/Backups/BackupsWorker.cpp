@@ -164,9 +164,9 @@ namespace
             backup_open_params.password = restore_settings.password;
             BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
-            auto restore_tasks = makeRestoreTasks(context, backup, new_query->elements, restore_settings, restore_coordination);
-            auto restore_metadata_timeout = std::chrono::seconds(context->getConfigRef().getUInt("backups.restore_metadata_timeout", 5));
-            executeRestoreTasks(std::move(restore_tasks), thread_pool, restore_settings, restore_coordination, restore_metadata_timeout);
+            auto timeout_for_restoring_metadata = std::chrono::seconds{context->getConfigRef().getUInt("backups.restore_metadata_timeout", 0)};
+            auto restore_tasks = makeRestoreTasks(context, backup, new_query->elements, restore_settings, restore_coordination, timeout_for_restoring_metadata);
+            executeRestoreTasks(std::move(restore_tasks), thread_pool, restore_settings, restore_coordination, timeout_for_restoring_metadata);
         }
     }
 }

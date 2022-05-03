@@ -8252,7 +8252,7 @@ public:
             {
                 it = partitions_restored_by_us.emplace(
                     part_info->partition_id,
-                    restore_coordination->startRestoringReplicatedTablePartition(
+                    restore_coordination->startInsertingDataToPartitionInReplicatedTable(
                         restore_settings.host_id, table_name, full_zk_path, part_info->partition_id)).first;
             }
 
