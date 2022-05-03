@@ -196,6 +196,8 @@ private:
         const Key & key, size_t offset, size_t size,
         FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
 
+    void removeCell(FileSegmentCell & cell, std::lock_guard<std::mutex> & cache_lock);
+
     void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
 
     bool tryReserve(
