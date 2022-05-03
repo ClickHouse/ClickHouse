@@ -2,6 +2,7 @@
 #include <IO/ReadSettings.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 #include <optional>
 
 namespace DB
@@ -48,6 +49,8 @@ class IBackupEntry;
 using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
 using BackupEntries = std::vector<std::pair<std::string, BackupEntryPtr>>;
 
+struct WriteSettings;
+
 class TemporaryFileOnDisk;
 
 /// This is an abstraction of storage for data part files.
@@ -81,7 +84,8 @@ public:
     };
 
     virtual void remove(
-        bool keep_shared_data,
+        bool can_remove_shared_data,
+        const NameSet & names_not_to_remove,
         const MergeTreeDataPartChecksums & checksums, 
         std::list<ProjectionChecksums> projections,
         Poco::Logger * log) const = 0;
@@ -108,9 +112,17 @@ public:
     virtual std::string getDiskPathForLogs() const = 0;
 
     /// Should remove it later
-    virtual void writeChecksums(const MergeTreeDataPartChecksums & checksums) const = 0;
-    virtual void writeColumns(const NamesAndTypesList & columns) const = 0;
+    virtual void writeChecksums(const MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const = 0;
+    virtual void writeColumns(const NamesAndTypesList & columns, const WriteSettings & settings) const = 0;
+    virtual void writeVersionMetadata(const VersionMetadata & version, bool fsync_part_dir) const = 0;
+    virtual void appendCSNToVersionMetadata(const VersionMetadata & version, VersionMetadata::WhichCSN which_csn) const = 0;
+    virtual void appendRemovalTIDToVersionMetadata(const VersionMetadata & version, bool clear) const = 0;
     virtual void writeDeleteOnDestroyMarker(Poco::Logger * log) const = 0;
+
+    virtual void removeDeleteOnDestroyMarker() const = 0;
+    virtual void removeVersionMetadata() const = 0;
+
+    virtual void loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const = 0;
 
     virtual void checkConsistency(const MergeTreeDataPartChecksums & checksums) const = 0;
 
@@ -138,14 +150,16 @@ public:
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
-        std::function<void(const DiskPtr &)> save_metadata_callback) const = 0;
+        bool make_source_readonly,
+        std::function<void(const DiskPtr &)> save_metadata_callback,
+        bool copy_instead_of_hardlink) const = 0;
 
     virtual std::shared_ptr<IDataPartStorage> clone(
         const std::string & to,
         const std::string & dir_path,
         Poco::Logger * log) const = 0;
 
-    virtual void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync) = 0;
+    virtual void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) = 0;
 
     /// Disk name
     virtual std::string getName() const = 0;
@@ -183,7 +197,7 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const = 0;
 
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size) = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, const WriteSettings & settings) = 0;
 
     virtual void removeFile(const String & path) = 0;
     virtual void removeRecursive() = 0;

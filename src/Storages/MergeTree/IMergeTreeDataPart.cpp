@@ -66,12 +66,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
-{
-    size_t file_size = disk->getFileSize(path);
-    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
-}
-
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
@@ -135,7 +129,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         String file_name = "minmax_" + escapeForFileName(column_names[i]) + ".idx";
         auto serialization = data_types.at(i)->getDefaultSerialization();
 
-        auto out = data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE);
+        auto out = data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
         HashingWriteBuffer out_hashing(*out);
         serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
         serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
@@ -974,7 +968,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
 
         checksums = checkDataPart(shared_from_this(), false);
-        data_part_storage->writeChecksums(checksums);
+        data_part_storage->writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
     }
@@ -1180,7 +1174,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
         if (columns.empty())
             throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        data_part_storage->writeColumns(loaded_columns);
+        data_part_storage->writeColumns(loaded_columns, {});
     }
     else
     {
@@ -1237,24 +1231,7 @@ void IMergeTreeDataPart::storeVersionMetadata() const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for in-memory parts (table: {}, part: {})",
                         storage.getStorageID().getNameForLogs(), name);
 
-    String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
-    String tmp_version_file_name = version_file_name + ".tmp";
-    DiskPtr disk = volume->getDisk();
-    {
-        /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
-        /// so we create empty file at first (expecting that createFile throws if file already exists)
-        /// and then overwrite it.
-        disk->createFile(tmp_version_file_name);
-        auto out = disk->writeFile(tmp_version_file_name, 256, WriteMode::Rewrite);
-        version.write(*out);
-        out->finalize();
-        out->sync();
-    }
-
-    SyncGuardPtr sync_guard;
-    if (storage.getSettings()->fsync_part_directory)
-        sync_guard = disk->getDirectorySyncGuard(getFullRelativePath());
-    disk->replaceFile(tmp_version_file_name, version_file_name);
+    data_part_storage->writeVersionMetadata(version, storage.getSettings()->fsync_part_directory);
 }
 
 void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
@@ -1266,16 +1243,7 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
     assert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && version.removal_csn == 0));
     assert(isStoredOnDisk());
 
-    /// Small enough appends to file are usually atomic,
-    /// so we append new metadata instead of rewriting file to reduce number of fsyncs.
-    /// We don't need to do fsync when writing CSN, because in case of hard restart
-    /// we will be able to restore CSN from transaction log in Keeper.
-
-    String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
-    DiskPtr disk = volume->getDisk();
-    auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
-    version.writeCSN(*out, which_csn);
-    out->finalize();
+    data_part_storage->appendCSNToVersionMetadata(version, which_csn);
 }
 
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
@@ -1298,69 +1266,15 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
     else
         LOG_TEST(storage.log, "Appending removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
 
-    String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
-    DiskPtr disk = volume->getDisk();
-    auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
-    version.writeRemovalTID(*out, clear);
-    out->finalize();
-
-    /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
-    if (!clear)
-        out->sync();
+    data_part_storage->appendRemovalTIDToVersionMetadata(version, clear);
 }
 
 void IMergeTreeDataPart::loadVersionMetadata() const
 try
 {
-    String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
-    String tmp_version_file_name = version_file_name + ".tmp";
-    DiskPtr disk = volume->getDisk();
+    data_part_storage->loadVersionMetadata(version, storage.log);
 
-    auto remove_tmp_file = [&]()
-    {
-        auto last_modified = disk->getLastModified(tmp_version_file_name);
-        auto buf = openForReading(disk, tmp_version_file_name);
-        String content;
-        readStringUntilEOF(content, *buf);
-        LOG_WARNING(storage.log, "Found file {} that was last modified on {}, has size {} and the following content: {}",
-                    tmp_version_file_name, last_modified.epochTime(), content.size(), content);
-        disk->removeFile(tmp_version_file_name);
-    };
 
-    if (disk->exists(version_file_name))
-    {
-        auto buf = openForReading(disk, version_file_name);
-        version.read(*buf);
-        if (disk->exists(tmp_version_file_name))
-            remove_tmp_file();
-        return;
-    }
-
-    /// Four (?) cases are possible:
-    /// 1. Part was created without transactions.
-    /// 2. Version metadata file was not renamed from *.tmp on part creation.
-    /// 3. Version metadata were written to *.tmp file, but hard restart happened before fsync.
-    /// 4. Fsyncs in storeVersionMetadata() work incorrectly.
-
-    if (!disk->exists(tmp_version_file_name))
-    {
-        /// Case 1.
-        /// We do not have version metadata and transactions history for old parts,
-        /// so let's consider that such parts were created by some ancient transaction
-        /// and were committed with some prehistoric CSN.
-        /// NOTE It might be Case 3, but version metadata file is written on part creation before other files,
-        /// so it's not Case 3 if part is not broken.
-        version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        version.creation_csn = Tx::PrehistoricCSN;
-        return;
-    }
-
-    /// Case 2.
-    /// Content of *.tmp file may be broken, just use fake TID.
-    /// Transaction was not committed if *.tmp file was not renamed, so we should complete rollback by removing part.
-    version.setCreationTID(Tx::DummyTID, nullptr);
-    version.creation_csn = Tx::RolledBackCSN;
-    remove_tmp_file();
 }
 catch (Exception & e)
 {
@@ -1394,15 +1308,16 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     if (part_is_probably_removed_from_disk)
         return true;
 
-    DiskPtr disk = volume->getDisk();
-    if (!disk->exists(getFullRelativePath()))
+    if (!data_part_storage->exists())
         return true;
 
     String content;
-    String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
+    String version_file_name = TXN_VERSION_METADATA_FILE_NAME;
     try
     {
-        auto buf = openForReading(disk, version_file_name);
+        size_t file_size = data_part_storage->getFileSize(TXN_VERSION_METADATA_FILE_NAME);
+        auto buf = data_part_storage->readFile(TXN_VERSION_METADATA_FILE_NAME, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+
         readStringUntilEOF(content, *buf);
         ReadBufferFromString str_buf{content};
         VersionMetadata file;
@@ -1561,7 +1476,12 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
-    data_part_storage->freeze(storage.relative_data_path, getRelativePathForDetachedPart(prefix), {});
+    data_part_storage->freeze(
+        storage.relative_data_path,
+        getRelativePathForDetachedPart(prefix),
+        /*make_source_readonly*/ true, 
+        {}, 
+        /*copy_instead_of_hardlink*/ false);
 }
 
 DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const

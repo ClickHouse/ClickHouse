@@ -34,7 +34,8 @@ public:
     DataPartStorageIteratorPtr iterateDirectory(const std::string & path) const override;
 
     void remove(
-        bool keep_shared_data,
+        bool can_remove_shared_data,
+        const NameSet & names_not_to_remove,
         const MergeTreeDataPartChecksums & checksums, 
         std::list<ProjectionChecksums> projections,
         Poco::Logger * log) const override;
@@ -56,9 +57,17 @@ public:
     bool isBroken() const override;
     std::string getDiskPathForLogs() const override;
 
-    void writeChecksums(const MergeTreeDataPartChecksums & checksums) const override;
-    void writeColumns(const NamesAndTypesList & columns) const override;
+    void writeChecksums(const MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const override;
+    void writeColumns(const NamesAndTypesList & columns, const WriteSettings & settings) const override;
+    void writeVersionMetadata(const VersionMetadata & version, bool fsync_part_dir) const override;
+    void appendCSNToVersionMetadata(const VersionMetadata & version, VersionMetadata::WhichCSN which_csn) const override;
+    void appendRemovalTIDToVersionMetadata(const VersionMetadata & version, bool clear) const override;
     void writeDeleteOnDestroyMarker(Poco::Logger * log) const override;
+
+    void removeDeleteOnDestroyMarker() const override;
+    void removeVersionMetadata() const override;
+
+    void loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const override;
 
     void checkConsistency(const MergeTreeDataPartChecksums & checksums) const override;
 
@@ -79,14 +88,16 @@ public:
     DataPartStoragePtr freeze(
         const std::string & to,
         const std::string & dir_path,
-        std::function<void(const DiskPtr &)> save_metadata_callback) const override;
+        bool make_source_readonly,
+        std::function<void(const DiskPtr &)> save_metadata_callback,
+        bool copy_instead_of_hardlink) const override;
 
     DataPartStoragePtr clone(
         const std::string & to,
         const std::string & dir_path,
         Poco::Logger * log) const override;
 
-    void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync) override;
+    void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) override;
 
     std::string getName() const override;
     std::string getDiskType() const override;
@@ -104,7 +115,8 @@ private:
 
     void clearDirectory(
         const std::string & dir,
-        bool keep_shared_data, 
+        bool can_remove_shared_data,
+        const NameSet & names_not_to_remove,
         const MergeTreeDataPartChecksums & checksums, 
         const std::unordered_set<String> & skip_directories, 
         Poco::Logger * log,
@@ -136,7 +148,8 @@ public:
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
-        size_t buf_size) override;
+        size_t buf_size,
+        const WriteSettings & settings) override;
 
     void removeFile(const String & path) override;
     void removeRecursive() override;

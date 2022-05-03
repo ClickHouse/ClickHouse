@@ -548,7 +548,7 @@ void finalizeMutatedPart(
 
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
-        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings(), context->getWriteSettings());
+        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         writeUUIDText(new_data_part->uuid, out_hashing);
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
