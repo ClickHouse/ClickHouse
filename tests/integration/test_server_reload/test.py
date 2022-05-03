@@ -196,7 +196,7 @@ def test_change_http_port(cluster, zk):
             zk.set("/clickhouse/ports/http", b"9090")
         with pytest.raises(ConnectionError, match="Connection refused"):
             instance.http_query("SELECT 1")
-        instance.http_query("SELECT 1", port=9090) == "1\n"
+        assert instance.http_query("SELECT 1", port=9090) == "1\n"
 
 
 def test_change_mysql_port(cluster, zk):
@@ -224,7 +224,7 @@ def test_change_postgresql_port(cluster, zk):
         pgsql_client_on_new_port = get_pgsql_client(cluster, port=9090)
         cursor = pgsql_client_on_new_port.cursor()
         cursor.execute("SELECT 1")
-        cursor.fetchall() == [(1,)]
+        assert cursor.fetchall() == [(1,)]
 
 
 def test_change_grpc_port(cluster, zk):
