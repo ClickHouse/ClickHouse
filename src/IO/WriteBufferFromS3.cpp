@@ -171,6 +171,9 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
+
+    if (cacheEnabled())
+        cache_writer.finalize();
 }
 
 void WriteBufferFromS3::createMultipartUpload()
