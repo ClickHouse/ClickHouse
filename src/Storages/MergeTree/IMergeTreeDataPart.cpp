@@ -119,7 +119,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     if (!initialized)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Attempt to store uninitialized MinMax index for part {}. This is a bug.",
+            "Attempt to store uninitialized MinMax index for part {}. This is a bug",
             data_part_storage_builder->getFullPath());
 
     WrittenFiles written_files;
@@ -332,7 +332,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     : storage(storage_)
     , name(name_)
     , info(info_)
-    , data_part_storage(parent_part_ ? parent_part_->data_part_storage : data_part_storage_)
+    , data_part_storage(data_part_storage_)
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
@@ -477,10 +477,10 @@ void IMergeTreeDataPart::removeIfNeeded()
 
         if (is_temp)
         {
-            String file_name = fileName(data_part_storage->getRelativePath());
+            String file_name = fileName(data_part_storage->getPartDirectory());
 
             if (file_name.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set", data_part_storage->getRelativePath(), name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set", data_part_storage->getPartDirectory(), name);
 
             if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj"))
             {
@@ -1387,6 +1387,11 @@ try
 
     data_part_storage->rename(new_relative_path, storage.log, remove_new_dir_if_exists, storage.getSettings()->fsync_part_directory);
     metadata_manager->move(from, to);
+
+    for (const auto & [p_name, part] : projection_parts)
+    {
+        part->data_part_storage = data_part_storage->getProjection(p_name + ".proj");
+    }
 }
 catch (...)
 {
@@ -1502,7 +1507,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, con
         throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    return data_part_storage->clone(path_to_clone, data_part_storage->getRelativePath(), storage.log);
+    return data_part_storage->clone(path_to_clone, data_part_storage->getPartDirectory(), storage.log);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

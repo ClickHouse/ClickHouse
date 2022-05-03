@@ -44,7 +44,7 @@ public:
 
     std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const override;
 
-    std::string getRelativePath() const override { return part_dir; }
+    std::string getPartDirectory() const override { return part_dir; }
     std::string getFullPath() const override;
     std::string getFullRootPath() const override;
     std::string getFullRelativePath() const override;
@@ -136,7 +136,7 @@ public:
     void createDirectories() override;
     void createProjection(const std::string & name) override;
 
-    std::string getRelativePath() const override { return part_dir; }
+    std::string getPartDirectory() const override { return part_dir; }
     std::string getFullPath() const override;
     std::string getFullRelativePath() const override;
 

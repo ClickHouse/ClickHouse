@@ -768,7 +768,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     SyncGuardPtr sync_guard;
     if (data.getSettings()->fsync_part_directory)
-        sync_guard = disk->getDirectorySyncGuard(data_part_storage->getRelativePath());
+        sync_guard = disk->getDirectorySyncGuard(data_part_storage->getPartDirectory());
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 

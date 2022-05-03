@@ -98,10 +98,16 @@ public:
     /// Reset part directory, used for im-memory parts
     virtual void setRelativePath(const std::string & path) = 0;
 
-    virtual std::string getRelativePath() const = 0;
+    virtual std::string getPartDirectory() const = 0;
+    // virtual std::string getRootPath() const = 0;
+    // std::string getPath() const; // getRootPath() / getPartDirectory()
+    // 
+    // virtual std::string getFullRootPath() const = 0;
+    // virtual std::string getFullPath() const = 0; // getFullRootPath() / getPartDirectory()
+
     virtual std::string getFullPath() const = 0;
     virtual std::string getFullRootPath() const = 0;
-    virtual std::string getFullRelativePath() const = 0;
+    virtual std::string getFullRelativePath() const = 0; // -> getPath
 
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
@@ -181,7 +187,7 @@ public:
     /// Reset part directory, used for im-memory parts
     virtual void setRelativePath(const std::string & path) = 0;
 
-    virtual std::string getRelativePath() const = 0;
+    virtual std::string getPartDirectory() const = 0;
     virtual std::string getFullPath() const = 0;
     virtual std::string getFullRelativePath() const = 0;
 

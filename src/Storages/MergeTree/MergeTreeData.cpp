@@ -1735,7 +1735,7 @@ void MergeTreeData::flushAllInMemoryPartsIfNeeded()
     {
         if (auto part_in_memory = asInMemoryPart(part))
         {
-            part_in_memory->flushToDisk(part_in_memory->data_part_storage->getRelativePath(), metadata_snapshot);
+            part_in_memory->flushToDisk(part_in_memory->data_part_storage->getPartDirectory(), metadata_snapshot);
         }
     }
 }
@@ -2722,7 +2722,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     else /// Parts from ReplicatedMergeTree already have names
         part_name = part->name;
 
-    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getRelativePath(), part_name);
+    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part_name);
 
     if (auto it_duplicate = data_parts_by_info.find(part_info); it_duplicate != data_parts_by_info.end())
     {
@@ -3005,9 +3005,9 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
 void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
 {
     if (prefix.empty())
-        LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->data_part_storage->getRelativePath(), part_to_detach->name);
+        LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->data_part_storage->getPartDirectory(), part_to_detach->name);
     else
-        LOG_INFO(log, "Renaming {} to {}_{} and forgetting it.", part_to_detach->data_part_storage->getRelativePath(), prefix, part_to_detach->name);
+        LOG_INFO(log, "Renaming {} to {}_{} and forgetting it.", part_to_detach->data_part_storage->getPartDirectory(), prefix, part_to_detach->name);
 
     auto lock = lockParts();
     bool removed_active_part = false;
@@ -4695,7 +4695,7 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
         WriteBufferFromOwnString buf;
         buf << " Rollbacking parts state to temporary and removing from working set:";
         for (const auto & part : precommitted_parts)
-            buf << " " << part->data_part_storage->getRelativePath();
+            buf << " " << part->data_part_storage->getPartDirectory();
         buf << ".";
         LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
 
@@ -4713,7 +4713,7 @@ void MergeTreeData::Transaction::rollback()
         WriteBufferFromOwnString buf;
         buf << " Removing parts:";
         for (const auto & part : precommitted_parts)
-            buf << " " << part->data_part_storage->getRelativePath();
+            buf << " " << part->data_part_storage->getPartDirectory();
         buf << ".";
         LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
 
@@ -5949,12 +5949,12 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
             // Store metadata for replicated table.
             // Do nothing for non-replocated.
-            createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->data_part_storage->getRelativePath());
+            createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->data_part_storage->getPartDirectory());
         };
 
         auto new_storage = part->data_part_storage->freeze(
             backup_part_path,
-            part->data_part_storage->getRelativePath(),
+            part->data_part_storage->getPartDirectory(),
             /*make_source_readonly*/ true,
             callback,
             /*copy_instead_of_hardlink*/ false);
