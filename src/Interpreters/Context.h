@@ -619,7 +619,7 @@ public:
 
     /// Credentials which server will use to communicate with others
     void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
-    InterserverCredentialsPtr getInterserverCredentials();
+    InterserverCredentialsPtr getInterserverCredentials() const;
 
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);
