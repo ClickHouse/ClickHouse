@@ -15,17 +15,20 @@ OwnPatternFormatter::OwnPatternFormatter(bool color_) : Poco::PatternFormatter("
 void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_ext, std::string & text)
 {
     DB::WriteBufferFromString wb(text);
+
+    DB::FormatSettings settings;
+    String key_name;
+
     const Poco::Message & msg = msg_ext.base;
     DB::writeChar('{', wb);
-    DB::writeChar('\"', wb);
-    DB::writeString("date_time", wb); // key
-    DB::writeChar('\"', wb);
+
+    key_name = "date_time";
+    writeJSONString(StringRef(key_name), wb, settings);
     DB::writeChar(':', wb);
+
     DB::writeChar('\"', wb);
     /// Change delimiters in date for compatibility with old logs.
-
     writeDateTimeUnixTimestamp(msg_ext.time_seconds, 0, wb);
-
     DB::writeChar('.', wb);
     DB::writeChar('0' + ((msg_ext.time_microseconds / 100000) % 10), wb);
     DB::writeChar('0' + ((msg_ext.time_microseconds / 10000) % 10), wb);
@@ -37,19 +40,15 @@ void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_
 
     DB::writeChar(',', wb);
 
-    DB::writeChar('\"', wb);
-    DB::writeString("thread_name", wb);
-    DB::writeChar('\"', wb);
+    key_name = "thread_name";
+    writeJSONString(StringRef(key_name), wb, settings);
     DB::writeChar(':', wb);
-    DB::writeChar('\"', wb);
-    DB::writeString(msg.getThread(), wb);
-    DB::writeChar('\"', wb);
+    writeJSONString(StringRef(msg.getThread()), wb, settings);
 
     DB::writeChar(',', wb);
 
-    DB::writeChar('\"', wb);
-    DB::writeString("thread_id", wb);
-    DB::writeChar('\"', wb);
+    key_name = "thread_id";
+    writeJSONString(StringRef(key_name), wb, settings);
     DB::writeChar(':', wb);
     DB::writeChar('\"', wb);
     DB::writeIntText(msg_ext.thread_id, wb);
@@ -57,77 +56,63 @@ void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_
 
     DB::writeChar(',', wb);
 
-    DB::writeChar('\"', wb);
-    DB::writeString("level", wb);
-    DB::writeChar('\"', wb);
+    key_name = "level";
+    writeJSONString(StringRef(key_name), wb, settings);
     DB::writeChar(':', wb);
-    DB::writeChar('\"', wb);
     int priority = static_cast<int>(msg.getPriority());
-    DB::writeString(getPriorityName(priority), wb);
-    DB::writeChar('\"', wb);
+    writeJSONString(StringRef(getPriorityName(priority)), wb, settings);
+
+    DB::writeChar(',', wb);
+
     /// We write query_id even in case when it is empty (no query context)
     /// just to be convenient for various log parsers.
-    DB::writeChar(',', wb);
 
-    DB::writeChar('\"', wb);
-    writeString("query_id", wb);
-    DB::writeChar('\"', wb);
+    key_name = "query_id";
+    writeJSONString(StringRef(key_name), wb, settings);
     DB::writeChar(':', wb);
-    DB::writeChar('\"', wb);
-    writeEscapedString(msg_ext.query_id, wb);
-    DB::writeChar('\"', wb);
+    writeJSONString(msg_ext.query_id, wb, settings);
 
     DB::writeChar(',', wb);
 
-    DB::writeChar('\"', wb);
-    writeString("logger_name", wb);
-    DB::writeChar('\"', wb);
+    key_name = "logger_name";
+    writeJSONString(StringRef(key_name), wb, settings);
     DB::writeChar(':', wb);
 
-    DB::writeChar('\"', wb);
-
-    writeEscapedString(msg.getSource(), wb);
-    DB::writeChar('\"', wb);
+    writeJSONString(StringRef(msg.getSource()), wb, settings);
 
     DB::writeChar(',', wb);
 
-    DB::writeChar('\"', wb);
-    writeString("message", wb);
-    DB::writeChar('\"', wb);
+    key_name = "message";
+    writeJSONString(StringRef(key_name), wb, settings);
     DB::writeChar(':', wb);
-    DB::writeChar('\"', wb);
     String msg_text = msg.getText();
-    writeEscapedString(msg_text, wb);
-    DB::writeChar('\"', wb);
+    writeJSONString(StringRef(msg_text), wb, settings);
 
     DB::writeChar(',', wb);
 
-    DB::writeChar('\"', wb);
-    writeString("source_file", wb);
-    DB::writeChar('\"', wb);
+    key_name = "source_file";
+    writeJSONString(StringRef(key_name), wb, settings);
     DB::writeChar(':', wb);
-    DB::writeChar('\"', wb);
     const char * source_file = msg.getSourceFile();
     if (source_file != nullptr)
     {
-        DB::writeString(source_file, wb);
+        writeJSONString(StringRef(source_file), wb, settings);
     }
 
     else
     {
-        DB::writeString("", wb);
+        writeJSONString(StringRef(""), wb, settings);
     }
-    DB::writeChar('\"', wb);
 
     DB::writeChar(',', wb);
 
-    DB::writeChar('\"', wb);
-    writeString("source_line", wb);
-    DB::writeChar('\"', wb);
+    key_name = "source_line";
+    writeJSONString(StringRef(key_name), wb, settings);
     DB::writeChar(':', wb);
     DB::writeChar('\"', wb);
     DB::writeIntText(msg.getSourceLine(), wb);
     DB::writeChar('\"', wb);
+
     DB::writeChar('}', wb);
 }
 
