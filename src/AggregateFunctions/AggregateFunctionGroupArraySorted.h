@@ -37,18 +37,18 @@ inline TColumn readItem(const IColumn * column, Arena * arena, size_t row)
 
 template <typename TColumn, typename TFilter = void>
 size_t
-getFirstNElements_low_threshold(const TColumn * data, int num_elements, int threshold, size_t * results, const TFilter * filter = nullptr)
+getFirstNElements_low_threshold(const TColumn * data, size_t row_begin, size_t row_end, size_t threshold, size_t * results, const TFilter * filter = nullptr)
 {
-    for (int i = 0; i < threshold; i++)
+    for (size_t i = 0; i < threshold; i++)
     {
         results[i] = 0;
     }
 
-    threshold = std::min(num_elements, threshold);
-    int current_max = 0;
-    int cur;
-    int z;
-    for (int i = 0; i < num_elements; i++)
+    threshold = std::min(row_end - row_begin, threshold);
+    size_t current_max = 0;
+    size_t cur;
+    size_t z;
+    for (size_t i = row_begin; i < row_end; i++)
     {
         if constexpr (!std::is_same_v<TFilter, void>)
         {
@@ -90,12 +90,12 @@ struct SortableItem
 
 template <typename TColumn, typename TFilter = void>
 size_t getFirstNElements_high_threshold(
-    const TColumn * data, size_t num_elements, size_t threshold, size_t * results, const TFilter * filter = nullptr)
+    const TColumn * data, size_t row_begin, size_t row_end, size_t threshold, size_t * results, const TFilter * filter = nullptr)
 {
-    std::vector<SortableItem<TColumn>> dataIndexed(num_elements);
+    std::vector<SortableItem<TColumn>> dataIndexed(row_end);
     size_t num_elements_filtered = 0;
 
-    for (size_t i = 0; i < num_elements; i++)
+    for (size_t i = row_begin; i < row_end; i++)
     {
         if constexpr (!std::is_same_v<TFilter, void>)
         {
@@ -124,21 +124,21 @@ size_t getFirstNElements_high_threshold(
 static const size_t THRESHOLD_MAX_CUSTOM_FUNCTION = 1000;
 
 template <typename TColumn>
-size_t getFirstNElements(const TColumn * data, size_t num_elements, size_t threshold, size_t * results, const UInt8 * filter = nullptr)
+size_t getFirstNElements(const TColumn * data, size_t row_begin, size_t row_end, size_t threshold, size_t * results, const UInt8 * filter = nullptr)
 {
     if (threshold < THRESHOLD_MAX_CUSTOM_FUNCTION)
     {
         if (filter != nullptr)
-            return getFirstNElements_low_threshold(data, num_elements, threshold, results, filter);
+            return getFirstNElements_low_threshold(data, row_begin, row_end, threshold, results, filter);
         else
-            return getFirstNElements_low_threshold(data, num_elements, threshold, results);
+            return getFirstNElements_low_threshold(data, row_begin, row_end, threshold, results);
     }
     else
     {
         if (filter != nullptr)
-            return getFirstNElements_high_threshold(data, num_elements, threshold, results, filter);
+            return getFirstNElements_high_threshold(data, row_begin, row_end, threshold, results, filter);
         else
-            return getFirstNElements_high_threshold(data, num_elements, threshold, results);
+            return getFirstNElements_high_threshold(data, row_begin, row_end, threshold, results);
     }
 }
 
@@ -203,7 +203,7 @@ public:
 
     template <typename TColumn, bool is_plain, typename TFunc>
     void
-    forFirstRows(size_t batch_size, const IColumn ** columns, size_t data_column, Arena * arena, ssize_t if_argument_pos, TFunc func) const
+    forFirstRows(size_t row_begin, size_t row_end, const IColumn ** columns, size_t data_column, Arena * arena, ssize_t if_argument_pos, TFunc func) const
     {
         const TColumn * values = nullptr;
         std::unique_ptr<std::vector<TColumn>> values_vector;
@@ -211,8 +211,8 @@ public:
 
         if constexpr (std::is_same_v<TColumn, StringRef>)
         {
-            values_vector.reset(new std::vector<TColumn>(batch_size));
-            for (size_t i = 0; i < batch_size; i++)
+            values_vector.reset(new std::vector<TColumn>(row_end));
+            for (size_t i = row_begin; i < row_end; i++)
                 (*values_vector)[i] = readItem<TColumn, is_plain>(columns[data_column], arena, i);
             values = (*values_vector).data();
         }
@@ -231,7 +231,7 @@ public:
             filter = reinterpret_cast<const UInt8 *>(refFilter.data);
         }
 
-        size_t num_elements = getFirstNElements(values, batch_size, threshold, best_rows.data(), filter);
+        size_t num_elements = getFirstNElements(values, row_begin, row_end, threshold, best_rows.data(), filter);
         for (size_t i = 0; i < num_elements; i++)
         {
             func(best_rows[i], values);
@@ -239,14 +239,19 @@ public:
     }
 
     void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
     {
         State & data = this->data(place);
 
         if constexpr (use_column_b)
         {
             forFirstRows<TColumnB, is_plain_b>(
-                batch_size, columns, 1, arena, if_argument_pos, [columns, &arena, &data](size_t row, const TColumnB * values)
+                row_begin, row_end, columns, 1, arena, if_argument_pos, [columns, &arena, &data](size_t row, const TColumnB * values)
                 {
                     data.add(readItem<TColumnA, is_plain_a>(columns[0], arena, row), values[row]);
                 });
@@ -254,7 +259,7 @@ public:
         else
         {
             forFirstRows<TColumnA, is_plain_a>(
-                batch_size, columns, 0, arena, if_argument_pos, [&data](size_t row, const TColumnA * values)
+                row_begin, row_end, columns, 0, arena, if_argument_pos, [&data](size_t row, const TColumnA * values)
                 {
                     data.add(values[row]);
                 });
