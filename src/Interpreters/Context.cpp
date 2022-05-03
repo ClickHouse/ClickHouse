@@ -535,6 +535,7 @@ ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 Context::~Context() = default;
 
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
+const InterserverIOHandler & Context::getInterserverIOHandler() const { return shared->interserver_io_handler; }
 
 std::unique_lock<std::recursive_mutex> Context::getLock() const
 {
