@@ -34,6 +34,8 @@ def cluster():
 init_list = {
     "ReadBufferFromS3Bytes": 0,
     "S3ReadMicroseconds": 0,
+    "ReadBufferFromS3Microseconds": 0,
+    "ReadBufferFromS3RequestsErrors": 0,
     "S3ReadRequestsCount": 0,
     "S3ReadRequestsErrorsTotal": 0,
     "S3ReadRequestsErrors503": 0,
