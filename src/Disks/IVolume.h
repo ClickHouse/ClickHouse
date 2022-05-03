@@ -11,7 +11,6 @@ namespace DB
 enum class VolumeType
 {
     JBOD,
-    RAID1,
     SINGLE_DISK,
     UNKNOWN
 };
