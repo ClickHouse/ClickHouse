@@ -455,6 +455,8 @@ void FileSegment::complete(State state)
     std::lock_guard cache_lock(cache->mutex);
     std::lock_guard segment_lock(mutex);
 
+    assertNotDetached();
+
     bool is_downloader = isDownloaderImpl(segment_lock);
     if (!is_downloader)
     {
@@ -477,8 +479,6 @@ void FileSegment::complete(State state)
 
     download_state = state;
 
-    assertNotDetached();
-
     try
     {
         completeImpl(cache_lock, segment_lock);
@@ -498,7 +498,11 @@ void FileSegment::complete(State state)
 void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 {
     std::lock_guard segment_lock(mutex);
+    completeUnlocked(cache_lock, segment_lock);
+}
 
+void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
+{
     if (download_state == State::SKIP_CACHE || detached)
         return;
 
@@ -561,6 +565,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
             * in FileSegmentsHolder represent a contiguous range, so we can resize
             * it only when nobody needs it.
             */
+            download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
             LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), current_downloaded_size);
             cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
         }
@@ -646,6 +651,11 @@ void FileSegment::assertNotDetached() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Operation not allowed, file segment is detached");
 }
 
+void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex>  & /* segment_lock */) const
+{
+    assert(download_state == State::EMPTY || hasFinalizedState());
+}
+
 FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & /* cache_lock */)
 {
     auto snapshot = std::make_shared<FileSegment>(
@@ -661,6 +671,26 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     snapshot->download_state = file_segment->state();
 
     return snapshot;
+}
+
+bool FileSegment::hasFinalizedState() const
+{
+    return download_state == State::DOWNLOADED
+        || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+        || download_state == State::SKIP_CACHE;
+}
+
+void FileSegment::detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
+{
+    if (detached)
+        return;
+
+    detached = true;
+
+    if (!hasFinalizedState())
+    {
+        completeUnlocked(cache_lock, segment_lock);
+    }
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()
@@ -679,13 +709,22 @@ FileSegmentsHolder::~FileSegmentsHolder()
         if (!cache)
             cache = file_segment->cache;
 
-        if (file_segment->detached)
         {
-            /// This file segment is not owned by cache, so it will be destructed
-            /// at this point, therefore no completion required.
-            assert(file_segment->state() == FileSegment::State::EMPTY);
-            file_segment_it = file_segments.erase(current_file_segment_it);
-            continue;
+            bool detached = false;
+            {
+                std::lock_guard segment_lock(file_segment->mutex);
+                detached = file_segment->isDetached(segment_lock);
+                if (detached)
+                    file_segment->assertDetachedStatus(segment_lock);
+            }
+            if (detached)
+            {
+                /// This file segment is not owned by cache, so it will be destructed
+                /// at this point, therefore no completion required.
+                file_segment_it = file_segments.erase(current_file_segment_it);
+                continue;
+            }
+
         }
 
         try

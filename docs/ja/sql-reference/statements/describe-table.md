@@ -1,1 +1,0 @@
-../../../en/sql-reference/statements/describe-table.md
