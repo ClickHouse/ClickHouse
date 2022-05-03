@@ -1,5 +1,3 @@
-#include <base/types.h>
-
 #include <Parsers/MySQLCompatibility/TreePath.h>
 
 namespace MySQLCompatibility
@@ -7,7 +5,7 @@ namespace MySQLCompatibility
 
 using MySQLParserOverlay::ASTPtr;
 
-static MySQLPtr extractNodeByName(MySQLPtr node, const String & rule_name)
+static MySQLPtr extractNodeByName(MySQLPtr node, const String & rule_name, bool strict)
 {
 	if (node == nullptr)
 		return nullptr;
@@ -17,16 +15,24 @@ static MySQLPtr extractNodeByName(MySQLPtr node, const String & rule_name)
 	
 	MySQLPtr result = nullptr;
 	for (const auto & child : node->children)
-		if ((result = extractNodeByName(child, rule_name)) != nullptr)
-			return result;
-	
+	{
+		if (!strict)
+		{
+			if ((result = extractNodeByName(child, rule_name, strict)) != nullptr)
+				return result;
+		} else
+		{
+			if (child->rule_name == rule_name)
+				return child;
+		}
+	}
 	return nullptr;
 }
 
-MySQLPtr TreePath::evaluate(MySQLPtr node) const
+MySQLPtr TreePath::evaluate(MySQLPtr node, bool strict) const
 {
 	for (const auto & name : node_names)
-		node = extractNodeByName(node, name);
+		node = extractNodeByName(node, name, strict);
 	
 	return node;
 }

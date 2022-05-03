@@ -1,5 +1,9 @@
 #include <Parsers/MySQLCompatibility/Recognizer.h>
 
+#include <Parsers/MySQLCompatibility/SetQueryCT.h>
+#include <Parsers/MySQLCompatibility/SelectQueryCT.h>
+#include <Parsers/MySQLCompatibility/UseCommandCT.h>
+
 namespace MySQLCompatibility
 {
 
@@ -13,7 +17,7 @@ ConvPtr SetQueryRecognizer::Recognize(MySQLPtr node) const
 ConvPtr SimpleSelectQueryRecognizer::Recognize(MySQLPtr node) const
 {
 	if (node->rule_name == "selectStatement")
-		return std::make_shared<SimpleSelectQueryCT>(node);
+		return std::make_shared<SelectQueryCT>(node);
 	
 	return nullptr;
 }

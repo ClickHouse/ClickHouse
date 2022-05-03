@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Parsers/MySQLCompatibility/AST_fwd.h>
-#include <Parsers/MySQLCompatibility/ConversionTree.h>
+#include <Parsers/MySQLCompatibility/IConversionTree.h>
+#include <Parsers/MySQLCompatibility/types.h>
 
 namespace MySQLCompatibility
 {
@@ -12,8 +12,6 @@ public:
 	virtual ConvPtr Recognize(MySQLPtr node) const = 0;
 	virtual ~IRecognizer() {}
 };
-
-using IRecognizerPtr = std::shared_ptr<IRecognizer>;
 
 class SetQueryRecognizer : public IRecognizer
 {
@@ -32,6 +30,8 @@ class UseCommandRecognizer : public IRecognizer
 public:
 	virtual ConvPtr Recognize(MySQLPtr node) const override;
 };
+
+using IRecognizerPtr = std::shared_ptr<IRecognizer>;
 
 class GenericRecognizer : public IRecognizer
 {

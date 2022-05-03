@@ -4,12 +4,13 @@
 #include <Parsers/MySQLCompatibility/ParserOverlay/AST.h>
 
 // MOO: for debug
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Util/Application.h>
 #include <IO/Operators.h>
 
 namespace MySQLCompatibility
 {
+
 class IConversionTree;
 
 using ConvPtr = std::shared_ptr<IConversionTree>;

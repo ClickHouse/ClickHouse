@@ -34,7 +34,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 
-#include <Parsers/MySQLCompatibility/Conversion.h>
+#include <Parsers/MySQLCompatibility/Converter.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>

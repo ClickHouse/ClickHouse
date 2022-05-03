@@ -1,10 +1,9 @@
-#include <Parsers/MySQLCompatibility/AST_fwd.h>
+#include <Parsers/MySQLCompatibility/types.h>
 
-#include <Parsers/MySQLCompatibility/Conversion.h>
+#include <Parsers/MySQLCompatibility/Converter.h>
 
 #include <Parsers/MySQLCompatibility/Recognizer.h>
 #include <Parsers/MySQLCompatibility/TreePath.h>
-#include <Parsers/MySQLCompatibility/ConversionTree.h>
 
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
