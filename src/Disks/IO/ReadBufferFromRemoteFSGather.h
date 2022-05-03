@@ -29,6 +29,9 @@ public:
         const std::string & common_path_prefix_,
         const BlobsPathToSize & blobs_to_read_,
         const ReadSettings & settings_);
+
+    ~ReadBufferFromRemoteFSGather() override;
+
     String getFileName() const;
 
     void reset();
@@ -66,6 +69,8 @@ protected:
 
     String current_path;
 
+    bool with_cache;
+
 private:
     bool nextImpl() override;
 
@@ -74,6 +79,8 @@ private:
     bool readImpl();
 
     bool moveToNextBuffer();
+
+    void appendFilesystemCacheLog();
 
     SeekableReadBufferPtr current_buf;
 
@@ -89,6 +96,12 @@ private:
     size_t bytes_to_ignore = 0;
 
     Poco::Logger * log;
+
+    String query_id;
+
+    size_t total_bytes_read = 0;
+
+    bool enable_cache_log = false;
 };
 
 

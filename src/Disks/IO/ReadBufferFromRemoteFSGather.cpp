@@ -21,8 +21,11 @@
 #include <filesystem>
 #include <iostream>
 #include <Common/hex.h>
+#include <Common/getQueryId.h>
+#include <Interpreters/FilesystemCacheLog.h>
 
 namespace fs = std::filesystem;
+
 
 namespace DB
 {
@@ -39,9 +42,6 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
     auto remote_path = fs::path(common_path_prefix) / path;
 
     auto cache = settings.remote_fs_cache;
-    bool with_cache = cache
-        && settings.enable_filesystem_cache
-        && (!IFileCache::isReadOnly() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
 
     auto remote_file_reader_creator = [=, this]()
     {
@@ -95,7 +95,30 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
+    , query_id(getQueryId())
+    , enable_cache_log(!query_id.empty() && settings.enable_filesystem_cache_log)
 {
+    with_cache = settings.remote_fs_cache
+        && settings.enable_filesystem_cache
+        && (!IFileCache::isReadOnly() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
+}
+
+
+void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
+{
+    FilesystemCacheLogElement elem
+    {
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .query_id = query_id,
+        .source_file_path = getFileName(),
+        .file_segment_range = { 0, total_bytes_read },
+        .read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_BYPASSING_CACHE,
+        .file_segment_size = total_bytes_read,
+        .cache_attempted = false,
+    };
+
+    if (auto cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog())
+        cache_log->add(elem);
 }
 
 
@@ -199,6 +222,7 @@ bool ReadBufferFromRemoteFSGather::readImpl()
      */
     if (bytes_to_ignore)
     {
+        total_bytes_read += bytes_to_ignore;
         current_buf->ignore(bytes_to_ignore);
         result = current_buf->hasPendingData();
         file_offset_of_buffer_end += bytes_to_ignore;
@@ -225,6 +249,7 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     {
         assert(available());
         nextimpl_working_buffer_offset = offset();
+        total_bytes_read += available();
     }
 
     return result;
@@ -282,5 +307,12 @@ size_t ReadBufferFromRemoteFSGather::getImplementationBufferOffset() const
     return current_buf->getFileOffsetOfBufferEnd();
 }
 
+ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
+{
+    if (!with_cache && enable_cache_log)
+    {
+        appendFilesystemCacheLog();
+    }
+}
 
 }
