@@ -1470,7 +1470,7 @@ bool MutateTask::execute()
             if (task->executeStep())
                 return true;
 
-            promise.set_value(ctx->new_data_part);
+            promise.set_value(std::move(ctx->new_data_part));
             return false;
         }
     }

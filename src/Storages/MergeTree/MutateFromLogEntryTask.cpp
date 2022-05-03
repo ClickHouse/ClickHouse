@@ -13,6 +13,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CHECKSUM_DOESNT_MATCH;
+}
+
 ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 {
     const String & source_part_name = entry.source_parts.at(0);
@@ -202,6 +207,9 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 
     try
     {
+        if (unlikely(storage.getSettings()->testing_mutate_corrupt_checksums))
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Throwing exception because `testing_mutate_corrupt_checksum` is enabled.");
+
         storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, mutate_task->getHardlinkedFiles());
     }
     catch (const Exception & e)
