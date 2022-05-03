@@ -82,4 +82,6 @@ private:
     CSVFormatReader reader;
 };
 
+std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows);
+
 }

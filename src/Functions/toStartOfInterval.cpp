@@ -164,7 +164,7 @@ namespace
             return time_zone.toStartOfHourInterval(t, hours);
         }
 
-        static UInt32 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfHourInterval(t / scale_multiplier, hours);
         }
@@ -182,7 +182,7 @@ namespace
             return time_zone.toStartOfMinuteInterval(t, minutes);
         }
 
-        static UInt32 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static Int64 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfMinuteInterval(t / scale_multiplier, minutes);
         }
@@ -200,7 +200,7 @@ namespace
             return time_zone.toStartOfSecondInterval(t, seconds);
         }
 
-        static UInt32 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static Int64 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfSecondInterval(t / scale_multiplier, seconds);
         }
