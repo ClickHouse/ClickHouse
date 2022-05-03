@@ -63,6 +63,7 @@ void registerFunctionH3GetOriginIndexFromUnidirectionalEdge(FunctionFactory &);
 void registerFunctionH3GetDestinationIndexFromUnidirectionalEdge(FunctionFactory &);
 void registerFunctionH3GetIndexesFromUnidirectionalEdge(FunctionFactory &);
 void registerFunctionH3GetUnidirectionalEdgesFromHexagon(FunctionFactory &);
+void registerFunctionH3GetUnidirectionalEdgeBoundary(FunctionFactory &);
 
 #endif
 
@@ -140,6 +141,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3GetDestinationIndexFromUnidirectionalEdge(factory);
     registerFunctionH3GetIndexesFromUnidirectionalEdge(factory);
     registerFunctionH3GetUnidirectionalEdgesFromHexagon(factory);
+    registerFunctionH3GetUnidirectionalEdgeBoundary(factory);
 #endif
 
 #if USE_S2_GEOMETRY
