@@ -46,8 +46,10 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-        
+                arg->getName(),
+                1,
+                getName());
+
         return std::make_shared<DataTypeUInt8>();
     }
 
