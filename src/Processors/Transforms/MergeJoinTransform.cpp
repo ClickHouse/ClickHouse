@@ -7,9 +7,9 @@
 #include <vector>
 
 #include <base/defines.h>
-#include <base/logger_useful.h>
 #include <base/types.h>
 
+#include <Common/logger_useful.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -127,11 +127,11 @@ ColumnPtr indexColumn(const ColumnPtr & column, const PaddedPODArray<UInt64> & i
 {
     auto new_col = column->cloneEmpty();
     new_col->reserve(indices.size());
-    for (size_t i = 0; i < indices.size(); ++i)
+    for (size_t idx : indices)
     {
         /// rows where default value should be inserted have index == size
-        if (indices[i] < column->size())
-            new_col->insertFrom(*column, indices[i]);
+        if (idx < column->size())
+            new_col->insertFrom(*column, idx);
         else
             new_col->insertDefault();
     }
@@ -174,6 +174,65 @@ size_t nextDistinct(SortCursorImpl & impl)
     if (impl.isValid())
         return impl.getRow() - start_pos;
     return impl.rows - start_pos;
+}
+
+ColumnPtr replicateRow(const IColumn & column, size_t num)
+{
+    MutableColumnPtr res = column.cloneEmpty();
+    res->insertManyFrom(column, 0, num);
+    return res;
+}
+
+template <typename TColumns>
+void copyColumnsResized(const TColumns & cols, size_t start, size_t size, Chunk & result_chunk)
+{
+    for (const auto & col : cols)
+    {
+        if (col->empty())
+        {
+            /// add defaults
+            result_chunk.addColumn(col->cloneResized(size));
+        }
+        else if (col->size() == 1)
+        {
+            /// copy same row n times
+            result_chunk.addColumn(replicateRow(*col, size));
+        }
+        else
+        {
+            /// cut column
+            assert(start + size <= col->size());
+            result_chunk.addColumn(col->cut(start, size));
+        }
+    }
+}
+
+Chunk copyChunkResized(const Chunk & lhs, const Chunk & rhs, size_t start, size_t num_rows)
+{
+    Chunk result;
+    copyColumnsResized(lhs.getColumns(), start, num_rows, result);
+    copyColumnsResized(rhs.getColumns(), start, num_rows, result);
+    return result;
+}
+
+Chunk getRowFromChunk(const Chunk & chunk, size_t pos)
+{
+    Chunk result;
+    copyColumnsResized(chunk.getColumns(), pos, 1, result);
+    return result;
+}
+
+void inline addRange(PaddedPODArray<UInt64> & left_map, size_t start, size_t end)
+{
+    assert(end > start);
+    for (size_t i = start; i < end; ++i)
+        left_map.push_back(i);
+}
+
+void inline addMany(PaddedPODArray<UInt64> & left_map, size_t idx, size_t num)
+{
+    for (size_t i = 0; i < num; ++i)
+        left_map.push_back(idx);
 }
 
 }
@@ -245,45 +304,6 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     }
 }
 
-static ColumnPtr replicateRow(const IColumn & column, size_t num)
-{
-    MutableColumnPtr res = column.cloneEmpty();
-    res->insertManyFrom(column, 0, num);
-    return res;
-}
-
-template <typename TColumns>
-static void copyColumnsResized(const TColumns & cols, size_t start, size_t size, Chunk & result_chunk)
-{
-    for (const auto & col : cols)
-    {
-        if (col->empty())
-        {
-            /// add defaults
-            result_chunk.addColumn(col->cloneResized(size));
-        }
-        else if (col->size() == 1)
-        {
-            /// copy same row n times
-            result_chunk.addColumn(replicateRow(*col, size));
-        }
-        else
-        {
-            /// cut column
-            assert(start + size <= col->size());
-            result_chunk.addColumn(col->cut(start, size));
-        }
-    }
-}
-
-static Chunk copyChunkResized(const Chunk & lhs, const Chunk & rhs, size_t start, size_t num_rows)
-{
-    Chunk result;
-    copyColumnsResized(lhs.getColumns(), start, num_rows, result);
-    copyColumnsResized(rhs.getColumns(), start, num_rows, result);
-    return result;
-}
-
 static void prepareChunk(Chunk & chunk)
 {
     if (!chunk)
@@ -328,26 +348,6 @@ void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
 
     prepareChunk(input.chunk);
     cursors[source_num]->setChunk(std::move(input.chunk));
-}
-
-static Chunk getRowFromChunk(const Chunk & chunk, size_t pos)
-{
-    Chunk result;
-    copyColumnsResized(chunk.getColumns(), pos, 1, result);
-    return result;
-}
-
-static void ALWAYS_INLINE addRange(PaddedPODArray<UInt64> & left_map, size_t start, size_t end)
-{
-    assert(end > start);
-    for (size_t i = start; i < end; ++i)
-        left_map.push_back(i);
-}
-
-static void ALWAYS_INLINE addMany(PaddedPODArray<UInt64> & left_map, size_t idx, size_t num)
-{
-    for (size_t i = 0; i < num; ++i)
-        left_map.push_back(idx);
 }
 
 template <JoinKind kind>
@@ -847,8 +847,8 @@ MergeJoinTransform::MergeJoinTransform(
         const Blocks & input_headers,
         const Block & output_header,
         size_t max_block_size,
-        UInt64 limit_hint)
-    : IMergingTransform<MergeJoinAlgorithm>(input_headers, output_header, true, limit_hint, table_join, input_headers, max_block_size)
+        UInt64 limit_hint_)
+    : IMergingTransform<MergeJoinAlgorithm>(input_headers, output_header, true, limit_hint_, table_join, input_headers, max_block_size)
     , log(&Poco::Logger::get("MergeJoinTransform"))
 {
     LOG_TRACE(log, "Use MergeJoinTransform");
