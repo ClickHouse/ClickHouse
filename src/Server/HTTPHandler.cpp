@@ -770,6 +770,7 @@ void HTTPHandler::processQuery(
     if (client_supports_http_compression)
         used_output.out->setCompressionLevel(settings.http_zlib_compression_level);
 
+    used_output.out->setSendProgress(settings.send_progress_in_http_headers);
     used_output.out->setSendProgressInterval(settings.http_headers_progress_interval_ms);
 
     /// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
@@ -802,8 +803,8 @@ void HTTPHandler::processQuery(
     };
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
-    if (settings.send_progress_in_http_headers)
-        append_callback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
+    /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
+    append_callback([&used_output](const Progress & progress) { used_output.out->onProgress(progress); });
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
@@ -842,7 +843,12 @@ void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
-    response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+    /// In case data has already been sent, like progress headers, try using the output buffer to
+    /// set the exception code since it will be able to append it if it hasn't finished writing headers
+    if (response.sent() && used_output.out)
+        used_output.out->setExceptionCode(exception_code);
+    else
+        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
 
     /// FIXME: make sure that no one else is reading from the same stream at the moment.
 
