@@ -153,7 +153,7 @@ void WriteBufferFromS3::allocateBuffer()
 WriteBufferFromS3::~WriteBufferFromS3()
 {
 #ifndef NDEBUG
-    if (!is_finalized.load(std::memory_order_relaxed))
+    if (!is_finalized)
     {
         LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It's a bug");
         std::terminate();
@@ -202,7 +202,7 @@ void WriteBufferFromS3::finalizeImpl()
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
 
-    is_finalized.store(true, std::memory_order_relaxed);
+    is_finalized = true;
 }
 
 void WriteBufferFromS3::createMultipartUpload()
