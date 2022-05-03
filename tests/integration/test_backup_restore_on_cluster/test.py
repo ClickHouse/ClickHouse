@@ -104,7 +104,7 @@ def test_replicated_database():
         "CREATE TABLE mydb.tbl(x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
 
-    assert_eq_with_retry(node2, "EXISTS mydb.tbl", "1\n")
+    node2.query("SYSTEM SYNC DATABASE REPLICA mydb")
 
     node1.query("INSERT INTO mydb.tbl VALUES (1, 'Don''t')")
     node2.query("INSERT INTO mydb.tbl VALUES (2, 'count')")
