@@ -18,7 +18,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <libnuraft/nuraft.hxx>
 #include <thread>
 #include <Coordination/KeeperLogStore.h>

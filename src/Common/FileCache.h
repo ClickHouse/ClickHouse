@@ -11,7 +11,7 @@
 #include <map>
 
 #include "FileCache_fwd.h"
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/FileSegment.h>
 #include <Core/Types.h>
 
@@ -42,7 +42,7 @@ public:
 
     virtual void remove(const Key & key) = 0;
 
-    virtual void tryRemoveAll() = 0;
+    virtual void remove(bool force_remove_unreleasable) = 0;
 
     static bool isReadOnly();
 
@@ -145,7 +145,7 @@ public:
 
     void remove(const Key & key) override;
 
-    void tryRemoveAll() override;
+    void remove(bool force_remove_unreleasable) override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
 
@@ -219,7 +219,7 @@ private:
 
     size_t availableSize() const { return max_size - current_size; }
 
-    void loadCacheInfoIntoMemory();
+    void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
 
     FileSegments splitRangeIntoCells(
         const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);

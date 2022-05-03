@@ -5,7 +5,6 @@
 #include <Common/FieldVisitors.h>
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/Serializations/JSONDataParser.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnObject.h>
 
@@ -86,6 +85,37 @@ void replaceMissedSubcolumnsByConstants(
     const ColumnsDescription & expected_columns,
     const ColumnsDescription & available_columns,
     ASTPtr query);
+
+/// Visitor that keeps @num_dimensions_to_keep dimensions in arrays
+/// and replaces all scalars or nested arrays to @replacement at that level.
+class FieldVisitorReplaceScalars : public StaticVisitor<Field>
+{
+public:
+    FieldVisitorReplaceScalars(const Field & replacement_, size_t num_dimensions_to_keep_)
+        : replacement(replacement_), num_dimensions_to_keep(num_dimensions_to_keep_)
+    {
+    }
+
+    Field operator()(const Array & x) const;
+
+    template <typename T>
+    Field operator()(const T &) const { return replacement; }
+
+private:
+    const Field & replacement;
+    size_t num_dimensions_to_keep;
+};
+
+/// Calculates number of dimensions in array field.
+/// Returns 0 for scalar fields.
+class FieldVisitorToNumberOfDimensions : public StaticVisitor<size_t>
+{
+public:
+    size_t operator()(const Array & x) const;
+
+    template <typename T>
+    size_t operator()(const T &) const { return 0; }
+};
 
 /// Receives range of objects, which contains collections
 /// of columns-like objects (e.g. ColumnsDescription or NamesAndTypesList)

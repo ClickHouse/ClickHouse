@@ -6,6 +6,29 @@ slug: /en/operations/settings/settings
 
 # Settings {#settings}
 
+## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
+
+User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
+
+Given that, for example, dictionaries, can be out of sync across nodes, mutations that pull values from them are disallowed on replicated tables by default. Enabling this setting allows this behavior, making it the user's responsibility to ensure that the data used is in sync across all nodes.
+
+Default value: 0.
+
+**Example**
+
+``` xml
+<profiles>
+    <default>
+        <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
+        
+        <!-- ... -->
+    </default>
+
+    <!-- ... -->
+
+</profiles>
+```
+
 ## distributed_product_mode {#distributed-product-mode}
 
 Changes the behaviour of [distributed subqueries](../../sql-reference/operators/in.md).
@@ -2433,17 +2456,6 @@ Possible values:
 
 Default value: 0.
 
-## background_pool_size {#background_pool_size}
-
-Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from the `default` profile at the ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
-
-Before changing it, please also take a look at related [MergeTree settings](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-merge_tree), such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 

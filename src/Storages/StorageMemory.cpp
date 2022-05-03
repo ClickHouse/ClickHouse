@@ -448,7 +448,7 @@ private:
         });
     }
 
-    std::unique_ptr<ReadBuffer> getReadBuffer(size_t index) override
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer(size_t index) override
     {
         initialize();
         return createReadBufferFromFileBase(file_paths[index], {});
@@ -553,7 +553,7 @@ private:
 };
 
 
-RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
+RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
