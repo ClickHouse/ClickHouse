@@ -59,8 +59,10 @@ public:
 
     size_t getTotalRowCount() const
     {
-        return std::accumulate(
-            parts.begin(), parts.end(), static_cast<size_t>(0), [](size_t sum, const auto & part) { return sum + part.getRowsCount(); });
+        size_t total = 0;
+        for (const auto & part : parts)
+            total += part.getRowsCount();
+        return total;
     }
 
 private:
