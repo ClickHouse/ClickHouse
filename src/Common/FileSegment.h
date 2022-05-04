@@ -146,7 +146,10 @@ public:
 
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
 
-    void detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+        void detach(
+            std::lock_guard<std::mutex> & cache_lock,
+            std::lock_guard<std::mutex> & /* detach_lock */,
+            std::lock_guard<std::mutex> & segment_lock);
 
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
@@ -195,8 +198,16 @@ private:
     size_t downloaded_size = 0;
     size_t reserved_size = 0;
 
+    /// global locking order rule:
+    /// 1. cache lock
+    /// 2. detach lock (if needed)
+    /// 3. segment lock
+
     mutable std::mutex mutex;
     std::condition_variable cv;
+
+    bool is_write_through_cache = false;
+    std::mutex detach_mutex;
 
     /// Protects downloaded_size access with actual write into fs.
     /// downloaded_size is not protected by download_mutex in methods which
@@ -218,9 +229,6 @@ private:
     std::atomic<bool> is_downloaded{false};
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
-
-    bool is_write_through_cache = false;
-    std::mutex detach_mutex;
 };
 
 struct FileSegmentsHolder : private boost::noncopyable

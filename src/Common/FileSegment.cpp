@@ -234,12 +234,10 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
                         "Attempt to write {} bytes to offset: {}, but current download offset is {}",
                         size, offset_, download_offset);
 
-    std::unique_lock detach_lock(detach_mutex, std::defer_lock);
+    std::lock_guard detach_lock(detach_mutex);
 
     {
         std::lock_guard segment_lock(mutex);
-        detach_lock.lock();
-
         assertNotDetached(segment_lock);
     }
 
@@ -311,12 +309,11 @@ bool FileSegment::reserve(size_t size)
     if (!size)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
 
-    std::unique_lock detach_lock(detach_mutex, std::defer_lock);
+    std::lock_guard cache_lock(cache->mutex);
+    std::lock_guard detach_lock(detach_mutex);
 
     {
         std::lock_guard segment_lock(mutex);
-        detach_lock.lock();
-
         assertNotDetached(segment_lock);
 
         auto caller_id = getCallerId();
@@ -340,7 +337,6 @@ bool FileSegment::reserve(size_t size)
     size_t free_space = reserved_size - downloaded_size;
     size_t size_to_reserve = size - free_space;
 
-    std::lock_guard cache_lock(cache->mutex);
     bool reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
 
     if (reserved)
@@ -648,12 +644,13 @@ bool FileSegment::hasFinalizedState() const
         || download_state == State::SKIP_CACHE;
 }
 
-void FileSegment::detach(std::lock_guard<std::mutex> & /* cache_lock */, std::lock_guard<std::mutex> & segment_lock)
+void FileSegment::detach(
+    std::lock_guard<std::mutex> & /* cache_lock */,
+    std::lock_guard<std::mutex> & /* detach_lock */,
+    std::lock_guard<std::mutex> & segment_lock)
 {
     if (detached)
         return;
-
-    std::lock_guard detach_lock(detach_mutex);
 
     detached = true;
     download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
