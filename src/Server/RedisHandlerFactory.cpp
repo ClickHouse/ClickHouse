@@ -4,9 +4,9 @@
 namespace DB
 {
 
-RedisHandlerFactory::RedisHandlerFactory(IServer & /*server_*/)
-    : log(&Poco::Logger::get("RedisHandlerFactory"))
-{}
+RedisHandlerFactory::RedisHandlerFactory(IServer & /*server_*/) : log(&Poco::Logger::get("RedisHandlerFactory"))
+{
+}
 
 Poco::Net::TCPServerConnection * RedisHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {

@@ -1,16 +1,16 @@
 #pragma once
 
-#include <Common/CurrentMetrics.h>
-#include <Common/config.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/TCPServerConnection.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/config.h>
 #include <Common/logger_useful.h>
 #include "IServer.h"
 
 
 namespace CurrentMetrics
 {
-    extern const Metric RedisConnection;
+extern const Metric RedisConnection;
 }
 
 namespace DB
@@ -25,9 +25,7 @@ class TCPServer;
 class RedisHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    RedisHandler(
-        const Poco::Net::StreamSocket & socket_,
-        TCPServer & tcp_server_);
+    RedisHandler(const Poco::Net::StreamSocket & socket_, TCPServer & tcp_server_);
 
     void run() final;
 

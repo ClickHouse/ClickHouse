@@ -12,11 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
-}
-
 RedisHandler::RedisHandler(const Poco::Net::StreamSocket & socket_, TCPServer & tcp_server_)
     : Poco::Net::TCPServerConnection(socket_), tcp_server(tcp_server_)
 {
