@@ -14,7 +14,6 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
-#include <base/shared_ptr_helper.h>
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
@@ -120,7 +119,7 @@ private:
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 : public shared_ptr_helper<StorageS3>, public IStorage, WithContext
+class StorageS3 : public IStorage, WithContext
 {
 public:
     StorageS3(

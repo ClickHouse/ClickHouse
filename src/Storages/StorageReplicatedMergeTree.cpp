@@ -59,6 +59,7 @@
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
+#include <Disks/createVolume.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
@@ -3042,7 +3043,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
     if (job_type == LogEntry::GET_PART)
     {
-        assignee.scheduleFetchTask(ExecutableLambdaAdapter::create(
+        assignee.scheduleFetchTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, selected_entry] () mutable
             {
                 return processQueueEntry(selected_entry);
@@ -3051,19 +3052,19 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     }
     else if (job_type == LogEntry::MERGE_PARTS)
     {
-        auto task = MergeFromLogEntryTask::create(selected_entry, *this, common_assignee_trigger);
+        auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry, *this, common_assignee_trigger);
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
     else if (job_type == LogEntry::MUTATE_PART)
     {
-        auto task = MutateFromLogEntryTask::create(selected_entry, *this, common_assignee_trigger);
+        auto task = std::make_shared<MutateFromLogEntryTask>(selected_entry, *this, common_assignee_trigger);
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
     else
     {
-        assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
+        assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, selected_entry] () mutable
             {
                 return processQueueEntry(selected_entry);
