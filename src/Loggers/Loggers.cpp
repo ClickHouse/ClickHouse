@@ -11,7 +11,7 @@
 #include "OwnSplitChannel.h"
 
 #ifdef WITH_TEXT_LOG
-#    include <Interpreters/TextLog.h>
+    #include <Interpreters/TextLog.h>
 #endif
 
 #include <filesystem>
@@ -223,7 +223,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             if (config.has("logger.json.date_time"))
             {
                 DB::ExtendedLogMessage::log_keys.key_date_time = config.getString("logger.json.date_time");
-                if(DB::ExtendedLogMessage::log_keys.key_date_time.empty())
+                if (DB::ExtendedLogMessage::log_keys.key_date_time.empty())
                 {
                     DB::ExtendedLogMessage::log_keys.key_date_time = "date_time";
                 }
@@ -236,7 +236,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             if (config.has("logger.json.thread_name"))
             {
                 DB::ExtendedLogMessage::log_keys.key_thread_name = config.getString("logger.json.thread_name");
-                if(DB::ExtendedLogMessage::log_keys.key_thread_name.empty())
+                if (DB::ExtendedLogMessage::log_keys.key_thread_name.empty())
                 {
                     DB::ExtendedLogMessage::log_keys.key_thread_name = "thread_name";
                 }
@@ -249,7 +249,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             if (config.has("logger.json.thread_id"))
             {
                 DB::ExtendedLogMessage::log_keys.key_thread_id = config.getString("logger.json.thread_id");
-                if(DB::ExtendedLogMessage::log_keys.key_thread_id.empty())
+                if (DB::ExtendedLogMessage::log_keys.key_thread_id.empty())
                 {
                     DB::ExtendedLogMessage::log_keys.key_thread_id = "thread_id";
                 }
@@ -262,7 +262,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             if (config.has("logger.json.level"))
             {
                 DB::ExtendedLogMessage::log_keys.key_level = config.getString("logger.json.level");
-                if(DB::ExtendedLogMessage::log_keys.key_level.empty())
+                if (DB::ExtendedLogMessage::log_keys.key_level.empty())
                 {
                     DB::ExtendedLogMessage::log_keys.key_level = "level";
                 }
@@ -275,7 +275,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             if (config.has("logger.json.query_id"))
             {
                 DB::ExtendedLogMessage::log_keys.key_query_id = config.getString("logger.json.query_id");
-                if(DB::ExtendedLogMessage::log_keys.key_query_id.empty())
+                if (DB::ExtendedLogMessage::log_keys.key_query_id.empty())
                 {
                     DB::ExtendedLogMessage::log_keys.key_query_id = "query_id";
                 }
@@ -288,7 +288,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             if (config.has("logger.json.logger_name"))
             {
                 DB::ExtendedLogMessage::log_keys.key_logger_name = config.getString("logger.json.logger_name");
-                if(DB::ExtendedLogMessage::log_keys.key_logger_name.empty())
+                if (DB::ExtendedLogMessage::log_keys.key_logger_name.empty())
                 {
                     DB::ExtendedLogMessage::log_keys.key_logger_name = "logger_name";
                 }
@@ -301,7 +301,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             if (config.has("logger.json.message"))
             {
                 DB::ExtendedLogMessage::log_keys.key_message = config.getString("logger.json.message");
-                if(DB::ExtendedLogMessage::log_keys.key_message.empty())
+                if (DB::ExtendedLogMessage::log_keys.key_message.empty())
                 {
                     DB::ExtendedLogMessage::log_keys.key_message = "message";
                 }
@@ -314,7 +314,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             if (config.has("logger.json.source_file"))
             {
                 DB::ExtendedLogMessage::log_keys.key_source_file = config.getString("logger.json.source_file");
-                if(DB::ExtendedLogMessage::log_keys.key_source_file.empty())
+                if (DB::ExtendedLogMessage::log_keys.key_source_file.empty())
                 {
                     DB::ExtendedLogMessage::log_keys.key_source_file = "source_file";
                 }
@@ -327,7 +327,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             if (config.has("logger.json.source_line"))
             {
                 DB::ExtendedLogMessage::log_keys.key_source_line = config.getString("logger.json.source_line");
-                if(DB::ExtendedLogMessage::log_keys.key_source_line.empty())
+                if (DB::ExtendedLogMessage::log_keys.key_source_line.empty())
                 {
                     DB::ExtendedLogMessage::log_keys.key_source_line = "source_line";
                 }

@@ -19,8 +19,6 @@ namespace Poco::Util
 class AbstractConfiguration;
 }
 
-extern bool log_format_json;
-
 class Loggers
 {
 public:

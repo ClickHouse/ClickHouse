@@ -41,15 +41,6 @@ public:
     std::string query_id;
     static bool log_format_json;
     static log_key_names log_keys;
-    //static log_key_names log_keys;
-    static std::string key_thread_name;
-    static std::string key_thread_id;
-    static std::string key_level;
-    static std::string key_query_id;
-    static std::string key_logger_name;
-    static std::string key_message;
-    static std::string key_source_file;
-    static std::string key_source_line;
 };
 
 
