@@ -409,14 +409,14 @@ MySQLDumpSchemaReader::MySQLDumpSchemaReader(ReadBuffer & in_, const FormatSetti
 NamesAndTypesList MySQLDumpSchemaReader::readSchema()
 {
     NamesAndTypesList structure_from_create;
-    Names column_names;
-    readFirstCreateAndInsertQueries(in, table_name, structure_from_create, column_names);
+    Names names;
+    readFirstCreateAndInsertQueries(in, table_name, structure_from_create, names);
 
     if (!structure_from_create.empty())
         return structure_from_create;
 
-    if (!column_names.empty())
-        setColumnNames(column_names);
+    if (!names.empty())
+        setColumnNames(names);
 
     return IRowSchemaReader::readSchema();
 }
