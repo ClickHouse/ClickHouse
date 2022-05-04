@@ -6,7 +6,7 @@ from redis import Redis
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node")
-server_port = 6379
+server_port = 9006
 
 
 @pytest.fixture(scope="module")

@@ -116,7 +116,7 @@
     <!-- Compatibility with Redis protocol.
          ClickHouse will pretend to be Redis for applications connecting to this port.
     -->
-    <redis_port>6379</redis_port>
+    <redis_port>9006</redis_port>
 
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.
