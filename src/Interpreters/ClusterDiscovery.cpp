@@ -7,7 +7,7 @@
 #include <unordered_set>
 
 #include <base/getFQDNOrHostName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>

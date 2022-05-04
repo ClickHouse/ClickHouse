@@ -1,14 +1,15 @@
 ---
-toc_priority: 41
-toc_title: For Searching in Strings
+sidebar_position: 41
+sidebar_label: For Searching in Strings
 ---
 
 # Functions for Searching in Strings {#functions-for-searching-strings}
 
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-!!! note "Note"
-    Functions for [replacing](../../sql-reference/functions/string-replace-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
+:::note    
+Functions for [replacing](../../sql-reference/functions/string-replace-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
+:::
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
@@ -30,8 +31,9 @@ position(needle IN haystack)
 
 Alias: `locate(haystack, needle[, start_pos])`.
 
-!!! note "Note"
-    Syntax of `position(needle IN haystack)` provides SQL-compatibility, the function works the same way as to `position(haystack, needle)`.
+:::note    
+Syntax of `position(needle IN haystack)` provides SQL-compatibility, the function works the same way as to `position(haystack, needle)`.
+:::
 
 **Arguments**
 
@@ -342,8 +344,9 @@ Returns 1, if at least one string needle<sub>i</sub> matches the string `haystac
 
 For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 
-!!! note "Note"
-    In all `multiSearch*` functions the number of needles should be less than 2<sup>8</sup> because of implementation specification.
+:::note    
+In all `multiSearch*` functions the number of needles should be less than 2<sup>8</sup> because of implementation specification.
+:::
 
 ## match(haystack, pattern) {#matchhaystack-pattern}
 
@@ -358,8 +361,9 @@ For patterns to search for substrings in a string, it is better to use LIKE or �
 
 The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. It uses [hyperscan](https://github.com/intel/hyperscan) library. For patterns to search substrings in a string, it is better to use `multiSearchAny` since it works much faster.
 
-!!! note "Note"
-    The length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.
+:::note    
+The length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.
+:::
 
 ## multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multimatchanyindexhaystack-pattern1-pattern2-patternn}
 
@@ -381,11 +385,13 @@ The same as `multiFuzzyMatchAny`, but returns any index that matches the haystac
 
 The same as `multiFuzzyMatchAny`, but returns the array of all indices in any order that match the haystack within a constant edit distance.
 
-!!! note "Note"
-    `multiFuzzyMatch*` functions do not support UTF-8 regular expressions, and such expressions are treated as bytes because of hyperscan restriction.
+:::note    
+`multiFuzzyMatch*` functions do not support UTF-8 regular expressions, and such expressions are treated as bytes because of hyperscan restriction.
+:::
 
-!!! note "Note"
-    To turn off all functions that use hyperscan, use setting `SET allow_hyperscan = 0;`.
+:::note    
+To turn off all functions that use hyperscan, use setting `SET allow_hyperscan = 0;`.
+:::
 
 ## extract(haystack, pattern) {#extracthaystack-pattern}
 
@@ -399,8 +405,9 @@ Extracts all the fragments of a string using a regular expression. If ‘haystac
 
 Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where the first array includes all fragments matching the first group, the second array - matching the second group, etc.
 
-!!! note "Note"
-    `extractAllGroupsHorizontal` function is slower than [extractAllGroupsVertical](#extractallgroups-vertical).
+:::note    
+`extractAllGroupsHorizontal` function is slower than [extractAllGroupsVertical](#extractallgroups-vertical).
+:::
 
 **Syntax**
 
@@ -570,8 +577,9 @@ Same as `ngramDistance` but calculates the non-symmetric difference between `nee
 
 For case-insensitive search or/and in UTF-8 format use functions `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8`.
 
-!!! note "Note"
-    For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables – collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function – we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one – this works for Latin and mostly for all Cyrillic letters.
+:::note    
+For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables – collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function – we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one – this works for Latin and mostly for all Cyrillic letters.
+:::
 
 ## countSubstrings {#countSubstrings}
 

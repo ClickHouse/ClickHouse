@@ -1,6 +1,6 @@
 ---
-toc_priority: 33
-toc_title: INSERT INTO
+sidebar_position: 33
+sidebar_label: INSERT INTO
 ---
 
 ## INSERT INTO {#insert}
