@@ -1,6 +1,5 @@
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 
 namespace DB
