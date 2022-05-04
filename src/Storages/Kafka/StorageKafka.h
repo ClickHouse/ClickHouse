@@ -114,9 +114,6 @@ private:
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
-    /// Handle error mode
-    // HandleKafkaErrorMode handle_error_mode; // NOLINT -- actually not used, needs checing
-
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(size_t consumer_number);
 
