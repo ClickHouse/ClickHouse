@@ -8,30 +8,22 @@ CREATE TABLE t_part_log_has_merge_type_table
 )
 ENGINE = MergeTree() 
 ORDER BY tuple()
-TTL event_time + toIntervalMonth(3)
-SETTINGS min_bytes_for_wide_part = 0, merge_with_ttl_timeout = 1;
+SETTINGS min_bytes_for_wide_part = 0, materialize_ttl_recalculate_only = true;
 
 INSERT INTO t_part_log_has_merge_type_table VALUES (now(), 1, 'username1');
 INSERT INTO t_part_log_has_merge_type_table VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
+
+ALTER TABLE t_part_log_has_merge_type_table
+    MODIFY TTL event_time + INTERVAL 3 MONTH;
 
 OPTIMIZE TABLE t_part_log_has_merge_type_table FINAL;
 
 SYSTEM FLUSH LOGS;
 
-SELECT count(*)
-FROM
-(
-    SELECT
-        metadata_modification_time,
-        event_time
-    FROM system.tables AS l
-    INNER JOIN system.part_log AS r
-    ON l.name = r.table
-    WHERE (l.database = currentDatabase()) AND
-          (l.name = 't_part_log_has_merge_type_table') AND
-          (r.event_type = 'MergeParts') AND
-          (r.merge_reason = 'TTLDeleteMerge')
-)
-WHERE (metadata_modification_time <= event_time);
+SELECT
+    event_type,
+    merge_reason 
+FROM system.part_log
+WHERE (table = 't_part_log_has_merge_type_table') AND (merge_reason = 'TTLDeleteMerge'); 
 
 DROP TABLE t_part_log_has_merge_type_table;

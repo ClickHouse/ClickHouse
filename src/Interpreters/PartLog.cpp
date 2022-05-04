@@ -21,14 +21,15 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-PartLogElement::MergeReasonType PartLogElement::getMergeReasonType(MergeType merge_type) {
+PartLogElement::MergeReasonType PartLogElement::getMergeReasonType(MergeType merge_type)
+{
     switch (merge_type)
     {
-    case MergeType::REGULAR:
+    case MergeType::Regular:
         return REGULAR_MERGE;
-    case MergeType::TTL_DELETE:
+    case MergeType::TTLDelete:
         return TTL_DELETE_MERGE;
-    case MergeType::TTL_RECOMPRESS:
+    case MergeType::TTLRecompress:
         return TTL_RECOMPRESS_MERGE;
     }
 
