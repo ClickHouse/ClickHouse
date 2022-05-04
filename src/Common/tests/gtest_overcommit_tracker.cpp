@@ -335,14 +335,14 @@ TEST(OvercommitTracker, UserFreeContinueAndAlloc3)
     ProcessList process_list;
     ProcessListForUser user_process_list(&process_list);
     UserOvercommitTrackerForTest user_overcommit_tracker(&process_list, &user_process_list);
-    free_continue_and_alloc_2_test(user_overcommit_tracker);
+    free_continue_and_alloc_3_test(user_overcommit_tracker);
 }
 
 TEST(OvercommitTracker, GlobalFreeContinueAndAlloc3)
 {
     ProcessList process_list;
     GlobalOvercommitTrackerForTest global_overcommit_tracker(&process_list);
-    free_continue_and_alloc_2_test(global_overcommit_tracker);
+    free_continue_and_alloc_3_test(global_overcommit_tracker);
 }
 
 template <typename T>
