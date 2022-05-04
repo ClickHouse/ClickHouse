@@ -1633,6 +1633,10 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserTupleOfLiterals tuple_literal_parser;
     ParserArrayOfLiterals array_literal_parser;
 
+    // Recursion
+    ParserQualifiedAsterisk qualified_asterisk_parser;
+    ParserColumnsMatcher columns_matcher_parser;
+
     Action next = Action::OPERAND;
 
     std::vector<std::unique_ptr<Layer>> storage;
@@ -1697,12 +1701,14 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                      tuple_literal_parser.parse(pos, tmp, expected) ||
                      array_literal_parser.parse(pos, tmp, expected) ||
                      number_parser.parse(pos, tmp, expected) ||
-                     literal_parser.parse(pos, tmp, expected))
+                     literal_parser.parse(pos, tmp, expected) ||
+                     asterisk_parser.parse(pos, tmp, expected) ||
+                     qualified_asterisk_parser.parse(pos, tmp, expected) ||
+                     columns_matcher_parser.parse(pos, tmp, expected))
             {
                 storage.back()->pushOperand(std::move(tmp));
             }
-            else if (identifier_parser.parse(pos, tmp, expected) ||
-                     asterisk_parser.parse(pos, tmp, expected))
+            else if (identifier_parser.parse(pos, tmp, expected))
             {
                 /// If the next token is '(' then it is a plain function, '[' - arrayElement function
                 if (pos->type == TokenType::OpeningRoundBracket)
@@ -1768,6 +1774,11 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             else if (pos->type == TokenType::OpeningRoundBracket)
             {
+                if (ParserSubquery().parse(pos, tmp, expected))
+                {
+                    storage.back()->pushOperand(std::move(tmp));
+                    continue;
+                }
                 next = Action::OPERAND;
                 storage.push_back(std::make_unique<Layer>(TokenType::ClosingRoundBracket, "tuple_"));
                 ++pos;
