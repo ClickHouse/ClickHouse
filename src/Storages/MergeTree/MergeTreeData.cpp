@@ -2910,7 +2910,13 @@ void MergeTreeData::removePartsFromWorkingSet(
     removePartsFromWorkingSet(txn, remove, clear_without_timeout, lock);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(
+
+void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
+{
+    removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock);
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
     DataPartsVector parts_to_remove;
@@ -2981,13 +2987,20 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(
 
     bool clear_without_timeout = true;
     /// We a going to remove active parts covered by drop_range without timeout.
-    /// Let's also reset timeout for inactive parts.
+    /// Let's also reset timeout for inactive parts
+    /// and add these parts to list of parts to remove from ZooKeeper
     auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage(DataPartState::Outdated, drop_range.partition_id, &lock);
-    for (auto & part : inactive_parts_to_remove_immediately)
-        part->remove_time.store(0, std::memory_order_relaxed);
 
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
+
+    for (auto & part : inactive_parts_to_remove_immediately)
+    {
+        if (!drop_range.contains(part->info))
+            continue;
+        part->remove_time.store(0, std::memory_order_relaxed);
+        parts_to_remove.push_back(std::move(part));
+    }
 
     return parts_to_remove;
 }
