@@ -46,6 +46,7 @@ class ZooKeeperLog;
 class SessionLog;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
+class FilesystemCacheLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -63,6 +64,7 @@ struct SystemLogs
     std::shared_ptr<CrashLog> crash_log;                /// Used to log server crashes.
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
+    std::shared_ptr<FilesystemCacheLog> cache_log;      /// Used to log cache trace.
     /// Metrics from system.asynchronous_metrics.
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
     /// OpenTelemetry trace spans.
