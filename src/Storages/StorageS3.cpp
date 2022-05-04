@@ -1012,7 +1012,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
             return nullptr;
         }
-      
+
         if (distributed_processing && read_keys_in_distributed_processing)
             read_keys_in_distributed_processing->push_back(key);
 
