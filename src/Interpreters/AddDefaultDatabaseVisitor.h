@@ -95,7 +95,7 @@ private:
     std::set<String> external_tables;
 
     bool only_replace_current_database_function = false;
-    bool only_replace_in_join = false;
+    mutable bool only_replace_in_join = false;
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -141,7 +141,13 @@ private:
             return;
 
         if (tables_element.table_expression)
+        {
+            bool only_replace_in_join_prev = only_replace_in_join;
+            /// replace expression recursively in JOIN subquery `... JOIN (SELECT * FROM table)`
+            only_replace_in_join = false;
             tryVisit<ASTTableExpression>(tables_element.table_expression);
+            only_replace_in_join = only_replace_in_join_prev;
+        }
     }
 
     void visit(ASTTableExpression & table_expression, ASTPtr &) const
