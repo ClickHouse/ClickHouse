@@ -16,6 +16,25 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+PartLogElement::MergeReasonType PartLogElement::getMergeReasonType(MergeType merge_type) {
+    switch (merge_type)
+    {
+    case MergeType::REGULAR:
+        return REGULAR_MERGE;
+    case MergeType::TTL_DELETE:
+        return TTL_DELETE_MERGE;
+    case MergeType::TTL_RECOMPRESS:
+        return TTL_RECOMPRESS_MERGE;
+    }
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeType {}", static_cast<UInt64>(merge_type));
+}
+
 NamesAndTypesList PartLogElement::getNamesAndTypes()
 {
     auto event_type_datatype = std::make_shared<DataTypeEnum8>(
@@ -30,11 +49,22 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
         }
     );
 
+    auto merge_reason_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"NotAMerge",           static_cast<Int8>(NOT_A_MERGE)},
+            {"RegularMerge",        static_cast<Int8>(REGULAR_MERGE)},
+            {"TTLDeleteMerge",      static_cast<Int8>(TTL_DELETE_MERGE)},
+            {"TTLRecompressMerge",  static_cast<Int8>(TTL_RECOMPRESS_MERGE)},
+        }
+    );
+
     ColumnsWithTypeAndName columns_with_type_and_name;
 
     return {
         {"query_id", std::make_shared<DataTypeString>()},
         {"event_type", std::move(event_type_datatype)},
+        {"merge_reason", std::move(merge_reason_datatype)},
         {"event_date", std::make_shared<DataTypeDate>()},
 
         {"event_time", std::make_shared<DataTypeDateTime>()},
@@ -72,6 +102,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(query_id);
     columns[i++]->insert(event_type);
+    columns[i++]->insert(merge_reason);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
