@@ -652,16 +652,15 @@ if args.report == "main":
     # Don't show mildly unstable queries, only the very unstable ones we
     # treat as errors.
     if very_unstable_queries:
-        # FIXME: uncomment the following lines when tests are stable and
-        # reliable
-        # if very_unstable_queries > 5:
-        #     error_tests += very_unstable_queries
-        #     status = "failure"
-        # FIXME: until here
         message_array.append(str(very_unstable_queries) + " unstable")
-
-    # FIXME: uncomment the following line when tests are stable and reliable
+    # FIXME: uncomment the following lines when tests are stable and
+    #     reliable
+    #     if very_unstable_queries > 5:
+    #         error_tests += very_unstable_queries
+    #         status = "failure"
+    #
     # error_tests += slow_average_tests
+    # FIXME: until here
 
     if error_tests:
         status = "failure"
