@@ -722,6 +722,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         info.use_uncompressed_cache));
 
                     auto & filter_function = filters[i];
+                    if (!filter_function)
+                        continue;
                     auto syntax_result = TreeRewriter(context).analyze(
                         filter_function, metadata_for_reading->getPrimaryKey().expression->getRequiredColumnsWithTypes());
                     auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
