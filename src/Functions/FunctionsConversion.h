@@ -3283,6 +3283,19 @@ private:
                 return res;
             };
         }
+        else if (checkAndGetDataType<DataTypeObject>(from_type.get()))
+        {
+            return [is_nullable = to_type->hasNullableSubcolumns()] (ColumnsWithTypeAndName & arguments, const DataTypePtr & , const ColumnNullable * , size_t) -> ColumnPtr
+            {
+                auto & column_object = assert_cast<const ColumnObject &>(*arguments.front().column);
+                auto res = ColumnObject::create(is_nullable);
+                for (size_t i = 0; i < column_object.size(); i++)
+                    res->insert(column_object[i]);
+
+                res->finalize();
+                return res;
+            };
+        }
 
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
