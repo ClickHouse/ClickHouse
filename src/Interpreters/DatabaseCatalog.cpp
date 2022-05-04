@@ -250,7 +250,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
         if (!context_->isInternalQuery() && db_and_table.first->getEngineName() == "MaterializedMySQL")
         {
-            db_and_table.second = StorageMaterializedMySQL::create(std::move(db_and_table.second), db_and_table.first.get());
+            db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
         }
 #endif
         return db_and_table;

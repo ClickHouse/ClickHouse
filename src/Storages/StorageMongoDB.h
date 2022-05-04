@@ -45,7 +45,6 @@ private:
     void connectIfNotConnected();
 
     const std::string host;
-    // const uint16_t port; /// NOLINT -- actually not used, needs checking
     const std::string database_name;
     const std::string collection_name;
     const std::string username;
