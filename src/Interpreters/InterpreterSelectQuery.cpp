@@ -37,6 +37,9 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 
 #include <QueryPipeline/Pipe.h>
+#if USE_CUDA
+    #include <Processors/QueryPlan/Cuda/CudaAggregatingStep.h>
+#endif
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -2315,19 +2318,38 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     const bool should_produce_results_in_order_of_bucket_number
         = options.to_stage == QueryProcessingStage::WithMergeableState && settings.distributed_aggregation_memory_efficient;
 
-    auto aggregating_step = std::make_unique<AggregatingStep>(
-        query_plan.getCurrentDataStream(),
-        std::move(aggregator_params),
-        std::move(grouping_sets_params),
-        final,
-        settings.max_block_size,
-        settings.aggregation_in_order_max_block_bytes,
-        merge_threads,
-        temporary_data_merge_threads,
-        storage_has_evenly_distributed_read,
-        std::move(group_by_info),
-        std::move(group_by_sort_description),
-        should_produce_results_in_order_of_bucket_number);
+    QueryPlanStepPtr aggregating_step;
+
+#if USE_CUDA
+    if (settings.use_cuda_aggregation)
+        aggregating_step = std::make_unique<CudaAggregatingStep>(
+            query_plan.getCurrentDataStream(),
+            params,
+            final,
+            settings.max_block_size,
+            settings.aggregation_in_order_max_block_bytes,
+            merge_threads,
+            temporary_data_merge_threads,
+            storage_has_evenly_distributed_read,
+            std::move(group_by_info),
+            std::move(group_by_sort_description),
+            context);
+#endif
+    if (!aggregating_step)
+        aggregating_step = std::make_unique<AggregatingStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(aggregator_params),
+            std::move(grouping_sets_params),
+            final,
+            settings.max_block_size,
+            settings.aggregation_in_order_max_block_bytes,
+            merge_threads,
+            temporary_data_merge_threads,
+            storage_has_evenly_distributed_read,
+            std::move(group_by_info),
+            std::move(group_by_sort_description),
+            should_produce_results_in_order_of_bucket_number);
+
     query_plan.addStep(std::move(aggregating_step));
 }
 

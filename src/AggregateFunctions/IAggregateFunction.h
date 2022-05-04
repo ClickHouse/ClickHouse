@@ -17,6 +17,10 @@
 #include <vector>
 #include <type_traits>
 
+#if USE_CUDA
+#   include <AggregateFunctions/Cuda/ICudaAggregateFunction.h>
+#endif
+
 namespace llvm
 {
     class LLVMContext;
@@ -31,6 +35,11 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace ErrorCodes
+{
+    extern const int CUDA_UNSUPPORTED_AGGREGATE_FUNCTION;
 }
 
 class Arena;
@@ -327,6 +336,14 @@ public:
 
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
+
+#if USE_CUDA
+    virtual const CudaAggregateFunctionPtr  createCudaFunction() const
+    {
+        throw Exception("IAggregateFunction::createCudaFunction: aggregate function is not supported", ErrorCodes::CUDA_UNSUPPORTED_AGGREGATE_FUNCTION);
+        return nullptr;
+    }
+#endif
 
 #if USE_EMBEDDED_COMPILER
 

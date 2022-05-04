@@ -120,6 +120,10 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
+#if USE_CUDA
+#   include <Common/Cuda/cudaInitDevice.h>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric Revision;
@@ -621,6 +625,11 @@ static void sanityChecks(Server & server)
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
+
+#if USE_CUDA
+    LOG_INFO(log, "Initializaing CUDA context");
+    cudaInitDevice(0, 17179869184);
+#endif
 
     UseSSL use_ssl;
 

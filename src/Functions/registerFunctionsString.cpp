@@ -61,6 +61,8 @@ void registerFunctionLemmatize(FunctionFactory &);
 void registerFunctionsDetectLanguage(FunctionFactory &);
 #endif
 
+void registerFunctionCuda(FunctionFactory &);
+
 #if USE_ICU
 void registerFunctionNormalizeUTF8(FunctionFactory &);
 #endif
@@ -121,6 +123,8 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionLemmatize(factory);
     registerFunctionsDetectLanguage(factory);
 #endif
+
+    registerFunctionCuda(factory);
 
 #if USE_ICU
     registerFunctionNormalizeUTF8(factory);

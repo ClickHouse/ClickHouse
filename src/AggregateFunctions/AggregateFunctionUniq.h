@@ -25,6 +25,9 @@
 #include <AggregateFunctions/ThetaSketchData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
+#if USE_CUDA
+#   include <AggregateFunctions/Cuda/createAggregateFunction.h>
+#endif
 
 namespace DB
 {
@@ -265,6 +268,13 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
+
+#if USE_CUDA
+    const CudaAggregateFunctionPtr  createCudaFunction() const override
+    {
+        return createCudaAggregateFunctionUniq();
+    }
+#endif
 };
 
 
