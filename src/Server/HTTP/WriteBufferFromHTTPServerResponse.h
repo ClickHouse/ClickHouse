@@ -124,7 +124,7 @@ private:
     size_t send_progress_interval_ms = 100;
     Stopwatch progress_watch;
 
-    int exception_code;
+    int exception_code = 0;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };
