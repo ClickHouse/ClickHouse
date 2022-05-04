@@ -1182,7 +1182,7 @@ void StorageWindowView::writeIntoWindowView(
         if (window_view.is_watermark_bounded)
         {
             UInt32 watermark_lower_bound
-                = addTime(t_max_watermark, window_view.slide_kind, -1 * window_view.slide_num_units, *window_view.time_zone);
+                = addTime(t_max_watermark, window_view.slide_kind, -window_view.slide_num_units, *window_view.time_zone);
 
             if (watermark_lower_bound < lateness_bound)
                 lateness_bound = watermark_lower_bound;
