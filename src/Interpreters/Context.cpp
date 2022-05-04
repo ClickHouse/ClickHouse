@@ -455,6 +455,8 @@ struct ContextSharedPart
         delete_message_broker_schedule_pool.reset();
         delete_ddl_worker.reset();
         delete_access_control.reset();
+
+        total_memory_tracker.resetOvercommitTracker();
     }
 
     bool hasTraceCollector() const
