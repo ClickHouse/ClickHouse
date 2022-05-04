@@ -1,7 +1,4 @@
 <test>
-    <preconditions>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
     <settings><max_threads>1</max_threads></settings>
 
     <!-- FIXME this should have been an EXPLAIN test, no point in measuring performance to deduce that the query was rewritten -->

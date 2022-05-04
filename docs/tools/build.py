@@ -19,12 +19,9 @@ from mkdocs import config
 from mkdocs import exceptions
 import mkdocs.commands.build
 
-import amp
 import blog
 import mdx_clickhouse
 import redirects
-import single_page
-import test
 import util
 import website
 
@@ -49,7 +46,6 @@ markdown.extensions.ClickHouseMarkdown = ClickHouseMarkdown
 
 def build_for_lang(lang, args):
     logging.info(f"Building {lang} docs")
-    os.environ["SINGLE_PAGE"] = "0"
 
     try:
         theme_cfg = {
@@ -104,7 +100,6 @@ def build_for_lang(lang, args):
             plugins=plugins,
             extra=dict(
                 now=datetime.datetime.now().isoformat(),
-                single_page=False,
                 rev=args.rev,
                 rev_short=args.rev_short,
                 rev_url=args.rev_url,
@@ -112,13 +107,9 @@ def build_for_lang(lang, args):
                 events=args.events,
                 languages=languages,
                 includes_dir=os.path.join(os.path.dirname(__file__), "..", "_includes"),
-                is_amp=False,
                 is_blog=False,
             ),
         )
-
-        # Clean to be safe if last build finished abnormally
-        single_page.remove_temporary_files(lang, args)
 
         raw_config["nav"] = nav.build_docs_nav(lang, args)
 
@@ -126,14 +117,6 @@ def build_for_lang(lang, args):
 
         if not args.skip_multi_page:
             mkdocs.commands.build.build(cfg)
-
-        if not args.skip_amp:
-            amp.build_amp(lang, args, cfg)
-
-        if not args.skip_single_page:
-            single_page.build_single_page_version(
-                lang, args, raw_config.get("nav"), cfg
-            )
 
         mdx_clickhouse.PatchedMacrosPlugin.disabled = False
 
@@ -174,7 +157,6 @@ def build(args):
 
     if not args.skip_website:
         website.process_benchmark_results(args)
-        website.minify_website(args)
         redirects.build_static_redirects(args)
 
 
@@ -197,22 +179,15 @@ if __name__ == "__main__":
     arg_parser.add_argument("--output-dir", default="build")
     arg_parser.add_argument("--nav-limit", type=int, default="0")
     arg_parser.add_argument("--skip-multi-page", action="store_true")
-    arg_parser.add_argument("--skip-single-page", action="store_true")
-    arg_parser.add_argument("--skip-amp", action="store_true")
     arg_parser.add_argument("--skip-website", action="store_true")
     arg_parser.add_argument("--skip-blog", action="store_true")
-    arg_parser.add_argument("--skip-git-log", action="store_true")
     arg_parser.add_argument("--skip-docs", action="store_true")
-    arg_parser.add_argument("--test-only", action="store_true")
-    arg_parser.add_argument("--minify", action="store_true")
     arg_parser.add_argument("--htmlproofer", action="store_true")
     arg_parser.add_argument("--no-docs-macros", action="store_true")
-    arg_parser.add_argument("--save-raw-single-page", type=str)
     arg_parser.add_argument("--livereload", type=int, default="0")
     arg_parser.add_argument("--verbose", action="store_true")
 
     args = arg_parser.parse_args()
-    args.minify = False  # TODO remove
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO, stream=sys.stderr
@@ -237,15 +212,6 @@ if __name__ == "__main__":
     )
     args.rev_url = f"https://github.com/ClickHouse/ClickHouse/commit/{args.rev}"
     args.events = get_events(args)
-
-    if args.test_only:
-        args.skip_multi_page = True
-        args.skip_blog = True
-        args.skip_website = True
-        args.skip_amp = True
-
-    if args.skip_git_log or args.skip_amp:
-        mdx_clickhouse.PatchedMacrosPlugin.skip_git_log = True
 
     from build import build
 

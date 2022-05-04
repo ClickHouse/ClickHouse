@@ -132,7 +132,10 @@ TEST(CheckSortedBlockInputStream, CheckBadLastRow)
     Chunk chunk;
     EXPECT_NO_THROW(executor.pull(chunk));
     EXPECT_NO_THROW(executor.pull(chunk));
+
+#ifndef ABORT_ON_LOGICAL_ERROR
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
+#endif
 }
 
 
@@ -154,7 +157,10 @@ TEST(CheckSortedBlockInputStream, CheckUnsortedBlock1)
     PullingPipelineExecutor executor(pipeline);
 
     Chunk chunk;
+
+#ifndef ABORT_ON_LOGICAL_ERROR
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
+#endif
 }
 
 TEST(CheckSortedBlockInputStream, CheckUnsortedBlock2)
@@ -175,7 +181,9 @@ TEST(CheckSortedBlockInputStream, CheckUnsortedBlock2)
     PullingPipelineExecutor executor(pipeline);
 
     Chunk chunk;
+#ifndef ABORT_ON_LOGICAL_ERROR
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
+#endif
 }
 
 TEST(CheckSortedBlockInputStream, CheckUnsortedBlock3)
@@ -196,7 +204,9 @@ TEST(CheckSortedBlockInputStream, CheckUnsortedBlock3)
     PullingPipelineExecutor executor(pipeline);
 
     Chunk chunk;
+#ifndef ABORT_ON_LOGICAL_ERROR
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
+#endif
 }
 
 TEST(CheckSortedBlockInputStream, CheckEqualBlock)

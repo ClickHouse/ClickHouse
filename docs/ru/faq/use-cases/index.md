@@ -1,8 +1,8 @@
 ---
 title: Вопросы о применении ClickHouse
 toc_hidden_folder: true
-toc_priority: 2
-toc_title: Применение
+sidebar_position: 2
+sidebar_label: Применение
 ---
 
 # Вопросы о применении ClickHouse {#questions-about-clickhouse-use-cases}

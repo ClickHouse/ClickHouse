@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Справочник"
-toc_priority: 36
-toc_hidden: true
+sidebar_label: "Справочник"
+sidebar_position: 36
 ---
 
 # Перечень агрегатных функций {#aggregate-functions-list}
