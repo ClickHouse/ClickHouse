@@ -6,7 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 user_files_path=$($CLICKHOUSE_CLIENT --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep -E '^Code: 107.*FILE_DOESNT_EXIST' | head -1 | awk '{gsub("/nonexist.txt","",$9); print $9}')
-[ -e "$user_files_path"/01825_file_*.json ] && rm "$user_files_path"/01825_file_*.json
+for f in "$user_files_path/01825_file_*.json"; do
+    [ -e $f ] && rm $f
+done
 
 for i in {0..5}; do
     echo "{\"k$i\": 100}" > "$user_files_path"/01825_file_$i.json
@@ -24,7 +26,7 @@ ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE IF EXISTS t_json_files"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_json_files \
     SELECT _file, data FROM file('01825_file_*.json', 'JSONAsObject', 'data JSON') \
-    ORDER BY _file LIMIT 3"
+    ORDER BY _file LIMIT 3" --max_threads 1 --min_insert_block_size_rows 1 --max_insert_block_size 1 --max_block_size 1
 
 ${CLICKHOUSE_CLIENT} -q "SELECT data FROM t_json_files ORDER BY file FORMAT JSONEachRow" --output_format_json_named_tuples_as_objects 1
 ${CLICKHOUSE_CLIENT} -q "SELECT toTypeName(data) FROM t_json_files LIMIT 1"
