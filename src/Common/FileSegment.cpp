@@ -601,6 +601,7 @@ String FileSegment::getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock
     info << "File segment: " << range().toString() << ", ";
     info << "state: " << download_state << ", ";
     info << "downloaded size: " << getDownloadedSize(segment_lock) << ", ";
+    info << "reserved size: " << reserved_size << ", ";
     info << "downloader id: " << downloader_id << ", ";
     info << "caller id: " << getCallerId();
 
