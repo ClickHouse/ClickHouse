@@ -67,6 +67,8 @@ def setup_teardown():
 
 
 def test_add_new_table_to_replication(started_cluster):
+    if instance.is_built_with_sanitizer() or instance.is_debug_build():
+        pytest.skip("Temporary disabled (FIXME)")
     cursor = pg_manager.get_db_cursor()
     cursor.execute("DROP TABLE IF EXISTS test_table")
     NUM_TABLES = 5
@@ -182,6 +184,8 @@ def test_add_new_table_to_replication(started_cluster):
 
 
 def test_remove_table_from_replication(started_cluster):
+    if instance.is_built_with_sanitizer() or instance.is_debug_build():
+        pytest.skip("Temporary disabled (FIXME)")
     NUM_TABLES = 5
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 10000)
     pg_manager.create_materialized_db(
@@ -267,6 +271,8 @@ def test_remove_table_from_replication(started_cluster):
 
 
 def test_predefined_connection_configuration(started_cluster):
+    if instance.is_built_with_sanitizer() or instance.is_debug_build():
+        pytest.skip("Temporary disabled (FIXME)")
     cursor = pg_manager.get_db_cursor()
     cursor.execute(f"DROP TABLE IF EXISTS test_table")
     cursor.execute(f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)")
@@ -282,6 +288,8 @@ insert_counter = 0
 
 
 def test_database_with_single_non_default_schema(started_cluster):
+    if instance.is_built_with_sanitizer() or instance.is_debug_build():
+        pytest.skip("Temporary disabled (FIXME)")
     cursor = pg_manager.get_db_cursor()
     NUM_TABLES = 5
     schema_name = "test_schema"
@@ -383,6 +391,8 @@ def test_database_with_single_non_default_schema(started_cluster):
 
 
 def test_database_with_multiple_non_default_schemas_1(started_cluster):
+    if instance.is_built_with_sanitizer() or instance.is_debug_build():
+        pytest.skip("Temporary disabled (FIXME)")
     cursor = pg_manager.get_db_cursor()
 
     NUM_TABLES = 5
@@ -503,6 +513,8 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
 
 
 def test_database_with_multiple_non_default_schemas_2(started_cluster):
+    if instance.is_built_with_sanitizer() or instance.is_debug_build():
+        pytest.skip("Temporary disabled (FIXME)")
     cursor = pg_manager.get_db_cursor()
     NUM_TABLES = 2
     schemas_num = 2
@@ -626,6 +638,8 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
 
 
 def test_table_override(started_cluster):
+    if instance.is_built_with_sanitizer() or instance.is_debug_build():
+        pytest.skip("Temporary disabled (FIXME)")
     cursor = pg_manager.get_db_cursor()
     table_name = "table_override"
     materialized_database = "test_database"
@@ -656,6 +670,8 @@ def test_table_override(started_cluster):
 
 
 def test_table_schema_changes_2(started_cluster):
+    if instance.is_built_with_sanitizer() or instance.is_debug_build():
+        pytest.skip("Temporary disabled (FIXME)")
     cursor = pg_manager.get_db_cursor()
     table_name = "test_table"
 
