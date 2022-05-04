@@ -24,6 +24,8 @@ public:
 
     ~PeekableReadBuffer() override;
 
+    void prefetch() override { sub_buf.prefetch(); }
+
     /// Sets checkpoint at current position
     ALWAYS_INLINE inline void setCheckpoint()
     {
