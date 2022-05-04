@@ -1609,7 +1609,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
     auto params = GetParam();
     ChangelogDirTest test("./logs");
     {
-        std::cerr << "================Firts time=====================\n";
+        std::cerr << "================First time=====================\n";
         DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
         changelog.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1656,7 +1656,7 @@ TEST_P(CoordinationTest, ChangelogInsertMultipleTimesSmooth)
     ChangelogDirTest test("./logs");
     for (size_t i = 0; i < 36; ++i)
     {
-        std::cerr << "================Firts time=====================\n";
+        std::cerr << "================First time=====================\n";
         DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
         changelog.init(1, 0);
         for (size_t j = 0; j < 7; ++j)
@@ -1676,7 +1676,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
 {
     auto params = GetParam();
     ChangelogDirTest test("./logs");
-    std::cerr << "================Firts time=====================\n";
+    std::cerr << "================First time=====================\n";
     DB::KeeperLogStore changelog1("./logs", 100, true, params.enable_compression);
     changelog1.init(1, 0);
     auto entry = getLogEntry("hello_world", 1000);
