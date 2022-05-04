@@ -8,6 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <IO/ZlibInflatingReadBuffer.h>
+#include <IO/PigzDeflatingWriteBuffer.h>
 #include <IO/ZstdDeflatingWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/Lz4DeflatingWriteBuffer.h>
@@ -49,6 +50,8 @@ std::string toContentEncodingName(CompressionMethod method)
             return "bz2";
         case CompressionMethod::Snappy:
             return "snappy";
+        case CompressionMethod::PIGzip:
+            return "pigz";
         case CompressionMethod::None:
             return "";
     }
@@ -90,6 +93,9 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         return CompressionMethod::Bzip2;
     if (method_str == "snappy")
         return CompressionMethod::Snappy;
+    if (method_str == "pigz") {
+        return CompressionMethod::PIGzip;
+    }
     if (hint.empty() || hint == "auto" || hint == "none")
         return CompressionMethod::None;
 
@@ -161,6 +167,10 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     if (method == CompressionMethod::Snappy)
         throw Exception("Unsupported compression method", ErrorCodes::NOT_IMPLEMENTED);
 #endif
+
+    if (method == CompressionMethod::PIGzip)
+        return std::make_unique<PigzDeflatingWriteBuffer>(std::move(nested), level);
+
     if (method == CompressionMethod::None)
         return nested;
 

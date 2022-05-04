@@ -35,6 +35,7 @@ enum class CompressionMethod
     Lz4,
     Bzip2,
     Snappy,
+    PIGzip,
 };
 
 /// How the compression method is named in HTTP.
