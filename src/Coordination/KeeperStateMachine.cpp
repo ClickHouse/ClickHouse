@@ -114,6 +114,13 @@ void KeeperStateMachine::init()
         storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest);
 }
 
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
+{
+    auto request_for_session = parseRequest(data);
+    LOG_WARNING(log, "Precommitting {}", log_idx);
+    return nullptr;
+}
+
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     auto request_for_session = parseRequest(data);

@@ -487,7 +487,42 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     }
 
     if (initialized_flag)
-        return nuraft::cb_func::ReturnCode::Ok;
+    {
+        switch (type)
+        {
+            case nuraft::cb_func::PreAppendLog:
+            {
+                auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
+                ReadBufferFromNuraftBuffer buffer(entry->get_buf());
+                KeeperStorage::RequestForSession request_for_session;
+                readIntBinary(request_for_session.session_id, buffer);
+
+                int32_t length;
+                Coordination::read(length, buffer);
+
+                int32_t xid;
+                Coordination::read(xid, buffer);
+
+                Coordination::OpNum opnum;
+
+                Coordination::read(opnum, buffer);
+
+                request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+                request_for_session.request->xid = xid;
+                request_for_session.request->readImpl(buffer);
+
+                if (!buffer.eof())
+                    readIntBinary(request_for_session.time, buffer);
+                else /// backward compatibility
+                    request_for_session.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+                LOG_INFO(log, "Preappend for log type={} opnum={} xid={}", entry->get_val_type(), static_cast<int>(opnum), xid);
+                return nuraft::cb_func::ReturnCode::Ok;
+            }
+            default:
+                return nuraft::cb_func::ReturnCode::Ok;
+        }
+    }
 
     size_t last_commited = state_machine->last_commit_index();
     size_t next_index = state_manager->getLogStore()->next_slot();

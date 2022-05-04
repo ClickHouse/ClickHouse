@@ -172,7 +172,6 @@ public:
     void enableSnapshotMode(size_t up_to_version)
     {
         container.enableSnapshotMode(up_to_version);
-
     }
 
     /// Turn off snapshot mode.
