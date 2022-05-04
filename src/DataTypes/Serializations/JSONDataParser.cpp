@@ -263,9 +263,9 @@ StringRef JSONDataParser<ParserImpl>::getNameOfNested(const PathInData::Parts & 
     /// Then subcolumns `k2.k3` and `k2.k5` may have indepented sizes and we should extract
     /// `k3` and `k5` keys instead of `k2`.
 
-    for (size_t i = 0; i < path.size(); ++i)
-        if (path[i].is_nested)
-            return StringRef{path[i].key};
+    for (const auto & part : path)
+        if (part.is_nested)
+            return StringRef{part.key};
 
     return {};
 }
