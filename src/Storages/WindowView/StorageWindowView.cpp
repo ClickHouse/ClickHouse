@@ -406,8 +406,7 @@ UInt32 StorageWindowView::getCleanupBound()
                 return 0;
             if (allowed_lateness)
             {
-                UInt32 lateness_bound = addTime(
-                    max_timestamp, lateness_kind, -1 * lateness_num_units, *time_zone);
+                UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -lateness_num_units, *time_zone);
                 lateness_bound = getWindowLowerBound(lateness_bound);
                 if (lateness_bound < w_bound)
                     w_bound = lateness_bound;
@@ -461,7 +460,7 @@ bool StorageWindowView::optimize(
 
 std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 {
-    UInt32 w_start = addTime(watermark, window_kind, -1 * window_num_units, *time_zone);
+    UInt32 w_start = addTime(watermark, window_kind, -window_num_units, *time_zone);
 
     InterpreterSelectQuery fetch(
         getFetchColumnQuery(w_start, watermark),
@@ -756,7 +755,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         {\
             UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
             UInt32 w_end = AddTime<IntervalKind::KIND>::execute(w_start, hop_num_units, *time_zone);\
-            return AddTime<IntervalKind::KIND>::execute(w_end, -1 * window_num_units, *time_zone);\
+            return AddTime<IntervalKind::KIND>::execute(w_end, -window_num_units, *time_zone);\
         }\
     }
         CASE_WINDOW_KIND(Second)
@@ -1175,9 +1174,7 @@ void StorageWindowView::writeIntoWindowView(
     // Filter outdated data
     if (window_view.allowed_lateness && t_max_timestamp != 0)
     {
-        lateness_bound = addTime(
-            t_max_timestamp, window_view.lateness_kind,
-            -1 * window_view.lateness_num_units, *window_view.time_zone);
+        lateness_bound = addTime(t_max_timestamp, window_view.lateness_kind, -window_view.lateness_num_units, *window_view.time_zone);
 
         if (window_view.is_watermark_bounded)
         {
@@ -1454,7 +1451,7 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
             /// windows will split into [1], [2], [3]... We compute each split window into
             /// mergeable state and merge them when the window is triggering.
             func_array ->arguments->children.push_back(std::make_shared<ASTLiteral>(w_end));
-            w_end = addTime(w_end, window_kind, -1 * slice_num_units, *time_zone);
+            w_end = addTime(w_end, window_kind, -slice_num_units, *time_zone);
         }
         auto func_has = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(window_id_name));
         res_query->setExpression(ASTSelectQuery::Expression::PREWHERE, func_has);
