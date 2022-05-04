@@ -190,6 +190,7 @@ bool ParallelReadBuffer::nextImpl()
         /// Remove completed units
         while (currentWorkerCompleted() && !emergency_stop)
         {
+            lock.unlock();
             read_workers.pop_front();
             worker_removed = true;
 
@@ -219,6 +220,7 @@ bool ParallelReadBuffer::nextImpl()
             current_segment = front_worker->nextSegment();
             if (currentWorkerCompleted())
             {
+                lock.unlock();
                 read_workers.pop_front();
                 all_completed = !addReaderToPool() && read_workers.empty();
             }
