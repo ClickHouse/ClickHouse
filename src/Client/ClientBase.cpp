@@ -1430,15 +1430,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             apply_query_settings(*with_output->settings_ast);
 
         if (!connection->checkConnected())
-        {
-            auto poco_logs_level = Poco::Logger::parseLevel(config().getString("send_logs_level", "none"));
-            /// Print under WARNING also because it is used by clickhouse-test.
-            if (poco_logs_level >= Poco::Message::PRIO_WARNING)
-            {
-                fmt::print(stderr, "Connection lost. Reconnecting.\n");
-            }
             connect();
-        }
 
         ASTPtr input_function;
         if (insert && insert->select)
