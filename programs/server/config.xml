@@ -66,10 +66,27 @@
         For example, like this below:
         {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
         To enable JSON logging support, just uncomment <json> tag. 
-        Having the <json> tag will make it work. For better understanding/visibility, you can add "true" or "1".
+        Having the <json> tag will make it work. 
+        User can remove any unwanted keys by simply deleting or commented out any tag below.
+        User can also change the key names by changing the values inside any tag.
+        If a tag is there, but no value is given, the program will print defualt value.
+        If no tag is there, but only the <json> tag is active, it will print default values for all tags.
+        Deafult name for each tag is the tag name itself. For example, default value for
+        <date_time> tag is "date_time" and so on.
         -->
-        <!-- <json>true</json> -->
-
+        <!--
+        <json>
+            <date_time>DATE_TIME</date_time>
+            <thread_name>THREAD_NAME</thread_name>
+            <thread_id>THREAD_ID</thread_id>
+            <level>LEVEL</level>
+            <query_id>QUERY_ID</query_id>
+            <logger_name>LOGGER_NAME</logger_name>
+            <message>MESSAGE</message>
+            <source_file>SOURCE_FILE</source_file>
+            <source_line>SOURCE_LINE</source_line>
+        </json>
+        -->
     </logger>
 
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->

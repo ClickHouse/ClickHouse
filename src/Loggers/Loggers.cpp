@@ -18,15 +18,7 @@
 
 namespace fs = std::filesystem;
 bool DB::ExtendedLogMessage::log_format_json;
-std::string DB::ExtendedLogMessage::key_date_time;
-std::string DB::ExtendedLogMessage::key_thread_name;
-std::string DB::ExtendedLogMessage::key_thread_id;
-std::string DB::ExtendedLogMessage::key_level;
-std::string DB::ExtendedLogMessage::key_query_id;
-std::string DB::ExtendedLogMessage::key_logger_name;
-std::string DB::ExtendedLogMessage::key_message;
-std::string DB::ExtendedLogMessage::key_source_file;
-std::string DB::ExtendedLogMessage::key_source_line;
+DB::log_key_names DB::ExtendedLogMessage::log_keys;
 
 namespace DB
 {
@@ -215,26 +207,134 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             && !config.has("logger.json.level") && !config.has("logger.json.query_id") && !config.has("logger.json.logger_name")
             && !config.has("logger.json.message") && !config.has("logger.json.source_file") && !config.has("logger.json.source_line"))
         {
-            DB::ExtendedLogMessage::key_date_time = "date_time";
-            DB::ExtendedLogMessage::key_thread_name = "thread_name";
-            DB::ExtendedLogMessage::key_thread_id = "thread_id";
-            DB::ExtendedLogMessage::key_level = "level";
-            DB::ExtendedLogMessage::key_query_id = "query_id";
-            DB::ExtendedLogMessage::key_logger_name = "logger_name";
-            DB::ExtendedLogMessage::key_message = "message";
-            DB::ExtendedLogMessage::key_source_file = "source_file";
-            DB::ExtendedLogMessage::key_source_line = "source_line";
+            DB::ExtendedLogMessage::log_keys.key_date_time = "date_time";
+            DB::ExtendedLogMessage::log_keys.key_thread_name = "thread_name";
+            DB::ExtendedLogMessage::log_keys.key_thread_id = "thread_id";
+            DB::ExtendedLogMessage::log_keys.key_level = "level";
+            DB::ExtendedLogMessage::log_keys.key_query_id = "query_id";
+            DB::ExtendedLogMessage::log_keys.key_logger_name = "logger_name";
+            DB::ExtendedLogMessage::log_keys.key_message = "message";
+            DB::ExtendedLogMessage::log_keys.key_source_file = "source_file";
+            DB::ExtendedLogMessage::log_keys.key_source_line = "source_line";
         }
 
         else
         {
             if (config.has("logger.json.date_time"))
             {
-                DB::ExtendedLogMessage::key_date_time = config.getString("logger.json.date_time");
+                DB::ExtendedLogMessage::log_keys.key_date_time = config.getString("logger.json.date_time");
+                if(DB::ExtendedLogMessage::log_keys.key_date_time.empty())
+                {
+                    DB::ExtendedLogMessage::log_keys.key_date_time = "date_time";
+                }
             }
             else
             {
-                DB::ExtendedLogMessage::key_date_time = "";
+                DB::ExtendedLogMessage::log_keys.key_date_time = "";
+            }
+
+            if (config.has("logger.json.thread_name"))
+            {
+                DB::ExtendedLogMessage::log_keys.key_thread_name = config.getString("logger.json.thread_name");
+                if(DB::ExtendedLogMessage::log_keys.key_thread_name.empty())
+                {
+                    DB::ExtendedLogMessage::log_keys.key_thread_name = "thread_name";
+                }
+            }
+            else
+            {
+                DB::ExtendedLogMessage::log_keys.key_thread_name = "";
+            }
+
+            if (config.has("logger.json.thread_id"))
+            {
+                DB::ExtendedLogMessage::log_keys.key_thread_id = config.getString("logger.json.thread_id");
+                if(DB::ExtendedLogMessage::log_keys.key_thread_id.empty())
+                {
+                    DB::ExtendedLogMessage::log_keys.key_thread_id = "thread_id";
+                }
+            }
+            else
+            {
+                DB::ExtendedLogMessage::log_keys.key_thread_id = "";
+            }
+
+            if (config.has("logger.json.level"))
+            {
+                DB::ExtendedLogMessage::log_keys.key_level = config.getString("logger.json.level");
+                if(DB::ExtendedLogMessage::log_keys.key_level.empty())
+                {
+                    DB::ExtendedLogMessage::log_keys.key_level = "level";
+                }
+            }
+            else
+            {
+                DB::ExtendedLogMessage::log_keys.key_level = "";
+            }
+
+            if (config.has("logger.json.query_id"))
+            {
+                DB::ExtendedLogMessage::log_keys.key_query_id = config.getString("logger.json.query_id");
+                if(DB::ExtendedLogMessage::log_keys.key_query_id.empty())
+                {
+                    DB::ExtendedLogMessage::log_keys.key_query_id = "query_id";
+                }
+            }
+            else
+            {
+                DB::ExtendedLogMessage::log_keys.key_query_id = "";
+            }
+
+            if (config.has("logger.json.logger_name"))
+            {
+                DB::ExtendedLogMessage::log_keys.key_logger_name = config.getString("logger.json.logger_name");
+                if(DB::ExtendedLogMessage::log_keys.key_logger_name.empty())
+                {
+                    DB::ExtendedLogMessage::log_keys.key_logger_name = "logger_name";
+                }
+            }
+            else
+            {
+                DB::ExtendedLogMessage::log_keys.key_logger_name = "";
+            }
+
+            if (config.has("logger.json.message"))
+            {
+                DB::ExtendedLogMessage::log_keys.key_message = config.getString("logger.json.message");
+                if(DB::ExtendedLogMessage::log_keys.key_message.empty())
+                {
+                    DB::ExtendedLogMessage::log_keys.key_message = "message";
+                }
+            }
+            else
+            {
+                DB::ExtendedLogMessage::log_keys.key_message = "";
+            }
+
+            if (config.has("logger.json.source_file"))
+            {
+                DB::ExtendedLogMessage::log_keys.key_source_file = config.getString("logger.json.source_file");
+                if(DB::ExtendedLogMessage::log_keys.key_source_file.empty())
+                {
+                    DB::ExtendedLogMessage::log_keys.key_source_file = "source_file";
+                }
+            }
+            else
+            {
+                DB::ExtendedLogMessage::log_keys.key_source_file = "";
+            }
+
+            if (config.has("logger.json.source_line"))
+            {
+                DB::ExtendedLogMessage::log_keys.key_source_line = config.getString("logger.json.source_line");
+                if(DB::ExtendedLogMessage::log_keys.key_source_line.empty())
+                {
+                    DB::ExtendedLogMessage::log_keys.key_source_line = "source_line";
+                }
+            }
+            else
+            {
+                DB::ExtendedLogMessage::log_keys.key_source_line = "";
             }
         }
     }

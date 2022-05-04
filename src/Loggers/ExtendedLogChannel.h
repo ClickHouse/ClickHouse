@@ -8,12 +8,24 @@ class Message;
 
 namespace DB
 {
+struct log_key_names
+{
+    std::string key_date_time;
+    std::string key_thread_name;
+    std::string key_thread_id;
+    std::string key_level;
+    std::string key_query_id;
+    std::string key_logger_name;
+    std::string key_message;
+    std::string key_source_file;
+    std::string key_source_line;
+};
 /// Poco::Message with more ClickHouse-specific info
 /// NOTE: Poco::Message is not polymorphic class, so we can't use inheritance in couple with dynamic_cast<>()
 class ExtendedLogMessage
 {
 public:
-    explicit ExtendedLogMessage(const Poco::Message & base_) : base(base_) {}
+    explicit ExtendedLogMessage(const Poco::Message & base_) : base(base_) { }
 
     /// Attach additional data to the message
     static ExtendedLogMessage getFrom(const Poco::Message & base);
@@ -28,7 +40,8 @@ public:
     uint64_t thread_id = 0;
     std::string query_id;
     static bool log_format_json;
-    static std::string key_date_time;
+    static log_key_names log_keys;
+    //static log_key_names log_keys;
     static std::string key_thread_name;
     static std::string key_thread_id;
     static std::string key_level;

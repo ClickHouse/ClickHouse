@@ -15,17 +15,16 @@ OwnPatternFormatter::OwnPatternFormatter(bool color_) : Poco::PatternFormatter("
 void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_ext, std::string & text)
 {
     DB::WriteBufferFromString wb(text);
-
     DB::FormatSettings settings;
-    String key_name;
     bool print_comma = false;
 
     const Poco::Message & msg = msg_ext.base;
     DB::writeChar('{', wb);
 
-    if(!DB::ExtendedLogMessage::key_date_time.empty())
+    if (!DB::ExtendedLogMessage::log_keys.key_date_time.empty())
     {
-        writeJSONString(StringRef(DB::ExtendedLogMessage::key_date_time), wb, settings);
+        writeJSONString(StringRef(DB::ExtendedLogMessage::log_keys.key_date_time), wb, settings);
+
         DB::writeChar(':', wb);
 
         DB::writeChar('\"', wb);
@@ -42,106 +41,164 @@ void OwnPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_
         print_comma = true;
     }
 
-    
-    if(print_comma)
+    if (!DB::ExtendedLogMessage::log_keys.key_thread_name.empty())
     {
-        DB::writeChar(',', wb);
-    }
-    
+        if (print_comma)
+        {
+            DB::writeChar(',', wb);
+        }
 
-    key_name = "thread_name";
-    writeJSONString(StringRef(key_name), wb, settings);
-    DB::writeChar(':', wb);
-    writeJSONString(StringRef(msg.getThread()), wb, settings);
+        else
+        {
+            print_comma = true;
+        }
+        writeJSONString(StringRef(DB::ExtendedLogMessage::log_keys.key_thread_name), wb, settings);
 
-    if(print_comma)
-    {
-        DB::writeChar(',', wb);
-    }
+        DB::writeChar(':', wb);
 
-    key_name = "thread_id";
-    writeJSONString(StringRef(key_name), wb, settings);
-    DB::writeChar(':', wb);
-    DB::writeChar('\"', wb);
-    DB::writeIntText(msg_ext.thread_id, wb);
-    DB::writeChar('\"', wb);
-
-    if(print_comma)
-    {
-        DB::writeChar(',', wb);
+        writeJSONString(StringRef(msg.getThread()), wb, settings);
     }
 
-    key_name = "level";
-    writeJSONString(StringRef(key_name), wb, settings);
-    DB::writeChar(':', wb);
-    int priority = static_cast<int>(msg.getPriority());
-    writeJSONString(StringRef(getPriorityName(priority)), wb, settings);
-
-    if(print_comma)
+    if (!DB::ExtendedLogMessage::log_keys.key_thread_id.empty())
     {
-        DB::writeChar(',', wb);
+        if (print_comma)
+        {
+            DB::writeChar(',', wb);
+        }
+
+        else
+        {
+            print_comma = true;
+        }
+
+        writeJSONString(StringRef(DB::ExtendedLogMessage::log_keys.key_thread_id), wb, settings);
+
+        DB::writeChar(':', wb);
+
+        DB::writeChar('\"', wb);
+        DB::writeIntText(msg_ext.thread_id, wb);
+        DB::writeChar('\"', wb);
+    }
+
+    if (!DB::ExtendedLogMessage::log_keys.key_level.empty())
+    {
+        if (print_comma)
+        {
+            DB::writeChar(',', wb);
+        }
+
+        else
+        {
+            print_comma = true;
+        }
+        writeJSONString(StringRef(DB::ExtendedLogMessage::log_keys.key_level), wb, settings);
+
+        DB::writeChar(':', wb);
+
+        int priority = static_cast<int>(msg.getPriority());
+        writeJSONString(StringRef(getPriorityName(priority)), wb, settings);
     }
 
     /// We write query_id even in case when it is empty (no query context)
     /// just to be convenient for various log parsers.
 
-    key_name = "query_id";
-    writeJSONString(StringRef(key_name), wb, settings);
-    DB::writeChar(':', wb);
-    writeJSONString(msg_ext.query_id, wb, settings);
-
-    if(print_comma)
+    if (!DB::ExtendedLogMessage::log_keys.key_query_id.empty())
     {
-        DB::writeChar(',', wb);
+        if (print_comma)
+        {
+            DB::writeChar(',', wb);
+        }
+
+        else
+        {
+            print_comma = true;
+        }
+        writeJSONString(StringRef(DB::ExtendedLogMessage::log_keys.key_query_id), wb, settings);
+
+        DB::writeChar(':', wb);
+
+        writeJSONString(msg_ext.query_id, wb, settings);
     }
 
-    key_name = "logger_name";
-    writeJSONString(StringRef(key_name), wb, settings);
-    DB::writeChar(':', wb);
-
-    writeJSONString(StringRef(msg.getSource()), wb, settings);
-
-    if(print_comma)
+    if (!DB::ExtendedLogMessage::log_keys.key_logger_name.empty())
     {
-        DB::writeChar(',', wb);
+        if (print_comma)
+        {
+            DB::writeChar(',', wb);
+        }
+
+        else
+        {
+            print_comma = true;
+        }
+        writeJSONString(StringRef(DB::ExtendedLogMessage::log_keys.key_logger_name), wb, settings);
+
+        DB::writeChar(':', wb);
+
+        writeJSONString(StringRef(msg.getSource()), wb, settings);
     }
 
-    key_name = "message";
-    writeJSONString(StringRef(key_name), wb, settings);
-    DB::writeChar(':', wb);
-    String msg_text = msg.getText();
-    writeJSONString(StringRef(msg_text), wb, settings);
-
-    if(print_comma)
+    if (!DB::ExtendedLogMessage::log_keys.key_message.empty())
     {
-        DB::writeChar(',', wb);
+        if (print_comma)
+        {
+            DB::writeChar(',', wb);
+        }
+
+        else
+        {
+            print_comma = true;
+        }
+        writeJSONString(StringRef(DB::ExtendedLogMessage::log_keys.key_message), wb, settings);
+
+        DB::writeChar(':', wb);
+
+        String msg_text = msg.getText();
+        writeJSONString(StringRef(msg_text), wb, settings);
     }
 
-    key_name = "source_file";
-    writeJSONString(StringRef(key_name), wb, settings);
-    DB::writeChar(':', wb);
-    const char * source_file = msg.getSourceFile();
-    if (source_file != nullptr)
+    if (!DB::ExtendedLogMessage::log_keys.key_source_file.empty())
     {
-        writeJSONString(StringRef(source_file), wb, settings);
+        if (print_comma)
+        {
+            DB::writeChar(',', wb);
+        }
+
+        else
+        {
+            print_comma = true;
+        }
+        writeJSONString(StringRef(DB::ExtendedLogMessage::log_keys.key_source_file), wb, settings);
+
+        DB::writeChar(':', wb);
+
+        const char * source_file = msg.getSourceFile();
+        if (source_file != nullptr)
+        {
+            writeJSONString(StringRef(source_file), wb, settings);
+        }
+
+        else
+        {
+            writeJSONString(StringRef(""), wb, settings);
+        }
     }
 
-    else
+    if (!DB::ExtendedLogMessage::log_keys.key_source_line.empty())
     {
-        writeJSONString(StringRef(""), wb, settings);
-    }
+        if (print_comma)
+        {
+            DB::writeChar(',', wb);
+        }
 
-    if(print_comma)
-    {
-        DB::writeChar(',', wb);
-    }
+        writeJSONString(StringRef(DB::ExtendedLogMessage::log_keys.key_source_line), wb, settings);
 
-    key_name = "source_line";
-    writeJSONString(StringRef(key_name), wb, settings);
-    DB::writeChar(':', wb);
-    DB::writeChar('\"', wb);
-    DB::writeIntText(msg.getSourceLine(), wb);
-    DB::writeChar('\"', wb);
+        DB::writeChar(':', wb);
+
+        DB::writeChar('\"', wb);
+        DB::writeIntText(msg.getSourceLine(), wb);
+        DB::writeChar('\"', wb);
+    }
 
     DB::writeChar('}', wb);
 }
