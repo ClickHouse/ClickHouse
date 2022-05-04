@@ -6,6 +6,11 @@
 #include <IO/Operators.h>
 #include <filesystem>
 
+namespace CurrentMetrics
+{
+extern const Metric CacheDetachedFileSegments;
+}
+
 namespace DB
 {
 
@@ -570,7 +575,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
             cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
         }
 
-        detached = true;
+        markAsDetached(segment_lock);
 
         if (cache_writer)
         {
@@ -685,12 +690,25 @@ void FileSegment::detach(std::lock_guard<std::mutex> & cache_lock, std::lock_gua
     if (detached)
         return;
 
-    detached = true;
+    markAsDetached(segment_lock);
 
     if (!hasFinalizedState())
     {
         completeUnlocked(cache_lock, segment_lock);
     }
+}
+
+void FileSegment::markAsDetached(std::lock_guard<std::mutex> & /* segment_lock */)
+{
+    detached = true;
+    CurrentMetrics::add(CurrentMetrics::CacheDetachedFileSegments);
+}
+
+FileSegment::~FileSegment()
+{
+    std::lock_guard segment_lock(mutex);
+    if (detached)
+        CurrentMetrics::sub(CurrentMetrics::CacheDetachedFileSegments);
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()
