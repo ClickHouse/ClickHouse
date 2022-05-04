@@ -103,6 +103,8 @@ namespace ErrorCodes
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int SUPPORT_IS_DISABLED;
+
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -227,6 +229,10 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     else if (exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
     {
         return HTTPResponse::HTTP_LENGTH_REQUIRED;
+    }
+    else if (exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
+    {
+        return HTTPResponse::HTTP_REQUEST_TIMEOUT;
     }
 
     return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
