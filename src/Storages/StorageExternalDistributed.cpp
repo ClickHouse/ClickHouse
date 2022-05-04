@@ -68,7 +68,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     configuration.username,
                     configuration.password);
 
-                shard = StorageMySQL::create(
+                shard = std::make_shared<StorageMySQL>(
                     table_id_,
                     std::move(pool),
                     configuration.database,
