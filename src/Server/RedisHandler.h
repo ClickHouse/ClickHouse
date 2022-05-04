@@ -32,8 +32,6 @@ public:
     void run() final;
 
 private:
-    void changeIO(Poco::Net::StreamSocket&);
-
     Poco::Logger * log = &Poco::Logger::get("RedisHandler");
 
     TCPServer & tcp_server;

@@ -5,9 +5,9 @@
 #include "RedisProtocol.hpp"
 
 #include <Server/TCPServer.h>
-#include <Common/setThreadName.h>
 #include <base/scope_guard.h>
 #include <Poco/Exception.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -17,19 +17,11 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-RedisHandler::RedisHandler(
-    const Poco::Net::StreamSocket & socket_,
-    TCPServer & tcp_server_)
-    : Poco::Net::TCPServerConnection(socket_)
-    , tcp_server(tcp_server_)
+RedisHandler::RedisHandler(const Poco::Net::StreamSocket & socket_, TCPServer & tcp_server_)
+    : Poco::Net::TCPServerConnection(socket_), tcp_server(tcp_server_)
 {
-    changeIO(socket());
-}
-
-void RedisHandler::changeIO(Poco::Net::StreamSocket & socket)
-{
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket);
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket);
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
 }
 
 void RedisHandler::run()
@@ -41,13 +33,17 @@ void RedisHandler::run()
         {
             RedisProtocol::GetRequest req;
             req.deserialize(*in);
+            log->log(Poco::format("GET request for %s key", req.getKey()));
+
+            RedisProtocol::GetResponse resp("Hello world");
+            resp.serialize(*out);
         }
     }
-    catch (const Poco::Exception &exc)
+    catch (const Poco::Exception & exc)
     {
         log->log(exc);
+        RedisProtocol::ErrorResponse resp(exc.message());
+        resp.serialize(*out);
     }
-
 }
-
 }

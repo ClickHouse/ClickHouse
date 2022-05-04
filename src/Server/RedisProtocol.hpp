@@ -2,16 +2,17 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <boost/pending/detail/property.hpp>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int NOT_IMPLEMENTED;
-    extern const int UNKNOWN_TYPE;
 }
 
 namespace RedisProtocol
@@ -64,49 +65,69 @@ namespace RedisProtocol
         ReadBuffer * buf;
     };
 
+    class Writer
+    {
+    public:
+        explicit Writer(WriteBuffer * buf_) : buf(buf_) { }
+
+        void writeBulkString(const String & s)
+        {
+            writeDataType(DataType::BULK_STRING);
+            writeIntBinary(s.size(), *buf);
+            writeCRLF();
+            writeString(s, *buf);
+            writeCRLF();
+        }
+
+        void writeErrorString(const String & s)
+        {
+            writeDataType(DataType::ERROR);
+            writeString(s, *buf);
+            writeCRLF();
+        }
+
+    private:
+        void writeDataType(DataType type) { buf->write(static_cast<char>(type)); }
+
+        void writeCRLF()
+        {
+            const char * crlf = "\r\n";
+            buf->write(crlf, 2);
+        }
+
+        WriteBuffer * buf;
+    };
+
     // *2\r\n $3\r\n GET\r\n $8\r\n some_key\r\n
     class GetRequest
     {
     public:
         void deserialize(ReadBuffer & in)
         {
-            keys.clear();
+            key.clear();
             Reader reader(&in);
 
             DataType type = reader.readType();
             if (type != DataType::ARRAY)
             {
                 throw Exception(
-                    Poco::format("Client sent wrong message or closed the connection. Message byte was %c.", static_cast<char>(type)),
-                    ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                    Poco::format("Wrong RESP type. Type byte was %c.", static_cast<char>(type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
             }
 
             Int64 array_size = reader.readNumber();
-            if (array_size < 2)
+            if (array_size != 2)
             {
                 throw Exception(
-                    Poco::format("Client sent wrong message. Number of words was %d.", array_size),
-                    ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-            }
-            if (keys.capacity() < static_cast<size_t>(array_size - 1))
-            {
-                keys.reserve(array_size - 1);
-            }
-
-            // Reading redis operation
-            if (reader.readType() != DataType::BULK_STRING)
-            {
-                throw Exception(
-                    Poco::format("Client sent wrong message. Number of words was %d.", array_size),
-                    ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                    Poco::format("Invalid array size. Array size was %d.", array_size), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
             }
 
             for (Int64 i = 0; i < array_size; ++i)
             {
-                if (reader.readType() != DataType::BULK_STRING)
+                type = reader.readType();
+                if (type != DataType::BULK_STRING)
                 {
                     throw Exception(
-                        Poco::format("Client sent wrong message. Number of words was %d.", array_size),
+                        Poco::format("Client sent wrong type. Type byte was %c.", static_cast<char>(type)),
                         ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
                 }
                 String data = reader.readBulkString();
@@ -114,22 +135,51 @@ namespace RedisProtocol
                 {
                     if (data != "GET")
                     {
-                        throw Exception(
-                            Poco::format("Client sent wrong message. Number of words was %d.", array_size),
-                            ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                        throw Exception(Poco::format("Client sent unsupported method %s.", data), ErrorCodes::NOT_IMPLEMENTED);
                     }
                 }
                 else
                 {
-                    keys.push_back(std::move(data));
+                    key = std::move(data);
                 }
             }
         }
 
-        const std::vector<String> & getKeys() const { return keys; }
+        const String & getKey() const { return key; }
 
     private:
-        std::vector<String> keys;
+        String key;
+    };
+
+    class GetResponse
+    {
+    public:
+        explicit GetResponse(const String & value_) : value(value_) { }
+
+        void serialize(WriteBuffer & out)
+        {
+            Writer writer(&out);
+            writer.writeBulkString(value);
+        }
+
+    private:
+        const String & value;
+    };
+
+
+    class ErrorResponse
+    {
+    public:
+        explicit ErrorResponse(const String & error_) : error(error_) { }
+
+        void serialize(WriteBuffer & out)
+        {
+            Writer writer(&out);
+            writer.writeErrorString(error);
+        }
+
+    private:
+        const String & error;
     };
 }
 }
