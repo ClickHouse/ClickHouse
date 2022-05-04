@@ -126,6 +126,10 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeBefore()
     output.size = out->buffer().size();
     output.pos = out->offset();
 
+    /// Actually we can use ZSTD_e_flush here and add empty termination
+    /// block on each new buffer creation for non-empty file unconditionally (without isNeedToAddEmptyBlock).
+    /// However ZSTD_decompressStream is able to read non-terminated frame (we use it in reader buffer),
+    /// but console zstd utility cannot.
     size_t remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);
     while (remaining != 0)
     {
@@ -166,7 +170,8 @@ void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
     if (out->buffer().size() - out->offset() < ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size())
         out->next();
 
-    std::memcpy(out->buffer().begin() + out->offset(), ZSTD_CORRECT_TERMINATION_LAST_BLOCK.data(), ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size());
+    std::memcpy(out->buffer().begin() + out->offset(),
+                ZSTD_CORRECT_TERMINATION_LAST_BLOCK.data(), ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size());
 
     out->position() = out->buffer().begin() + out->offset() + ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size();
 }
@@ -181,6 +186,10 @@ bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
         std::array<char, 3> result;
         reader.seek(fsize - 3, SEEK_SET);
         reader.readStrict(result.data(), 3);
+
+        /// If we don't have correct block in the end, then we need to add it manually.
+        /// NOTE: maybe we can have the same bytes in case of data corruption/unfinished write.
+        /// But in this case file still corrupted and we have to remove it.
         return result != ZSTD_CORRECT_TERMINATION_LAST_BLOCK;
     }
     else if (fsize > 0)

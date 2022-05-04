@@ -16,7 +16,7 @@ namespace DB
 /// Main differences from ZstdDeflatingWriteBuffer:
 /// 1) Allows to continue to write to the same output even if finalize() (or destructor) was not called, for example
 ///    when server was killed with 9 signal. Natively zstd doesn't support such feature because
-///    ZSTD_decompressStream expect to see empty block at the end of each frame. There is not API function for it
+///    ZSTD_decompressStream expect to see empty block (3 bytes 0x01, 0x00, 0x00) at the end of each frame. There is not API function for it
 ///    so we just use HACK and add empty block manually on the first write (see addEmptyBlock). Maintainers of zstd
 ///    said that there is no risks of compatibility issues https://github.com/facebook/zstd/issues/2090#issuecomment-620158967.
 /// 2) Doesn't support internal ZSTD check-summing, because ZSTD checksums written at the end of frame (frame epilogue).
@@ -25,6 +25,7 @@ class ZstdDeflatingAppendableWriteBuffer : public BufferWithOwnMemory<WriteBuffe
 {
 public:
     using ZSTDLastBlock = const std::array<char, 3>;
+    /// Frame end block. If we read non-empty file and see no such flag we should add it.
     static inline constexpr ZSTDLastBlock ZSTD_CORRECT_TERMINATION_LAST_BLOCK = {0x01, 0x00, 0x00};
 
     ZstdDeflatingAppendableWriteBuffer(
@@ -60,8 +61,11 @@ private:
     void finalizeAfter();
     void finalizeZstd();
 
+    /// Read three last bytes from non-empty compressed file and compares them with
+    /// ZSTD_CORRECT_TERMINATION_LAST_BLOCK.
     bool isNeedToAddEmptyBlock();
-    /// Adding zstd empty block to out.working_buffer
+
+    /// Adding zstd empty block (ZSTD_CORRECT_TERMINATION_LAST_BLOCK) to out.working_buffer
     void addEmptyBlock();
 
     std::unique_ptr<WriteBufferFromFile> out;
