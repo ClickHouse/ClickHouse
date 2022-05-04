@@ -6,9 +6,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_string"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_from_string"
-
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ghdata (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
 
 cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO ghdata FORMAT JSONAsObject"
@@ -37,16 +34,4 @@ ${CLICKHOUSE_CLIENT} -q \
 
 ${CLICKHOUSE_CLIENT} -q "SELECT max(data.payload.pull_request.assignees.size0) FROM ghdata"
 
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE ghdata_string (data String) ENGINE = MergeTree ORDER BY tuple()"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE ghdata_from_string (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
-
-cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO ghdata_string FORMAT JSONAsString"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO ghdata_from_string SELECT data FROM ghdata_string"
-
-${CLICKHOUSE_CLIENT} -q "SELECT \
-    (SELECT toTypeName(any(data)), sum(cityHash64(flattenTuple(data))) FROM ghdata_from_string) = \
-    (SELECT toTypeName(any(data)), sum(cityHash64(flattenTuple(data))) FROM ghdata)"
-
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_string"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_from_string"
