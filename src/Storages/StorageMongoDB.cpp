@@ -38,13 +38,10 @@ StorageMongoDB::StorageMongoDB(
     const ConstraintsDescription & constraints_,
     const String & comment)
     : IStorage(table_id_)
-    , host(host_)
-    // , port(port_)
     , database_name(database_name_)
     , collection_name(collection_name_)
     , username(username_)
     , password(password_)
-    , options(options_)
     , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
 {
     StorageInMemoryMetadata storage_metadata;

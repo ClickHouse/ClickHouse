@@ -44,12 +44,10 @@ public:
 private:
     void connectIfNotConnected();
 
-    const std::string host;
     const std::string database_name;
     const std::string collection_name;
     const std::string username;
     const std::string password;
-    const std::string options;
     const std::string uri;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
