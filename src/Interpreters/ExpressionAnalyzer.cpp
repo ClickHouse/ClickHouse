@@ -337,8 +337,6 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 {
                     ASTs group_elements_ast;
                     const ASTExpressionList * group_ast_element = group_asts[i]->as<const ASTExpressionList>();
-                    if (!group_ast_element)
-                        throw Exception("Grouping Sets element " + group_asts[i]->getColumnName() + " should be an expression type", ErrorCodes::UNKNOWN_IDENTIFIER);
                     group_elements_ast = group_ast_element->children;
 
                     NamesAndTypesList grouping_set_list;

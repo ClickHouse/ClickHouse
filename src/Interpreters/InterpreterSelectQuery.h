@@ -15,7 +15,7 @@
 #include <Storages/TableLockHolder.h>
 
 #include <Columns/FilterDescription.h>
-#include "Interpreters/ActionsDAG.h"
+#include <Interpreters/ActionsDAG.h>
 
 namespace Poco
 {
