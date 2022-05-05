@@ -56,6 +56,7 @@ public:
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
+        const String & quota_key = "",
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0));
 
     ~Connection() override;
@@ -176,6 +177,7 @@ private:
     std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
     String client_name;
+    String quota_key;
 
     bool connected = false;
 

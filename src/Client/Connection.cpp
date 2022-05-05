@@ -69,12 +69,14 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_,
+    const String & quota_key_,
     Poco::Timespan sync_request_timeout_)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
+    , quota_key(quota_key_)
     , compression(compression_)
     , secure(secure_)
     , sync_request_timeout(sync_request_timeout_)
@@ -239,6 +241,7 @@ void Connection::sendHello()
     {
         writeStringBinary(user, *out);
         writeStringBinary(password, *out);
+        writeStringBinary(quota_key, *out);
     }
 
     out->next();
@@ -1069,7 +1072,8 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         "", /* cluster_secret */
         "client",
         parameters.compression,
-        parameters.security);
+        parameters.security,
+        parameters.quota_key);
 }
 
 }

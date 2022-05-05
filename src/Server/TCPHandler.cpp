@@ -975,6 +975,7 @@ void TCPHandler::receiveHello()
     UInt64 packet_type = 0;
     String user;
     String password;
+    String quota_key;
 
     readVarUInt(packet_type, *in);
     if (packet_type != Protocol::Client::Hello)
@@ -999,6 +1000,7 @@ void TCPHandler::receiveHello()
     readStringBinary(default_database, *in);
     readStringBinary(user, *in);
     readStringBinary(password, *in);
+    readStringBinary(quota_key, *in);
 
     if (user.empty())
         throw NetException("Unexpected packet from client (no user in Hello package)", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
@@ -1022,6 +1024,7 @@ void TCPHandler::receiveHello()
     client_info.connection_client_version_minor = client_version_minor;
     client_info.connection_client_version_patch = client_version_patch;
     client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
+    client_info.quota_key = quota_key;
 
     is_interserver_mode = (user == USER_INTERSERVER_MARKER);
     if (is_interserver_mode)
