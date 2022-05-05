@@ -53,7 +53,7 @@ StoragePtr TableFunctionDictionary::executeImpl(
     StorageID dict_id(getDatabaseName(), table_name);
     auto dictionary_table_structure = getActualTableStructure(context);
 
-    auto result = StorageDictionary::create(
+    auto result = std::make_shared<StorageDictionary>(
         dict_id, dictionary_name, std::move(dictionary_table_structure), String{}, StorageDictionary::Location::Custom, context);
 
     return result;

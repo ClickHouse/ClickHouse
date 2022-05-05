@@ -1516,7 +1516,7 @@ void registerStorageWindowView(StorageFactory & factory)
                 "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')",
                 ErrorCodes::SUPPORT_IS_DISABLED);
 
-        return StorageWindowView::create(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
+        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
     });
 }
 

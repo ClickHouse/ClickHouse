@@ -7,6 +7,12 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/FilesystemCacheLog.h>
 
+
+namespace CurrentMetrics
+{
+extern const Metric FilesystemCacheReadBuffers;
+}
+
 namespace DB
 {
 
@@ -110,6 +116,8 @@ private:
 
     String query_id;
     bool enable_logging = false;
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
 };
 
 }
