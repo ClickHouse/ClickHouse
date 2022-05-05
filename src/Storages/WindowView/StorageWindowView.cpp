@@ -12,15 +12,18 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/getHeaderForProcessingStage.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -41,6 +44,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
 #include <base/sleep.h>
 #include <base/logger_useful.h>
 
@@ -50,6 +54,12 @@
 #include <Storages/WindowView/WindowViewSource.h>
 
 #include <QueryPipeline/printPipeline.h>
+
+namespace ProfileEvents
+{
+    extern const Event SelectedBytes;
+    extern const Event SelectedRows;
+}
 
 namespace DB
 {
@@ -818,11 +828,6 @@ void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
 void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 {
     std::lock_guard lock(fire_signal_mutex);
-    if (max_watermark == 0)
-    {
-        max_watermark = getWindowUpperBound(watermark - 1);
-        return;
-    }
 
     bool updated;
     if (is_watermark_strictly_ascending)
@@ -1161,9 +1166,88 @@ void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
     }
 }
 
+class PushingToWindowViewSink final : public SinkToStorage
+{
+public:
+    PushingToWindowViewSink(const Block & header, StorageWindowView & window_view_, StoragePtr storage_holder_, ContextPtr context_);
+    String getName() const override { return "PushingToWindowViewSink"; }
+    void consume(Chunk chunk) override;
+
+private:
+    StorageWindowView & window_view;
+    StoragePtr storage_holder;
+    ContextPtr context;
+};
+
+BlockIO StorageWindowView::populate()
+{
+    if(is_time_column_func_now)
+        throw Exception(
+            ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "POPULATE is not supported when using function now() as the time column");
+
+    auto select_query_ = select_query->clone();
+    auto & modified_select = select_query_->as<ASTSelectQuery &>();
+
+    auto analyzer_res = TreeRewriterResult({});
+    removeJoin(modified_select, analyzer_res, getContext());
+
+    modified_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
+    modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+
+    auto select = std::make_shared<ASTExpressionList>();
+    select->children.push_back(std::make_shared<ASTAsterisk>());
+    modified_select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(select));
+
+    auto order_by = std::make_shared<ASTExpressionList>();
+    auto order_by_elem = std::make_shared<ASTOrderByElement>();
+    order_by_elem->children.push_back(std::make_shared<ASTIdentifier>(timestamp_column_name));
+    order_by_elem->direction = 1;
+    order_by->children.push_back(order_by_elem);
+    modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
+
+    QueryPipelineBuilder pipeline;
+
+	/// Passing 1 as subquery_depth will disable limiting size of intermediate result.
+	InterpreterSelectQuery interpreter_select{
+		select_query_ , getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+	pipeline = interpreter_select.buildQueryPipeline();
+
+    auto header_block
+        = InterpreterSelectQuery(
+              select_query_->clone(), getContext(), getParentTable(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete))
+              .getSampleBlock();
+
+    auto sink = std::make_shared<PushingToWindowViewSink>(header_block, *this, nullptr, getContext());
+
+    BlockIO res;
+
+    pipeline.addChain(Chain(std::move(sink)));
+	pipeline.setMaxThreads(1);
+	pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+	{
+		return std::make_shared<EmptySink>(cur_header);
+	});
+
+	res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+
+    res.pipeline.addStorageHolder(shared_from_this());
+    res.pipeline.addStorageHolder(getInnerTable());
+
+    return res;
+}
+
 void StorageWindowView::writeIntoWindowView(
     StorageWindowView & window_view, const Block & block, ContextPtr local_context)
 {
+    if (!window_view.is_proctime && window_view.max_watermark == 0 && block.rows() > 0)
+    {
+        std::lock_guard lock(window_view.fire_signal_mutex);
+        const auto & window_column = block.getByName(window_view.timestamp_column_name);
+        const ColumnUInt32::Container & window_end_data = static_cast<const ColumnUInt32 &>(*window_column.column).getData();
+        UInt32 first_record_timestamp = window_end_data[0];
+        window_view.max_watermark = window_view.getWindowUpperBound(first_record_timestamp);
+    }
+
     Pipe pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), block.rows())));
 
     UInt32 lateness_bound = 0;
