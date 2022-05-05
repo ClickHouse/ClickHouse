@@ -17610,8 +17610,8 @@ tree::TerminalNode* MySQLParser::GroupByClauseContext::BY_SYMBOL() {
   return getToken(MySQLParser::BY_SYMBOL, 0);
 }
 
-MySQLParser::OrderListContext* MySQLParser::GroupByClauseContext::orderList() {
-  return getRuleContext<MySQLParser::OrderListContext>(0);
+MySQLParser::GroupListContext* MySQLParser::GroupByClauseContext::groupList() {
+  return getRuleContext<MySQLParser::GroupListContext>(0);
 }
 
 MySQLParser::OlapOptionContext* MySQLParser::GroupByClauseContext::olapOption() {
@@ -17649,7 +17649,7 @@ MySQLParser::GroupByClauseContext* MySQLParser::groupByClause() {
     setState(3182);
     match(MySQLParser::BY_SYMBOL);
     setState(3183);
-    orderList();
+    groupList();
     setState(3185);
     _errHandler->sync(this);
 
@@ -45389,26 +45389,28 @@ void MySQLParser::GroupListContext::exitRule(tree::ParseTreeListener *listener) 
 MySQLParser::GroupListContext* MySQLParser::groupList() {
   GroupListContext *_localctx = _tracker.createInstance<GroupListContext>(_ctx, getState());
   enterRule(_localctx, 768, MySQLParser::RuleGroupList);
-  size_t _la = 0;
 
   auto onExit = finally([=] {
     exitRule();
   });
   try {
+    size_t alt;
     enterOuterAlt(_localctx, 1);
     setState(6491);
     groupingExpression();
     setState(6496);
     _errHandler->sync(this);
-    _la = _input->LA(1);
-    while (_la == MySQLParser::COMMA_SYMBOL) {
-      setState(6492);
-      match(MySQLParser::COMMA_SYMBOL);
-      setState(6493);
-      groupingExpression();
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 822, _ctx);
+    while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
+      if (alt == 1) {
+        setState(6492);
+        match(MySQLParser::COMMA_SYMBOL);
+        setState(6493);
+        groupingExpression(); 
+      }
       setState(6498);
       _errHandler->sync(this);
-      _la = _input->LA(1);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 822, _ctx);
     }
    
   }
@@ -75914,7 +75916,7 @@ MySQLParser::Initializer::Initializer() {
        0x2, 0xc6b, 0xc6c, 0x3, 0x2, 0x2, 0x2, 0xc6c, 0xc6d, 0x7, 0x1b1, 
        0x2, 0x2, 0xc6d, 0xc6e, 0x5, 0x11a, 0x8e, 0x2, 0xc6e, 0x145, 0x3, 
        0x2, 0x2, 0x2, 0xc6f, 0xc70, 0x7, 0x202, 0x2, 0x2, 0xc70, 0xc71, 
-       0x7, 0x1be, 0x2, 0x2, 0xc71, 0xc73, 0x5, 0x2fe, 0x180, 0x2, 0xc72, 
+       0x7, 0x1be, 0x2, 0x2, 0xc71, 0xc73, 0x5, 0x302, 0x182, 0x2, 0xc72, 
        0xc74, 0x5, 0x148, 0xa5, 0x2, 0xc73, 0xc72, 0x3, 0x2, 0x2, 0x2, 0xc73, 
        0xc74, 0x3, 0x2, 0x2, 0x2, 0xc74, 0x147, 0x3, 0x2, 0x2, 0x2, 0xc75, 
        0xc76, 0x7, 0x2ac, 0x2, 0x2, 0xc76, 0xc7b, 0x7, 0x129, 0x2, 0x2, 

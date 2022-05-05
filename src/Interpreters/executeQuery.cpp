@@ -436,7 +436,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_table;
     try
     {
-		String sql_dialect = settings.sql_dialect;
+		const String & sql_dialect = settings.sql_dialect;
 		assert(sql_dialect == "clickhouse" || sql_dialect == "mysql");
  		if (sql_dialect == "mysql")
 		{

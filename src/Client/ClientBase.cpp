@@ -54,6 +54,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 
+#include <Parsers/MySQLCompatibility/Converter.h>
+
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -66,7 +68,6 @@
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
 #include <boost/algorithm/string/replace.hpp>
-
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -290,35 +291,42 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 
     const auto & settings = global_context->getSettingsRef();
     size_t max_length = 0;
+	
+	const String & sql_dialect = settings.sql_dialect;
+	// assert(sql_dialect == "clickhouse" || sql_dialect == "mysql");
+    if (sql_dialect == "mysql")
+	{
+		MySQLCompatibility::Converter converter;
+		converter.toClickHouseAST(pos, res);
+	} else
+	{
+		if (!allow_multi_statements)
+			max_length = settings.max_query_size;
+		
+		if (is_interactive || ignore_error)
+		{
+			String message;
+			res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
-    if (!allow_multi_statements)
-        max_length = settings.max_query_size;
-
-    if (is_interactive || ignore_error)
-    {
-        String message;
-        res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
-
-        if (!res)
-        {
-            std::cerr << std::endl << message << std::endl << std::endl;
-            return nullptr;
-        }
-    }
-    else
-    {
-        res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
-    }
-
-    if (is_interactive)
-    {
-        std::cout << std::endl;
-        WriteBufferFromOStream res_buf(std::cout, 4096);
-        formatAST(*res, res_buf);
-        res_buf.next();
-        std::cout << std::endl << std::endl;
-    }
-
+			if (!res)
+			{
+				std::cerr << std::endl << message << std::endl << std::endl;
+				return nullptr;
+			}
+		}
+		else
+		{
+			res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+		}
+		if (is_interactive)
+		{
+			std::cout << std::endl;
+			WriteBufferFromOStream res_buf(std::cout, 4096);
+			formatAST(*res, res_buf);
+			res_buf.next();
+			std::cout << std::endl << std::endl;
+		}
+	}
     return res;
 }
 

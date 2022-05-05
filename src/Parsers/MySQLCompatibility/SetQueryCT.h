@@ -2,8 +2,6 @@
 
 #include <Parsers/MySQLCompatibility/IConversionTree.h>
 
-// TODO: split into separate files
-
 namespace MySQLCompatibility
 {
 class SetQueryCT : public IConversionTree

@@ -4029,7 +4029,7 @@ public:
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *GROUP_SYMBOL();
     antlr4::tree::TerminalNode *BY_SYMBOL();
-    OrderListContext *orderList();
+    GroupListContext *groupList();
     OlapOptionContext *olapOption();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;

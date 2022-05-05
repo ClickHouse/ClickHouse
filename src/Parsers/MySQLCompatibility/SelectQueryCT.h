@@ -12,22 +12,18 @@ public:
 	virtual bool setup() override;
 	virtual void convert(CHPtr & ch_tree) const override;
 private:
+	bool has_asterisk = false;
 	std::vector<ConvPtr> exprs;
 };
 
 class SelectOrderByCT : public IConversionTree
 {
 public:
-	enum class DIRECTION : uint8_t
-	{
-		ASC,
-		DESC
-	};
 	SelectOrderByCT(MySQLPtr source) : IConversionTree(source) {}
 	virtual bool setup() override;
 	virtual void convert(CHPtr & ch_tree) const override;
 private:
-	std::vector<std::pair<String, DIRECTION> > args;
+	std::vector<std::pair<ConvPtr, MySQLTree::TOKEN_TYPE> > args;
 };
 
 class SelectLimitOffsetCT : public IConversionTree
@@ -65,6 +61,16 @@ private:
 	std::vector<TableAndDB> tables;
 };
 
+class SelectGroupByCT : public IConversionTree
+{
+public:
+	SelectGroupByCT(MySQLPtr source) : IConversionTree(source) {}
+	virtual bool setup() override;
+	virtual void convert(CHPtr & ch_tree) const override;
+private:
+	std::vector<ConvPtr> args;
+};
+
 class SelectQueryCT : public IConversionTree
 {
 public:
@@ -77,9 +83,9 @@ private:
 	ConvPtr limit_length_ct = nullptr;
 	ConvPtr limit_offset_ct = nullptr;
 	ConvPtr tables_ct = nullptr;
-	// bool has_limit = false;
-	// LimitOption limit_arg; // TODO: int is ok?
-	// std::vector<String> tables;
+	ConvPtr where_ct = nullptr;
+	ConvPtr group_by_ct = nullptr;
+	ConvPtr having_ct = nullptr;
 };
 
 }

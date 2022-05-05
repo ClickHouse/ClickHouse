@@ -2,10 +2,10 @@
 
 enum SqlMode
 {
-	NoMode = 0,
-	AnsiQuotes = 1 << 0,
-	HighNotPrecedence = 1 << 1,
-	PipesAsConcat = 1 << 2,
-	IgnoreSpace = 1 << 3,
-	NoBackslashEscapes = 1 << 4
+	NoMode = 0u,
+	AnsiQuotes = 1u << 0,
+	HighNotPrecedence = 1u << 1,
+	PipesAsConcat = 1u << 2,
+	IgnoreSpace = 1u << 3,
+	NoBackslashEscapes = 1u << 4
 };

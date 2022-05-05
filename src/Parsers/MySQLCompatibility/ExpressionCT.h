@@ -4,7 +4,7 @@
 
 namespace MySQLCompatibility
 {
-/*
+
 class ExprLiteralInt64CT : public IConversionTree
 {
 public:
@@ -13,7 +13,65 @@ public:
 	virtual void convert(CHPtr & ch_tree) const override;
 private:
 	int64_t value;
-}*/
+};
+
+class ExprLiteralFloat64CT : public IConversionTree
+{
+public:
+	ExprLiteralFloat64CT(MySQLPtr source) : IConversionTree(source) {}
+	virtual bool setup() override;
+	virtual void convert(CHPtr & ch_tree) const override;
+private:
+	double value;
+};
+
+class ExprLiteralNumericCT : public IConversionTree
+{
+public:
+	ExprLiteralNumericCT(MySQLPtr source) : IConversionTree(source) {}
+	virtual bool setup() override;
+	virtual void convert(CHPtr & ch_tree) const override;
+private:
+	ConvPtr numeric_ct = nullptr;
+};
+
+class ExprLiteralText : public IConversionTree
+{
+public:
+	ExprLiteralText(MySQLPtr source) : IConversionTree(source) {}
+	virtual bool setup() override;
+	virtual void convert(CHPtr & ch_tree) const override;
+private:
+	String value;
+};
+
+class ExprLiteralBoolCT : public IConversionTree
+{
+public:
+	ExprLiteralBoolCT(MySQLPtr source) : IConversionTree(source) {}
+	virtual bool setup() override;
+	virtual void convert(CHPtr & ch_tree) const override;
+private:
+	bool value;
+};
+
+class ExprLiteralNullCT : public IConversionTree
+{
+public:
+	ExprLiteralNullCT(MySQLPtr source) : IConversionTree(source) {}
+	virtual bool setup() override;
+	virtual void convert(CHPtr & ch_tree) const override;
+};
+
+class ExprGenericLiteralCT : public IConversionTree
+{
+public:
+	ExprGenericLiteralCT(MySQLPtr source) : IConversionTree(source) {}
+	virtual bool setup() override;
+	virtual void convert(CHPtr & ch_tree) const override;
+private:
+	ConvPtr literal_ct = nullptr;
+};
 
 class ExprIdentifierCT : public IConversionTree
 {
@@ -25,25 +83,44 @@ private:
 	String value;
 };
 
-class BitExprCT : public IConversionTree
+class ExprSimpleCT : public IConversionTree
 {
 public:
-	enum class OPERATION : uint8_t
-	{
-		PLUS,
-		MINUS,
-		MUL,
-		DIV
-	};
-	BitExprCT(MySQLPtr source) : IConversionTree(source) {}
+	ExprSimpleCT(MySQLPtr source) : IConversionTree(source) {}
 	virtual bool setup() override;
 	virtual void convert(CHPtr & ch_tree) const override;
 private:
-	ConvPtr simple_expr = nullptr;
-	
-	// OPERATION operation;
-	// ConvPtr first_operand = nullptr;
-	// ConvPtr second_operatnd = nullptr;
+	ConvPtr subexpr_ct = nullptr;
+	bool negate = false;
+};
+
+class ExprBitCT : public IConversionTree
+{
+public:
+	ExprBitCT(MySQLPtr source) : IConversionTree(source) {}
+	virtual bool setup() override;
+	virtual void convert(CHPtr & ch_tree) const override;
+private:
+	ConvPtr simple_expr_ct = nullptr;
+
+	MySQLTree::TOKEN_TYPE operation;
+	ConvPtr first_operand_ct = nullptr;
+    ConvPtr second_operand_ct = nullptr;
+};
+
+// TODO: add predicate
+
+class ExprBoolStatementCT : public IConversionTree
+{
+public:
+	ExprBoolStatementCT(MySQLPtr source) : IConversionTree(source) {}
+	virtual bool setup() override;
+	virtual void convert(CHPtr & ch_tree) const override;
+private:
+	ConvPtr predicate_ct = nullptr;
+	MySQLTree::TOKEN_TYPE operation;
+	ConvPtr first_operand_ct = nullptr;
+	ConvPtr second_operand_ct = nullptr;
 };
 
 class ExpressionCT : public IConversionTree
@@ -53,6 +130,11 @@ public:
 	virtual bool setup() override;
 	virtual void convert(CHPtr & ch_tree) const override;
 private:
-	ConvPtr bit_expr = nullptr; // TODO: full grammar
+	ConvPtr subexpr_ct = nullptr;
+	bool not_rule = false;
+
+	MySQLTree::TOKEN_TYPE operation;
+	ConvPtr first_operand_ct = nullptr;
+	ConvPtr second_operand_ct = nullptr;
 };
 }

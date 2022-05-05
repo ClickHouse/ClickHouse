@@ -1,6 +1,11 @@
 #include "MySQLBaseParser.h"
 
-bool MySQLBaseParser::isSqlModeActive(int mode)
+void MySQLBaseParser::setMode(uint32_t mode)
+{
+	sqlMode = mode;
+}
+
+bool MySQLBaseParser::isSqlModeActive(SqlMode mode) const
 {
 	if (!sqlMode)
 		return false;

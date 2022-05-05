@@ -3,6 +3,7 @@
 #include <Parsers/MySQLCompatibility/SelectQueryCT.h>
 #include <Parsers/MySQLCompatibility/ExpressionCT.h>
 
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
@@ -25,6 +26,9 @@ bool SelectItemsListCT::setup()
 			"expr",
 		});
 	
+	if (!select_item_list->terminal_types.empty())
+		has_asterisk = select_item_list->terminal_types[0] == MySQLTree::TOKEN_TYPE::MULT_OPERATOR;
+
 	for (const auto & child : select_item_list->children)
 	{
 		MySQLPtr expr_node = nullptr;
@@ -34,7 +38,7 @@ bool SelectItemsListCT::setup()
 			if (!expr->setup())
 			{
 				expr = nullptr;
-				continue; // TODO: maybe fail?
+				return false;
 			}
 
 			exprs.push_back(std::move(expr));
@@ -47,11 +51,15 @@ bool SelectItemsListCT::setup()
 void SelectItemsListCT::convert(CHPtr & ch_tree) const
 {
 	auto select_item_list = std::make_shared<DB::ASTExpressionList>();
+	if (has_asterisk)
+	{
+		auto asterisk = std::make_shared<DB::ASTAsterisk>();
+		select_item_list->children.push_back(std::move(asterisk));
+	}
 	for (const auto & expr : exprs)
 	{
 		CHPtr expr_node = nullptr;
 		expr->convert(expr_node);
-		// auto identifier = std::make_shared<DB::ASTIdentifier>(c); // TODO: generic exprs here
 		select_item_list->children.push_back(std::move(expr_node));
 	}
 
@@ -66,31 +74,28 @@ bool SelectOrderByCT::setup()
 		return false;
 
 	
-	auto column_path = TreePath::columnPath();
-	auto order_expr_path = TreePath({
-			"orderExpression"	
-		});
-	auto direction_path = TreePath({
-			"direction"
-		});
-
+	auto order_expr_path = TreePath({"orderExpression"});
 	for (const auto & child : order_list->children)
 	{
 		MySQLPtr order_expr = nullptr;
 		if ((order_expr = order_expr_path.evaluate(child)) != nullptr)
 		{
-			MySQLPtr column = nullptr;
-			if ((column = column_path.evaluate(order_expr)) != nullptr && !column->terminals.empty())
+			assert(order_expr->children.size() <= 2);
+			assert(order_expr->children[0]->rule_name == "expr");
+			
+			ConvPtr order_elem_ct = std::make_shared<ExpressionCT>(order_expr->children[0]);
+			if (!order_elem_ct->setup())
 			{
-				args.push_back({column->terminals[0], DIRECTION::ASC});
-				MySQLPtr direction = nullptr;
-				if ((direction = direction_path.evaluate(child)) != nullptr && !direction->terminals.empty())
-				{
-					// TODO: write more pretty condition
-					const String & direction_term = direction->terminals[0];
-					if (direction_term[0] == 'd' || direction_term[0] == 'D')
-						args.back().second = DIRECTION::DESC;
-				}
+				order_elem_ct = nullptr;
+				return false;
+			}
+
+			args.push_back({std::move(order_elem_ct), MySQLTree::TOKEN_TYPE::ASC_SYMBOL});
+
+			if (order_expr->children.size() == 2)
+			{
+				MySQLTree::TOKEN_TYPE direction = order_expr->children[1]->terminal_types[0];
+				args.back().second = direction;
 			}
 		}
 	}
@@ -105,9 +110,10 @@ void SelectOrderByCT::convert(CHPtr & ch_tree) const
 	for (const auto & elem : args)
 	{
 		auto order_node = std::make_shared<DB::ASTOrderByElement>();
-		auto identifier = std::make_shared<DB::ASTIdentifier>(elem.first); // TODO: generic exprs here
-		order_node->direction = (elem.second == DIRECTION::ASC ? 1 : -1);
-		order_node->children.push_back(std::move(identifier));
+		CHPtr expr = nullptr;
+		elem.first->convert(expr);
+		order_node->direction = (elem.second == MySQLTree::TOKEN_TYPE::ASC_SYMBOL ? 1 : -1);
+		order_node->children.push_back(std::move(expr));
 		order_by_list->children.push_back(std::move(order_node));
 	}
 
@@ -248,6 +254,52 @@ void SelectTablesCT::convert(CHPtr & ch_tree) const
 	ch_tree = table_list;
 }
 
+bool SelectGroupByCT::setup()
+{
+	MySQLPtr group_clause = TreePath({
+			"groupByClause"
+		}).evaluate(_source);
+	
+	if (group_clause == nullptr)
+		return false;
+	
+	auto expr_path = TreePath({
+			"groupingExpression",
+			"expr"
+		});
+	
+	for (const auto & child : group_clause->children)
+	{
+		MySQLPtr expr = nullptr;
+		if ((expr = expr_path.evaluate(child)) != nullptr)
+		{
+			ConvPtr group_elem = std::make_shared<ExpressionCT>(expr);
+			if (!group_elem->setup())
+			{
+				group_elem = nullptr;
+				return false;
+			}
+			args.push_back(std::move(group_elem));
+		}
+	}
+
+	return true;
+}
+
+void SelectGroupByCT::convert(CHPtr & ch_tree) const
+{
+	auto expr_list = std::make_shared<DB::ASTExpressionList>();
+
+	for (const auto & expr : args)
+	{
+		CHPtr node = nullptr;
+		expr->convert(node);
+		expr_list->children.push_back(node);
+	}
+
+	ch_tree = expr_list;
+}
+
 bool SelectQueryCT::setup()
 {
 	auto * logger = &Poco::Logger::get("AST");
@@ -286,10 +338,16 @@ bool SelectQueryCT::setup()
 				"fromClause",
 				"tableReferenceList"
 			}).evaluate(query_expr_spec);
-		
-		tables_ct = std::make_shared<SelectTablesCT>(table_list);
-		if (!tables_ct->setup())
-			tables_ct = nullptr;
+
+		if (table_list != nullptr)
+		{
+			tables_ct = std::make_shared<SelectTablesCT>(table_list);
+			if (!tables_ct->setup())
+			{
+				tables_ct = nullptr;
+				return false;
+			}
+		}
 	}
 
 	// ORDER BY
@@ -298,10 +356,16 @@ bool SelectQueryCT::setup()
 				"orderClause",
 				"orderList"
 			}).evaluate(query_expr);
-		
-		order_by_ct = std::make_shared<SelectOrderByCT>(order_list);
-		if (!order_by_ct->setup())
-			order_by_ct = nullptr;
+
+		if (order_list != nullptr)
+		{	
+			order_by_ct = std::make_shared<SelectOrderByCT>(order_list);
+			if (!order_by_ct->setup())
+			{
+				order_by_ct = nullptr;
+				return false;
+			}
+		}
 	}
 
 	// LIMIT
@@ -309,20 +373,76 @@ bool SelectQueryCT::setup()
 		MySQLPtr limit_options = TreePath({
 				"limitClause",
 				"limitOptions"
-			}).evaluate(query_expr);	
+			}).evaluate(query_expr);
 
-		limit_length_ct = std::make_shared<SelectLimitLengthCT>(limit_options);
-		if (!limit_length_ct->setup())
-			limit_length_ct = nullptr;
+		if (limit_options != nullptr)
+		{
+			limit_length_ct = std::make_shared<SelectLimitLengthCT>(limit_options);
+			if (!limit_length_ct->setup())
+			{
+				limit_length_ct = nullptr;
+				return false;
+			}
 
-		limit_offset_ct = std::make_shared<SelectLimitOffsetCT>(limit_options);
-		if (!limit_offset_ct->setup())
+			limit_offset_ct = std::make_shared<SelectLimitOffsetCT>(limit_options);
+			if (!limit_offset_ct->setup())
+			{
 				limit_offset_ct = nullptr;	
+				return false;
+			}
+		}
 	}		
+	
+	// WHERE
+	{
+		MySQLPtr where_clause = TreePath({
+				"whereClause"
+			}).evaluate(query_expr_spec);
 
-	MySQLPtr where_clause = TreePath({
-			"whereClause"
-		}).evaluate(query_expr_spec);
+		if (where_clause != nullptr)
+		{
+			where_ct = std::make_shared<ExpressionCT>(where_clause->children[0]);
+			if (!where_ct->setup())
+			{
+				where_ct = nullptr;
+				return false;
+			}
+		}
+	}
+
+	// ORDER BY
+	{
+		MySQLPtr group_by_clause = TreePath({
+				"groupByClause"
+			}).evaluate(query_expr_spec);
+
+		if (group_by_clause != nullptr)
+		{
+			group_by_ct = std::make_shared<SelectGroupByCT>(group_by_clause);
+			if (!group_by_ct->setup())
+			{
+				group_by_ct = nullptr;
+				return false;
+			}
+		}
+	}
+
+	// HAVING
+	{
+		MySQLPtr having_clause = TreePath({
+				"havingClause"
+			}).evaluate(query_expr_spec);
+
+		if (having_clause != nullptr)
+		{
+			having_ct = std::make_shared<ExpressionCT>(having_clause->children[0]);
+			if (!having_ct->setup())
+			{
+				having_ct = nullptr;
+				return false;
+			}
+		}
+	}
 
 	LOG_DEBUG(logger, "MySQL AST parsing succeded!");
 	
@@ -376,6 +496,29 @@ void SelectQueryCT::convert(CHPtr & ch_tree) const
 			limit_offset_ct->convert(limit_offset);
 			select_node->setExpression(DB::ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
 		}
+	}
+
+	// WHERE
+	if (where_ct != nullptr) 
+	{
+		CHPtr where_node = nullptr;
+		where_ct->convert(where_node);
+		select_node->setExpression(DB::ASTSelectQuery::Expression::WHERE, std::move(where_node));
+	}
+
+	// ORDER BY
+	if (group_by_ct != nullptr) 
+	{
+		CHPtr group_by_node = nullptr;
+		group_by_ct->convert(group_by_node);
+		select_node->setExpression(DB::ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_node));
+	}
+
+	if (having_ct != nullptr)
+	{
+		CHPtr having_node = nullptr;
+		having_ct->convert(having_node);
+		select_node->setExpression(DB::ASTSelectQuery::Expression::HAVING, std::move(having_node));
 	}
 	
 	select_list->children.push_back(std::move(select_node));

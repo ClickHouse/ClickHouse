@@ -16,6 +16,5 @@ class IConversionTree;
 using ConvPtr = std::shared_ptr<IConversionTree>;
 using MySQLTree = MySQLParserOverlay::AST;
 using MySQLPtr = MySQLParserOverlay::ASTPtr;
-
 using CHPtr = DB::ASTPtr;
 }

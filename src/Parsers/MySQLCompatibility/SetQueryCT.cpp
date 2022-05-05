@@ -1,3 +1,4 @@
+#include <Parsers/MySQLCompatibility/util.h>
 #include <Parsers/MySQLCompatibility/SetQueryCT.h>
 #include <Parsers/MySQLCompatibility/TreePath.h>
 
@@ -18,7 +19,7 @@ bool SetQueryCT::setup()
 	if (key_node == nullptr)
 		return false;
 	
-	std::string key = key_node->terminals[0];
+	const String & key = key_node->terminals[0];
 	
 	MySQLPtr value_node = TreePath({
 			"setExprOrDefault",
@@ -28,7 +29,7 @@ bool SetQueryCT::setup()
 	if (value_node == nullptr)
 		return false;
 	
-	std::string value = value_node->terminals[0];
+	String value = removeQuotes(value_node->terminals[0]);
 
 	_key_value_list.push_back({key, value});
 

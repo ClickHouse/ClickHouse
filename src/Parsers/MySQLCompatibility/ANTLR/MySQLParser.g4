@@ -1117,7 +1117,7 @@ commonTableExpression:
 ;
 
 groupByClause:
-    GROUP_SYMBOL BY_SYMBOL orderList olapOption?
+    GROUP_SYMBOL BY_SYMBOL groupList olapOption?
 ;
 
 olapOption:
