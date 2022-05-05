@@ -19,7 +19,6 @@ Checks: '*,
     -bugprone-not-null-terminated-result,
     -bugprone-signal-handler,
     -bugprone-spuriously-wake-up-functions,
-    -bugprone-suspicious-semicolon,
     -bugprone-unhandled-exception-at-new,
     -bugprone-unhandled-self-assignment,
 
