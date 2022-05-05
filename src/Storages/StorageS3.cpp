@@ -1018,7 +1018,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         if (args.storage_def->partition_by)
             partition_by = args.storage_def->partition_by->clone();
 
-        return StorageS3::create(
+        return std::make_shared<StorageS3>(
             s3_uri,
             configuration.auth_settings.access_key_id,
             configuration.auth_settings.secret_access_key,

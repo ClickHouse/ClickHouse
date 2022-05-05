@@ -8,6 +8,11 @@
 
 namespace Poco { class Logger; }
 
+namespace CurrentMetrics
+{
+extern const Metric CacheFileSegments;
+}
+
 namespace DB
 {
 
@@ -67,6 +72,8 @@ public:
     FileSegment(
         size_t offset_, size_t size_, const Key & key_,
         IFileCache * cache_, State download_state_);
+
+    ~FileSegment();
 
     State state() const;
 
@@ -157,12 +164,14 @@ private:
     size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
     bool hasFinalizedState() const;
-    bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return detached; }
-    [[noreturn]] static void throwDetached();
 
+    bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return detached; }
+    void markAsDetached(std::lock_guard<std::mutex> & segment_lock);
+
+    void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
+    void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;
+    [[noreturn]] static void throwDetached();
 
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
@@ -229,6 +238,8 @@ private:
     std::atomic<bool> is_downloaded{false};
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 
 struct FileSegmentsHolder : private boost::noncopyable

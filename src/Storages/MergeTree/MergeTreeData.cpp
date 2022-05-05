@@ -5523,8 +5523,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
 
-    // If minmax_count_projection is a valid candidate, check its completeness.
-    if (minmax_count_projection_candidate)
+    auto prepare_min_max_count_projection = [&]()
     {
         DataPartsVector normal_parts;
         query_info.minmax_count_projection_block = getMinMaxCountProjectionBlock(
@@ -5537,7 +5536,11 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             max_added_blocks.get(),
             query_context);
 
-        if (query_info.minmax_count_projection_block && minmax_count_projection_candidate->prewhere_info)
+        // minmax_count_projection should not be used when there is no data to process.
+        if (!query_info.minmax_count_projection_block)
+            return;
+
+        if (minmax_count_projection_candidate->prewhere_info)
         {
             const auto & prewhere_info = minmax_count_projection_candidate->prewhere_info;
             if (prewhere_info->alias_actions)
@@ -5562,42 +5565,35 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             selected_candidate->complete = true;
             min_sum_marks = query_info.minmax_count_projection_block.rows();
         }
-        else
+        else if (normal_parts.size() < parts.size())
         {
-            if (normal_parts.size() == parts.size())
-            {
-                // minmax_count_projection is useless.
-            }
-            else
-            {
-                auto normal_result_ptr = reader.estimateNumMarksToRead(
-                    normal_parts,
-                    analysis_result.required_columns,
-                    metadata_snapshot,
-                    metadata_snapshot,
-                    query_info,
-                    query_context,
-                    settings.max_threads,
-                    max_added_blocks);
+            auto normal_result_ptr = reader.estimateNumMarksToRead(
+                normal_parts,
+                analysis_result.required_columns,
+                metadata_snapshot,
+                metadata_snapshot,
+                query_info,
+                query_context,
+                settings.max_threads,
+                max_added_blocks);
 
-                if (!normal_result_ptr->error())
-                {
-                    selected_candidate = &*minmax_count_projection_candidate;
-                    selected_candidate->merge_tree_normal_select_result_ptr = normal_result_ptr;
-                    min_sum_marks = query_info.minmax_count_projection_block.rows() + normal_result_ptr->marks();
-                }
+            if (!normal_result_ptr->error())
+            {
+                selected_candidate = &*minmax_count_projection_candidate;
+                selected_candidate->merge_tree_normal_select_result_ptr = normal_result_ptr;
+                min_sum_marks = query_info.minmax_count_projection_block.rows() + normal_result_ptr->marks();
             }
-
-            // We cannot find a complete match of minmax_count_projection, add more projections to check.
-            for (const auto & projection : metadata_snapshot->projections)
-                add_projection_candidate(projection);
         }
-    }
-    else
-    {
+    };
+
+    // If minmax_count_projection is a valid candidate, prepare it and check its completeness.
+    if (minmax_count_projection_candidate)
+        prepare_min_max_count_projection();
+
+    // We cannot find a complete match of minmax_count_projection, add more projections to check.
+    if (!selected_candidate || !selected_candidate->complete)
         for (const auto & projection : metadata_snapshot->projections)
             add_projection_candidate(projection);
-    }
 
     // Let's select the best projection to execute the query.
     if (!candidates.empty())
@@ -6185,7 +6181,7 @@ bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
     if (moving_tagger->parts_to_move.empty())
         return false;
 
-    assignee.scheduleMoveTask(ExecutableLambdaAdapter::create(
+    assignee.scheduleMoveTask(std::make_shared<ExecutableLambdaAdapter>(
         [this, moving_tagger] () mutable
         {
             return moveParts(moving_tagger);
