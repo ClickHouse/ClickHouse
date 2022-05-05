@@ -1,6 +1,6 @@
 ---
-toc_priority: 34
-toc_title: SummingMergeTree
+sidebar_position: 50
+sidebar_label:  SummingMergeTree
 ---
 
 # SummingMergeTree {#summingmergetree}
@@ -41,8 +41,9 @@ When creating a `SummingMergeTree` table the same [clauses](../../../engines/tab
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-!!! attention "Attention"
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+:::warning
+Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+:::
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

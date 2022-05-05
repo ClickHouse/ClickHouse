@@ -1,11 +1,13 @@
 ---
-toc_priority: 56
-toc_title: JSON
+sidebar_position: 56
+sidebar_label: JSON
 ---
 
 # Functions for Working with JSON {#functions-for-working-with-json}
 
-ClickHouse has special functions for working with this JSON. The `visitParam` functions make strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done. The following assumptions are made:
+ClickHouse has special functions for working with this JSON. All the JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
+
+The following assumptions are made:
 
 1.  The field name (function argument) must be a constant.
 2.  The field name is somehow canonically encoded in JSON. For example: `visitParamHas('{"abc":"def"}', 'abc') = 1`, but `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
@@ -357,8 +359,9 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
 SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 ```
 
-!!! note "Note"
-    before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
+:::note    
+Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
+:::
 
 ## JSON_QUERY(json, path) {#json-query}
 
@@ -383,8 +386,9 @@ Result:
 [2]
 String
 ```
-!!! note "Note"
-    before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, json)
+:::note    
+Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, json)
+:::
 
 ## JSON_VALUE(json, path) {#json-value}
 
@@ -404,14 +408,15 @@ SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
 Result:
 
 ``` text
-"world"
+world
 0
 2
 String
 ```
 
-!!! note "Note"
-    before version 21.11 the order of arguments was wrong, i.e. JSON_VALUE(path, json)
+:::note    
+Before version 21.11 the order of arguments was wrong, i.e. JSON_VALUE(path, json)
+:::
 
 ## toJSONString {#tojsonstring}
 

@@ -20,7 +20,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <filesystem>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -160,7 +160,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     /// clickhouse-local creates DatabaseMemory as default database by itself
     /// For clickhouse-server we need create default database
     bool create_default_db_if_not_exists = !default_database_name.empty();
-    bool metadata_dir_for_default_db_already_exists = databases.count(default_database_name);
+    bool metadata_dir_for_default_db_already_exists = databases.contains(default_database_name);
     if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
         databases.emplace(default_database_name, std::filesystem::path(path) / escapeForFileName(default_database_name));
 
