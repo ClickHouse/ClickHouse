@@ -51,16 +51,14 @@ public:
     int setCertificate(SSL * ssl);
 
 private:
-    CertificateReloader()
-    {
-    }
+    CertificateReloader() = default;
 
     Poco::Logger * log = &Poco::Logger::get("CertificateReloader");
 
     struct File
     {
         const char * description;
-        File(const char * description_) : description(description_) {}
+        explicit File(const char * description_) : description(description_) {}
 
         std::string path;
         std::filesystem::file_time_type modification_time;
@@ -76,7 +74,7 @@ private:
         Poco::Crypto::X509Certificate cert;
         Poco::Crypto::EVPPKey key;
 
-        Data(std::string cert_path, std::string key_path);
+        Data(std::string cert_path, std::string key_path, std::string pass_phrase);
     };
 
     MultiVersion<Data> data;
