@@ -25,7 +25,7 @@ void SharedLibraryHandlerFactory::create(
 {
     std::lock_guard lock(mutex);
     if (!library_handlers.contains(dictionary_id))
-        library_handlers.emplace(std::make_pair(dictionary_id, std::make_shared<SharedLibraryHandler>(library_path, library_settings, sample_block, attributes_names)));
+        library_handlers.emplace(std::pair(dictionary_id, std::make_shared<SharedLibraryHandler>(library_path, library_settings, sample_block, attributes_names)));
     else
         LOG_WARNING(&Poco::Logger::get("SharedLibraryHandlerFactory"), "Library handler with dictionary id {} already exists", dictionary_id);
 }

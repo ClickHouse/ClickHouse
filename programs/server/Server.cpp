@@ -1004,8 +1004,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     static const auto interserver_tags =
     {
-        std::make_tuple("interserver_http_host", "interserver_http_port", "http"),
-        std::make_tuple("interserver_https_host", "interserver_https_port", "https")
+        std::tuple("interserver_http_host", "interserver_http_port", "http"),
+        std::tuple("interserver_https_host", "interserver_https_port", "https")
     };
 
     for (auto [host_tag, port_tag, scheme] : interserver_tags)

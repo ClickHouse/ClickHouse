@@ -129,7 +129,7 @@ public:
         std::lock_guard lock(mutex);
 
         if (!factory.count(connection_string))
-            factory.emplace(std::make_pair(connection_string, std::make_shared<nanodbc::Pool>(pool_size)));
+            factory.emplace(std::pair(connection_string, std::make_shared<nanodbc::Pool>(pool_size)));
 
         auto & pool = factory[connection_string];
 
