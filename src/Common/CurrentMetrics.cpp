@@ -89,6 +89,9 @@
     M(KafkaConsumersInUse, "Number of consumers which are currently used by direct or background reads") \
     M(KafkaWrites, "Number of currently running inserts to Kafka") \
     M(KafkaAssignedPartitions, "Number of partitions Kafka tables currently assigned to") \
+    M(FilesystemCacheReadBuffers, "Number of active cache buffers") \
+    M(CacheFileSegments, "Number of existing cache file segments") \
+    M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
 
 namespace CurrentMetrics
 {

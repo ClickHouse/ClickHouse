@@ -723,6 +723,20 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     initMisc();
 }
 
+std::vector<Strings> Cluster::getHostIDs() const
+{
+    std::vector<Strings> host_ids;
+    host_ids.resize(addresses_with_failover.size());
+    for (size_t i = 0; i != addresses_with_failover.size(); ++i)
+    {
+        const auto & addresses = addresses_with_failover[i];
+        host_ids[i].resize(addresses.size());
+        for (size_t j = 0; j != addresses.size(); ++j)
+            host_ids[i][j] = addresses[j].toString();
+    }
+    return host_ids;
+}
+
 const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const
 {
     if (!has_internal_replication)
