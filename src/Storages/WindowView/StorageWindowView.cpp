@@ -1354,6 +1354,18 @@ void StorageWindowView::writeIntoWindowView(
     auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr();
     auto output = inner_storage->write(window_view.getMergeableQuery(), metadata_snapshot, local_context);
 
+    auto actions_dag = ActionsDAG::makeConvertingActions(
+        builder.getHeader().getColumnsWithTypeAndName(),
+        output->getHeader().getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Position);
+    auto actions
+        = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+
+    builder.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<ExpressionTransform>(header, actions);
+    });
+
     builder.addChain(Chain(std::move(output)));
     builder.setSinks([&](const Block & cur_header, Pipe::StreamType)
     {
