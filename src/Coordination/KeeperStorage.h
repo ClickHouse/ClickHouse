@@ -112,6 +112,37 @@ public:
     /// container.
     Container container;
 
+    struct CurrentNode
+    {
+        CurrentNode(int64_t zxid_, Coordination::Stat stat_, String data_, int32_t seq_num_)
+            : zxid(zxid_)
+            , stat(stat_)
+            , seq_num(seq_num_)
+            , data(std::move(data_))
+        {}
+
+        int64_t zxid;
+        Coordination::Stat stat{};
+        int32_t seq_num{0};
+        String data;
+    };
+
+    using CurrentNodePtr = std::shared_ptr<CurrentNode>;
+
+    struct CurrentNodes
+    {
+        explicit CurrentNodes(KeeperStorage & storage_) : storage(storage_) {}
+
+        CurrentNodePtr getNode(const std::string & path);
+        bool hasNode(const std::string & path) const;
+        void insertNode(const std::string & path, const CurrentNodePtr & new_node);
+
+        std::unordered_map<std::string, std::shared_ptr<CurrentNode>> updated_nodes;
+        KeeperStorage & storage;
+    };
+
+    CurrentNodes current_nodes{*this};
+
     /// Mapping session_id -> set of ephemeral nodes paths
     Ephemerals ephemerals;
     /// Mapping session_id -> set of watched nodes paths
@@ -127,6 +158,7 @@ public:
     /// Global id of all requests applied to storage
     int64_t zxid{0};
     bool finalized{false};
+    int64_t last_committed_zxid{0};
 
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;
@@ -163,6 +195,7 @@ public:
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
     ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, std::optional<int64_t> new_last_zxid, bool check_acl = true);
+    std::optional<int64_t> preprocessRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, int64_t new_last_zxid);
 
     void finalize();
 
