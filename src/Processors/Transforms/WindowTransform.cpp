@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
-#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -1674,16 +1673,67 @@ struct RecurrentWindowFunction : public WindowFunction
     }
 };
 
-struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFunction<1>
+template<typename State>
+struct StatefulWindowFunction : public WindowFunction
+{
+    StatefulWindowFunction(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {
+    }
+
+    size_t sizeOfData() const override { return sizeof(State); }
+    size_t alignOfData() const override { return 1; }
+
+    void create(AggregateDataPtr __restrict place) const override
+    {
+        auto * const state = static_cast<State *>(static_cast<void *>(place));
+        *state = State();
+    }
+
+    virtual void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        auto * const state = static_cast<State *>(static_cast<void *>(place));
+        state->~State();
+    }
+
+    State & getState(const WindowFunctionWorkspace & workspace)
+    {
+        return *static_cast<State *>(static_cast<void *>(workspace.aggregate_function_state.data()));
+    }
+};
+
+struct ExponentialTimeDecayedSumState
+{
+    RowNumber previous_frame_start;
+    RowNumber previous_frame_end;
+    Float64 previous_time;
+    Float64 previous_sum;
+};
+
+struct ExponentialTimeDecayedWindowSumFunction : public StatefulWindowFunction<ExponentialTimeDecayedSumState>
+{
+    ExponentialTimeDecayedWindowSumFunction(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : StatefulWindowFunction<ExponentialTimeDecayedSumState>(name_, argument_types_, parameters_)
+    {
+    }
+
+    template<typename T>
+    static void setValueToOutputColumn(const WindowTransform * transform, size_t function_index, T value)
+    {
+        recurrent_detail::setValueToOutputColumn<T>(transform, function_index, value);
+    }
+};
+
+struct WindowFunctionExponentialTimeDecayedSum final : public ExponentialTimeDecayedWindowSumFunction
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
 
-    static constexpr size_t STATE_SUM = 0;
-
     WindowFunctionExponentialTimeDecayedSum(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
-        : RecurrentWindowFunction(name_, argument_types_, parameters_)
+        : ExponentialTimeDecayedWindowSumFunction(name_, argument_types_, parameters_)
     {
         if (parameters_.size() != 1)
         {
@@ -1722,26 +1772,58 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    static Float64 getValue(
+        const WindowTransform * transform, size_t function_index,
+        size_t column_index, RowNumber row)
+    {
+        const auto & workspace = transform->workspaces[function_index];
+        const auto & column = transform->blockAt(row.block).input_columns[workspace.argument_column_indices[column_index]];
+        return column->getFloat64(row.row);
+    }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        //const auto & workspace = transform->workspaces[function_index];
+        const auto & workspace = transform->workspaces[function_index];
+        auto & state = getState(workspace);
 
-        LOG_WARNING(&Poco::Logger::get("windowInsertResultInto"), "{}:{} - {}:{}",
-            transform->frame_start.block, transform->frame_start.row,
-            transform->frame_end.block, transform->frame_end.row);
+        Float64 result = 0;
+        Float64 curr_t = getValue(transform, function_index, ARGUMENT_TIME, transform->current_row);
 
-        Float64 last_sum = getLastValueFromState<Float64>(transform, function_index, STATE_SUM);
-        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
+        if (state.previous_frame_start <= transform->frame_start
+            && transform->frame_start < state.previous_frame_end
+            && state.previous_frame_end <= transform->frame_end)
+        {
+            for (RowNumber i = state.previous_frame_start; i < transform->frame_start; transform->advanceRowNumber(i))
+            {
+                Float64 prev_val = getValue(transform, function_index, ARGUMENT_VALUE, i);
+                Float64 prev_t = getValue(transform, function_index, ARGUMENT_TIME, i);
+                result -= exp((prev_t - curr_t) / decay_length) * prev_val;
+            }
+            result += exp((state.previous_time - curr_t) / decay_length) * state.previous_sum;
+            for (RowNumber i = state.previous_frame_end; i < transform->frame_end; transform->advanceRowNumber(i))
+            {
+                Float64 prev_val = getValue(transform, function_index, ARGUMENT_VALUE, i);
+                Float64 prev_t = getValue(transform, function_index, ARGUMENT_TIME, i);
+                result += exp((prev_t - curr_t) / decay_length) * prev_val;
+            }
+        }
+        else
+        {
+            for (RowNumber i = transform->frame_start; i < transform->frame_end; transform->advanceRowNumber(i))
+            {
+                Float64 prev_val = getValue(transform, function_index, ARGUMENT_VALUE, i);
+                Float64 prev_t = getValue(transform, function_index, ARGUMENT_TIME, i);
+                result += exp((prev_t - curr_t) / decay_length) * prev_val;
+            }
+        }
 
-        Float64 x = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_VALUE);
-        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
-
-        Float64 c = exp((last_t - t) / decay_length);
-        Float64 result = x + c * last_sum;
+        state.previous_sum = result;
+        state.previous_time = curr_t;
+        state.previous_frame_start = transform->frame_start;
+        state.previous_frame_end = transform->frame_end;
 
         setValueToOutputColumn(transform, function_index, result);
-        setValueToState(transform, function_index, result, STATE_SUM);
     }
 
     private:
