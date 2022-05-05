@@ -1086,7 +1086,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         expressions.need_aggregate &&
         options.to_stage > QueryProcessingStage::WithMergeableState &&
         !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
-    
+
     bool use_grouping_set_key = expressions.use_grouping_set_key;
 
     if (query.group_by_with_grouping_sets && query.group_by_with_totals)
