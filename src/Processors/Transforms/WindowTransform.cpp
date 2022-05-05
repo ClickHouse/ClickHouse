@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -1724,6 +1725,12 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
+        //const auto & workspace = transform->workspaces[function_index];
+
+        LOG_WARNING(&Poco::Logger::get("windowInsertResultInto"), "{}:{} - {}:{}",
+            transform->frame_start.block, transform->frame_start.row,
+            transform->frame_end.block, transform->frame_end.row);
+
         Float64 last_sum = getLastValueFromState<Float64>(transform, function_index, STATE_SUM);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
