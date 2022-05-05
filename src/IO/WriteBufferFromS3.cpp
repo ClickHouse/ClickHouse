@@ -20,7 +20,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3WriteBytes;
+    extern const Event WriteBufferFromS3Bytes;
     extern const Event RemoteFSCacheDownloadBytes;
 }
 
@@ -121,7 +121,7 @@ void WriteBufferFromS3::nextImpl()
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
 
     last_part_size += offset();
 
