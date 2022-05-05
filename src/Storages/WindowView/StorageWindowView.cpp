@@ -443,9 +443,9 @@ bool StorageWindowView::optimize(
     const Names & deduplicate_by_columns,
     ContextPtr local_context)
 {
-    auto storage_ptr = getInnerStorage();
+    auto storage_ptr = getInnerTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return getInnerStorage()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
+    return getInnerTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
 }
 
 std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
@@ -455,7 +455,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     InterpreterSelectQuery fetch(
         getFetchColumnQuery(w_start, watermark),
         window_view_context,
-        getInnerStorage(),
+        getInnerTable(),
         nullptr,
         SelectQueryOptions(QueryProcessingStage::FetchColumns));
 
@@ -490,7 +490,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     auto creator = [&](const StorageID & blocks_id_global)
     {
-        auto parent_table_metadata = getParentStorage()->getInMemoryMetadataPtr();
+        auto parent_table_metadata = getParentTable()->getInMemoryMetadataPtr();
         auto required_columns = parent_table_metadata->getColumns();
         required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
         return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::WithMergeableState);
@@ -561,7 +561,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
     }
     if (!target_table_id.empty())
     {
-        StoragePtr target_table = getTargetStorage();
+        StoragePtr target_table = getTargetTable();
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = target_table->getStorageID();
         InterpreterInsertQuery interpreter(insert, getContext());
@@ -604,7 +604,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
 
     auto t_sample_block
         = InterpreterSelectQuery(
-            inner_select_query, window_view_context, getParentStorage(), nullptr,
+            inner_select_query, window_view_context, getParentTable(), nullptr,
             SelectQueryOptions(QueryProcessingStage::WithMergeableState)) .getSampleBlock();
 
     auto columns_list = std::make_shared<ASTExpressionList>();
@@ -1056,8 +1056,8 @@ StorageWindowView::StorageWindowView(
         InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
-        inner_storage = DatabaseCatalog::instance().getTable(StorageID(inner_create_query->getDatabase(), inner_create_query->getTable()), getContext());
-        inner_table_id = inner_storage->getStorageID();
+        inner_table = DatabaseCatalog::instance().getTable(StorageID(inner_create_query->getDatabase(), inner_create_query->getTable()), getContext());
+        inner_table_id = inner_table->getStorageID();
     }
 
     clean_interval_ms = getContext()->getSettingsRef().window_view_clean_interval.totalMilliseconds();
@@ -1262,7 +1262,7 @@ void StorageWindowView::writeIntoWindowView(
 
     auto creator = [&](const StorageID & blocks_id_global)
     {
-        auto parent_metadata = window_view.getParentStorage()->getInMemoryMetadataPtr();
+        auto parent_metadata = window_view.getParentTable()->getInMemoryMetadataPtr();
         auto required_columns = parent_metadata->getColumns();
         required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
         return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::FetchColumns);
@@ -1319,11 +1319,12 @@ void StorageWindowView::writeIntoWindowView(
         });
     }
 
-    auto inner_storage = window_view.getInnerStorage();
-    auto lock = inner_storage->lockForShare(
+    auto inner_table = window_view.getInnerTable();
+    auto lock = inner_table->lockForShare(
         local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
-    auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr();
-    auto output = inner_storage->write(window_view.getMergeableQuery(), metadata_snapshot, local_context);
+    auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
+    auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context);
+    output->addTableLock(lock);
 
     builder.addChain(Chain(std::move(output)));
     builder.setSinks([&](const Block & cur_header, Pipe::StreamType)
@@ -1356,7 +1357,7 @@ void StorageWindowView::shutdown()
 
     auto table_id = getStorageID();
     DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
-    inner_storage.reset();
+    inner_table.reset();
 }
 
 void StorageWindowView::checkTableCanBeDropped() const
@@ -1399,7 +1400,7 @@ Block & StorageWindowView::getHeader() const
     if (!sample_block)
     {
         sample_block = InterpreterSelectQuery(
-            select_query->clone(), window_view_context, getParentStorage(), nullptr,
+            select_query->clone(), window_view_context, getParentTable(), nullptr,
             SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
         /// convert all columns to full columns
         /// in case some of them are constant
@@ -1411,18 +1412,18 @@ Block & StorageWindowView::getHeader() const
     return sample_block;
 }
 
-StoragePtr StorageWindowView::getParentStorage() const
+StoragePtr StorageWindowView::getParentTable() const
 {
-    if (!parent_storage)
-        parent_storage = DatabaseCatalog::instance().getTable(select_table_id, getContext());
-    return parent_storage;
+    if (!parent_table)
+        parent_table = DatabaseCatalog::instance().getTable(select_table_id, getContext());
+    return parent_table;
 }
 
-StoragePtr StorageWindowView::getInnerStorage() const
+StoragePtr StorageWindowView::getInnerTable() const
 {
-    if (!inner_storage)
-        inner_storage = DatabaseCatalog::instance().getTable(inner_table_id, getContext());
-    return inner_storage;
+    if (!inner_table)
+        inner_table = DatabaseCatalog::instance().getTable(inner_table_id, getContext());
+    return inner_table;
 }
 
 ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const
@@ -1470,11 +1471,11 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
     return res_query;
 }
 
-StoragePtr StorageWindowView::getTargetStorage() const
+StoragePtr StorageWindowView::getTargetTable() const
 {
-    if (!target_storage && !target_table_id.empty())
-        target_storage = DatabaseCatalog::instance().getTable(target_table_id, getContext());
-    return target_storage;
+    if (!target_table&& !target_table_id.empty())
+        target_table = DatabaseCatalog::instance().getTable(target_table_id, getContext());
+    return target_table;
 }
 
 void registerStorageWindowView(StorageFactory & factory)
