@@ -258,23 +258,46 @@ namespace
         });
     }
 
-    bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings, ASTPtr & base_backup_name)
+    bool parseClusterHostIDs(IParser::Pos & pos, Expected & expected, ASTPtr & cluster_host_ids)
+    {
+        return ParserArray{}.parse(pos, cluster_host_ids, expected);
+    }
+
+    bool parseClusterHostIDsSetting(IParser::Pos & pos, Expected & expected, ASTPtr & cluster_host_ids)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"cluster_host_ids"}.ignore(pos, expected)
+                && ParserToken(TokenType::Equals).ignore(pos, expected)
+                && parseClusterHostIDs(pos, expected, cluster_host_ids);
+        });
+    }
+
+    bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings, ASTPtr & base_backup_name, ASTPtr & cluster_host_ids)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
                 return false;
 
-            ASTPtr res_settings;
+            SettingsChanges settings_changes;
             ASTPtr res_base_backup_name;
+            ASTPtr res_cluster_host_ids;
 
             auto parse_setting = [&]
             {
-                if (!res_settings && ParserSetQuery{true}.parse(pos, res_settings, expected))
-                    return true;
-
                 if (!res_base_backup_name && parseBaseBackupSetting(pos, expected, res_base_backup_name))
                     return true;
+
+                if (!res_cluster_host_ids && parseClusterHostIDsSetting(pos, expected, res_cluster_host_ids))
+                    return true;
+
+                SettingChange setting;
+                if (ParserSetQuery::parseNameValuePair(setting, pos, expected))
+                {
+                    settings_changes.push_back(std::move(setting));
+                    return true;
+                }
 
                 return false;
             };
@@ -282,8 +305,18 @@ namespace
             if (!ParserList::parseUtil(pos, expected, parse_setting, false))
                 return false;
 
+            ASTPtr res_settings;
+            if (!settings_changes.empty())
+            {
+                auto settings_changes_ast = std::make_shared<ASTSetQuery>();
+                settings_changes_ast->changes = std::move(settings_changes);
+                settings_changes_ast->is_standalone = false;
+                res_settings = settings_changes_ast;
+            }
+
             settings = std::move(res_settings);
             base_backup_name = std::move(res_base_backup_name);
+            cluster_host_ids = std::move(res_cluster_host_ids);
             return true;
         });
     }
@@ -350,7 +383,8 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ASTPtr settings;
     ASTPtr base_backup_name;
-    parseSettings(pos, expected, settings, base_backup_name);
+    ASTPtr cluster_host_ids;
+    parseSettings(pos, expected, settings, base_backup_name, cluster_host_ids);
     parseSyncOrAsync(pos, expected, settings);
 
     auto query = std::make_shared<ASTBackupQuery>();
@@ -358,10 +392,11 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->kind = kind;
     query->elements = std::move(elements);
-    query->backup_name = std::move(backup_name);
-    query->base_backup_name = std::move(base_backup_name);
-    query->settings = std::move(settings);
     query->cluster = std::move(cluster);
+    query->backup_name = std::move(backup_name);
+    query->settings = std::move(settings);
+    query->base_backup_name = std::move(base_backup_name);
+    query->cluster_host_ids = std::move(cluster_host_ids);
 
     return true;
 }
