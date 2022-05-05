@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTBackupQuery.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -19,6 +20,6 @@ using ContextPtr = std::shared_ptr<const Context>;
 BackupEntries makeBackupEntries(const ContextPtr & context, const ASTBackupQuery::Elements & elements, const BackupSettings & backup_settings);
 
 /// Write backup entries to an opened backup.
-void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, size_t num_threads);
+void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool);
 
 }
