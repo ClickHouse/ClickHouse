@@ -60,9 +60,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
 
-#include <Poco/Logger.h>
-#include <base/logger_useful.h>
-
 namespace DB
 {
 
