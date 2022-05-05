@@ -349,7 +349,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
 
     auto num_streams = left->getNumStreams();
 
-    if (join->supportParallelJoin())
+    if (join->supportParallelJoin() && !right->hasTotals())
     {
         if (!keep_left_read_in_order)
         {
@@ -357,23 +357,20 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
             num_streams = max_streams;
         }
 
-        if (!right->hasTotals())
+        right->resize(max_streams);
+        auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
-            right->resize(max_streams);
-            auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
+            Processors processors;
+            for (auto & outport : outports)
             {
-                Processors processors;
-                for (auto & outport : outports)
-                {
-                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
-                    connect(*outport, adding_joined->getInputs().front());
-                    processors.emplace_back(adding_joined);
-                }
-                return processors;
-            };
-            right->transform(concurrent_right_filling_transform);
-            right->resize(1);
-        }
+                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+                connect(*outport, adding_joined->getInputs().front());
+                processors.emplace_back(adding_joined);
+            }
+            return processors;
+        };
+        right->transform(concurrent_right_filling_transform);
+        right->resize(1);
     }
     else
     {
