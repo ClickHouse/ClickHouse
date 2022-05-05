@@ -33,9 +33,6 @@ Checks: '*,
     -cert-oop57-cpp,
     -cert-oop58-cpp,
 
-    -clang-analyzer-core.DynamicTypePropagation,
-    -clang-analyzer-core.uninitialized.CapturedBlockVariable,
-
     -clang-analyzer-optin.performance.Padding,
     -clang-analyzer-optin.portability.UnixAPI,
 
