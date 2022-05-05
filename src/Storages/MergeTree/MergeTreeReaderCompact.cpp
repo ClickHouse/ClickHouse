@@ -91,8 +91,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 [this, path]()
                 {
                     return data_part->data_part_storage->readFile(
-                        path, 
-                        settings.read_settings, 
+                        path,
+                        settings.read_settings,
                         std::nullopt, std::nullopt);
                 },
                 uncompressed_cache,
