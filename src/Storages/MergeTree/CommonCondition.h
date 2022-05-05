@@ -35,7 +35,7 @@ private:
     struct ANNExpression {
         Target target;
         float distance;     
-        String meteic_name; // Metric name, maybe some Enum for all indices
+        String metric_name; // Metric name, maybe some Enum for all indices
         String column_name; // Coloumn name stored in IndexGranule
     };
 
