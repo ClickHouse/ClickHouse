@@ -128,6 +128,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_READ_METHOD;
+    extern const int UNKNOWN_USER;
 }
 
 
@@ -719,6 +720,9 @@ void Context::setUser(const UUID & user_id_)
         user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
 
     auto user = access->getUser();
+    if (!user)
+        throw Exception(ErrorCodes::UNKNOWN_USER, "User has been dropped");
+
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
     auto default_profile_info = access->getDefaultProfileInfo();
@@ -765,6 +769,9 @@ void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
 void Context::setCurrentRolesDefault()
 {
     auto user = getUser();
+    if (!user)
+        throw Exception(ErrorCodes::UNKNOWN_USER, "User has been dropped");
+
     setCurrentRoles(user->granted_roles.findGranted(user->default_roles));
 }
 
