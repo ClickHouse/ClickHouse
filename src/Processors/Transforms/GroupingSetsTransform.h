@@ -6,6 +6,13 @@
 namespace DB
 {
 
+/*
+ * This transform is used as the last step of aggregation with GROUPING SETS modifier.
+ * The main purpose is to add a '__grouping_set' column which stores information
+ * about grouping keys set used to generate rows.
+ * '__grouping_set' column is required during MergeAggregated step to distinguish
+ * generated on different shards rows.
+*/
 class GroupingSetsTransform : public ISimpleTransform
 {
 public:
