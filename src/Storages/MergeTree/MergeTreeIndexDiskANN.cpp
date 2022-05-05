@@ -214,12 +214,12 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorDiskANN::getGranuleAndReset()
     auto base_index = detail::constructIndexFromDatapoints(dimensions.value(), accumulated_data);
 
     diskann::Parameters paras;
-    paras.Set<unsigned>("R", 100);
-    paras.Set<unsigned>("L", 150);
-    paras.Set<unsigned>("C", 750);
-    paras.Set<float>("alpha", 1.2);
+    paras.Set<unsigned>("R", 15);
+    paras.Set<unsigned>("L", 75);
+    paras.Set<unsigned>("C", 1500);
+    paras.Set<float>("alpha", 1.5);
     paras.Set<bool>("saturate_graph", true);
-    paras.Set<unsigned>("num_threads", 1);
+    paras.Set<unsigned>("num_threads", 32);
 
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Index parameters set");
     

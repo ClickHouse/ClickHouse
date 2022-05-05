@@ -89,6 +89,7 @@ add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy
 add_contrib (protobuf-cmake protobuf)
 add_contrib (openldap-cmake openldap)
+add_contrib (openmp-cmake openmp)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
 

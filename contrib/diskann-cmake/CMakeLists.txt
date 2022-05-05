@@ -52,9 +52,7 @@ else()
 endif()
 
 # OpenMP dependancy
-find_package(OpenMP REQUIRED)
-target_link_libraries(_diskann PRIVATE OpenMP::OpenMP_C)
-target_link_libraries(_diskann PRIVATE OpenMP::OpenMP_CXX)
+target_link_libraries(_diskann PRIVATE ch_contrib::openmp)
 
 # Boost dependancy
 target_link_libraries(_diskann PRIVATE boost::headers_only)
