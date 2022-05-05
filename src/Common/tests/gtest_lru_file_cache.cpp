@@ -257,7 +257,6 @@ TEST(LRUFileCache, get)
     ///                   10         17      21  24  26
 
     ASSERT_EQ(cache.getFileSegmentsNum(), 5);
-    ASSERT_EQ(cache.getStat().size, 5);
 
     {
         auto holder = cache.getOrSet(key, 23, 5); /// Get [23, 28]
@@ -486,8 +485,6 @@ TEST(LRUFileCache, get)
 
         auto cache2 = DB::LRUFileCache(cache_base_path, settings);
         cache2.initialize();
-
-        ASSERT_EQ(cache2.getStat().downloaded_size, 5);
 
         auto holder1 = cache2.getOrSet(key, 2, 28); /// Get [2, 29]
         auto segments1 = fromHolder(holder1);

@@ -165,13 +165,12 @@ private:
         {
             Key key;
             size_t offset;
-            size_t size = 0;
+            size_t size;
 
             FileKeyAndOffset(const Key & key_, size_t offset_, size_t size_) : key(key_), offset(offset_), size(size_) {}
         };
 
-        using Impl = std::list<FileKeyAndOffset>;
-        using Iterator = typename Impl::iterator;
+        using Iterator = typename std::list<FileKeyAndOffset>::iterator;
 
         size_t getTotalWeight(std::lock_guard<std::mutex> & /* cache_lock */) const { return cache_size; }
 
@@ -183,11 +182,8 @@ private:
 
         void moveToEnd(Iterator queue_it, std::lock_guard<std::mutex> & cache_lock);
 
+        /// Space reservation for a file segment is incremental, so we need to be able to increment size of the queue entry.
         void incrementSize(Iterator queue_it, size_t size_increment, std::lock_guard<std::mutex> & cache_lock);
-
-        /// If func returns true - ietration should continue, othersize stop iterating.
-        using IterateFunc = std::function<bool(const Iterator &)>;
-        void iterate(IterateFunc func, std::lock_guard<std::mutex> & cache_lock);
 
         void assertCorrectness(LRUFileCache * cache, std::lock_guard<std::mutex> & cache_lock);
 
@@ -195,8 +191,12 @@ private:
 
         bool contains(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock) const;
 
+        Iterator begin() { return queue.begin(); }
+
+        Iterator end() { return queue.end(); }
+
     private:
-        Impl queue;
+        std::list<FileKeyAndOffset> queue;
         size_t cache_size = 0;
     };
 
@@ -216,7 +216,7 @@ private:
 
         FileSegmentCell(FileSegmentPtr file_segment_, LRUFileCache * cache, std::lock_guard<std::mutex> & cache_lock);
 
-        FileSegmentCell(FileSegmentCell && other) noexcept
+        FileSegmentCell(FileSegmentCell && other)
             : file_segment(std::move(other.file_segment))
             , queue_iterator(std::move(other.queue_iterator)) {}
     };
@@ -267,30 +267,20 @@ private:
     FileSegments splitRangeIntoCells(
         const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
 
-    String dumpStructureImpl(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
+    String dumpStructureUnlocked(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
 
     void fillHolesWithEmptyFileSegments(
         FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, std::lock_guard<std::mutex> & cache_lock);
 
-    size_t getUsedCacheSizeImpl(std::lock_guard<std::mutex> & cache_lock) const;
+    size_t getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
-    size_t getAvailableCacheSizeImpl(std::lock_guard<std::mutex> & cache_lock) const;
+    size_t getAvailableCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
-    size_t getFileSegmentsNumImpl(std::lock_guard<std::mutex> & cache_lock) const;
+    size_t getFileSegmentsNumUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
     void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
 
 public:
-    struct Stat
-    {
-        size_t size;
-        size_t available;
-        size_t downloaded_size;
-        size_t downloading_size;
-    };
-
-    Stat getStat();
-
     String dumpStructure(const Key & key_) override;
 
     void assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock);

@@ -90,11 +90,6 @@ size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_l
 
 String FileSegment::getCallerId()
 {
-    return getCallerIdImpl();
-}
-
-String FileSegment::getCallerIdImpl()
-{
     if (!CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()
         || CurrentThread::getQueryId().size == 0)
