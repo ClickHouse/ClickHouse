@@ -451,11 +451,11 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
     else
         aggregated_columns = temp_actions->getNamesAndTypesList();
 
-    for (const auto & desc : aggregate_descriptions)
-        aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
-
     if (select_query != nullptr && select_query->group_by_with_grouping_sets)
         aggregated_columns.emplace_back("__grouping_set", std::make_shared<DataTypeUInt64>());
+
+    for (const auto & desc : aggregate_descriptions)
+        aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
 }
 
 
@@ -1238,6 +1238,8 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
                 getRootActions(ast_element, only_types, step.actions());
             }
         }
+        step.addRequiredOutput("__grouping_set");
+        step.actions()->addGroupingSetColumn();
     }
     else
     {
@@ -1548,6 +1550,12 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
             result_columns.emplace_back(source_name, result_name);
             step.addRequiredOutput(result_columns.back().second);
         }
+    }
+
+    if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && select_query->group_by_with_grouping_sets)
+    {
+        result_columns.emplace_back("__grouping_set", "__grouping_set");
+        step.addRequiredOutput("__grouping_set");
     }
 
     auto actions = chain.getLastActions();

@@ -872,6 +872,21 @@ using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants
 class CompiledAggregateFunctionsHolder;
 class NativeWriter;
 
+struct GroupingSetsParams
+{
+    GroupingSetsParams() = default;
+
+    GroupingSetsParams(ColumnNumbers used_keys_, ColumnNumbers missing_keys_)
+        : used_keys(std::move(used_keys_))
+        , missing_keys(std::move(missing_keys_))
+    {}
+
+    ColumnNumbers used_keys;
+    ColumnNumbers missing_keys;
+};
+
+using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
+
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
   *
@@ -951,22 +966,7 @@ public:
         };
         StatsCollectingParams stats_collecting_params;
 
-        struct GroupingSetsParams
-        {
-            GroupingSetsParams() = default;
-
-            GroupingSetsParams(ColumnNumbersList grouping_sets_with_keys_, ColumnNumbersList missing_columns_per_set_)
-                : grouping_sets_with_keys(std::move(grouping_sets_with_keys_))
-                , missing_columns_per_set(std::move(missing_columns_per_set_))
-            {}
-
-            bool isValid() const noexcept { return !grouping_sets_with_keys.empty(); }
-
-            size_t size() const noexcept { return grouping_sets_with_keys.size(); }
-
-            ColumnNumbersList grouping_sets_with_keys;
-            ColumnNumbersList missing_columns_per_set;
-        } grouping_sets_params;
+        bool has_grouping_sets;
 
         Params(
             const Block & src_header_,
@@ -986,7 +986,7 @@ public:
             size_t min_count_to_compile_aggregate_expression_,
             const Block & intermediate_header_ = {},
             const StatsCollectingParams & stats_collecting_params_ = {},
-            const GroupingSetsParams & grouping_sets_params_ = {})
+            bool has_grouping_sets_ = false)
             : src_header(src_header_)
             , intermediate_header(intermediate_header_)
             , keys(keys_)
@@ -1006,14 +1006,19 @@ public:
             , compile_aggregate_expressions(compile_aggregate_expressions_)
             , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
             , stats_collecting_params(stats_collecting_params_)
-            , grouping_sets_params(grouping_sets_params_)
+            , has_grouping_sets(has_grouping_sets_)
         {
         }
 
         /// Only parameters that matter during merge.
-        Params(const Block & intermediate_header_,
-            const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0)
+        Params(
+            const Block & intermediate_header_,
+            const ColumnNumbers & keys_,
+            const AggregateDescriptions & aggregates_,
+            bool overflow_row_,
+            bool has_grouping_sets_,
+            size_t max_threads_)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, {}, {}, has_grouping_sets_)
         {
             intermediate_header = intermediate_header_;
         }
@@ -1023,22 +1028,12 @@ public:
             const Block & intermediate_header,
             const ColumnNumbers & keys,
             const AggregateDescriptions & aggregates,
-            const GroupingSetsParams & grouping_sets_params,
+            bool has_grouping_sets,
             bool final);
 
         Block getHeader(bool final) const
         {
-            return getHeader(src_header, intermediate_header, keys, aggregates, grouping_sets_params, final);
-        }
-
-        bool hasGroupingSets() const noexcept
-        {
-            return grouping_sets_params.isValid();
-        }
-
-        GroupingSetsParams const & getGroupingSetsParams() const noexcept
-        {
-            return grouping_sets_params;
+            return getHeader(src_header, intermediate_header, keys, aggregates, has_grouping_sets, final);
         }
 
         /// Returns keys and aggregated for EXPLAIN query

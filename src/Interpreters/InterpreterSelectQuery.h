@@ -133,17 +133,18 @@ private:
 
     Aggregator::Params getAggregatorParams(
         const Block & current_data_stream_header,
+        const ColumnNumbers & keys,
         const AggregateDescriptions & aggregates,
         bool overflow_row, const Settings & settings,
         size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes);
-    Aggregator::Params::GroupingSetsParams getAggregatorGroupingSetsParams(
+    GroupingSetsParamsList getAggregatorGroupingSetsParams(
         const Block & header_before_aggregation,
         const ColumnNumbers & all_keys);
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(
         QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
-    void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final);
+    void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     static void executeExpression(QueryPlan & query_plan, const ActionsDAGPtr & expression, const std::string & description);

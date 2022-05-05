@@ -17,6 +17,7 @@ public:
     AggregatingStep(
         const DataStream & input_stream_,
         Aggregator::Params params_,
+        GroupingSetsParamsList grouping_sets_params_,
         bool final_,
         size_t max_block_size_,
         size_t aggregation_in_order_max_block_bytes_,
@@ -39,6 +40,7 @@ public:
 
 private:
     Aggregator::Params params;
+    GroupingSetsParamsList grouping_sets_params;
     bool final;
     size_t max_block_size;
     size_t aggregation_in_order_max_block_bytes;
