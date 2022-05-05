@@ -143,6 +143,8 @@ public:
 
     std::pair<BlocksPtr, Block> getNewBlocks(UInt32 watermark);
 
+	BlockIO populate();
+
     static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, ContextPtr context);
 
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
