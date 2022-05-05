@@ -440,11 +440,11 @@ BackupEntries StorageMaterializedView::backupData(ContextPtr context_, const AST
     return getTargetTable()->backupData(context_, partitions_);
 }
 
-RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup_, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_)
+RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup_, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
 {
     if (!hasInnerTable())
         return {};
-    return getTargetTable()->restoreData(context_, partitions_, backup_, data_path_in_backup_, restore_settings_);
+    return getTargetTable()->restoreData(context_, partitions_, backup_, data_path_in_backup_, restore_settings_, restore_coordination_);
 }
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
@@ -462,7 +462,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
     factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)
     {
         /// Pass local_context here to convey setting for inner table
-        return StorageMaterializedView::create(
+        return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
             args.columns, args.attach, args.comment);
     });

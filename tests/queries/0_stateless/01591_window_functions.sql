@@ -403,6 +403,47 @@ window w as (order by number range between 1 preceding and 1 following)
 order by number
 ;
 
+-- nth_value without specific frame range given
+select
+    number,
+    nth_value(number, 1) over w as firstValue,
+    nth_value(number, 2) over w as secondValue,
+    nth_value(number, 3) over w as thirdValue,
+    nth_value(number, 4) over w as fourthValue
+from numbers(10)
+window w as (order by number)
+order by number
+;
+
+-- nth_value with frame range specified
+select
+    number,
+    nth_value(number, 1) over w as firstValue,
+    nth_value(number, 2) over w as secondValue,
+    nth_value(number, 3) over w as thirdValue,
+    nth_value(number, 4) over w as fourthValue
+from numbers(10)
+window w as (order by number range between 1 preceding and 1 following)
+order by number
+;
+
+-- to make nth_value return null for out-of-frame rows, cast the argument to
+-- Nullable; otherwise, it returns default values.
+SELECT
+    number,
+    nth_value(toNullable(number), 1) OVER w as firstValue,
+    nth_value(toNullable(number), 3) OVER w as thridValue
+FROM numbers(5)
+WINDOW w AS (ORDER BY number ASC)
+;
+
+-- nth_value UBsan
+SELECT nth_value(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(1, 0) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
+SELECT nth_value(1, 1) OVER ();
+
 -- lagInFrame UBsan
 SELECT lagInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
 SELECT lagInFrame(1, 0) OVER ();
@@ -416,6 +457,15 @@ SELECT leadInFrame(1, 0) OVER ();
 SELECT leadInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
 SELECT leadInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
 SELECT leadInFrame(1, 1) OVER ();
+
+-- nth_value Msan
+SELECT nth_value(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
+
+-- lagInFrame Msan
+SELECT lagInFrame(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
+
+-- leadInFrame Msan
+SELECT leadInFrame(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
 
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.

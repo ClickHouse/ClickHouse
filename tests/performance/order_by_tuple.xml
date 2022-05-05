@@ -1,8 +1,3 @@
 <test>
-    <tags>
-        <tag>sorting</tag>
-        <tag>comparison</tag>
-    </tags>
-
     <query>select * from numbers(300000000) order by (1 - number , number + 1 , number) limit 10;</query>
 </test>

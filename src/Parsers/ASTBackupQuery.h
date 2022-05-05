@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
@@ -15,6 +16,7 @@ using DatabaseAndTableName = std::pair<String, String>;
   *          ALL TEMPORARY TABLES [EXCEPT ...] |
   *          DATABASE database_name [EXCEPT ...] [AS database_name_in_backup] |
   *          ALL DATABASES [EXCEPT ...] } [,...]
+  *        [ON CLUSTER 'cluster_name']
   *        TO { File('path/') |
   *             Disk('disk_name', 'path/')
   *        [SETTINGS base_backup = {File(...) | Disk(...)}]
@@ -25,6 +27,7 @@ using DatabaseAndTableName = std::pair<String, String>;
   *           ALL TEMPORARY TABLES [EXCEPT ...] |
   *           DATABASE database_name_in_backup [EXCEPT ...] [INTO database_name] |
   *           ALL DATABASES [EXCEPT ...] } [,...]
+  *         [ON CLUSTER 'cluster_name']
   *         FROM {File(...) | Disk(...)}
   *
   * Notes:
@@ -42,7 +45,7 @@ using DatabaseAndTableName = std::pair<String, String>;
   * The "WITH BASE" clause allows to set a base backup. Only differences made after the base backup will be
   * included in a newly created backup, so this option allows to make an incremental backup.
   */
-class ASTBackupQuery : public IAST
+class ASTBackupQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     enum Kind
@@ -84,5 +87,6 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override;
 };
 }

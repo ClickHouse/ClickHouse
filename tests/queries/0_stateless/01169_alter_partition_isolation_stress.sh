@@ -17,9 +17,10 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE dst (n UInt64, type UInt8) ENGINE=Merge
 function thread_insert()
 {
     set -e
-    trap "exit 0" INT
     val=1
-    while true; do
+    trap "STOP_THE_LOOP=1" INT
+    STOP_THE_LOOP=0
+    while [[ $STOP_THE_LOOP != 1 ]]; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);
@@ -91,8 +92,9 @@ function thread_partition_dst_to_src()
 function thread_select()
 {
     set -e
-    trap "exit 0" INT
-    while true; do
+    trap "STOP_THE_LOOP=1" INT
+    STOP_THE_LOOP=0
+    while [[ $STOP_THE_LOOP != 1 ]]; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
         -- no duplicates

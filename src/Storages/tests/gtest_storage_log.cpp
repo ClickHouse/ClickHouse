@@ -34,9 +34,9 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     NamesAndTypesList names_and_types;
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
 
-    StoragePtr table = StorageLog::create(
+    StoragePtr table = std::make_shared<StorageLog>(
         "Log", disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types},
-        ConstraintsDescription{}, String{}, false, 1048576);
+        ConstraintsDescription{}, String{}, false, static_cast<size_t>(1048576));
 
     table->startup();
 
