@@ -3,7 +3,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <base/shared_ptr_helper.h>
 
 #include <Poco/Event.h>
 
@@ -41,9 +40,8 @@ namespace DB
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer final : public shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
+class StorageBuffer final : public IStorage, WithContext
 {
-friend struct shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
 friend class BufferSink;
 
@@ -54,6 +52,22 @@ public:
         size_t rows = 0;  /// The number of rows in the block.
         size_t bytes = 0; /// The number of (uncompressed) bytes in the block.
     };
+
+    /** num_shards - the level of internal parallelism (the number of independent buffers)
+      * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
+      */
+    StorageBuffer(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        ContextPtr context_,
+        size_t num_shards_,
+        const Thresholds & min_thresholds_,
+        const Thresholds & max_thresholds_,
+        const Thresholds & flush_thresholds_,
+        const StorageID & destination_id,
+        bool allow_materialized_);
 
     std::string getName() const override { return "Buffer"; }
 
@@ -166,23 +180,6 @@ private:
 
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
-
-protected:
-    /** num_shards - the level of internal parallelism (the number of independent buffers)
-      * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
-      */
-    StorageBuffer(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context_,
-        size_t num_shards_,
-        const Thresholds & min_thresholds_,
-        const Thresholds & max_thresholds_,
-        const Thresholds & flush_thresholds_,
-        const StorageID & destination_id,
-        bool allow_materialized_);
 };
 
 }

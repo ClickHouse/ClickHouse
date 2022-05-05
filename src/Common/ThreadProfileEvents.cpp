@@ -27,7 +27,6 @@
 
 namespace ProfileEvents
 {
-#if defined(__linux__)
     extern const Event OSIOWaitMicroseconds;
     extern const Event OSCPUWaitMicroseconds;
     extern const Event OSCPUVirtualTimeMicroseconds;
@@ -61,7 +60,6 @@ namespace ProfileEvents
     extern const Event PerfInstructionTLBMisses;
     extern const Event PerfLocalMemoryReferences;
     extern const Event PerfLocalMemoryMisses;
-#endif
 }
 
 namespace DB
