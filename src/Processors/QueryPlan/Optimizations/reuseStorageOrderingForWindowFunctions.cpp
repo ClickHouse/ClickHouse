@@ -48,20 +48,20 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     auto * possible_read_from_merge_tree_node = sorting_node->children.front();
 
-    if (auto * expression = typeid_cast<ExpressionStep *>(possible_read_from_merge_tree_node->step.get()))
+    if (typeid_cast<ExpressionStep *>(possible_read_from_merge_tree_node->step.get()))
     {
-        if (expression->children.size() != 1)
+        if (possible_read_from_merge_tree_node->children.size() != 1)
             return 0;
 
-        possible_read_from_merge_tree_node = expression->children.front();
+        possible_read_from_merge_tree_node = possible_read_from_merge_tree_node->children.front();
     }
 
-    if (auto * quota_and_limits = typeid_cast<SettingQuotaAndLimitsStep *>(possible_read_from_merge_tree_node->step.get()))
+    if (typeid_cast<SettingQuotaAndLimitsStep *>(possible_read_from_merge_tree_node->step.get()))
     {
-        if (quota_and_limits->children.size() != 1)
+        if (possible_read_from_merge_tree_node->children.size() != 1)
             return 0;
 
-        possible_read_from_merge_tree_node = quota_and_limits->children.front();
+        possible_read_from_merge_tree_node = possible_read_from_merge_tree_node->children.front();
     }
 
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(possible_read_from_merge_tree_node->step.get());
