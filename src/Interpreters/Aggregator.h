@@ -914,9 +914,8 @@ public:
 
         /// What to count.
         ColumnNumbers keys;
-        const ColumnNumbersList keys_vector;
         const AggregateDescriptions aggregates;
-        size_t keys_size;
+        const size_t keys_size;
         const size_t aggregates_size;
 
         /// The settings of approximate calculation of GROUP BY.

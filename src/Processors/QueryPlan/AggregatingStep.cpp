@@ -9,9 +9,9 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
-#include "Interpreters/Aggregator.h"
-#include "Processors/QueryPlan/IQueryPlanStep.h"
-#include "Processors/Transforms/GroupingSetsTransform.h"
+#include <Interpreters/Aggregator.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/Transforms/GroupingSetsTransform.h>
 
 namespace DB
 {
@@ -264,37 +264,35 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
+    /// If there are several sources, then we perform parallel aggregation
+    if (pipeline.getNumStreams() > 1)
     {
-        /// If there are several sources, then we perform parallel aggregation
-        if (pipeline.getNumStreams() > 1)
+        /// Add resize transform to uniformly distribute data between aggregating streams.
+        if (!storage_has_evenly_distributed_read)
+            pipeline.resize(pipeline.getNumStreams(), true, true);
+
+        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
+
+        size_t counter = 0;
+        pipeline.addSimpleTransform([&](const Block & header)
         {
-            /// Add resize transform to uniformly distribute data between aggregating streams.
-            if (!storage_has_evenly_distributed_read)
-                pipeline.resize(pipeline.getNumStreams(), true, true);
+            return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+        });
 
-            auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
+        pipeline.resize(1);
 
-            size_t counter = 0;
-            pipeline.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
-            });
+        aggregating = collector.detachProcessors(0);
+    }
+    else
+    {
+        pipeline.resize(1);
 
-            pipeline.resize(1);
-
-            aggregating = collector.detachProcessors(0);
-        }
-        else
+        pipeline.addSimpleTransform([&](const Block & header)
         {
-            pipeline.resize(1);
+            return std::make_shared<AggregatingTransform>(header, transform_params);
+        });
 
-            pipeline.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<AggregatingTransform>(header, transform_params);
-            });
-
-            aggregating = collector.detachProcessors(0);
-        }
+        aggregating = collector.detachProcessors(0);
     }
 }
 
