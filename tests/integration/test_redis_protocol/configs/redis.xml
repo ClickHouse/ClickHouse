@@ -1,0 +1,5 @@
+<clickhouse>
+    <redis>
+        <port>9006</port>
+    </redis>
+</clickhouse>

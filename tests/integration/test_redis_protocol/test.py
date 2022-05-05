@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 from redis import Redis
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node")
+node = cluster.add_instance("node", main_configs=["configs/redis.xml"])
 server_port = 9006
 
 

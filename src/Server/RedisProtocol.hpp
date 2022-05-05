@@ -73,7 +73,7 @@ namespace RedisProtocol
         void writeBulkString(const String & s)
         {
             writeDataType(DataType::BULK_STRING);
-            writeIntBinary(s.size(), *buf);
+            writeString(std::to_string(s.size()), *buf);
             writeCRLF();
             writeString(s, *buf);
             writeCRLF();

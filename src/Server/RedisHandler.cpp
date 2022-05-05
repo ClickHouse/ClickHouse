@@ -32,6 +32,7 @@ void RedisHandler::run()
 
             RedisProtocol::GetResponse resp("Hello world");
             resp.serialize(*out);
+            out->next();
         }
     }
     catch (const Poco::Exception & exc)
