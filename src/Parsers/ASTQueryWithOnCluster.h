@@ -6,6 +6,17 @@
 namespace DB
 {
 
+/// Parameters for rewriting queries without ON CLUSTER, see getRewrittenASTWithoutOnCluster().
+struct WithoutOnClusterASTRewriteParams
+{
+    /// Default database from the cluster's configuration.
+    String default_database;
+
+    /// The ID of the current host in the format.
+    String host_id;
+};
+
+
 /// TODO: Quite messy.
 class ASTQueryWithOnCluster
 {
@@ -17,10 +28,10 @@ public:
 
     /// new_database should be used by queries that refer to default db
     ///  and default_database is specified for remote server
-    virtual ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database = {}) const = 0; /// NOLINT
+    virtual ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params = {}) const = 0; /// NOLINT
 
     /// Returns a query prepared for execution on remote server
-    std::string getRewrittenQueryWithoutOnCluster(const std::string & new_database = {}) const;
+    std::string getRewrittenQueryWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params = {}) const;
 
     void formatOnCluster(const IAST::FormatSettings & settings) const;
 

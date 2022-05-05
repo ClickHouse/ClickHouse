@@ -170,6 +170,8 @@ struct FormatSettings
 
     struct
     {
+        bool input_flatten_google_wrappers = false;
+        bool output_nullables_with_google_wrappers = false;
         /**
          * Some buffers (kafka / rabbit) split the rows internally using callback,
          * and always send one row per message, so we can push there formats
@@ -260,6 +262,12 @@ struct FormatSettings
         UInt64 number_of_columns = 0;
         MsgPackUUIDRepresentation output_uuid_representation = MsgPackUUIDRepresentation::EXT;
     } msgpack;
+
+    struct MySQLDump
+    {
+        String table_name;
+        bool map_column_names = true;
+    } mysql_dump;
 };
 
 }

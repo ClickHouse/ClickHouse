@@ -1135,6 +1135,76 @@ def test_kafka_consumer_hang2(kafka_cluster):
     kafka_delete_topic(admin_client, topic_name)
 
 
+# sequential read from different consumers leads to breaking lot of kafka invariants
+# (first consumer will get all partitions initially, and may have problems in doing polls every 60 sec)
+def test_kafka_read_consumers_in_parallel(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic_name = "read_consumers_in_parallel"
+    kafka_create_topic(admin_client, topic_name, num_partitions=8)
+
+    cancel = threading.Event()
+
+    def produce():
+        while not cancel.is_set():
+            messages = []
+            for _ in range(100):
+                messages.append(json.dumps({"key": 0, "value": 0}))
+            kafka_produce(kafka_cluster, "read_consumers_in_parallel", messages)
+            time.sleep(1)
+
+    kafka_thread = threading.Thread(target=produce)
+    kafka_thread.start()
+
+    # when we have more than 1 consumer in a single table,
+    # and kafka_thread_per_consumer=0
+    # all the consumers should be read in parallel, not in sequence.
+    # then reading in parallel 8 consumers with 1 seconds kafka_poll_timeout_ms and less than 1 sec limit
+    # we should have exactly 1 poll per consumer (i.e. 8 polls) every 1 seconds (from different threads)
+    # in case parallel consuming is not working we will have only 1 poll every 1 seconds (from the same thread).
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic_name}',
+                     kafka_group_name = '{topic_name}',
+                     kafka_format = 'JSONEachRow',
+                     kafka_num_consumers = 8,
+                     kafka_thread_per_consumer = 0,
+                     kafka_poll_timeout_ms = 1000,
+                     kafka_flush_interval_ms = 999;
+        CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = Memory();
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+        """
+    )
+
+    instance.wait_for_log_line(
+        "kafka.*Polled batch of [0-9]+.*read_consumers_in_parallel",
+        repetitions=64,
+        look_behind_lines=100,
+        timeout=30,  # we should get 64 polls in ~8 seconds, but when read sequentially it will take more than 64 sec
+    )
+
+    cancel.set()
+    kafka_thread.join()
+
+    instance.query(
+        """
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+        DROP TABLE test.kafka;
+    """
+    )
+    kafka_delete_topic(admin_client, topic_name)
+
+
 def test_kafka_csv_with_delimiter(kafka_cluster):
     messages = []
     for i in range(50):

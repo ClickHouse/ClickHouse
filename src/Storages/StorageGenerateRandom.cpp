@@ -480,7 +480,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         if (engine_args.size() == 3)
             max_array_length = engine_args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
-        return StorageGenerateRandom::create(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
+        return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });
 }
 

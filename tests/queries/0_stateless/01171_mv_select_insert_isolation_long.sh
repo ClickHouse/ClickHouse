@@ -11,6 +11,7 @@ set -e
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS src";
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS dst";
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mv";
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS tmp";
 $CLICKHOUSE_CLIENT --query "CREATE TABLE src (n Int8, m Int8, CONSTRAINT c CHECK xxHash32(n+m) % 8 != 0) ENGINE=MergeTree ORDER BY n PARTITION BY 0 < n SETTINGS old_parts_lifetime=0";
 $CLICKHOUSE_CLIENT --query "CREATE TABLE dst (nm Int16, CONSTRAINT c CHECK xxHash32(nm) % 8 != 0) ENGINE=MergeTree ORDER BY nm SETTINGS old_parts_lifetime=0";
 $CLICKHOUSE_CLIENT --query "CREATE MATERIALIZED VIEW mv TO dst (nm Int16) AS SELECT n*m AS nm FROM src";
@@ -49,8 +50,9 @@ function thread_insert_rollback()
 function thread_optimize()
 {
     set -e
-    trap "exit 0" INT
-    while true; do
+    trap "STOP_THE_LOOP=1" INT
+    STOP_THE_LOOP=0
+    while [[ $STOP_THE_LOOP != 1 ]]; do
         optimize_query="OPTIMIZE TABLE src"
         partition_id=$(( RANDOM % 2 ))
         if (( RANDOM % 2 )); then
@@ -101,8 +103,9 @@ function thread_select()
 function thread_select_insert()
 {
     set -e
-    trap "exit 0" INT
-    while true; do
+    trap "STOP_THE_LOOP=1" INT
+    STOP_THE_LOOP=0
+    while [[ $STOP_THE_LOOP != 1 ]]; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
         SELECT throwIf((SELECT count() FROM tmp) != 0) FORMAT Null;
@@ -154,3 +157,4 @@ $CLICKHOUSE_CLIENT --query "SELECT count(), sum(nm) FROM mv"
 $CLICKHOUSE_CLIENT --query "DROP TABLE src";
 $CLICKHOUSE_CLIENT --query "DROP TABLE dst";
 $CLICKHOUSE_CLIENT --query "DROP TABLE mv";
+$CLICKHOUSE_CLIENT --query "DROP TABLE tmp";
