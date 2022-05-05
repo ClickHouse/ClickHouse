@@ -7,6 +7,7 @@
 #include <Poco/Version.h>
 #include <Poco/Exception.h>
 
+#include <base/defines.h>
 #include <Common/StackTrace.h>
 
 #include <fmt/format.h>
@@ -35,10 +36,10 @@ public:
     {}
 
     // Format message with fmt::format, like the logging functions.
-    template <typename ...Args>
-    Exception(int code, const std::string & fmt, Args&&... args)
-        : Exception(fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...), code)
-    {}
+    template <typename... Args>
+    Exception(int code, fmt::format_string<Args...> fmt, Args &&... args) : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+    {
+    }
 
     struct CreateFromPocoTag {};
     struct CreateFromSTDTag {};
@@ -52,10 +53,10 @@ public:
     const char * what() const throw() override { return message().data(); }
 
     /// Add something to the existing message.
-    template <typename ...Args>
-    void addMessage(const std::string& format, Args&&... args)
+    template <typename... Args>
+    void addMessage(fmt::format_string<Args...> format, Args &&... args)
     {
-        extendedMessage(fmt::format(fmt::runtime(format), std::forward<Args>(args)...));
+        extendedMessage(fmt::format(format, std::forward<Args>(args)...));
     }
 
     void addMessage(const std::string& message)
@@ -117,10 +118,10 @@ public:
     ParsingException(int code, const std::string & message);
 
     // Format message with fmt::format, like the logging functions.
-    template <typename ...Args>
-    ParsingException(int code, const std::string & fmt, Args&&... args)
-        : Exception(fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...), code)
-    {}
+    template <typename... Args>
+    ParsingException(int code, fmt::format_string<Args...> fmt, Args &&... args) : Exception(code, fmt, std::forward<Args>(args)...)
+    {
+    }
 
 
     std::string displayText() const
@@ -132,8 +133,15 @@ public:
     int getLineNumber() const { return line_number; }
     void setLineNumber(int line_number_) { line_number = line_number_;}
 
+    const String getFileName() const { return file_name; }
+    void setFileName(const String & file_name_) { file_name = file_name_; }
+
+    Exception * clone() const override { return new ParsingException(*this); }
+    void rethrow() const override { throw *this; }
+
 private:
     ssize_t line_number{-1};
+    String file_name;
     mutable std::string formatted_message;
 
     const char * name() const throw() override { return "DB::ParsingException"; }
@@ -170,6 +178,8 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
 int getCurrentExceptionCode();
 int getExceptionErrorCode(std::exception_ptr e);
 
+/// Returns string containing extra diagnostic info for specific exceptions (like "no space left on device" and "memory limit exceeded")
+std::string getExtraExceptionInfo(const std::exception & e);
 
 /// An execution status of any piece of code, contains return code and optional error
 struct ExecutionStatus

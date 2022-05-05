@@ -17,7 +17,7 @@
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <boost/algorithm/string.hpp>
 
@@ -337,8 +337,11 @@ void MySQLSource::initPositionMappingFromQueryResultStructure()
     if (!settings->fetch_by_name)
     {
         if (description.sample_block.columns() != connection->result.getNumFields())
-            throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
-                + toString(description.sample_block.columns()) + " expected", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
+            throw Exception(
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "mysqlxx::UseQueryResult contains {} columns while {} expected",
+                connection->result.getNumFields(),
+                description.sample_block.columns());
 
         for (const auto idx : collections::range(0, connection->result.getNumFields()))
             position_mapping[idx] = idx;
@@ -362,18 +365,10 @@ void MySQLSource::initPositionMappingFromQueryResultStructure()
         }
 
         if (!missing_names.empty())
-        {
-            WriteBufferFromOwnString exception_message;
-            for (auto iter = missing_names.begin(); iter != missing_names.end(); ++iter)
-            {
-                if (iter != missing_names.begin())
-                    exception_message << ", ";
-                exception_message << *iter;
-            }
-
-            throw Exception("mysqlxx::UseQueryResult must be contain the" + exception_message.str() + " columns.",
-                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-        }
+            throw Exception(
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "mysqlxx::UseQueryResult must contain columns: {}",
+                fmt::join(missing_names, ", "));
     }
 }
 

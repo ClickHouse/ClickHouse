@@ -11,47 +11,68 @@ from testflows.asserts import error
 from testflows.core.name import basename, parentname
 from testflows._core.testtype import TestSubType
 
+
 def check_clickhouse_version(version):
-    """Compare ClickHouse version.
-    """
+    """Compare ClickHouse version."""
+
     def check(test):
         if getattr(test.context, "clickhouse_version", None) is None:
-           return False
+            return False
 
         clickhouse_version = pkg_version.parse(str(test.context.clickhouse_version))
 
         if version.startswith("=="):
-            return clickhouse_version == pkg_version.parse(str(version.split("==",1)[-1]))
+            return clickhouse_version == pkg_version.parse(
+                str(version.split("==", 1)[-1])
+            )
         elif version.startswith(">="):
-            return clickhouse_version >= pkg_version.parse(str(version.split(">=",1)[-1]))
+            return clickhouse_version >= pkg_version.parse(
+                str(version.split(">=", 1)[-1])
+            )
         elif version.startswith("<="):
-            return clickhouse_version <= pkg_version.parse(str(version.split("<=",1)[-1]))
+            return clickhouse_version <= pkg_version.parse(
+                str(version.split("<=", 1)[-1])
+            )
         elif version.startswith("="):
-            return clickhouse_version == pkg_version.parse(str(version.split("=",1)[-1]))
+            return clickhouse_version == pkg_version.parse(
+                str(version.split("=", 1)[-1])
+            )
         elif version.startswith(">"):
-            return clickhouse_version > pkg_version.parse(str(version.split(">",1)[-1]))
+            return clickhouse_version > pkg_version.parse(
+                str(version.split(">", 1)[-1])
+            )
         elif version.startswith("<"):
-            return clickhouse_version < pkg_version.parse(str(version.split("<",1)[-1]))
+            return clickhouse_version < pkg_version.parse(
+                str(version.split("<", 1)[-1])
+            )
         else:
             return clickhouse_version == pkg_version.parse(str(version))
 
     return check
 
+
 def getuid(with_test_name=False):
     if not with_test_name:
-        return str(uuid.uuid1()).replace('-', '_')
+        return str(uuid.uuid1()).replace("-", "_")
 
     if current().subtype == TestSubType.Example:
-        testname = f"{basename(parentname(current().name)).replace(' ', '_').replace(',', '')}"
+        testname = (
+            f"{basename(parentname(current().name)).replace(' ', '_').replace(',', '')}"
+        )
     else:
         testname = f"{basename(current().name).replace(' ', '_').replace(',', '')}"
 
-    return testname + "_" + str(uuid.uuid1()).replace('-', '_')
+    return testname + "_" + str(uuid.uuid1()).replace("-", "_")
 
 
 @TestStep(Given)
-def instrument_clickhouse_server_log(self, node=None, test=None,
-        clickhouse_server_log="/var/log/clickhouse-server/clickhouse-server.log", always_dump=False):
+def instrument_clickhouse_server_log(
+    self,
+    node=None,
+    test=None,
+    clickhouse_server_log="/var/log/clickhouse-server/clickhouse-server.log",
+    always_dump=False,
+):
     """Instrument clickhouse-server.log for the current test (default)
     by adding start and end messages that include test name to log
     of the specified node. If we are in the debug mode and the test
@@ -67,22 +88,31 @@ def instrument_clickhouse_server_log(self, node=None, test=None,
 
     with By("getting current log size"):
         cmd = node.command(f"stat --format=%s {clickhouse_server_log}")
-        if cmd.output == f"stat: cannot stat '{clickhouse_server_log}': No such file or directory":
+        if (
+            cmd.output
+            == f"stat: cannot stat '{clickhouse_server_log}': No such file or directory"
+        ):
             start_logsize = 0
         else:
             start_logsize = cmd.output.split(" ")[0].strip()
 
     try:
         with And("adding test name start message to the clickhouse-server.log"):
-            node.command(f"echo -e \"\\n-- start: {test.name} --\\n\" >> {clickhouse_server_log}")
+            node.command(
+                f'echo -e "\\n-- start: {test.name} --\\n" >> {clickhouse_server_log}'
+            )
         yield
 
     finally:
         if test.terminating is True:
             return
 
-        with Finally("adding test name end message to the clickhouse-server.log", flags=TE):
-            node.command(f"echo -e \"\\n-- end: {test.name} --\\n\" >> {clickhouse_server_log}")
+        with Finally(
+            "adding test name end message to the clickhouse-server.log", flags=TE
+        ):
+            node.command(
+                f'echo -e "\\n-- end: {test.name} --\\n" >> {clickhouse_server_log}'
+            )
 
         with And("getting current log size at the end of the test"):
             cmd = node.command(f"stat --format=%s {clickhouse_server_log}")
@@ -92,8 +122,10 @@ def instrument_clickhouse_server_log(self, node=None, test=None,
 
         if dump_log:
             with Then("dumping clickhouse-server.log for this test"):
-                node.command(f"tail -c +{start_logsize} {clickhouse_server_log}"
-                             f" | head -c {int(end_logsize) - int(start_logsize)}")
+                node.command(
+                    f"tail -c +{start_logsize} {clickhouse_server_log}"
+                    f" | head -c {int(end_logsize) - int(start_logsize)}"
+                )
 
 
 xml_with_utf8 = '<?xml version="1.0" encoding="utf-8"?>\n'
@@ -142,7 +174,9 @@ class KeyWithAttributes:
         self.attributes = dict(attributes)
 
 
-def create_xml_config_content(entries, config_file, config_d_dir="/etc/clickhouse-server/config.d"):
+def create_xml_config_content(
+    entries, config_file, config_d_dir="/etc/clickhouse-server/config.d"
+):
     """Create XML configuration file from a dictionary.
 
     :param entries: dictionary that defines xml
@@ -184,27 +218,34 @@ def create_xml_config_content(entries, config_file, config_d_dir="/etc/clickhous
     create_xml_tree(entries, root)
     xml_indent(root)
     content = xml_with_utf8 + str(
-        xmltree.tostring(root, short_empty_elements=False, encoding="utf-8"),
-        "utf-8")
+        xmltree.tostring(root, short_empty_elements=False, encoding="utf-8"), "utf-8"
+    )
 
     return Config(content, path, name, uid, "config.xml")
 
 
-def add_invalid_config(config, message, recover_config=None, tail=30, timeout=300, restart=True, user=None):
-    """Check that ClickHouse errors when trying to load invalid configuration file.
-    """
+def add_invalid_config(
+    config, message, recover_config=None, tail=30, timeout=300, restart=True, user=None
+):
+    """Check that ClickHouse errors when trying to load invalid configuration file."""
     cluster = current().context.cluster
     node = current().context.node
 
     try:
         with Given("I prepare the error log by writing empty lines into it"):
-            node.command("echo -e \"%s\" > /var/log/clickhouse-server/clickhouse-server.err.log" % ("-\\n" * tail))
+            node.command(
+                'echo -e "%s" > /var/log/clickhouse-server/clickhouse-server.err.log'
+                % ("-\\n" * tail)
+            )
 
         with When("I add the config", description=config.path):
             command = f"cat <<HEREDOC > {config.path}\n{config.content}\nHEREDOC"
             node.command(command, steps=False, exitcode=0)
 
-        with Then(f"{config.preprocessed_name} should be updated", description=f"timeout {timeout}"):
+        with Then(
+            f"{config.preprocessed_name} should be updated",
+            description=f"timeout {timeout}",
+        ):
             started = time.time()
             command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
             while time.time() - started < timeout:
@@ -222,9 +263,19 @@ def add_invalid_config(config, message, recover_config=None, tail=30, timeout=30
         if recover_config is None:
             with Finally(f"I remove {config.name}"):
                 with By("removing invalid configuration file"):
-                    system_config_path = os.path.join(cluster.environ["CLICKHOUSE_TESTS_DIR"], "configs", node.name,
-                                                      "config.d", config.path.split("config.d/")[-1])
-                    cluster.command(None, f'rm -rf {system_config_path}', timeout=timeout, exitcode=0)
+                    system_config_path = os.path.join(
+                        cluster.environ["CLICKHOUSE_TESTS_DIR"],
+                        "configs",
+                        node.name,
+                        "config.d",
+                        config.path.split("config.d/")[-1],
+                    )
+                    cluster.command(
+                        None,
+                        f"rm -rf {system_config_path}",
+                        timeout=timeout,
+                        exitcode=0,
+                    )
 
                 if restart:
                     with And("restarting ClickHouse"):
@@ -233,9 +284,19 @@ def add_invalid_config(config, message, recover_config=None, tail=30, timeout=30
         else:
             with Finally(f"I change {config.name}"):
                 with By("changing invalid configuration file"):
-                    system_config_path = os.path.join(cluster.environ["CLICKHOUSE_TESTS_DIR"], "configs", node.name,
-                                                      "config.d", config.path.split("config.d/")[-1])
-                    cluster.command(None, f'rm -rf {system_config_path}', timeout=timeout, exitcode=0)
+                    system_config_path = os.path.join(
+                        cluster.environ["CLICKHOUSE_TESTS_DIR"],
+                        "configs",
+                        node.name,
+                        "config.d",
+                        config.path.split("config.d/")[-1],
+                    )
+                    cluster.command(
+                        None,
+                        f"rm -rf {system_config_path}",
+                        timeout=timeout,
+                        exitcode=0,
+                    )
                     command = f"cat <<HEREDOC > {system_config_path}\n{recover_config.content}\nHEREDOC"
                     cluster.command(None, command, timeout=timeout, exitcode=0)
 
@@ -245,7 +306,7 @@ def add_invalid_config(config, message, recover_config=None, tail=30, timeout=30
 
     with Then("error log should contain the expected error message"):
         started = time.time()
-        command = f"tail -n {tail} /var/log/clickhouse-server/clickhouse-server.err.log | grep \"{message}\""
+        command = f'tail -n {tail} /var/log/clickhouse-server/clickhouse-server.err.log | grep "{message}"'
         while time.time() - started < timeout:
             exitcode = node.command(command, steps=False).exitcode
             if exitcode == 0:
@@ -254,8 +315,16 @@ def add_invalid_config(config, message, recover_config=None, tail=30, timeout=30
         assert exitcode == 0, error()
 
 
-def add_config(config, timeout=300, restart=False, modify=False, node=None, user=None, wait_healthy=True,
-               check_preprocessed = True):
+def add_config(
+    config,
+    timeout=300,
+    restart=False,
+    modify=False,
+    node=None,
+    user=None,
+    wait_healthy=True,
+    check_preprocessed=True,
+):
     """Add dynamic configuration file to ClickHouse.
 
     :param config: configuration file description
@@ -268,8 +337,7 @@ def add_config(config, timeout=300, restart=False, modify=False, node=None, user
     cluster = current().context.cluster
 
     def check_preprocessed_config_is_updated(after_removal=False):
-        """Check that preprocessed config is updated.
-        """
+        """Check that preprocessed config is updated."""
         started = time.time()
         command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
 
@@ -284,7 +352,9 @@ def add_config(config, timeout=300, restart=False, modify=False, node=None, user
             time.sleep(1)
 
         if settings.debug:
-            node.command(f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name}")
+            node.command(
+                f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name}"
+            )
 
         if after_removal:
             assert exitcode == 1, error()
@@ -292,8 +362,7 @@ def add_config(config, timeout=300, restart=False, modify=False, node=None, user
             assert exitcode == 0, error()
 
     def wait_for_config_to_be_loaded(user=None):
-        """Wait for config to be loaded.
-        """
+        """Wait for config to be loaded."""
         if restart:
             with When("I close terminal to the node to be restarted"):
                 bash.close()
@@ -302,8 +371,10 @@ def add_config(config, timeout=300, restart=False, modify=False, node=None, user
                 node.stop_clickhouse(safe=False)
 
             with And("I get the current log size"):
-                cmd = node.cluster.command(None,
-                                           f"stat --format=%s {cluster.environ['CLICKHOUSE_TESTS_DIR']}/_instances/{node.name}/logs/clickhouse-server.log")
+                cmd = node.cluster.command(
+                    None,
+                    f"stat --format=%s {cluster.environ['CLICKHOUSE_TESTS_DIR']}/_instances/{node.name}/logs/clickhouse-server.log",
+                )
                 logsize = cmd.output.split(" ")[0].strip()
 
             with And("I start ClickHouse back up"):
@@ -312,17 +383,21 @@ def add_config(config, timeout=300, restart=False, modify=False, node=None, user
             with Then("I tail the log file from using previous log size as the offset"):
                 bash.prompt = bash.__class__.prompt
                 bash.open()
-                bash.send(f"tail -c +{logsize} -f /var/log/clickhouse-server/clickhouse-server.log")
+                bash.send(
+                    f"tail -c +{logsize} -f /var/log/clickhouse-server/clickhouse-server.log"
+                )
 
         with Then("I wait for config reload message in the log file"):
             if restart:
                 bash.expect(
                     f"ConfigReloader: Loaded config '/etc/clickhouse-server/config.xml', performed update on configuration",
-                    timeout=timeout)
+                    timeout=timeout,
+                )
             else:
                 bash.expect(
                     f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration",
-                    timeout=timeout)
+                    timeout=timeout,
+                )
 
     try:
         with Given(f"{config.name}"):
@@ -332,17 +407,24 @@ def add_config(config, timeout=300, restart=False, modify=False, node=None, user
 
             with node.cluster.shell(node.name) as bash:
                 bash.expect(bash.prompt)
-                bash.send("tail -v -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
+                bash.send(
+                    "tail -v -n 0 -f /var/log/clickhouse-server/clickhouse-server.log"
+                )
                 # make sure tail process is launched and started to follow the file
                 bash.expect("<==")
                 bash.expect("\n")
 
                 with When("I add the config", description=config.path):
-                    command = f"cat <<HEREDOC > {config.path}\n{config.content}\nHEREDOC"
+                    command = (
+                        f"cat <<HEREDOC > {config.path}\n{config.content}\nHEREDOC"
+                    )
                     node.command(command, steps=False, exitcode=0)
 
                 if check_preprocessed:
-                    with Then(f"{config.preprocessed_name} should be updated", description=f"timeout {timeout}"):
+                    with Then(
+                        f"{config.preprocessed_name} should be updated",
+                        description=f"timeout {timeout}",
+                    ):
                         check_preprocessed_config_is_updated()
 
                     with And("I wait for config to be reloaded"):
@@ -354,7 +436,9 @@ def add_config(config, timeout=300, restart=False, modify=False, node=None, user
             with Finally(f"I remove {config.name} on {node.name}"):
                 with node.cluster.shell(node.name) as bash:
                     bash.expect(bash.prompt)
-                    bash.send("tail -v -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
+                    bash.send(
+                        "tail -v -n 0 -f /var/log/clickhouse-server/clickhouse-server.log"
+                    )
                     # make sure tail process is launched and started to follow the file
                     bash.expect("<==")
                     bash.expect("\n")
@@ -362,7 +446,10 @@ def add_config(config, timeout=300, restart=False, modify=False, node=None, user
                     with By("removing the config file", description=config.path):
                         node.command(f"rm -rf {config.path}", exitcode=0)
 
-                    with Then(f"{config.preprocessed_name} should be updated", description=f"timeout {timeout}"):
+                    with Then(
+                        f"{config.preprocessed_name} should be updated",
+                        description=f"timeout {timeout}",
+                    ):
                         check_preprocessed_config_is_updated(after_removal=True)
 
                     with And("I wait for config to be reloaded"):
@@ -370,9 +457,17 @@ def add_config(config, timeout=300, restart=False, modify=False, node=None, user
 
 
 @TestStep(When)
-def copy(self, dest_node, src_path, dest_path, bash=None, binary=False, eof="EOF", src_node=None):
-    """Copy file from source to destination node.
-    """
+def copy(
+    self,
+    dest_node,
+    src_path,
+    dest_path,
+    bash=None,
+    binary=False,
+    eof="EOF",
+    src_node=None,
+):
+    """Copy file from source to destination node."""
     if binary:
         raise NotImplementedError("not yet implemented; need to use base64 encoding")
 
@@ -387,9 +482,10 @@ def copy(self, dest_node, src_path, dest_path, bash=None, binary=False, eof="EOF
 
 
 @TestStep(Given)
-def add_user_to_group_on_node(self, node=None, group="clickhouse",  username="clickhouse"):
-    """Add user {username} into group {group}.
-    """
+def add_user_to_group_on_node(
+    self, node=None, group="clickhouse", username="clickhouse"
+):
+    """Add user {username} into group {group}."""
     if node is None:
         node = self.context.node
 
@@ -398,8 +494,7 @@ def add_user_to_group_on_node(self, node=None, group="clickhouse",  username="cl
 
 @TestStep(Given)
 def change_user_on_node(self, node=None, username="clickhouse"):
-    """Change user on node.
-    """
+    """Change user on node."""
     if node is None:
         node = self.context.node
     try:
@@ -411,8 +506,7 @@ def change_user_on_node(self, node=None, username="clickhouse"):
 
 @TestStep(Given)
 def add_user_on_node(self, node=None, groupname=None, username="clickhouse"):
-    """Create user on node with group specifying.
-    """
+    """Create user on node with group specifying."""
     if node is None:
         node = self.context.node
     try:
@@ -427,8 +521,7 @@ def add_user_on_node(self, node=None, groupname=None, username="clickhouse"):
 
 @TestStep(Given)
 def add_group_on_node(self, node=None, groupname="clickhouse"):
-    """Create group on node
-    """
+    """Create group on node"""
     if node is None:
         node = self.context.node
     try:
