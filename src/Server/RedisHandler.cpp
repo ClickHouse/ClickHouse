@@ -84,6 +84,8 @@ void RedisHandler::run()
                     continue;
                 }
 
+                authenticated = true;
+
                 RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
                 resp.serialize(*out);
             }
