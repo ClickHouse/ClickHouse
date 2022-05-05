@@ -4248,3 +4248,18 @@ Default value: 0.
 The waiting time in seconds for currently handled connections when shutdown server.
 
 Default Value: 5.
+
+## input_format_mysql_dump_table_name (#input-format-mysql-dump-table-name)
+
+The name of the table from which to read data from in MySQLDump input format.
+
+## input_format_mysql_dump_map_columns (#input-format-mysql-dump-map-columns)
+
+Enables matching columns from table in MySQL dump and columns from ClickHouse table by names in MySQLDump input format.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
