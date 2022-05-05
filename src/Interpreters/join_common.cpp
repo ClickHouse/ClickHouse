@@ -622,9 +622,8 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
         setRightIndex(right_pos, result_position);
     }
 
-    /// `result_sample_block` also may contains non unique column names
-    const auto & result_names = result_sample_block.getNames();
-    size_t unique_names_count = std::unordered_set<String>(result_names.begin(), result_names.end()).size();
+    /// `result_sample_block` may contains non unique column names
+    size_t unique_names_count = result_sample_block.getNamesToIndexesMap().size();
     if (column_indices_left.size() + column_indices_right.size() + same_result_keys.size() != unique_names_count)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
