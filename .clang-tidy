@@ -38,6 +38,7 @@ Checks: '*,
     -clang-analyzer-core.DynamicTypePropagation,
     -clang-analyzer-core.uninitialized.CapturedBlockVariable,
 
+    -clang-analyzer-optin.performance.Padding,
     -clang-analyzer-optin.portability.UnixAPI,
 
     -clang-analyzer-security.insecureAPI.bzero,
@@ -119,6 +120,8 @@ Checks: '*,
     -performance-type-promotion-in-math-fn,
     -performance-trivially-destructible,
     -performance-unnecessary-value-param,
+
+    -portability-simd-intrinsics,
 
     -readability-convert-member-functions-to-static,
     -readability-braces-around-statements,
