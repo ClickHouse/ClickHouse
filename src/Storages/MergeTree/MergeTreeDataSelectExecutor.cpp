@@ -1565,17 +1565,19 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
-            
+            // Cast to Ann condition
             auto ann_condition  = std::dynamic_pointer_cast<IMergeTreeIndexConditionAnn>(condition);
-            if (ann_condition != nullptr){
-                LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Start Ann");
+            if (ann_condition != nullptr)
+            {
+                // vector of indexes of useful ranges
                 auto result = ann_condition->getUsefulRanges(granule);
                 bool is_skipped = result.empty();
-                for(auto range: result){
-                    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Next range -- {}", range);
+                for (auto range_idx : result)
+                {
+                    // range for corresponding index
                     MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * index_granularity + range),
-                        std::min(ranges[i].end, index_mark * index_granularity + range + 1));
+                        std::max(ranges[i].begin, index_mark * index_granularity + range_idx),
+                        std::min(ranges[i].end, index_mark * index_granularity + range_idx + 1));
 
                     if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
                         res.push_back(data_range);
@@ -1592,28 +1594,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
             if (!condition->mayBeTrueOnGranule(granule))
-            {
-                ++granules_dropped;
-                continue;
-            }
-
-            if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
-                res.push_back(data_range);
-            else
-                res.back().end = data_range.end;
-        }
-
-        last_index_mark = index_range.end - 1;
-    }
-    return res;
-}
-
-MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
-    MergeTreeIndices indices,
-    MergeTreeIndexMergedConditionPtr condition,
-    MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
-    const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
     size_t & total_granules,
     size_t & granules_dropped,
