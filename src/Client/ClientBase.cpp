@@ -293,11 +293,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     size_t max_length = 0;
 	
 	const String & sql_dialect = settings.sql_dialect;
-	// assert(sql_dialect == "clickhouse" || sql_dialect == "mysql");
     if (sql_dialect == "mysql")
 	{
 		MySQLCompatibility::Converter converter;
-		converter.toClickHouseAST(pos, res);
+		String query = MySQLCompatibility::Converter::extractQuery(pos, end);
+		converter.toClickHouseAST(query, res);
 	} else
 	{
 		if (!allow_multi_statements)

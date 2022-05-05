@@ -145,11 +145,13 @@ void AST::PrintTreeImpl(std::stringstream & ss) const
     if (!terminals.empty())
     {
         ss << "terminals = [";
-        for (const auto & x : terminals)
-        {
-            ss << x << " ";
-        }
-        ss << "]; ";
+        for (int i = 0; i < terminals.size(); ++i)
+		{
+			ss << "(";
+			ss << "'" << terminals[i] << "'";
+			ss << ")";
+		}
+		ss << "]; ";
     }
     if (!children.empty())
     {

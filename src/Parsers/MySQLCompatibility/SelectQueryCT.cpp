@@ -374,7 +374,7 @@ bool SelectQueryCT::setup()
         }
     }
 
-    // ORDER BY
+    // GROUP BY
     {
         MySQLPtr group_by_clause = TreePath({"groupByClause"}).evaluate(query_expr_spec);
 
@@ -391,6 +391,7 @@ bool SelectQueryCT::setup()
 
     // HAVING
     {
+        // TODO: if we don't have groupby, do we need this?
         MySQLPtr having_clause = TreePath({"havingClause"}).evaluate(query_expr_spec);
 
         if (having_clause != nullptr)
@@ -461,7 +462,7 @@ void SelectQueryCT::convert(CHPtr & ch_tree) const
         select_node->setExpression(DB::ASTSelectQuery::Expression::WHERE, std::move(where_node));
     }
 
-    // ORDER BY
+    // GROUP BY
     if (group_by_ct != nullptr)
     {
         CHPtr group_by_node = nullptr;
@@ -469,6 +470,7 @@ void SelectQueryCT::convert(CHPtr & ch_tree) const
         select_node->setExpression(DB::ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_node));
     }
 
+    // HAVING
     if (having_ct != nullptr)
     {
         CHPtr having_node = nullptr;

@@ -37,6 +37,89 @@ String Converter::dumpTerminals(const String & query) const
         return "MySQL query is invalid, TODO: listen antlr errors";
 }
 
+static void queryMovePosition(const char *& pos, const char * end)
+{
+    while (pos < end)
+    {
+        if (pos + 1 < end && (*pos) == '/' && *(pos + 1) == '*')
+        {
+            while (pos < end)
+            {
+                if (pos + 1 < end && (*pos) == '*' && *(pos + 1) == '/')
+                {
+                    pos += 2;
+                    break;
+                }
+                ++pos;
+            }
+            continue;
+        }
+
+        if ((*pos) == '\'' || (*pos) == '"' || (*pos) == '`')
+        {
+            char quote = *pos;
+            int bs_count = 0;
+            ++pos;
+            while (pos < end)
+            {
+                if ((*pos) == '\\')
+                    bs_count += 1;
+
+                if ((*pos) == quote && bs_count % 2 == 0)
+                {
+                    ++pos;
+                    break;
+                }
+
+                if ((*pos) != '\\')
+                    bs_count = 0;
+
+                ++pos;
+            }
+            continue;
+        }
+
+        bool line_comment = false;
+        line_comment = (line_comment || (*pos == '#'));
+        line_comment = (line_comment || (pos + 1 < end && (*pos) == '-' && *(pos + 1) == '-'));
+        line_comment = (line_comment || (pos + 1 < end && (*pos) == '/' && *(pos + 1) == '/'));
+
+        if (line_comment)
+        {
+            while (pos < end)
+            {
+                // FIXME: add other linebreaks
+                if (*pos == '\n')
+                {
+                    ++pos;
+                    break;
+                }
+                ++pos;
+            }
+            continue;
+        }
+
+        if ((*pos) == ';')
+        {
+            ++pos;
+            break;
+        }
+
+        ++pos;
+    }
+}
+
+String Converter::extractQuery(const char *& pos, const char * end)
+{
+    String query = "";
+    const char * begin = pos;
+    queryMovePosition(pos, end);
+    for (int i = 0; (begin + i) < pos && (begin + i) < end; ++i)
+        query += begin[i];
+
+    return query;
+}
+
 void Converter::toClickHouseAST(const String & query, CHPtr & ch_tree) const
 {
     ch_tree = nullptr;

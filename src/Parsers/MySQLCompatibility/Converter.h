@@ -10,5 +10,6 @@ public:
     String dumpAST(const String & query) const;
     String dumpTerminals(const String & query) const;
     void toClickHouseAST(const String & query, DB::ASTPtr & ch_tree) const;
+    static String extractQuery(const char *& pos, const char * end);
 };
 }
