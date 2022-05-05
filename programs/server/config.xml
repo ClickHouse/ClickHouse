@@ -113,10 +113,13 @@
     -->
     <postgresql_port>9005</postgresql_port>
 
-    <!-- Compatibility with Redis protocol.
-         ClickHouse will pretend to be Redis for applications connecting to this port.
-    -->
-    <redis_port>9006</redis_port>
+    <!-- Compatibility with Redis protocol. -->
+    <redis>
+        <!-- ClickHouse will pretend to be Redis for applications connecting to this port. -->
+        <port>9006</port>
+
+        <enable_ssl>false</enable_ssl>
+    </redis>
 
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.

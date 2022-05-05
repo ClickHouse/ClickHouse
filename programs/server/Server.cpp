@@ -2006,7 +2006,7 @@ void Server::createServers(
                     context(), createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
 
-        port_name = "redis_port";
+        port_name = "redis.port";
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
             Poco::Net::ServerSocket socket;
