@@ -390,7 +390,10 @@ bool FileSegment::reserve(size_t size)
     bool reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
 
     if (reserved)
+    {
+        std::lock_guard segment_lock(mutex);
         reserved_size += size;
+    }
 
     return reserved;
 }
