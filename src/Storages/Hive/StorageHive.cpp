@@ -844,7 +844,7 @@ void registerStorageHive(StorageFactory & factory)
             const String & hive_metastore_url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
             const String & hive_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
             const String & hive_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-            return StorageHive::create(
+            return std::make_shared<StorageHive>(
                 hive_metastore_url,
                 hive_database,
                 hive_table,
