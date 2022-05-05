@@ -8,103 +8,112 @@ namespace MySQLCompatibility
 class ExprLiteralInt64CT : public IConversionTree
 {
 public:
-	ExprLiteralInt64CT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
+    ExprLiteralInt64CT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
+
 private:
-	int64_t value;
+    int64_t value;
 };
 
 class ExprLiteralFloat64CT : public IConversionTree
 {
 public:
-	ExprLiteralFloat64CT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
+    ExprLiteralFloat64CT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
+
 private:
-	double value;
+    double value;
 };
 
 class ExprLiteralNumericCT : public IConversionTree
 {
 public:
-	ExprLiteralNumericCT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
+    ExprLiteralNumericCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
+
 private:
-	ConvPtr numeric_ct = nullptr;
+    ConvPtr numeric_ct = nullptr;
 };
 
 class ExprLiteralText : public IConversionTree
 {
 public:
-	ExprLiteralText(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
+    ExprLiteralText(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
+
 private:
-	String value;
+    String value;
 };
 
 class ExprLiteralBoolCT : public IConversionTree
 {
 public:
-	ExprLiteralBoolCT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
+    ExprLiteralBoolCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
+
 private:
-	bool value;
+    bool value;
 };
 
 class ExprLiteralNullCT : public IConversionTree
 {
 public:
-	ExprLiteralNullCT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
+    ExprLiteralNullCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
 };
 
 class ExprGenericLiteralCT : public IConversionTree
 {
 public:
-	ExprGenericLiteralCT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
+    ExprGenericLiteralCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
+
 private:
-	ConvPtr literal_ct = nullptr;
+    ConvPtr literal_ct = nullptr;
 };
 
 class ExprIdentifierCT : public IConversionTree
 {
 public:
-	ExprIdentifierCT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
+    ExprIdentifierCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
+
 private:
-	String value;
+    String value;
 };
 
 class ExprSimpleCT : public IConversionTree
 {
 public:
-	ExprSimpleCT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
+    ExprSimpleCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
+
 private:
-	ConvPtr subexpr_ct = nullptr;
-	bool negate = false;
+    ConvPtr subexpr_ct = nullptr;
+    bool negate = false;
 };
 
 class ExprBitCT : public IConversionTree
 {
 public:
-	ExprBitCT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
-private:
-	ConvPtr simple_expr_ct = nullptr;
+    ExprBitCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
 
-	MySQLTree::TOKEN_TYPE operation;
-	ConvPtr first_operand_ct = nullptr;
+private:
+    ConvPtr simple_expr_ct = nullptr;
+
+    MySQLTree::TOKEN_TYPE operation;
+    ConvPtr first_operand_ct = nullptr;
     ConvPtr second_operand_ct = nullptr;
 };
 
@@ -113,28 +122,30 @@ private:
 class ExprBoolStatementCT : public IConversionTree
 {
 public:
-	ExprBoolStatementCT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
+    ExprBoolStatementCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
+
 private:
-	ConvPtr predicate_ct = nullptr;
-	MySQLTree::TOKEN_TYPE operation;
-	ConvPtr first_operand_ct = nullptr;
-	ConvPtr second_operand_ct = nullptr;
+    ConvPtr predicate_ct = nullptr;
+    MySQLTree::TOKEN_TYPE operation;
+    ConvPtr first_operand_ct = nullptr;
+    ConvPtr second_operand_ct = nullptr;
 };
 
 class ExpressionCT : public IConversionTree
 {
 public:
-	ExpressionCT(MySQLPtr source) : IConversionTree(source) {}
-	virtual bool setup() override;
-	virtual void convert(CHPtr & ch_tree) const override;
-private:
-	ConvPtr subexpr_ct = nullptr;
-	bool not_rule = false;
+    ExpressionCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup() override;
+    virtual void convert(CHPtr & ch_tree) const override;
 
-	MySQLTree::TOKEN_TYPE operation;
-	ConvPtr first_operand_ct = nullptr;
-	ConvPtr second_operand_ct = nullptr;
+private:
+    ConvPtr subexpr_ct = nullptr;
+    bool not_rule = false;
+
+    MySQLTree::TOKEN_TYPE operation;
+    ConvPtr first_operand_ct = nullptr;
+    ConvPtr second_operand_ct = nullptr;
 };
 }

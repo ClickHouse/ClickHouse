@@ -4,9 +4,9 @@
 #include <Parsers/MySQLCompatibility/ParserOverlay/AST.h>
 
 // MOO: for debug
-#include <Common/logger_useful.h>
-#include <Poco/Util/Application.h>
 #include <IO/Operators.h>
+#include <Poco/Util/Application.h>
+#include <Common/logger_useful.h>
 
 namespace MySQLCompatibility
 {
