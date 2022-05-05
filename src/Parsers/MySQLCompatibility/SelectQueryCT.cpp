@@ -286,8 +286,6 @@ void SelectGroupByCT::convert(CHPtr & ch_tree) const
 
 bool SelectQueryCT::setup()
 {
-    auto * logger = &Poco::Logger::get("AST");
-
     auto column_path = TreePath::columnPath();
 
     MySQLPtr query_expr = TreePath({"queryExpression"}).evaluate(_source);
@@ -406,15 +404,11 @@ bool SelectQueryCT::setup()
         }
     }
 
-    LOG_DEBUG(logger, "MySQL AST parsing succeded!");
-
     return true;
 }
 
 void SelectQueryCT::convert(CHPtr & ch_tree) const
 {
-    auto * logger = &Poco::Logger::get("AST");
-
     auto select_union = std::make_shared<DB::ASTSelectWithUnionQuery>();
     auto select_list = std::make_shared<DB::ASTExpressionList>();
     auto select_node = std::make_shared<DB::ASTSelectQuery>();
@@ -429,7 +423,6 @@ void SelectQueryCT::convert(CHPtr & ch_tree) const
     // FROM
     if (tables_ct != nullptr)
     {
-        LOG_DEBUG(logger, "FROM!");
         CHPtr table_list;
         tables_ct->convert(table_list);
         select_node->setExpression(DB::ASTSelectQuery::Expression::TABLES, std::move(table_list));

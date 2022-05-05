@@ -275,8 +275,6 @@ void ExprIdentifierCT::convert(CHPtr & ch_tree) const
 
 bool ExprSimpleCT::setup()
 {
-    LOG_DEBUG(getLogger(), "got simple expr!");
-
     MySQLPtr simple_expr_node = TreePath({"simpleExpr"}).evaluate(_source);
 
     if (simple_expr_node == nullptr)
@@ -288,7 +286,6 @@ bool ExprSimpleCT::setup()
 
         if (expr_list != nullptr)
         {
-            LOG_DEBUG(getLogger(), "got SUB!");
             // FIXME: list
             if (expr_list->children.size() != 1)
                 return false;
@@ -306,7 +303,6 @@ bool ExprSimpleCT::setup()
 
     if (!simple_expr_node->terminal_types.empty())
     {
-        LOG_DEBUG(getLogger(), "got negate!");
         if (simple_expr_node->terminal_types.size() == 1)
         {
             switch (simple_expr_node->terminal_types[0])
@@ -369,7 +365,6 @@ void ExprSimpleCT::convert(CHPtr & ch_tree) const
 
 bool ExprBitCT::setup()
 {
-    LOG_DEBUG(getLogger(), "expr bit!");
     MySQLPtr bitexpr_node = TreePath({"bitExpr"}).evaluate(_source);
 
     if (bitexpr_node == nullptr)
@@ -380,7 +375,6 @@ bool ExprBitCT::setup()
 
     if (simple_expr_node != nullptr)
     {
-        LOG_DEBUG(getLogger(), "simple expr");
         simple_expr_ct = std::make_shared<ExprSimpleCT>(simple_expr_node);
         if (!simple_expr_ct->setup())
         {
@@ -420,7 +414,6 @@ bool ExprBitCT::setup()
         return true;
     }
 
-    LOG_DEBUG(getLogger(), "unknown expr");
     return false; // FIXME
 }
 
@@ -437,7 +430,6 @@ void ExprBitCT::convert(CHPtr & ch_tree) const
 
 bool ExprBoolStatementCT::setup()
 {
-    LOG_DEBUG(getLogger(), "check bool!");
     MySQLPtr bool_pri_node = TreePath({"boolPri"}).evaluate(_source);
 
     if (bool_pri_node == nullptr)
@@ -465,7 +457,6 @@ bool ExprBoolStatementCT::setup()
 
     if (bool_pri_node->children.size() == 3)
     {
-        LOG_DEBUG(getLogger(), "BOOL EXPR!");
         if (bool_pri_node->children[2]->rule_name == "predicate")
         {
             MySQLPtr first_operand = bool_pri_node->children[0];
@@ -489,8 +480,6 @@ bool ExprBoolStatementCT::setup()
                 second_operand_ct = first_operand_ct = nullptr;
                 return false;
             }
-
-            LOG_DEBUG(getLogger(), "bool args ok!");
 
             return true;
         }
@@ -583,7 +572,6 @@ void ExpressionCT::convert(CHPtr & ch_tree) const
 {
     if (not_rule)
     {
-        LOG_DEBUG(getLogger(), "NOT SPAWN");
         CHPtr subexpr = nullptr;
         subexpr_ct->convert(subexpr);
         ch_tree = DB::makeASTFunction("not", subexpr);
