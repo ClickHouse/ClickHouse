@@ -20,13 +20,13 @@ namespace ANNCondition
     There are two main patterns of queries being supported
 
     1) Search query type
-    SELECT * FROM * WHERE DistanceFunc(column, target_vector) < floatLiteral [LIM count]
+    SELECT * FROM * WHERE DistanceFunc(column, target_vector) < floatLiteral [LIMIT count]
 
     2) OrderBy query type
-    SELECT * FROM * WHERE * ORDERBY DistanceFunc(column, target_vector) LIM some_length
+    SELECT * FROM * WHERE * ORDERBY DistanceFunc(column, target_vector) LIMIT some_length
 
     target_vector(should have float coordinates) examples:
-        tuple(10.0, 100.0, ...., 10000.0) or (10.0, 100.0, ...., 10000.0)
+        tuple(0.1, 0.1, ...., 0.1) or (0.1, 0.1, ...., 0.1)
         [the word tuple is not needed]
 
     If the query mathces one of these two types, than tha class extracts useful information
@@ -40,7 +40,7 @@ namespace ANNCondition
     * distance to compare(ONLY for search types, otherwise you get exception)
     * spaceDimension(which is targetVector's components count)
     * column
-    * objects count from LIM section(for both queries)
+    * objects count from LIMIT section(for both queries)
     * settings str, if query has settings section with new 'ann_index_params' value,
         than you can get the new value(empty by default) calling method getSettingsStr
     * queryHasOrderByClause and queryHasWhereClause return true if query mathces the type
@@ -81,7 +81,7 @@ public:
     // true if query match Search type
     bool queryHasWhereClause() const;
 
-    // length's value from LIM section, nullopt if not any
+    // length's value from LIMIT section, nullopt if not any
     std::optional<UInt64> getLimitCount() const;
 
     // value of 'ann_index_params' if have in SETTINGS section, empty string otherwise
@@ -116,7 +116,7 @@ private:
             // DistanceFunctions
             FUNCTION_DISTANCE,
 
-            //tuple(10.0, ..., 10.0)
+            //tuple(0.1, ..., 0.1)
             FUNCTION_TUPLE,
 
             // Operators <, >, <=, >=
@@ -134,7 +134,7 @@ private:
             // Unknown, can be any value
             FUNCTION_UNKNOWN,
 
-            // (10.0, ...., 10.0) vector without word 'tuple'
+            // (0.1, ...., 0.1) vector without word 'tuple'
             FUNCTION_LITERAL_TUPLE,
         };
 
@@ -176,7 +176,7 @@ private:
     // Returns true and stores ANNExpr if the query has valid ORDERBY section
     static bool matchRPNOrderBy(RPN & rpn, ANNExpression & expr);
 
-    // Returns true and stores Length if we have valid LIM clause in query
+    // Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPN & rpn, LimitExpression & expr);
 
     // Parses SETTINGS section, stores the new value for 'ann_index_params'

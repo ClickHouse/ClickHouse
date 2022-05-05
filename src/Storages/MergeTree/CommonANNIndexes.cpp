@@ -36,8 +36,9 @@ bool ANNCondition::alwaysUnknownOrTrue(String metric_name) const
 {
     if (!index_is_useful)
     {
-        return true;
+        return true; // Query isn't supported
     }
+    // If query is supported, check metrics for match
     return !(metric_name == ann_expr->metric_name);
 }
 
@@ -109,7 +110,7 @@ void ANNCondition::buildRPN(const SelectQueryInfo & query)
         traverseAST(select.where(), rpn_where_clause);
     }
 
-    if (select.limitLength()) // If query has LIM section
+    if (select.limitLength()) // If query has LIMIT section
     {
         traverseAST(select.limitLength(), rpn_limit_clause);
     }
@@ -297,7 +298,7 @@ bool ANNCondition::matchAllRPNS()
 
 bool ANNCondition::matchRPNLimit(RPN & rpn, LimitExpression & expr)
 {
-    // LIM section must have least 1 expression
+    // LIMIT section must have least 1 expression
     if (rpn.size() != 1)
     {
         return false;
@@ -327,7 +328,7 @@ void ANNCondition::parseSettings(const ASTPtr & node)
 
 bool ANNCondition::matchRPNOrderBy(RPN & rpn, ANNExpression & expr)
 {
-    // ORDERBY section must  have at least 3 expressions
+    // ORDERBY section must have at least 3 expressions
     if (rpn.size() < 3)
     {
         return false;
@@ -415,8 +416,8 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end,
 
 bool ANNCondition::matchRPNWhere(RPN & rpn, ANNExpression & expr)
 {
-    // WHERE section must have at least 6 espressions
-    // Matches Operator->Distance(float)->mainParts
+    // WHERE section must have at least 6 expressions
+    // Operator->Distance(float)->DistanceFunc->Column->TupleFunc(Literal)->Coordinates(floats)
     if (rpn.size() < 6)
     {
         return false;
