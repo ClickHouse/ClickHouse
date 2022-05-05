@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeIndicesANNCondition.h>
+#include <Storages/MergeTree/CommonANNIndexes.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Parsers/ASTIdentifier.h>
