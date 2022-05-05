@@ -1,0 +1,59 @@
+1
+1; SELECT 0;;;; SELECT 0
+1; SELECT \'str\';;;; SELECT \'str\' 0
+2
+MOO: numbers and arithmetics
+1
+2
+4
+3.14
+-0.9375
+5
+5
+1234
+1234.5
+5	4	3	2	1
+MOO: comparisons
+1
+1
+1
+1
+1
+1
+1
+MOO: strings
+double quoted string literal
+ordinary quoted string literal
+1
+1
+1
+123
+abcd
+MOO: boolean
+false
+true
+\N
+\N
+true
+false
+false
+true
+true
+false
+false
+true
+false
+true
+false
+true
+true
+false
+1
+1
+1
+1
+1
+0
+0
+1
+MOO: end of MySQL queries
