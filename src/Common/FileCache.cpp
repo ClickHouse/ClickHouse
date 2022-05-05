@@ -889,9 +889,9 @@ LRUFileCache::LRUQueue::Iterator LRUFileCache::LRUQueue::add(
     const IFileCache::Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & /* cache_lock */)
 {
 #ifndef NDEBUG
-    for (auto it = queue.begin(); it != queue.end(); ++it)
+    for (const auto [entry_key, entry_offset, _] : queue)
     {
-        if (it->key == key && it->offset == offset)
+        if (entry_key == key && entry_offset == offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue. (Key: {}, offset: {}, size: {})",
@@ -925,9 +925,9 @@ bool LRUFileCache::LRUQueue::contains(
 {
     /// This method is used for assertions in debug mode.
     /// So we do not care about complexity here.
-    for (const auto [queue_key, queue_offset, size] : queue)
+    for (const auto [entry_key, entry_offset, size] : queue)
     {
-        if (key == queue_key && offset == queue_offset)
+        if (key == entry_key && offset == entry_offset)
             return true;
     }
     return false;
