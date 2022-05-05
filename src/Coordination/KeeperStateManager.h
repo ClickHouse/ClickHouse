@@ -6,6 +6,7 @@
 #include <Coordination/CoordinationSettings.h>
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
+#include "Coordination/KeeperStateMachine.h"
 #include <Coordination/KeeperSnapshotManager.h>
 
 namespace DB
@@ -131,6 +132,7 @@ private:
     nuraft::ptr<KeeperLogStore> log_store;
     nuraft::ptr<nuraft::srv_state> server_state;
 
+public:
     /// Parse configuration from xml config.
     KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const;
 };
