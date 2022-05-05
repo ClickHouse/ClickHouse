@@ -36,7 +36,7 @@ public:
     void remove(
         bool can_remove_shared_data,
         const NameSet & names_not_to_remove,
-        const MergeTreeDataPartChecksums & checksums, 
+        const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         Poco::Logger * log) const override;
 
@@ -119,8 +119,8 @@ private:
         const std::string & dir,
         bool can_remove_shared_data,
         const NameSet & names_not_to_remove,
-        const MergeTreeDataPartChecksums & checksums, 
-        const std::unordered_set<String> & skip_directories, 
+        const MergeTreeDataPartChecksums & checksums,
+        const std::unordered_set<String> & skip_directories,
         Poco::Logger * log,
         bool is_projection) const;
 };

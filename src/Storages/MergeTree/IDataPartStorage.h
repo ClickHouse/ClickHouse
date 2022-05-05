@@ -86,7 +86,7 @@ public:
     virtual void remove(
         bool can_remove_shared_data,
         const NameSet & names_not_to_remove,
-        const MergeTreeDataPartChecksums & checksums, 
+        const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         Poco::Logger * log) const = 0;
 
@@ -101,7 +101,7 @@ public:
     virtual std::string getPartDirectory() const = 0;
     // virtual std::string getRootPath() const = 0;
     // std::string getPath() const; // getRootPath() / getPartDirectory()
-    // 
+    //
     // virtual std::string getFullRootPath() const = 0;
     // virtual std::string getFullPath() const = 0; // getFullRootPath() / getPartDirectory()
 

@@ -1520,7 +1520,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 {
     if (!index_helper->getDeserializedFormat(part->data_part_storage, index_helper->getFileName()))
     {
-        LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name), 
+        LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->data_part_storage->getFullPath()) / index_helper->getFileName()).string());
         return ranges;
     }

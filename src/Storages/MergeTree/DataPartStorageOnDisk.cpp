@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int LOGICAL_ERROR;
 }
 
 DataPartStorageOnDisk::DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_)
