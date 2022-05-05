@@ -1324,7 +1324,7 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part,  ctx->data_part_storage_builder, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->data_part_storage_builder, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
     }
 
 
