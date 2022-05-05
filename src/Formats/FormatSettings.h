@@ -262,6 +262,12 @@ struct FormatSettings
         UInt64 number_of_columns = 0;
         MsgPackUUIDRepresentation output_uuid_representation = MsgPackUUIDRepresentation::EXT;
     } msgpack;
+
+    struct MySQLDump
+    {
+        String table_name;
+        bool map_column_names = true;
+    } mysql_dump;
 };
 
 }

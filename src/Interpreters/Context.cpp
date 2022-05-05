@@ -455,6 +455,8 @@ struct ContextSharedPart
         delete_message_broker_schedule_pool.reset();
         delete_ddl_worker.reset();
         delete_access_control.reset();
+
+        total_memory_tracker.resetOvercommitTracker();
     }
 
     bool hasTraceCollector() const
@@ -3314,7 +3316,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         background_common_pool_size = config.getUInt64("profiles.default.background_common_pool_size");
 
     /// With this executor we can execute more tasks than threads we have
-    shared->merge_mutate_executor = MergeMutateBackgroundExecutor::create
+    shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
     (
         "MergeMutate",
         /*max_threads_count*/background_pool_size,
@@ -3324,7 +3326,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
         background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio);
 
-    shared->moves_executor = OrdinaryBackgroundExecutor::create
+    shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Move",
         background_move_pool_size,
@@ -3333,7 +3335,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     );
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", background_move_pool_size, background_move_pool_size);
 
-    shared->fetch_executor = OrdinaryBackgroundExecutor::create
+    shared->fetch_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Fetch",
         background_fetches_pool_size,
@@ -3342,7 +3344,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     );
     LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_pool_size);
 
-    shared->common_executor = OrdinaryBackgroundExecutor::create
+    shared->common_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Common",
         background_common_pool_size,
