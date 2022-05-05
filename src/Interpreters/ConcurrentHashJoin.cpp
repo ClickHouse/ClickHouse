@@ -19,7 +19,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/parseQuery.h>
-#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 namespace DB
