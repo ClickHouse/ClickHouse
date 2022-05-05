@@ -77,7 +77,11 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & block, bool check_limits)
             auto & dispatched_block = dispatched_blocks[i];
             if (hash_join->mutex.try_lock())
             {
-                hash_join->data->addJoinedBlock(dispatched_block, check_limits);
+                if (!hash_join->data->addJoinedBlock(dispatched_block, check_limits))
+                {
+                    hash_join->mutex.unlock();
+                    return false;
+                }
 
                 hash_join->mutex.unlock();
                 iter = pending_blocks.erase(iter);
