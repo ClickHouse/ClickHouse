@@ -11,6 +11,8 @@ namespace DB
 class IBackupCoordination
 {
 public:
+    virtual ~IBackupCoordination() = default;
+
     struct FileInfo
     {
         String file_name;
@@ -31,8 +33,6 @@ public:
         /// Position in the archive.
         UInt64 pos_in_archive = static_cast<UInt64>(-1);
     };
-
-    virtual ~IBackupCoordination() = default;
 
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
