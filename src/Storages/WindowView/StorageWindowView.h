@@ -5,7 +5,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
-#include <base/shared_ptr_helper.h>
 
 #include <mutex>
 
@@ -99,14 +98,20 @@ using ASTPtr = std::shared_ptr<IAST>;
  *     Users need to take these duplicated results into account.
  */
 
-class StorageWindowView final : public shared_ptr_helper<StorageWindowView>, public IStorage, WithContext
+class StorageWindowView final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageWindowView>;
     friend class TimestampTransformation;
     friend class WindowViewSource;
     friend class WatermarkTransform;
 
 public:
+    StorageWindowView(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns,
+        bool attach_);
+
     String getName() const override { return "WindowView"; }
 
     bool isView() const override { return true; }
@@ -241,12 +246,5 @@ private:
     StoragePtr getTargetStorage() const;
 
     Block & getHeader() const;
-
-    StorageWindowView(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns,
-        bool attach_);
 };
 }

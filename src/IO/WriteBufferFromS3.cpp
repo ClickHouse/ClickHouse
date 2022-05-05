@@ -20,7 +20,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3WriteBytes;
+    extern const Event WriteBufferFromS3Bytes;
     extern const Event RemoteFSCacheDownloadBytes;
 }
 
@@ -30,7 +30,6 @@ namespace DB
 // In case server does not return an error on exceeding that number, we print a warning
 // because custom S3 implementation may allow relaxed requirements on that.
 const int S3_WARN_MAX_PARTS = 10000;
-
 
 namespace ErrorCodes
 {
@@ -100,7 +99,7 @@ void WriteBufferFromS3::nextImpl()
             ? CurrentThread::get().getThreadGroup()
             : MainThreadStatus::getInstance().getThreadGroup();
 
-    ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
 
     last_part_size += offset();
 
