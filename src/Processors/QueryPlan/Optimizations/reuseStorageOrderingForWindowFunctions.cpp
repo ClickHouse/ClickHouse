@@ -1,7 +1,6 @@
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -49,8 +48,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     auto * possible_read_from_merge_tree_node = sorting_node->children.front();
 
-    auto * expression = typeid_cast<ExpressionStep *>(possible_read_from_merge_tree_node->step.get());
-    if (expression)
+    if (auto * expression = typeid_cast<ExpressionStep *>(possible_read_from_merge_tree_node->step.get()))
     {
         if (possible_read_from_merge_tree_node->children.size() != 1)
             return 0;
@@ -58,8 +56,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
         possible_read_from_merge_tree_node = possible_read_from_merge_tree_node->children.front();
     }
 
-    auto * quota_and_limits = typeid_cast<SettingQuotaAndLimitsStep *>(possible_read_from_merge_tree_node->step.get());
-    if (quota_and_limits)
+    if (auto * quota_and_limits = typeid_cast<SettingQuotaAndLimitsStep *>(possible_read_from_merge_tree_node->step.get()))
     {
         if (possible_read_from_merge_tree_node->children.size() != 1)
             return 0;
