@@ -443,9 +443,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 			MySQLCompatibility::Converter converter;
 			String ast_dump = converter.dumpAST(begin);
 			LOG_INFO(&Poco::Logger::get("executeQuery"), "MySQL AST = {}", ast_dump);
-			converter.toClickHouseAST(begin, ast);
-			if (ast == nullptr)
-				throw Exception(ErrorCodes::INVALID_TRANSACTION, "Convertion failed");
+			
+			String error;
+			if (!converter.toClickHouseAST(begin, ast, error))
+				throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "ClickHouse failed to parse MySQL query with error: " + error);
 			
 			ast_dump = ast->dumpTree();
 			LOG_INFO(&Poco::Logger::get("executeQuery"), "Converted AST = {}", ast_dump);

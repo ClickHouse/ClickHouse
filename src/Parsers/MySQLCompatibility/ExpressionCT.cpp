@@ -92,7 +92,7 @@ static void spawnCHFunction(MySQLTree::TOKEN_TYPE operation, const ConvPtr & x, 
     ch_tree = DB::makeASTFunction(op_name, first_node, second_node);
 }
 
-bool ExprLiteralNullCT::setup()
+bool ExprLiteralNullCT::setup(String &)
 {
     MySQLPtr literal_node = TreePath({"nullLiteral"}).evaluate(_source);
 
@@ -105,7 +105,7 @@ void ExprLiteralNullCT::convert(CHPtr & ch_tree) const
     ch_tree = literal_node;
 }
 
-bool ExprLiteralBoolCT::setup()
+bool ExprLiteralBoolCT::setup(String &)
 {
     MySQLPtr literal_node = TreePath({"boolLiteral"}).evaluate(_source);
 
@@ -122,7 +122,7 @@ void ExprLiteralBoolCT::convert(CHPtr & ch_tree) const
     ch_tree = literal_node;
 }
 
-bool ExprLiteralInt64CT::setup()
+bool ExprLiteralInt64CT::setup(String &)
 {
     MySQLPtr literal_node = TreePath({"numLiteral"}).evaluate(_source);
 
@@ -139,7 +139,7 @@ void ExprLiteralInt64CT::convert(CHPtr & ch_tree) const
     ch_tree = literal_node;
 }
 
-bool ExprLiteralFloat64CT::setup()
+bool ExprLiteralFloat64CT::setup(String &)
 {
     MySQLPtr literal_node = TreePath({"numLiteral"}).evaluate(_source);
 
@@ -156,7 +156,7 @@ void ExprLiteralFloat64CT::convert(CHPtr & ch_tree) const
     ch_tree = literal_node;
 }
 
-bool ExprLiteralNumericCT::setup()
+bool ExprLiteralNumericCT::setup(String & error)
 {
     MySQLPtr numeric_node = TreePath({"numLiteral"}).evaluate(_source);
 
@@ -177,7 +177,7 @@ bool ExprLiteralNumericCT::setup()
             return false;
     }
 
-    if (!numeric_ct->setup())
+    if (!numeric_ct->setup(error))
     {
         numeric_ct = nullptr;
         return false;
@@ -192,7 +192,7 @@ void ExprLiteralNumericCT::convert(CHPtr & ch_tree) const
     numeric_ct->convert(ch_tree);
 }
 
-bool ExprLiteralText::setup()
+bool ExprLiteralText::setup(String &)
 {
     MySQLPtr text_literal = TreePath({"textLiteral"}).evaluate(_source);
 
@@ -219,7 +219,7 @@ void ExprLiteralText::convert(CHPtr & ch_tree) const
     ch_tree = literal_node;
 }
 
-bool ExprGenericLiteralCT::setup()
+bool ExprGenericLiteralCT::setup(String & error)
 {
     MySQLPtr literal_node = TreePath({"literal"}).evaluate(_source);
 
@@ -239,7 +239,7 @@ bool ExprGenericLiteralCT::setup()
     else
         return false;
 
-    if (!literal_ct->setup())
+    if (!literal_ct->setup(error))
     {
         literal_ct = nullptr;
         return false;
@@ -254,13 +254,15 @@ void ExprGenericLiteralCT::convert(CHPtr & ch_tree) const
     literal_ct->convert(ch_tree);
 }
 
-bool ExprIdentifierCT::setup()
+bool ExprIdentifierCT::setup(String & error)
 {
     MySQLPtr identifier_node = TreePath({"pureIdentifier"}).evaluate(_source);
 
     if (identifier_node == nullptr)
+    {
+        error = "invalid identifier";
         return false;
-
+    }
     assert(!identifier_node->terminals.empty());
     value = removeQuotes(identifier_node->terminals[0]);
 
@@ -273,7 +275,7 @@ void ExprIdentifierCT::convert(CHPtr & ch_tree) const
     ch_tree = identifier;
 }
 
-bool ExprSimpleCT::setup()
+bool ExprSimpleCT::setup(String & error)
 {
     MySQLPtr simple_expr_node = TreePath({"simpleExpr"}).evaluate(_source);
 
@@ -291,7 +293,7 @@ bool ExprSimpleCT::setup()
                 return false;
 
             subexpr_ct = std::make_shared<ExpressionCT>(expr_list->children[0]);
-            if (!subexpr_ct->setup())
+            if (!subexpr_ct->setup(error))
             {
                 subexpr_ct = nullptr;
                 return false;
@@ -314,7 +316,7 @@ bool ExprSimpleCT::setup()
                 default:
                     return false;
             }
-            if (!subexpr_ct->setup())
+            if (!subexpr_ct->setup(error))
             {
                 subexpr_ct = nullptr;
                 return false;
@@ -329,7 +331,7 @@ bool ExprSimpleCT::setup()
     if (column_node != nullptr)
     {
         subexpr_ct = std::make_shared<ExprIdentifierCT>(column_node);
-        if (!subexpr_ct->setup())
+        if (!subexpr_ct->setup(error))
         {
             subexpr_ct = nullptr;
             return false;
@@ -341,7 +343,7 @@ bool ExprSimpleCT::setup()
     if (literal_node != nullptr)
     {
         subexpr_ct = std::make_shared<ExprGenericLiteralCT>(literal_node);
-        if (!subexpr_ct->setup())
+        if (!subexpr_ct->setup(error))
         {
             subexpr_ct = nullptr;
             return false;
@@ -349,7 +351,8 @@ bool ExprSimpleCT::setup()
         return true;
     }
 
-    return true;
+    error = "unknown expression parameter";
+    return false;
 }
 
 void ExprSimpleCT::convert(CHPtr & ch_tree) const
@@ -363,7 +366,7 @@ void ExprSimpleCT::convert(CHPtr & ch_tree) const
         ch_tree = subexpr;
 }
 
-bool ExprBitCT::setup()
+bool ExprBitCT::setup(String & error)
 {
     MySQLPtr bitexpr_node = TreePath({"bitExpr"}).evaluate(_source);
 
@@ -376,7 +379,7 @@ bool ExprBitCT::setup()
     if (simple_expr_node != nullptr)
     {
         simple_expr_ct = std::make_shared<ExprSimpleCT>(simple_expr_node);
-        if (!simple_expr_ct->setup())
+        if (!simple_expr_ct->setup(error))
         {
             simple_expr_ct = nullptr;
             return false;
@@ -398,14 +401,14 @@ bool ExprBitCT::setup()
             return false;
 
         first_operand_ct = std::make_shared<ExprBitCT>(first);
-        if (!first_operand_ct->setup())
+        if (!first_operand_ct->setup(error))
         {
             first_operand_ct = nullptr;
             return false;
         }
 
         second_operand_ct = std::make_shared<ExprBitCT>(second);
-        if (!second_operand_ct->setup())
+        if (!second_operand_ct->setup(error))
         {
             second_operand_ct = first_operand_ct = nullptr;
             return false;
@@ -428,7 +431,7 @@ void ExprBitCT::convert(CHPtr & ch_tree) const
     spawnCHFunction(operation, first_operand_ct, second_operand_ct, ch_tree);
 }
 
-bool ExprBoolStatementCT::setup()
+bool ExprBoolStatementCT::setup(String & error)
 {
     MySQLPtr bool_pri_node = TreePath({"boolPri"}).evaluate(_source);
 
@@ -443,7 +446,7 @@ bool ExprBoolStatementCT::setup()
         if (predicate_ptr != nullptr)
         {
             predicate_ct = std::make_shared<ExprBitCT>(predicate_ptr);
-            if (!predicate_ct->setup())
+            if (!predicate_ct->setup(error))
             {
                 predicate_ct = nullptr;
                 return false;
@@ -468,14 +471,14 @@ bool ExprBoolStatementCT::setup()
                 return false;
 
             first_operand_ct = std::make_shared<ExprBoolStatementCT>(first_operand);
-            if (!first_operand_ct->setup())
+            if (!first_operand_ct->setup(error))
             {
                 first_operand_ct = nullptr;
                 return false;
             }
 
             second_operand_ct = std::make_shared<ExprBitCT>(second_operand);
-            if (!second_operand_ct->setup())
+            if (!second_operand_ct->setup(error))
             {
                 second_operand_ct = first_operand_ct = nullptr;
                 return false;
@@ -500,7 +503,7 @@ void ExprBoolStatementCT::convert(CHPtr & ch_tree) const
 
     spawnCHFunction(operation, first_operand_ct, second_operand_ct, ch_tree);
 }
-bool ExpressionCT::setup()
+bool ExpressionCT::setup(String & error)
 {
     MySQLPtr expr = _source;
     if (expr == nullptr)
@@ -515,7 +518,7 @@ bool ExpressionCT::setup()
 
             not_rule = true;
             subexpr_ct = std::make_shared<ExpressionCT>(expr->children[0]);
-            if (!subexpr_ct->setup())
+            if (!subexpr_ct->setup(error))
             {
                 subexpr_ct = nullptr;
                 return false;
@@ -526,7 +529,7 @@ bool ExpressionCT::setup()
         {
             MySQLPtr bool_pri_node = expr->children[0];
             subexpr_ct = std::make_shared<ExprBoolStatementCT>(bool_pri_node);
-            if (!subexpr_ct->setup())
+            if (!subexpr_ct->setup(error))
             {
                 subexpr_ct = nullptr;
                 return false;
@@ -547,14 +550,14 @@ bool ExpressionCT::setup()
                 return false;
 
             first_operand_ct = std::make_shared<ExpressionCT>(expr->children[0]);
-            if (!first_operand_ct->setup())
+            if (!first_operand_ct->setup(error))
             {
                 first_operand_ct = nullptr;
                 return false;
             }
 
             second_operand_ct = std::make_shared<ExpressionCT>(expr->children[1]);
-            if (!second_operand_ct->setup())
+            if (!second_operand_ct->setup(error))
             {
                 second_operand_ct = first_operand_ct = nullptr;
                 return false;

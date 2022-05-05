@@ -9,7 +9,7 @@ class SelectItemsListCT : public IConversionTree
 {
 public:
     SelectItemsListCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -21,7 +21,7 @@ class SelectOrderByCT : public IConversionTree
 {
 public:
     SelectOrderByCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -32,7 +32,7 @@ class SelectLimitOffsetCT : public IConversionTree
 {
 public:
     SelectLimitOffsetCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -43,7 +43,7 @@ class SelectLimitLengthCT : public IConversionTree
 {
 public:
     SelectLimitLengthCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -59,7 +59,7 @@ public:
         String database = "";
     };
     SelectTablesCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -70,7 +70,7 @@ class SelectGroupByCT : public IConversionTree
 {
 public:
     SelectGroupByCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -81,7 +81,7 @@ class SelectQueryCT : public IConversionTree
 {
 public:
     SelectQueryCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:

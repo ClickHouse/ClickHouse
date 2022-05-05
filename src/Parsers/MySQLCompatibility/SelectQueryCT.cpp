@@ -14,7 +14,7 @@
 
 namespace MySQLCompatibility
 {
-bool SelectItemsListCT::setup()
+bool SelectItemsListCT::setup(String & error)
 {
     MySQLPtr select_item_list = _source;
 
@@ -35,7 +35,7 @@ bool SelectItemsListCT::setup()
         if ((expr_node = select_expr_path.evaluate(child)) != nullptr)
         {
             ConvPtr expr = std::make_shared<ExpressionCT>(expr_node);
-            if (!expr->setup())
+            if (!expr->setup(error))
             {
                 expr = nullptr;
                 return false;
@@ -67,7 +67,7 @@ void SelectItemsListCT::convert(CHPtr & ch_tree) const
 }
 
 
-bool SelectOrderByCT::setup()
+bool SelectOrderByCT::setup(String & error)
 {
     MySQLPtr order_list = _source;
     if (order_list == nullptr)
@@ -84,7 +84,7 @@ bool SelectOrderByCT::setup()
             assert(order_expr->children[0]->rule_name == "expr");
 
             ConvPtr order_elem_ct = std::make_shared<ExpressionCT>(order_expr->children[0]);
-            if (!order_elem_ct->setup())
+            if (!order_elem_ct->setup(error))
             {
                 order_elem_ct = nullptr;
                 return false;
@@ -120,7 +120,7 @@ void SelectOrderByCT::convert(CHPtr & ch_tree) const
     ch_tree = order_by_list;
 }
 
-bool SelectLimitLengthCT::setup()
+bool SelectLimitLengthCT::setup(String &)
 {
     MySQLPtr limit_options = _source;
     if (limit_options == nullptr)
@@ -153,7 +153,7 @@ void SelectLimitLengthCT::convert(CHPtr & ch_tree) const
     ch_tree = limit_length;
 }
 
-bool SelectLimitOffsetCT::setup()
+bool SelectLimitOffsetCT::setup(String &)
 {
     MySQLPtr limit_options = _source;
     if (limit_options == nullptr)
@@ -183,7 +183,7 @@ void SelectLimitOffsetCT::convert(CHPtr & ch_tree) const
     ch_tree = limit_offset;
 }
 
-bool SelectTablesCT::setup()
+bool SelectTablesCT::setup(String &)
 {
     auto table_list = _source;
     if (table_list == nullptr)
@@ -243,7 +243,7 @@ void SelectTablesCT::convert(CHPtr & ch_tree) const
     ch_tree = table_list;
 }
 
-bool SelectGroupByCT::setup()
+bool SelectGroupByCT::setup(String & error)
 {
     MySQLPtr group_clause = TreePath({"groupByClause"}).evaluate(_source);
 
@@ -258,7 +258,7 @@ bool SelectGroupByCT::setup()
         if ((expr = expr_path.evaluate(child)) != nullptr)
         {
             ConvPtr group_elem = std::make_shared<ExpressionCT>(expr);
-            if (!group_elem->setup())
+            if (!group_elem->setup(error))
             {
                 group_elem = nullptr;
                 return false;
@@ -284,7 +284,7 @@ void SelectGroupByCT::convert(CHPtr & ch_tree) const
     ch_tree = expr_list;
 }
 
-bool SelectQueryCT::setup()
+bool SelectQueryCT::setup(String & error)
 {
     auto column_path = TreePath::columnPath();
 
@@ -300,7 +300,7 @@ bool SelectQueryCT::setup()
         MySQLPtr items_node = TreePath({"selectItemList"}).evaluate(query_expr_spec);
 
         select_items_ct = std::make_shared<SelectItemsListCT>(items_node);
-        if (!select_items_ct->setup())
+        if (!select_items_ct->setup(error))
         {
             select_items_ct = nullptr;
             return false;
@@ -314,7 +314,7 @@ bool SelectQueryCT::setup()
         if (table_list != nullptr)
         {
             tables_ct = std::make_shared<SelectTablesCT>(table_list);
-            if (!tables_ct->setup())
+            if (!tables_ct->setup(error))
             {
                 tables_ct = nullptr;
                 return false;
@@ -329,7 +329,7 @@ bool SelectQueryCT::setup()
         if (order_list != nullptr)
         {
             order_by_ct = std::make_shared<SelectOrderByCT>(order_list);
-            if (!order_by_ct->setup())
+            if (!order_by_ct->setup(error))
             {
                 order_by_ct = nullptr;
                 return false;
@@ -344,14 +344,14 @@ bool SelectQueryCT::setup()
         if (limit_options != nullptr)
         {
             limit_length_ct = std::make_shared<SelectLimitLengthCT>(limit_options);
-            if (!limit_length_ct->setup())
+            if (!limit_length_ct->setup(error))
             {
                 limit_length_ct = nullptr;
                 return false;
             }
 
             limit_offset_ct = std::make_shared<SelectLimitOffsetCT>(limit_options);
-            if (!limit_offset_ct->setup())
+            if (!limit_offset_ct->setup(error))
             {
                 limit_offset_ct = nullptr;
                 return false;
@@ -366,7 +366,7 @@ bool SelectQueryCT::setup()
         if (where_clause != nullptr)
         {
             where_ct = std::make_shared<ExpressionCT>(where_clause->children[0]);
-            if (!where_ct->setup())
+            if (!where_ct->setup(error))
             {
                 where_ct = nullptr;
                 return false;
@@ -381,7 +381,7 @@ bool SelectQueryCT::setup()
         if (group_by_clause != nullptr)
         {
             group_by_ct = std::make_shared<SelectGroupByCT>(group_by_clause);
-            if (!group_by_ct->setup())
+            if (!group_by_ct->setup(error))
             {
                 group_by_ct = nullptr;
                 return false;
@@ -397,7 +397,7 @@ bool SelectQueryCT::setup()
         if (having_clause != nullptr)
         {
             having_ct = std::make_shared<ExpressionCT>(having_clause->children[0]);
-            if (!having_ct->setup())
+            if (!having_ct->setup(error))
             {
                 having_ct = nullptr;
                 return false;

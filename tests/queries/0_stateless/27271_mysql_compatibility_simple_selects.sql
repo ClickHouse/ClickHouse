@@ -76,6 +76,7 @@ SELECT NOT FALSE;
 SELECT FALSE && TRUE;
 SELECT FALSE || TRUE;
 
+-- order of operations
 SELECT ((3 * 4) = (2 * 6) OR (0 = 1)) AND FALSE;
 SELECT (3 * 4) = (2 * 6) OR (0 = 1) AND FALSE;
 SELECT NOT TRUE OR TRUE;

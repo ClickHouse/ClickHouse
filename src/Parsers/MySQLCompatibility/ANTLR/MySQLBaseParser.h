@@ -14,3 +14,22 @@ protected:
 private:
 	uint32_t sqlMode;
 };
+
+class MySQLParserErrorListner : public antlr4::BaseErrorListener
+{
+public:
+	virtual void syntaxError(antlr4::Recognizer *recognizer, antlr4::Token * offendingSymbol, size_t line, size_t charPositionInLine, const std::string &msg, std::exception_ptr e) override
+	{
+		std::stringstream ss;
+		ss << msg << " ";
+		ss << " at " << line << ":" << charPositionInLine;
+		error = ss.str();
+	}
+
+	const std::string & getError() const
+	{
+		return error;
+	}
+private:
+	std::string error;
+};

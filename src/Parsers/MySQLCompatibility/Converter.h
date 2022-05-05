@@ -9,7 +9,7 @@ class Converter
 public:
     String dumpAST(const String & query) const;
     String dumpTerminals(const String & query) const;
-    void toClickHouseAST(const String & query, DB::ASTPtr & ch_tree) const;
+    bool toClickHouseAST(const String & query, DB::ASTPtr & ch_tree, String & error) const;
     static String extractQuery(const char *& pos, const char * end);
 };
 }

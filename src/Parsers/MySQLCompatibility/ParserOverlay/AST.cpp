@@ -82,7 +82,7 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
     return AST::TOKEN_TYPE::UNKNOWN;
 }
 
-static bool buildFromANTLR(const MySQLParser & parser, const antlr4::RuleContext * antlr_tree, ASTPtr node, std::string & error)
+static bool buildFromANTLR(const MySQLParser & parser, const antlr4::RuleContext * antlr_tree, ASTPtr node)
 {
     auto rule_index = antlr_tree->getRuleIndex();
     auto rule_name_name = parser.getRuleNames()[rule_index];
@@ -90,10 +90,7 @@ static bool buildFromANTLR(const MySQLParser & parser, const antlr4::RuleContext
     for (const auto & x : antlr_tree->children)
     {
         if (antlrcpp::is<antlr4::tree::ErrorNode *>(x))
-        {
-            error = dynamic_cast<antlr4::tree::ErrorNode *>(x)->toString();
             return false;
-        }
 
         antlr4::tree::TerminalNode * antlr_terminal = nullptr;
         if ((antlr_terminal = dynamic_cast<antlr4::tree::TerminalNode *>(x)) != nullptr)
@@ -113,7 +110,7 @@ static bool buildFromANTLR(const MySQLParser & parser, const antlr4::RuleContext
         {
             ASTPtr ast_child = std::make_shared<AST>();
             node->children.push_back(ast_child);
-            if (!buildFromANTLR(parser, antlr_child, ast_child, error))
+            if (!buildFromANTLR(parser, antlr_child, ast_child))
                 return false;
         }
     }
@@ -121,14 +118,30 @@ static bool buildFromANTLR(const MySQLParser & parser, const antlr4::RuleContext
     return true;
 }
 
-void AST::FromQuery(const std::string & query, ASTPtr & result, std::string & error)
+bool AST::FromQuery(const std::string & query, ASTPtr & result, std::string & error)
 {
     uint32_t settings = 0;
     // settings |= AnsiQuotes;
 
     auto analyzer = MySQLAnalyzer(query, settings);
-    if (!buildFromANTLR(analyzer.getParser(), analyzer.getParseTree(), result, error))
+	auto tree = analyzer.parse();
+	
+	result = std::make_shared<AST>();
+	if (!analyzer.getParseError().empty())
+	{
+		error = analyzer.getParseError();
+		result = nullptr;
+		return;
+	}
+    
+	if (!buildFromANTLR(analyzer.getParser(), tree, result))
+	{
+		error = "unkown internal error, syntax tree is invalid";
         result = nullptr;
+		return false;
+	}
+
+	return true;
 }
 
 std::string AST::PrintTree() const

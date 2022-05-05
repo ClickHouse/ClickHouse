@@ -9,7 +9,7 @@ namespace MySQLCompatibility
 {
 
 // TODO: multiple key-value pairs in SET query
-bool SetQueryCT::setup()
+bool SetQueryCT::setup(String &)
 {
     MySQLPtr key_node = TreePath({"internalVariableName", "pureIdentifier"}).evaluate(_source);
 

@@ -57,7 +57,7 @@ public:
 public:
     AST() { }
     AST(const std::string & rule_name_) : rule_name(rule_name_) { }
-    static void FromQuery(const std::string & query, ASTPtr & result, std::string & error);
+    static bool FromQuery(const std::string & query, ASTPtr & result, std::string & error);
 
 public:
     std::string PrintTree() const;

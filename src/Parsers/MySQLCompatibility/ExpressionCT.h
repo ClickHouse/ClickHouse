@@ -9,7 +9,7 @@ class ExprLiteralInt64CT : public IConversionTree
 {
 public:
     ExprLiteralInt64CT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -20,7 +20,7 @@ class ExprLiteralFloat64CT : public IConversionTree
 {
 public:
     ExprLiteralFloat64CT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -31,7 +31,7 @@ class ExprLiteralNumericCT : public IConversionTree
 {
 public:
     ExprLiteralNumericCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -42,7 +42,7 @@ class ExprLiteralText : public IConversionTree
 {
 public:
     ExprLiteralText(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -53,7 +53,7 @@ class ExprLiteralBoolCT : public IConversionTree
 {
 public:
     ExprLiteralBoolCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -64,7 +64,7 @@ class ExprLiteralNullCT : public IConversionTree
 {
 public:
     ExprLiteralNullCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 };
 
@@ -72,7 +72,7 @@ class ExprGenericLiteralCT : public IConversionTree
 {
 public:
     ExprGenericLiteralCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -83,7 +83,7 @@ class ExprIdentifierCT : public IConversionTree
 {
 public:
     ExprIdentifierCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -94,7 +94,7 @@ class ExprSimpleCT : public IConversionTree
 {
 public:
     ExprSimpleCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -106,7 +106,7 @@ class ExprBitCT : public IConversionTree
 {
 public:
     ExprBitCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -123,7 +123,7 @@ class ExprBoolStatementCT : public IConversionTree
 {
 public:
     ExprBoolStatementCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
@@ -137,7 +137,7 @@ class ExpressionCT : public IConversionTree
 {
 public:
     ExpressionCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:

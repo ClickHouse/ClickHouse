@@ -9,7 +9,7 @@ class UseCommandCT : public IConversionTree
 {
 public:
     UseCommandCT(MySQLPtr source) : IConversionTree(source) { }
-    virtual bool setup() override;
+    virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:

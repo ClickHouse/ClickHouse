@@ -9,7 +9,7 @@ class IConversionTree
 {
 public:
     IConversionTree(MySQLPtr source) : _source(source) { }
-    virtual bool setup() = 0;
+    virtual bool setup(String & error) = 0;
     virtual void convert(CHPtr & ch_tree) const = 0;
     virtual ~IConversionTree() { }
 

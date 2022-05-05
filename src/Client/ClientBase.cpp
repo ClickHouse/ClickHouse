@@ -297,7 +297,12 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 	{
 		MySQLCompatibility::Converter converter;
 		String query = MySQLCompatibility::Converter::extractQuery(pos, end);
-		converter.toClickHouseAST(query, res);
+		String error;
+		if (!converter.toClickHouseAST(query, res, error))
+		{
+			std::cerr << "ClickHouse failed to parse MySQL query with error: " << error << std::endl;
+			return nullptr;
+		}
 	} else
 	{
 		if (!allow_multi_statements)

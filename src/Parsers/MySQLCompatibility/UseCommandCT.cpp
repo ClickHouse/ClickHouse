@@ -6,7 +6,7 @@
 namespace MySQLCompatibility
 {
 
-bool UseCommandCT::setup()
+bool UseCommandCT::setup(String &)
 {
     MySQLPtr db_node = TreePath({"useCommand", "identifier", "pureIdentifier"}).evaluate(_source);
 

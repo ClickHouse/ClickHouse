@@ -22,7 +22,7 @@ String Converter::dumpAST(const String & query) const
     if (root != nullptr)
         return root->PrintTree();
     else
-        return "MySQL query is invalid, TODO: listen antlr errors";
+        return "MySQL query is invalid: " + error;
 }
 
 String Converter::dumpTerminals(const String & query) const
@@ -120,22 +120,34 @@ String Converter::extractQuery(const char *& pos, const char * end)
     return query;
 }
 
-void Converter::toClickHouseAST(const String & query, CHPtr & ch_tree) const
+bool Converter::toClickHouseAST(const String & query, CHPtr & ch_tree, String & error) const
 {
+    String internal_error;
     ch_tree = nullptr;
-    MySQLPtr root = std::make_shared<MySQLTree>();
 
-    // TODO: report meaningful errors
-    std::string error;
-    MySQLTree::FromQuery(query, root, error);
-
-    if (root == nullptr)
-        return;
-
+    MySQLPtr root = nullptr;
+    if (!MySQLTree::FromQuery(query, root, internal_error))
+    {
+        error = "invalid MySQL query; " + internal_error;
+        return false;
+    }
     GenericRecognizer recognizer;
     auto result = recognizer.Recognize(root);
-    if (result != nullptr && result->setup())
-        result->convert(ch_tree);
+
+    if (result == nullptr)
+    {
+        error = "ClickHouse does not support this type of MySQL queries";
+        return false;
+    }
+
+    if (!result->setup(internal_error))
+    {
+        error = "failed to convert correct MySQL query; " + internal_error;
+        return false;
+    }
+
+    result->convert(ch_tree);
+    return true;
 }
 
 }
