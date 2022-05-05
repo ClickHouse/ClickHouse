@@ -372,7 +372,7 @@ Block Aggregator::Params::getHeader(
     const Block & intermediate_header,
     const ColumnNumbers & keys,
     const AggregateDescriptions & aggregates,
-    const GroupingSetsParams & grouping_sets_params,
+    bool has_grouping_sets,
     bool final)
 {
     Block res;
@@ -397,6 +397,9 @@ Block Aggregator::Params::getHeader(
         for (const auto & key : keys)
             res.insert(src_header.safeGetByPosition(key).cloneEmpty());
 
+        if (has_grouping_sets)
+            res.insert({ std::make_shared<DataTypeUInt64>(), "__grouping_set" });
+
         for (const auto & aggregate : aggregates)
         {
             size_t arguments_size = aggregate.arguments.size();
@@ -412,9 +415,6 @@ Block Aggregator::Params::getHeader(
 
             res.insert({ type, aggregate.column_name });
         }
-
-        if (grouping_sets_params.isValid())
-            res.insert({ std::make_shared<DataTypeUInt64>(), "__grouping_set" });
     }
 
     return materializeBlock(res);

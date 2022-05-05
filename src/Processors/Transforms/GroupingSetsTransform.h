@@ -13,7 +13,7 @@ public:
         Block input_header,
         Block output_header,
         AggregatingTransformParamsPtr params,
-        ColumnNumbersList const & missing_columns,
+        ColumnNumbers const & missing_columns,
         size_t set_id);
     String getName() const override { return "GroupingSetsTransform"; }
 
