@@ -190,7 +190,7 @@ def process_benchmark_results(args):
         results_root = os.path.join(benchmark_root, benchmark_kind, "results")
         for result in sorted(os.listdir(results_root)):
             result_file = os.path.join(results_root, result)
-            logging.debug(f"Reading benchmark result from {result_file}")
+            logging.info(f"Reading benchmark result from {result_file}")
             with open(result_file, "r") as f:
                 result = json.loads(f.read())
                 for item in result:
