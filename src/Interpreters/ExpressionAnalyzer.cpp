@@ -451,7 +451,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
     else
         aggregated_columns = temp_actions->getNamesAndTypesList();
 
-    if (select_query != nullptr && select_query->group_by_with_grouping_sets)
+    if (aggregation_keys_list.size() > 1)
         aggregated_columns.emplace_back("__grouping_set", std::make_shared<DataTypeUInt64>());
 
     for (const auto & desc : aggregate_descriptions)
@@ -1238,8 +1238,11 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
                 getRootActions(ast_element, only_types, step.actions());
             }
         }
-        step.addRequiredOutput("__grouping_set");
-        step.actions()->addGroupingSetColumn();
+        if (useGroupingSetKey())
+        {
+            step.addRequiredOutput("__grouping_set");
+            step.actions()->addGroupingSetColumn();
+        }
     }
     else
     {
@@ -1481,15 +1484,17 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     if (!select_query->limitBy())
         return false;
 
-    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
+    /// Use columns for ORDER BY.
+    /// They could be required to do ORDER BY on the initiator in case of distributed queries.
+    ExpressionActionsChain::Step & step = chain.lastStep(chain.getLastStep().getRequiredColumns());
 
     getRootActions(select_query->limitBy(), only_types, step.actions());
 
-    NameSet aggregated_names;
-    for (const auto & column : aggregated_columns)
+    NameSet existing_column_names;
+    for (const auto & column : chain.getLastStep().getRequiredColumns())
     {
         step.addRequiredOutput(column.name);
-        aggregated_names.insert(column.name);
+        existing_column_names.insert(column.name);
     }
 
     auto & children = select_query->limitBy()->children;
@@ -1499,7 +1504,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
             replaceForPositionalArguments(child, select_query, ASTSelectQuery::Expression::LIMIT_BY);
 
         auto child_name = child->getColumnName();
-        if (!aggregated_names.contains(child_name))
+        if (!existing_column_names.contains(child_name))
             step.addRequiredOutput(child_name);
     }
 
@@ -1552,7 +1557,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
         }
     }
 
-    if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && select_query->group_by_with_grouping_sets)
+    if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && useGroupingSetKey())
     {
         result_columns.emplace_back("__grouping_set", "__grouping_set");
         step.addRequiredOutput("__grouping_set");
@@ -1663,6 +1668,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     , second_stage(second_stage_)
     , need_aggregate(query_analyzer.hasAggregation())
     , has_window(query_analyzer.hasWindow())
+    , use_grouping_set_key(query_analyzer.useGroupingSetKey())
 {
     /// first_stage: Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     /// second_stage: Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.

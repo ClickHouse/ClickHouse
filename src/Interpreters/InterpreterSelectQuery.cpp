@@ -34,6 +34,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Interpreters/RewriteCountDistinctVisitor.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -83,8 +84,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/Aggregator.h>
 #include <base/map.h>
-#include <base/scope_guard_safe.h>
-#include <algorithm>
+#include <Common/scope_guard_safe.h>
 #include <memory>
 
 
@@ -163,17 +163,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names_)
     : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
-{
-}
-
-InterpreterSelectQuery::InterpreterSelectQuery(
-    const ASTPtr & query_ptr_,
-    ContextPtr context_,
-    const SelectQueryOptions & options_,
-    PreparedSets prepared_sets_)
-    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, {}, {}, std::move(prepared_sets_))
-{
-}
+{}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -190,6 +180,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const StorageMetadataPtr & metadata_snapshot_,
     const SelectQueryOptions & options_)
     : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_)
+{}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextPtr context_,
+    const SelectQueryOptions & options_,
+    SubqueriesForSets subquery_for_sets_,
+    PreparedSets prepared_sets_)
+    : InterpreterSelectQuery(
+        query_ptr_, context_, std::nullopt, nullptr, options_, {}, {}, std::move(subquery_for_sets_), std::move(prepared_sets_))
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
@@ -278,6 +278,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names,
     const StorageMetadataPtr & metadata_snapshot_,
+    SubqueriesForSets subquery_for_sets_,
     PreparedSets prepared_sets_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
     : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
@@ -285,6 +286,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , input_pipe(std::move(input_pipe_))
     , log(&Poco::Logger::get("InterpreterSelectQuery"))
     , metadata_snapshot(metadata_snapshot_)
+    , subquery_for_sets(std::move(subquery_for_sets_))
     , prepared_sets(std::move(prepared_sets_))
 {
     checkStackSize();
@@ -315,6 +317,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     query_info.original_query = query_ptr->clone();
+
+    if (settings.count_distinct_optimization)
+    {
+        RewriteCountDistinctFunctionMatcher::Data data_rewrite_countdistinct;
+        RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
+    }
 
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols);
 
@@ -406,9 +414,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     StorageView * view = nullptr;
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
-
-    /// Reuse already built sets for multiple passes of analysis
-    SubqueriesForSets subquery_for_sets;
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
@@ -573,7 +578,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         /// Reuse already built sets for multiple passes of analysis
         subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
-        prepared_sets = query_info.sets.empty() ? query_analyzer->getPreparedSets() : query_info.sets;
+        prepared_sets = std::move(query_analyzer->getPreparedSets());
 
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
@@ -657,9 +662,14 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         auto & query = getSelectQuery();
         query_analyzer->makeSetsForIndex(query.where());
         query_analyzer->makeSetsForIndex(query.prewhere());
-        query_info.sets = query_analyzer->getPreparedSets();
+        query_info.sets = std::move(query_analyzer->getPreparedSets());
+        query_info.subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
 
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
+
+        /// query_info.sets is used for further set index analysis. Use copy instead of move.
+        query_analyzer->getPreparedSets() = query_info.sets;
+        query_analyzer->getSubqueriesForSets() = std::move(query_info.subquery_for_sets);
     }
 
     /// Do I need to perform the first part of the pipeline?
@@ -731,7 +741,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         for (const auto & key : query_analyzer->aggregationKeys())
             res.insert({nullptr, header.getByName(key.name).type, key.name});
 
-        if (getSelectQuery().group_by_with_grouping_sets)
+        if (analysis_result.use_grouping_set_key)
             res.insert({ nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set" });
 
         for (const auto & aggregate : query_analyzer->aggregates())
@@ -1076,6 +1086,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         expressions.need_aggregate &&
         options.to_stage > QueryProcessingStage::WithMergeableState &&
         !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
+    
+    bool use_grouping_set_key = expressions.use_grouping_set_key;
 
     if (query.group_by_with_grouping_sets && query.group_by_with_totals)
        throw Exception("WITH TOTALS and GROUPING SETS are not supported together", ErrorCodes::NOT_IMPLEMENTED);
@@ -1194,7 +1206,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             preliminary_sort();
             if (expressions.need_aggregate)
-                executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final, query.group_by_with_grouping_sets);
+                executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final, use_grouping_set_key);
         }
         if (from_aggregation_stage)
         {
@@ -1353,7 +1365,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             {
                 /// If you need to combine aggregated results from multiple servers
                 if (!expressions.first_stage)
-                    executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final, query.group_by_with_grouping_sets);
+                    executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final, use_grouping_set_key);
 
                 if (!aggregate_final)
                 {
@@ -1678,6 +1690,20 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
                 query_info.projection->aggregate_descriptions);
         }
     }
+}
+
+void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
+{
+    context->getClientInfo().collaborate_with_initiator = true;
+    context->setMergeTreeReadTaskCallback(std::move(callback));
+}
+
+void InterpreterSelectQuery::setProperClientInfo()
+{
+    context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    assert(options.shard_count.has_value() && options.shard_num.has_value());
+    context->getClientInfo().count_participating_replicas = *options.shard_count;
+    context->getClientInfo().number_of_current_replica = *options.shard_num;
 }
 
 bool InterpreterSelectQuery::shouldMoveToPrewhere()
@@ -2164,7 +2190,8 @@ Aggregator::Params InterpreterSelectQuery::getAggregatorParams(
     const ColumnNumbers & keys,
     const AggregateDescriptions & aggregates,
     bool overflow_row, const Settings & settings,
-    size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes)
+    size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes,
+    bool use_grouping_set_key)
 {
     const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
         query_ptr,
@@ -2192,7 +2219,7 @@ Aggregator::Params InterpreterSelectQuery::getAggregatorParams(
         settings.min_count_to_compile_aggregate_expression,
         Block{},
         stats_collecting_params,
-        getSelectQuery().group_by_with_grouping_sets
+        use_grouping_set_key
     };
 }
 
@@ -2202,11 +2229,9 @@ GroupingSetsParamsList InterpreterSelectQuery::getAggregatorGroupingSetsParams(
 )
 {
     GroupingSetsParamsList result;
-    if (getSelectQuery().group_by_with_grouping_sets)
+    if (query_analyzer->useGroupingSetKey())
     {
         auto const & aggregation_keys_list = query_analyzer->aggregationKeysList();
-        if (aggregation_keys_list.size() <= 1)
-            return {};
 
         ColumnNumbersList grouping_sets_with_keys;
         ColumnNumbersList missing_columns_per_set;
@@ -2257,7 +2282,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         keys.push_back(header_before_aggregation.getPositionByName(key.name));
 
     auto aggregator_params = getAggregatorParams(header_before_aggregation, keys, aggregates, overflow_row, settings,
-                 settings.group_by_two_level_threshold, settings.group_by_two_level_threshold_bytes);
+                 settings.group_by_two_level_threshold, settings.group_by_two_level_threshold_bytes, query_analyzer->useGroupingSetKey());
 
     auto grouping_sets_params = getAggregatorGroupingSetsParams(header_before_aggregation, keys);
 
@@ -2349,7 +2374,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     for (const auto & key : query_analyzer->aggregationKeys())
         keys.push_back(header_before_transform.getPositionByName(key.name));
 
-    auto params = getAggregatorParams(header_before_transform, keys, query_analyzer->aggregates(), false, settings, 0, 0);
+    auto params = getAggregatorParams(header_before_transform, keys, query_analyzer->aggregates(), false, settings, 0, 0, false);
     auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), true);
 
     QueryPlanStepPtr step;

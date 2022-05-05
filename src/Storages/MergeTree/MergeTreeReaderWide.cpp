@@ -180,12 +180,14 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
         if (!data_file_exists)
             return;
 
+        bool is_lc_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
+
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
             disk, data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
             data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,
-            profile_callback, clock_type));
+            profile_callback, clock_type, is_lc_dict));
     };
 
     data_part->getSerialization(name_and_type)->enumerateStreams(callback);

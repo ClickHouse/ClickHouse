@@ -32,7 +32,7 @@ struct LocalQueryState
     std::unique_ptr<PushingAsyncPipelineExecutor> pushing_async_executor;
     InternalProfileEventsQueuePtr profile_queue;
 
-    std::optional<Exception> exception;
+    std::unique_ptr<Exception> exception;
 
     /// Current block to be sent next.
     std::optional<Block> block;
