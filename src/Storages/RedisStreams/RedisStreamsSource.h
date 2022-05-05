@@ -2,8 +2,8 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 
-#include <Storages/Redis/StorageRedis.h>
-#include <Storages/Redis/ReadBufferFromRedisConsumer.h>
+#include <Storages/RedisStreams/StorageRedisStreams.h>
+#include <Storages/RedisStreams/ReadBufferFromRedisStreams.h>
 
 
 namespace Poco
@@ -17,7 +17,7 @@ class RedisStreamsSource : public SourceWithProgress
 {
 public:
     RedisStreamsSource(
-        StorageRedis & storage_,
+        StorageRedisStreams & storage_,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context_,
         const Names & columns,
@@ -33,7 +33,7 @@ public:
     bool isStalled() const { return !buffer || read_nothing; }
 
 private:
-    StorageRedis & storage;
+    StorageRedisStreams & storage;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     Names column_names;

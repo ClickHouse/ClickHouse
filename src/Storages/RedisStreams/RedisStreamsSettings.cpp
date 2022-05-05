@@ -1,4 +1,4 @@
-#include <Storages/Redis/RedisSettings.h>
+#include <Storages/RedisStreams/RedisStreamsSettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -13,9 +13,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_TRAITS(RedisSettingsTraits, LIST_OF_REDIS_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(RedisStreamsSettingsTraits, LIST_OF_REDIS_STREAMS_SETTINGS)
 
-void RedisSettings::loadFromQuery(ASTStorage & storage_def)
+void RedisStreamsSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {

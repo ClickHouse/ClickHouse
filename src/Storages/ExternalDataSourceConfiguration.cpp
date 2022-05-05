@@ -18,8 +18,9 @@
 #if USE_MYSQL
 #include <Storages/MySQL/MySQLSettings.h>
 #endif
-
-#include <Storages/Redis/RedisSettings.h>
+#if USE_HIREDIS
+#include <Storages/RedisStreams/RedisStreamsSettings.h>
+#endif
 
 #include <re2/re2.h>
 
@@ -486,7 +487,7 @@ bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSet
 #endif
 
 template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RedisSettingsTraits> & settings, ContextPtr context);
+bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RedisStreamsSettingsTraits> & settings, ContextPtr context);
 
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(

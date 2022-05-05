@@ -1,14 +1,14 @@
-#include <Storages/Redis/RedisBlockOutputStream.h>
+#include <Storages/RedisStreams/RedisStreamsSink.h>
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Storages/Redis/WriteBufferToRedisProducer.h>
+#include <Storages/RedisStreams/WriteBufferToRedisStreams.h>
 
 namespace DB
 {
 
-RedisSink::RedisSink(
-    StorageRedis & storage_,
+RedisStreamsSink::RedisStreamsSink(
+    StorageRedisStreams & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const ContextPtr & context_)
     : SinkToStorage(metadata_snapshot_->getSampleBlockNonMaterialized())
@@ -18,7 +18,7 @@ RedisSink::RedisSink(
 {
 }
 
-void RedisSink::onStart()
+void RedisStreamsSink::onStart()
 {
     buffer = storage.createWriteBuffer();
 
@@ -34,12 +34,12 @@ void RedisSink::onStart()
         format_settings);
 }
 
-void RedisSink::consume(Chunk chunk)
+void RedisStreamsSink::consume(Chunk chunk)
 {
     format->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
-void RedisSink::onFinish()
+void RedisStreamsSink::onFinish()
 {
     if (format)
         format->finalize();

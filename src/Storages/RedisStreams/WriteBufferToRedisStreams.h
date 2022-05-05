@@ -14,16 +14,16 @@ namespace DB
 class Block;
 using RedisPtr = std::shared_ptr<sw::redis::Redis>;
 
-class WriteBufferToRedisProducer : public WriteBuffer
+class WriteBufferToRedisStreams : public WriteBuffer
 {
 public:
-    WriteBufferToRedisProducer(
+    WriteBufferToRedisStreams(
         RedisPtr redis_,
         const std::string & stream_,
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_);
-    ~WriteBufferToRedisProducer() override;
+    ~WriteBufferToRedisStreams() override;
 
     void countRow();
 

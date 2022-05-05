@@ -1,4 +1,4 @@
-#include <Storages/Redis/StorageRedis.h>
+#include <Storages/RedisStreams/StorageRedisStreams.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -16,10 +16,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/Redis/RedisBlockOutputStream.h>
-#include <Storages/Redis/RedisSettings.h>
-#include <Storages/Redis/RedisStreamsSource.h>
-#include <Storages/Redis/WriteBufferToRedisProducer.h>
+#include <Storages/RedisStreams/RedisStreamsSink.h>
+#include <Storages/RedisStreams/RedisStreamsSettings.h>
+#include <Storages/RedisStreams/RedisStreamsSource.h>
+#include <Storages/RedisStreams/WriteBufferToRedisStreams.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
@@ -59,9 +59,9 @@ namespace
     static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 }
 
-StorageRedis::StorageRedis(
+StorageRedisStreams::StorageRedisStreams(
     const StorageID & table_id_, ContextPtr context_,
-    const ColumnsDescription & columns_, std::unique_ptr<RedisSettings> redis_settings_,
+    const ColumnsDescription & columns_, std::unique_ptr<RedisStreamsSettings> redis_settings_,
     const String & collection_name_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -69,11 +69,11 @@ StorageRedis::StorageRedis(
     , streams(parseStreams(getContext()->getMacros()->expand(redis_settings->redis_stream_list.value)))
     , broker(getContext()->getMacros()->expand(redis_settings->redis_broker))
     , group(getContext()->getMacros()->expand(redis_settings->redis_group_name.value))
-    , client_id(
-          redis_settings->redis_client_id.value.empty() ? getDefaultClientId(table_id_)
-                                                        : getContext()->getMacros()->expand(redis_settings->redis_client_id.value))
+    , consumer_id(
+          redis_settings->redis_consumer_id.value.empty() ? getDefaultConsumerId(table_id_)
+                                                        : getContext()->getMacros()->expand(redis_settings->redis_consumer_id.value))
     , num_consumers(redis_settings->redis_num_consumers.value)
-    , log(&Poco::Logger::get("StorageRedis (" + table_id_.table_name + ")"))
+    , log(&Poco::Logger::get("StorageRedisStreams (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers)
     , intermediate_commit(redis_settings->redis_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
@@ -114,7 +114,7 @@ StorageRedis::StorageRedis(
     }
 }
 
-SettingsChanges StorageRedis::createSettingsAdjustments()
+SettingsChanges StorageRedisStreams::createSettingsAdjustments()
 {
     SettingsChanges result;
     // Needed for backward compatibility
@@ -138,7 +138,7 @@ SettingsChanges StorageRedis::createSettingsAdjustments()
     return result;
 }
 
-Names StorageRedis::parseStreams(String stream_list)
+Names StorageRedisStreams::parseStreams(String stream_list)
 {
     Names result;
     boost::split(result, stream_list,[](char c){ return c == ','; });
@@ -149,13 +149,13 @@ Names StorageRedis::parseStreams(String stream_list)
     return result;
 }
 
-String StorageRedis::getDefaultClientId(const StorageID & table_id_)
+String StorageRedisStreams::getDefaultConsumerId(const StorageID & table_id_) const
 {
-    return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id_.database_name, table_id_.table_name);
+    return fmt::format("{}-{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id_.database_name, table_id_.table_name, group);
 }
 
 
-Pipe StorageRedis::read(
+Pipe StorageRedisStreams::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /* query_info */,
@@ -171,10 +171,12 @@ Pipe StorageRedis::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
     if (mv_attached)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRedis with attached materialized views");
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRedisStreams with attached materialized views");
 
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
+    std::vector<std::shared_ptr<RedisStreamsSource>> sources;
+    sources.reserve(num_created_consumers);
     pipes.reserve(num_created_consumers);
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
@@ -182,10 +184,9 @@ Pipe StorageRedis::read(
     // Claim as many consumers as requested, but don't block
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
-        /// TODO: probably that leads to awful performance.
-        /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        pipes.emplace_back(std::make_shared<RedisStreamsSource>(*this, storage_snapshot, modified_context, column_names, log, 1));
+        const auto source = std::make_shared<RedisStreamsSource>(*this, storage_snapshot, modified_context, column_names, log, 1);
+        pipes.emplace_back(source);
+        sources.emplace_back(source);
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -193,7 +194,7 @@ Pipe StorageRedis::read(
 }
 
 
-SinkToStoragePtr StorageRedis::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageRedisStreams::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
@@ -201,17 +202,17 @@ SinkToStoragePtr StorageRedis::write(const ASTPtr &, const StorageMetadataPtr & 
     if (streams.size() > 1)
         throw Exception("Can't write to Redis table with multiple streams!", ErrorCodes::NOT_IMPLEMENTED);
 
-    return std::make_shared<RedisSink>(*this, metadata_snapshot, modified_context);
+    return std::make_shared<RedisStreamsSink>(*this, metadata_snapshot, modified_context);
 }
 
 
-void StorageRedis::startup()
+void StorageRedisStreams::startup()
 {
     try
     {
         for (size_t i = 0; i < num_consumers; ++i)
         {
-            pushReadBuffer(createReadBuffer(std::to_string(i)));
+            pushReadBuffer(createReadBuffer(consumer_id + "_" + std::to_string(i)));
             ++num_created_consumers;
         }
 
@@ -227,7 +228,7 @@ void StorageRedis::startup()
 }
 
 
-void StorageRedis::shutdown()
+void StorageRedisStreams::shutdown()
 {
     for (auto & task : tasks)
     {
@@ -243,7 +244,7 @@ void StorageRedis::shutdown()
 }
 
 
-void StorageRedis::pushReadBuffer(ConsumerBufferPtr buffer)
+void StorageRedisStreams::pushReadBuffer(ConsumerBufferPtr buffer)
 {
     std::lock_guard lock(mutex);
     buffers.push_back(buffer);
@@ -251,13 +252,13 @@ void StorageRedis::pushReadBuffer(ConsumerBufferPtr buffer)
 }
 
 
-ConsumerBufferPtr StorageRedis::popReadBuffer()
+ConsumerBufferPtr StorageRedisStreams::popReadBuffer()
 {
     return popReadBuffer(std::chrono::milliseconds::zero());
 }
 
 
-ConsumerBufferPtr StorageRedis::popReadBuffer(std::chrono::milliseconds timeout)
+ConsumerBufferPtr StorageRedisStreams::popReadBuffer(std::chrono::milliseconds timeout)
 {
     // Wait for the first free buffer
     if (timeout == std::chrono::milliseconds::zero())
@@ -275,26 +276,26 @@ ConsumerBufferPtr StorageRedis::popReadBuffer(std::chrono::milliseconds timeout)
     return buffer;
 }
 
-ProducerBufferPtr StorageRedis::createWriteBuffer()
+ProducerBufferPtr StorageRedisStreams::createWriteBuffer()
 {
-    return std::make_shared<WriteBufferToRedisProducer>(
+    return std::make_shared<WriteBufferToRedisStreams>(
         redis, streams[0], std::nullopt, 1, 1024);
 }
 
 
-ConsumerBufferPtr StorageRedis::createReadBuffer(const std::string& id)
+ConsumerBufferPtr StorageRedisStreams::createReadBuffer(const std::string& id)
 {
-    return std::make_shared<ReadBufferFromRedisConsumer>(redis, group, id, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, streams);
+    return std::make_shared<ReadBufferFromRedisStreams>(redis, group, id, log, getPollMaxBatchSize(), getClaimMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, streams);
 }
 
-size_t StorageRedis::getMaxBlockSize() const
+size_t StorageRedisStreams::getMaxBlockSize() const
 {
     return redis_settings->redis_max_block_size.changed
         ? redis_settings->redis_max_block_size.value
         : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
 }
 
-size_t StorageRedis::getPollMaxBatchSize() const
+size_t StorageRedisStreams::getPollMaxBatchSize() const
 {
     size_t batch_size = redis_settings->redis_poll_max_batch_size.changed
                         ? redis_settings->redis_poll_max_batch_size.value
@@ -303,14 +304,23 @@ size_t StorageRedis::getPollMaxBatchSize() const
     return std::min(batch_size,getMaxBlockSize());
 }
 
-size_t StorageRedis::getPollTimeoutMillisecond() const
+size_t StorageRedisStreams::getClaimMaxBatchSize() const
+{
+    size_t batch_size = redis_settings->redis_claim_max_batch_size.changed
+        ? redis_settings->redis_claim_max_batch_size.value
+        : getContext()->getSettingsRef().max_block_size.value;
+
+    return std::min(batch_size, getMaxBlockSize());
+}
+
+size_t StorageRedisStreams::getPollTimeoutMillisecond() const
 {
     return redis_settings->redis_poll_timeout_ms.changed
         ? redis_settings->redis_poll_timeout_ms.totalMilliseconds()
         : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
-bool StorageRedis::checkDependencies(const StorageID & table_id)
+bool StorageRedisStreams::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
     auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
@@ -337,7 +347,7 @@ bool StorageRedis::checkDependencies(const StorageID & table_id)
     return true;
 }
 
-void StorageRedis::threadFunc(size_t idx)
+void StorageRedisStreams::threadFunc(size_t idx)
 {
     assert(idx < tasks.size());
     auto task = tasks[idx];
@@ -399,7 +409,7 @@ void StorageRedis::threadFunc(size_t idx)
 }
 
 
-bool StorageRedis::streamToViews()
+bool StorageRedisStreams::streamToViews()
 {
     Stopwatch watch;
 
@@ -451,9 +461,6 @@ bool StorageRedis::streamToViews()
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
-    // We can't cancel during copyData, as it's not aware of commits and other redis-related stuff.
-    // It will be cancelled on underlying layer (redis buffer)
-
     size_t rows = 0;
     {
         block_io.pipeline.complete(std::move(pipe));
@@ -476,7 +483,7 @@ bool StorageRedis::streamToViews()
     return some_stream_is_stalled;
 }
 
-void registerStorageRedis(StorageFactory & factory)
+void registerStorageRedisStreams(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
@@ -484,7 +491,7 @@ void registerStorageRedis(StorageFactory & factory)
         size_t args_count = engine_args.size();
         bool has_settings = args.storage_def->settings;
 
-        auto redis_settings = std::make_unique<RedisSettings>();
+        auto redis_settings = std::make_unique<RedisStreamsSettings>();
         auto named_collection = getExternalDataSourceConfiguration(args.engine_args, *redis_settings, args.getLocalContext());
         if (has_settings)
         {
@@ -494,7 +501,7 @@ void registerStorageRedis(StorageFactory & factory)
         // Check arguments and settings
         #define CHECK_REDIS_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME, EVAL)       \
             /* One of the four required arguments is not specified */       \
-            if (args_count < (ARG_NUM) && (ARG_NUM) <= 4 &&                 \
+            if (args_count < (ARG_NUM) && (ARG_NUM) <= 3 &&                 \
                 !redis_settings->PAR_NAME.changed)                          \
             {                                                               \
                 throw Exception(                                            \
@@ -539,14 +546,16 @@ void registerStorageRedis(StorageFactory & factory)
         /** Arguments of engine is following:
           * - Redis broker list
           * - List of streams
-          * - Group ID (may be a constaint expression with a string result)
-          * - Message format (string)
-          * - Row delimiter
-          * - Schema (optional, if the format supports it)
+          * - Group ID
+          * - Consumer Id (string)
           * - Number of consumers
-          * - Max block size for background consumption
-          * - Skip (at least) unreadable messages number
           * - Do intermediate commits when the batch consumed and handled
+          * - Timeout for single poll from Redis
+          * - Maximum amount of messages to be polled in a single Redis poll
+          * - Max block size for background consumption
+          * - Timeout for flushing data from Redis
+          * - Provide independent thread for each consumer
+          * - Redis password
           */
 
         String collection_name;
@@ -560,8 +569,8 @@ void registerStorageRedis(StorageFactory & factory)
             CHECK_REDIS_STORAGE_ARGUMENT(1, redis_broker, 0)
             CHECK_REDIS_STORAGE_ARGUMENT(2, redis_stream_list, 1)
             CHECK_REDIS_STORAGE_ARGUMENT(3, redis_group_name, 2)
-            CHECK_REDIS_STORAGE_ARGUMENT(7, redis_num_consumers, 0)
-            CHECK_REDIS_STORAGE_ARGUMENT(8, redis_max_block_size, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(5, redis_num_consumers, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(9, redis_max_block_size, 0)
             CHECK_REDIS_STORAGE_ARGUMENT(10, redis_commit_every_batch, 0)
         }
 
@@ -589,29 +598,33 @@ void registerStorageRedis(StorageFactory & factory)
             throw Exception("redis_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageRedis::create(args.table_id, args.getContext(), args.columns, std::move(redis_settings), collection_name);
+        return StorageRedisStreams::create(args.table_id, args.getContext(), args.columns, std::move(redis_settings), collection_name);
     };
-    factory.registerStorage("Redis", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    factory.registerStorage("RedisStreams", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
-NamesAndTypesList StorageRedis::getVirtuals() const
+NamesAndTypesList StorageRedisStreams::getVirtuals() const
 {
     auto result = NamesAndTypesList{
         {"_stream", std::make_shared<DataTypeString>()},
         {"_key", std::make_shared<DataTypeString>()},
         {"_timestamp", std::make_shared<DataTypeUInt64>()},
-        {"_sequence_number", std::make_shared<DataTypeUInt64>()}
+        {"_sequence_number", std::make_shared<DataTypeUInt64>()},
+        {"_group", std::make_shared<DataTypeString>()},
+        {"_consumer", std::make_shared<DataTypeString>()}
     };
     return result;
 }
 
-Names StorageRedis::getVirtualColumnNames() const
+Names StorageRedisStreams::getVirtualColumnNames() const
 {
     auto result = Names {
         "_stream",
         "_key",
         "_timestamp",
-        "_sequence_number"
+        "_sequence_number",
+        "_group",
+        "_consumer"
     };
     return result;
 }

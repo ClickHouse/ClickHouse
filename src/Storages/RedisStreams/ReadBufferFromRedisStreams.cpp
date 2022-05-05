@@ -1,4 +1,4 @@
-#include <Storages/Redis/ReadBufferFromRedisConsumer.h>
+#include <Storages/RedisStreams/ReadBufferFromRedisStreams.h>
 
 #include <base/logger_useful.h>
 
@@ -10,12 +10,13 @@ namespace DB
 
 using namespace std::chrono_literals;
 
-ReadBufferFromRedisConsumer::ReadBufferFromRedisConsumer(
+ReadBufferFromRedisStreams::ReadBufferFromRedisStreams(
     RedisPtr redis_,
     std::string group_name_,
     std::string consumer_name_,
     Poco::Logger * log_,
     size_t max_batch_size,
+    size_t max_claim_size,
     size_t poll_timeout_,
     bool intermediate_ack_,
     const Names & _streams)
@@ -25,6 +26,7 @@ ReadBufferFromRedisConsumer::ReadBufferFromRedisConsumer(
     , consumer_name(consumer_name_)
     , log(log_)
     , batch_size(max_batch_size)
+    , claim_batch_size(max_claim_size)
     , poll_timeout(poll_timeout_)
     , intermediate_ack(intermediate_ack_)
     , current(messages.begin())
@@ -35,10 +37,10 @@ ReadBufferFromRedisConsumer::ReadBufferFromRedisConsumer(
     }
 }
 
-ReadBufferFromRedisConsumer::~ReadBufferFromRedisConsumer() = default;
+ReadBufferFromRedisStreams::~ReadBufferFromRedisStreams() = default;
 
 
-void ReadBufferFromRedisConsumer::ack()
+void ReadBufferFromRedisStreams::ack()
 {
     for (auto & [stream_name, ids] : last_read_ids)
     {
@@ -50,7 +52,7 @@ void ReadBufferFromRedisConsumer::ack()
     }
 }
 
-bool ReadBufferFromRedisConsumer::poll()
+bool ReadBufferFromRedisStreams::poll()
 {
     if (hasMorePolledMessages())
     {
@@ -61,8 +63,38 @@ bool ReadBufferFromRedisConsumer::poll()
     stalled_status = NO_MESSAGES_RETURNED;
 
     StreamsOutput new_messages;
-    redis->xreadgroup(group_name, consumer_name, streams_with_ids.begin(), streams_with_ids.end(),
-                      std::chrono::milliseconds(poll_timeout), batch_size, std::inserter(new_messages, new_messages.end()));
+    try
+    {
+        redis->xreadgroup(group_name, consumer_name, streams_with_ids.begin(), streams_with_ids.end(),
+                          std::chrono::milliseconds(poll_timeout), batch_size, std::inserter(new_messages, new_messages.end()));
+        std::unordered_map<std::string, std::vector<std::string>> pending_items_for_streams;
+        std::vector<PendingItem> pending_items;
+        size_t num_claimed = 0;
+        for (const auto & [stream_name, id] : streams_with_ids)
+        {
+            redis->command("XPENDING", stream_name, group_name, "IDLE", min_pending_time_for_claim, "-", "+",
+                           claim_batch_size - num_claimed, std::inserter(pending_items, pending_items.end()));
+            for (const auto& item : pending_items)
+            {
+                pending_items_for_streams[stream_name].push_back(std::get<0>(item));
+            }
+            num_claimed += pending_items.size();
+            pending_items.clear();
+            if (num_claimed == claim_batch_size)
+                break;
+        }
+        for (const auto& [stream, ids] : pending_items_for_streams)
+        {
+            ItemStream claimed_items;
+            redis->xclaim(stream, group_name, consumer_name, std::chrono::milliseconds(min_pending_time_for_claim),
+                          ids.begin(), ids.end(), std::inserter(claimed_items, claimed_items.end()));
+            new_messages.emplace_back(stream, std::move(claimed_items));
+        }
+    }
+    catch (const sw::redis::Error & e)
+    {
+        LOG_DEBUG(log, "Failed to poll messages from Redis in group {} consumer {}. Error message: {}", group_name, consumer_name, e.what());
+    }
 
     if (new_messages.empty())
     {
@@ -82,7 +114,7 @@ bool ReadBufferFromRedisConsumer::poll()
 }
 
 /// Do commit messages implicitly after we processed the previous batch.
-bool ReadBufferFromRedisConsumer::nextImpl()
+bool ReadBufferFromRedisStreams::nextImpl()
 {
     if (!allowed || !hasMorePolledMessages())
         return false;
@@ -103,7 +135,7 @@ bool ReadBufferFromRedisConsumer::nextImpl()
     return true;
 }
 
-void ReadBufferFromRedisConsumer::convertStreamsOutputToMessages(const StreamsOutput& output) {
+void ReadBufferFromRedisStreams::convertStreamsOutputToMessages(const StreamsOutput& output) {
     if (intermediate_ack)
         ack();
     messages.clear();

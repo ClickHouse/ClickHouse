@@ -1,7 +1,6 @@
-#include <Storages/Redis/RedisStreamsSource.h>
+#include <Storages/RedisStreams/RedisStreamsSource.h>
 
 #include <Formats/FormatFactory.h>
-#include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <base/logger_useful.h>
 #include <Interpreters/Context.h>
@@ -18,7 +17,7 @@ namespace ErrorCodes
 const auto MAX_FAILED_POLL_ATTEMPTS = 10;
 
 RedisStreamsSource::RedisStreamsSource(
-    StorageRedis & storage_,
+    StorageRedisStreams & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const Names & columns,
@@ -48,7 +47,7 @@ Chunk RedisStreamsSource::generateImpl()
 {
     if (!buffer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef().redis_streams_max_wait_ms.totalMilliseconds());
         buffer = storage.popReadBuffer(timeout);
 
         if (!buffer)
@@ -99,6 +98,8 @@ Chunk RedisStreamsSource::generateImpl()
                 virtual_columns[1]->insert(key);
                 virtual_columns[2]->insert(timestamp);
                 virtual_columns[3]->insert(sequence_number);
+                virtual_columns[4]->insert(buffer->groupName());
+                virtual_columns[5]->insert(buffer->consumerName());
             }
 
             total_rows = total_rows + new_rows;

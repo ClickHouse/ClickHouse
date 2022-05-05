@@ -27,7 +27,6 @@ void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
-void registerStorageRedis(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
@@ -58,6 +57,10 @@ void registerStorageKafka(StorageFactory & factory);
 
 #if USE_AMQPCPP
 void registerStorageRabbitMQ(StorageFactory & factory);
+#endif
+
+#if USE_HIREDIS
+void registerStorageRedisStreams(StorageFactory & factory);
 #endif
 
 #if USE_ROCKSDB
@@ -132,7 +135,10 @@ void registerStorages()
     #if USE_RDKAFKA
     registerStorageKafka(factory);
     #endif
-    registerStorageRedis(factory);
+
+    #if USE_HIREDIS
+    registerStorageRedisStreams(factory);
+    #endif
 
     #if USE_FILELOG
     registerStorageFileLog(factory);

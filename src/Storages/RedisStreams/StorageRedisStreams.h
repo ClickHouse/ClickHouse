@@ -2,8 +2,8 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Storages/Redis/Buffer_fwd.h>
-#include <Storages/Redis/RedisSettings.h>
+#include <Storages/RedisStreams/Buffer_fwd.h>
+#include <Storages/RedisStreams/RedisStreamsSettings.h>
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
@@ -17,19 +17,17 @@
 namespace DB
 {
 
-struct StorageRedisInterceptors;
-
-/** Implements a Redis queue table engine that can be used as a persistent queue / buffer,
+/** Implements a Redis Streams table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageRedis final : public shared_ptr_helper<StorageRedis>, public IStorage, WithContext
+class StorageRedisStreams final : public shared_ptr_helper<StorageRedisStreams>, public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageRedis>;
-    friend struct StorageRedisInterceptors;
+    friend struct shared_ptr_helper<StorageRedisStreams>;
+    friend struct StorageRedisStreamsInterceptors;
     using RedisPtr = std::shared_ptr<sw::redis::Redis>;
 
 public:
-    std::string getName() const override { return "Redis"; }
+    std::string getName() const override { return "RedisStreams"; }
 
     bool noPushingToViews() const override { return true; }
 
@@ -61,20 +59,20 @@ public:
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
 protected:
-    StorageRedis(
+    StorageRedisStreams(
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
-        std::unique_ptr<RedisSettings> Redis_settings_,
+        std::unique_ptr<RedisStreamsSettings> Redis_settings_,
         const String & collection_name_);
 
 private:
     // Configuration and state
-    std::unique_ptr<RedisSettings> redis_settings;
+    std::unique_ptr<RedisStreamsSettings> redis_settings;
     const Names streams;
     const String broker;
     const String group;
-    const String client_id;
+    const String consumer_id;
     const size_t num_consumers; /// total number of consumers
     Poco::Logger * log;
     Poco::Semaphore semaphore;
@@ -116,11 +114,12 @@ private:
     void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;
+    size_t getClaimMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    String getDefaultConsumerId(const StorageID & table_id_) const;
 
     static Names parseStreams(String stream_list);
-    static String getDefaultClientId(const StorageID & table_id_);
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);

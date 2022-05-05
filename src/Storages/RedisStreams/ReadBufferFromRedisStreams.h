@@ -18,20 +18,21 @@ namespace DB
 
 using RedisPtr = std::shared_ptr<sw::redis::Redis>;
 
-class ReadBufferFromRedisConsumer : public ReadBuffer
+class ReadBufferFromRedisStreams : public ReadBuffer
 {
 public:
-    ReadBufferFromRedisConsumer(
+    ReadBufferFromRedisStreams(
         RedisPtr redis_,
         std::string group_name_,
         std::string consumer_name_,
         Poco::Logger * log_,
         size_t max_batch_size,
+        size_t max_claim_size,
         size_t poll_timeout_,
         bool intermediate_ack_,
         const Names & _streams
     );
-    ~ReadBufferFromRedisConsumer() override;
+    ~ReadBufferFromRedisStreams() override;
     void ack(); // Acknowledge all processed messages.
 
     auto pollTimeout() const { return poll_timeout; }
@@ -76,6 +77,8 @@ private:
     using StreamsOutput = std::vector<std::pair<std::string, ItemStream>>;
     using Messages = std::vector<Message>;
 
+    using PendingItem = std::tuple<std::string, std::string, long long, long long>;
+
     enum StalledStatus
     {
         NOT_STALLED,
@@ -87,7 +90,9 @@ private:
     std::string consumer_name;
     Poco::Logger * log;
     const size_t batch_size = 1;
+    const size_t claim_batch_size = 100;
     const size_t poll_timeout = 0;
+    const size_t min_pending_time_for_claim = 10000;
 
     StalledStatus stalled_status = NO_MESSAGES_RETURNED;
     bool intermediate_ack = true;

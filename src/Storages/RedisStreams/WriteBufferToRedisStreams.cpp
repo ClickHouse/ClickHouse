@@ -1,11 +1,11 @@
-#include "WriteBufferToRedisProducer.h"
+#include "WriteBufferToRedisStreams.h"
 #include "Core/Block.h"
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
 
 namespace DB
 {
-WriteBufferToRedisProducer::WriteBufferToRedisProducer(
+WriteBufferToRedisStreams::WriteBufferToRedisStreams(
     RedisPtr redis_,
     const std::string & stream_,
     std::optional<char> delimiter,
@@ -22,12 +22,12 @@ WriteBufferToRedisProducer::WriteBufferToRedisProducer(
     reinitializeChunks();
 }
 
-WriteBufferToRedisProducer::~WriteBufferToRedisProducer()
+WriteBufferToRedisStreams::~WriteBufferToRedisStreams()
 {
     assert(rows == 0);
 }
 
-void WriteBufferToRedisProducer::countRow()
+void WriteBufferToRedisStreams::countRow()
 {
     if (++rows % max_rows == 0)
     {
@@ -55,7 +55,7 @@ void WriteBufferToRedisProducer::countRow()
     }
 }
 
-std::vector<std::pair<std::string, std::string>> WriteBufferToRedisProducer::convertRawPayloadToItems(const std::string& payload)
+std::vector<std::pair<std::string, std::string>> WriteBufferToRedisStreams::convertRawPayloadToItems(const std::string& payload)
 {
     Poco::JSON::Parser parser;
     auto json = parser.parse(payload);
@@ -71,19 +71,19 @@ std::vector<std::pair<std::string, std::string>> WriteBufferToRedisProducer::con
     return result;
 }
 
-void WriteBufferToRedisProducer::nextImpl()
+void WriteBufferToRedisStreams::nextImpl()
 {
     addChunk();
 }
 
-void WriteBufferToRedisProducer::addChunk()
+void WriteBufferToRedisStreams::addChunk()
 {
     chunks.push_back(std::string());
     chunks.back().resize(chunk_size);
     set(chunks.back().data(), chunk_size);
 }
 
-void WriteBufferToRedisProducer::reinitializeChunks()
+void WriteBufferToRedisStreams::reinitializeChunks()
 {
     rows = 0;
     chunks.clear();

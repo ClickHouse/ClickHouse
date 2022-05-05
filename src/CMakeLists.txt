@@ -108,8 +108,8 @@ if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
-if (TARGET ch_contrib:hiredis)
-    add_headers_and_sources(dbms Storages/Redis)
+if (TARGET ch_contrib::hiredis)
+    add_headers_and_sources(dbms Storages/RedisStreams)
 endif()
 
 if (USE_LIBPQXX)
