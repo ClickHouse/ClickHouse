@@ -9,65 +9,67 @@ ClickHouse can accept and return data in various formats. A format supported for
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
 The supported formats are:
+                                                                                  | Input | Output |
+|-------------------------------------------------------------------------------------------|-------|-------|
+| [TabSeparated](#tabseparated)                                                             | ✔     | ✔     |
+| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔     | ✔     |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔     | ✔     |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔     | ✔     |
+| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔     | ✔     |
+| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔     | ✔     |
+| [Template](#format-template)                                                              | ✔     | ✔     |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔     | ✗     |
+| [CSV](#csv)                                                                               | ✔     | ✔     |
+| [CSVWithNames](#csvwithnames)                                                             | ✔     | ✔     |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔     | ✔     |
+| [CustomSeparated](#format-customseparated)                                                | ✔     | ✔     |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔     | ✔     |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔     | ✔     |
+| [Values](#data-format-values)                                                             | ✔     | ✔     |
+| [Vertical](#vertical)                                                                     | ✗     | ✔     |
+| [JSON](#json)                                                                             | ✗     | ✔     |
+| [JSONAsString](#jsonasstring)                                                             | ✔     | ✗     |
+| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔     |
+| [JSONCompact](#jsoncompact)                                                               | ✗     | ✔     |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔     |
+| [JSONEachRow](#jsoneachrow)                                                               | ✔     | ✔     |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗     | ✔     |
+| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔     | ✔     |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗     | ✔     |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔     | ✔     |
+| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔     | ✔     |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔     | ✔     |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔     |
+| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔     | ✔     |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔     |
+| [TSKV](#tskv)                                                                             | ✔     | ✔     |
+| [Pretty](#pretty)                                                                         | ✗     | ✔     |
+| [PrettyCompact](#prettycompact)                                                           | ✗     | ✔     |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗     | ✔     |
+| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗     | ✔     |
+| [PrettySpace](#prettyspace)                                                               | ✗     | ✔     |
+| [Prometheus](#prometheus)                                                                 | ✗     | ✔     |
+| [Protobuf](#protobuf)                                                                     | ✔     | ✔     |
+| [ProtobufSingle](#protobufsingle)                                                         | ✔     | ✔     |
+| [Avro](#data-format-avro)                                                                 | ✔     | ✔     |
+| [AvroConfluent](#data-format-avro-confluent)                                              | ✔     | ✗     |
+| [Parquet](#data-format-parquet)                                                           | ✔     | ✔     |
+| [Arrow](#data-format-arrow)                                                               | ✔     | ✔     |
+| [ArrowStream](#data-format-arrow-stream)                                                  | ✔     | ✔     |
+| [ORC](#data-format-orc)                                                                   | ✔     | ✔     |
+| [RowBinary](#rowbinary)                                                                   | ✔     | ✔     |
+| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔     | ✔     |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔     | ✔     |
+| [Native](#native)                                                                         | ✔     | ✔     |
+| [Null](#null)                                                                             | ✗     | ✔     |
+| [XML](#xml)                                                                               | ✗     | ✔     |
+| [CapnProto](#capnproto)                                                                   | ✔     | ✔     |
+| [LineAsString](#lineasstring)                                                             | ✔     | ✗     |
+| [Regexp](#data-format-regexp)                                                             | ✔     | ✗     |
+| [RawBLOB](#rawblob)                                                                       | ✔     | ✔     |
+| [MsgPack](#msgpack)                                                                       | ✔     | ✔     |
+| [MySQLDump](#mysqldump)                                                                   | ✔     | ✗     |
 
-| Format                                                                                  | Input | Output |
-|-----------------------------------------------------------------------------------------|-------|--------|
-| [TabSeparated](#tabseparated)                                                           | ✔     | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                                     | ✔     | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                                         | ✔     | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                         | ✔     | ✔      |
-| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                                     | ✔     | ✔      |
-| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                                                     | ✔     | ✔      |
-| [Template](#format-template)                                                            | ✔     | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                                           | ✔     | ✗      |
-| [CSV](#csv)                                                                             | ✔     | ✔      |
-| [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
-| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                                           | ✔     | ✔      |
-| [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
-| [CustomSeparatedWithNames](#customseparatedwithnames)                                   | ✔     | ✔      |
-| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                   | ✔     | ✔      |
-| [Values](#data-format-values)                                                           | ✔     | ✔      |
-| [Vertical](#vertical)                                                                   | ✗     | ✔      |
-| [JSON](#json)                                                                           | ✗     | ✔      |
-| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
-| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
-| [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
-| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
-| [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
-| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
-| [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
-| [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
-| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)             | ✔     | ✔      |
-| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
-| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames) | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
-| [TSKV](#tskv)                                                                           | ✔     | ✔      |
-| [Pretty](#pretty)                                                                       | ✗     | ✔      |
-| [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                       | ✗     | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                                                     | ✗     | ✔      |
-| [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
-| [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
-| [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
-| [Avro](#data-format-avro)                                                               | ✔     | ✔      |
-| [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
-| [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
-| [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
-| [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
-| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
-| [Native](#native)                                                                       | ✔     | ✔      |
-| [Null](#null)                                                                           | ✗     | ✔      |
-| [XML](#xml)                                                                             | ✗     | ✔      |
-| [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
-| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
-| [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
-| [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
-| [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -183,7 +185,7 @@ Differs from the `TabSeparated` format in that the column names are written in t
 During parsing, the first row is expected to contain the column names. You can use column names to determine their position and to check their correctness.
 
 If setting [input_format_with_names_use_header](../operations/settings/settings.md#settings-input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input_format_skip_unknown_fields) is set to 1.
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
 Otherwise, the first row will be skipped.
 
 This format is also available under the name `TSVWithNames`.
@@ -1162,6 +1164,76 @@ You can select data from a ClickHouse table and save them into some file in the 
 ``` bash
 $ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
+## Prometheus {#prometheus}
+
+Expose metrics in [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
+
+The output table should have a proper structure.
+Columns `name` ([String](../sql-reference/data-types/string.md)) and `value` (number) are required.
+Rows may optionally contain `help` ([String](../sql-reference/data-types/string.md)) and `timestamp` (number).
+Column `type` ([String](../sql-reference/data-types/string.md)) is either `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
+Each metric value may also have some `labels` ([Map(String, String)](../sql-reference/data-types/map.md)).
+Several consequent rows may refer to the one metric with different lables. The table should be sorted by metric name (e.g., with `ORDER BY name`).
+
+There's special requirements for labels for `histogram` and `summary`, see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. Special rules applied to row with labels `{'count':''}` and `{'sum':''}`, they'll be convered to `<metric_name>_count` and `<metric_name>_sum` respectively.
+
+**Example:**
+
+```
+┌─name────────────────────────────────┬─type──────┬─help──────────────────────────────────────┬─labels─────────────────────────┬────value─┬─────timestamp─┐
+│ http_request_duration_seconds       │ histogram │ A histogram of the request duration.      │ {'le':'0.05'}                  │    24054 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.1'}                   │    33444 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.2'}                   │   100392 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.5'}                   │   129389 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'1'}                     │   133988 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'+Inf'}                  │   144320 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'sum':''}                     │    53423 │             0 │
+│ http_requests_total                 │ counter   │ Total number of HTTP requests             │ {'method':'post','code':'200'} │     1027 │ 1395066363000 │
+│ http_requests_total                 │ counter   │                                           │ {'method':'post','code':'400'} │        3 │ 1395066363000 │
+│ metric_without_timestamp_and_labels │           │                                           │ {}                             │    12.47 │             0 │
+│ rpc_duration_seconds                │ summary   │ A summary of the RPC duration in seconds. │ {'quantile':'0.01'}            │     3102 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.05'}            │     3272 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.5'}             │     4773 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.9'}             │     9001 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.99'}            │    76656 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'count':''}                   │     2693 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'sum':''}                     │ 17560473 │             0 │
+│ something_weird                     │           │                                           │ {'problem':'division by zero'} │      inf │      -3982045 │
+└─────────────────────────────────────┴───────────┴───────────────────────────────────────────┴────────────────────────────────┴──────────┴───────────────┘
+```
+
+Will be formatted as:
+
+```
+# HELP http_request_duration_seconds A histogram of the request duration.
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="0.05"} 24054
+http_request_duration_seconds_bucket{le="0.1"} 33444
+http_request_duration_seconds_bucket{le="0.5"} 129389
+http_request_duration_seconds_bucket{le="1"} 133988
+http_request_duration_seconds_bucket{le="+Inf"} 144320
+http_request_duration_seconds_sum 53423
+http_request_duration_seconds_count 144320
+
+# HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{code="200",method="post"} 1027 1395066363000
+http_requests_total{code="400",method="post"} 3 1395066363000
+
+metric_without_timestamp_and_labels 12.47
+
+# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
+# TYPE rpc_duration_seconds summary
+rpc_duration_seconds{quantile="0.01"} 3102
+rpc_duration_seconds{quantile="0.05"} 3272
+rpc_duration_seconds{quantile="0.5"} 4773
+rpc_duration_seconds{quantile="0.9"} 9001
+rpc_duration_seconds{quantile="0.99"} 76656
+rpc_duration_seconds_sum 17560473
+rpc_duration_seconds_count 2693
+
+something_weird{problem="division by zero"} +Inf -3982045
+```
 
 ## Protobuf {#protobuf}
 
@@ -1704,4 +1776,71 @@ Writing to a file ".msgpk":
 $ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
 $ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
 $ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
+```
+
+## MySQLDump {#msgpack}
+
+ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html).
+It reads all data from INSERT queries belonging to one table in dump. If there are more than one table, by default it reads data from the first one.
+You can specify the name of the table from which to read data from using [input_format_mysql_dump_table_name](../operations/settings/settings.md#settings-input-format-mysql-dump-table-name) settings.
+If setting [input_format_mysql_dump_map_columns](../operations/settings/settings.md#settings-input-format-mysql-dump-map-columns) is set to 1 and
+dump contains CREATE query for specified table or column names in INSERT query the columns from input data will be mapped to the columns from the table by their names,
+columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+This format supports schema inference: if the dump contains CREATE query for the specified table, the structure is extracted from it, otherwise schema is inferred from the data of INSERT queries.
+
+Examples:
+
+File dump.sql:
+```sql
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test` (
+  `x` int DEFAULT NULL,
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test` VALUES (1,NULL),(2,NULL),(3,NULL),(3,NULL),(4,NULL),(5,NULL),(6,7);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test 3` (
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test 3` VALUES (1);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test2` (
+  `x` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test2` VALUES (1),(2),(3);
+```
+
+Queries:
+
+```sql
+:) desc file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
+
+DESCRIBE TABLE file(dump.sql, MySQLDump)
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+
+Query id: 25e66c89-e10a-42a8-9b42-1ee8bbbde5ef
+
+┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ x    │ Nullable(Int32) │              │                    │         │                  │                │
+└──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+:) select * from file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
+
+SELECT *
+FROM file(dump.sql, MySQLDump)
+         SETTINGS input_format_mysql_dump_table_name = 'test2'
+
+Query id: 17d59664-ebce-4053-bb79-d46a516fb590
+
+┌─x─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
 ```

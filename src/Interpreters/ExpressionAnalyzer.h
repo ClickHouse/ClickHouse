@@ -224,6 +224,8 @@ struct ExpressionAnalysisResult
     bool optimize_aggregation_in_order = false;
     bool join_has_delayed_stream = false;
 
+    bool use_grouping_set_key = false;
+
     ActionsDAGPtr before_array_join;
     ArrayJoinActionPtr array_join;
     ActionsDAGPtr before_join;
@@ -324,12 +326,13 @@ public:
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 
+    bool useGroupingSetKey() const { return aggregation_keys_list.size() > 1; }
+
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
     const NamesAndTypesLists & aggregationKeysList() const { return aggregation_keys_list; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
-    const PreparedSets & getPreparedSets() const { return prepared_sets; }
     std::unique_ptr<QueryPlan> getJoinedPlan();
 
     /// Tables that will need to be sent to remote servers for distributed query processing.

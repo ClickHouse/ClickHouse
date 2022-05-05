@@ -9,7 +9,7 @@
 
 #include <boost/algorithm/string.hpp>
 
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <base/unit.h>
 #include <base/FnTraits.h>
 
@@ -109,6 +109,7 @@ DiskS3::DiskS3(
     String name_,
     String bucket_,
     String s3_root_path_,
+    String version_id_,
     DiskPtr metadata_disk_,
     FileCachePtr cache_,
     ContextPtr context_,
@@ -116,6 +117,7 @@ DiskS3::DiskS3(
     GetDiskSettings settings_getter_)
     : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
+    , version_id(std::move(version_id_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
     , context(context_)
@@ -196,7 +198,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     }
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        settings->client, bucket, metadata.remote_fs_root_path, metadata.remote_fs_objects,
+        settings->client, bucket, version_id, metadata.remote_fs_root_path, metadata.remote_fs_objects,
         settings->s3_settings.max_single_read_retries, disk_read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
@@ -354,6 +356,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
         settings->client,
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
+        version_id,
         settings->s3_settings.max_single_read_retries,
         context->getReadSettings());
 
@@ -755,7 +758,7 @@ void DiskS3::restore()
         bool cleanup_s3 = information.source_bucket != bucket || information.source_path != remote_fs_root_path;
         for (const auto & root : data_roots)
             if (exists(root))
-                removeSharedRecursive(root + '/', !cleanup_s3);
+                removeSharedRecursive(root + '/', !cleanup_s3, {});
 
         restoreFiles(information);
         restoreFileOperations(information);
