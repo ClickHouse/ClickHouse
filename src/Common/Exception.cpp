@@ -276,7 +276,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
 #endif
 }
 
-static std::string getExtraExceptionInfo(const std::exception & e)
+std::string getExtraExceptionInfo(const std::exception & e)
 {
     String msg;
     try

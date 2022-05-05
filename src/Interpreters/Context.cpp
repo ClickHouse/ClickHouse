@@ -47,7 +47,6 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
-#include <Backups/BackupFactory.h>
 #include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -187,8 +186,6 @@ struct ContextSharedPart
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
     mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
-    mutable VolumePtr backups_volume;                       /// Volume for all the backups.
-
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
@@ -207,6 +204,8 @@ struct ContextSharedPart
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
     mutable std::optional<Lemmatizers> lemmatizers;
 #endif
+
+    std::optional<BackupsWorker> backups_worker;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -355,7 +354,8 @@ struct ContextSharedPart
         Session::shutdownNamedSessions();
 
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
-        BackupsWorker::instance().shutdown();
+        if (backups_worker)
+            backups_worker->shutdown();
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
@@ -455,6 +455,8 @@ struct ContextSharedPart
         delete_message_broker_schedule_pool.reset();
         delete_ddl_worker.reset();
         delete_access_control.reset();
+
+        total_memory_tracker.resetOvercommitTracker();
     }
 
     bool hasTraceCollector() const
@@ -1617,6 +1619,17 @@ Lemmatizers & Context::getLemmatizers() const
     return *shared->lemmatizers;
 }
 #endif
+
+BackupsWorker & Context::getBackupsWorker() const
+{
+    auto lock = getLock();
+
+    if (!shared->backups_worker)
+        shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads);
+
+    return *shared->backups_worker;
+}
+
 
 void Context::setProgressCallback(ProgressCallback callback)
 {
@@ -2840,15 +2853,12 @@ void Context::shutdown()
     }
 
     // Special volumes might also use disks that require shutdown.
-    for (const auto & volume : {shared->tmp_volume, shared->backups_volume})
+    if (shared->tmp_volume)
     {
-        if (volume)
+        auto & disks = shared->tmp_volume->getDisks();
+        for (auto & disk : disks)
         {
-            auto & disks = volume->getDisks();
-            for (auto & disk : disks)
-            {
-                disk->shutdown();
-            }
+            disk->shutdown();
         }
     }
 
@@ -3314,7 +3324,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         background_common_pool_size = config.getUInt64("profiles.default.background_common_pool_size");
 
     /// With this executor we can execute more tasks than threads we have
-    shared->merge_mutate_executor = MergeMutateBackgroundExecutor::create
+    shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
     (
         "MergeMutate",
         /*max_threads_count*/background_pool_size,
@@ -3324,7 +3334,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
         background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio);
 
-    shared->moves_executor = OrdinaryBackgroundExecutor::create
+    shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Move",
         background_move_pool_size,
@@ -3333,7 +3343,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     );
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", background_move_pool_size, background_move_pool_size);
 
-    shared->fetch_executor = OrdinaryBackgroundExecutor::create
+    shared->fetch_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Fetch",
         background_fetches_pool_size,
@@ -3342,7 +3352,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     );
     LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_pool_size);
 
-    shared->common_executor = OrdinaryBackgroundExecutor::create
+    shared->common_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Common",
         background_common_pool_size,

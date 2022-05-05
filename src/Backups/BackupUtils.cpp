@@ -88,7 +88,6 @@ namespace
         }
     };
 
-
     using Kind = ASTBackupQuery::Kind;
     using Element = ASTBackupQuery::Element;
     using Elements = ASTBackupQuery::Elements;
@@ -107,8 +106,8 @@ namespace
         /// Prepares internal structures for making backup entries.
         void prepare(const ASTBackupQuery::Elements & elements)
         {
-            String current_database = context->getCurrentDatabase();
-            renaming_settings.setFromBackupQuery(elements, current_database);
+            calculateShardNumAndReplicaNumInBackup();
+            renaming_settings.setFromBackupQuery(elements);
 
             for (const auto & element : elements)
             {
@@ -116,11 +115,7 @@ namespace
                 {
                     case ElementType::TABLE:
                     {
-                        const String & table_name = element.name.second;
-                        String database_name = element.name.first;
-                        if (database_name.empty())
-                            database_name = current_database;
-                        prepareToBackupTable(DatabaseAndTableName{database_name, table_name}, element.partitions);
+                        prepareToBackupTable(element.name, element.partitions);
                         break;
                     }
 
@@ -155,7 +150,7 @@ namespace
                     auto data_backup = info.storage->backupData(context, info.partitions);
                     if (!data_backup.empty())
                     {
-                        String data_path = PathsInBackup::getDataPath(*info.create_query, backup_settings.shard_num, backup_settings.replica_num);
+                        String data_path = PathsInBackup::getDataPath(*info.create_query, shard_num_in_backup, replica_num_in_backup);
                         for (auto & [path_in_backup, backup_entry] : data_backup)
                             res.emplace_back(data_path + path_in_backup, std::move(backup_entry));
                     }
@@ -170,6 +165,19 @@ namespace
         }
 
     private:
+        void calculateShardNumAndReplicaNumInBackup()
+        {
+            size_t shard_num = 0;
+            size_t replica_num = 0;
+            if (!backup_settings.host_id.empty())
+            {
+                std::tie(shard_num, replica_num)
+                    = BackupSettings::Util::findShardNumAndReplicaNum(backup_settings.cluster_host_ids, backup_settings.host_id);
+            }
+            shard_num_in_backup = shard_num;
+            replica_num_in_backup = replica_num;
+        }
+
         /// Prepares to backup a single table and probably its database's definition.
         void prepareToBackupTable(const DatabaseAndTableName & table_name_, const ASTs & partitions_)
         {
@@ -286,7 +294,7 @@ namespace
         std::pair<String, BackupEntryPtr> makeBackupEntryForMetadata(const IAST & create_query) const
         {
             auto metadata_entry = std::make_unique<BackupEntryFromMemory>(serializeAST(create_query));
-            String metadata_path = PathsInBackup::getMetadataPath(create_query, backup_settings.shard_num, backup_settings.replica_num);
+            String metadata_path = PathsInBackup::getMetadataPath(create_query, shard_num_in_backup, replica_num_in_backup);
             return {metadata_path, std::move(metadata_entry)};
         }
 
@@ -307,6 +315,8 @@ namespace
 
         ContextPtr context;
         BackupSettings backup_settings;
+        size_t shard_num_in_backup = 0;
+        size_t replica_num_in_backup = 0;
         DDLRenamingSettings renaming_settings;
         std::unordered_map<String /* db_name_in_backup */, CreateDatabaseInfo> databases;
         std::map<DatabaseAndTableName /* table_name_in_backup */, CreateTableInfo> tables;
@@ -322,15 +332,14 @@ BackupEntries makeBackupEntries(const ContextPtr & context, const Elements & ele
 }
 
 
-void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, size_t num_threads)
+void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool)
 {
-    if (!num_threads || !backup->supportsWritingInMultipleThreads())
-        num_threads = 1;
-    std::vector<ThreadFromGlobalPool> threads;
-    size_t num_active_threads = 0;
+    size_t num_active_jobs = 0;
     std::mutex mutex;
-    std::condition_variable cond;
+    std::condition_variable event;
     std::exception_ptr exception;
+
+    bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
 
     for (auto & name_and_entry : backup_entries)
     {
@@ -341,14 +350,23 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
             std::unique_lock lock{mutex};
             if (exception)
                 break;
-            cond.wait(lock, [&] { return num_active_threads < num_threads; });
-            if (exception)
-                break;
-            ++num_active_threads;
+            ++num_active_jobs;
         }
 
-        threads.emplace_back([backup, &name, &entry, &mutex, &cond, &num_active_threads, &exception]()
+        auto job = [&]()
         {
+            SCOPE_EXIT({
+                std::lock_guard lock{mutex};
+                if (!--num_active_jobs)
+                    event.notify_all();
+            });
+
+            {
+                std::lock_guard lock{mutex};
+                if (exception)
+                    return;
+            }
+
             try
             {
                 backup->writeFile(name, std::move(entry));
@@ -359,17 +377,16 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
                 if (!exception)
                     exception = std::current_exception();
             }
+        };
 
-            {
-                std::lock_guard lock{mutex};
-                --num_active_threads;
-                cond.notify_all();
-            }
-        });
+        if (always_single_threaded || !thread_pool.trySchedule(job))
+            job();
     }
 
-    for (auto & thread : threads)
-        thread.join();
+    {
+        std::unique_lock lock{mutex};
+        event.wait(lock, [&] { return !num_active_jobs; });
+    }
 
     backup_entries.clear();
 

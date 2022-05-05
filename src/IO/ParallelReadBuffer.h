@@ -30,7 +30,7 @@ private:
     bool nextImpl() override;
 
 public:
-    class ReadBufferFactory :  public WithFileSize
+    class ReadBufferFactory : public WithFileSize
     {
     public:
         virtual SeekableReadBufferPtr getReader() = 0;
@@ -58,10 +58,10 @@ private:
     /// First worker in deque processed and flushed all data
     bool currentWorkerCompleted() const;
 
-    void handleEmergencyStop();
+    [[noreturn]] void handleEmergencyStop();
 
-    void addReaders(std::unique_lock<std::mutex> & buffer_lock);
-    bool addReaderToPool(std::unique_lock<std::mutex> & buffer_lock);
+    void addReaders();
+    bool addReaderToPool();
 
     /// Process read_worker, read data and save into internal segments queue
     void readerThreadFunction(ReadWorkerPtr read_worker);
@@ -86,10 +86,10 @@ private:
      */
     std::deque<ReadWorkerPtr> read_workers;
 
-    std::mutex mutex;
     /// Triggered when new data available
     std::condition_variable next_condvar;
 
+    std::mutex exception_mutex;
     std::exception_ptr background_exception = nullptr;
     std::atomic_bool emergency_stop{false};
 
