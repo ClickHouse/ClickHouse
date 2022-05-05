@@ -43,7 +43,7 @@ struct HexImpl
     static constexpr size_t word_size = 2;
 
     template <typename T>
-    static void executeOneUInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
+    static void executeOneUIntOrInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
     {
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
@@ -134,7 +134,7 @@ struct BinImpl
     static constexpr size_t word_size = 8;
 
     template <typename T>
-    static void executeOneUInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
+    static void executeOneUIntOrInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
     {
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
@@ -280,6 +280,7 @@ public:
             !which.isDateTime() &&
             !which.isDateTime64() &&
             !which.isUInt() &&
+            !which.isInt() &&
             !which.isFloat() &&
             !which.isDecimal() &&
             !which.isUUID() &&
@@ -304,10 +305,18 @@ public:
             return res_column;
         }
 
-        if (tryExecuteUInt<UInt8>(column, res_column) ||
-            tryExecuteUInt<UInt16>(column, res_column) ||
-            tryExecuteUInt<UInt32>(column, res_column) ||
-            tryExecuteUInt<UInt64>(column, res_column) ||
+        if (tryExecuteUIntOrInt<UInt8>(column, res_column) ||
+            tryExecuteUIntOrInt<UInt16>(column, res_column) ||
+            tryExecuteUIntOrInt<UInt32>(column, res_column) ||
+            tryExecuteUIntOrInt<UInt64>(column, res_column) ||
+            tryExecuteUIntOrInt<UInt128>(column, res_column) ||
+            tryExecuteUIntOrInt<UInt256>(column, res_column) ||
+            tryExecuteUIntOrInt<Int8>(column, res_column) ||
+            tryExecuteUIntOrInt<Int16>(column, res_column) ||
+            tryExecuteUIntOrInt<Int32>(column, res_column) ||
+            tryExecuteUIntOrInt<Int64>(column, res_column) ||
+            tryExecuteUIntOrInt<Int128>(column, res_column) ||
+            tryExecuteUIntOrInt<Int256>(column, res_column) ||
             tryExecuteString(column, res_column) ||
             tryExecuteFixedString(column, res_column) ||
             tryExecuteFloat<Float32>(column, res_column) ||
@@ -324,7 +333,7 @@ public:
     }
 
     template <typename T>
-    bool tryExecuteUInt(const IColumn * col, ColumnPtr & col_res) const
+    bool tryExecuteUIntOrInt(const IColumn * col, ColumnPtr & col_res) const
     {
         const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
 
@@ -351,7 +360,7 @@ public:
 
                 char * begin = reinterpret_cast<char *>(&out_vec[pos]);
                 char * end = begin;
-                Impl::executeOneUInt(in_vec[i], end);
+                Impl::executeOneUIntOrInt(in_vec[i], end);
 
                 pos += end - begin;
                 out_offsets[i] = pos;
@@ -521,8 +530,8 @@ public:
 
                 // use executeOnUInt instead of using executeOneString
                 // because the latter one outputs the string in the memory order
-                Impl::executeOneUInt(uuid[i].toUnderType().items[0], end, false, false);
-                Impl::executeOneUInt(uuid[i].toUnderType().items[1], end, false, true);
+                Impl::executeOneUIntOrInt(uuid[i].toUnderType().items[0], end, false, false);
+                Impl::executeOneUIntOrInt(uuid[i].toUnderType().items[1], end, false, true);
 
                 pos += end - begin;
                 out_offsets[i] = pos;

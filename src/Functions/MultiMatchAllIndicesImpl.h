@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include "Regexps.h"
 
 #include "config_functions.h"

@@ -5,7 +5,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
-#include <base/shared_ptr_helper.h>
 
 #include <mutex>
 
@@ -99,14 +98,20 @@ using ASTPtr = std::shared_ptr<IAST>;
  *     Users need to take these duplicated results into account.
  */
 
-class StorageWindowView final : public shared_ptr_helper<StorageWindowView>, public IStorage, WithContext
+class StorageWindowView final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageWindowView>;
     friend class TimestampTransformation;
     friend class WindowViewSource;
     friend class WatermarkTransform;
 
 public:
+    StorageWindowView(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns,
+        bool attach_);
+
     String getName() const override { return "WindowView"; }
 
     bool isView() const override { return true; }
@@ -159,7 +164,6 @@ private:
     /// Used to fetch the mergeable state and generate the final result. e.g. SELECT * FROM * GROUP BY tumble(____timestamp, *)
     ASTPtr final_query;
 
-    ContextMutablePtr window_view_context;
     bool is_proctime{true};
     bool is_time_column_func_now;
     bool is_tumble; // false if is hop
@@ -184,7 +188,6 @@ private:
 
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
-    std::mutex flush_table_mutex;
     std::shared_mutex fire_signal_mutex;
     mutable std::mutex sample_block_lock; /// Mutex to protect access to sample block and inner_blocks_query
 
@@ -243,12 +246,5 @@ private:
     StoragePtr getTargetTable() const;
 
     Block & getHeader() const;
-
-    StorageWindowView(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns,
-        bool attach_);
 };
 }

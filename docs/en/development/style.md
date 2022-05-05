@@ -1,9 +1,10 @@
 ---
-toc_priority: 69
-toc_title: C++ Guide
+sidebar_position: 69
+sidebar_label: C++ Guide
+description: A list of recommendations regarding coding style, naming convention, formatting and more
 ---
 
-# How to Write C++ Code {#how-to-write-c-code}
+# How to Write C++ Code 
 
 ## General Recommendations {#general-recommendations}
 
@@ -404,9 +405,9 @@ enum class CompressionMethod
 };
 ```
 
-**15.** All names must be in English. Transliteration of Russian words is not allowed.
+**15.** All names must be in English. Transliteration of Hebrew words is not allowed.
 
-    not Stroka
+    not T_PAAMAYIM_NEKUDOTAYIM
 
 **16.** Abbreviations are acceptable if they are well known (when you can easily find the meaning of the abbreviation in Wikipedia or in a search engine).
 
