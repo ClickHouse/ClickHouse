@@ -38,10 +38,10 @@ int main(int, char **)
     std::vector<int> vec{1, 2, 3};
     DUMP(vec);
 
-    auto pair = std::make_pair(1, 2);
+    auto pair = std::pair(1, 2);
     DUMP(pair);
 
-    auto tuple = std::make_tuple(1, 2, 3);
+    auto tuple = std::tuple(1, 2, 3);
     DUMP(tuple);
 
     std::map<int, std::string> map{{1, "hello"}, {2, "world"}};
