@@ -30,7 +30,10 @@ def ssl_server_address():
 
 
 def test_python_client(server_address):
-    redis = Redis(host=server_address, port=server_port)
+    redis = Redis(host=server_address, port=server_port, username="user", password="123")
+
+    value = redis.select(2)
+    assert value
 
     value = redis.get("key")
     assert value == b"Hello world"

@@ -36,15 +36,19 @@ public:
 private:
     void makeSecureConnection();
 
+    Int64 db = 0;
+
+    bool authenticated = true;
+    String username;
+    String password;
+
     Poco::Logger * log = &Poco::Logger::get("RedisHandler");
 
     IServer & server;
     TCPServer & tcp_server;
-
 #if USE_SSL
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 #endif
-
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
 

@@ -2,5 +2,8 @@
     <redis>
         <port>9006</port>
         <enable_ssl>false</enable_ssl>
+
+        <username>user</username>
+        <requirepass>123</requirepass>
     </redis>
 </clickhouse>

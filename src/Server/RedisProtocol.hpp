@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_REQUEST_PARAMETER;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int NOT_IMPLEMENTED;
 }
@@ -25,6 +26,13 @@ namespace RedisProtocol
         BULK_STRING = '$',
         ARRAY = '*',
     };
+
+    namespace Message
+    {
+        const String OK = "OK";
+        const String NOAUTH = "NOAUTH Authentication required.";
+        const String WRONGPASS = "WRONGPASS invalid username-password pair or user is disabled.";
+    }
 
     class Reader
     {
@@ -48,6 +56,12 @@ namespace RedisProtocol
 
         String readBulkString()
         {
+            if (auto type = readType(); type != DataType::BULK_STRING)
+            {
+                throw Exception(
+                    Poco::format("Client sent wrong type. Type byte was %c.", static_cast<char>(type)),
+                    ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+            }
             Int64 size = readNumber();
             String s;
             s.reserve(size);
@@ -79,6 +93,13 @@ namespace RedisProtocol
             writeCRLF();
         }
 
+        void writeSimpleString(const String & s)
+        {
+            writeDataType(DataType::SIMPLE_STRING);
+            writeString(s, *buf);
+            writeCRLF();
+        }
+
         void writeErrorString(const String & s)
         {
             writeDataType(DataType::ERROR);
@@ -98,13 +119,19 @@ namespace RedisProtocol
         WriteBuffer * buf;
     };
 
-    // *2\r\n $3\r\n GET\r\n $8\r\n some_key\r\n
-    class GetRequest
+    class Request
     {
     public:
-        void deserialize(ReadBuffer & in)
+        virtual void deserialize(ReadBuffer & in) = 0;
+
+        virtual ~Request() = default;
+    };
+
+    class BeginRequest : public Request
+    {
+    public:
+        virtual void deserialize(ReadBuffer & in) final
         {
-            key.clear();
             Reader reader(&in);
 
             DataType type = reader.readType();
@@ -114,49 +141,132 @@ namespace RedisProtocol
                     Poco::format("Wrong RESP type. Type byte was %c.", static_cast<char>(type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
             }
 
-            Int64 array_size = reader.readNumber();
-            if (array_size != 2)
+            array_size = reader.readNumber() - 1; // Minus method element
+            if (array_size < 0)
             {
-                throw Exception(
-                    Poco::format("Invalid array size. Array size was %d.", array_size), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                throw Exception(Poco::format("Negative array size: %?d.", array_size), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
             }
 
-            for (Int64 i = 0; i < array_size; ++i)
+            method = Poco::toLower(reader.readBulkString());
+        }
+
+        Int64 getArraySize() const { return array_size; }
+
+        const String & getMethod() const { return method; }
+
+    private:
+        Int64 array_size = 0;
+        String method;
+    };
+
+    class AuthRequest : public Request
+    {
+    public:
+        explicit AuthRequest(BeginRequest & req_) : req(req_) { }
+
+        virtual void deserialize(ReadBuffer & in) final
+        {
+            Reader reader(&in);
+            switch (auto array_size = req.getArraySize())
             {
-                type = reader.readType();
-                if (type != DataType::BULK_STRING)
-                {
-                    throw Exception(
-                        Poco::format("Client sent wrong type. Type byte was %c.", static_cast<char>(type)),
-                        ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-                }
-                String data = reader.readBulkString();
-                if (i == 0) // Operation itself
-                {
-                    if (Poco::toLower(data) != "get")
-                    {
-                        throw Exception(Poco::format("Client sent unsupported method %s.", data), ErrorCodes::NOT_IMPLEMENTED);
-                    }
-                }
-                else
-                {
-                    key = std::move(data);
-                }
+                case 1:
+                    password = reader.readBulkString();
+                    break;
+                case 2:
+                    username = reader.readBulkString();
+                    password = reader.readBulkString();
+                    break;
+                default:
+                    throw Exception(Poco::format("Invalid array size. Array size was %?d.", array_size), ErrorCodes::BAD_REQUEST_PARAMETER);
             }
+        }
+
+        const String & getUsername() const { return username; }
+
+        const String & getPassword() const { return password; }
+
+    private:
+        String username;
+        String password;
+        BeginRequest & req;
+    };
+
+    class SelectRequest : public Request
+    {
+    public:
+        explicit SelectRequest(BeginRequest & req_) : req(req_) { }
+
+        virtual void deserialize(ReadBuffer & in) final
+        {
+            Reader reader(&in);
+            if (auto array_size = req.getArraySize(); array_size != 1)
+            {
+                throw Exception(Poco::format("Invalid array size. Array size was %?d.", array_size), ErrorCodes::BAD_REQUEST_PARAMETER);
+            }
+            db = stoi(reader.readBulkString());
+        }
+
+        Int64 getDb() const { return db; }
+
+    private:
+        Int64 db = 0;
+        BeginRequest & req;
+    };
+
+    class GetRequest : public Request
+    {
+    public:
+        explicit GetRequest(BeginRequest & req_) : req(req_) { }
+
+        void deserialize(ReadBuffer & in) final
+        {
+            key.clear();
+            Reader reader(&in);
+
+            if (auto array_size = req.getArraySize(); array_size != 1)
+            {
+                throw Exception(Poco::format("Invalid array size. Array size was %?d.", array_size), ErrorCodes::BAD_REQUEST_PARAMETER);
+            }
+
+            key = reader.readBulkString();
         }
 
         const String & getKey() const { return key; }
 
     private:
         String key;
+        BeginRequest & req;
     };
 
-    class GetResponse
+    class Response
     {
     public:
-        explicit GetResponse(const String & value_) : value(value_) { }
+        virtual void serialize(WriteBuffer & out) = 0;
 
-        void serialize(WriteBuffer & out)
+        virtual ~Response() = default;
+    };
+
+    class SimpleStringResponse : public Response
+    {
+    public:
+        explicit SimpleStringResponse(const String & value_) : value(value_) { }
+
+        void serialize(WriteBuffer & out) final
+        {
+            Writer writer(&out);
+            writer.writeSimpleString(value);
+        }
+
+    private:
+        const String & value;
+    };
+
+    class BulkStringResponse : public Response
+    {
+    public:
+        explicit BulkStringResponse(const String & value_) : value(value_) { }
+
+        void serialize(WriteBuffer & out) final
         {
             Writer writer(&out);
             writer.writeBulkString(value);
@@ -167,12 +277,12 @@ namespace RedisProtocol
     };
 
 
-    class ErrorResponse
+    class ErrorResponse : public Response
     {
     public:
         explicit ErrorResponse(const String & error_) : error(error_) { }
 
-        void serialize(WriteBuffer & out)
+        void serialize(WriteBuffer & out) final
         {
             Writer writer(&out);
             writer.writeErrorString(error);

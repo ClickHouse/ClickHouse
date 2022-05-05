@@ -75,6 +75,14 @@ redis:
     # ClickHouse will pretend to be Redis for applications connecting to this port.
     port: 9006
     enable_ssl: false
+   
+    # Authentication settings
+    username: default
+    requirepass: password
+
+    Database settings. Maps redis database to ClickHouse table.
+    db:
+        0: table_name
 
 # HTTP API with TLS (HTTPS).
 # You have to configure certificate to enable this interface.

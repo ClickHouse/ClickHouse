@@ -118,7 +118,17 @@
         <!-- ClickHouse will pretend to be Redis for applications connecting to this port. -->
         <port>9006</port>
 
+        <!-- TLS settings -->
         <enable_ssl>false</enable_ssl>
+
+        <!-- Authentication settings -->
+        <username>default</username>
+        <requirepass>password</requirepass>
+
+        <!-- Database settings. Maps redis database to ClickHouse table. -->
+        <db>
+            <0>table_name</0>
+        </db>
     </redis>
 
     <!-- HTTP API with TLS (HTTPS).
