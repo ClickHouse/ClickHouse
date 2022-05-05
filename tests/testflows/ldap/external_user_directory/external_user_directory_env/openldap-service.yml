@@ -1,0 +1,35 @@
+version: '2.3'
+
+services:
+  openldap:
+    image: osixia/openldap:1.4.0
+    command: "--copy-service --loglevel debug"
+    environment:
+      LDAP_ORGANIZATION: "company"
+      LDAP_DOMAIN: "company.com"
+      LDAP_ADMIN_PASSWORD: "admin"
+      LDAP_TLS: "false"
+    expose:
+      - "389"
+      - "636"
+    healthcheck:
+      test: ldapsearch -x -H ldap://localhost:$${LDAP_PORT:-389} -b "dc=company,dc=com" -D "cn=admin,dc=company,dc=com" -w admin
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    security_opt:
+      - label:disable
+
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    environment:
+      PHPLDAPADMIN_HTTPS=false:
+    healthcheck:
+      test: echo 1
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    security_opt:
+      - label:disable

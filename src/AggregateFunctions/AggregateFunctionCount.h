@@ -37,7 +37,7 @@ namespace ErrorCodes
 class AggregateFunctionCount final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCount>
 {
 public:
-    AggregateFunctionCount(const DataTypes & argument_types_) : IAggregateFunctionDataHelper(argument_types_, {}) {}
+    explicit AggregateFunctionCount(const DataTypes & argument_types_) : IAggregateFunctionDataHelper(argument_types_, {}) {}
 
     String getName() const override { return "count"; }
 
@@ -54,7 +54,12 @@ public:
     }
 
     void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos) const override
     {
         if (if_argument_pos >= 0)
         {
@@ -63,12 +68,13 @@ public:
         }
         else
         {
-            data(place).count += batch_size;
+            data(place).count += row_end - row_begin;
         }
     }
 
     void addBatchSinglePlaceNotNull(
-        size_t batch_size,
+        size_t row_begin,
+        size_t row_end,
         AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
@@ -78,11 +84,12 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            data(place).count += countBytesInFilterWithNull(flags, null_map);
+            data(place).count += countBytesInFilterWithNull(flags, null_map, row_begin, row_end);
         }
         else
         {
-            data(place).count += batch_size - countBytesInFilter(null_map, batch_size);
+            size_t rows = row_end - row_begin;
+            data(place).count += rows - countBytesInFilter(null_map, row_begin, row_end);
         }
     }
 
@@ -107,7 +114,7 @@ public:
     }
 
     /// Reset the state to specified value. This function is not the part of common interface.
-    void set(AggregateDataPtr __restrict place, UInt64 new_count) const
+    static void set(AggregateDataPtr __restrict place, UInt64 new_count)
     {
         data(place).count = new_count;
     }
@@ -204,17 +211,23 @@ public:
     }
 
     void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos) const override
     {
-        auto & nc = assert_cast<const ColumnNullable &>(*columns[0]);
+        const auto & nc = assert_cast<const ColumnNullable &>(*columns[0]);
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            data(place).count += countBytesInFilterWithNull(flags, nc.getNullMapData().data());
+            data(place).count += countBytesInFilterWithNull(flags, nc.getNullMapData().data(), row_begin, row_end);
         }
         else
         {
-            data(place).count += batch_size - countBytesInFilter(nc.getNullMapData().data(), batch_size);
+            size_t rows = row_end - row_begin;
+            data(place).count += rows - countBytesInFilter(nc.getNullMapData().data(), row_begin, row_end);
         }
     }
 

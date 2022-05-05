@@ -23,12 +23,13 @@ echo '0, "2019-09-24", "hello"
 1, 2019-09-25, "world"
 2, "2019-09-26", custom
 3, 2019-09-27, separated
-end' | $CLICKHOUSE_CLIENT --query="INSERT INTO custom_separated FORMAT CustomSeparated SETTINGS \
+end' | $CLICKHOUSE_CLIENT --query="INSERT INTO custom_separated SETTINGS \
 format_custom_escaping_rule = 'CSV', \
 format_custom_field_delimiter = ', ', \
 format_custom_row_after_delimiter = '\n', \
 format_custom_row_between_delimiter = '', \
-format_custom_result_after_delimiter = 'end\n'"
+format_custom_result_after_delimiter = 'end\n'
+FORMAT CustomSeparated"
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM custom_separated ORDER BY n FORMAT CSV"
 

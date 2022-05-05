@@ -169,6 +169,7 @@ void RemoteCacheController::backgroundDownload(ReadBufferPtr remote_read_buffer)
     file_status = DOWNLOADED;
     flush(true);
     data_file_writer.reset();
+    is_enable = true;
     lock.unlock();
     more_data_signal.notify_all();
     ExternalDataSourceCache::instance().updateTotalSize(file_metadata_ptr->file_size);

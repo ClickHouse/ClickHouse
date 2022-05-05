@@ -18,7 +18,7 @@ using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 class RowPolicyCache
 {
 public:
-    RowPolicyCache(const AccessControl & access_control_);
+    explicit RowPolicyCache(const AccessControl & access_control_);
     ~RowPolicyCache();
 
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles);
@@ -26,7 +26,7 @@ public:
 private:
     struct PolicyInfo
     {
-        PolicyInfo(const RowPolicyPtr & policy_) { setPolicy(policy_); }
+        explicit PolicyInfo(const RowPolicyPtr & policy_) { setPolicy(policy_); }
         void setPolicy(const RowPolicyPtr & policy_);
 
         RowPolicyPtr policy;
