@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "SharedLibraryHandler.h"
 
 

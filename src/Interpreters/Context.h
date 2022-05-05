@@ -7,6 +7,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/MultiVersion.h>
@@ -25,6 +26,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+
+#include <thread>
 #include <exception>
 
 
@@ -80,7 +83,10 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class SessionLog;
+class BackupsWorker;
+class TransactionsInfoLog;
 class ProcessorsProfileLog;
+class FilesystemCacheLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -119,6 +125,7 @@ struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 class Session;
+struct WriteSettings;
 
 class IInputFormat;
 class IOutputFormat;
@@ -312,6 +319,7 @@ private:
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
 
+    inline static ContextPtr global_context_instance;
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
@@ -339,6 +347,11 @@ private:
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
 
+    MergeTreeTransactionPtr merge_tree_transaction;     /// Current transaction context. Can be inside session or query context.
+                                                        /// It's shared with all children contexts.
+    MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
+
+    /// Use copy constructor or createGlobal() instead
     Context();
     Context(const Context &);
     Context & operator=(const Context &);
@@ -358,6 +371,7 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getUserDefinedPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -369,6 +383,7 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
+    void setUserDefinedPath(const String & path);
 
     void addWarningMessage(const String & msg);
 
@@ -588,6 +603,8 @@ public:
     Lemmatizers & getLemmatizers() const;
 #endif
 
+    BackupsWorker & getBackupsWorker() const;
+
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -632,6 +649,8 @@ public:
     bool hasSessionContext() const { return !session_context.expired(); }
 
     ContextMutablePtr getGlobalContext() const;
+
+    static ContextPtr getGlobalContextInstance() { return global_context_instance; }
 
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
@@ -802,7 +821,10 @@ public:
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
     std::shared_ptr<SessionLog> getSessionLog() const;
+    std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
+
+    std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -890,6 +912,14 @@ public:
     /// Removes context of current distributed DDL.
     void resetZooKeeperMetadataTransaction();
 
+    void checkTransactionsAreAllowed(bool explicit_tcl_query = false) const;
+    void initCurrentTransaction(MergeTreeTransactionPtr txn);
+    void setCurrentTransaction(MergeTreeTransactionPtr txn);
+    MergeTreeTransactionPtr getCurrentTransaction() const;
+
+    bool isServerCompletelyStarted() const;
+    void setServerCompletelyStarted();
+
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
 
@@ -904,6 +934,7 @@ public:
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
+    bool areBackgroundExecutorsInitialized();
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
@@ -912,6 +943,9 @@ public:
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
+
+    /** Get settings for writing to filesystem. */
+    WriteSettings getWriteSettings() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;

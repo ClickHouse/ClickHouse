@@ -26,11 +26,15 @@ class ParserInsertQuery : public IParserBase
 {
 private:
     const char * end;
+    bool allow_settings_after_format_in_insert;
 
     const char * getName() const override { return "INSERT query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 public:
-    explicit ParserInsertQuery(const char * end_) : end(end_) {}
+    explicit ParserInsertQuery(const char * end_, bool allow_settings_after_format_in_insert_)
+        : end(end_)
+        , allow_settings_after_format_in_insert(allow_settings_after_format_in_insert_)
+    {}
 };
 
 /** Insert accepts an identifier and an asterisk with variants.

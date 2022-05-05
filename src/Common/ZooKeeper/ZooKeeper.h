@@ -7,7 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -416,5 +416,7 @@ String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with
 String extractZooKeeperName(const String & path);
 
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+
+String getSequentialNodeName(const String & prefix, UInt64 number);
 
 }
