@@ -139,11 +139,6 @@ void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_st
         if (!isObject(column.type))
             continue;
 
-        if (!isObject(column.type))
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Type for column '{}' mismatch in columns list and in block. In list: {}, in block: {}",
-                column.name, column.type->getName(), column.type->getName());
-
         const auto & column_object = assert_cast<const ColumnObject &>(*column.column);
         const auto & subcolumns = column_object.getSubcolumns();
 
@@ -687,7 +682,7 @@ void replaceMissedSubcolumnsByConstants(
 
     /// Replace missed subcolumns to default literals of theirs type.
     for (const auto & [name, type] : missed_names_types)
-        if (identifiers.count(name))
+        if (identifiers.contains(name))
             addConstantToWithClause(query, name, type);
 }
 
@@ -696,6 +691,28 @@ void finalizeObjectColumns(MutableColumns & columns)
     for (auto & column : columns)
         if (auto * column_object = typeid_cast<ColumnObject *>(column.get()))
             column_object->finalize();
+}
+
+Field FieldVisitorReplaceScalars::operator()(const Array & x) const
+{
+    if (num_dimensions_to_keep == 0)
+        return replacement;
+
+    const size_t size = x.size();
+    Array res(size);
+    for (size_t i = 0; i < size; ++i)
+        res[i] = applyVisitor(FieldVisitorReplaceScalars(replacement, num_dimensions_to_keep - 1), x[i]);
+    return res;
+}
+
+size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x) const
+{
+    const size_t size = x.size();
+    size_t dimensions = 0;
+    for (size_t i = 0; i < size; ++i)
+        dimensions = std::max(dimensions, applyVisitor(*this, x[i]));
+
+    return 1 + dimensions;
 }
 
 }

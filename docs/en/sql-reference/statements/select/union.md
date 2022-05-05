@@ -1,5 +1,5 @@
 ---
-toc_title: UNION
+sidebar_label: UNION
 ---
 
 # UNION Clause {#union-clause}
