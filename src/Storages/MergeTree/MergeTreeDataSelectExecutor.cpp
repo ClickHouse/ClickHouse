@@ -1551,6 +1551,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
+
     for (size_t i = 0; i < ranges.size(); ++i)
     {
         const MarkRange & index_range = index_ranges[i];
@@ -1564,30 +1565,33 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
-
+            
+            // Cast to Ann condition
             auto ann_condition  = std::dynamic_pointer_cast<IMergeTreeIndexConditionAnn>(condition);
             if (ann_condition != nullptr){
+               
+                // vector of indexes of useful ranges
+                auto result = ann_condition->getUsefulRanges(granule);
+                bool is_skipped = result.empty();
+                
+                for(auto range: result){
 
-                auto result = ann_condition->getUsefulGranules(granule);
-                bool is_skipped = true;
-                for(size_t j = 0; j < index_granularity;++j){
-                    
-                    if (result[i]){
-                        is_skipped = false;
-                         MarkRange data_range(
-                            std::max(ranges[i].begin, index_mark * index_granularity + j),
-                            std::min(ranges[i].end, index_mark * index_granularity + j + 1));
+                    // range for corresponding index
+                    MarkRange data_range(
+                        std::max(ranges[i].begin, index_mark * index_granularity + range),
+                        std::min(ranges[i].end, index_mark * index_granularity + range + 1));
 
-                            if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
-                                res.push_back(data_range);
-                            else
-                                res.back().end = data_range.end;
-                    }
+                    if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
+                        res.push_back(data_range);
+                    else
+                        res.back().end = data_range.end;
                 }
+
                 if (is_skipped)
                     ++granules_dropped;
                 continue;
             }
+
             MarkRange data_range(
                     std::max(ranges[i].begin, index_mark * index_granularity),
                     std::min(ranges[i].end, (index_mark + 1) * index_granularity));
@@ -1606,7 +1610,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
         last_index_mark = index_range.end - 1;
     }
-
     return res;
 }
 

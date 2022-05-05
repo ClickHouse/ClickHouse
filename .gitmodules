@@ -264,4 +264,4 @@
 	url = https://github.com/zlib-ng/minizip-ng
 [submodule "contrib/nmslib"]
 	path = contrib/nmslib
-	url = git@github.com:Vector-Similarity-Search-for-ClickHouse/nmslib.git
+	url = https://github.com/Vector-Similarity-Search-for-ClickHouse/nmslib.git
