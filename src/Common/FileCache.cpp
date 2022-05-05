@@ -898,7 +898,7 @@ LRUFileCache::LRUQueue::Iterator LRUFileCache::LRUQueue::add(
     const IFileCache::Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & /* cache_lock */)
 {
 #ifndef NDEBUG
-    for (const auto [entry_key, entry_offset, _] : queue)
+    for (const auto & [entry_key, entry_offset, _] : queue)
     {
         if (entry_key == key && entry_offset == offset)
             throw Exception(
@@ -934,7 +934,7 @@ bool LRUFileCache::LRUQueue::contains(
 {
     /// This method is used for assertions in debug mode.
     /// So we do not care about complexity here.
-    for (const auto [entry_key, entry_offset, size] : queue)
+    for (const auto & [entry_key, entry_offset, size] : queue)
     {
         if (key == entry_key && offset == entry_offset)
             return true;
