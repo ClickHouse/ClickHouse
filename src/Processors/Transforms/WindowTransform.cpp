@@ -1,5 +1,7 @@
 #include <Processors/Transforms/WindowTransform.h>
 
+#include <limits>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -13,6 +15,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
+
 
 namespace DB
 {
@@ -1594,8 +1597,7 @@ struct StatefulWindowFunction : public WindowFunction
 
     void create(AggregateDataPtr __restrict place) const override
     {
-        auto * const state = static_cast<State *>(static_cast<void *>(place));
-        *state = State();
+        new (place) State();
     }
 
     virtual void destroy(AggregateDataPtr __restrict place) const noexcept override
@@ -1627,7 +1629,7 @@ struct ExponentialTimeDecayedAvgState
     Float64 previous_count;
 };
 
-struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunction<ExponentialTimeDecayedSumState>, public WindowFunctionHelpers
+struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunction<ExponentialTimeDecayedSumState>
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1680,7 +1682,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
         auto & state = getState(workspace);
 
         Float64 result = 0;
-        Float64 curr_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, transform->current_row);
+        Float64 curr_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, transform->current_row);
 
         if (state.previous_frame_start <= transform->frame_start
             && transform->frame_start < state.previous_frame_end
@@ -1688,15 +1690,15 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
         {
             for (RowNumber i = state.previous_frame_start; i < transform->frame_start; transform->advanceRowNumber(i))
             {
-                Float64 prev_val = getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
-                Float64 prev_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
+                Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
+                Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
                 result -= std::exp((prev_t - curr_t) / decay_length) * prev_val;
             }
             result += std::exp((state.previous_time - curr_t) / decay_length) * state.previous_sum;
             for (RowNumber i = state.previous_frame_end; i < transform->frame_end; transform->advanceRowNumber(i))
             {
-                Float64 prev_val = getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
-                Float64 prev_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
+                Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
+                Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
                 result += std::exp((prev_t - curr_t) / decay_length) * prev_val;
             }
         }
@@ -1704,8 +1706,8 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
         {
             for (RowNumber i = transform->frame_start; i < transform->frame_end; transform->advanceRowNumber(i))
             {
-                Float64 prev_val = getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
-                Float64 prev_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
+                Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
+                Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
                 result += std::exp((prev_t - curr_t) / decay_length) * prev_val;
             }
         }
@@ -1715,14 +1717,14 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
         state.previous_frame_start = transform->frame_start;
         state.previous_frame_end = transform->frame_end;
 
-        setValueToOutputColumn<Float64>(transform, function_index, result);
+        WindowFunctionHelpers::setValueToOutputColumn<Float64>(transform, function_index, result);
     }
 
     private:
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction, public WindowFunctionHelpers
+struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1771,27 +1773,29 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction, pu
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        Float64 result = 0;
-        Float64 curr_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, transform->current_row);
+        Float64 result = -std::numeric_limits<Float64>::infinity();
+        Float64 curr_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, transform->current_row);
 
         for (RowNumber i = transform->frame_start; i < transform->frame_end; transform->advanceRowNumber(i))
         {
-            Float64 val = getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
-            Float64 t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
-            if (val > result || t > curr_t)
+            Float64 value = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
+            Float64 t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
+
+            /// Avoiding extra calls to `exp` and multiplications.
+            if (value > result || t > curr_t || result < 0)
             {
-                result = std::max(std::exp((t - curr_t) / decay_length) * val, result);
+                result = std::max(std::exp((t - curr_t) / decay_length) * value, result);
             }
         }
 
-        setValueToOutputColumn<Float64>(transform, function_index, result);
+        WindowFunctionHelpers::setValueToOutputColumn<Float64>(transform, function_index, result);
     }
 
     private:
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFunction<ExponentialTimeDecayedSumState>, public WindowFunctionHelpers
+struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFunction<ExponentialTimeDecayedSumState>
 {
     static constexpr size_t ARGUMENT_TIME = 0;
 
@@ -1835,7 +1839,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
         auto & state = getState(workspace);
 
         Float64 result = 0;
-        Float64 curr_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, transform->current_row);
+        Float64 curr_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, transform->current_row);
 
         if (state.previous_frame_start <= transform->frame_start
             && transform->frame_start < state.previous_frame_end
@@ -1843,13 +1847,13 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
         {
             for (RowNumber i = state.previous_frame_start; i < transform->frame_start; transform->advanceRowNumber(i))
             {
-                Float64 prev_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
+                Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
                 result -= std::exp((prev_t - curr_t) / decay_length);
             }
             result += std::exp((state.previous_time - curr_t) / decay_length) * state.previous_sum;
             for (RowNumber i = state.previous_frame_end; i < transform->frame_end; transform->advanceRowNumber(i))
             {
-                Float64 prev_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
+                Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
                 result += std::exp((prev_t - curr_t) / decay_length);
             }
         }
@@ -1857,7 +1861,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
         {
             for (RowNumber i = transform->frame_start; i < transform->frame_end; transform->advanceRowNumber(i))
             {
-                Float64 prev_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
+                Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
                 result += std::exp((prev_t - curr_t) / decay_length);
             }
         }
@@ -1867,14 +1871,14 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
         state.previous_frame_start = transform->frame_start;
         state.previous_frame_end = transform->frame_end;
 
-        setValueToOutputColumn<Float64>(transform, function_index, result);
+        WindowFunctionHelpers::setValueToOutputColumn<Float64>(transform, function_index, result);
     }
 
     private:
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunction<ExponentialTimeDecayedAvgState>, public WindowFunctionHelpers
+struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunction<ExponentialTimeDecayedAvgState>
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1928,7 +1932,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
 
         Float64 count = 0;
         Float64 sum = 0;
-        Float64 curr_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, transform->current_row);
+        Float64 curr_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, transform->current_row);
 
         if (state.previous_frame_start <= transform->frame_start
             && transform->frame_start < state.previous_frame_end
@@ -1936,8 +1940,8 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
         {
             for (RowNumber i = state.previous_frame_start; i < transform->frame_start; transform->advanceRowNumber(i))
             {
-                Float64 prev_val = getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
-                Float64 prev_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
+                Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
+                Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
                 Float64 decay = std::exp((prev_t - curr_t) / decay_length);
                 sum -= decay * prev_val;
                 count -= decay;
@@ -1951,8 +1955,8 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
 
             for (RowNumber i = state.previous_frame_end; i < transform->frame_end; transform->advanceRowNumber(i))
             {
-                Float64 prev_val = getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
-                Float64 prev_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
+                Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
+                Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
                 Float64 decay = std::exp((prev_t - curr_t) / decay_length);
                 sum += decay * prev_val;
                 count += decay;
@@ -1962,8 +1966,8 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
         {
             for (RowNumber i = transform->frame_start; i < transform->frame_end; transform->advanceRowNumber(i))
             {
-                Float64 prev_val = getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
-                Float64 prev_t = getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
+                Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
+                Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
                 Float64 decay = std::exp((prev_t - curr_t) / decay_length);
                 sum += decay * prev_val;
                 count += decay;
@@ -1976,7 +1980,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
         state.previous_frame_start = transform->frame_start;
         state.previous_frame_end = transform->frame_end;
 
-        setValueToOutputColumn<Float64>(transform, function_index, sum/count);
+        WindowFunctionHelpers::setValueToOutputColumn<Float64>(transform, function_index, sum/count);
     }
 
     private:
