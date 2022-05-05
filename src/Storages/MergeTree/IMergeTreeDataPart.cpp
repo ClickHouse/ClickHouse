@@ -1376,16 +1376,19 @@ try
 {
     assertOnDisk();
 
+    std::string relative_path = storage.relative_data_path;
+    bool fsync_dir = storage.getSettings()->fsync_part_directory;
+
     if (parent_part)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Move is not supported for projection parts: moving form {} to {}",
-            data_part_storage->getFullPath(), new_relative_path);
+    {
+        /// For projections, move is only possible inside parent part dir.
+        relative_path = parent_part->data_part_storage->getFullRelativePath();
+    }
 
     String from = data_part_storage->getFullRelativePath();
-    String to = fs::path(storage.relative_data_path) / new_relative_path / "";
+    String to = fs::path(relative_path) / new_relative_path / "";
 
-    data_part_storage->rename(new_relative_path, storage.log, remove_new_dir_if_exists, storage.getSettings()->fsync_part_directory);
+    data_part_storage->rename(new_relative_path, storage.log, remove_new_dir_if_exists, fsync_dir);
     metadata_manager->move(from, to);
 
     for (const auto & [p_name, part] : projection_parts)

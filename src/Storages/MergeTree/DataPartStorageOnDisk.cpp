@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 DataPartStorageOnDisk::DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_)
     : volume(std::move(volume_)), root_path(std::move(root_path_)), part_dir(std::move(part_dir_))
-{   
+{
 }
 
 void DataPartStorageOnDisk::setRelativePath(const std::string & path)
@@ -143,7 +143,7 @@ DataPartStorageIteratorPtr DataPartStorageOnDisk::iterateDirectory(const String 
 void DataPartStorageOnDisk::remove(
     bool can_remove_shared_data,
     const NameSet & names_not_to_remove,
-    const MergeTreeDataPartChecksums & checksums, 
+    const MergeTreeDataPartChecksums & checksums,
     std::list<ProjectionChecksums> projections,
     Poco::Logger * log) const
 {
@@ -189,6 +189,10 @@ void DataPartStorageOnDisk::remove(
     {
         std::string proj_dir_name = projection.name + ".proj";
         projection_directories.emplace(proj_dir_name);
+
+        clearDirectory(
+            fs::path(to) / proj_dir_name,
+            can_remove_shared_data, names_not_to_remove, projection.checksums, {}, log, true);
     }
 
     clearDirectory(to, can_remove_shared_data, names_not_to_remove, checksums, projection_directories, log, false);
@@ -198,8 +202,8 @@ void DataPartStorageOnDisk::clearDirectory(
     const std::string & dir,
     bool can_remove_shared_data,
     const NameSet & names_not_to_remove,
-    const MergeTreeDataPartChecksums & checksums, 
-    const std::unordered_set<String> & skip_directories, 
+    const MergeTreeDataPartChecksums & checksums,
+    const std::unordered_set<String> & skip_directories,
     Poco::Logger * log,
     bool is_projection) const
 {
@@ -552,6 +556,13 @@ void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logge
             "Part directory {} doesn't exist. Most likely it is a logical error.",
             std::string(fs::path(volume->getDisk()->getPath()) / root_path / part_dir));
 
+    auto new_path = fs::path(root_path) / new_relative_path;
+    if (!new_path.has_filename())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot rename from {} to {}. Destination should not contain trailing slash",
+            getFullRelativePath(),
+            new_relative_path);
+
     /// Why "" ?
     String to = fs::path(root_path) / new_relative_path / "";
 
@@ -562,8 +573,8 @@ void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logge
             Names files;
             volume->getDisk()->listFiles(to, files);
 
-            LOG_WARNING(log, 
-                "Part directory {} already exists and contains {} files. Removing it.", 
+            LOG_WARNING(log,
+                "Part directory {} already exists and contains {} files. Removing it.",
                 fullPath(volume->getDisk(), to), files.size());
 
             volume->getDisk()->removeRecursive(to);
@@ -571,8 +582,8 @@ void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logge
         else
         {
             throw Exception(
-                ErrorCodes::DIRECTORY_ALREADY_EXISTS, 
-                "Part directory {} already exists", 
+                ErrorCodes::DIRECTORY_ALREADY_EXISTS,
+                "Part directory {} already exists",
                 fullPath(volume->getDisk(), to));
         }
     }
@@ -585,12 +596,39 @@ void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logge
     /// Why?
     volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
     volume->getDisk()->moveDirectory(from, to);
-    part_dir = new_relative_path;
+    part_dir = new_path.filename();
+    root_path = new_path.remove_filename();
     // metadata_manager->updateAll(true);
 
     SyncGuardPtr sync_guard;
     if (fsync_part_dir)
         sync_guard = volume->getDisk()->getDirectorySyncGuard(getFullRelativePath());
+}
+
+void DataPartStorageOnDisk::changeRootPath(const std::string & from_root, const std::string & to_root)
+{
+    /// This is a very dumb implementation, here for root path like
+    /// "some/current/path/to/part" and change like
+    /// "some/current" -> "other/different", we just replace prefix to make new root like
+    /// "other/different/path/to/part".
+    /// Here we expect that actual move was done by somebody else.
+
+    size_t prefix_size = from_root.size();
+    if (prefix_size > 0 && from_root.back() == '/')
+        --prefix_size;
+
+    if (prefix_size > root_path.size()
+        || std::string_view(from_root).substr(0, prefix_size) !=  std::string_view(root_path).substr(0, prefix_size))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot change part root to {} because it is not a prefix of current root {}",
+            from_root, root_path);
+
+    size_t dst_size = to_root.size();
+    if (dst_size > 0 && to_root.back() == '/')
+        --dst_size;
+
+    root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
 }
 
 bool DataPartStorageOnDisk::shallParticipateInMerges(const IStoragePolicy & storage_policy) const
@@ -666,7 +704,7 @@ void DataPartStorageOnDisk::backup(
 
 
 DataPartStoragePtr DataPartStorageOnDisk::freeze(
-    const std::string & to, 
+    const std::string & to,
     const std::string & dir_path,
     bool make_source_readonly,
     std::function<void(const DiskPtr &)> save_metadata_callback,
@@ -711,7 +749,7 @@ DataPartStoragePtr DataPartStorageOnDisk::freeze(
 
 DataPartStorageBuilderOnDisk::DataPartStorageBuilderOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_)
     : volume(std::move(volume_)), root_path(std::move(root_path_)), part_dir(std::move(part_dir_))
-{   
+{
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DataPartStorageBuilderOnDisk::readFile(
@@ -756,12 +794,12 @@ void DataPartStorageBuilderOnDisk::createHardLinkFrom(const IDataPartStorage & s
     const auto * source_on_disk = typeid_cast<const DataPartStorageOnDisk *>(&source);
     if (!source_on_disk)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, 
+            ErrorCodes::LOGICAL_ERROR,
             "Cannot create hardlink from different storage. Expected DataPartStorageOnDisk, got {}",
             typeid(source).name());
 
     volume->getDisk()->createHardLink(
-        fs::path(source_on_disk->getFullRelativePath()) / from, 
+        fs::path(source_on_disk->getFullRelativePath()) / from,
         fs::path(root_path) / part_dir / to);
 }
 
