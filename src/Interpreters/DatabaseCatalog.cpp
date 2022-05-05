@@ -14,7 +14,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
@@ -92,7 +92,7 @@ TemporaryTableHolder::TemporaryTableHolder(
         context_,
         [&](const StorageID & table_id)
         {
-            auto storage = StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
+            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
 
             if (create_for_global_subquery)
                 storage->delayReadForGlobalSubqueries();

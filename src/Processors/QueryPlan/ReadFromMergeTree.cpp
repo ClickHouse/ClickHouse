@@ -25,7 +25,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 

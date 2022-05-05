@@ -13,8 +13,7 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Poco/URI.h>
-#include <base/logger_useful.h>
-#include <base/shared_ptr_helper.h>
+#include <Common/logger_useful.h>
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
@@ -73,6 +72,7 @@ public:
         String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
+        const String & version_id,
         std::shared_ptr<IteratorWrapper> file_iterator_,
         size_t download_thread_num);
 
@@ -85,6 +85,7 @@ public:
 private:
     String name;
     String bucket;
+    String version_id;
     String file_path;
     String format;
     ColumnsDescription columns_desc;
@@ -118,7 +119,7 @@ private:
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 : public shared_ptr_helper<StorageS3>, public IStorage, WithContext
+class StorageS3 : public IStorage, WithContext
 {
 public:
     StorageS3(

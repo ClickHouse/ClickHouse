@@ -21,7 +21,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
 #include "Processors/Sources/SourceWithProgress.h"
 #include <Processors/Sources/RemoteSource.h>
@@ -30,7 +30,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>

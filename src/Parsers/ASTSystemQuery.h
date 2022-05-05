@@ -36,6 +36,7 @@ public:
         RESTORE_REPLICA,
         DROP_REPLICA,
         SYNC_REPLICA,
+        SYNC_DATABASE_REPLICA,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
         RELOAD_MODEL,
@@ -89,7 +90,10 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+
+    /// Values for `drop filesystem cache` system query.
     String filesystem_cache_path;
+    bool force_removal = false;
 
     String getID(char) const override { return "SYSTEM query"; }
 
@@ -104,9 +108,9 @@ public:
         return res;
     }
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
-        return removeOnCluster<ASTSystemQuery>(clone(), new_database);
+        return removeOnCluster<ASTSystemQuery>(clone(), params.default_database);
     }
 
     virtual QueryKind getQueryKind() const override { return QueryKind::System; }

@@ -27,7 +27,6 @@
 
 namespace ProfileEvents
 {
-#if defined(__linux__)
     extern const Event OSIOWaitMicroseconds;
     extern const Event OSCPUWaitMicroseconds;
     extern const Event OSCPUVirtualTimeMicroseconds;
@@ -61,11 +60,24 @@ namespace ProfileEvents
     extern const Event PerfInstructionTLBMisses;
     extern const Event PerfLocalMemoryReferences;
     extern const Event PerfLocalMemoryMisses;
-#endif
 }
 
 namespace DB
 {
+
+const char * TasksStatsCounters::metricsProviderString(MetricsProvider provider)
+{
+    switch (provider)
+    {
+        case MetricsProvider::None:
+            return "none";
+        case MetricsProvider::Procfs:
+            return "procfs";
+        case MetricsProvider::Netlink:
+            return "netlink";
+    }
+    __builtin_unreachable();
+}
 
 bool TasksStatsCounters::checkIfAvailable()
 {
