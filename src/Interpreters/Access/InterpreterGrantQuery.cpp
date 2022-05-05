@@ -117,7 +117,7 @@ namespace
     void checkGranteeIsAllowed(const ContextAccess & current_user_access, const UUID & grantee_id, const IAccessEntity & grantee)
     {
         auto current_user = current_user_access.getUser();
-        if (current_user && !current_user->grantees.match(grantee_id))
+        if (!current_user || !current_user->grantees.match(grantee_id))
             throw Exception(grantee.formatTypeWithName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
     }
 
