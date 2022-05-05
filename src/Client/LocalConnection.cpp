@@ -392,9 +392,9 @@ Packet LocalConnection::receivePacket()
     packet.type = next_packet_type.value();
     switch (next_packet_type.value())
     {
-        case Protocol::Server::Totals: [[fallthrough]];
-        case Protocol::Server::Extremes: [[fallthrough]];
-        case Protocol::Server::Log: [[fallthrough]];
+        case Protocol::Server::Totals:
+        case Protocol::Server::Extremes:
+        case Protocol::Server::Log:
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {

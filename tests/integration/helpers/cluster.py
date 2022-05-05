@@ -3765,10 +3765,10 @@ class ClickHouseInstance:
         if self.external_dirs:
             for external_dir in self.external_dirs:
                 external_dir_abs_path = p.abspath(
-                    p.join(self.path, external_dir.lstrip("/"))
+                    p.join(self.cluster.instances_dir, external_dir.lstrip("/"))
                 )
                 logging.info(f"external_dir_abs_path={external_dir_abs_path}")
-                os.mkdir(external_dir_abs_path)
+                os.makedirs(external_dir_abs_path, exist_ok=True)
                 external_dirs_volumes += (
                     "- " + external_dir_abs_path + ":" + external_dir + "\n"
                 )

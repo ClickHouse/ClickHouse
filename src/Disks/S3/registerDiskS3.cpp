@@ -1,6 +1,6 @@
 #include <Common/config.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -195,6 +195,7 @@ void registerDiskS3(DiskFactory & factory)
             name,
             uri.bucket,
             uri.key,
+            uri.version_id,
             metadata_disk,
             std::move(cache),
             context,

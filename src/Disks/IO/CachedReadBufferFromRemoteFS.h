@@ -4,7 +4,8 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <Interpreters/FilesystemCacheLog.h>
 
 namespace DB
 {
@@ -64,6 +65,8 @@ private:
     size_t getTotalSizeToRead();
     bool completeFileSegmentAndGetNext();
 
+    void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range, ReadType read_type);
+
     Poco::Logger * log;
     IFileCache::Key cache_key;
     String remote_fs_object_path;
@@ -104,6 +107,9 @@ private:
     size_t first_offset = 0;
     String nextimpl_step_log_info;
     String last_caller_id;
+
+    String query_id;
+    bool enable_logging = false;
 };
 
 }
