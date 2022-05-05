@@ -1893,6 +1893,9 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
     if (!getStorageID().hasUUID())
         getContext()->dropCaches();
 
+    for (const auto & part : data_parts_by_info)
+        part->data_part_storage->changeRootPath(relative_data_path, new_table_path);
+
     relative_data_path = new_table_path;
     renameInMemory(new_table_id);
 }

@@ -165,7 +165,11 @@ public:
         const std::string & dir_path,
         Poco::Logger * log) const = 0;
 
-    virtual void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) = 0;
+    virtual void rename(const std::string & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) = 0;
+
+    /// Change part's root. From should be a prefix path of current root path.
+    /// Right now, this is needed for rename table query.
+    virtual void changeRootPath(const std::string & from_root, const std::string & to_root) = 0;
 
     /// Disk name
     virtual std::string getName() const = 0;

@@ -99,6 +99,8 @@ public:
 
     void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) override;
 
+    void changeRootPath(const std::string & from_root, const std::string & to_root) override;
+
     std::string getName() const override;
     std::string getDiskType() const override;
 
