@@ -1245,6 +1245,13 @@ Coordination::RequestPtr makeGetRequest(const std::string & path)
     return request;
 }
 
+Coordination::RequestPtr makeSimpleListRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::SimpleListRequest>();
+    request->path = path;
+    return request;
+}
+
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version)
 {
     auto request = std::make_shared<Coordination::SetRequest>();

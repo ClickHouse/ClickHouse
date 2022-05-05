@@ -121,6 +121,15 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
     }
 };
 
+struct TestKeeperSimpleListRequest final : SimpleListRequest, TestKeeperRequest
+{
+    TestKeeperSimpleListRequest() = default;
+    explicit TestKeeperSimpleListRequest(const SimpleListRequest & base) : SimpleListRequest(base) {}
+
+    ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
 struct TestKeeperListRequest final : ListRequest, TestKeeperRequest
 {
     ResponsePtr createResponse() const override;
@@ -168,6 +177,11 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
             {
                 checkOpKindOrThrow(false);
                 requests.push_back(std::make_shared<TestKeeperGetRequest>(*concrete_request_get));
+            }
+            else if (const auto * concrete_request_simple_list = dynamic_cast<const SimpleListRequest *>(generic_request.get()))
+            {
+                checkOpKindOrThrow(false);
+                requests.push_back(std::make_shared<TestKeeperSimpleListRequest>(*concrete_request_simple_list));
             }
             else
                 throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
@@ -384,6 +398,22 @@ std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container
     return { std::make_shared<SetResponse>(response), undo };
 }
 
+std::pair<ResponsePtr, Undo> TestKeeperSimpleListRequest::process(TestKeeper::Container & container, int64_t zxid) const
+{
+    TestKeeperListRequest req;
+    req.path = path;
+    auto [full_response_ptr, undo] = req.process(container, zxid);
+    const auto * full_response = dynamic_cast<const ListResponse*>(full_response_ptr.get());
+    if (full_response == nullptr)
+    {
+        throw Exception("Logical error: expected to get ListResponse from ListRequest", Error::ZSYSTEMERROR);
+    }
+    SimpleListResponse response;
+    response.error = full_response->error;
+    response.names = full_response->names;
+    return {std::make_shared<SimpleListResponse>(response), undo};
+}
+
 std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Container & container, int64_t) const
 {
     ListResponse response;
@@ -495,6 +525,7 @@ ResponsePtr TestKeeperExistsRequest::createResponse() const { return std::make_s
 ResponsePtr TestKeeperGetRequest::createResponse() const { return std::make_shared<GetResponse>(); }
 ResponsePtr TestKeeperSetRequest::createResponse() const { return std::make_shared<SetResponse>(); }
 ResponsePtr TestKeeperListRequest::createResponse() const { return std::make_shared<ListResponse>(); }
+ResponsePtr TestKeeperSimpleListRequest::createResponse() const { return std::make_shared<SimpleListResponse>(); }
 ResponsePtr TestKeeperCheckRequest::createResponse() const { return std::make_shared<CheckResponse>(); }
 ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
 

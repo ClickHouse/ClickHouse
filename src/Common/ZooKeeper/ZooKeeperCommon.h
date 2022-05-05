@@ -337,9 +337,18 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
     size_t bytesSize() const override { return ListRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
 
-struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
+struct ZooKeeperSimpleListRequest final : SimpleListRequest, ZooKeeperRequest
 {
+    ZooKeeperSimpleListRequest() = default;
+    explicit ZooKeeperSimpleListRequest(const SimpleListRequest & base) : SimpleListRequest(base) {}
+
     OpNum getOpNum() const override { return OpNum::SimpleList; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+
+    size_t bytesSize() const override { return SimpleListRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
 
 struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
@@ -353,9 +362,15 @@ struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
     void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
-struct ZooKeeperSimpleListResponse final : ZooKeeperListResponse
+struct ZooKeeperSimpleListResponse final : SimpleListResponse, ZooKeeperResponse
 {
-    OpNum getOpNum() const override { return OpNum::SimpleList; }
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    OpNum getOpNum() const override { return OpNum::List; }
+
+    size_t bytesSize() const override { return SimpleListResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+
+    void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest

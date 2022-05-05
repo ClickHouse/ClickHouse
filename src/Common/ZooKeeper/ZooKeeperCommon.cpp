@@ -240,6 +240,28 @@ void ZooKeeperListResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(stat, out);
 }
 
+void ZooKeeperSimpleListRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+    Coordination::read(has_watch, in);
+}
+
+void ZooKeeperSimpleListRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+    Coordination::write(has_watch, out);
+}
+
+void ZooKeeperSimpleListResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(names, in);
+}
+
+void ZooKeeperSimpleListResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(names, out);
+}
+
 
 void ZooKeeperSetACLRequest::writeImpl(WriteBuffer & out) const
 {
@@ -349,6 +371,11 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
         {
             checkOpKindOrThrow(OpKind::Read);
             requests.push_back(std::make_shared<ZooKeeperGetRequest>(*concrete_request_get));
+        }
+        else if (const auto * concrete_request_simple_list = dynamic_cast<const SimpleListRequest *>(generic_request.get()))
+        {
+            checkOpKindOrThrow(OpKind::Read);
+            requests.push_back(std::make_shared<ZooKeeperSimpleListRequest>(*concrete_request_simple_list));
         }
         else
             throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
@@ -531,6 +558,7 @@ ZooKeeperResponsePtr ZooKeeperExistsRequest::makeResponse() const { return setTi
 ZooKeeperResponsePtr ZooKeeperGetRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperGetResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSetResponse>()); }
 ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperListResponse>()); }
+ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSimpleListResponse>()); }
 ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperCheckResponse>()); }
 ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperMultiResponse>(requests)); }
 ZooKeeperResponsePtr ZooKeeperCloseRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperCloseResponse>()); }
@@ -683,6 +711,13 @@ void ZooKeeperListResponse::fillLogElements(LogElements & elems, size_t idx) con
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.stat = stat;
+    elem.children = names;
+}
+
+void ZooKeeperSimpleListResponse::fillLogElements(LogElements & elems, size_t idx) const
+{
+    ZooKeeperResponse::fillLogElements(elems, idx);
+    auto & elem =  elems[idx];
     elem.children = names;
 }
 

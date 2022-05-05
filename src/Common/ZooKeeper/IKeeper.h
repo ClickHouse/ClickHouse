@@ -275,6 +275,29 @@ struct SetResponse : virtual Response
     size_t bytesSize() const override { return sizeof(stat); }
 };
 
+struct SimpleListRequest : virtual Request
+{
+    String path;
+
+    void addRootPath(const String & root_path) override;
+    String getPath() const override { return path; }
+
+    size_t bytesSize() const override { return path.size(); }
+};
+
+struct SimpleListResponse : virtual Response
+{
+    std::vector<String> names;
+
+    size_t bytesSize() const override
+    {
+        size_t size = 0;
+        for (const auto & name : names)
+            size += name.size();
+        return size;
+    }
+};
+
 struct ListRequest : virtual Request
 {
     String path;

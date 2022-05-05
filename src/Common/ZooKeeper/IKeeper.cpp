@@ -140,6 +140,7 @@ void RemoveRequest::addRootPath(const String & root_path) { Coordination::addRoo
 void ExistsRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void GetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
+void SimpleListRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void ListRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void CheckRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }

@@ -100,13 +100,20 @@ void testMultiRead(zkutil::ZooKeeper & zk)
     Coordination::Requests requests{
         zkutil::makeGetRequest("/data/multiread/d2"),
         zkutil::makeGetRequest("/data/multiread/d1"),
+        zkutil::makeSimpleListRequest("/data/multiread"),
         zkutil::makeGetRequest("/data/multiread/d3"),
     };
     auto resp = zk.multiRead(requests);
-    assert_eq(resp.size(), 3u);
+    assert_eq(resp.size(), 4u);
     assert_eq(assert_dynamic_cast<Coordination::GetResponse>(resp[0].get())->data, "b");
     assert_eq(assert_dynamic_cast<Coordination::GetResponse>(resp[1].get())->data, "a");
     assert_eq(assert_dynamic_cast<Coordination::GetResponse>(resp[3].get())->data, "c");
+
+    const auto * list_resp = assert_dynamic_cast<Coordination::SimpleListResponse>(resp[2].get());
+    assert_eq(list_resp->names.size(), 3u);
+    assert_eq(list_resp->names[0], "d1");
+    assert_eq(list_resp->names[1], "d2");
+    assert_eq(list_resp->names[2], "d3");
 }
 
 void testCreateSetVersionRequest(zkutil::ZooKeeper & zk)
@@ -383,19 +390,19 @@ int main(int argc, char *argv[])
         zk.createIfNotExists("/data", "");
         std::cerr << "Created\n";
 
-        Stopwatch watch;
-        createConcurrent(zk, argv[1], 1, 1005000, 10);
-        std::cerr << "Finished in: " << watch.elapsedMilliseconds() << "ms" << std::endl;
+        //Stopwatch watch;
+        //createConcurrent(zk, argv[1], 1, 1005000, 10);
+        //std::cerr << "Finished in: " << watch.elapsedMilliseconds() << "ms" << std::endl;
 
         //testCreateGetExistsNode(zk);
-        //testCreateSetNode(zk);
-        //testCreateList(zk);
-        //testCreateSetVersionRequest(zk);
-        //testMultiRequest(zk);
-        //testMultiRead(zk);
-        //testCreateSetWatchEvent(zk);
-        //testCreateListWatchEvent(zk);
-        //tryConcurrentWatches(zk);
+        testCreateSetNode(zk);
+        testCreateList(zk);
+        testCreateSetVersionRequest(zk);
+        testMultiRequest(zk);
+        testMultiRead(zk);
+        testCreateSetWatchEvent(zk);
+        testCreateListWatchEvent(zk);
+        tryConcurrentWatches(zk);
     }
     catch (...)
     {
