@@ -133,7 +133,7 @@ namespace RedisProtocol
                 String data = reader.readBulkString();
                 if (i == 0) // Operation itself
                 {
-                    if (data != "GET")
+                    if (Poco::toLower(data) != "get")
                     {
                         throw Exception(Poco::format("Client sent unsupported method %s.", data), ErrorCodes::NOT_IMPLEMENTED);
                     }

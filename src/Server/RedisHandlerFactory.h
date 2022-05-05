@@ -9,6 +9,7 @@ namespace DB
 class RedisHandlerFactory : public TCPServerConnectionFactory
 {
 private:
+    IServer & server;
     Poco::Logger * log;
 
 public:

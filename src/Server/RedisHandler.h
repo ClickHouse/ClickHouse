@@ -7,6 +7,10 @@
 #include <Common/logger_useful.h>
 #include "IServer.h"
 
+#if USE_SSL
+#    include <Poco/Net/SecureStreamSocket.h>
+#endif
+
 
 namespace CurrentMetrics
 {
@@ -25,14 +29,21 @@ class TCPServer;
 class RedisHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    RedisHandler(const Poco::Net::StreamSocket & socket_, TCPServer & tcp_server_);
+    RedisHandler(const Poco::Net::StreamSocket & socket_, IServer & server_, TCPServer & tcp_server_);
 
     void run() final;
 
 private:
+    void makeSecureConnection();
+
     Poco::Logger * log = &Poco::Logger::get("RedisHandler");
 
+    IServer & server;
     TCPServer & tcp_server;
+
+#if USE_SSL
+    std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
+#endif
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;

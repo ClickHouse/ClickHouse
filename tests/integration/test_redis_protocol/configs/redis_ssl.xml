@@ -1,0 +1,6 @@
+<clickhouse>
+    <redis>
+        <port>9007</port>
+        <enable_ssl>true</enable_ssl>
+    </redis>
+</clickhouse>
