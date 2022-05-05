@@ -34,7 +34,7 @@ namespace JoinStuff
 class ConcurrentHashJoin : public IJoin
 {
 public:
-    explicit ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & left_sample_block, const Block & right_sample_block, bool any_take_last_row_ = false);
+    explicit ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_ = false);
     ~ConcurrentHashJoin() override = default;
 
     const TableJoin & getTableJoin() const override { return *table_join; }
@@ -68,20 +68,7 @@ private:
     mutable std::mutex totals_mutex;
     Block totals;
 
-    struct BlockDispatchControlData
-    {
-        std::shared_ptr<ExpressionActions> hash_expression_actions;
-        String hash_column_name;
-        BlockDispatchControlData() = default;
-    };
-
-    std::vector<std::shared_ptr<BlockDispatchControlData>> dispatch_datas;
-
-    Poco::Logger * logger = &Poco::Logger::get("ConcurrentHashJoin");
-
-    std::pair<std::shared_ptr<ExpressionActions>, String> buildHashExpressionAction(const Block & block, const Strings & based_columns_names);
-
-    void dispatchBlock(BlockDispatchControlData & dispatch_data, Block & from_block, Blocks & dispatched_blocks);
+    Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
 
 };
 }

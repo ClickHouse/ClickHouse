@@ -4,10 +4,6 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -31,7 +27,7 @@ namespace ErrorCodes
 }
 namespace JoinStuff
 {
-ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & left_sample_block, const Block & right_sample_block, bool any_take_last_row_)
+ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_)
     : context(context_)
     , table_join(table_join_)
     , slots(slots_)
@@ -48,21 +44,11 @@ ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<Tabl
         hash_joins.emplace_back(std::move(inner_hash_join));
     }
 
-    dispatch_datas = {std::make_shared<BlockDispatchControlData>(), std::make_shared<BlockDispatchControlData>()};
-    const auto & onexpr = table_join->getClauses()[0];
-    auto & left_dispatch_data = *dispatch_datas[0];
-    std::tie(left_dispatch_data.hash_expression_actions, left_dispatch_data.hash_column_name) = buildHashExpressionAction(left_sample_block, onexpr.key_names_left);
-
-    auto & right_dispatch_data = *dispatch_datas[1];
-    std::tie(right_dispatch_data.hash_expression_actions, right_dispatch_data.hash_column_name) = buildHashExpressionAction(right_sample_block, onexpr.key_names_right);
 }
 
 bool ConcurrentHashJoin::addJoinedBlock(const Block & block, bool check_limits)
 {
-    auto & dispatch_data = *dispatch_datas[1];
-    Blocks dispatched_blocks;
-    Block cloned_block = block;
-    dispatchBlock(dispatch_data, cloned_block, dispatched_blocks);
+    Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, block);
 
     std::list<size_t> pending_blocks;
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
@@ -97,10 +83,7 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & block, bool check_limits)
 
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
-    auto & dispatch_data = *dispatch_datas[0];
-    Blocks dispatched_blocks;
-    Block cloned_block = block;
-    dispatchBlock(dispatch_data, cloned_block, dispatched_blocks);
+    Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
         std::shared_ptr<ExtraBlock> none_extra_block;
@@ -178,73 +161,45 @@ std::shared_ptr<NotJoinedBlocks> ConcurrentHashJoin::getNonJoinedBlocks(
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}", table_join->kind(), table_join->strictness());
 }
 
-std::pair<std::shared_ptr<ExpressionActions>, String> ConcurrentHashJoin::buildHashExpressionAction(const Block & block, const Strings & based_columns_names)
+Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
 {
-    Strings hash_columns_names;
-    WriteBufferFromOwnString col_buf;
-    for (size_t i = 0, sz = based_columns_names.size(); i < sz; ++i)
+    Blocks result;
+
+    size_t num_shards = hash_joins.size();
+    size_t num_rows = from_block.rows();
+    size_t num_cols = from_block.columns();
+
+    ColumnRawPtrs key_cols;
+    for (const auto & key_name : key_columns_names)
     {
-        if (i)
-            col_buf << ",";
-        col_buf << based_columns_names[i];
+        key_cols.push_back(from_block.getByName(key_name).column.get());
     }
-    WriteBufferFromOwnString write_buf;
-    write_buf << "cityHash64(" << col_buf.str() << ") % " << slots;
-
-    auto settings = context->getSettings();
-    ParserExpressionList hash_expr_parser(true);
-    ASTPtr func_ast = parseQuery(hash_expr_parser, write_buf.str(), "Parse Block hash expression", settings.max_query_size, settings.max_parser_depth);
-    auto hash_column_name = func_ast->children[0]->getColumnName();
-
-    DebugASTLog<false> visit_log;
-    const auto & names_and_types = block.getNamesAndTypesList();
-    ActionsDAGPtr actions = std::make_shared<ActionsDAG>(names_and_types);
-    PreparedSets prepared_sets;
-    SubqueriesForSets subqueries_for_sets;
-    ActionsVisitor::Data visitor_data(
-        context,
-        SizeLimits{settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode},
-        10,
-        names_and_types,
-        std::move(actions),
-        prepared_sets,
-        subqueries_for_sets,
-        true, false, true, false);
-    ActionsVisitor(visitor_data, visit_log.stream()).visit(func_ast);
-    actions = visitor_data.getActions();
-    return {std::make_shared<ExpressionActions>(actions), hash_column_name};
-}
-
-void ConcurrentHashJoin::dispatchBlock(BlockDispatchControlData & dispatch_data, Block & from_block, Blocks & dispatched_blocks)
-{
-    auto header = from_block.cloneEmpty();
-    auto num_shards = hash_joins.size();
-    Block block_for_build_selector = from_block;
-    dispatch_data.hash_expression_actions->execute(block_for_build_selector);
-    auto selector_column = block_for_build_selector.getByName(dispatch_data.hash_column_name);
-    std::vector<UInt64> selector_slots;
-    for (UInt64 i = 0; i < num_shards; ++i)
+    IColumn::Selector selector(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
     {
-        selector_slots.emplace_back(i);
-        dispatched_blocks.emplace_back(from_block.cloneEmpty());
+        SipHash hash;
+        for (const auto & key_col : key_cols)
+        {
+            key_col->updateHashWithValue(i, hash);
+        }
+        selector[i] = hash.get64() % num_shards;
     }
-    if (selector_column.column->isNullable())
-    {
-        // use the default value for null rows.
-        selector_column.column = typeid_cast<const ColumnNullable *>(selector_column.column.get())->getNestedColumnPtr();
-    }
-    auto selector = createBlockSelector<UInt8>(*selector_column.column, selector_slots);
 
-    auto columns_in_block = header.columns();
-    for (size_t i = 0; i < columns_in_block; ++i)
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        result.emplace_back(from_block.cloneEmpty());
+    }
+
+    for (size_t i = 0; i < num_cols; ++i)
     {
         auto dispatched_columns = from_block.getByPosition(i).column->scatter(num_shards, selector);
+        assert(result.size() == dispatched_columns.size());
         for (size_t block_index = 0; block_index < num_shards; ++block_index)
         {
-            dispatched_blocks[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
+            result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
         }
     }
-
+    return result;
 }
 
 }
