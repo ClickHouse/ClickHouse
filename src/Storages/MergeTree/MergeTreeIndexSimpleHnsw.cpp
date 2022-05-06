@@ -305,13 +305,13 @@ MergeTreeIndexConditionSimpleHnsw::MergeTreeIndexConditionSimpleHnsw(
 
 bool MergeTreeIndexConditionSimpleHnsw::alwaysUnknownOrTrue() const
 {
-    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Condition -- {}", condition.alwaysUnknownOrTrue());
-    return condition.alwaysUnknownOrTrue();
+    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Condition -- {}", condition.alwaysUnknownOrTrue("L2Distance"));
+    return condition.alwaysUnknownOrTrue("L2Distance");
 }
 
 std::vector<size_t> MergeTreeIndexConditionSimpleHnsw::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
-    UInt64 limit = condition.getLimitLength() ? condition.getLimitLength().value() : 1ull;
+    UInt64 limit = condition.getLimitCount() ? condition.getLimitCount().value() : 1ull;
     std::optional<float> comp_dist
         = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistance()) : std::nullopt;
     std::vector<float> target_vec = condition.getTargetVector();

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/CommonCondition.h>
+#include <Storages/MergeTree/CommonANNIndexes.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -124,7 +124,7 @@ public:
     ~MergeTreeIndexConditionSimpleHnsw() override = default;
 
 private:
-    Condition::CommonCondition condition;
+    ANNCondition::ANNCondition condition;
 };
 
 class MergeTreeIndexSimpleHnsw : public IMergeTreeIndex
