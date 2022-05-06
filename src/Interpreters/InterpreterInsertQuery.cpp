@@ -438,7 +438,7 @@ BlockIO InterpreterInsertQuery::execute()
         });
 
         /// We need to convert Sparse columns to full, because it's destination storage
-        /// may not support it may have different settings for applying Sparse serialization.
+        /// may not support it or may have different settings for applying Sparse serialization.
         pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             return std::make_shared<MaterializingTransform>(in_header);

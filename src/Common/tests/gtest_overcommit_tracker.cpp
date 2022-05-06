@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <chrono>
 #include <thread>
 #include <vector>
 
@@ -6,6 +7,7 @@
 #include <Common/OvercommitTracker.h>
 #include <Interpreters/ProcessList.h>
 
+using namespace std::chrono_literals;
 using namespace DB;
 
 template <typename BaseTracker>
@@ -33,7 +35,7 @@ protected:
 using UserOvercommitTrackerForTest = OvercommitTrackerForTest<UserOvercommitTracker>;
 using GlobalOvercommitTrackerForTest = OvercommitTrackerForTest<GlobalOvercommitTracker>;
 
-static constexpr UInt64 WAIT_TIME = 3'000'000;
+static constexpr UInt64 WAIT_TIME = 4'000'000;
 
 template <typename T>
 void free_not_continue_test(T & overcommit_tracker)
@@ -60,7 +62,13 @@ void free_not_continue_test(T & overcommit_tracker)
         ));
     }
 
-    std::thread([&]() { overcommit_tracker.tryContinueQueryExecutionAfterFree(50); }).join();
+    std::thread(
+        [&]()
+        {
+            std::this_thread::sleep_for(1000ms);
+            overcommit_tracker.tryContinueQueryExecutionAfterFree(50);
+        }
+    ).join();
 
     for (auto & thread : threads)
     {
@@ -110,7 +118,13 @@ void free_continue_test(T & overcommit_tracker)
         ));
     }
 
-    std::thread([&]() { overcommit_tracker.tryContinueQueryExecutionAfterFree(5000); }).join();
+    std::thread(
+        [&]()
+        {
+            std::this_thread::sleep_for(1000ms);
+            overcommit_tracker.tryContinueQueryExecutionAfterFree(5000);
+        }
+    ).join();
 
     for (auto & thread : threads)
     {
@@ -165,6 +179,7 @@ void free_continue_and_alloc_test(T & overcommit_tracker)
         [&]()
         {
             MemoryTracker failed;
+            std::this_thread::sleep_for(1000ms);
             overcommit_tracker.tryContinueQueryExecutionAfterFree(5000);
             stopped_next = overcommit_tracker.needToStopQuery(&failed, 100);
         }
@@ -224,12 +239,19 @@ void free_continue_and_alloc_2_test(T & overcommit_tracker)
         [&]()
         {
             MemoryTracker failed;
+            std::this_thread::sleep_for(1000ms);
             overcommit_tracker.tryContinueQueryExecutionAfterFree(5000);
             stopped_next = overcommit_tracker.needToStopQuery(&failed, 100);
         }
     ));
 
-    overcommit_tracker.tryContinueQueryExecutionAfterFree(90);
+    threads.push_back(std::thread(
+        [&]()
+        {
+            std::this_thread::sleep_for(2000ms);
+            overcommit_tracker.tryContinueQueryExecutionAfterFree(90);
+        }
+    ));
 
     for (auto & thread : threads)
     {
@@ -285,12 +307,19 @@ void free_continue_and_alloc_3_test(T & overcommit_tracker)
         [&]()
         {
             MemoryTracker failed;
+            std::this_thread::sleep_for(1000ms);
             overcommit_tracker.tryContinueQueryExecutionAfterFree(5000);
             stopped_next = overcommit_tracker.needToStopQuery(&failed, 100);
         }
     ));
 
-    overcommit_tracker.tryContinueQueryExecutionAfterFree(100);
+    threads.push_back(std::thread(
+        [&]()
+        {
+            std::this_thread::sleep_for(2000ms);
+            overcommit_tracker.tryContinueQueryExecutionAfterFree(100);
+        }
+    ));
 
     for (auto & thread : threads)
     {
@@ -306,14 +335,14 @@ TEST(OvercommitTracker, UserFreeContinueAndAlloc3)
     ProcessList process_list;
     ProcessListForUser user_process_list(&process_list);
     UserOvercommitTrackerForTest user_overcommit_tracker(&process_list, &user_process_list);
-    free_continue_and_alloc_2_test(user_overcommit_tracker);
+    free_continue_and_alloc_3_test(user_overcommit_tracker);
 }
 
 TEST(OvercommitTracker, GlobalFreeContinueAndAlloc3)
 {
     ProcessList process_list;
     GlobalOvercommitTrackerForTest global_overcommit_tracker(&process_list);
-    free_continue_and_alloc_2_test(global_overcommit_tracker);
+    free_continue_and_alloc_3_test(global_overcommit_tracker);
 }
 
 template <typename T>
@@ -342,7 +371,11 @@ void free_continue_2_test(T & overcommit_tracker)
     }
 
     std::thread(
-        [&]() { overcommit_tracker.tryContinueQueryExecutionAfterFree(300); }
+        [&]()
+        {
+            std::this_thread::sleep_for(1000ms);
+            overcommit_tracker.tryContinueQueryExecutionAfterFree(300);
+        }
     ).join();
 
     for (auto & thread : threads)
@@ -386,6 +419,7 @@ void query_stop_not_continue_test(T & overcommit_tracker)
                 ++need_to_stop;
         }
     );
+    std::this_thread::sleep_for(1000ms);
     overcommit_tracker.onQueryStop(&picked);
     thread.join();
 

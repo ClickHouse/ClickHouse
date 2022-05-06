@@ -46,13 +46,17 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
     // This may happen if no soft limit is set.
     if (picked_tracker == nullptr)
     {
+        // Here state can not be RUNNING, because it requires
+        // picked_tracker to be not null pointer.
         assert(cancellation_state == QueryCancellationState::SELECTED);
         cancellation_state = QueryCancellationState::NONE;
         return true;
     }
     if (picked_tracker == tracker)
     {
-        assert(cancellation_state == QueryCancellationState::SELECTED);
+        // Query of the provided as an argument memory tracker was chosen.
+        // It may happen even when current state is RUNNING, because
+        // ThreadStatus::~ThreadStatus may call MemoryTracker::alloc.
         cancellation_state = QueryCancellationState::RUNNING;
         return true;
     }
@@ -165,17 +169,17 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
     for (auto const & query : process_list->processes)
     {
         if (query.isKilled())
-            return;
+            continue;
 
         Int64 user_soft_limit = 0;
         if (auto const * user_process_list = query.getUserProcessList())
             user_soft_limit = user_process_list->user_memory_tracker.getSoftLimit();
         if (user_soft_limit == 0)
-            return;
+            continue;
 
         auto * memory_tracker = query.getMemoryTracker();
         if (!memory_tracker)
-            return;
+            continue;
         auto ratio = memory_tracker->getOvercommitRatio(user_soft_limit);
         LOG_DEBUG(logger, "Query has ratio {}/{}", ratio.committed, ratio.soft_limit);
         if (current_ratio < ratio)
