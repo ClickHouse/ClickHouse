@@ -525,16 +525,6 @@ size_t ColumnObject::size() const
     return num_rows;
 }
 
-MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
-{
-    /// cloneResized with new_size == 0 is used for cloneEmpty().
-    if (new_size != 0)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "ColumnObject doesn't support resize to non-zero length");
-
-    return ColumnObject::create(is_nullable);
-}
-
 size_t ColumnObject::byteSize() const
 {
     size_t res = 0;
@@ -698,7 +688,7 @@ void ColumnObject::popBack(size_t length)
 }
 
 template <typename Func>
-ColumnPtr ColumnObject::applyForSubcolumns(Func && func) const
+MutableColumnPtr ColumnObject::applyForSubcolumns(Func && func) const
 {
     if (!isFinalized())
     {
@@ -735,6 +725,14 @@ ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
 ColumnPtr ColumnObject::replicate(const Offsets & offsets) const
 {
     return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.replicate(offsets); });
+}
+
+MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
+{
+    if (new_size == 0)
+        return ColumnObject::create(is_nullable);
+
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.cloneResized(new_size); });
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const
