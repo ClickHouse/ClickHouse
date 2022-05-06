@@ -81,7 +81,7 @@ SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(
 #if USE_HDFS
 SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path, size_t /* file_size */)
 {
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, settings.remote_fs_buffer_size);
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, 0, settings.remote_fs_buffer_size);
 }
 #endif
 

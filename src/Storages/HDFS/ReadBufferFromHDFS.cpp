@@ -37,11 +37,14 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         const std::string & hdfs_uri_,
         const std::string & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_, size_t read_until_position_)
+        size_t buf_size_,
+        size_t file_offset_,
+        size_t read_until_position_)
         : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , builder(createHDFSBuilder(hdfs_uri_, config_))
+        , file_offset(file_offset_)
         , read_until_position(read_until_position_)
     {
         fs = createHDFSFS(builder.get());
@@ -51,6 +54,17 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
                 "Unable to open HDFS file: {}. Error: {}",
                 hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
+        
+        if (file_offset)
+        {
+            int seek_status = hdfsSeek(fs.get(), fin, file_offset);
+            if (seek_status != 0)
+                throw Exception(
+                    ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
+                    "Fail to seek HDFS file: {}, error: {}",
+                    hdfs_uri,
+                    std::string(hdfsGetLastError()));
+        }
     }
 
     ~ReadBufferFromHDFSImpl() override
@@ -121,12 +135,14 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 };
 
 ReadBufferFromHDFS::ReadBufferFromHDFS(
-        const String & hdfs_uri_,
-        const String & hdfs_file_path_,
-        const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_, size_t read_until_position_)
+    const String & hdfs_uri_,
+    const String & hdfs_file_path_,
+    const Poco::Util::AbstractConfiguration & config_,
+    size_t buf_size_,
+    size_t file_offset_,
+    size_t read_until_position_)
     : SeekableReadBuffer(nullptr, 0)
-    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_, read_until_position_))
+    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_, file_offset_, read_until_position_))
 {
 }
 
