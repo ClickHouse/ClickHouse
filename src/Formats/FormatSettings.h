@@ -268,6 +268,11 @@ struct FormatSettings
         String table_name;
         bool map_column_names = true;
     } mysql_dump;
+
+    struct
+    {
+        size_t max_rows_to_buffer = 10000;
+    } json_columns;
 };
 
 }

@@ -36,12 +36,7 @@ private:
 
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num) override;
 
-    void writeTotalsField(const IColumn & column, const ISerialization & serialization, size_t row_num) override
-    {
-        return writeField(column, serialization, row_num);
-    }
-
-    void writeTotalsFieldDelimiter() override;
+    void writeTotals(const Columns & columns, size_t row_num) override;
 };
 
 }

@@ -1,7 +1,8 @@
 #include <IO/ReadHelpers.h>
-#include <Formats/JSONEachRowUtils.h>
+#include <Formats/JSONUtils.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -212,7 +213,7 @@ DataTypePtr getDataTypeFromJSONField(const String & field)
     auto [parser, element] = getJSONParserAndElement();
     bool parsed = parser.parse(field, element);
     if (!parsed)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}", field);
 
     return getDataTypeFromJSONFieldImpl(element);
 }
@@ -224,7 +225,7 @@ static DataTypes determineColumnDataTypesFromJSONEachRowDataImpl(ReadBuffer & in
     auto [parser, element] = getJSONParserAndElement();
     bool parsed = parser.parse(line, element);
     if (!parsed)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}", line);
 
     auto fields = extractor.extract(element);
 
@@ -382,6 +383,209 @@ DataTypePtr getCommonTypeForJSONFormats(const DataTypePtr & first, const DataTyp
         return std::make_shared<DataTypeObject>("json", true);
 
     return nullptr;
+}
+
+void writeJSONFieldDelimiter(WriteBuffer & out, size_t new_lines)
+{
+    writeChar(',', out);
+    writeChar('\n', new_lines, out);
+}
+
+void writeJSONFieldCompactDelimiter(WriteBuffer & out)
+{
+    writeCString(", ", out);
+}
+
+template <bool with_space>
+void writeJSONTitle(const char * title, WriteBuffer & out, size_t indent)
+{
+    writeChar('\t', indent, out);
+    writeChar('"', out);
+    writeCString(title, out);
+    if constexpr (with_space)
+        writeCString("\": ", out);
+    else
+        writeCString("\":\n", out);
+}
+
+void writeJSONObjectStart(WriteBuffer & out, size_t indent, const char * title)
+{
+    if (title)
+        writeJSONTitle<false>(title, out, indent);
+    writeChar('\t', indent, out);
+    writeCString("{\n", out);
+}
+
+void writeJSONObjectEnd(WriteBuffer & out, size_t indent)
+{
+    writeChar('\n', out);
+    writeChar('\t', indent, out);
+    writeChar('}', out);
+}
+
+void writeJSONArrayStart(WriteBuffer & out, size_t indent, const char * title)
+{
+    if (title)
+        writeJSONTitle<false>(title, out, indent);
+    writeChar('\t', indent, out);
+    writeCString("[\n", out);
+}
+
+void writeJSONCompactArrayStart(WriteBuffer & out, size_t indent, const char * title)
+{
+    if (title)
+        writeJSONTitle<true>(title, out, indent);
+    else
+        writeChar('\t', indent, out);
+    writeCString("[", out);
+}
+
+void writeJSONArrayEnd(WriteBuffer & out, size_t indent)
+{
+    writeChar('\n', out);
+    writeChar('\t', indent, out);
+    writeChar(']', out);
+}
+
+void writeJSONCompactArrayEnd(WriteBuffer & out)
+{
+    writeChar(']', out);
+}
+
+void writeJSONFieldFromColumn(
+    const IColumn & column,
+    const ISerialization & serialization,
+    size_t row_num,
+    bool yield_strings,
+    const FormatSettings & settings,
+    WriteBuffer & out,
+    const std::optional<String> & name,
+    size_t indent)
+{
+    if (name.has_value())
+        writeJSONTitle<true>(name->data(), out, indent);
+
+    if (yield_strings)
+    {
+        WriteBufferFromOwnString buf;
+
+        serialization.serializeText(column, row_num, buf, settings);
+        writeJSONString(buf.str(), out, settings);
+    }
+    else
+        serialization.serializeTextJSON(column, row_num, out, settings);
+}
+
+void writeJSONColumns(
+    const Columns & columns,
+    const NamesAndTypes & fields,
+    const Serializations & serializations,
+    size_t row_num,
+    bool yield_strings,
+    const FormatSettings & settings,
+    WriteBuffer & out,
+    size_t indent)
+{
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (i != 0)
+            writeJSONFieldDelimiter(out);
+        writeJSONFieldFromColumn(*columns[i], *serializations[i], row_num, yield_strings, settings, out, fields[i].name, indent);
+    }
+}
+
+void writeJSONCompactColumns(
+    const Columns & columns,
+    const Serializations & serializations,
+    size_t row_num,
+    bool yield_strings,
+    const FormatSettings & settings,
+    WriteBuffer & out)
+{
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (i != 0)
+            writeJSONFieldCompactDelimiter(out);
+        writeJSONFieldFromColumn(*columns[i], *serializations[i], row_num, yield_strings, settings, out);
+    }
+}
+
+void writeJSONMetadata(const NamesAndTypes & fields, const FormatSettings & settings, WriteBuffer & out)
+{
+    writeJSONArrayStart(out, 1, "meta");
+
+    for (size_t i = 0; i < fields.size(); ++i)
+    {
+        writeJSONObjectStart(out, 2);
+
+        writeJSONTitle<true>("name", out, 3);
+        writeDoubleQuoted(fields[i].name, out);
+        writeJSONFieldDelimiter(out);
+        writeJSONTitle<true>("type", out, 3);
+        writeJSONString(fields[i].type->getName(), out, settings);
+        writeJSONObjectEnd(out, 2);
+
+        if (i + 1 < fields.size())
+            writeJSONFieldDelimiter(out);
+    }
+
+    writeJSONArrayEnd(out, 1);
+}
+
+void writeJSONAdditionalInfo(
+    size_t rows,
+    size_t rows_before_limit,
+    bool applied_limit,
+    const Stopwatch & watch,
+    const Progress & progress,
+    bool write_statistics,
+    WriteBuffer & out)
+{
+    writeJSONFieldDelimiter(out, 2);
+    writeJSONTitle<true>("rows", out, 1);
+    writeIntText(rows, out);
+
+    if (applied_limit)
+    {
+        writeJSONFieldDelimiter(out, 2);
+        writeJSONTitle<true>("rows_before_limit_at_least", out, 1);
+        writeIntText(rows_before_limit, out);
+    }
+
+    if (write_statistics)
+    {
+        writeJSONFieldDelimiter(out, 2);
+        writeJSONObjectStart(out, 1, "statistics");
+
+        writeJSONTitle<true>("elapsed", out, 2);
+        writeText(watch.elapsedSeconds(), out);
+        writeJSONFieldDelimiter(out);
+
+        writeJSONTitle<true>("rows_read", out, 2);
+        writeText(progress.read_rows.load(), out);
+        writeJSONFieldDelimiter(out);
+
+        writeJSONTitle<true>("bytes_read", out, 2);
+        writeText(progress.read_bytes.load(), out);
+
+        writeJSONObjectEnd(out, 1);
+    }
+}
+
+void makeNamesAndTypesWithValidUTF8(NamesAndTypes & fields, const FormatSettings & settings, bool & need_validate_utf8)
+{
+    for (auto & field : fields)
+    {
+        if (!field.type->textCanContainOnlyValidUTF8())
+            need_validate_utf8 = true;
+
+        WriteBufferFromOwnString buf;
+        {
+            WriteBufferValidUTF8 validating_buf(buf);
+            writeJSONString(field.name, validating_buf, settings);
+        }
+        field.name = buf.str().substr(1, buf.str().size() - 2);
+    }
 }
 
 }
