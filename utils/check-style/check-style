@@ -228,8 +228,9 @@ find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | gre
 # There shouldn't be any code snippets under GPL or LGPL
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
 
-# std::make_tuple/pair was superseded by std::pair/tuple, use "// NOLINT(style-check-make-pair-tuple)" to suppress the check
-find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -P 'std::make_(pair|tuple).*(?<!NOLINT\(style-check-make-pair-tuple\))$' && echo "std::make_pair/make_tuple should be replaced by std::pair/tuple"
+# std::make_tuple/pair was superseded by std::pair/tuple
+find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -P
+'std::make_(pair|tuple).*(?<!NOLINT\(style-check-make-pair-tuple\))$' && echo "std::make_pair/make_tuple should be replaced by std::pair/tuple, use // NOLINT(style-check-make-pair-tuple) to suppress the check"
 
 # There shouldn't be any docker containers outside docker directory
 find $ROOT_PATH -not -path $ROOT_PATH'/tests/ci*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name Dockerfile -type f 2>/dev/null | xargs --no-run-if-empty -n1 echo "Please move Dockerfile to docker directory:"
