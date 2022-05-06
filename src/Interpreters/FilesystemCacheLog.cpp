@@ -33,8 +33,9 @@ NamesAndTypesList FilesystemCacheLogElement::getNamesAndTypes()
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"query_id", std::make_shared<DataTypeString>()},
-        {"remote_file_path", std::make_shared<DataTypeString>()},
+        {"source_file_path", std::make_shared<DataTypeString>()},
         {"file_segment_range", std::make_shared<DataTypeTuple>(std::move(types))},
+        {"size", std::make_shared<DataTypeUInt64>()},
         {"read_type", std::make_shared<DataTypeString>()},
     };
 }
@@ -48,8 +49,9 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(query_id);
 
-    columns[i++]->insert(remote_file_path);
+    columns[i++]->insert(source_file_path);
     columns[i++]->insert(Tuple{file_segment_range.first, file_segment_range.second});
+    columns[i++]->insert(file_segment_size);
     columns[i++]->insert(typeToString(read_type));
 }
 
