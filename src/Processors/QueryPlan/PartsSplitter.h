@@ -8,8 +8,11 @@
 #include <vector>
 
 #include <Core/Field.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
 
@@ -88,22 +91,53 @@ private:
     };
 
 public:
+    using ReadingStepGetter = std::function<Pipe(RangesInDataParts)>;
+
     PartsSplitter(
         const KeyDescription & primary_key_,
         const RangesInDataParts & parts_,
         size_t max_num_streams,
-        std::unique_ptr<IndexAccess> index_access_)
+        std::unique_ptr<IndexAccess> index_access_,
+        ReadingStepGetter && reading_step_getter_)
         : primary_key(primary_key_)
         , parts(parts_)
         , index_access(std::move(index_access_))
         , rows_per_layer(std::max<size_t>(index_access->getTotalRowCount() / max_num_streams, 1))
         , max_layers(max_num_streams)
+        , reading_step_getter(std::move(reading_step_getter_))
     {
         if (max_num_streams <= 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "max_num_streams should be greater than 1.");
     }
 
-    std::vector<IndexValue> chooseBorders()
+    Pipes buildPipesForReading(ContextPtr context)
+    {
+        auto result_layers = split();
+        auto filters = buildFilters();
+        Pipes pipes(result_layers.size());
+        for (size_t i = 0; i < result_layers.size(); ++i)
+        {
+            pipes[i] = reading_step_getter(std::move(result_layers[i]));
+            auto & filter_function = filters[i];
+            if (!filter_function)
+                continue;
+            auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
+            auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
+            ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
+            auto description = fmt::format(
+                "filter values in [{}, {})", i ? borders[i - 1].toString() : "-inf", i < borders.size() ? borders[i].toString() : "+inf");
+            pipes[i].addSimpleTransform(
+                [&](const Block & header)
+                {
+                    auto step = std::make_shared<FilterTransform>(header, expression_actions, filter_function->getColumnName(), true);
+                    step->setDescription(description);
+                    return step;
+                });
+        }
+        return pipes;
+    }
+
+    std::vector<RangesInDataParts> split()
     {
         // We will advance the iterator pointing to the mark with the smallest value until there will be not less than rows_per_layer rows in the current layer (roughly speaking).
         // Then we choose the last observed value as the new border.
@@ -137,11 +171,12 @@ public:
             }
         }
 
-        std::vector<IndexValue> borders;
         /// the beginning of currently started (but not yet finished) range of marks of a part in the current layer
         std::unordered_map<size_t, size_t> current_part_range_begin;
         /// the current ending of a range of marks of a part in the current layer
         std::unordered_map<size_t, size_t> current_part_range_end;
+
+        std::vector<RangesInDataParts> result_layers;
 
         while (!parts_ranges_queue.empty())
         {
@@ -232,17 +267,11 @@ public:
                     LOG_DEBUG(&Poco::Logger::get("PartsSplitter"), "begin={}, end={}", mark_range.begin, mark_range.end);
             }
         }
-
-        return borders;
-    }
-
-    std::vector<RangesInDataParts> divideIntoLayers(const std::vector<IndexValue> &)
-    {
         return result_layers;
     }
 
     /// Will return borders.size()+1 filters in total, i-th filter will accept values from the range [borders[i-1], borders[i]).
-    std::vector<ASTPtr> buildFilters(const std::vector<IndexValue> & borders)
+    std::vector<ASTPtr> buildFilters()
     {
         auto add_and_condition = [&](ASTPtr & result, const ASTPtr & foo) { result = !result ? foo : makeASTFunction("and", result, foo); };
         auto add_or_condition = [&](ASTPtr & result, const ASTPtr & foo) { result = !result ? foo : makeASTFunction("or", result, foo); };
@@ -290,7 +319,8 @@ private:
     const size_t rows_per_layer;
     const size_t max_layers;
 
-    std::vector<RangesInDataParts> result_layers;
+    std::vector<IndexValue> borders;
+    ReadingStepGetter reading_step_getter;
 };
 
 }

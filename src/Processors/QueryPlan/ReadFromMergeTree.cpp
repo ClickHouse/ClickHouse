@@ -703,44 +703,23 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             if (split_into_layers_optimization_applies)
             {
                 // Let's split parts into layers to ensure data parallelism of final.
-                PartsSplitter parts_splitter(
-                    metadata_for_reading->getPrimaryKey(), new_parts, num_streams, std::make_unique<IndexAccess>(new_parts));
-                const auto borders = parts_splitter.chooseBorders();
-                auto layers = parts_splitter.divideIntoLayers(borders);
-                auto filters = parts_splitter.buildFilters(borders);
-                for (size_t i = 0; i < layers.size(); ++i)
+                auto reading_step_getter = [this, &column_names, &info](auto parts)
                 {
-                    if (layers[i].empty())
-                        continue;
-
-                    pipes.emplace_back(read(
-                        std::move(layers[i]),
+                    return read(
+                        std::move(parts),
                         column_names,
                         ReadFromMergeTree::ReadType::InOrder,
                         1 /* num_streams */,
                         0 /* min_marks_for_concurrent_read */,
-                        info.use_uncompressed_cache));
-
-                    auto & filter_function = filters[i];
-                    if (!filter_function)
-                        continue;
-                    auto syntax_result = TreeRewriter(context).analyze(
-                        filter_function, metadata_for_reading->getPrimaryKey().expression->getRequiredColumnsWithTypes());
-                    auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
-                    ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
-                    auto description = fmt::format(
-                        "filter values in [{}, {})",
-                        i ? borders[i - 1].toString() : "-inf",
-                        i < borders.size() ? borders[i].toString() : "+inf");
-                    pipes.back().addSimpleTransform(
-                        [&](const Block & header)
-                        {
-                            auto step
-                                = std::make_shared<FilterTransform>(header, expression_actions, filter_function->getColumnName(), true);
-                            step->setDescription(description);
-                            return step;
-                        });
-                }
+                        info.use_uncompressed_cache);
+                };
+                PartsSplitter parts_splitter(
+                    metadata_for_reading->getPrimaryKey(),
+                    new_parts,
+                    num_streams,
+                    std::make_unique<IndexAccess>(new_parts),
+                    std::move(reading_step_getter));
+                pipes = parts_splitter.buildPipesForReading(context);
             }
             else
             {
