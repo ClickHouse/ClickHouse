@@ -241,7 +241,14 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     const auto & column_object = assert_cast<const ColumnObject &>(column);
 
     if (!column_object.isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write non-finalized ColumnObject");
+    {
+        auto finalized = IColumn::mutate(column_object.getPtr());
+        auto & finalized_object = assert_cast<ColumnObject &>(*finalized);
+        finalized_object.finalize();
+        serializeBinaryBulkWithMultipleStreams(
+            finalized_object, offset, limit, settings, state);
+        return;
+    }
 
     settings.path.push_back(Substream::ObjectStructure);
     if (auto * stream = settings.getter(settings.path))

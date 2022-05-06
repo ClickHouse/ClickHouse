@@ -15,3 +15,7 @@ Array(Tuple(k1 Int8, k2 Tuple(k3 Int8, k4 Int8, k5 String)))
 {"k1":{"k2":"aaa","k3":"bbb","k4":0}}
 {"k1":{"k2":"ccc","k3":"","k4":0}}
 Tuple(k2 String, k3 String, k4 Int8)
+{"arr":[{"x":1}]}
+{"arr":{"x":{"y":1},"t":{"y":2}}}
+{"arr":[1,{"y":1}]}
+{"arr":[{"x":"aaa","y":[1,2,3]}]}

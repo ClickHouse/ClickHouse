@@ -553,11 +553,9 @@ size_t ColumnObject::allocatedBytes() const
 
 void ColumnObject::forEachSubcolumn(ColumnCallback callback)
 {
-    if (!isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot iterate over non-finalized ColumnObject");
-
     for (auto & entry : subcolumns)
-        callback(entry->data.data.back());
+        for (auto & part : entry->data.data)
+            callback(part);
 }
 
 void ColumnObject::insert(const Field & field)
@@ -594,26 +592,43 @@ void ColumnObject::insertDefault()
 
 Field ColumnObject::operator[](size_t n) const
 {
-    if (!isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get Field from non-finalized ColumnObject");
-
-    Object object;
-    for (const auto & entry : subcolumns)
-        object[entry->path.getPath()] = (*entry->data.data.back())[n];
-
+    Field object;
+    get(n, object);
     return object;
 }
 
 void ColumnObject::get(size_t n, Field & res) const
 {
-    if (!isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get Field from non-finalized ColumnObject");
-
+    assert(n < size());
+    res = Object();
     auto & object = res.get<Object &>();
-    for (const auto & entry : subcolumns)
+
+    if (isFinalized())
     {
-        auto it = object.try_emplace(entry->path.getPath()).first;
-        entry->data.data.back()->get(n, it->second);
+        for (const auto & entry : subcolumns)
+        {
+            auto it = object.try_emplace(entry->path.getPath()).first;
+            entry->data.data.back()->get(n, it->second);
+        }
+    }
+    else
+    {
+        for (const auto & entry : subcolumns)
+        {
+            size_t ind = n;
+            for (const auto & part : entry->data.data)
+            {
+                if (ind < part->size())
+                {
+                    auto it = object.try_emplace(entry->path.getPath()).first;
+                    part->get(ind, it->second);
+                    it->second = convertFieldToTypeOrThrow(it->second, *entry->data.getLeastCommonType());
+                    break;
+                }
+
+                ind -= part->size();
+            }
+        }
     }
 }
 
@@ -625,19 +640,25 @@ void ColumnObject::insertFrom(const IColumn & src, size_t n)
 
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const auto & src_object = assert_cast<const ColumnObject &>(src);
-    if (!src_object.isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insertRangeFrom non-finalized ColumnObject");
+    const auto * src_object = &assert_cast<const ColumnObject &>(src);
+    MutableColumnPtr column_holder;
+
+    if (!src_object->isFinalized())
+    {
+        column_holder = IColumn::mutate(src_object->getPtr());
+        column_holder->finalize();
+        src_object = &assert_cast<const ColumnObject &>(*column_holder);
+    }
 
     for (auto & entry : subcolumns)
     {
-        if (src_object.hasSubcolumn(entry->path))
-            entry->data.insertRangeFrom(src_object.getSubcolumn(entry->path), start, length);
+        if (src_object->hasSubcolumn(entry->path))
+            entry->data.insertRangeFrom(src_object->getSubcolumn(entry->path), start, length);
         else
             entry->data.insertManyDefaults(length);
     }
 
-    for (const auto & entry : src_object.subcolumns)
+    for (const auto & entry : src_object->subcolumns)
     {
         if (!hasSubcolumn(entry->path))
         {
@@ -668,21 +689,6 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
     finalize();
 }
 
-ColumnPtr ColumnObject::replicate(const Offsets & offsets) const
-{
-    if (!isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replicate non-finalized ColumnObject");
-
-    auto res_column = ColumnObject::create(is_nullable);
-    for (const auto & entry : subcolumns)
-    {
-        auto replicated_data = entry->data.data.back()->replicate(offsets)->assumeMutable();
-        res_column->addSubcolumn(entry->path, std::move(replicated_data));
-    }
-
-    return res_column;
-}
-
 void ColumnObject::popBack(size_t length)
 {
     for (auto & entry : subcolumns)
@@ -692,10 +698,15 @@ void ColumnObject::popBack(size_t length)
 }
 
 template <typename Func>
-ColumnPtr ColumnObject::applyForSubcolumns(Func && func, std::string_view func_name) const
+ColumnPtr ColumnObject::applyForSubcolumns(Func && func) const
 {
     if (!isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot {} non-finalized ColumnObject", func_name);
+    {
+        auto finalized = IColumn::mutate(getPtr());
+        auto & finalized_object = assert_cast<ColumnObject &>(*finalized);
+        finalized_object.finalize();
+        return finalized_object.applyForSubcolumns(std::move(func));
+    }
 
     auto res = ColumnObject::create(is_nullable);
     for (const auto & subcolumn : subcolumns)
@@ -708,17 +719,22 @@ ColumnPtr ColumnObject::applyForSubcolumns(Func && func, std::string_view func_n
 
 ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
 {
-    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.permute(perm, limit); }, "permute");
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.permute(perm, limit); });
 }
 
 ColumnPtr ColumnObject::filter(const Filter & filter, ssize_t result_size_hint) const
 {
-    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.filter(filter, result_size_hint); }, "filter");
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.filter(filter, result_size_hint); });
 }
 
 ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
 {
-    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.index(indexes, limit); }, "index");
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.index(indexes, limit); });
+}
+
+ColumnPtr ColumnObject::replicate(const Offsets & offsets) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.replicate(offsets); });
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const
