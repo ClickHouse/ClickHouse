@@ -958,9 +958,8 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
     if (!parent_part)
         partition.appendFiles(storage, files);
 
-    if (!isEmpty())
-        if (!parent_part)
-            minmax_idx->appendFiles(storage, files);
+    if (!parent_part)
+        minmax_idx->appendFiles(storage, files);
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)
