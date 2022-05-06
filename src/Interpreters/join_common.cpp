@@ -623,7 +623,7 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
     }
 
     /// `result_sample_block` may contains non unique column names
-    size_t unique_names_count = result_sample_block.getNamesToIndexesMap().size();
+    const size_t unique_names_count = result_sample_block.getNamesToIndexesMap().size();
     if (column_indices_left.size() + column_indices_right.size() + same_result_keys.size() != unique_names_count)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

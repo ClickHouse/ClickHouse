@@ -625,7 +625,7 @@ Names Block::getDataTypeNames() const
 }
 
 
-std::unordered_map<String, size_t> Block::getNamesToIndexesMap() const
+const IndexByName & Block::getNamesToIndexesMap() const
 {
     return index_by_name;
 }
