@@ -719,7 +719,8 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 query_processing_stage,
                 &global_context->getSettingsRef(),
                 &global_context->getClientInfo(),
-                true);
+                true,
+                [&](const Progress & progress) { onProgress(progress); });
 
             if (send_external_tables)
                 sendExternalTables(parsed_query);
@@ -1072,7 +1073,8 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         query_processing_stage,
         &global_context->getSettingsRef(),
         &global_context->getClientInfo(),
-        true);
+        true,
+        [&](const Progress & progress) { onProgress(progress); });
 
     if (send_external_tables)
         sendExternalTables(parsed_query);
@@ -1104,7 +1106,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
-    if (need_render_progress)
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+
+    if (need_render_progress && have_data_in_stdin)
     {
         /// Set total_bytes_to_read for current fd.
         FileProgress file_progress(0, std_in.size());
@@ -1113,8 +1117,6 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Set callback to be called on file progress.
         progress_indication.setFileProgressCallback(global_context, true);
     }
-
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
 
     /// If data fetched from file (maybe compressed file)
     if (parsed_insert_query->infile)

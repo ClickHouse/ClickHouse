@@ -107,7 +107,7 @@ std::vector<String> Client::loadWarningMessages()
     connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &global_context->getSettingsRef(),
-                          &global_context->getClientInfo(), false);
+                          &global_context->getClientInfo(), false, {});
     while (true)
     {
         Packet packet = connection->receivePacket();
