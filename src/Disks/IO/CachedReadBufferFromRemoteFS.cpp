@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
+    extern const int CACHE_FILE_SEGMENT_IS_DETACHED:
 }
 
 static String getQueryId()
@@ -28,6 +29,14 @@ static String getQueryId()
     if (!CurrentThread::isInitialized() || !CurrentThread::get().getQueryContext() || CurrentThread::getQueryId().size == 0)
         return "";
     return CurrentThread::getQueryId().toString();
+}
+
+static int getErrorCode(const FileSegmentPtr & file_segment)
+{
+    if (file_segment->isForcefullyDetached())
+        return ErrorCodes::CACHE_FILE_SEGMENT_IS_DETACHED;
+    else
+        return ErrorCodes::LOGICAL_ERROR;
 }
 
 CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
@@ -106,12 +115,12 @@ void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
     initialized = true;
 }
 
-SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getCacheReadBuffer(size_t offset) const
+SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getCacheReadBuffer(size_t offset, const FileSegmentPtr & file_segment) const
 {
     auto path = cache->getPathInLocalCache(cache_key, offset);
     auto buf = std::make_shared<ReadBufferFromFile>(path, settings.local_fs_buffer_size);
     if (buf->size() == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
+        throw Exception(getErrorCode(file_segment), "Attempt to read from an empty cache file: {}", path);
     return buf;
 }
 
@@ -176,9 +185,8 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
         if (download_state == FileSegment::State::DOWNLOADED)
         {
             read_type = ReadType::CACHED;
-            return getCacheReadBuffer(range.left);
-        }
-        else
+            return getCacheReadBuffer(range.left, file_segment);
+        } else
         {
             read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
             return getRemoteFSReadBuffer(file_segment, read_type);
@@ -243,7 +251,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
                     ///                     file_offset_of_buffer_end
 
                     read_type = ReadType::CACHED;
-                    return getCacheReadBuffer(range.left);
+                    return getCacheReadBuffer(range.left, file_segment);
                 }
 
                 if (wait_download_tries++ < wait_download_max_tries)
@@ -260,7 +268,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
             case FileSegment::State::DOWNLOADED:
             {
                 read_type = ReadType::CACHED;
-                return getCacheReadBuffer(range.left);
+                return getCacheReadBuffer(range.left, file_segment);
             }
             case FileSegment::State::PARTIALLY_DOWNLOADED:
             {
@@ -284,7 +292,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
 
                         read_type = ReadType::CACHED;
                         file_segment->resetDownloader();
-                        return getCacheReadBuffer(range.left);
+                        return getCacheReadBuffer(range.left, file_segment);
                     }
 
                     if (download_offset < file_offset_of_buffer_end)
@@ -320,7 +328,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
                 if (can_start_from_cache)
                 {
                     read_type = ReadType::CACHED;
-                    return getCacheReadBuffer(range.left);
+                    return getCacheReadBuffer(range.left, file_segment);
                 }
                 else
                 {
@@ -367,7 +375,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getImplementationBuffer(File
 
             if (file_size == 0 || range.left + file_size <= file_offset_of_buffer_end)
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    getErrorCode(file_segment),
                     "Unexpected state of cache file. Cache file size: {}, cache file offset: {}, "
                     "expected file size to be non-zero and file downloaded size to exceed current file read offset (expected: {} > {})",
                     file_size,
@@ -747,13 +755,13 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 
     auto download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
     if (download_current_segment != file_segment->isDownloader())
+    {
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Incorrect segment state. Having read type: {}, Caller id: {}, downloader id: {}, file segment state: {}",
+            getErrorCode(file_segment),
+            "Incorrect segment state. Having read type: {}, file segment info: {}",
             toString(read_type),
-            file_segment->getCallerId(),
-            file_segment->getDownloader(),
-            file_segment->state());
+            file_segment->getInfoForLog());
+    }
 
     if (!result)
     {
@@ -763,7 +771,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
             auto cache_file_size = cache_file_reader->size();
             if (cache_file_size == 0)
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {} (just before actual read)", cache_file_size);
+                    getErrorCode(file_segment), "Attempt to read from an empty cache file: {} (just before actual read)", cache_file_size);
         }
 #endif
 
@@ -823,11 +831,6 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 
     swap(*implementation_buffer);
 
-    if (download_current_segment)
-        file_segment->completeBatchAndResetDownloader();
-
-    assert(!file_segment->isDownloader());
-
     LOG_TEST(
         log,
         "Key: {}. Returning with {} bytes, buffer position: {} (offset: {}, predownloaded: {}), "
@@ -855,13 +858,18 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
             cache_file_size = cache_file_reader->size();
 
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            getErrorCode(file_segment),
             "Having zero bytes, but range is not finished: file offset: {}, reading until: {}, read type: {}, cache file size: {}",
             file_offset_of_buffer_end,
             read_until_position,
             toString(read_type),
             cache_file_size ? std::to_string(*cache_file_size) : "None");
     }
+
+    if (download_current_segment)
+        file_segment->completeBatchAndResetDownloader();
+
+    assert(!file_segment->isDownloader());
 
     return result;
 }

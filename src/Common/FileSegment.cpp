@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int REMOTE_FS_OBJECT_CACHE_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int CACHE_FILE_SEGMENT_IS_DETACHED;
 }
 
 FileSegment::FileSegment(
@@ -287,8 +288,8 @@ FileSegment::State FileSegment::wait()
 {
     std::unique_lock segment_lock(mutex);
 
-    if (detached)
-        throwDetached();
+    if (is_detached)
+        throwDetachedUnlocked(segment_lock);
 
     if (downloader_id.empty())
         return download_state;
@@ -458,7 +459,7 @@ void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 
 void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
 {
-    if (download_state == State::SKIP_CACHE || detached)
+    if (download_state == State::SKIP_CACHE || is_detached)
         return;
 
     if (isDownloaderImpl(segment_lock)
@@ -601,19 +602,26 @@ void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment
     assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
 }
 
-void FileSegment::throwDetached()
+void FileSegment::throwDetached() const
 {
-    throw Exception(
-        ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-        "Cache file segment is in detached state, operation not allowed. "
-        "It can happen when cache was concurrently dropped with SYSTEM DROP FILESYSTEM CACHE FORCE. "
-        "Please, retry");
+    std::lock_guard segment_lock(mutex);
+    throwDetachedUnlocked(segment_lock);
 }
 
-void FileSegment::assertNotDetached(std::lock_guard<std::mutex> & /* segment_lock */) const
+void FileSegment::throwDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const
 {
-    if (detached)
-        throwDetached();
+    throw Exception(
+        is_forcefully_detached ? ErrorCodes::CACHE_FILE_SEGMENT_IS_DETACHED : ErrorCodes::LOGICAL_ERROR,
+        "Cache file segment is in detached state, operation not allowed. "
+        "It can happen when cache was concurrently dropped with SYSTEM DROP FILESYSTEM CACHE FORCE. "
+        "Please, retry. File segment info: {}", getInfoForLogImpl(segment_lock));
+}
+
+
+void FileSegment::assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const
+{
+    if (is_detached)
+        throwDetachedUnlocked(segment_lock);
 }
 
 void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const
@@ -649,15 +657,23 @@ bool FileSegment::hasFinalizedState() const
         || download_state == State::SKIP_CACHE;
 }
 
+bool FileSegment::isForcefullyDetached() const
+{
+    std::lock_guard detach_lock(detach_mutex);
+    return is_forcefully_detached;
+}
+
 void FileSegment::detach(
+    bool forced_detach,
     std::lock_guard<std::mutex> & /* cache_lock */,
     std::lock_guard<std::mutex> & /* detach_lock */,
     std::lock_guard<std::mutex> & segment_lock)
 {
-    if (detached)
+    if (is_detached)
         return;
 
     markAsDetached(segment_lock);
+    is_forcefully_detached = forced_detach;
     download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
     downloader_id.clear();
 
@@ -666,14 +682,14 @@ void FileSegment::detach(
 
 void FileSegment::markAsDetached(std::lock_guard<std::mutex> & /* segment_lock */)
 {
-    detached = true;
+    is_detached = true;
     CurrentMetrics::add(CurrentMetrics::CacheDetachedFileSegments);
 }
 
 FileSegment::~FileSegment()
 {
     std::lock_guard segment_lock(mutex);
-    if (detached)
+    if (is_detached)
         CurrentMetrics::sub(CurrentMetrics::CacheDetachedFileSegments);
 }
 
@@ -695,16 +711,16 @@ FileSegmentsHolder::~FileSegmentsHolder()
 
         try
         {
-            bool detached = false;
+            bool is_detached = false;
 
             {
                 std::lock_guard segment_lock(file_segment->mutex);
-                detached = file_segment->isDetached(segment_lock);
-                if (detached)
+                is_detached = file_segment->isDetached(segment_lock);
+                if (is_detached)
                     file_segment->assertDetachedStatus(segment_lock);
             }
 
-            if (detached)
+            if (is_detached)
             {
                 /// This file segment is not owned by cache, so it will be destructed
                 /// at this point, therefore no completion required.
