@@ -6,6 +6,29 @@ slug: /en/operations/settings/settings
 
 # Settings {#settings}
 
+## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
+
+User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
+
+Given that, for example, dictionaries, can be out of sync across nodes, mutations that pull values from them are disallowed on replicated tables by default. Enabling this setting allows this behavior, making it the user's responsibility to ensure that the data used is in sync across all nodes.
+
+Default value: 0.
+
+**Example**
+
+``` xml
+<profiles>
+    <default>
+        <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
+        
+        <!-- ... -->
+    </default>
+
+    <!-- ... -->
+
+</profiles>
+```
+
 ## distributed_product_mode {#distributed-product-mode}
 
 Changes the behaviour of [distributed subqueries](../../sql-reference/operators/in.md).
@@ -4225,3 +4248,18 @@ Default value: 0.
 The waiting time in seconds for currently handled connections when shutdown server.
 
 Default Value: 5.
+
+## input_format_mysql_dump_table_name (#input-format-mysql-dump-table-name)
+
+The name of the table from which to read data from in MySQLDump input format.
+
+## input_format_mysql_dump_map_columns (#input-format-mysql-dump-map-columns)
+
+Enables matching columns from table in MySQL dump and columns from ClickHouse table by names in MySQLDump input format.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
