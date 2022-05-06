@@ -476,7 +476,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     InterpreterSelectQuery fetch(
         getFetchColumnQuery(w_start, watermark),
         getContext(),
-        getInnerStorage(),
+        getInnerTable(),
         nullptr,
         SelectQueryOptions(QueryProcessingStage::FetchColumns));
 
@@ -625,7 +625,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
 
     auto t_sample_block
         = InterpreterSelectQuery(
-              inner_select_query, getContext(), getParentStorage(), nullptr, SelectQueryOptions(QueryProcessingStage::WithMergeableState))
+              inner_select_query, getContext(), getParentTable(), nullptr, SelectQueryOptions(QueryProcessingStage::WithMergeableState))
               .getSampleBlock();
 
     auto columns_list = std::make_shared<ASTExpressionList>();
@@ -1514,7 +1514,7 @@ Block & StorageWindowView::getHeader() const
     {
         sample_block
             = InterpreterSelectQuery(
-                  select_query->clone(), getContext(), getParentStorage(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete))
+                  select_query->clone(), getContext(), getParentTable(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete))
                   .getSampleBlock();
         /// convert all columns to full columns
         /// in case some of them are constant
