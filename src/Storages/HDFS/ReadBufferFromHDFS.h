@@ -76,7 +76,7 @@ public:
         , file_size(file_size_)
     {
         assert(range_step > 0);
-        assert(range_step < object_size);
+        assert(range_step < file_size);
     }
 
     SeekableReadBufferPtr getReader() override;
