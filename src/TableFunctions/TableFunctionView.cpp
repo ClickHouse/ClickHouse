@@ -15,6 +15,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+
+const ASTSelectWithUnionQuery & TableFunctionView::getSelectQuery() const
+{
+    return *create.select;
+}
+
 void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();

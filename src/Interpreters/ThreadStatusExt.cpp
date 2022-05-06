@@ -597,6 +597,16 @@ CurrentThread::QueryScope::QueryScope(ContextMutablePtr query_context)
         query_context->makeQueryContext();
 }
 
+CurrentThread::QueryScope::QueryScope(ContextPtr query_context)
+{
+    if (!query_context->hasQueryContext())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Cannot initialize query scope without query context");
+
+    CurrentThread::initializeQuery();
+    CurrentThread::attachQueryContext(query_context);
+}
+
 void CurrentThread::QueryScope::logPeakMemoryUsage()
 {
     auto group = CurrentThread::getGroup();

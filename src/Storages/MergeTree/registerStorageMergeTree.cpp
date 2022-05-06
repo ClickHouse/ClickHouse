@@ -256,20 +256,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         String msg;
         if (is_extended_storage_def)
-            msg += "With extended storage definition syntax storage " + args.engine_name + " requires ";
+            msg += fmt::format("With extended storage definition syntax storage {} requires ", args.engine_name);
         else
-            msg += "Storage " + args.engine_name + " requires ";
+            msg += fmt::format("ORDER BY or PRIMARY KEY clause is missing. "
+                               "Consider using extended storage definition syntax with ORDER BY or PRIMARY KEY clause. "
+                               "With deprecated old syntax (highly not recommended) storage {} requires ", args.engine_name);
 
-        if (max_num_params)
-        {
-            if (min_num_params == max_num_params)
-                msg += toString(min_num_params) + " parameters: ";
-            else
-                msg += toString(min_num_params) + " to " + toString(max_num_params) + " parameters: ";
-            msg += needed_params;
-        }
-        else
+        if (max_num_params == 0)
             msg += "no parameters";
+        if (min_num_params == max_num_params)
+            msg += fmt::format("{} parameters: {}", min_num_params, needed_params);
+        else
+            msg += fmt::format("{} to {} parameters: {}", min_num_params, max_num_params, needed_params);
+
 
         msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 

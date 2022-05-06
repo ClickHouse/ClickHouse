@@ -141,7 +141,6 @@ private:
     bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
-    void setOutputFormat(ProcessorPtr output);
 
     friend class QueryPipelineBuilder;
     friend class QueryPipeline;

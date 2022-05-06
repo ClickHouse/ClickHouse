@@ -696,22 +696,24 @@ namespace
 /// The function works for Arrays and Nullables of the same structure.
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
-    if (from->equals(*to))
-        return true;
-
-    if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from))
+    auto is_compatible_enum_types_conversion = [](const IDataType * from_type, const IDataType * to_type)
     {
-        if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(to))
-            return to_enum8->contains(*from_enum8);
-    }
+        if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from_type))
+        {
+            if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(to_type))
+                return to_enum8->contains(*from_enum8);
+        }
 
-    if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(from))
-    {
-        if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(to))
-            return to_enum16->contains(*from_enum16);
-    }
+        if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(from_type))
+        {
+            if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(to_type))
+                return to_enum16->contains(*from_enum16);
+        }
 
-    static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
+        return false;
+    };
+
+    static const std::unordered_multimap<std::type_index, const std::type_info &> allowed_conversions =
         {
             { typeid(DataTypeEnum8),    typeid(DataTypeInt8)     },
             { typeid(DataTypeEnum16),   typeid(DataTypeInt16)    },
@@ -721,12 +723,19 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
         };
 
+    /// Unwrap some nested and check for valid conevrsions
     while (true)
     {
+        /// types are equal, obviously pure metadata alter
         if (from->equals(*to))
             return true;
 
-        auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
+        /// We just adding something to enum, nothing changed on disk
+        if (is_compatible_enum_types_conversion(from, to))
+            return true;
+
+        /// Types changed, but representation on disk didn't
+        auto it_range = allowed_conversions.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
             if (it->second == typeid(*to))
@@ -1046,8 +1055,12 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
             if (!all_columns.has(column_name))
             {
                 if (!command.if_exists)
-                    throw Exception{"Wrong column name. Cannot find column " + backQuote(column_name) + " to modify",
-                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                {
+                    String exception_message = fmt::format("Wrong column. Cannot find column {} to modify", backQuote(column_name));
+                    all_columns.appendHintsMessage(exception_message, column_name);
+                    throw Exception{exception_message,
+                        ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                }
                 else
                     continue;
             }
@@ -1152,17 +1165,22 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
                 all_columns.remove(command.column_name);
             }
             else if (!command.if_exists)
-                throw Exception(
-                    "Wrong column name. Cannot find column " + backQuote(command.column_name) + " to drop",
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+            {
+                String exception_message = fmt::format("Wrong column name. Cannot find column {} to drop", backQuote(command.column_name));
+                all_columns.appendHintsMessage(exception_message, command.column_name);
+                throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+            }
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
         {
             if (!all_columns.has(command.column_name))
             {
                 if (!command.if_exists)
-                    throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to comment",
-                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                {
+                    String exception_message = fmt::format("Wrong column name. Cannot find column {} to comment", backQuote(command.column_name));
+                    all_columns.appendHintsMessage(exception_message, command.column_name);
+                    throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                }
             }
         }
         else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
@@ -1196,8 +1214,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
             if (!all_columns.has(command.column_name))
             {
                 if (!command.if_exists)
-                    throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to rename",
-                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                {
+                    String exception_message = fmt::format("Wrong column name. Cannot find column {} to rename", backQuote(command.column_name));
+                    all_columns.appendHintsMessage(exception_message, command.column_name);
+                    throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                }
                 else
                     continue;
             }

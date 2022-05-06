@@ -303,7 +303,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 }
 
 /// 'select * from a join b using id' should result one 'id' column
-void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, Data & data)
+void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(ASTPtr ast, Data & data)
 {
     const auto & table_join = ast->as<ASTTableJoin &>();
 

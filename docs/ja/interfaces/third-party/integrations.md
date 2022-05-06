@@ -8,7 +8,7 @@ toc_title: "\u7D71\u5408"
 # サードパーティ開発者からの統合ライブラリ {#integration-libraries-from-third-party-developers}
 
 !!! warning "免責事項"
-    Yandexのは **ない** 以下のツールとライブラリを維持し、その品質を確保するための広範なテストを行っていません。
+    ClickHouse, Inc.のは **ない** 以下のツールとライブラリを維持し、その品質を確保するための広範なテストを行っていません。
 
 ## インフラ製品 {#infrastructure-products}
 

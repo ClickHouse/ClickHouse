@@ -48,13 +48,13 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 void FillingStep::describeActions(FormatSettings & settings) const
 {
     settings.out << String(settings.offset, ' ');
-    dumpSortDescription(sort_description, input_streams.front().header, settings.out);
+    dumpSortDescription(sort_description, settings.out);
     settings.out << '\n';
 }
 
 void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Sort Description", explainSortDescription(sort_description, input_streams.front().header));
+    map.add("Sort Description", explainSortDescription(sort_description));
 }
 
 }

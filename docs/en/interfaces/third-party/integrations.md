@@ -6,7 +6,7 @@ toc_title: Integrations
 # Integration Libraries from Third-party Developers {#integration-libraries-from-third-party-developers}
 
 !!! warning "Disclaimer"
-    Yandex does **not** maintain the tools and libraries listed below and haven’t done any extensive testing to ensure their quality.
+    ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven’t done extensive testing to ensure their quality.
 
 ## Infrastructure Products {#infrastructure-products}
 

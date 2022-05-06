@@ -17,7 +17,7 @@ struct ColumnMapping
     OptionalIndexes column_indexes_for_input_fields;
 
     /// The list of column indexes that are not presented in input data.
-    std::vector<UInt8> not_presented_columns;
+    std::vector<size_t> not_presented_columns;
 
     /// The list of column names in input data. Needed for better exception messages.
     std::vector<String> names_of_columns;

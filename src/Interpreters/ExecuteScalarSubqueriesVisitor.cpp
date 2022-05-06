@@ -113,14 +113,18 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     bool is_local = false;
 
     Block scalar;
-    if (data.local_scalars.count(scalar_query_hash_str))
+    if (data.only_analyze)
+    {
+        /// Don't use scalar cache during query analysis
+    }
+    else if (data.local_scalars.contains(scalar_query_hash_str))
     {
         hit = true;
         scalar = data.local_scalars[scalar_query_hash_str];
         is_local = true;
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesLocalCacheHit);
     }
-    else if (data.scalars.count(scalar_query_hash_str))
+    else if (data.scalars.contains(scalar_query_hash_str))
     {
         hit = true;
         scalar = data.scalars[scalar_query_hash_str];

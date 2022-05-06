@@ -5,6 +5,7 @@
 #include <IO/AsynchronousReader.h>
 #include <utility>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -44,9 +45,11 @@ public:
 
     void prefetch() override;
 
-    void setReadUntilPosition(size_t position) override;
+    void setReadUntilPosition(size_t position) override; /// [..., position).
 
     void setReadUntilEnd() override;
+
+    String getInfoForLog() override;
 
 private:
     bool nextImpl() override;
@@ -76,6 +79,8 @@ private:
     std::optional<size_t> read_until_position;
 
     bool must_read_until_position;
+
+    Poco::Logger * log;
 };
 
 }

@@ -24,6 +24,7 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/HeadObjectRequest.h>  // Y_IGNORE
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
@@ -517,7 +518,7 @@ private:
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
-    explicit S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_insecure_imds_request)
+    S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_insecure_imds_request)
     {
         auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
@@ -529,16 +530,17 @@ public:
             static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
 
             /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
-            /// is that this chain uses custom ClientConfiguration.
-
-            AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
-            AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
-            AddProvider(std::make_shared<Aws::Auth::ProcessCredentialsProvider>());
-
+            /// is that this chain uses custom ClientConfiguration. Also we removed process provider because it's useless in our case.
+            ///
+            /// AWS API tries credentials providers one by one. Some of providers (like ProfileConfigFileAWSCredentialsProvider) can be
+            /// quite verbose even if nobody configured them. So we use our provider first and only after it use default providers.
             {
                 DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects);
                 AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
             }
+
+            AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
+
 
             /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
             const auto relative_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
@@ -601,6 +603,9 @@ public:
         }
 
         AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
+        /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
+        /// in chain.
+        AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
     }
 };
 
@@ -678,6 +683,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int S3_ERROR;
 }
 
 namespace S3
@@ -834,6 +840,26 @@ namespace S3
         if (bucket.length() < 3 || bucket.length() > 63)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI:     {}{}",
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
+    }
+
+    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, bool throw_on_error)
+    {
+        Aws::S3::Model::HeadObjectRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+
+        Aws::S3::Model::HeadObjectOutcome outcome = client_ptr->HeadObject(req);
+
+        if (outcome.IsSuccess())
+        {
+            auto read_result = outcome.GetResultWithOwnership();
+            return static_cast<size_t>(read_result.GetContentLength());
+        }
+        else if (throw_on_error)
+        {
+            throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        }
+        return 0;
     }
 }
 

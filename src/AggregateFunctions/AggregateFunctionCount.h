@@ -37,7 +37,7 @@ namespace ErrorCodes
 class AggregateFunctionCount final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCount>
 {
 public:
-    AggregateFunctionCount(const DataTypes & argument_types_) : IAggregateFunctionDataHelper(argument_types_, {}) {}
+    explicit AggregateFunctionCount(const DataTypes & argument_types_) : IAggregateFunctionDataHelper(argument_types_, {}) {}
 
     String getName() const override { return "count"; }
 
@@ -107,7 +107,7 @@ public:
     }
 
     /// Reset the state to specified value. This function is not the part of common interface.
-    void set(AggregateDataPtr __restrict place, UInt64 new_count) const
+    static void set(AggregateDataPtr __restrict place, UInt64 new_count)
     {
         data(place).count = new_count;
     }
@@ -206,7 +206,7 @@ public:
     void addBatchSinglePlace(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
     {
-        auto & nc = assert_cast<const ColumnNullable &>(*columns[0]);
+        const auto & nc = assert_cast<const ColumnNullable &>(*columns[0]);
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();

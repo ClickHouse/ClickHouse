@@ -4,7 +4,10 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml'], stay_alive=True)
+node1 = cluster.add_instance(
+    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True
+)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -102,18 +105,25 @@ NORMAL_CONFIG = """
 </clickhouse>
 """
 
+
 def test_duplicate_endpoint(started_cluster):
     node1.stop_clickhouse()
-    node1.replace_config("/etc/clickhouse-server/config.d/enable_keeper1.xml", DUPLICATE_ENDPOINT_CONFIG)
+    node1.replace_config(
+        "/etc/clickhouse-server/config.d/enable_keeper1.xml", DUPLICATE_ENDPOINT_CONFIG
+    )
 
     with pytest.raises(Exception):
         node1.start_clickhouse(start_wait_sec=10)
 
-    node1.replace_config("/etc/clickhouse-server/config.d/enable_keeper1.xml", DUPLICATE_ID_CONFIG)
+    node1.replace_config(
+        "/etc/clickhouse-server/config.d/enable_keeper1.xml", DUPLICATE_ID_CONFIG
+    )
     with pytest.raises(Exception):
         node1.start_clickhouse(start_wait_sec=10)
 
-    node1.replace_config("/etc/clickhouse-server/config.d/enable_keeper1.xml", NORMAL_CONFIG)
+    node1.replace_config(
+        "/etc/clickhouse-server/config.d/enable_keeper1.xml", NORMAL_CONFIG
+    )
     node1.start_clickhouse()
 
     assert node1.query("SELECT 1") == "1\n"

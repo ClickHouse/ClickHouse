@@ -40,7 +40,7 @@ RUN apt-get update \
         /tmp/* \
     && apt-get clean
 
-ENV TZ=Europe/Moscow
+ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV DOCKER_CHANNEL stable

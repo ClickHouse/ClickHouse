@@ -139,7 +139,11 @@ void ArrowBlockInputFormat::prepareReader()
     }
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(), "Arrow", format_settings.arrow.import_nested, format_settings.arrow.allow_missing_columns);
+        getPort().getHeader(),
+        "Arrow",
+        format_settings.arrow.import_nested,
+        format_settings.arrow.allow_missing_columns,
+        format_settings.arrow.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     if (stream)

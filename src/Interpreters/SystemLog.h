@@ -43,6 +43,7 @@ class OpenTelemetrySpanLog;
 class QueryViewsLog;
 class ZooKeeperLog;
 class SessionLog;
+class ProcessorsProfileLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -70,6 +71,8 @@ struct SystemLogs
     std::shared_ptr<ZooKeeperLog> zookeeper_log;
     /// Login, LogOut and Login failure events
     std::shared_ptr<SessionLog> session_log;
+    /// Used to log processors profiling
+    std::shared_ptr<ProcessorsProfileLog> processors_profile_log;
 
     std::vector<ISystemLog *> logs;
 };

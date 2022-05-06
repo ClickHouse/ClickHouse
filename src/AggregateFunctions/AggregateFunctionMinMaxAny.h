@@ -1130,7 +1130,7 @@ private:
     SerializationPtr serialization;
 
 public:
-    AggregateFunctionsSingleValue(const DataTypePtr & type)
+    explicit AggregateFunctionsSingleValue(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {})
         , serialization(type->getDefaultSerialization())
     {
@@ -1188,7 +1188,7 @@ public:
         }
     }
 
-    void addBatchSinglePlaceNotNull(
+    void addBatchSinglePlaceNotNull( /// NOLINT
         size_t batch_size,
         AggregateDataPtr place,
         const IColumn ** columns,

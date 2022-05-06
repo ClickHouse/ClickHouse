@@ -7,41 +7,19 @@
 #include <memory>
 
 #include <boost/algorithm/string/join.hpp>
+#include <arrow/adapters/orc/adapter.h>
+#include <parquet/arrow/reader.h>
 
 #include <Core/Field.h>
 #include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/Hive/HiveSettings.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
 
 namespace orc
 {
-class Reader;
 class Statistics;
 class ColumnStatistics;
-}
-
-namespace parquet
-{
-class ParquetFileReader;
-namespace arrow
-{
-    class FileReader;
-}
-}
-
-namespace arrow
-{
-namespace io
-{
-    class RandomAccessFile;
-}
-
-namespace fs
-{
-    class FileSystem;
-}
-
-class Buffer;
 }
 
 namespace DB
@@ -98,7 +76,7 @@ public:
     }
 
     IHiveFile(
-        const FieldVector & values_,
+        const FieldVector & partition_values_,
         const String & namenode_url_,
         const String & path_,
         UInt64 last_modify_time_,
@@ -107,7 +85,7 @@ public:
         const std::shared_ptr<HiveSettings> & storage_settings_,
         ContextPtr context_)
         : WithContext(context_)
-        , partition_values(values_)
+        , partition_values(partition_values_)
         , namenode_url(namenode_url_)
         , path(path_)
         , last_modify_time(last_modify_time_)
@@ -118,56 +96,47 @@ public:
     }
     virtual ~IHiveFile() = default;
 
-    virtual FileFormat getFormat() const = 0;
+    String getFormatName() const { return String(magic_enum::enum_name(getFormat())); }
+    const String & getPath() const { return path; }
+    UInt64 getLastModTs() const { return last_modify_time; }
+    size_t getSize() const { return size; }
+    const FieldVector & getPartitionValues() const { return partition_values; }
+    const String & getNamenodeUrl() { return namenode_url; }
+    MinMaxIndexPtr getMinMaxIndex() const { return file_minmax_idx; }
+    const std::vector<MinMaxIndexPtr> & getSubMinMaxIndexes() const { return split_minmax_idxes; }
 
-    virtual String getName() const = 0;
+    const std::unordered_set<int> & getSkipSplits() const { return skip_splits; }
+    void setSkipSplits(const std::unordered_set<int> & skip_splits_) { skip_splits = skip_splits_; }
 
-    virtual String getPath() const { return path; }
-
-    virtual FieldVector getPartitionValues() const { return partition_values; }
-
-    virtual String getNamenodeUrl() { return namenode_url; }
-
-    virtual bool hasMinMaxIndex() const { return false; }
-
-    virtual void loadMinMaxIndex()
-    {
-        throw Exception("Method loadMinMaxIndex is not supported by hive file:" + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    virtual MinMaxIndexPtr getMinMaxIndex() const { return minmax_idx; }
-
-    // Do hive file contains sub-file level minmax index?
-    virtual bool hasSubMinMaxIndex() const { return false; }
-
-    virtual void loadSubMinMaxIndex()
-    {
-        throw Exception("Method loadSubMinMaxIndex is not supported by hive file:" + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    virtual const std::vector<MinMaxIndexPtr> & getSubMinMaxIndexes() const { return sub_minmax_idxes; }
-
-    virtual void setSkipSplits(const std::set<int> & splits) { skip_splits = splits; }
-
-    virtual const std::set<int> & getSkipSplits() const { return skip_splits; }
-
-    inline std::string describeMinMaxIndex(const MinMaxIndexPtr & idx) const
+    String describeMinMaxIndex(const MinMaxIndexPtr & idx) const
     {
         if (!idx)
             return "";
 
-        std::vector<std::string> strs;
+        std::vector<String> strs;
         strs.reserve(index_names_and_types.size());
         size_t i = 0;
         for (const auto & name_type : index_names_and_types)
-        {
             strs.push_back(name_type.name + ":" + name_type.type->getName() + idx->hyperrectangle[i++].toString());
-        }
         return boost::algorithm::join(strs, "|");
     }
 
-    inline UInt64 getLastModTs() const { return last_modify_time; }
-    inline size_t getSize() const { return size; }
+    virtual FileFormat getFormat() const = 0;
+
+    virtual bool useFileMinMaxIndex() const { return false; }
+
+    virtual void loadFileMinMaxIndex()
+    {
+        throw Exception("Method loadFileMinMaxIndex is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// If hive query could use contains sub-file level minmax index?
+    virtual bool useSplitMinMaxIndex() const { return false; }
+
+    virtual void loadSplitMinMaxIndex()
+    {
+        throw Exception("Method loadSplitMinMaxIndex is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
 protected:
     FieldVector partition_values;
@@ -176,9 +145,10 @@ protected:
     UInt64 last_modify_time;
     size_t size;
     NamesAndTypesList index_names_and_types;
-    MinMaxIndexPtr minmax_idx;
-    std::vector<MinMaxIndexPtr> sub_minmax_idxes;
-    std::set<int> skip_splits; // skip splits for this file after applying minmax index (if any)
+    MinMaxIndexPtr file_minmax_idx;
+    std::vector<MinMaxIndexPtr> split_minmax_idxes;
+    /// Skip splits for this file after applying minmax index (if any)
+    std::unordered_set<int> skip_splits;
     std::shared_ptr<HiveSettings> storage_settings;
 };
 
@@ -189,7 +159,7 @@ class HiveTextFile : public IHiveFile
 {
 public:
     HiveTextFile(
-        const FieldVector & values_,
+        const FieldVector & partition_values_,
         const String & namenode_url_,
         const String & path_,
         UInt64 last_modify_time_,
@@ -197,19 +167,18 @@ public:
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
         ContextPtr context_)
-        : IHiveFile(values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
+        : IHiveFile(partition_values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
 
     virtual FileFormat getFormat() const override { return FileFormat::TEXT; }
-    virtual String getName() const override { return "TEXT"; }
 };
 
-class HiveOrcFile : public IHiveFile
+class HiveORCFile : public IHiveFile
 {
 public:
-    HiveOrcFile(
-        const FieldVector & values_,
+    HiveORCFile(
+        const FieldVector & partition_values_,
         const String & namenode_url_,
         const String & path_,
         UInt64 last_modify_time_,
@@ -217,25 +186,26 @@ public:
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
         ContextPtr context_)
-        : IHiveFile(values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
+        : IHiveFile(partition_values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
 
-    virtual FileFormat getFormat() const override { return FileFormat::ORC; }
-    virtual String getName() const override { return "ORC"; }
-    virtual bool hasMinMaxIndex() const override;
-    virtual void loadMinMaxIndex() override;
+    FileFormat getFormat() const override { return FileFormat::ORC; }
+    bool useFileMinMaxIndex() const override;
+    void loadFileMinMaxIndex() override;
 
-    virtual bool hasSubMinMaxIndex() const override;
-    virtual void loadSubMinMaxIndex() override;
+    bool useSplitMinMaxIndex() const override;
+    void loadSplitMinMaxIndex() override;
 
-protected:
-    virtual std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const orc::Statistics * statistics);
-    virtual Range buildRange(const orc::ColumnStatistics * col_stats);
-    virtual void prepareReader();
-    virtual void prepareColumnMapping();
+private:
+    static Range buildRange(const orc::ColumnStatistics * col_stats);
 
-    std::shared_ptr<orc::Reader> reader;
+    std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const orc::Statistics * statistics);
+    void prepareReader();
+    void prepareColumnMapping();
+
+    std::unique_ptr<ReadBufferFromHDFS> in;
+    std::unique_ptr<arrow::adapters::orc::ORCFileReader> reader;
     std::map<String, size_t> orc_column_positions;
 };
 
@@ -243,7 +213,7 @@ class HiveParquetFile : public IHiveFile
 {
 public:
     HiveParquetFile(
-        const FieldVector & values_,
+        const FieldVector & partition_values_,
         const String & namenode_url_,
         const String & path_,
         UInt64 last_modify_time_,
@@ -251,21 +221,20 @@ public:
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
         ContextPtr context_)
-        : IHiveFile(values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
+        : IHiveFile(partition_values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
 
-    virtual FileFormat getFormat() const override { return FileFormat::PARQUET; }
-    virtual String getName() const override { return "PARQUET"; }
+    FileFormat getFormat() const override { return FileFormat::PARQUET; }
 
-    virtual bool hasSubMinMaxIndex() const override;
-    virtual void loadSubMinMaxIndex() override;
+    bool useSplitMinMaxIndex() const override;
+    void loadSplitMinMaxIndex() override;
 
-protected:
-    virtual void prepareReader();
+private:
+    void prepareReader();
 
-    std::shared_ptr<arrow::fs::FileSystem> fs;
-    std::shared_ptr<parquet::ParquetFileReader> reader;
+    std::unique_ptr<ReadBufferFromHDFS> in;
+    std::unique_ptr<parquet::arrow::FileReader> reader;
     std::map<String, size_t> parquet_column_positions;
 };
 }

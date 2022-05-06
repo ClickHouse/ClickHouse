@@ -18,7 +18,7 @@ class TraceLog;
 class TraceCollector
 {
 public:
-    TraceCollector(std::shared_ptr<TraceLog> trace_log_);
+    explicit TraceCollector(std::shared_ptr<TraceLog> trace_log_);
     ~TraceCollector();
 
     static inline void collect(TraceType trace_type, const StackTrace & stack_trace, Int64 size)

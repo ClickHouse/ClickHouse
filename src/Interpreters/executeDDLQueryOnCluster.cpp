@@ -320,12 +320,13 @@ Chunk DDLQueryStatusSource::generate()
             if (throw_on_timeout)
             {
                 if (!first_exception)
-                    first_exception = std::make_unique<Exception>(ErrorCodes::TIMEOUT_EXCEEDED, msg_format,
-                        node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+                    first_exception = std::make_unique<Exception>(
+                        fmt::format(msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts),
+                        ErrorCodes::TIMEOUT_EXCEEDED);
                 return {};
             }
 
-            LOG_INFO(log, fmt::runtime(msg_format), node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+            LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
 
             NameSet unfinished_hosts = waiting_hosts;
             for (const auto & host_id : finished_hosts)
@@ -358,9 +359,12 @@ Chunk DDLQueryStatusSource::generate()
             /// Paradoxically, this exception will be throw even in case of "never_throw" mode.
 
             if (!first_exception)
-                first_exception = std::make_unique<Exception>(ErrorCodes::UNFINISHED,
-                    "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
-                    " since it was finished (or its lifetime is expired)", node_path);
+                first_exception = std::make_unique<Exception>(
+                    fmt::format(
+                        "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
+                        " since it was finished (or its lifetime is expired)",
+                        node_path),
+                    ErrorCodes::UNFINISHED);
             return {};
         }
 
@@ -386,7 +390,8 @@ Chunk DDLQueryStatusSource::generate()
             if (status.code != 0 && !first_exception
                 && context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW)
             {
-                first_exception = std::make_unique<Exception>(status.code, "There was an error on [{}:{}]: {}", host, port, status.message);
+                first_exception = std::make_unique<Exception>(
+                    fmt::format("There was an error on [{}:{}]: {}", host, port, status.message), status.code);
             }
 
             ++num_hosts_finished;

@@ -3,6 +3,8 @@
 #include <Coordination/Defines.h>
 #include <Common/Exception.h>
 #include <filesystem>
+#include <Common/isLocalAddress.h>
+#include <Common/DNSResolver.h>
 
 namespace DB
 {
@@ -12,6 +14,70 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
+namespace
+{
+
+bool isLoopback(const std::string & hostname)
+{
+    try
+    {
+        return DNSResolver::instance().resolveHost(hostname).isLoopback();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return false;
+}
+
+bool isLocalhost(const std::string & hostname)
+{
+    try
+    {
+        return isLocalAddress(DNSResolver::instance().resolveHost(hostname));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return false;
+}
+
+std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::AbstractConfiguration & config)
+{
+    static const char * config_port_names[] = {
+        "keeper_server.tcp_port",
+        "keeper_server.tcp_port_secure",
+        "interserver_http_port",
+        "interserver_https_port",
+        "tcp_port",
+        "tcp_with_proxy_port",
+        "tcp_port_secure",
+        "mysql_port",
+        "postgresql_port",
+        "grpc_port",
+        "prometheus.port",
+    };
+
+    std::unordered_map<UInt64, std::string> ports;
+    for (const auto & config_port_name : config_port_names)
+    {
+        if (config.has(config_port_name))
+            ports[config.getUInt64(config_port_name)] = config_port_name;
+    }
+    return ports;
+}
+
+}
+
+/// this function quite long because contains a lot of sanity checks in config:
+/// 1. No duplicate endpoints
+/// 2. No "localhost" or "127.0.0.1" or another local addresses mixed with normal addresses
+/// 3. Raft internal port is not equal to any other port for client
+/// 4. No duplicate IDs
+/// 5. Our ID present in hostnames list
 KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
     KeeperConfigurationWrapper result;
@@ -19,12 +85,17 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix + ".raft_configuration", keys);
 
+    auto client_ports = getClientPorts(config);
+
     /// Sometimes (especially in cloud envs) users can provide incorrect
     /// configuration with duplicated raft ids or endpoints. We check them
     /// on config parsing stage and never commit to quorum.
     std::unordered_map<std::string, int> check_duplicated_hostnames;
 
     size_t total_servers = 0;
+    std::string loopback_hostname;
+    std::string non_local_hostname;
+    size_t local_address_counter = 0;
     for (const auto & server_key : keys)
     {
         if (!startsWith(server_key, "server"))
@@ -38,13 +109,33 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
 
+        if (client_ports.count(port) != 0)
+        {
+            throw Exception(ErrorCodes::RAFT_ERROR, "Raft configuration contains hostname '{}' with port '{}' which is equal to '{}' in server configuration",
+                            hostname, port, client_ports[port]);
+        }
+
+        if (isLoopback(hostname))
+        {
+            loopback_hostname = hostname;
+            local_address_counter++;
+        }
+        else if (isLocalhost(hostname))
+        {
+            local_address_counter++;
+        }
+        else
+        {
+            non_local_hostname = hostname;
+        }
+
         if (start_as_follower)
             result.servers_start_as_followers.insert(new_server_id);
 
         auto endpoint = hostname + ":" + std::to_string(port);
         if (check_duplicated_hostnames.count(endpoint))
         {
-            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contain duplicate endpoints: "
+            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate endpoints: "
                             "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
                             endpoint, check_duplicated_hostnames[endpoint], new_server_id);
         }
@@ -54,7 +145,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
             for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
             {
                 if (new_server_id == id)
-                    throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contain duplicate ids: id {} has been already added with endpoint {}, "
+                    throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
                                     "but going to add it one more time with endpoint {}", id, id_endpoint, endpoint);
             }
             check_duplicated_hostnames.emplace(endpoint, new_server_id);
@@ -76,6 +167,24 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
 
     if (result.servers_start_as_followers.size() == total_servers)
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
+
+    if (!loopback_hostname.empty() && !non_local_hostname.empty())
+    {
+        throw Exception(
+            ErrorCodes::RAFT_ERROR,
+            "Mixing loopback and non-local hostnames ('{}' and '{}') in raft_configuration is not allowed. "
+            "Different hosts can resolve it to themselves so it's not allowed.",
+            loopback_hostname, non_local_hostname);
+    }
+
+    if (!non_local_hostname.empty() && local_address_counter > 1)
+    {
+        throw Exception(
+            ErrorCodes::RAFT_ERROR,
+            "Local address specified more than once ({} times) and non-local hostnames also exists ('{}') in raft_configuration. "
+            "Such configuration is not allowed because single host can vote multiple times.",
+            local_address_counter, non_local_hostname);
+    }
 
     return result;
 }

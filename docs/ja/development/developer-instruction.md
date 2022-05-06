@@ -273,7 +273,7 @@ GitHubのUIでforkリポジトリに移動します。 ブランチで開発し�
 
 プル要求は、作業がまだ完了していない場合でも作成できます。 この場合、単語を入れてください “WIP” （進行中の作業）タイトルの先頭に、それは後で変更することができます。 これは、変更の協調的なレビューと議論、および利用可能なすべてのテストの実行に役立ちます。 変更の簡単な説明を提供することが重要です。
 
-Yandexの従業員がタグであなたのPRにラベルを付けるとすぐにテストが開始されます “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
+ClickHouseの従業員がタグであなたのPRにラベルを付けるとすぐにテストが開始されます “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 
 システムは、プル要求用にClickHouseバイナリビルドを個別に準備します。 これらのビルドを取得するには “Details” 次のリンク “ClickHouse build check” 小切手のリストのエントリ。 そこには、ビルドへの直接リンクがあります。ClickHouseのdebパッケージは、本番サーバーにも展開できます（恐れがない場合）。
 

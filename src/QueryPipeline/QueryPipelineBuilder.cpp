@@ -1,5 +1,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
@@ -8,7 +9,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -247,21 +247,6 @@ void QueryPipelineBuilder::addExtremesTransform()
     pipe.addTransform(std::move(transform), nullptr, port);
 }
 
-void QueryPipelineBuilder::setOutputFormat(ProcessorPtr output)
-{
-    checkInitializedAndNotCompleted();
-
-    if (output_format)
-        throw Exception("QueryPipeline already has output.", ErrorCodes::LOGICAL_ERROR);
-
-    resize(1);
-
-    output_format = dynamic_cast<IOutputFormat * >(output.get());
-    pipe.setOutputFormat(std::move(output));
-
-    initRowsBeforeLimit();
-}
-
 QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
     size_t max_threads_limit,
@@ -323,7 +308,15 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     right->pipe.dropExtremes();
 
     left->pipe.collected_processors = collected_processors;
-    right->pipe.collected_processors = collected_processors;
+
+    /// Collect the NEW processors for the right pipeline.
+    QueryPipelineProcessorsCollector collector(*right);
+    /// Remember the last step of the right pipeline.
+    ExpressionStep* step = typeid_cast<ExpressionStep*>(right->pipe.processors.back()->getQueryPlanStep());
+    if (!step)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The top step of the right pipeline should be ExpressionStep");
+    }
 
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool default_totals = false;
@@ -393,6 +386,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
         left->pipe.processors.emplace_back(std::move(joining));
     }
 
+    /// Move the collected processors to the last step in the right pipeline.
+    Processors processors = collector.detachProcessors();
+    step->appendExtraProcessors(processors);
+
     left->pipe.processors.insert(left->pipe.processors.end(), right->pipe.processors.begin(), right->pipe.processors.end());
     left->pipe.holder = std::move(right->pipe.holder);
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
@@ -459,93 +456,6 @@ void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source->setProcessListElement(elem);
     }
-}
-
-void QueryPipelineBuilder::initRowsBeforeLimit()
-{
-    RowsBeforeLimitCounterPtr rows_before_limit_at_least;
-
-    /// TODO: add setRowsBeforeLimitCounter as virtual method to IProcessor.
-    std::vector<LimitTransform *> limits;
-    std::vector<RemoteSource *> remote_sources;
-
-    std::unordered_set<IProcessor *> visited;
-
-    struct QueuedEntry
-    {
-        IProcessor * processor;
-        bool visited_limit;
-    };
-
-    std::queue<QueuedEntry> queue;
-
-    queue.push({ output_format, false });
-    visited.emplace(output_format);
-
-    while (!queue.empty())
-    {
-        auto * processor = queue.front().processor;
-        auto visited_limit = queue.front().visited_limit;
-        queue.pop();
-
-        if (!visited_limit)
-        {
-            if (auto * limit = typeid_cast<LimitTransform *>(processor))
-            {
-                visited_limit = true;
-                limits.emplace_back(limit);
-            }
-
-            if (auto * source = typeid_cast<RemoteSource *>(processor))
-                remote_sources.emplace_back(source);
-        }
-        else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
-        {
-            if (!rows_before_limit_at_least)
-                rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
-
-            sorting->setRowsBeforeLimitCounter(rows_before_limit_at_least);
-
-            /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
-            continue;
-        }
-
-        /// Skip totals and extremes port for output format.
-        if (auto * format = dynamic_cast<IOutputFormat *>(processor))
-        {
-            auto * child_processor = &format->getPort(IOutputFormat::PortKind::Main).getOutputPort().getProcessor();
-            if (visited.emplace(child_processor).second)
-                queue.push({ child_processor, visited_limit });
-
-            continue;
-        }
-
-        for (auto & child_port : processor->getInputs())
-        {
-            auto * child_processor = &child_port.getOutputPort().getProcessor();
-            if (visited.emplace(child_processor).second)
-                queue.push({ child_processor, visited_limit });
-        }
-    }
-
-    if (!rows_before_limit_at_least && (!limits.empty() || !remote_sources.empty()))
-    {
-        rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
-
-        for (auto & limit : limits)
-            limit->setRowsBeforeLimitCounter(rows_before_limit_at_least);
-
-        for (auto & source : remote_sources)
-            source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
-    }
-
-    /// If there is a limit, then enable rows_before_limit_at_least
-    /// It is needed when zero rows is read, but we still want rows_before_limit_at_least in result.
-    if (!limits.empty())
-        rows_before_limit_at_least->add(0);
-
-    if (rows_before_limit_at_least)
-        output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 }
 
 PipelineExecutorPtr QueryPipelineBuilder::execute()

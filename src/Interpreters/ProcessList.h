@@ -216,7 +216,7 @@ struct ProcessListForUserInfo
 /// Data about queries for one user.
 struct ProcessListForUser
 {
-    ProcessListForUser(ProcessList * global_process_list);
+    explicit ProcessListForUser(ProcessList * global_process_list);
 
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
     using QueryToElement = std::unordered_map<String, QueryStatus *>;
@@ -349,15 +349,6 @@ public:
     {
         std::lock_guard lock(mutex);
         max_size = max_size_;
-    }
-
-    // Before calling this method you should be sure
-    // that lock is acquired.
-    template <typename F>
-    void processEachQueryStatus(F && func) const
-    {
-        for (auto && query : processes)
-            func(query);
     }
 
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)

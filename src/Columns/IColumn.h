@@ -299,13 +299,27 @@ public:
     /// Check if all elements in the column have equal values. Return true if column is empty.
     virtual bool hasEqualValues() const = 0;
 
+    enum class PermutationSortDirection : uint8_t
+    {
+        Ascending = 0,
+        Descending
+    };
+
+    enum class PermutationSortStability : uint8_t
+    {
+        Unstable = 0,
+        Stable
+    };
+
     /** Returns a permutation that sorts elements of this column,
       *  i.e. perm[i]-th element of source column should be i-th element of sorted column.
-      * reverse - reverse ordering (acsending).
+      * direction - permutation direction.
+      * stability - stability of result permutation.
       * limit - if isn't 0, then only first limit elements of the result column could be sorted.
       * nan_direction_hint - see above.
       */
-    virtual void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const = 0;
+    virtual void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                            size_t limit, int nan_direction_hint, Permutation & res) const = 0;
 
     /*in updatePermutation we pass the current permutation and the intervals at which it should be sorted
      * Then for each interval separately (except for the last one, if there is a limit)
@@ -315,16 +329,20 @@ public:
      * If there is a limit, then for the last interval we do partial sorting and all that is described above,
      * but in addition we still find all the elements equal to the largest sorted, they will also need to be sorted.
      */
-    virtual void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const = 0;
+    virtual void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                            size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const = 0;
 
     /** Equivalent to getPermutation and updatePermutation but collator is used to compare values.
       * Supported for String, LowCardinality(String), Nullable(String) and for Array and Tuple, containing them.
       */
-    virtual void getPermutationWithCollation(const Collator &, bool, size_t, int, Permutation &) const
+    virtual void getPermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
+                            size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/) const
     {
         throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
     }
-    virtual void updatePermutationWithCollation(const Collator &, bool, size_t, int, Permutation &, EqualRanges&) const
+
+    virtual void updatePermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
+                            size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/, EqualRanges & /*equal_ranges*/) const
     {
         throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
     }
@@ -363,6 +381,9 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
+    virtual void ensureOwnership() {}
+
     /// Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined.
     virtual size_t byteSize() const = 0;
 
@@ -392,7 +413,7 @@ public:
 
     /// Returns ration of values in column, that equal to default value of column.
     /// Checks only @sample_ratio ratio of rows.
-    virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0;
+    virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0; /// NOLINT
 
     /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
@@ -528,27 +549,13 @@ protected:
     template <typename Derived>
     void getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const;
 
-    /// Uses sort and partial_sort as default algorithms.
-    /// Implements 'less' and 'equals' via comparator.
-    /// If 'less' and 'equals' can be implemented more optimal
-    /// (e.g. with less number of comparisons), you can use
-    /// directly the second overload of this method.
-    template <typename Comparator>
-    void updatePermutationImpl(
-        size_t limit,
-        Permutation & res,
-        EqualRanges & equal_ranges,
-        Comparator cmp) const;
+    template <typename Compare, typename Sort, typename PartialSort>
+    void getPermutationImpl(size_t limit, Permutation & res, Compare compare,
+                        Sort full_sort, PartialSort partial_sort) const;
 
-    template <typename Less, typename Equals, typename Sort, typename PartialSort>
-    void updatePermutationImpl(
-        size_t limit,
-        Permutation & res,
-        EqualRanges & equal_ranges,
-        Less less,
-        Equals equals,
-        Sort full_sort,
-        PartialSort partial_sort) const;
+    template <typename Compare, typename Equals, typename Sort, typename PartialSort>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Compare compare, Equals equals,
+                        Sort full_sort, PartialSort partial_sort) const;
 };
 
 using ColumnPtr = IColumn::Ptr;

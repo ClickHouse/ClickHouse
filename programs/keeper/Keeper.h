@@ -2,6 +2,7 @@
 
 #include <Server/IServer.h>
 #include <daemon/BaseDaemon.h>
+#include "TinyContext.h"
 
 namespace Poco
 {
@@ -17,27 +18,22 @@ namespace DB
 /// standalone clickhouse-keeper server (replacement for ZooKeeper). Uses the same
 /// config as clickhouse-server. Serves requests on TCP ports with or without
 /// SSL using ZooKeeper protocol.
-class Keeper : public BaseDaemon, public IServer
+class Keeper : public BaseDaemon
 {
 public:
     using ServerApplication::run;
 
-    Poco::Util::LayeredConfiguration & config() const override
+    Poco::Util::LayeredConfiguration & config() const
     {
         return BaseDaemon::config();
     }
 
-    Poco::Logger & logger() const override
+    Poco::Logger & logger() const
     {
         return BaseDaemon::logger();
     }
 
-    ContextMutablePtr context() const override
-    {
-        return global_context;
-    }
-
-    bool isCancelled() const override
+    bool isCancelled() const
     {
         return BaseDaemon::isCancelled();
     }
@@ -58,7 +54,7 @@ protected:
     std::string getDefaultConfigFileName() const override;
 
 private:
-    ContextMutablePtr global_context;
+    TinyContext tiny_context;
 
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 

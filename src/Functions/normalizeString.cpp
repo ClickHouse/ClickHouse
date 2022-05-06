@@ -98,8 +98,6 @@ struct NormalizeUTF8Impl
         ColumnString::Offset current_from_offset = 0;
         ColumnString::Offset current_to_offset = 0;
 
-        icu::UnicodeString to_string;
-
         PODArray<UChar> from_uchars;
         PODArray<UChar> to_uchars;
 

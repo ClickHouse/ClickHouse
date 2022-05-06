@@ -2499,3 +2499,41 @@ Result:
 │                      286 │
 └──────────────────────────┘
 ```
+
+## getTypeSerializationStreams {#getTypeSerializationStreams}
+
+return the serialization streams of data type.
+
+**Syntax**
+``` sql
+getTypeSerializationStreams(type_name)
+
+getTypeSerializationStreams(column)
+```
+
+**Arguments**
+- `type_name` - Name of data type to get its serialization paths. [String](../../sql-reference/data-types/string.md#string).
+- `column`       - any column which has a data type
+
+**Returned value**
+- List of serialization streams;
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+
+
+**Example**
+
+Query:
+
+``` sql
+SELECT getTypeSerializationStreams('Array(Array(Int8))')
+```
+
+Result:
+
+``` text
+┌───────────────────────getTypeSerializationStreams('Array(Array(Int8))')─────────────────────────────┐
+│ ['{ArraySizes}','{ArrayElements, ArraySizes}','{ArrayElements, ArrayElements, Regular}']            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
