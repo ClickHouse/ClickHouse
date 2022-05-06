@@ -55,12 +55,6 @@
 
 #include <QueryPipeline/printPipeline.h>
 
-namespace ProfileEvents
-{
-    extern const Event SelectedBytes;
-    extern const Event SelectedRows;
-}
-
 namespace DB
 {
 namespace ErrorCodes
@@ -1240,11 +1234,7 @@ BlockIO StorageWindowView::populate()
     InterpreterSelectQuery interpreter_select{modified_query, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
     pipeline = interpreter_select.buildQueryPipeline();
 
-    auto header_block
-        = InterpreterSelectQuery(
-              select_query_->clone(), getContext(), getParentTable(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete))
-              .getSampleBlock();
-
+    auto header_block = interpreter_select.getSampleBlock();
     auto sink = std::make_shared<PushingToWindowViewSink>(header_block, *this, nullptr, getContext());
 
     BlockIO res;
