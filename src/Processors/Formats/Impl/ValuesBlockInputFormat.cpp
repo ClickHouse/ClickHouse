@@ -1,11 +1,9 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/ReadSchemaUtils.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
@@ -18,7 +16,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/ObjectUtils.h>
 
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -588,7 +585,7 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
     }
 
     skipWhitespaceIfAny(buf);
-    if (buf.eof())
+    if (buf.eof() || end_of_data)
         return {};
 
     assertChar('(', buf);
@@ -614,6 +611,12 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
     skipWhitespaceIfAny(buf);
     if (!buf.eof() && *buf.position() == ',')
         ++buf.position();
+
+    if (!buf.eof() && *buf.position() == ';')
+    {
+        ++buf.position();
+        end_of_data = true;
+    }
 
     return data_types;
 }

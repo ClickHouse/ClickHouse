@@ -90,6 +90,10 @@ public:
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
 
+    virtual size_t getUsedCacheSize() const = 0;
+
+    virtual size_t getCacheFilesNum() const = 0;
+
 protected:
     String cache_base_path;
     size_t max_size;
@@ -149,6 +153,10 @@ public:
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
 
+    size_t getUsedCacheSize() const override;
+
+    size_t getCacheFilesNum() const override;
+
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
     using LRUQueue = std::list<FileKeyAndOffset>;
@@ -170,9 +178,9 @@ private:
 
         FileSegmentCell(FileSegmentPtr file_segment_, LRUQueue & queue_);
 
-        FileSegmentCell(FileSegmentCell && other)
+        FileSegmentCell(FileSegmentCell && other) noexcept
             : file_segment(std::move(other.file_segment))
-            , queue_iterator(std::move(other.queue_iterator)) {}
+            , queue_iterator(other.queue_iterator) {}
 
         std::pair<Key, size_t> getKeyAndOffset() const { return std::make_pair(file_segment->key(), file_segment->range().left); }
     };
