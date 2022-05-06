@@ -216,9 +216,9 @@ private:
 
         FileSegmentCell(FileSegmentPtr file_segment_, LRUFileCache * cache, std::lock_guard<std::mutex> & cache_lock);
 
-        FileSegmentCell(FileSegmentCell && other)
+        FileSegmentCell(FileSegmentCell && other) noexcept
             : file_segment(std::move(other.file_segment))
-            , queue_iterator(std::move(other.queue_iterator)) {}
+            , queue_iterator(other.queue_iterator) {}
     };
 
     using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
