@@ -296,26 +296,25 @@ private:
         return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner(IOThreadPool::get()), download_thread_num);
     }
 
+    const SourcesInfoPtr source_info;
+    const String hdfs_namenode_url;
+    const String format;
+    const String compression_method;
+    const UInt64 max_block_size;
+    const Block sample_block;
+    const ColumnsDescription columns_description;
+    const size_t download_thread_num = 1;
+    const Names & text_input_field_names;
+    const FormatSettings format_settings;
+    const ReadSettings read_settings;
+
+    Block to_read_block;
+    String current_path;
+    size_t current_idx = 0;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
-    SourcesInfoPtr source_info;
-    String hdfs_namenode_url;
-    String format;
-    String compression_method;
-    UInt64 max_block_size;
-    Block sample_block;
-    Block to_read_block;
-    ColumnsDescription columns_description;
-    size_t download_thread_num = 1;
-    const Names & text_input_field_names;
-
-    FormatSettings format_settings;
-    ReadSettings read_settings;
-
-    String current_path;
-    size_t current_idx = 0;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
 };
@@ -735,6 +734,7 @@ Pipe StorageHive::read(
         num_streams = sources_info->hive_files.size();
 
     Pipes pipes;
+    const size_t max_download_threads = context_->getSettingsRef().max_download_threads;
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageHiveSource>(
@@ -745,6 +745,7 @@ Pipe StorageHive::read(
             sample_block,
             context_,
             max_block_size,
+            max_download_threads,
             text_input_field_names));
     }
     return Pipe::unitePipes(std::move(pipes));
