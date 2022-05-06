@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
 }
 
-static void chooseResultType(
+void chooseResultColumnType(
     DataTypePtr & type,
     const DataTypePtr & new_type,
     CommonDataTypeChecker common_type_checker,
@@ -48,7 +48,7 @@ static void chooseResultType(
     }
 }
 
-static void checkTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t max_rows_to_read)
+void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t max_rows_to_read)
 {
     if (!type)
     {
@@ -111,7 +111,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             if (!new_data_types[i])
                 continue;
 
-            chooseResultType(data_types[i], new_data_types[i], common_type_checker, getDefaultType(i), std::to_string(i + 1), row);
+            chooseResultColumnType(data_types[i], new_data_types[i], common_type_checker, getDefaultType(i), std::to_string(i + 1), row);
         }
     }
 
@@ -136,7 +136,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     for (size_t i = 0; i != data_types.size(); ++i)
     {
         /// Check that we could determine the type of this column.
-        checkTypeAndAppend(result, data_types[i], column_names[i], getDefaultType(i), max_rows_to_read);
+        checkResultColumnTypeAndAppend(result, data_types[i], column_names[i], getDefaultType(i), max_rows_to_read);
     }
 
     return result;
@@ -189,7 +189,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
             }
 
             auto & type = it->second;
-            chooseResultType(type, new_type, common_type_checker, default_type, name, row);
+            chooseResultColumnType(type, new_type, common_type_checker, default_type, name, row);
         }
     }
 
@@ -202,7 +202,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     {
         auto & type = names_to_types[name];
         /// Check that we could determine the type of this column.
-        checkTypeAndAppend(result, type, name, default_type, max_rows_to_read);
+        checkResultColumnTypeAndAppend(result, type, name, default_type, max_rows_to_read);
     }
 
     return result;

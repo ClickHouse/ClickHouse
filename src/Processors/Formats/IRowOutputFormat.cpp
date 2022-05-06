@@ -12,13 +12,11 @@ namespace ErrorCodes
 
 IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
     : IOutputFormat(header, out_)
+    , num_columns(header.columns())
     , types(header.getDataTypes())
+    , serializations(header.getSerializations())
     , params(params_)
 {
-    num_columns = types.size();
-    serializations.reserve(num_columns);
-    for (const auto & type : types)
-        serializations.push_back(type->getDefaultSerialization());
 }
 
 void IRowOutputFormat::consume(DB::Chunk chunk)

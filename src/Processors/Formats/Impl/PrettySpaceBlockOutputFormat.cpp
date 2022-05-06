@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
+void PrettySpaceBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
     UInt64 max_rows = format_settings.pretty.max_rows;
 

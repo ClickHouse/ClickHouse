@@ -2,7 +2,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
-#include <Formats/JSONEachRowUtils.h>
+#include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>

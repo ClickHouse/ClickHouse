@@ -1363,7 +1363,7 @@ static void readQuotedFieldInBrackets(String & s, ReadBuffer & buf)
     }
 }
 
-void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
+void readQuotedField(String & s, ReadBuffer & buf)
 {
     s.clear();
 
@@ -1427,8 +1427,9 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
     }
 }
 
-void readJSONFieldIntoString(String & s, ReadBuffer & buf)
+void readJSONField(String & s, ReadBuffer & buf)
 {
+    s.clear();
     auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
     readParsedValueIntoString(s, buf, parse_func);
 }

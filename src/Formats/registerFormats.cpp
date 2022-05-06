@@ -60,6 +60,10 @@ void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
+void registerInputFormatJSONColumns(FormatFactory & factory);
+void registerOutputFormatJSONColumns(FormatFactory & factory);
+void registerInputFormatJSONCompactColumns(FormatFactory & factory);
+void registerOutputFormatJSONCompactColumns(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -77,6 +81,7 @@ void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory);
+void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -119,6 +124,8 @@ void registerTSKVSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory);
+void registerJSONColumnsSchemaReader(FormatFactory & factory);
+void registerJSONCompactColumnsSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -176,6 +183,10 @@ void registerFormats()
     registerOutputFormatAvro(factory);
     registerInputFormatArrow(factory);
     registerOutputFormatArrow(factory);
+    registerInputFormatJSONColumns(factory);
+    registerOutputFormatJSONColumns(factory);
+    registerInputFormatJSONCompactColumns(factory);
+    registerOutputFormatJSONCompactColumns(factory);
 
     registerOutputFormatPretty(factory);
     registerOutputFormatPrettyCompact(factory);
@@ -192,6 +203,7 @@ void registerFormats()
     registerOutputFormatPostgreSQLWire(factory);
     registerOutputFormatCapnProto(factory);
     registerOutputFormatPrometheus(factory);
+    registerOutputFormatJSONColumnsWithMetadata(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
@@ -232,6 +244,8 @@ void registerFormats()
     registerValuesSchemaReader(factory);
     registerTemplateSchemaReader(factory);
     registerMySQLSchemaReader(factory);
+    registerJSONColumnsSchemaReader(factory);
+    registerJSONCompactColumnsSchemaReader(factory);
 }
 
 }

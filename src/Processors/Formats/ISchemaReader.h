@@ -109,4 +109,15 @@ public:
     virtual ~IExternalSchemaReader() = default;
 };
 
+void chooseResultColumnType(
+    DataTypePtr & type,
+    const DataTypePtr & new_type,
+    CommonDataTypeChecker common_type_checker,
+    const DataTypePtr & default_type,
+    const String & column_name,
+    size_t row);
+
+void checkResultColumnTypeAndAppend(
+    NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t max_rows_to_read);
+
 }

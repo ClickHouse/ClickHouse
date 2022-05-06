@@ -730,6 +730,8 @@ class IColumn;
     \
     M(String, input_format_mysql_dump_table_name, "", "Name of the table in MySQL dump from which to read data", 0) \
     M(Bool, input_format_mysql_dump_map_column_names, true, "Match columns from table in MySQL dump and columns from ClickHouse table by names", 0) \
+    \
+    M(UInt64, output_format_json_columns_max_rows_to_buffer, 10000, "Max rows to buffer in JSONColumnsMonoBlock, JSONCompactColumnsMonoBlock and JSONColumnsWithMetadata format", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.

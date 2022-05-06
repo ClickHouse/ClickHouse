@@ -1,5 +1,5 @@
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
-#include <Formats/JSONEachRowUtils.h>
+#include <Formats/JSONUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <base/find_symbols.h>

@@ -57,6 +57,7 @@ public:
     /// Check that we have to replace default value at least in one of columns
     bool hasDefaultBits(size_t column_idx) const;
     void setBit(size_t column_idx, size_t row_idx);
+    void setBits(size_t column_idx, size_t rows);
     bool empty() const { return rows_mask_by_column_id.empty(); }
     size_t size() const { return rows_mask_by_column_id.size(); }
     void clear() { rows_mask_by_column_id.clear(); }
