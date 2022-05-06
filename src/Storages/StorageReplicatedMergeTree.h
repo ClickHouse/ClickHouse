@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <base/UUID.h>
 #include <atomic>
 #include <pcg_random.hpp>
@@ -81,10 +80,32 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
-class StorageReplicatedMergeTree final : public shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
+class StorageReplicatedMergeTree final : public MergeTreeData
 {
-    friend struct shared_ptr_helper<StorageReplicatedMergeTree>;
 public:
+    enum RenamingRestrictions
+    {
+        ALLOW_ANY,
+        ALLOW_PRESERVING_UUID,
+        DO_NOT_ALLOW,
+    };
+
+    /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
+      */
+    StorageReplicatedMergeTree(
+        const String & zookeeper_path_,
+        const String & replica_name_,
+        bool attach,
+        const StorageID & table_id_,
+        const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata_,
+        ContextMutablePtr context_,
+        const String & date_column_name,
+        const MergingParams & merging_params_,
+        std::unique_ptr<MergeTreeSettings> settings_,
+        bool has_force_restore_data_flag,
+        RenamingRestrictions renaming_restrictions_);
+
     void startup() override;
     void shutdown() override;
     void flush() override;
@@ -142,13 +163,6 @@ public:
     void drop() override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &) override;
-
-    enum RenamingRestrictions
-    {
-        ALLOW_ANY,
-        ALLOW_PRESERVING_UUID,
-        DO_NOT_ALLOW,
-    };
 
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
@@ -793,23 +807,6 @@ private:
     /// Create ephemeral lock in zookeeper for part and disk which support zero copy replication.
     /// If somebody already holding the lock -- return std::nullopt.
     std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk) override;
-
-protected:
-    /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
-      */
-    StorageReplicatedMergeTree(
-        const String & zookeeper_path_,
-        const String & replica_name_,
-        bool attach,
-        const StorageID & table_id_,
-        const String & relative_data_path_,
-        const StorageInMemoryMetadata & metadata_,
-        ContextMutablePtr context_,
-        const String & date_column_name,
-        const MergingParams & merging_params_,
-        std::unique_ptr<MergeTreeSettings> settings_,
-        bool has_force_restore_data_flag,
-        RenamingRestrictions renaming_restrictions_);
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);
