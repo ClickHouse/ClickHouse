@@ -1085,8 +1085,7 @@ StorageWindowView::StorageWindowView(
         InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
-        inner_storage = DatabaseCatalog::instance().getTable(StorageID(inner_create_query->getDatabase(), inner_create_query->getTable()), getContext());
-        inner_table_id = inner_storage->getStorageID();
+        inner_table_id = StorageID(inner_create_query->getDatabase(), inner_create_query->getTable());
     }
 
     clean_interval_ms = getContext()->getSettingsRef().window_view_clean_interval.totalMilliseconds();
@@ -1385,7 +1384,6 @@ void StorageWindowView::shutdown()
 
     auto table_id = getStorageID();
     DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
-    inner_storage.reset();
 }
 
 void StorageWindowView::checkTableCanBeDropped() const
@@ -1443,16 +1441,12 @@ Block & StorageWindowView::getHeader() const
 
 StoragePtr StorageWindowView::getParentStorage() const
 {
-    if (!parent_storage)
-        parent_storage = DatabaseCatalog::instance().getTable(select_table_id, getContext());
-    return parent_storage;
+    return DatabaseCatalog::instance().getTable(select_table_id, getContext());
 }
 
 StoragePtr StorageWindowView::getInnerStorage() const
 {
-    if (!inner_storage)
-        inner_storage = DatabaseCatalog::instance().getTable(inner_table_id, getContext());
-    return inner_storage;
+    return DatabaseCatalog::instance().getTable(inner_table_id, getContext());
 }
 
 ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const
@@ -1502,9 +1496,7 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
 
 StoragePtr StorageWindowView::getTargetStorage() const
 {
-    if (!target_storage && !target_table_id.empty())
-        target_storage = DatabaseCatalog::instance().getTable(target_table_id, getContext());
-    return target_storage;
+    return DatabaseCatalog::instance().getTable(target_table_id, getContext());
 }
 
 void registerStorageWindowView(StorageFactory & factory)
