@@ -485,10 +485,6 @@ std::string ExpressionActions::Action::toString() const
         case ActionsDAG::ActionType::INPUT:
             out << "INPUT " << arguments.front();
             break;
-
-        case ActionsDAG::ActionType::GROUPING_SET:
-            out << "GROUPING SET";
-            break;
     }
 
     out << " -> " << node->result_name
@@ -682,14 +678,6 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             else
                 columns[action.result_position] = std::move(inputs[pos]);
 
-            break;
-        }
-
-        case ActionsDAG::ActionType::GROUPING_SET:
-        {
-            auto & res_column = columns[action.result_position];
-            res_column.type = action.node->result_type;
-            res_column.name = action.node->result_name;
             break;
         }
     }
