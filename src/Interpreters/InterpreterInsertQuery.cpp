@@ -153,6 +153,29 @@ Block InterpreterInsertQuery::getSampleBlock(
     return res;
 }
 
+namespace
+{
+    struct FindFunction
+    {
+    public:
+        using Visitor = InDepthNodeVisitor<FindFunction, true>;
+        struct Data
+        {
+            bool has_function_in_select = false;
+        };
+
+        static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+
+        static void visit(ASTPtr & ast, Data & data)
+        {
+            if (auto * t = ast->as<ASTFunction>())
+            {
+                data.has_function_in_select = true;
+            }
+        }
+    };
+}
+
 
 /** A query that just reads all data without any complex computations or filetering.
   * If we just pipe the result to INSERT, we don't have to use too many threads for read.
@@ -178,6 +201,14 @@ static bool isTrivialSelect(const ASTPtr & select)
         if (table_expr.subquery)
             return false;
 
+        /// If have function in select expression, return false.
+        /// For example, select count() from t.
+        FindFunction::Data data;
+		FindFunction::Visitor find_function_visitor(data);
+		find_function_visitor.visit(select_query->refSelect());
+		if (data.has_function_in_select)
+            return false;
+
         /// Note: how to write it in more generic way?
         return (!select_query->distinct
             && !select_query->limit_with_ties
@@ -186,7 +217,8 @@ static bool isTrivialSelect(const ASTPtr & select)
             && !select_query->groupBy()
             && !select_query->having()
             && !select_query->orderBy()
-            && !select_query->limitBy());
+            && !select_query->limitBy()
+            && !select_query->with());
     }
     /// This query is ASTSelectWithUnionQuery subquery
     return false;
