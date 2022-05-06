@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from threading import Thread
 from queue import Queue
 import json
+import os
 import time
 
 import jwt
@@ -20,7 +21,7 @@ NEED_RERUN_OR_CANCELL_WORKFLOWS = {
 
 # https://docs.github.com/en/rest/reference/actions#cancel-a-workflow-run
 #
-API_URL = "https://api.github.com/repos/ClickHouse/ClickHouse"
+API_URL = os.getenv("API_URL", "https://api.github.com/repos/ClickHouse/ClickHouse")
 
 MAX_RETRY = 5
 

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 
-import json
-import time
-import fnmatch
 from collections import namedtuple
-import jwt
+import fnmatch
+import json
+import os
+import time
 
+import jwt
 import requests  # type: ignore
 import boto3  # type: ignore
 
-API_URL = "https://api.github.com/repos/ClickHouse/ClickHouse"
+API_URL = os.getenv("API_URL", "https://api.github.com/repos/ClickHouse/ClickHouse")
 
 SUSPICIOUS_CHANGED_FILES_NUMBER = 200
 
