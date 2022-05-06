@@ -5,7 +5,6 @@
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
 #include <Common/hex.h>
-#include <Common/getQueryId.h>
 
 
 namespace ProfileEvents
@@ -42,9 +41,11 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , settings(settings_)
     , read_until_position(read_until_position_)
     , remote_file_reader_creator(remote_file_reader_creator_)
-    , query_id(getQueryId())
+    , query_id(CurrentThread::getQueryId())
     , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
 {
+    assert(query_id.empty()
+           || CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr);
 }
 
 void CachedReadBufferFromRemoteFS::appendFilesystemCacheLog(
