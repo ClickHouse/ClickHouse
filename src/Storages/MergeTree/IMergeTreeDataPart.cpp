@@ -21,7 +21,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/JSON.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -958,9 +958,8 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
     if (!parent_part)
         partition.appendFiles(storage, files);
 
-    if (!isEmpty())
-        if (!parent_part)
-            minmax_idx->appendFiles(storage, files);
+    if (!parent_part)
+        minmax_idx->appendFiles(storage, files);
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)

@@ -236,8 +236,8 @@
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
-            <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
+            <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
@@ -367,7 +367,7 @@
 
     <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
-    
+
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
     <!-- <allow_plaintext_password>0</allow_plaintext_password> -->
     <!-- <allow_no_password>0</allow_no_password> -->`
@@ -1297,8 +1297,8 @@
     -->
 
     <!-- Uncomment if enable merge tree metadata cache -->
-    <merge_tree_metadata_cache>
+    <!--merge_tree_metadata_cache>
         <lru_cache_size>268435456</lru_cache_size>
         <continue_if_corrupted>true</continue_if_corrupted>
-    </merge_tree_metadata_cache>
+    </merge_tree_metadata_cache-->
 </clickhouse>

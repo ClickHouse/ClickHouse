@@ -31,7 +31,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
 
 
@@ -919,7 +919,7 @@ void registerStorageURL(StorageFactory & factory)
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            return StorageURL::create(
+            return std::make_shared<StorageURL>(
                 configuration.url,
                 args.table_id,
                 configuration.format,
