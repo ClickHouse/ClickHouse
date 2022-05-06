@@ -187,7 +187,6 @@ public:
     TypeIndex getDataType() const override { return TypeIndex::Object; }
 
     size_t size() const override;
-    MutableColumnPtr cloneResized(size_t new_size) const override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
@@ -198,10 +197,12 @@ public:
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
+    MutableColumnPtr cloneResized(size_t new_size) const override;
 
     /// Finalizes all subcolumns.
     void finalize() override;
@@ -237,7 +238,7 @@ private:
     }
 
     template <typename Func>
-    ColumnPtr applyForSubcolumns(Func && func) const;
+    MutableColumnPtr applyForSubcolumns(Func && func) const;
 };
 
 }
