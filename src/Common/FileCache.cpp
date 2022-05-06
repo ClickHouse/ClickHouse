@@ -811,6 +811,18 @@ std::vector<String> LRUFileCache::tryGetCachePaths(const Key & key)
     return cache_paths;
 }
 
+size_t LRUFileCache::getUsedCacheSize() const
+{
+    std::lock_guard cache_lock(mutex);
+    return current_size;
+}
+
+size_t LRUFileCache::getCacheFilesNum() const
+{
+    std::lock_guard cache_lock(mutex);
+    return files.size();
+}
+
 LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRUQueue & queue_)
     : file_segment(file_segment_)
 {

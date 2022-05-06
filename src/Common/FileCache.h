@@ -90,6 +90,10 @@ public:
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
 
+    virtual size_t getUsedCacheSize() const = 0;
+
+    virtual size_t getCacheFilesNum() const = 0;
+
 protected:
     String cache_base_path;
     size_t max_size;
@@ -148,6 +152,10 @@ public:
     void remove(bool force_remove_unreleasable) override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
+
+    size_t getUsedCacheSize() const override;
+
+    size_t getCacheFilesNum() const override;
 
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
