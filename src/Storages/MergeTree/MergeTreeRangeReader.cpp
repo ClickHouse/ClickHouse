@@ -64,7 +64,7 @@ static void filterColumns(Columns & columns, const ColumnPtr & filter)
 }
 
 
-static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges)
+size_t MergeTreeRangeReader::ReadResult::getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges)
 {
     size_t current_task_last_mark = 0;
     for (const auto & mark_range : ranges)
@@ -1001,7 +1001,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     const auto & rows_per_granule = result.rowsPerGranule();
     const auto & started_ranges = result.startedRanges();
 
-    size_t current_task_last_mark = getLastMark(started_ranges);
+    size_t current_task_last_mark = ReadResult::getLastMark(started_ranges);
     size_t next_range_to_start = 0;
 
     auto size = rows_per_granule.size();
