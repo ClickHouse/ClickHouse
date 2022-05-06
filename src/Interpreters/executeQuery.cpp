@@ -79,6 +79,7 @@ namespace ProfileEvents
     extern const Event QueryTimeMicroseconds;
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
+    extern const Event OtherQueryTimeMicroseconds;
 }
 
 namespace DB
@@ -801,6 +802,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     ProfileEvents::increment(ProfileEvents::InsertQueryTimeMicroseconds, query_time);
                 }
+                else
+                {
+                    ProfileEvents::increment(ProfileEvents::OtherQueryTimeMicroseconds, query_time);
+                }
 
                 element.query_duration_ms = info.elapsed_seconds * 1000;
 
@@ -892,7 +897,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         ReadableSize(elem.read_bytes / elapsed_seconds));
                 }
 
-                if (log_queries && elem.type >= log_queries_min_type && Int64(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
+                if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
                 {
                     if (auto query_log = context->getQueryLog())
                         query_log->add(elem);
@@ -1009,7 +1014,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 logException(context, elem);
 
                 /// In case of exception we log internal queries also
-                if (log_queries && elem.type >= log_queries_min_type && Int64(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
+                if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
                 {
                     if (auto query_log = context->getQueryLog())
                         query_log->add(elem);

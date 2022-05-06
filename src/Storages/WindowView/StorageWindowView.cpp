@@ -42,7 +42,7 @@
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
 #include <base/sleep.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Storages/LiveView/StorageBlocks.h>
 
@@ -315,9 +315,7 @@ namespace
         switch (kind)
         {
             case IntervalKind::Nanosecond:
-                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
             case IntervalKind::Microsecond:
-                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
             case IntervalKind::Millisecond:
                 throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
 #define CASE_WINDOW_KIND(KIND) \
@@ -752,9 +750,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
     switch (window_interval_kind)
     {
         case IntervalKind::Nanosecond:
-            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
         case IntervalKind::Microsecond:
-            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
         case IntervalKind::Millisecond:
             throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
 #define CASE_WINDOW_KIND(KIND) \
@@ -793,9 +789,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
     switch (window_interval_kind)
     {
         case IntervalKind::Nanosecond:
-            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
         case IntervalKind::Microsecond:
-            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
         case IntervalKind::Millisecond:
             throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
 
@@ -1522,7 +1516,7 @@ void registerStorageWindowView(StorageFactory & factory)
                 "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')",
                 ErrorCodes::SUPPORT_IS_DISABLED);
 
-        return StorageWindowView::create(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
+        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
     });
 }
 

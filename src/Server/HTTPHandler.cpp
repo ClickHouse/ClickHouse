@@ -21,7 +21,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/setThreadName.h>
@@ -669,7 +669,7 @@ void HTTPHandler::processQuery(
         if (name.empty())
             return true;
 
-        if (reserved_param_names.count(name))
+        if (reserved_param_names.contains(name))
             return true;
 
         for (const String & suffix : reserved_param_suffixes)
@@ -1063,7 +1063,7 @@ PredefinedQueryHandler::PredefinedQueryHandler(
 
 bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
 {
-    if (receive_params.count(key))
+    if (receive_params.contains(key))
     {
         context->setQueryParameter(key, value);
         return true;

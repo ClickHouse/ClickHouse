@@ -239,12 +239,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         uint32_t path_length = 0;
         _NSGetExecutablePath(nullptr, &path_length);
         if (path_length <= 1)
-            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
         std::string path(path_length, std::string::value_type());
         auto res = _NSGetExecutablePath(&path[0], &path_length);
         if (res != 0)
-            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
         if (path.back() == '\0')
             path.pop_back();
