@@ -17,7 +17,6 @@ namespace DB
 class JSONColumnsBlockOutputFormat : public JSONColumnsBaseBlockOutputFormat
 {
 public:
-    /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
     JSONColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, size_t indent_ = 0);
 
     String getName() const override { return "JSONColumnsBlockOutputFormat"; }
