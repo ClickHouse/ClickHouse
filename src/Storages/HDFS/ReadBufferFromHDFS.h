@@ -3,15 +3,20 @@
 #include <Common/config.h>
 
 #if USE_HDFS
-#include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <string>
 #include <memory>
+
 #include <hdfs/hdfs.h>
+
 #include <base/types.h>
+#include <Common/RangeGenerator.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Context.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileName.h>
+#include <IO/ReadBuffer.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/ParallelReadBuffer.h>
 
 
 namespace DB
@@ -49,6 +54,52 @@ public:
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
 };
+
+
+/// Creates separate ReadBufferFromHDFS for sequence of ranges of particular HDFS file
+class ReadBufferHDFSFactory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
+{
+public:
+    explicit ReadBufferHDFSFactory(
+        const String & hdfs_uri_,
+        const String & hdfs_file_path_,
+        const Poco::Util::AbstractConfiguration & config_,
+        const ReadSettings & read_settings_,
+        size_t range_step_,
+        size_t file_size_)
+        : hdfs_uri(hdfs_uri_)
+        , hdfs_file_path(hdfs_file_path_)
+        , config(config_)
+        , read_settings(read_settings_)
+        , range_generator(file_size_, range_step_)
+        , range_step(range_step_)
+        , file_size(file_size_)
+    {
+        assert(range_step > 0);
+        assert(range_step < object_size);
+    }
+
+    SeekableReadBufferPtr getReader() override;
+
+    off_t seek(off_t off, [[maybe_unused]] int whence) override;
+
+    std::optional<size_t> getFileSize() override;
+
+    String getFileName() const override
+    {
+        return endsWith(hdfs_uri, "/") ? hdfs_uri.substr(0, hdfs_uri.size() - 1) + hdfs_file_path : hdfs_uri + hdfs_file_path;
+    }
+
+private:
+    const String hdfs_uri;
+    const String hdfs_file_path;
+    const Poco::Util::AbstractConfiguration & config;
+    const ReadSettings read_settings;
+    RangeGenerator range_generator;
+    size_t range_step;
+    size_t file_size;
+};
+
 }
 
 #endif

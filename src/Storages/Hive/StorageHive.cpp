@@ -6,8 +6,8 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <fmt/core.h>
 #include <Poco/URI.h>
-#include <Common/logger_useful.h>
 
+#include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
@@ -19,7 +19,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
-#include <Storages/Cache/ExternalDataSourceCache.h>
+#include <IO/IOThreadPool.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -29,6 +29,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/StorageHiveMetadata.h>
@@ -108,6 +109,7 @@ public:
         Block sample_block_,
         ContextPtr context_,
         UInt64 max_block_size_,
+        size_t download_thread_num_,
         const Names & text_input_field_names_ = {})
         : SourceWithProgress(getHeader(sample_block_, source_info_))
         , WithContext(context_)
@@ -118,8 +120,10 @@ public:
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
         , columns_description(getColumnsDescription(sample_block, source_info))
+        , download_thread_num(download_thread_num_)
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
+        , read_settings(getContext()->getReadSettings())
     {
         to_read_block = sample_block;
 
@@ -163,8 +167,7 @@ public:
                 std::unique_ptr<ReadBuffer> raw_read_buf;
                 try
                 {
-                    raw_read_buf = std::make_unique<ReadBufferFromHDFS>(
-                        hdfs_namenode_url, current_path, getContext()->getGlobalContext()->getConfigRef());
+                    raw_read_buf = createHDFSReadBuffer(current_path, current_file->getSize());
                 }
                 catch (Exception & e)
                 {
@@ -261,6 +264,39 @@ public:
     }
 
 private:
+    std::unique_ptr<ReadBuffer> createHDFSReadBuffer(const String & file_path, size_t file_size)
+    {
+        auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
+        const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
+        const bool object_too_small = file_size < download_thread_num * download_buffer_size;
+        if (!use_parallel_download || object_too_small)
+        {
+            LOG_TRACE(log, "Downloading file of path {} size {} from HDFS in single thread", file_path, file_size);
+            return std::make_unique<ReadBufferFromHDFS>(hdfs_namenode_url, file_path, getContext()->getGlobalContext()->getConfigRef());
+        }
+
+        assert(file_size > 0);
+
+        if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
+        {
+            LOG_WARNING(
+                log, "Downloading buffer {} bytes too small, set at least {} bytes", download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
+            download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+        }
+
+        auto factory = std::make_unique<ReadBufferHDFSFactory>(
+            hdfs_namenode_url, file_path, getContext()->getGlobalContext()->getConfigRef(), read_settings, download_buffer_size, file_size);
+        LOG_TRACE(
+            log,
+            "Downloading from HDFS in {} threads. File size: {}, Range size: {}.",
+            download_thread_num,
+            file_size,
+            download_buffer_size);
+
+        return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner(IOThreadPool::get()), download_thread_num);
+    }
+
+
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
@@ -272,8 +308,11 @@ private:
     Block sample_block;
     Block to_read_block;
     ColumnsDescription columns_description;
+    size_t download_thread_num = 1;
     const Names & text_input_field_names;
+
     FormatSettings format_settings;
+    ReadSettings read_settings;
 
     String current_path;
     size_t current_idx = 0;

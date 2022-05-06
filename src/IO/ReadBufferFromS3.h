@@ -1,20 +1,20 @@
 #pragma once
 
-#include <Common/RangeGenerator.h>
 #include <Common/config.h>
 
 #if USE_AWS_S3
 
 #include <memory>
 
+#include <aws/s3/model/GetObjectResult.h>
+
+#include <Common/RangeGenerator.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileName.h>
-
-#include <aws/s3/model/GetObjectResult.h>
 
 namespace Aws::S3
 {

@@ -54,7 +54,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
                 "Unable to open HDFS file: {}. Error: {}",
                 hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
-        
+
         if (file_offset)
         {
             int seek_status = hdfsSeek(fs.get(), fin, file_offset);
@@ -201,6 +201,33 @@ size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
 String ReadBufferFromHDFS::getFileName() const
 {
     return impl->hdfs_file_path;
+}
+
+SeekableReadBufferPtr ReadBufferHDFSFactory::getReader()
+{
+    const auto next_range = range_generator.nextRange();
+    if (!next_range)
+        return nullptr;
+
+    auto reader = std::make_shared<ReadBufferFromHDFS>(
+        hdfs_uri,
+        hdfs_file_path,
+        config,
+        read_settings.remote_fs_buffer_size,
+        next_range->first,
+        next_range->second);
+    return std::move(reader);
+}
+
+off_t ReadBufferHDFSFactory::seek(off_t off, [[maybe_unused]] int whence)
+{
+    range_generator = RangeGenerator{file_size, range_step, static_cast<size_t>(off)};
+    return off;
+}
+
+std::optional<size_t> ReadBufferHDFSFactory::getFileSize()
+{
+    return file_size;
 }
 
 }
