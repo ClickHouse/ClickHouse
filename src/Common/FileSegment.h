@@ -221,7 +221,7 @@ private:
     std::condition_variable cv;
 
     bool is_write_through_cache = false;
-    std::mutex detach_mutex;
+    mutable std::mutex detach_mutex;
 
     /// Protects downloaded_size access with actual write into fs.
     /// downloaded_size is not protected by download_mutex in methods which
