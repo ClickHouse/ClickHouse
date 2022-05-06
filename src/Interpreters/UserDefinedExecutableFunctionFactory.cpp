@@ -47,6 +47,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return true; }
     bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
@@ -56,6 +57,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Do not start user defined script during query analysis. Because user script startup could be heavy.
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         auto coordinator = executable_function->getCoordinator();
         const auto & coordinator_configuration = coordinator->getConfiguration();
         const auto & configuration = executable_function->getConfiguration();

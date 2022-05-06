@@ -5,7 +5,7 @@ toc_title: Caches
 
 # Cache Types {#cache-types}
 
-When performing queries, ClichHouse uses different caches.
+When performing queries, ClickHouse uses different caches.
 
 Main cache types:
 

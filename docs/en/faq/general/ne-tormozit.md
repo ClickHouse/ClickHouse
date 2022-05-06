@@ -9,7 +9,7 @@ toc_priority: 11
 
 This question usually arises when people see official ClickHouse t-shirts. They have large words **“ClickHouse не тормозит”** on the front.
 
-Before ClickHouse became open-source, it has been developed as an in-house storage system by the largest Russian IT company, [Yandex](https://yandex.com/company/). That’s why it initially got its slogan in Russian, which is “не тормозит” (pronounced as “ne tormozit”). After the open-source release we first produced some of those t-shirts for events in Russia and it was a no-brainer to use the slogan as-is.
+Before ClickHouse became open-source, it has been developed as an in-house storage system by the largest Russian IT company, Yandex. That’s why it initially got its slogan in Russian, which is “не тормозит” (pronounced as “ne tormozit”). After the open-source release we first produced some of those t-shirts for events in Russia and it was a no-brainer to use the slogan as-is.
 
 One of the following batches of those t-shirts was supposed to be given away on events outside of Russia and we tried to make the English version of the slogan. Unfortunately, the Russian language is kind of elegant in terms of expressing stuff and there was a restriction of limited space on a t-shirt, so we failed to come up with good enough translation (most options appeared to be either long or inaccurate) and decided to keep the slogan in Russian even on t-shirts produced for international events. It appeared to be a great decision because people all over the world get positively surprised and curious when they see it.
 

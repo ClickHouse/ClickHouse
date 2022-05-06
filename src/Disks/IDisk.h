@@ -9,6 +9,7 @@
 #include <Disks/Executor.h>
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
 
 #include <memory>
 #include <mutex>
@@ -30,6 +31,11 @@ namespace Poco
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class IDiskDirectoryIterator;
 using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
@@ -158,17 +164,18 @@ public:
     virtual void listFiles(const String & path, std::vector<String> & file_names) = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
         const ReadSettings & settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
         const String & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite) = 0;
+        WriteMode mode = WriteMode::Rewrite,
+        const WriteSettings & settings = {}) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     virtual void removeFile(const String & path) = 0;
@@ -196,6 +203,24 @@ public:
     /// Differs from removeFileIfExists for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool) { removeFileIfExists(path); }
+
+
+    virtual String getCacheBasePath() const { return ""; }
+
+    /// Returns a list of paths because for Log family engines there might be
+    /// multiple files in remote fs for single clickhouse file.
+    virtual std::vector<String> getRemotePaths(const String &) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePaths() not implemented for disk: {}`", getType());
+    }
+
+    /// For one local path there might be multiple remote paths in case of Log family engines.
+    using LocalPathWithRemotePaths = std::pair<String, std::vector<String>>;
+
+    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getType());
+    }
 
     struct RemoveRequest
     {
@@ -247,6 +272,10 @@ public:
     /// Whether this disk support zero-copy replication.
     /// Overrode in remote fs disks.
     virtual bool supportZeroCopyReplication() const = 0;
+
+    /// Whether this disk support parallel write
+    /// Overrode in remote fs disks.
+    virtual bool supportParallelWrite() const { return false; }
 
     virtual bool isReadOnly() const { return false; }
 
@@ -354,7 +383,7 @@ public:
     virtual UInt64 getSize() const = 0;
 
     /// Get i-th disk where reservation take place.
-    virtual DiskPtr getDisk(size_t i = 0) const = 0;
+    virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT
 
     /// Get all disks, used in reservation
     virtual Disks getDisks() const = 0;

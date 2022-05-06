@@ -38,7 +38,7 @@ namespace ErrorCodes
  *
  * To get files for upload run:
  * clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>
- * (--metadata-path can be found in query: `select data_paths from system.tables where name='<table_name>';`)
+ * (--metadata-path can be found in query: `select data_paths from system.tables where name='<table_name>';`) /// NOLINT
  *
  * When loading files by <endpoint> they must be loaded into <endpoint>/store/ path, but config must conrain only <endpoint>.
  *
@@ -77,7 +77,6 @@ public:
     UInt64 getTotalSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     UInt64 getAvailableSpace() const final override { return std::numeric_limits<UInt64>::max(); }
-
     UInt64 getUnreservedSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     /// Read-only part
@@ -100,7 +99,7 @@ public:
 
     /// Write and modification part
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode) override
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode, const WriteSettings &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
@@ -164,6 +163,10 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
+
+    std::vector<String> getRemotePaths(const String &) const override { return {}; }
+
+    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &) override {}
 
     /// Create part
 

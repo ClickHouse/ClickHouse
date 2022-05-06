@@ -13,16 +13,19 @@ from compress_files import decompress_fast, compress_fast
 
 DOWNLOAD_RETRIES_COUNT = 5
 
+
 def dowload_file_with_progress(url, path):
     logging.info("Downloading from %s to temp path %s", url, path)
     for i in range(DOWNLOAD_RETRIES_COUNT):
         try:
-            with open(path, 'wb') as f:
+            with open(path, "wb") as f:
                 response = requests.get(url, stream=True)
                 response.raise_for_status()
-                total_length = response.headers.get('content-length')
+                total_length = response.headers.get("content-length")
                 if total_length is None or int(total_length) == 0:
-                    logging.info("No content-length, will download file without progress")
+                    logging.info(
+                        "No content-length, will download file without progress"
+                    )
                     f.write(response.content)
                 else:
                     dl = 0
@@ -34,8 +37,8 @@ def dowload_file_with_progress(url, path):
                         if sys.stdout.isatty():
                             done = int(50 * dl / total_length)
                             percent = int(100 * float(dl) / total_length)
-                            eq_str = '=' * done
-                            space_str = ' ' * (50 - done)
+                            eq_str = "=" * done
+                            space_str = " " * (50 - done)
                             sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
                             sys.stdout.flush()
             break
@@ -52,7 +55,9 @@ def dowload_file_with_progress(url, path):
     logging.info("Downloading finished")
 
 
-def get_ccache_if_not_exists(path_to_ccache_dir, s3_helper, current_pr_number, temp_path):
+def get_ccache_if_not_exists(
+    path_to_ccache_dir, s3_helper, current_pr_number, temp_path
+):
     ccache_name = os.path.basename(path_to_ccache_dir)
     cache_found = False
     prs_to_check = [current_pr_number]
@@ -93,13 +98,16 @@ def get_ccache_if_not_exists(path_to_ccache_dir, s3_helper, current_pr_number, t
     else:
         logging.info("ccache downloaded")
 
+
 def upload_ccache(path_to_ccache_dir, s3_helper, current_pr_number, temp_path):
     logging.info("Uploading cache %s for pr %s", path_to_ccache_dir, current_pr_number)
     ccache_name = os.path.basename(path_to_ccache_dir)
     compressed_cache_path = os.path.join(temp_path, ccache_name + ".tar.gz")
     compress_fast(path_to_ccache_dir, compressed_cache_path)
 
-    s3_path = str(current_pr_number) + "/ccaches/" + os.path.basename(compressed_cache_path)
+    s3_path = (
+        str(current_pr_number) + "/ccaches/" + os.path.basename(compressed_cache_path)
+    )
     logging.info("Will upload %s to path %s", compressed_cache_path, s3_path)
     s3_helper.upload_build_file_to_s3(compressed_cache_path, s3_path)
     logging.info("Upload finished")

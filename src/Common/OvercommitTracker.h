@@ -43,8 +43,6 @@ class MemoryTracker;
 // is killed to free memory.
 struct OvercommitTracker : boost::noncopyable
 {
-    explicit OvercommitTracker(std::mutex & global_mutex_);
-
     void setMaxWaitTime(UInt64 wait_time);
 
     bool needToStopQuery(MemoryTracker * tracker);
@@ -54,8 +52,12 @@ struct OvercommitTracker : boost::noncopyable
     virtual ~OvercommitTracker() = default;
 
 protected:
+    explicit OvercommitTracker(std::mutex & global_mutex_);
+
     virtual void pickQueryToExcludeImpl() = 0;
 
+    // This mutex is used to disallow concurrent access
+    // to picked_tracker and cancelation_state variables.
     mutable std::mutex overcommit_m;
     mutable std::condition_variable cv;
 
@@ -87,6 +89,11 @@ private:
         }
     }
 
+    // Global mutex which is used in ProcessList to synchronize
+    // insertion and deletion of queries.
+    // OvercommitTracker::pickQueryToExcludeImpl() implementations
+    // require this mutex to be locked, because they read list (or sublist)
+    // of queries.
     std::mutex & global_mutex;
 };
 

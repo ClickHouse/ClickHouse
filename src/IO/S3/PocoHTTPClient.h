@@ -49,13 +49,13 @@ class PocoHTTPResponse : public Aws::Http::Standard::StandardHttpResponse
 public:
     using SessionPtr = HTTPSessionPtr;
 
-    PocoHTTPResponse(const std::shared_ptr<const Aws::Http::HttpRequest> request)
+    explicit PocoHTTPResponse(const std::shared_ptr<const Aws::Http::HttpRequest> request)
         : Aws::Http::Standard::StandardHttpResponse(request)
         , body_stream(request->GetResponseStreamFactory())
     {
     }
 
-    void SetResponseBody(Aws::IStream & incoming_stream, SessionPtr & session_)
+    void SetResponseBody(Aws::IStream & incoming_stream, SessionPtr & session_) /// NOLINT
     {
         body_stream = Aws::Utils::Stream::ResponseStream(
             Aws::New<SessionAwareIOStream<SessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf())

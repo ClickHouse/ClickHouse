@@ -38,21 +38,7 @@ unsigned getCGroupLimitedCPUCores(unsigned default_cpu_count)
         quota_count = ceil(static_cast<float>(cgroup_quota) / static_cast<float>(cgroup_period));
     }
 
-    // Share number (typically a number relative to 1024) (2048 typically expresses 2 CPUs worth of processing)
-    // -1 for no share setup
-    int cgroup_share = read_from("/sys/fs/cgroup/cpu/cpu.shares", -1);
-    // Convert 1024 to no shares setup
-    if (cgroup_share == 1024)
-        cgroup_share = -1;
-
-#    define PER_CPU_SHARES 1024
-    unsigned share_count = default_cpu_count;
-    if (cgroup_share > -1)
-    {
-        share_count = ceil(static_cast<float>(cgroup_share) / static_cast<float>(PER_CPU_SHARES));
-    }
-
-    return std::min(default_cpu_count, std::min(share_count, quota_count));
+    return std::min(default_cpu_count, quota_count);
 }
 #endif // OS_LINUX
 
@@ -91,6 +77,7 @@ unsigned getNumberOfPhysicalCPUCores()
             cpu_count = std::thread::hardware_concurrency();
 
 #if defined(OS_LINUX)
+        /// TODO: add a setting for disabling that, similar to UseContainerSupport in java
         cpu_count = getCGroupLimitedCPUCores(cpu_count);
 #endif // OS_LINUX
         return cpu_count;

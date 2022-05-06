@@ -120,18 +120,14 @@ class CSVHTTPServer(BaseHTTPRequestHandler):
 class HTTPServerV6(HTTPServer):
     address_family = socket.AF_INET6
 
-def start_server(requests_amount):
+def start_server():
     if IS_IPV6:
         httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, CSVHTTPServer)
     else:
         httpd = HTTPServer(HTTP_SERVER_ADDRESS, CSVHTTPServer)
 
-    def real_func():
-        for i in range(requests_amount):
-            httpd.handle_request()
-
-    t = threading.Thread(target=real_func)
-    return t
+    t = threading.Thread(target=httpd.serve_forever)
+    return t, httpd
 
 # test section
 
@@ -201,7 +197,7 @@ def main():
         'select double, count(*) from {tbl} group by double': "7.7\t2\n9.9\t10"
     }
 
-    t = start_server(len(select_only_requests) * 2 + (len(insert_requests) + len(select_requests)) * 2)
+    t, httpd = start_server()
     t.start()
     # test table with url engine
     test_select(table_name="test_table_select", requests=list(select_only_requests.keys()), answers=list(select_only_requests.values()), test_data=test_data)
@@ -211,6 +207,8 @@ def main():
     test_insert(table_name="test_table_insert", requests_insert=insert_requests, requests_select=list(select_requests.keys()), answers=list(select_requests.values()))
     #test insert into table function url
     test_insert(requests_insert=insert_requests, requests_select=list(select_requests.keys()), answers=list(select_requests.values()))
+
+    httpd.shutdown()
     t.join()
     print("PASSED")
 

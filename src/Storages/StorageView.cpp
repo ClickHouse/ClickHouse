@@ -107,7 +107,7 @@ StorageView::StorageView(
 
 Pipe StorageView::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -115,7 +115,7 @@ Pipe StorageView::read(
     const unsigned num_streams)
 {
     QueryPlan plan;
-    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    read(plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     return plan.convertToPipe(
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
@@ -124,14 +124,14 @@ Pipe StorageView::read(
 void StorageView::read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         const size_t /*max_block_size*/,
         const unsigned /*num_streams*/)
 {
-    ASTPtr current_inner_query = metadata_snapshot->getSelectQuery().inner_query;
+    ASTPtr current_inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
 
     if (query_info.view_query)
     {
@@ -154,7 +154,7 @@ void StorageView::read(
     query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
-    const auto & expected_header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);
     const auto & header = query_plan.getCurrentDataStream().header;
 
     const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();

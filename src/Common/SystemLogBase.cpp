@@ -9,6 +9,7 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>

@@ -71,6 +71,8 @@ This check means that the CI system started to process the pull request. When it
 Performs some simple regex-based checks of code style, using the [`utils/check-style/check-style`](https://github.com/ClickHouse/ClickHouse/blob/master/utils/check-style/check-style) binary (note that it can be run locally).
 If it fails, fix the style errors following the [code style guide](style.md).
 
+Python code is checked with [black](https://github.com/psf/black/).
+
 ### Report Details
 - [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check.html)
 - `output.txt` contains the check resulting errors (invalid tabulation etc), blank page means no errors. [Successful result example](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check/output.txt).
@@ -190,15 +192,3 @@ Runs randomly generated queries to catch program errors. If it fails, ask a main
 
 ## Performance Tests
 Measure changes in query performance. This is the longest check that takes just below 6 hours to run. The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).
-
-
-
-# QA
-
-> What is a `Task (private network)` item on status pages?
-
-It's a link to the Yandex's internal job system. Yandex employees can see the check's start time and its more verbose status.
-
-> Where the tests are run
-
-Somewhere on Yandex internal infrastructure.

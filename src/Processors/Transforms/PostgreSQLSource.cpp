@@ -28,7 +28,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
     const Block & sample_block,
-    const UInt64 max_block_size_)
+    UInt64 max_block_size_)
     : SourceWithProgress(sample_block.cloneEmpty())
     , query_str(query_str_)
     , max_block_size(max_block_size_)
@@ -43,7 +43,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     std::shared_ptr<T> tx_,
     const std::string & query_str_,
     const Block & sample_block,
-    const UInt64 max_block_size_,
+    UInt64 max_block_size_,
     bool auto_commit_)
     : SourceWithProgress(sample_block.cloneEmpty())
     , query_str(query_str_)

@@ -40,7 +40,7 @@ FORMAT Vertical
 ``` text
 Row 1:
 ──────
-name:           example01-08-1.yandex.ru
+name:           example01-08-1
 value:
 czxid:          932998691229
 mzxid:          932998691229
@@ -57,7 +57,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 Row 2:
 ──────
-name:           example01-08-2.yandex.ru
+name:           example01-08-2
 value:
 czxid:          933002738135
 mzxid:          933002738135

@@ -98,7 +98,6 @@ public:
     /// Set path of main config.xml. It will be cut from all configs placed to preprocessed_configs/
     static void setConfigPath(const std::string & config_path);
 
-public:
     using Files = std::vector<std::string>;
 
     static Files getConfigMergeFiles(const std::string & config_path);
@@ -122,7 +121,6 @@ private:
     Poco::AutoPtr<Poco::XML::NamePool> name_pool;
     Poco::XML::DOMParser dom_parser;
 
-private:
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
 
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
