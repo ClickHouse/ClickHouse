@@ -211,9 +211,10 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
-    finalizeObjectColumns(columns);
+    for (const auto & column : columns)
+        column->finalize();
+
     Chunk chunk(std::move(columns), num_rows);
-    //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
 }
 

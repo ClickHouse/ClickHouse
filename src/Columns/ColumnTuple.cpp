@@ -572,4 +572,10 @@ SerializationInfoPtr ColumnTuple::getSerializationInfo() const
     return std::make_shared<SerializationInfoTuple>(std::move(infos), SerializationInfo::Settings{});
 }
 
+void ColumnTuple::finalize()
+{
+    for (auto & column : columns)
+        column->finalize();
+}
+
 }

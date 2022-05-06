@@ -177,8 +177,6 @@ public:
     Subcolumns & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;
 
-    /// Finalizes all subcolumns.
-    void finalize();
     bool isFinalized() const;
 
     /// Part of interface
@@ -198,6 +196,9 @@ public:
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+
+    /// Finalizes all subcolumns.
+    void finalize() override;
 
     /// All other methods throw exception.
 
