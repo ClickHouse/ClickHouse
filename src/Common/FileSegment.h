@@ -154,9 +154,14 @@ public:
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
 
         void detach(
+            bool forced_detach,
             std::lock_guard<std::mutex> & cache_lock,
             std::lock_guard<std::mutex> & /* detach_lock */,
             std::lock_guard<std::mutex> & segment_lock);
+
+    bool isForcefullyDetached() const;
+
+    [[noreturn]] void throwDetached() const;
 
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
@@ -166,12 +171,12 @@ private:
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
     bool hasFinalizedState() const;
 
-    bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return detached; }
+    bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return is_detached; }
     void markAsDetached(std::lock_guard<std::mutex> & segment_lock);
+    [[noreturn]] void throwDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
 
     void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
     void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;
-    [[noreturn]] static void throwDetached();
 
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
@@ -233,7 +238,8 @@ private:
 
     /// "detached" file segment means that it is not owned by cache ("detached" from cache).
     /// In general case, all file segments are owned by cache.
-    bool detached = false;
+    bool is_detached = false;
+    bool is_forcefully_detached = false;
 
     std::atomic<bool> is_downloaded{false};
     std::atomic<size_t> hits_count = 0; /// cache hits.
