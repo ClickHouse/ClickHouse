@@ -75,6 +75,7 @@ using BackupEntries = std::vector<std::pair<String, std::unique_ptr<IBackupEntry
 class IRestoreTask;
 using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
 struct StorageRestoreSettings;
+class IRestoreCoordination;
 
 struct ColumnSize
 {
@@ -134,6 +135,9 @@ public:
 
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
+
+    /// Returns true if the storage supports queries with the TTL section.
+    virtual bool supportsTTL() const { return false; }
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
@@ -230,7 +234,7 @@ public:
     virtual BackupEntries backupData(ContextPtr context, const ASTs & partitions);
 
     /// Extract data from the backup and put it to the storage.
-    virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings);
+    virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination);
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
@@ -416,7 +420,7 @@ public:
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void checkTableCanBeRenamed() const {}
+    virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
 
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
