@@ -1210,12 +1210,12 @@ private:
 
 BlockIO StorageWindowView::populate()
 {
-    if(is_time_column_func_now)
+    if (is_time_column_func_now)
         throw Exception(
             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "POPULATE is not supported when using function now() as the time column");
 
-    auto select_query_ = select_query->clone();
-    auto & modified_select = select_query_->as<ASTSelectQuery &>();
+    auto modified_query = select_query->clone();
+    auto & modified_select = modified_query->as<ASTSelectQuery &>();
 
     auto analyzer_res = TreeRewriterResult({});
     removeJoin(modified_select, analyzer_res, getContext());
@@ -1236,10 +1236,9 @@ BlockIO StorageWindowView::populate()
 
     QueryPipelineBuilder pipeline;
 
-	/// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-	InterpreterSelectQuery interpreter_select{
-		select_query_ , getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-	pipeline = interpreter_select.buildQueryPipeline();
+    /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
+    InterpreterSelectQuery interpreter_select{modified_query, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+    pipeline = interpreter_select.buildQueryPipeline();
 
     auto header_block
         = InterpreterSelectQuery(
@@ -1251,13 +1250,13 @@ BlockIO StorageWindowView::populate()
     BlockIO res;
 
     pipeline.addChain(Chain(std::move(sink)));
-	pipeline.setMaxThreads(1);
-	pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
-	{
-		return std::make_shared<EmptySink>(cur_header);
-	});
+    pipeline.setMaxThreads(1);
+    pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+    {
+        return std::make_shared<EmptySink>(cur_header);
+    });
 
-	res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
 
     res.pipeline.addStorageHolder(shared_from_this());
     res.pipeline.addStorageHolder(getInnerTable());
