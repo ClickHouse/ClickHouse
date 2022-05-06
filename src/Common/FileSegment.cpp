@@ -289,7 +289,10 @@ FileSegment::State FileSegment::wait()
     std::unique_lock segment_lock(mutex);
 
     if (is_detached)
-        throwDetachedUnlocked(segment_lock);
+        throw Exception(
+            is_forcefully_detached ? ErrorCodes::CACHE_FILE_SEGMENT_IS_DETACHED : ErrorCodes::LOGICAL_ERROR,
+            "Cache file segment is in detached state, operation not allowed. "
+            "It can happen when cache was concurrently dropped with SYSTEM DROP FILESYSTEM CACHE FORCE");
 
     if (downloader_id.empty())
         return download_state;

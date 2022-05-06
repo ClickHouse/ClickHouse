@@ -21,7 +21,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
-    extern const int CACHE_FILE_SEGMENT_IS_DETACHED:
+    extern const int CACHE_FILE_SEGMENT_IS_DETACHED;
 }
 
 static String getQueryId()
