@@ -16,6 +16,7 @@
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/NamedCollections.h>
+#include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Common/logger_useful.h>
 
 
@@ -88,17 +89,16 @@ StorageExternalDistributed::StorageExternalDistributed(
 
             case ExternalStorageEngine::PostgreSQL:
             {
-                addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
-                StoragePostgreSQLConfiguration postgres_conf;
-                postgres_conf.set(configuration);
-                postgres_conf.addresses = addresses;
+                // addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
+                // StoragePostgreSQL::Configuration postgres_conf;
+                // postgres_conf.addresses = addresses;
 
-                auto pool = std::make_shared<postgres::PoolWithFailover>(
-                    postgres_conf,
-                    context->getSettingsRef().postgresql_connection_pool_size,
-                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+                // auto pool = std::make_shared<postgres::PoolWithFailover>(
+                //     postgres_conf,
+                //     context->getSettingsRef().postgresql_connection_pool_size,
+                //     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = std::make_shared<StoragePostgreSQL>(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
+                // shard = std::make_shared<StoragePostgreSQL>(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
                 break;
             }
 #endif

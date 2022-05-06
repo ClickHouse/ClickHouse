@@ -20,6 +20,11 @@ class Context;
 class StorageS3Cluster : public IStorage
 {
 public:
+    struct Configuration : StorageS3::Configuration
+    {
+        String cluster_name;
+    };
+
     StorageS3Cluster(
         const Configuration & s3_configuration_,
         const StorageID & table_id_,
@@ -38,7 +43,7 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
 private:
-    StorageS3Cluster::Configuration s3_configuration;
+    Configuration s3_configuration;
 
     String cluster_name;
     String format_name;

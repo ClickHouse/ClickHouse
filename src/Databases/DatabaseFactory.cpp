@@ -15,6 +15,7 @@
 #include <Parsers/queryToString.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Common/Macros.h>
+#include <Core/PostgreSQL/PoolWithFailover.h>
 
 #include "config_core.h"
 
@@ -296,25 +297,17 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         ASTs & engine_args = engine->arguments->children;
         auto use_table_cache = false;
-        StoragePostgreSQLConfiguration configuration;
+        StoragePostgreSQL::Configuration configuration;
 
-        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
+        const auto & config = context->getConfigRef();
+        if (isNamedCollection(engine_args, config))
         {
-            auto [common_configuration, storage_specific_args, _] = named_collection.value();
+            const auto & config_keys = StoragePostgreSQL::getConfigKeys();
+            auto collection_name = getCollectionName(engine_args);
 
-            configuration.set(common_configuration);
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-
-            for (const auto & [arg_name, arg_value] : storage_specific_args)
-            {
-                if (arg_name == "use_table_cache")
-                    use_table_cache = true;
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Unexpected key-value argument."
-                            "Got: {}, but expected one of:"
-                            "host, port, username, password, database, schema, use_table_cache.", arg_name);
-            }
+            auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
+            overrideConfigurationFromNamedCollectionWithAST(engine_args, configuration_from_config, config_keys, context);
+            configuration = StoragePostgreSQL::parseConfigurationFromNamedCollection(configuration_from_config, context);
         }
         else
         {
@@ -355,16 +348,17 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
         ASTs & engine_args = engine->arguments->children;
-        StoragePostgreSQLConfiguration configuration;
+        StoragePostgreSQL::Configuration configuration;
 
-        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
+        const auto & config = context->getConfigRef();
+        if (isNamedCollection(engine_args, config))
         {
-            auto [common_configuration, storage_specific_args, _] = named_collection.value();
-            configuration.set(common_configuration);
+            const auto & config_keys = StoragePostgreSQL::getConfigKeys();
+            auto collection_name = getCollectionName(engine_args);
 
-            if (!storage_specific_args.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "MaterializedPostgreSQL Database requires only `host`, `port`, `database_name`, `username`, `password`.");
+            auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
+            overrideConfigurationFromNamedCollectionWithAST(engine_args, configuration_from_config, config_keys, context);
+            configuration = StoragePostgreSQL::parseConfigurationFromNamedCollection(configuration_from_config, context);
         }
         else
         {

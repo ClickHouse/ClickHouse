@@ -27,7 +27,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     postgres::PoolWithFailoverPtr connection_pool;
-    std::optional<StoragePostgreSQLConfiguration> configuration;
+    std::optional<StoragePostgreSQL::Configuration> configuration;
 };
 
 }

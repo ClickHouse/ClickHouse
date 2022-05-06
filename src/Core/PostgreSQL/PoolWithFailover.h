@@ -10,6 +10,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/logger_useful.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/StoragePostgreSQL.h>
 
 
 namespace postgres
@@ -34,14 +35,14 @@ public:
         size_t priority = 0;
     };
 
-    PoolWithFailover(
+    explicit PoolWithFailover(
         std::vector<AuthSettings> connection_infos,
         size_t pool_size = POSTGRESQL_POOL_DEFAULT_SIZE,
         size_t pool_wait_timeout = POSTGRESQL_POOL_WAIT_TIMEOUT,
         size_t max_tries_ = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
-    PoolWithFailover(
-        const DB::StoragePostgreSQLConfiguration & configuration,
+    explicit PoolWithFailover(
+        const DB::StoragePostgreSQL::Configuration & configuration,
         size_t pool_size = POSTGRESQL_POOL_DEFAULT_SIZE,
         size_t pool_wait_timeout = POSTGRESQL_POOL_WAIT_TIMEOUT,
         size_t max_tries_ = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);

@@ -607,9 +607,7 @@ StorageS3::StorageS3(
     if (columns_.empty())
     {
         auto columns = getTableStructureFromDataImpl(
-            format_name,
             configuration,
-            compression_method,
             distributed_processing_,
             is_key_with_globs,
             format_settings,

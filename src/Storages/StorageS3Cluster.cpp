@@ -45,7 +45,7 @@
 namespace DB
 {
 StorageS3Cluster::StorageS3Cluster(
-    const Configuration & s3_configuration_,
+    const StorageS3Cluster::Configuration & s3_configuration_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
