@@ -40,6 +40,13 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
+    enum class ReadType
+    {
+        CACHED,
+        REMOTE_FS_READ_BYPASS_CACHE,
+        REMOTE_FS_READ_AND_PUT_IN_CACHE,
+    };
+
 private:
     void initialize(size_t offset, size_t size);
 
@@ -58,13 +65,6 @@ private:
     bool nextImplStep();
 
     void assertCorrectness() const;
-
-    enum class ReadType
-    {
-        CACHED,
-        REMOTE_FS_READ_BYPASS_CACHE,
-        REMOTE_FS_READ_AND_PUT_IN_CACHE,
-    };
 
     SeekableReadBufferPtr getRemoteFSReadBuffer(FileSegmentPtr & file_segment, ReadType read_type_);
 

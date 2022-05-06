@@ -79,6 +79,7 @@ namespace ProfileEvents
     extern const Event QueryTimeMicroseconds;
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
+    extern const Event OtherQueryTimeMicroseconds;
 }
 
 namespace DB
@@ -800,6 +801,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 else if (query_ast->as<ASTInsertQuery>())
                 {
                     ProfileEvents::increment(ProfileEvents::InsertQueryTimeMicroseconds, query_time);
+                }
+                else
+                {
+                    ProfileEvents::increment(ProfileEvents::OtherQueryTimeMicroseconds, query_time);
                 }
 
                 element.query_duration_ms = info.elapsed_seconds * 1000;

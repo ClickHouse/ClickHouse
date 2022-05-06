@@ -71,18 +71,26 @@ public:
         bool new_name_is_in_temp_db = false;
         ASTs partitions;
         std::set<String> except_list;
+
+        void setDatabase(const String & new_database);
     };
 
     using Elements = std::vector<Element>;
+    static void setDatabase(Elements & elements, const String & new_database);
+    void setDatabase(const String & new_database) { setDatabase(elements, new_database); }
+
     Elements elements;
 
     ASTPtr backup_name;
+
+    ASTPtr settings;
 
     /// Base backup. Only differences made after the base backup will be included in a newly created backup,
     /// so this setting allows to make an incremental backup.
     ASTPtr base_backup_name;
 
-    ASTPtr settings;
+    /// List of cluster's hosts' IDs if this is a BACKUP/RESTORE ON CLUSTER command.
+    ASTPtr cluster_host_ids;
 
     String getID(char) const override;
     ASTPtr clone() const override;
