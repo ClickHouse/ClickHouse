@@ -236,12 +236,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 
 const ActionsDAG::Node & ActionsDAG::addGroupingSetColumn()
 {
-    Node node;
-    node.type = ActionType::GROUPING_SET;
-    node.result_type = std::make_shared<DataTypeUInt64>();
-    node.result_name = "__grouping_set";
-
-    auto & res = nodes.emplace_back(std::move(node));
+    const auto & res = addInput("__grouping_set", std::make_shared<DataTypeUInt64>());
     index.emplace_back(&res);
     return res;
 }
@@ -501,11 +496,6 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
         }
 
         case ActionsDAG::ActionType::INPUT:
-        {
-            break;
-        }
-
-        case ActionsDAG::ActionType::GROUPING_SET:
         {
             break;
         }
@@ -938,10 +928,6 @@ std::string ActionsDAG::dumpDAG() const
 
             case ActionsDAG::ActionType::INPUT:
                 out << "INPUT ";
-                break;
-
-            case ActionsDAG::ActionType::GROUPING_SET:
-                out << "GROUPING SET ";
                 break;
         }
 

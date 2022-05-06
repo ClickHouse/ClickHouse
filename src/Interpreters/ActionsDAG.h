@@ -57,7 +57,6 @@ public:
         /// Function arrayJoin. Specially separated because it changes the number of rows.
         ARRAY_JOIN,
         FUNCTION,
-        GROUPING_SET,
     };
 
     struct Node;
