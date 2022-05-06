@@ -469,6 +469,11 @@ public:
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
+    void onException() override
+    {
+        write_buf->finalize();
+    }
+
     void onFinish() override
     {
         try
