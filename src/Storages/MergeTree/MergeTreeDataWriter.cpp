@@ -287,7 +287,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     for (auto & column : columns)
-        if (isObject(column.type))
+        if (column.type->hasDynamicSubcolumns())
             column.type = block.getByName(column.name).type;
 
     static const String TMP_PREFIX = "tmp_insert_";
@@ -467,16 +467,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->getBytesOnDisk());
 
     return temp_part;
-}
-
-void MergeTreeDataWriter::deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block)
-{
-    if (!storage_snapshot->object_columns.empty())
-    {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
-        auto storage_columns = storage_snapshot->getColumns(options);
-        convertObjectsToTuples(block, storage_columns);
-    }
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(

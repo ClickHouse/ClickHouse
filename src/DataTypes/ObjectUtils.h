@@ -11,6 +11,9 @@
 namespace DB
 {
 
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;
+
 /// Returns number of dimensions in Array type. 0 if type is not array.
 size_t getNumberOfDimensions(const IDataType & type);
 
@@ -37,25 +40,28 @@ DataTypePtr getDataTypeByColumn(const IColumn & column);
 
 /// Converts Object types and columns to Tuples in @columns_list and @block
 /// and checks that types are consistent with types in @extended_storage_columns.
-void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_storage_columns);
+void convertDynamicColumnsToTuples(Block & block, const StorageSnapshotPtr & storage_snapshot);
 
 /// Checks that each path is not the prefix of any other path.
 void checkObjectHasNoAmbiguosPaths(const PathsInData & paths);
 
 /// Receives several Tuple types and deduces the least common type among them.
-DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambiguos_paths = false);
+DataTypePtr getLeastCommonTypeForDynamicColumns(
+    const DataTypePtr & type_in_storage, const DataTypes & types, bool check_ambiguos_paths = false);
+
+DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage);
 
 /// Converts types of object columns to tuples in @columns_list
 /// according to @object_columns and adds all tuple's subcolumns if needed.
 void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescription & object_columns, bool with_subcolumns);
-
-NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list);
-bool hasObjectColumns(const ColumnsDescription & columns);
-void finalizeObjectColumns(MutableColumns & columns);
+bool hasDynamicSubcolumns(const ColumnsDescription & columns);
 
 /// Updates types of objects in @object_columns inplace
 /// according to types in new_columns.
-void updateObjectColumns(ColumnsDescription & object_columns, const NamesAndTypesList & new_columns);
+void updateObjectColumns(
+    ColumnsDescription & object_columns,
+    const ColumnsDescription & storage_columns,
+    const NamesAndTypesList & new_columns);
 
 using DataTypeTuplePtr = std::shared_ptr<DataTypeTuple>;
 
@@ -124,7 +130,7 @@ public:
 /// columns-like objects from entry to which Iterator points.
 /// columns-like object should have fields "name" and "type".
 template <typename Iterator, typename EntryColumnsGetter>
-ColumnsDescription getObjectColumns(
+ColumnsDescription getConcreteObjectColumns(
     Iterator begin, Iterator end,
     const ColumnsDescription & storage_columns,
     EntryColumnsGetter && entry_columns_getter)
@@ -135,14 +141,8 @@ ColumnsDescription getObjectColumns(
     {
         for (const auto & column : storage_columns)
         {
-            if (isObject(column.type))
-            {
-                auto tuple_type = std::make_shared<DataTypeTuple>(
-                    DataTypes{std::make_shared<DataTypeUInt8>()},
-                    Names{ColumnObject::COLUMN_NAME_DUMMY});
-
-                res.add({column.name, std::move(tuple_type)});
-            }
+            if (column.type->hasDynamicSubcolumns())
+                res.add({column.name, createConcreteEmptyDynamicColumn(column.type)});
         }
 
         return res;
@@ -156,13 +156,16 @@ ColumnsDescription getObjectColumns(
         for (const auto & column : entry_columns)
         {
             auto storage_column = storage_columns.tryGetPhysical(column.name);
-            if (storage_column && isObject(storage_column->type))
+            if (storage_column && storage_column->type->hasDynamicSubcolumns())
                 types_in_entries[column.name].push_back(column.type);
         }
     }
 
     for (const auto & [name, types] : types_in_entries)
-        res.add({name, getLeastCommonTypeForObject(types)});
+    {
+        auto storage_column = storage_columns.getPhysical(name);
+        res.add({name, getLeastCommonTypeForDynamicColumns(storage_column.type, types)});
+    }
 
     return res;
 }

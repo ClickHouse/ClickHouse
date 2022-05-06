@@ -442,6 +442,8 @@ public:
         return getPtr();
     }
 
+    /// Some columns may require finalization before using of other operations.
+    virtual void finalize() {}
 
     [[nodiscard]] static MutablePtr mutate(Ptr ptr)
     {

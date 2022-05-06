@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/NestedUtils.h>
+#include <Storages/StorageSnapshot.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
@@ -128,44 +129,109 @@ static auto extractVector(const std::vector<Tuple> & vec)
     return res;
 }
 
-void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_storage_columns)
+static DataTypePtr recreateTupleWithElements(const DataTypeTuple & type_tuple, const DataTypes & elements)
 {
-    std::unordered_map<String, DataTypePtr> storage_columns_map;
-    for (const auto & [name, type] : extended_storage_columns)
-        storage_columns_map[name] = type;
+    return type_tuple.haveExplicitNames()
+        ? std::make_shared<DataTypeTuple>(elements, type_tuple.getElementNames())
+        : std::make_shared<DataTypeTuple>(elements);
+}
 
-    for (auto & column : block)
+static std::pair<ColumnPtr, DataTypePtr> convertObjectColumnToTuple(
+    const ColumnObject & column_object, const DataTypeObject & type_object)
+{
+    const auto & subcolumns = column_object.getSubcolumns();
+
+    if (!column_object.isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot convert to tuple column of type {}. Column should be finalized first", type_object.getName());
+
+    PathsInData tuple_paths;
+    DataTypes tuple_types;
+    Columns tuple_columns;
+
+    for (const auto & entry : subcolumns)
     {
-        if (!isObject(column.type))
-            continue;
+        tuple_paths.emplace_back(entry->path);
+        tuple_types.emplace_back(entry->data.getLeastCommonType());
+        tuple_columns.emplace_back(entry->data.getFinalizedColumnPtr());
+    }
 
-        const auto & column_object = assert_cast<const ColumnObject &>(*column.column);
-        const auto & subcolumns = column_object.getSubcolumns();
+    return unflattenTuple(tuple_paths, tuple_types, tuple_columns);
+}
 
-        if (!column_object.isFinalized())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Cannot convert to tuple column '{}' from type {}. Column should be finalized first",
-                column.name, column.type->getName());
+static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
+    const ColumnPtr & column, const DataTypePtr & type)
+{
+    if (!type->hasDynamicSubcolumns())
+        return {column, type};
 
-        PathsInData tuple_paths;
-        DataTypes tuple_types;
-        Columns tuple_columns;
+    if (const auto * type_object = typeid_cast<const DataTypeObject *>(type.get()))
+    {
+        const auto & column_object = assert_cast<const ColumnObject &>(*column);
+        return convertObjectColumnToTuple(column_object, *type_object);
+    }
 
-        for (const auto & entry : subcolumns)
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(*column);
+        auto [new_column, new_type] = recursivlyConvertDynamicColumnToTuple(
+            column_array.getDataPtr(), type_array->getNestedType());
+
+        return
         {
-            tuple_paths.emplace_back(entry->path);
-            tuple_types.emplace_back(entry->data.getLeastCommonType());
-            tuple_columns.emplace_back(entry->data.getFinalizedColumnPtr());
+            ColumnArray::create(std::move(new_column), column_array.getOffsetsPtr()),
+            std::make_shared<DataTypeArray>(std::move(new_type)),
+        };
+    }
+
+    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto & column_tuple = assert_cast<const ColumnTuple &>(*column);
+
+        const auto & tuple_columns = column_tuple.getColumns();
+        const auto & tuple_types = type_tuple->getElements();
+        assert(tuple_columns.size() == tuple_types.size());
+        const size_t tuple_size = tuple_types.size();
+
+        Columns new_tuple_columns(tuple_size);
+        DataTypes new_tuple_types(tuple_size);
+
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            std::tie(new_tuple_columns[i], new_tuple_types[i])
+                = recursivlyConvertDynamicColumnToTuple(tuple_columns[i], tuple_types[i]);
         }
 
-        auto it = storage_columns_map.find(column.name);
-        if (it == storage_columns_map.end())
+        return
+        {
+            ColumnTuple::create(new_tuple_columns),
+            recreateTupleWithElements(*type_tuple, new_tuple_types)
+        };
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type {} unexpectedly has dynamic columns", type->getName());
+}
+
+void convertDynamicColumnsToTuples(Block & block, const StorageSnapshotPtr & storage_snapshot)
+{
+    for (auto & column : block)
+    {
+        if (!column.type->hasDynamicSubcolumns())
+            continue;
+
+        std::tie(column.column, column.type)
+            = recursivlyConvertDynamicColumnToTuple(column.column, column.type);
+
+        GetColumnsOptions options(GetColumnsOptions::AllPhysical);
+        auto storage_column = storage_snapshot->tryGetColumn(options, column.name);
+        if (!storage_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", column.name);
 
-        std::tie(column.column, column.type) = unflattenTuple(tuple_paths, tuple_types, tuple_columns);
+        auto storage_column_concrete = storage_snapshot->getColumn(options.withExtendedObjects(), column.name);
 
         /// Check that constructed Tuple type and type in storage are compatible.
-        getLeastCommonTypeForObject({column.type, it->second}, true);
+        getLeastCommonTypeForDynamicColumns(
+            storage_column->type, {column.type, storage_column_concrete.type}, true);
     }
 }
 
@@ -196,24 +262,8 @@ void checkObjectHasNoAmbiguosPaths(const PathsInData & paths)
     }
 }
 
-DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambiguos_paths)
+static DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambiguos_paths)
 {
-    if (types.empty())
-        return nullptr;
-
-    bool all_equal = true;
-    for (size_t i = 1; i < types.size(); ++i)
-    {
-        if (!types[i]->equals(*types[0]))
-        {
-            all_equal = false;
-            break;
-        }
-    }
-
-    if (all_equal)
-        return types[0];
-
     /// Types of subcolumns by path from all tuples.
     std::unordered_map<PathInData, DataTypes, PathInData::Hash> subcolumns_types;
 
@@ -266,19 +316,123 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambi
     return unflattenTuple(tuple_paths, tuple_types);
 }
 
-NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list)
+DataTypePtr getLeastCommonTypeForDynamicColumnsImpl(
+    const DataTypePtr & type_in_storage, const DataTypes & concrete_types, bool check_ambiguos_paths)
 {
-    NameSet res;
-    for (const auto & [name, type] : columns_list)
-        if (isObject(type))
-            res.insert(name);
+    if (!type_in_storage->hasDynamicSubcolumns())
+        return type_in_storage;
 
-    return res;
+    if (isObject(type_in_storage))
+        return getLeastCommonTypeForObject(concrete_types, check_ambiguos_paths);
+
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(type_in_storage.get()))
+    {
+        DataTypes nested_types;
+        nested_types.reserve(concrete_types.size());
+
+        for (const auto & type : concrete_types)
+        {
+            const auto * type_array_conctete = typeid_cast<const DataTypeArray *>(type.get());
+            if (!type_array_conctete)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected Array type, got {}", type->getName());
+
+            nested_types.push_back(type_array_conctete->getNestedType());
+        }
+
+        return std::make_shared<DataTypeArray>(
+            getLeastCommonTypeForDynamicColumnsImpl(
+                type_array->getNestedType(), nested_types, check_ambiguos_paths));
+    }
+
+    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_in_storage.get()))
+    {
+        const auto & element_types = type_tuple->getElements();
+        DataTypes new_element_types(element_types.size());
+
+        for (size_t i = 0; i < element_types.size(); ++i)
+        {
+            DataTypes concrete_element_types;
+            concrete_element_types.reserve(concrete_types.size());
+
+            for (const auto & type : concrete_types)
+            {
+                const auto * type_tuple_conctete = typeid_cast<const DataTypeTuple *>(type.get());
+                if (!type_tuple_conctete)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected Tuple type, got {}", type->getName());
+
+                concrete_element_types.push_back(type_tuple_conctete->getElement(i));
+            }
+
+            new_element_types[i] = getLeastCommonTypeForDynamicColumnsImpl(
+                element_types[i], concrete_element_types, check_ambiguos_paths);
+        }
+
+        return recreateTupleWithElements(*type_tuple, new_element_types);
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type {} unexpectedly has dynamic columns", type_in_storage->getName());
 }
 
-bool hasObjectColumns(const ColumnsDescription & columns)
+DataTypePtr getLeastCommonTypeForDynamicColumns(
+    const DataTypePtr & type_in_storage, const DataTypes & concrete_types, bool check_ambiguos_paths)
 {
-    return std::any_of(columns.begin(), columns.end(), [](const auto & column) { return isObject(column.type); });
+    if (concrete_types.empty())
+        return nullptr;
+
+    bool all_equal = true;
+    for (size_t i = 1; i < concrete_types.size(); ++i)
+    {
+        if (!concrete_types[i]->equals(*concrete_types[0]))
+        {
+            all_equal = false;
+            break;
+        }
+    }
+
+    if (all_equal)
+        return concrete_types[0];
+
+    return getLeastCommonTypeForDynamicColumnsImpl(type_in_storage, concrete_types, check_ambiguos_paths);
+}
+
+DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage)
+{
+    if (!type_in_storage->hasDynamicSubcolumns())
+        return type_in_storage;
+
+    if (isObject(type_in_storage))
+    {
+        return std::make_shared<DataTypeTuple>(
+            DataTypes{std::make_shared<DataTypeUInt8>()},
+            Names{ColumnObject::COLUMN_NAME_DUMMY});
+    }
+
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(type_in_storage.get()))
+        return std::make_shared<DataTypeArray>(
+            createConcreteEmptyDynamicColumn(type_array->getNestedType()));
+
+    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_in_storage.get()))
+    {
+        const auto & elements = type_tuple->getElements();
+        DataTypes new_elements;
+        new_elements.reserve(elements.size());
+
+        for (const auto & element : elements)
+            new_elements.push_back(createConcreteEmptyDynamicColumn(element));
+
+        return recreateTupleWithElements(*type_tuple, new_elements);
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type {} unexpectedly has dynamic columns", type_in_storage->getName());
+}
+
+bool hasDynamicSubcolumns(const ColumnsDescription & columns)
+{
+    return std::any_of(columns.begin(), columns.end(),
+        [](const auto & column)
+        {
+            return column.type->hasDynamicSubcolumns();
+        });
 }
 
 void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescription & object_columns, bool with_subcolumns)
@@ -299,16 +453,20 @@ void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescript
     columns_list.splice(columns_list.end(), std::move(subcolumns_list));
 }
 
-void updateObjectColumns(ColumnsDescription & object_columns, const NamesAndTypesList & new_columns)
+void updateObjectColumns(
+    ColumnsDescription & object_columns,
+    const ColumnsDescription & storage_columns,
+    const NamesAndTypesList & new_columns)
 {
     for (const auto & new_column : new_columns)
     {
         auto object_column = object_columns.tryGetColumn(GetColumnsOptions::All, new_column.name);
         if (object_column && !object_column->type->equals(*new_column.type))
         {
+            auto storage_column = storage_columns.getColumn(GetColumnsOptions::All, new_column.name);
             object_columns.modify(new_column.name, [&](auto & column)
             {
-                column.type = getLeastCommonTypeForObject({object_column->type, new_column.type});
+                column.type = getLeastCommonTypeForDynamicColumns(storage_column.type, {object_column->type, new_column.type});
             });
         }
     }
@@ -684,13 +842,6 @@ void replaceMissedSubcolumnsByConstants(
     for (const auto & [name, type] : missed_names_types)
         if (identifiers.contains(name))
             addConstantToWithClause(query, name, type);
-}
-
-void finalizeObjectColumns(MutableColumns & columns)
-{
-    for (auto & column : columns)
-        if (auto * column_object = typeid_cast<ColumnObject *>(column.get()))
-            column_object->finalize();
 }
 
 Field FieldVisitorReplaceScalars::operator()(const Array & x) const

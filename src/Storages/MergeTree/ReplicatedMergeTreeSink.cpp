@@ -4,6 +4,7 @@
 #include <Interpreters/PartLog.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
 
@@ -151,7 +152,9 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         checkQuorumPrecondition(zookeeper);
 
     auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, context);
-    storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
+    if (!storage_snapshot->object_columns.empty())
+        convertDynamicColumnsToTuples(block, storage_snapshot);
+
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<ReplicatedMergeTreeSink::DelayedChunk::Partition>;
