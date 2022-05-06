@@ -112,36 +112,85 @@ public:
     /// container.
     Container container;
 
-    struct CurrentNode
+    struct CreateNodeDelta 
     {
-        CurrentNode(int64_t zxid_, Coordination::Stat stat_, String data_, int32_t seq_num_)
-            : zxid(zxid_)
-            , stat(stat_)
-            , seq_num(seq_num_)
-            , data(std::move(data_))
-        {}
-
-        int64_t zxid;
-        Coordination::Stat stat{};
-        int32_t seq_num{0};
+        Coordination::Stat stat;
+        bool is_ephemeral;
+        bool is_sequental;
+        Coordination::ACLs acls;
         String data;
     };
 
-    using CurrentNodePtr = std::shared_ptr<CurrentNode>;
+    struct RemoveNodeDelta
+    {
+        int32_t version{-1};
+    };
+
+    struct UpdateNodeDelta
+    {
+        std::function<void(Node &)> update_fn;
+        int32_t version{-1};
+    };
+
+    struct SetACLDelta
+    {
+        Coordination::ACLs acls;
+        int32_t version{-1};
+    };
+
+    struct ErrorDelta
+    {
+        Coordination::Error error;
+    };
+
+    using Operation = std::variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, ErrorDelta>;
+
+    struct Delta
+    {
+        Delta(String path_, int64_t zxid_, Operation operation_)
+            : path(std::move(path_))
+            , zxid(zxid_)
+            , operation(std::move(operation_))
+        {}
+
+        Delta(int64_t zxid_, ErrorDelta error)
+            : Delta("", zxid_, error)
+        {}
+
+        String path;
+        int64_t zxid;
+        Operation operation;
+    };
 
     struct CurrentNodes
     {
         explicit CurrentNodes(KeeperStorage & storage_) : storage(storage_) {}
 
-        CurrentNodePtr getNode(const std::string & path);
-        bool hasNode(const std::string & path) const;
-        void insertNode(const std::string & path, const CurrentNodePtr & new_node);
+        template <typename Visitor>
+        void applyDeltas(StringRef path, const Visitor & visitor) const
+        {
+            for (const auto & delta : deltas)
+            {
+                if (delta.path == path)
+                    std::visit(visitor, delta.operation);
+            }
+        }
 
-        std::unordered_map<std::string, std::shared_ptr<CurrentNode>> updated_nodes;
+        std::shared_ptr<Node> getNode(StringRef path);
+        bool hasNode(StringRef path) const;
+
+        std::unordered_map<std::string, std::deque<Delta>> node_to_deltas;
+        std::deque<Delta> deltas;
         KeeperStorage & storage;
+        int64_t current_zxid{0};
     };
 
     CurrentNodes current_nodes{*this};
+
+    Coordination::Error commit(int64_t zxid, int64_t session_id);
+
+    bool createNode(const std::string & path, String data, const Coordination::Stat & stat, bool is_sequental, bool is_ephemeral, Coordination::ACLs node_acls, int64_t session_id);
+    bool removeNode(const std::string & path, int32_t version);
 
     /// Mapping session_id -> set of ephemeral nodes paths
     Ephemerals ephemerals;

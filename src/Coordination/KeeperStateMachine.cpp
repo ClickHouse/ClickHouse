@@ -119,18 +119,16 @@ void KeeperStateMachine::init()
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
-    auto request_for_session = parseRequest(data);
-    LOG_WARNING(log, "Precommitting {}", log_idx);
+    preprocess(log_idx, data);
     return nullptr;
 }
 
 std::optional<int64_t> KeeperStateMachine::preprocess(const uint64_t log_idx, nuraft::buffer & data)
 {
+    LOG_INFO(&Poco::Logger::get("Storageeee"), "Preprocess called");
     auto request_for_session = parseRequest(data);
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-    {
         return std::nullopt;
-    }
     std::lock_guard lock(storage_and_responses_lock);
     return storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, log_idx);
 }
