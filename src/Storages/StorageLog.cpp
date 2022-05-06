@@ -398,6 +398,7 @@ void LogSink::onFinish()
 
     storage.saveMarks(lock);
     storage.saveFileSizes(lock);
+    storage.updateTotalRows(lock);
 
     done = true;
 
@@ -581,6 +582,8 @@ StorageLog::StorageLog(
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+
+    total_bytes = file_checker.getTotalSize();
 }
 
 
@@ -624,7 +627,7 @@ void StorageLog::loadMarks(std::chrono::seconds lock_timeout)
     loadMarks(lock);
 }
 
-void StorageLog::loadMarks(const WriteLock & /* already locked exclusively */)
+void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively */)
 {
     if (!use_marks_file || marks_loaded)
         return;
@@ -655,6 +658,9 @@ void StorageLog::loadMarks(const WriteLock & /* already locked exclusively */)
 
     marks_loaded = true;
     num_marks_saved = num_marks;
+
+    /// We need marks to calculate the number of rows, and now we have the marks.
+    updateTotalRows(lock);
 }
 
 void StorageLog::saveMarks(const WriteLock & /* already locked for writing */)
@@ -713,6 +719,7 @@ void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing *
         file_checker.update(marks_file_path);
 
     file_checker.save();
+    total_bytes = file_checker.getTotalSize();
 }
 
 
@@ -887,6 +894,32 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
     return column_sizes;
 }
 
+void StorageLog::updateTotalRows(const WriteLock &)
+{
+    if (!use_marks_file || !marks_loaded)
+        return;
+
+    if (num_data_files)
+        total_rows = data_files[INDEX_WITH_REAL_ROW_COUNT].marks.empty() ? 0 : data_files[INDEX_WITH_REAL_ROW_COUNT].marks.back().rows;
+    else
+        total_rows = 0;
+}
+
+std::optional<UInt64> StorageLog::totalRows(const Settings &) const
+{
+    if (use_marks_file && marks_loaded)
+        return total_rows;
+
+    if (!total_bytes)
+        return 0;
+
+    return {};
+}
+
+std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
+{
+    return total_bytes;
+}
 
 BackupEntries StorageLog::backupData(ContextPtr context, const ASTs & partitions)
 {
@@ -1044,6 +1077,7 @@ public:
             /// Finish writing.
             storage->saveMarks(lock);
             storage->saveFileSizes(lock);
+            storage->updateTotalRows(lock);
         }
         catch (...)
         {

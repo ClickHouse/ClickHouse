@@ -107,6 +107,9 @@ public:
     BackupEntries backupData(ContextPtr context_, const ASTs & partitions_) override;
     RestoreTaskPtr restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_) override;
 
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
 private:
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
