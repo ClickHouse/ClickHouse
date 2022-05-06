@@ -3784,6 +3784,12 @@ Possible values:
 
 Default value: `0`.
 
+## output_format_json_columns_max_rows_to_buffer {#output-format-json-columns-max-rows-to-buffer}
+
+The maximum rows to buffer in formats JSONColumnsMonoBlock/JSONCompactColumnsMonoBlock/JSONColumnsWithMetadata
+
+Default value: `10000`.
+
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md#projections) optimization when processing `SELECT` queries.

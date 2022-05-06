@@ -30,8 +30,13 @@ The supported formats are:
 | [JSON](#json)                                                                             | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                             | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
+| [JSONColumns](#jsoncolumns)                                                               | ✔     | ✔      |
+| [JSONColumnsMonoBlock](#jsoncolumnsmonoblock)                                             | ✗     | ✔      |
+| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                               | ✗     | ✔      |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
+| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔     | ✔      |
+| [JSONCompactColumnsMonoBlock](#jsoncompactcolumnsmonoblock)                               | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                               | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗     | ✔      |
 | [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔     | ✔      |
@@ -565,6 +570,82 @@ Example:
 }
 ```
 
+## JSONColumns {#jsoncolumns}
+
+In this format, each block of data is represented as a JSON Object:
+
+```json
+{
+    "name1": [1, 2, 3, 4],
+    "name2": ["Hello", ",", "world", "!"],
+    "name3": [[1, 2], [3, 4], [5, 6], [7, 8]]
+}
+```
+
+Columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+Columns that are not presente in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
+
+## JSONColumnsMonoBlock {#jsoncolumnsmonoblock}
+
+Differs from JSONColumns in that it buffers up to [output_format_json_columns_max_rows_to_buffer](../operations/settings/settings.md#output-format-json-columns-max-rows-to-buffer)
+rows and then outputs them as a single block.
+
+## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
+
+Differs from JSON output format in that it outputs columns as in JSONColumns format. This format buffers up to [output_format_json_columns_max_rows_to_buffer](../operations/settings/settings.md#session_settings-output-format-json-columns-max-rows-to-buffer)
+rows and then outputs them as a single block.
+
+```json
+{
+	"meta":
+	[
+		{
+			"name": "sum",
+			"type": "UInt64"
+		},
+		{
+			"name": "avg",
+			"type": "Float64"
+		}
+	],
+
+	"data":
+	{
+		"sum": ["1", "2", "3", "4"],
+		"avg": [1, 2, 3, 2]
+	},
+
+	"totals":
+	{
+		"sum": "10",
+		"avg": 2
+	},
+
+	"extremes":
+	{
+		"min":
+		{
+			"sum": "1",
+			"avg": 1
+		},
+		"max":
+		{
+			"sum": "4",
+			"avg": 3
+		}
+	},
+
+	"rows": 4,
+
+	"statistics":
+	{
+        "elapsed": 0.003701718,
+		"rows_read": 5,
+		"bytes_read": 20
+	}
+}
+```
+
 ## JSONAsString {#jsonasstring}
 
 In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
@@ -682,6 +763,25 @@ Example:
         "rows_before_limit_at_least": 3
 }
 ```
+
+## JSONCompactColumns {#jsoncompactcolumns}
+
+In this format, each block of data is represented as a JSON array of arrays:
+
+```json
+[
+    [1, 2, 3, 4],
+    ["Hello", ",", "world", "!"],
+    [[1, 2], [3, 4], [5, 6], [7, 8]]
+]
+```
+
+Columns that are not presente in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
+
+## JSONCompactColumnsMonoBlock {#jsoncompactcolumnsmonoblock}
+
+Differs from JSONCompactColumns in that it buffers up to [output_format_json_columns_max_rows_to_buffer](../operations/settings/settings.md#session_settings-output-format-json-columns-max-rows-to-buffer)
+rows and then outputs them as a single block.
 
 ## JSONEachRow {#jsoneachrow}
 ## JSONStringsEachRow {#jsonstringseachrow}
