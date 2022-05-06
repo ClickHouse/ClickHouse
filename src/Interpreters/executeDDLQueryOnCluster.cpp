@@ -82,7 +82,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     }
 
     query->cluster = context->getMacros()->expand(query->cluster);
-    ClusterPtr cluster = context->getCluster(query->cluster);
+    ClusterPtr cluster = params.cluster ? params.cluster : context->getCluster(query->cluster);
     DDLWorker & ddl_worker = context->getDDLWorker();
 
     /// Enumerate hosts which will be used to send query.
@@ -94,24 +94,22 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         if (shard_index > shards.size())
             throw Exception(ErrorCodes::INVALID_SHARD_ID, "Cluster {} doesn't have shard #{}", query->cluster, shard_index);
         const auto & replicas = shards[shard_index - 1];
-        if (params.replica_index)
+        if (params.only_replica_num)
         {
-            if (params.replica_index > replicas.size())
-                throw Exception(ErrorCodes::NO_SUCH_REPLICA, "Cluster {} doesn't have replica #{} in shard #{}", query->cluster, params.replica_index, shard_index);
-            hosts.emplace_back(replicas[params.replica_index - 1]);
+            if (params.only_replica_num > replicas.size())
+                throw Exception(ErrorCodes::NO_SUCH_REPLICA, "Cluster {} doesn't have replica #{} in shard #{}", query->cluster, params.only_replica_num, shard_index);
+            hosts.emplace_back(replicas[params.only_replica_num - 1]);
         }
         else
         {
-            if ((replicas.size() > 1) && !params.allow_multiple_replicas)
-                throw Exception("This query cannot be executed on multiple replicas", ErrorCodes::QUERY_IS_PROHIBITED);
             for (const auto & addr : replicas)
                 hosts.emplace_back(addr);
         }
     };
 
-    if (params.shard_index)
+    if (params.only_shard_num)
     {
-        collect_hosts_from_replicas(params.shard_index);
+        collect_hosts_from_replicas(params.only_shard_num);
     }
     else
     {
