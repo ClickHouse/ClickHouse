@@ -34,3 +34,17 @@ SELECT id, data FROM type_json_dst ORDER BY id;
 
 DROP TABLE type_json_src;
 DROP TABLE type_json_dst;
+
+CREATE TABLE type_json_dst (data JSON) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE type_json_src (data String) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO type_json_src FORMAT JSONAsString {"k1": 1, "k10": [{"a": "1", "b": "2"}, {"a": "2", "b": "3"}]};
+INSERT INTO type_json_src FORMAT JSONAsString  {"k1": 2, "k10": [{"a": "1", "b": "2", "c": {"k11": "haha"}}]};
+INSERT INTO type_json_dst SELECT data FROM type_json_src;
+
+SET output_format_json_named_tuples_as_objects = 1;
+SELECT * FROM type_json_dst ORDER BY data.k1 FORMAT JSONEachRow;
+SELECT toTypeName(data) FROM type_json_dst LIMIT 1;
+
+DROP TABLE type_json_src;
+DROP TABLE type_json_dst;

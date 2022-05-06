@@ -8,6 +8,11 @@
 
 namespace Poco { class Logger; }
 
+namespace CurrentMetrics
+{
+extern const Metric CacheFileSegments;
+}
+
 namespace DB
 {
 
@@ -65,6 +70,8 @@ public:
     FileSegment(
         size_t offset_, size_t size_, const Key & key_,
         IFileCache * cache_, State download_state_);
+
+    ~FileSegment();
 
     State state() const;
 
@@ -144,6 +151,8 @@ public:
 
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
 
+    void detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
 
@@ -151,6 +160,10 @@ private:
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
     void assertNotDetached() const;
+    void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
+    bool hasFinalizedState() const;
+    bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return detached; }
+    void markAsDetached(std::lock_guard<std::mutex> & segment_lock);
 
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
@@ -165,6 +178,7 @@ private:
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
     void complete(std::lock_guard<std::mutex> & cache_lock);
+    void completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
 
     void completeImpl(
         std::lock_guard<std::mutex> & cache_lock,
@@ -208,12 +222,14 @@ private:
     std::atomic<bool> is_downloaded{false};
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 
 struct FileSegmentsHolder : private boost::noncopyable
 {
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
-    FileSegmentsHolder(FileSegmentsHolder && other) : file_segments(std::move(other.file_segments)) {}
+    FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
 
     ~FileSegmentsHolder();
 

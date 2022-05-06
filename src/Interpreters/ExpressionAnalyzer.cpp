@@ -1,3 +1,4 @@
+#include <memory>
 #include <Core/Block.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -16,6 +17,7 @@
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/DictionaryReader.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
@@ -934,7 +936,13 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
 
     bool allow_merge_join = analyzed_join->allowMergeJoin();
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
+    {
+        if (analyzed_join->allowParallelHashJoin())
+        {
+            return std::make_shared<JoinStuff::ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, sample_block);
+        }
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
+    }
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
         return std::make_shared<MergeJoin>(analyzed_join, sample_block);
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
@@ -1398,15 +1406,17 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     if (!select_query->limitBy())
         return false;
 
-    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
+    /// Use columns for ORDER BY.
+    /// They could be required to do ORDER BY on the initiator in case of distributed queries.
+    ExpressionActionsChain::Step & step = chain.lastStep(chain.getLastStep().getRequiredColumns());
 
     getRootActions(select_query->limitBy(), only_types, step.actions());
 
-    NameSet aggregated_names;
-    for (const auto & column : aggregated_columns)
+    NameSet existing_column_names;
+    for (const auto & column : chain.getLastStep().getRequiredColumns())
     {
         step.addRequiredOutput(column.name);
-        aggregated_names.insert(column.name);
+        existing_column_names.insert(column.name);
     }
 
     auto & children = select_query->limitBy()->children;
@@ -1416,7 +1426,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
             replaceForPositionalArguments(child, select_query, ASTSelectQuery::Expression::LIMIT_BY);
 
         auto child_name = child->getColumnName();
-        if (!aggregated_names.contains(child_name))
+        if (!existing_column_names.contains(child_name))
             step.addRequiredOutput(child_name);
     }
 

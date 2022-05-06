@@ -107,7 +107,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this filename won't contains globs
-        storage = StorageS3::create(
+        storage = std::make_shared<StorageS3>(
             configuration,
             StorageID(getDatabaseName(), table_name),
             columns,
@@ -120,7 +120,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
     }
     else
     {
-        storage = StorageS3Cluster::create(
+        storage = std::make_shared<StorageS3Cluster>(
             configuration,
             StorageID(getDatabaseName(), table_name),
             columns,

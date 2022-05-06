@@ -107,6 +107,9 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
     if (WhichDataType(idx).isSimple())
         return DataTypeFactory::instance().get(String(magic_enum::enum_name(idx)));
 
+    if (WhichDataType(idx).isNothing())
+        return std::make_shared<DataTypeNothing>();
+
     if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
         return std::make_shared<DataTypeArray>(getDataTypeByColumn(column_array->getData()));
 
@@ -691,6 +694,28 @@ void finalizeObjectColumns(MutableColumns & columns)
     for (auto & column : columns)
         if (auto * column_object = typeid_cast<ColumnObject *>(column.get()))
             column_object->finalize();
+}
+
+Field FieldVisitorReplaceScalars::operator()(const Array & x) const
+{
+    if (num_dimensions_to_keep == 0)
+        return replacement;
+
+    const size_t size = x.size();
+    Array res(size);
+    for (size_t i = 0; i < size; ++i)
+        res[i] = applyVisitor(FieldVisitorReplaceScalars(replacement, num_dimensions_to_keep - 1), x[i]);
+    return res;
+}
+
+size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x) const
+{
+    const size_t size = x.size();
+    size_t dimensions = 0;
+    for (size_t i = 0; i < size; ++i)
+        dimensions = std::max(dimensions, applyVisitor(*this, x[i]));
+
+    return 1 + dimensions;
 }
 
 }

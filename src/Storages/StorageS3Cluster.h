@@ -7,8 +7,6 @@
 #include <memory>
 #include <optional>
 
-#include <base/shared_ptr_helper.h>
-
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
@@ -19,10 +17,16 @@ namespace DB
 
 class Context;
 
-class StorageS3Cluster : public shared_ptr_helper<StorageS3Cluster>, public IStorage
+class StorageS3Cluster : public IStorage
 {
-    friend struct shared_ptr_helper<StorageS3Cluster>;
 public:
+    StorageS3Cluster(
+        const Configuration & s3_configuration_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        ContextPtr context_);
+
     std::string getName() const override { return "S3Cluster"; }
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
@@ -32,19 +36,6 @@ public:
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     NamesAndTypesList getVirtuals() const override;
-
-    struct Configuration : StorageS3::Configuration
-    {
-        String cluster_name;
-    };
-
-protected:
-    StorageS3Cluster(
-        const Configuration & s3_configuration_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        ContextPtr context_);
 
 private:
     StorageS3Cluster::Configuration s3_configuration;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -29,18 +28,16 @@ namespace DB
  * FORMAT Vertical
  */
 
-class StorageSystemFilesystemCache final : public shared_ptr_helper<StorageSystemFilesystemCache>,
-    public IStorageSystemOneBlock<StorageSystemFilesystemCache>
+class StorageSystemFilesystemCache final : public IStorageSystemOneBlock<StorageSystemFilesystemCache>
 {
-    friend struct shared_ptr_helper<StorageSystemFilesystemCache>;
 public:
+    explicit StorageSystemFilesystemCache(const StorageID & table_id_);
+
     std::string getName() const override { return "SystemFilesystemCache"; }
 
     static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    explicit StorageSystemFilesystemCache(const StorageID & table_id_);
-
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
