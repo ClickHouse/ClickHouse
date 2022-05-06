@@ -1,3 +1,4 @@
+#pragma once
 #include <Common/CurrentThread.h>
 
 namespace DB
