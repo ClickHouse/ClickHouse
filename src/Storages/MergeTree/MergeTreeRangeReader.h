@@ -57,6 +57,7 @@ public:
     bool isCurrentRangeFinished() const;
     bool isInitialized() const { return is_initialized; }
 
+private:
     /// Accumulates sequential read() requests to perform a large read instead of multiple small reads
     class DelayedStream
     {
@@ -144,10 +145,23 @@ public:
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
     };
 
+public:
     /// Statistics after next reading step.
     class ReadResult
     {
     public:
+        Columns columns;
+        size_t num_rows = 0;
+
+        /// The number of rows were added to block as a result of reading chain.
+        size_t numReadRows() const { return num_read_rows; }
+        /// The number of bytes read from disk.
+        size_t numBytesRead() const { return num_bytes_read; }
+
+    private:
+        /// Only MergeTreeRangeReader is supposed to access ReadResult internals.
+        friend class MergeTreeRangeReader;
+
         using NumRows = std::vector<size_t>;
 
         struct RangeInfo
@@ -161,13 +175,11 @@ public:
         const RangesInfo & startedRanges() const { return started_ranges; }
         const NumRows & rowsPerGranule() const { return rows_per_granule; }
 
+        static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges);
+
         /// The number of rows were read at LAST iteration in chain. <= num_added_rows + num_filtered_rows.
         size_t totalRowsPerGranule() const { return total_rows_per_granule; }
-        /// The number of rows were added to block as a result of reading chain.
-        size_t numReadRows() const { return num_read_rows; }
         size_t numRowsToSkipInLastGranule() const { return num_rows_to_skip_in_last_granule; }
-        /// The number of bytes read from disk.
-        size_t numBytesRead() const { return num_bytes_read; }
         /// Filter you need to apply to newly-read columns in order to add them to block.
         const ColumnUInt8 * getFilterOriginal() const { return filter_original ? filter_original : filter; }
         const ColumnUInt8 * getFilter() const { return filter; }
@@ -195,13 +207,10 @@ public:
 
         size_t countBytesInResultFilter(const IColumn::Filter & filter);
 
-        Columns columns;
-        size_t num_rows = 0;
         bool need_filter = false;
 
         Block block_before_prewhere;
 
-    private:
         RangesInfo started_ranges;
         /// The number of rows read from each granule.
         /// Granule here is not number of rows between two marks
@@ -234,7 +243,6 @@ public:
     const Block & getSampleBlock() const { return sample_block; }
 
 private:
-
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
