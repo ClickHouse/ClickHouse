@@ -19,7 +19,6 @@
 #include <Storages/MergeTree/MergeTreeIndexSimpleHnsw.h>
 #include <space/space_lp.h>
 #include <space/space_scalar.h>
-#include <Poco/Logger.h>
 #include "Storages/MergeTree/KeyCondition.h"
 #include "base/types.h"
 
@@ -255,7 +254,6 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSimpleHnsw::getGranuleAndReset(
     auto impl = std::make_unique<HnswWrapper::IndexWrap<float>>("l2");
     impl->addBatchUnsafe(std::move(data));
     impl->createIndex(index_params);
-    LOG_DEBUG(&Poco::Logger::get("Hnsw"), "Create here");
     return std::make_shared<MergeTreeIndexGranuleSimpleHnsw>(index_name, index_sample_block, std::move(impl));
 }
 
@@ -267,7 +265,6 @@ void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * po
                 + ", Block rows: " + toString(block.rows()) + ".",
             ErrorCodes::LOGICAL_ERROR);
 
-    LOG_DEBUG(&Poco::Logger::get("Hnsw"), "Update here");
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
     auto index_column_name = index_sample_block.getByPosition(0).name;
@@ -305,7 +302,6 @@ MergeTreeIndexConditionSimpleHnsw::MergeTreeIndexConditionSimpleHnsw(
 
 bool MergeTreeIndexConditionSimpleHnsw::alwaysUnknownOrTrue() const
 {
-    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Condition -- {}", condition.alwaysUnknownOrTrue("L2Distance"));
     return condition.alwaysUnknownOrTrue("L2Distance");
 }
 
@@ -325,15 +321,13 @@ std::vector<size_t> MergeTreeIndexConditionSimpleHnsw::getUsefulRanges(MergeTree
     std::unordered_set<size_t> result;
     while (!search_result->Empty())
     {
-        LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Queue size -- {}", search_result->Size());
         auto cur_dist = search_result->TopDistance();
         const auto * obj = search_result->Pop();
-        LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "cur dist -- {}", cur_dist);
         if (comp_dist && cur_dist > comp_dist)
         {
             continue;
         }
-        result.insert(obj->id() / 8192); // Todo: add range_size
+        result.insert(obj->id() / 8192);
     }
 
     std::vector<size_t> result_vector;
@@ -344,42 +338,11 @@ std::vector<size_t> MergeTreeIndexConditionSimpleHnsw::getUsefulRanges(MergeTree
     }
 
     return result_vector;
-
-
-    // float comp_dist = condition.getComparisonDistance();
-    // std::vector<float> target_vec = condition.getTargetVector();
-    // similarity::Object target(-1,-1, target_vec.size() * sizeof(float), target_vec.data());
-    // std::shared_ptr<MergeTreeIndexGranuleSimpleHnsw> granule
-    //      = std::dynamic_pointer_cast<MergeTreeIndexGranuleSimpleHnsw>(idx_granule);
-    // if (!granule)
-    //      throw Exception(
-    //          "SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
-    // LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Granularity {}, vec_size -- {}", granularity, granule->index_impl->dataSize());
-    // size_t limit = 5;
-    // auto search_result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(target, limit));
-    // std::unordered_set<size_t> result;
-    // while(!search_result->Empty()){
-    //     LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Queue size -- {}", search_result->Size());
-    //     auto cur_dist = search_result->TopDistance();
-    //     const auto *obj = search_result->Pop();
-    //     LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "cur dist -- {}", cur_dist);
-    //     if (cur_dist > comp_dist) {
-    //         continue;
-    //     }
-    //     result.insert(obj->id() / 8192); // Todo: add range_size
-    // }
-    // std::vector<size_t> result_vector;
-    // result_vector.reserve(result.size());
-    // for(auto range: result){
-    //     result_vector.push_back(range);
-    // }
-    // return result_vector;
 }
 
 
 bool MergeTreeIndexConditionSimpleHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "Checking granule begin");
     float comp_dist = condition.getComparisonDistance();
     std::vector<float> target_vec = condition.getTargetVector();
     similarity::Object target(-1, -1, target_vec.size() * sizeof(float), target_vec.data());
@@ -387,7 +350,6 @@ bool MergeTreeIndexConditionSimpleHnsw::mayBeTrueOnGranule(MergeTreeIndexGranule
     if (!granule)
         throw Exception("SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
     auto result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(target, 1));
-    LOG_DEBUG(&Poco::Logger::get("SimpleHnsw"), "check res -- {}", result->TopDistance());
     return result->TopDistance() < comp_dist;
 }
 
@@ -409,17 +371,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexSimpleHnsw::createIndexCondition(const 
 
 bool MergeTreeIndexSimpleHnsw::mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const
 {
-    // const String column_name = node->getColumnName();
-
-    // for (const auto & cname : index.column_names)
-    //     if (column_name == cname)
-    //         return true;
-
-    // if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
-    //     if (func->arguments->children.size() == 1)
-    //         return mayBenefitFromIndexForIn(func->arguments->children.front());
-
-    return true;
+    return false;
 }
 
 MergeTreeIndexFormat MergeTreeIndexSimpleHnsw::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const

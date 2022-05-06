@@ -344,7 +344,10 @@ if (TARGET ch_contrib::cpuid)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
-dbms_target_link_libraries(PUBLIC ch_contrib::nmslib)
+
+if (ENABLE_NMSLIB)
+    dbms_target_link_libraries(PUBLIC ch_contrib::nmslib)
+endif()
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies

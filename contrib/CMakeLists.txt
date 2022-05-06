@@ -147,7 +147,14 @@ endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
-add_contrib (nmslib-cmake nmslib)
+
+set (ENABLE_NMSLIB_DEFAULT ${ENABLE_LIBRARIES})
+option(ENABLE_NMSLIB "Enable Faiss indexes support" ${ENABLE_NMSLIB_DEFAULT})
+
+if (ENABLE_NMSLIB)
+    add_contrib (nmslib-cmake nmslib)
+endif()
+
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
