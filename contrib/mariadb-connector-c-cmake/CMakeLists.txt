@@ -19,6 +19,7 @@ set(CC_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/mariadb-connector-c)
 set(CC_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
 set(WITH_SSL ON)
+set(WITH_ICONV ON)
 
 set(MARIADB_CONNECTOR_C_COPYRIGHT "2013-2017 MariaDB Corporation Ab")
 
@@ -50,7 +51,10 @@ if(NOT MARIADB_UNIX_ADDR)
   set(MARIADB_UNIX_ADDR "/tmp/mysql.sock")
 endif()
 
+if(NOT OS_FREEBSD)
 set(HAVE_ALLOCA_H 1)
+endif()
+
 set(HAVE_ARPA_INET_H 1)
 set(HAVE_DLFCN_H 1)
 set(HAVE_FCNTL_H 1)
@@ -226,6 +230,15 @@ ${CC_SOURCE_DIR}/libmariadb/secure/openssl.c
 ${CC_SOURCE_DIR}/libmariadb/secure/openssl_crypt.c
 ${CC_BINARY_DIR}/libmariadb/ma_client_plugin.c
 )
+
+if(WITH_ICONV)
+  find_package(Iconv REQUIRED)
+  set(SYSTEM_LIBS ${SYSTEM_LIBS} ${Iconv_LIBRARIES})
+endif()
+
+if(APPLE)
+  add_definitions(-D _XOPEN_SOURCE)
+endif()
 
 if(ICONV_INCLUDE_DIR)
    include_directories(BEFORE ${ICONV_INCLUDE_DIR})
