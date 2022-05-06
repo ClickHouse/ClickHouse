@@ -4,8 +4,6 @@
 #include <optional>
 #include <mutex>
 
-#include <base/shared_ptr_helper.h>
-
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 
@@ -19,13 +17,19 @@ namespace DB
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public shared_ptr_helper<StorageMemory>, public IStorage
+class StorageMemory final : public IStorage
 {
 friend class MemorySink;
 friend class MemoryRestoreTask;
-friend struct shared_ptr_helper<StorageMemory>;
 
 public:
+    StorageMemory(
+        const StorageID & table_id_,
+        ColumnsDescription columns_description_,
+        ConstraintsDescription constraints_,
+        const String & comment,
+        bool compress_ = false);
+
     String getName() const override { return "Memory"; }
 
     size_t getSize() const { return data.get()->size(); }
@@ -123,14 +127,6 @@ private:
     std::atomic<size_t> total_size_rows = 0;
 
     bool compress;
-
-protected:
-    StorageMemory(
-        const StorageID & table_id_,
-        ColumnsDescription columns_description_,
-        ConstraintsDescription constraints_,
-        const String & comment,
-        bool compress_ = false);
 };
 
 }

@@ -14,11 +14,11 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <base/defines.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
-#include <base/ErrorHandlers.h>
+#include <Common/ErrorHandlers.h>
 #include <base/getMemoryAmount.h>
 #include <base/getAvailableMemoryAmount.h>
 #include <base/errnoToString.h>
@@ -528,16 +528,19 @@ static int readNumber(const String & path)
 
 #endif
 
-static void sanityChecks(Server * server)
+static void sanityChecks(Server & server)
 {
-    std::string data_path = getCanonicalPath(server->config().getString("path", DBMS_DEFAULT_PATH));
-    std::string logs_path = server->config().getString("logger.log", "");
+    std::string data_path = getCanonicalPath(server.config().getString("path", DBMS_DEFAULT_PATH));
+    std::string logs_path = server.config().getString("logger.log", "");
+
+    if (server.logger().is(Poco::Message::PRIO_TEST))
+        server.context()->addWarningMessage("Server logging level is set to 'test' and performance is degraded. This cannot be used in production.");
 
 #if defined(OS_LINUX)
     try
     {
         if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
-            server->context()->addWarningMessage("Linux is not using fast TSC clock source. Performance can be degraded.");
+            server.context()->addWarningMessage("Linux is not using fast TSC clock source. Performance can be degraded.");
     }
     catch (...)
     {
@@ -546,7 +549,7 @@ static void sanityChecks(Server * server)
     try
     {
         if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
-            server->context()->addWarningMessage("Linux memory overcommit is disabled.");
+            server.context()->addWarningMessage("Linux memory overcommit is disabled.");
     }
     catch (...)
     {
@@ -555,7 +558,7 @@ static void sanityChecks(Server * server)
     try
     {
         if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
-            server->context()->addWarningMessage("Linux transparent hugepage are set to \"always\".");
+            server.context()->addWarningMessage("Linux transparent hugepage are set to \"always\".");
     }
     catch (...)
     {
@@ -564,7 +567,7 @@ static void sanityChecks(Server * server)
     try
     {
         if (readNumber("/proc/sys/kernel/pid_max") < 30000)
-            server->context()->addWarningMessage("Linux max PID is too low.");
+            server.context()->addWarningMessage("Linux max PID is too low.");
     }
     catch (...)
     {
@@ -573,7 +576,7 @@ static void sanityChecks(Server * server)
     try
     {
         if (readNumber("/proc/sys/kernel/threads-max") < 30000)
-            server->context()->addWarningMessage("Linux threads max count is too low.");
+            server.context()->addWarningMessage("Linux threads max count is too low.");
     }
     catch (...)
     {
@@ -581,21 +584,22 @@ static void sanityChecks(Server * server)
 
     std::string dev_id = getBlockDeviceId(data_path);
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
-        server->context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
+        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
 #endif
 
     try
     {
         if (getAvailableMemoryAmount() < (2l << 30))
-            server->context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
+            server.context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
 
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
-            server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
+            server.context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
 
         if (!logs_path.empty())
         {
-            if (!enoughSpaceInDirectory(fs::path(logs_path).parent_path(), 1ull << 30))
-                server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
+            auto logs_parent = fs::path(logs_path).parent_path();
+            if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
+                server.context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
         }
     }
     catch (...)
@@ -643,7 +647,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
-    sanityChecks(this);
+    sanityChecks(*this);
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will

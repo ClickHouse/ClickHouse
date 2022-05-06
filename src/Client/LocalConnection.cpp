@@ -392,9 +392,9 @@ Packet LocalConnection::receivePacket()
     packet.type = next_packet_type.value();
     switch (next_packet_type.value())
     {
-        case Protocol::Server::Totals: [[fallthrough]];
-        case Protocol::Server::Extremes: [[fallthrough]];
-        case Protocol::Server::Log: [[fallthrough]];
+        case Protocol::Server::Totals:
+        case Protocol::Server::Extremes:
+        case Protocol::Server::Log:
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
@@ -410,7 +410,7 @@ Packet LocalConnection::receivePacket()
         {
             if (state->profile_info)
             {
-                packet.profile_info = std::move(*state->profile_info);
+                packet.profile_info = *state->profile_info;
                 state->profile_info.reset();
             }
             next_packet_type.reset();

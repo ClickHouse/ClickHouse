@@ -51,6 +51,8 @@ private:
     void restartReplicas(ContextMutablePtr system_context);
     void syncReplica(ASTSystemQuery & query);
 
+    void syncReplicatedDatabase(ASTSystemQuery & query);
+
     void restoreReplica();
 
     void dropReplica(ASTSystemQuery & query);

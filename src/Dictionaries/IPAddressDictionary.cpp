@@ -873,7 +873,7 @@ Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size
     }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns_with_type), std::move(view_columns), max_block_size);
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns_with_type), std::move(view_columns), max_block_size);
     auto result = coordinator->read(num_streams);
 
     return result;

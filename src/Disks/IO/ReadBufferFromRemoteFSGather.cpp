@@ -17,7 +17,7 @@
 #endif
 
 #include <Disks/IO/CachedReadBufferFromRemoteFS.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <filesystem>
 #include <iostream>
 #include <Common/hex.h>

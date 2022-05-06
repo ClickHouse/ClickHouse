@@ -27,11 +27,11 @@
 #include <Poco/Timestamp.h>
 #include <base/sleep.h>
 #include <base/getFQDNOrHostName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <random>
 #include <pcg_random.hpp>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Interpreters/ZooKeeperLog.h>
 

@@ -37,7 +37,7 @@ public:
         if (!connection->hasReadPendingData() && !checkReceiveTimeout())
         {
             /// Receive timeout expired.
-            return Poco::Timespan();
+            return connection->getSocket()->getReceiveTimeout();
         }
 
         /// Resume fiber.
@@ -59,6 +59,11 @@ public:
     }
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
+
+    void setReceiveTimeout(const Poco::Timespan & timeout)
+    {
+        receive_timeout.setRelative(timeout);
+    }
 
 private:
     /// When epoll file descriptor is ready, check if it's an expired timeout.
