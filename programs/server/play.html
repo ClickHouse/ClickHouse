@@ -748,7 +748,7 @@
         const max_rows = 10000 / response.meta.length;
         let row_num = 0;
 
-        const column_is_number = response.meta.map(elem => !!elem.type.match(/^(U?Int|Decimal|Float)/));
+        const column_is_number = response.meta.map(elem => !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/));
         const column_maximums = column_is_number.map((elem, idx) => elem ? Math.max(...response.data.map(row => row[idx])) : 0);
         const column_minimums = column_is_number.map((elem, idx) => elem ? Math.min(...response.data.map(row => Math.max(0, row[idx]))) : 0);
         const column_need_render_bars = column_is_number.map((elem, idx) => column_maximums[idx] > 0 && column_maximums[idx] > column_minimums[idx]);
