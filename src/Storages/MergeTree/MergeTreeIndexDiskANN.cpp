@@ -21,8 +21,6 @@
 
 #include <Storages/MergeTree/MergeTreeIndexDiskANN.h>
 
-#include <base/logger_useful.h>
-
 
 namespace DB
 {
@@ -214,10 +212,10 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorDiskANN::getGranuleAndReset()
     auto base_index = detail::constructIndexFromDatapoints(dimensions.value(), accumulated_data);
 
     diskann::Parameters paras;
-    paras.Set<unsigned>("R", 15);
-    paras.Set<unsigned>("L", 75);
+    paras.Set<unsigned>("R", 90);
+    paras.Set<unsigned>("L", 150);
     paras.Set<unsigned>("C", 1500);
-    paras.Set<float>("alpha", 1.5);
+    paras.Set<float>("alpha", 1.2);
     paras.Set<bool>("saturate_graph", true);
     paras.Set<unsigned>("num_threads", 32);
 
@@ -288,7 +286,7 @@ MergeTreeIndexConditionDiskANN::MergeTreeIndexConditionDiskANN(
 
 bool MergeTreeIndexConditionDiskANN::alwaysUnknownOrTrue() const
 {
-    return common_condition.alwaysUnknownOrTrue();
+    return common_condition.alwaysUnknownOrTrue("L2Distance");
 }
 
 bool MergeTreeIndexConditionDiskANN::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
@@ -331,12 +329,8 @@ bool MergeTreeIndexConditionDiskANN::mayBeTrueOnGranule(MergeTreeIndexGranulePtr
     ERROR_COEF is added to minimise the likelihood of false negative result
     */
 
-    /*
     const static float ERROR_COEF = 10.f;
     return distance < min_distance * min_distance * ERROR_COEF;
-    */
-
-    return true;
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexDiskANN::createIndexGranule() const

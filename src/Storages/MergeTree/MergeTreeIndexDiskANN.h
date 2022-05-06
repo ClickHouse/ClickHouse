@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <Storages/MergeTree/CommonCondition.h>
+#include <Storages/MergeTree/CommonANNIndexes.h>
 
 #include <memory>
 #include <random>
@@ -83,7 +83,7 @@ public:
 
     ~MergeTreeIndexConditionDiskANN() override = default;
 private:
-    Condition::Common::CommonCondition common_condition;
+    ANNCondition::ANNCondition common_condition;
 };
 
 

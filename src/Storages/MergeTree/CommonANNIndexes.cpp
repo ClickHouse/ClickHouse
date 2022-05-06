@@ -6,7 +6,6 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
-#include <base/logger_useful.h>
 
 namespace DB
 {
