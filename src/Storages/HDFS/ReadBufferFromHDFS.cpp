@@ -30,7 +30,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    off_t offset = 0;
+    off_t file_offset = 0;
     off_t read_until_position = 0;
 
     explicit ReadBufferFromHDFSImpl(
@@ -58,7 +58,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    std::optional<size_t> getTotalSize() const
+    std::optional<size_t> getFileSize() const
     {
         auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
         if (!file_info)
@@ -71,13 +71,13 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         size_t num_bytes_to_read;
         if (read_until_position)
         {
-            if (read_until_position == offset)
+            if (read_until_position == file_offset)
                 return false;
 
-            if (read_until_position < offset)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+            if (read_until_position < file_offset)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", file_offset, read_until_position - 1);
 
-            num_bytes_to_read = read_until_position - offset;
+            num_bytes_to_read = read_until_position - file_offset;
         }
         else
         {
@@ -94,28 +94,29 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         {
             working_buffer = internal_buffer;
             working_buffer.resize(bytes_read);
-            offset += bytes_read;
+            file_offset += bytes_read;
             return true;
         }
 
         return false;
     }
 
-    off_t seek(off_t offset_, int whence) override
+    off_t seek(off_t file_offset_, int whence) override
     {
         if (whence != SEEK_SET)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Only SEEK_SET is supported");
 
-        offset = offset_;
-        int seek_status = hdfsSeek(fs.get(), fin, offset);
+        int seek_status = hdfsSeek(fs.get(), fin, file_offset_);
         if (seek_status != 0)
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
-        return offset;
+        file_offset = file_offset_;
+        resetWorkingBuffer();
+        return file_offset;
     }
 
     off_t getPosition() override
     {
-        return offset;
+        return file_offset;
     }
 };
 
@@ -124,14 +125,14 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
         size_t buf_size_, size_t read_until_position_)
-    : SeekableReadBufferWithSize(nullptr, 0)
+    : SeekableReadBuffer(nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_, read_until_position_))
 {
 }
 
-std::optional<size_t> ReadBufferFromHDFS::getTotalSize()
+std::optional<size_t> ReadBufferFromHDFS::getFileSize()
 {
-    return impl->getTotalSize();
+    return impl->getFileSize();
 }
 
 bool ReadBufferFromHDFS::nextImpl()
@@ -140,7 +141,7 @@ bool ReadBufferFromHDFS::nextImpl()
     auto result = impl->next();
 
     if (result)
-        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset); /// use the buffer returned by `impl`
+        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
 
     return result;
 }
@@ -179,6 +180,11 @@ off_t ReadBufferFromHDFS::getPosition()
 size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
 {
     return impl->getPosition();
+}
+
+String ReadBufferFromHDFS::getFileName() const
+{
+    return impl->hdfs_file_path;
 }
 
 }

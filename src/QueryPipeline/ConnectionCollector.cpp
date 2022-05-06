@@ -3,8 +3,9 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <Common/NetException.h>
 #include "Core/Protocol.h"
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {
@@ -17,7 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int UNEXPECTED_PACKET_FROM_SERVER;
 }
 
 std::unique_ptr<ConnectionCollector> ConnectionCollector::connection_collector;
@@ -33,7 +34,7 @@ ConnectionCollector & ConnectionCollector::init(ContextMutablePtr global_context
 {
     if (connection_collector)
     {
-        throw Exception("Connection collector is initialized twice. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Connection collector is initialized twice. This is a bug", ErrorCodes::LOGICAL_ERROR);
     }
 
     connection_collector.reset(new ConnectionCollector(global_context_, max_threads));
@@ -90,13 +91,13 @@ void ConnectionCollector::drainConnections(IConnections & connections, bool thro
                 break;
 
             default:
-                /// Connection should be closed in case of unknown packet,
+                /// Connection should be closed in case of unexpected packet,
                 /// since this means that the connection in some bad state.
                 is_drained = false;
-                throw Exception(
-                    ErrorCodes::UNKNOWN_PACKET_FROM_SERVER,
-                    "Unknown packet {} from one of the following replicas: {}",
-                    toString(packet.type),
+                throw NetException(
+                    ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                    "Unexpected packet {} from one of the following replicas: {}. (expected EndOfStream, Log, ProfileEvents or Exception)",
+                    Protocol::Server::toString(packet.type),
                     connections.dumpAddresses());
         }
     }
