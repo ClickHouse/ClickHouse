@@ -54,7 +54,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
     assert(index < size());
-    return memoryIsZero(chars.data() + index * n, n);
+    return memoryIsZero(chars.data() + index * n, 0, n);
 }
 
 void ColumnFixedString::insert(const Field & x)
@@ -207,7 +207,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 {
     size_t col_size = size();
     if (col_size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
 
     auto res = ColumnFixedString::create(n);
 

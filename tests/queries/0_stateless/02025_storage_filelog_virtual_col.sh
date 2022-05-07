@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-backward-compatibility-check
 
 set -eu
 

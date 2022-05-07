@@ -538,7 +538,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 
     const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
-        if (required_right_keys.count(column.name))
+        if (required_right_keys.contains(column.name))
             right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
 
     JoinCommon::createMissedColumns(right_columns_to_add);
@@ -881,6 +881,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
             {
                 right_cursor.nextN(range.right_length);
                 right_block_info.skip = right_cursor.position();
+                left_cursor.nextN(range.left_length);
                 return false;
             }
         }

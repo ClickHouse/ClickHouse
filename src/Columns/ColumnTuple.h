@@ -35,7 +35,8 @@ public:
     static Ptr create(const TupleColumns & columns);
     static Ptr create(Columns && arg) { return create(arg); }
 
-    template <typename Arg, typename = typename std::enable_if<std::is_rvalue_reference<Arg &&>::value>::type>
+    template <typename Arg>
+    requires std::is_rvalue_reference_v<Arg &&>
     static MutablePtr create(Arg && arg) { return Base::create(std::forward<Arg>(arg)); }
 
     std::string getName() const override;

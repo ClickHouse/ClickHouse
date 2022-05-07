@@ -9,11 +9,24 @@ from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml', 'configs/use_keeper.xml'], stay_alive=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml', 'configs/use_keeper.xml'], stay_alive=True)
-node3 = cluster.add_instance('node3', main_configs=['configs/enable_keeper3.xml', 'configs/use_keeper.xml'], stay_alive=True)
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/enable_keeper1.xml", "configs/use_keeper.xml"],
+    stay_alive=True,
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/enable_keeper2.xml", "configs/use_keeper.xml"],
+    stay_alive=True,
+)
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/enable_keeper3.xml", "configs/use_keeper.xml"],
+    stay_alive=True,
+)
 
 from kazoo.client import KazooClient, KazooState
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -25,8 +38,10 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def smaller_exception(ex):
-    return '\n'.join(str(ex).split('\n')[0:2])
+    return "\n".join(str(ex).split("\n")[0:2])
+
 
 def wait_node(node):
     for _ in range(100):
@@ -47,15 +62,19 @@ def wait_node(node):
     else:
         raise Exception("Can't wait node", node.name, "to become ready")
 
+
 def wait_nodes():
     for node in [node1, node2, node3]:
         wait_node(node)
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
     _fake_zk_instance.start()
     return _fake_zk_instance
+
 
 def test_read_write_multinode(started_cluster):
     try:
@@ -111,6 +130,7 @@ def test_watch_on_follower(started_cluster):
         node3_zk.set("/test_data_watches", b"world")
 
         node1_data = None
+
         def node1_callback(event):
             print("node1 data watch called")
             nonlocal node1_data
@@ -119,6 +139,7 @@ def test_watch_on_follower(started_cluster):
         node1_zk.get("/test_data_watches", watch=node1_callback)
 
         node2_data = None
+
         def node2_callback(event):
             print("node2 data watch called")
             nonlocal node2_data
@@ -127,6 +148,7 @@ def test_watch_on_follower(started_cluster):
         node2_zk.get("/test_data_watches", watch=node2_callback)
 
         node3_data = None
+
         def node3_callback(event):
             print("node3 data watch called")
             nonlocal node3_data
@@ -169,7 +191,10 @@ def test_session_expiration(started_cluster):
             node3_zk.stop()
             node3_zk.close()
             for _ in range(100):
-                if node1_zk.exists("/test_ephemeral_node") is None and node2_zk.exists("/test_ephemeral_node") is None:
+                if (
+                    node1_zk.exists("/test_ephemeral_node") is None
+                    and node2_zk.exists("/test_ephemeral_node") is None
+                ):
                     break
                 print("Node1 exists", node1_zk.exists("/test_ephemeral_node"))
                 print("Node2 exists", node2_zk.exists("/test_ephemeral_node"))
@@ -221,7 +246,11 @@ def test_follower_restart(started_cluster):
 def test_simple_replicated_table(started_cluster):
     wait_nodes()
     for i, node in enumerate([node1, node2, node3]):
-        node.query("CREATE TABLE t (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t', '{}') ORDER BY tuple()".format(i + 1))
+        node.query(
+            "CREATE TABLE t (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t', '{}') ORDER BY tuple()".format(
+                i + 1
+            )
+        )
 
     node2.query("INSERT INTO t SELECT number FROM numbers(10)")
 
