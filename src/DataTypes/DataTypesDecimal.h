@@ -92,7 +92,7 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
 
 template <typename FromDataType, typename ToDataType, typename ReturnType = void>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-ALWAYS_INLINE ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType& result)
+inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType& result)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
