@@ -408,7 +408,7 @@ public:
     Field & operator= (String && str);
     Field & operator= (const char * str) { return *this = std::string_view{str}; }
 
-    ALWAYS_INLINE ~Field()
+    ~Field()
     {
         destroy();
     }
