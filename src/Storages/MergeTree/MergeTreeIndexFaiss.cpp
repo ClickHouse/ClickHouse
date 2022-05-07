@@ -42,7 +42,7 @@ namespace
         {
             ostr.write(reinterpret_cast<const char*>(ptr), size * nitems);
 
-            // WriteBuffer guarantees to write all items, so return the number of all elements 
+            // WriteBuffer guarantees to write all items, so return the number of all elements
             return nitems;
         }
 
@@ -307,7 +307,7 @@ std::vector<size_t> MergeTreeIndexConditionFaiss::getUsefulRanges(MergeTreeIndex
     std::unordered_set<size_t> useful_granules;
     for (size_t i = 0; i < k; ++i)
     {
-        // In the case of queries like WHERE ... < distance, 
+        // In the case of queries like WHERE ... < distance,
         // we have to stop iteration if we meet a greater distance than the distance variable
         if (distance.has_value() && distances[i] > distance.value())
             break;
