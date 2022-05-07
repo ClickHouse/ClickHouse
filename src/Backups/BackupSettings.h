@@ -11,7 +11,8 @@ class ASTBackupQuery;
 /// Settings specified in the "SETTINGS" clause of a BACKUP query.
 struct BackupSettings
 {
-    /// Base backup, if it's set an incremental backup will be built.
+    /// Base backup, if it's set an incremental backup will be built. That means only differences made after the base backup will be put
+    /// into a new backup.
     std::optional<BackupInfo> base_backup_info;
 
     /// Compression method and level for writing the backup (when applicable).

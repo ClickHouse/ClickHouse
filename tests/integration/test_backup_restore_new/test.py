@@ -81,16 +81,16 @@ def test_restore_table_into_existing_table(engine):
         "Cannot restore table test.table because it already contains some data"
     )
     assert expected_error in instance.query_and_get_error(
-        f"RESTORE TABLE test.table INTO test.table FROM {backup_name}"
+        f"RESTORE TABLE test.table FROM {backup_name}"
     )
 
     instance.query(
-        f"RESTORE TABLE test.table INTO test.table FROM {backup_name} SETTINGS structure_only=true"
+        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS structure_only=true"
     )
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
     instance.query(
-        f"RESTORE TABLE test.table INTO test.table FROM {backup_name} SETTINGS allow_non_empty_tables=true"
+        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS allow_non_empty_tables=true"
     )
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "200\t9900\n"
 
@@ -104,7 +104,7 @@ def test_restore_table_under_another_name():
 
     assert instance.query("EXISTS test.table2") == "0\n"
 
-    instance.query(f"RESTORE TABLE test.table INTO test.table2 FROM {backup_name}")
+    instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "100\t4950\n"
 
 
