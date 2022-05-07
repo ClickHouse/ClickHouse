@@ -19,6 +19,7 @@ void registerTableFunctions()
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
+    registerTableFunctionMongodb(factory);
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
@@ -39,7 +40,6 @@ void registerTableFunctions()
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);
 #endif
-
 #if USE_LIBPQXX
     registerTableFunctionPostgreSQL(factory);
 #endif

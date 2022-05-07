@@ -17,6 +17,7 @@ void registerTableFunctionURL(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
+void registerTableFunctionMongodb(TableFunctionFactory & factory);
 
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);
@@ -37,7 +38,6 @@ void registerTableFunctionView(TableFunctionFactory & factory);
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
 #endif
-
 #if USE_LIBPQXX
 void registerTableFunctionPostgreSQL(TableFunctionFactory & factory);
 #endif
