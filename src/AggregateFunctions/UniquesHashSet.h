@@ -97,11 +97,6 @@ concept UniqueHashAddressable
     {
         T::addressingForReInsert(buf, start_index, max_index)
     } -> std::same_as<size_t>;
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-    {
-        T::setCollisions(nullptr)
-    }
-#endif
 };
 
 
@@ -111,7 +106,6 @@ class HashAddressingForNoneSIMD
 public:
     using Buf = HashValue *;
     using Value = HashValue;
-    static uint64_t * pcollisions;
     inline static size_t place(HashValue x, size_t mask) { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask; }
     inline static size_t addressingForResize(Buf buf, size_t start_index, size_t max_index, HashValue x)
     {
@@ -120,10 +114,6 @@ public:
         {
             ++place_value;
             place_value &= max_index;
-
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-            ++(*pcollisions);
-#endif
         }
         return place_value;
     }
@@ -134,10 +124,6 @@ public:
         {
             ++place_value;
             place_value &= max_index;
-
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-            ++(*pcollisions);
-#endif
         }
         return place_value;
     }
@@ -148,16 +134,9 @@ public:
         {
             ++place_value;
             place_value &= max_index;
-
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-            ++(*pcollisions);
-#endif
         }
         return place_value;
     }
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-    static void setCollisions(uint64_t * p) { pcollisions = p; }
-#endif
 };
 
 #if defined(__SSE2__)
@@ -192,7 +171,6 @@ private:
 public:
     using Buf = HashValue *;
     using Value = HashValue;
-    static uint64_t * pcollisions;
 
     inline static size_t place(HashValue x, size_t mask) { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask; }
 
@@ -224,15 +202,9 @@ public:
             {
                 size_t offset = __builtin_ctz(cmask);
                 place_value = start_index + (offset >> 2);
-#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-                *pcollisions += (offset >> 2) - 1;
-#    endif
                 break;
             }
             start_index += 4;
-#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-            *pcollisions += 4;
-#    endif
         }
         return place_value;
     }
@@ -266,15 +238,9 @@ public:
             {
                 size_t offset = __builtin_ctz(cmask);
                 place_value = start_index + (offset >> 2);
-#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-                collisions += (offset >> 2) - 1;
-#    endif
                 break;
             }
             start_index += 4;
-#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-            *pcollisions += 4;
-#    endif
         }
         return place_value;
     }
@@ -307,22 +273,12 @@ public:
             {
                 size_t offset = __builtin_ctz(cmask);
                 place_value = start_index + (offset >> 2);
-#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-                *pcollisions += (offset >> 2) - 1;
-#    endif
                 break;
             }
             start_index += 4;
-#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-            *pcollisions += 4;
-#    endif
         }
         return place_value;
     }
-
-#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-    static void setCollisions(uint64_t * p) { pcollisions = p; }
-#    endif
 };
 #endif
 
@@ -340,11 +296,6 @@ private:
     bool has_zero; /// The hash table contains an element with a hash value of 0.
 
     HashValue * buf;
-
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-    /// For profiling.
-    mutable size_t collisions;
-#endif
 
     void alloc(UInt8 new_size_degree)
     {
@@ -511,10 +462,6 @@ public:
     UniquesHashSetBase() : m_size(0), skip_degree(0), has_zero(false)
     {
         alloc(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE);
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-        collisions = 0;
-        AddrPolicy::setCollisions(&collisions);
-#endif
     }
 
     UniquesHashSetBase(const UniquesHashSetBase & rhs) : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
@@ -754,10 +701,6 @@ public:
         insertImpl(hash_value);
         shrinkIfNeed();
     }
-
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-    size_t getCollisions() const { return collisions; }
-#endif
 };
 
 
