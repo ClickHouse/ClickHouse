@@ -1,0 +1,43 @@
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
+┌─x──────┬─name─┐
+│ system │ one  │
+└────────┴──────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
+┌─x──────┬─name─┐
+│ system │ one  │
+└────────┴──────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
+┌─db.x───┬─name─┐
+│ system │ one  │
+└────────┴──────┘
+┌─db.name─┬─name─┐
+│ system  │ one  │
+└─────────┴──────┘
+┌─db.name─┬─name─┐
+│ system  │ one  │
+└─────────┴──────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
+2
+2
+2
+100
+3
+200
+200
