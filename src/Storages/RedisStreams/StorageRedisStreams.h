@@ -6,13 +6,12 @@
 #include <Storages/RedisStreams/RedisStreamsSettings.h>
 #include <Common/SettingsChanges.h>
 
-#include <Poco/Semaphore.h>
-#include <base/shared_ptr_helper.h>
 #include <redis++/redis++.h>
+#include <Poco/Semaphore.h>
 
-#include <mutex>
-#include <list>
 #include <atomic>
+#include <list>
+#include <mutex>
 
 namespace DB
 {
@@ -20,12 +19,19 @@ namespace DB
 /** Implements a Redis Streams table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageRedisStreams final : public shared_ptr_helper<StorageRedisStreams>, public IStorage, WithContext
+class StorageRedisStreams final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageRedisStreams>;
     using RedisPtr = std::shared_ptr<sw::redis::Redis>;
 
 public:
+    StorageRedisStreams(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ColumnsDescription & columns_,
+        std::unique_ptr<RedisStreamsSettings> Redis_settings_,
+        const String & collection_name_,
+        bool is_attach_);
+
     std::string getName() const override { return "RedisStreams"; }
 
     bool noPushingToViews() const override { return true; }
@@ -57,14 +63,6 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
-protected:
-    StorageRedisStreams(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ColumnsDescription & columns_,
-        std::unique_ptr<RedisStreamsSettings> Redis_settings_,
-        const String & collection_name_,
-        bool is_attach_);
 
 private:
     // Configuration and state
@@ -95,16 +93,14 @@ private:
     struct TaskContext
     {
         BackgroundSchedulePool::TaskHolder holder;
-        std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
-        {
-        }
+        std::atomic<bool> stream_cancelled{false};
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder && task_) : holder(std::move(task_)) { }
     };
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
 
     SettingsChanges createSettingsAdjustments();
-    ConsumerBufferPtr createReadBuffer(const std::string& id);
+    ConsumerBufferPtr createReadBuffer(const std::string & id);
 
     /// If named_collection is specified.
     String collection_name;

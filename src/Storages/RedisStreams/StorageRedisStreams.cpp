@@ -13,22 +13,22 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/RedisStreams/ReadBufferFromRedisStreams.h>
-#include <Storages/RedisStreams/RedisStreamsSink.h>
 #include <Storages/RedisStreams/RedisStreamsSettings.h>
+#include <Storages/RedisStreams/RedisStreamsSink.h>
 #include <Storages/RedisStreams/RedisStreamsSource.h>
 #include <Storages/RedisStreams/WriteBufferToRedisStreams.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/parseAddress.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 
@@ -39,11 +39,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int QUERY_NOT_ALLOWED;
-    extern const int CONSUMER_GROUP_NOT_CREATED;
     extern const int CANNOT_CONNECT_REDIS;
 }
 
@@ -55,9 +53,12 @@ namespace
 }
 
 StorageRedisStreams::StorageRedisStreams(
-    const StorageID & table_id_, ContextPtr context_,
-    const ColumnsDescription & columns_, std::unique_ptr<RedisStreamsSettings> redis_settings_,
-    const String & collection_name_, bool is_attach_)
+    const StorageID & table_id_,
+    ContextPtr context_,
+    const ColumnsDescription & columns_,
+    std::unique_ptr<RedisStreamsSettings> redis_settings_,
+    const String & collection_name_,
+    bool is_attach_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , redis_settings(std::move(redis_settings_))
@@ -65,8 +66,9 @@ StorageRedisStreams::StorageRedisStreams(
     , broker(getContext()->getMacros()->expand(redis_settings->redis_broker))
     , group(getContext()->getMacros()->expand(redis_settings->redis_group_name.value))
     , consumer_id(
-          redis_settings->redis_common_consumer_id.value.empty() ? getDefaultConsumerId(table_id_)
-                                                        : getContext()->getMacros()->expand(redis_settings->redis_common_consumer_id.value))
+          redis_settings->redis_common_consumer_id.value.empty()
+              ? getDefaultConsumerId(table_id_)
+              : getContext()->getMacros()->expand(redis_settings->redis_common_consumer_id.value))
     , num_consumers(redis_settings->redis_num_consumers.value)
     , log(&Poco::Logger::get("StorageRedisStreams (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers)
@@ -86,10 +88,12 @@ StorageRedisStreams::StorageRedisStreams(
     connect_options.port = parsed_address.second;
     connect_options.socket_timeout = std::chrono::seconds(1);
     auto redis_password = redis_settings->redis_password.value;
-    if (redis_password.empty() && getContext()->getConfigRef().has("redis.password")) {
+    if (redis_password.empty() && getContext()->getConfigRef().has("redis.password"))
+    {
         redis_password = getContext()->getConfigRef().getString("redis.password");
     }
-    if (!redis_password.empty()) {
+    if (!redis_password.empty())
+    {
         connect_options.password = std::move(redis_password);
     }
 
@@ -118,7 +122,7 @@ StorageRedisStreams::StorageRedisStreams(
     {
         for (size_t i = 0; i < task_count; ++i)
         {
-            auto task = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this, i]{ threadFunc(i); });
+            auto task = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this, i] { threadFunc(i); });
             task->deactivate();
             tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
         }
@@ -156,7 +160,7 @@ SettingsChanges StorageRedisStreams::createSettingsAdjustments()
 Names StorageRedisStreams::parseStreams(String stream_list)
 {
     Names result;
-    boost::split(result, stream_list,[](char c){ return c == ','; });
+    boost::split(result, stream_list, [](char c) { return c == ','; });
     for (String & stream : result)
     {
         boost::trim(stream);
@@ -259,7 +263,8 @@ void StorageRedisStreams::shutdown()
 
     if (redis_settings->redis_manage_consumer_groups.value)
     {
-        for (const auto& stream : streams) {
+        for (const auto & stream : streams)
+        {
             redis->xgroup_destroy(stream, group);
         }
     }
@@ -300,46 +305,42 @@ ConsumerBufferPtr StorageRedisStreams::popReadBuffer(std::chrono::milliseconds t
 
 ProducerBufferPtr StorageRedisStreams::createWriteBuffer()
 {
-    return std::make_shared<WriteBufferToRedisStreams>(
-        redis, streams[0], std::nullopt, 1, 1024);
+    return std::make_shared<WriteBufferToRedisStreams>(redis, streams[0], std::nullopt, 1, 1024);
 }
 
 
-ConsumerBufferPtr StorageRedisStreams::createReadBuffer(const std::string& id)
+ConsumerBufferPtr StorageRedisStreams::createReadBuffer(const std::string & id)
 {
-    return std::make_shared<ReadBufferFromRedisStreams>(redis, group, id, log, getPollMaxBatchSize(), getClaimMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, streams);
+    return std::make_shared<ReadBufferFromRedisStreams>(
+        redis, group, id, log, getPollMaxBatchSize(), getClaimMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, streams);
 }
 
 size_t StorageRedisStreams::getMaxBlockSize() const
 {
-    return redis_settings->redis_max_block_size.changed
-        ? redis_settings->redis_max_block_size.value
-        : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+    return redis_settings->redis_max_block_size.changed ? redis_settings->redis_max_block_size.value
+                                                        : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
 }
 
 size_t StorageRedisStreams::getPollMaxBatchSize() const
 {
-    size_t batch_size = redis_settings->redis_poll_max_batch_size.changed
-                        ? redis_settings->redis_poll_max_batch_size.value
-                        : getContext()->getSettingsRef().max_block_size.value;
+    size_t batch_size = redis_settings->redis_poll_max_batch_size.changed ? redis_settings->redis_poll_max_batch_size.value
+                                                                          : getContext()->getSettingsRef().max_block_size.value;
 
-    return std::min(batch_size,getMaxBlockSize());
+    return std::min(batch_size, getMaxBlockSize());
 }
 
 size_t StorageRedisStreams::getClaimMaxBatchSize() const
 {
-    size_t batch_size = redis_settings->redis_claim_max_batch_size.changed
-        ? redis_settings->redis_claim_max_batch_size.value
-        : getContext()->getSettingsRef().max_block_size.value;
+    size_t batch_size = redis_settings->redis_claim_max_batch_size.changed ? redis_settings->redis_claim_max_batch_size.value
+                                                                           : getContext()->getSettingsRef().max_block_size.value;
 
     return std::min(batch_size, getMaxBlockSize());
 }
 
 size_t StorageRedisStreams::getPollTimeoutMillisecond() const
 {
-    return redis_settings->redis_poll_timeout_ms.changed
-        ? redis_settings->redis_poll_timeout_ms.totalMilliseconds()
-        : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
+    return redis_settings->redis_poll_timeout_ms.changed ? redis_settings->redis_poll_timeout_ms.totalMilliseconds()
+                                                         : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
 bool StorageRedisStreams::checkDependencies(const StorageID & table_id)
@@ -407,7 +408,7 @@ void StorageRedisStreams::threadFunc(size_t idx)
                 }
 
                 auto ts = std::chrono::steady_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
                 if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                 {
                     LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
@@ -466,7 +467,8 @@ bool StorageRedisStreams::streamToViews()
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<RedisStreamsSource>(*this, storage_snapshot, redis_context, block_io.pipeline.getHeader().getNames(), log, block_size);
+        auto source = std::make_shared<RedisStreamsSource>(
+            *this, storage_snapshot, redis_context, block_io.pipeline.getHeader().getNames(), log, block_size);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -499,8 +501,7 @@ bool StorageRedisStreams::streamToViews()
     }
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
-    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
-        formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
+    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
 
     return some_stream_is_stalled;
 }
@@ -620,7 +621,7 @@ void registerStorageRedisStreams(StorageFactory & factory)
             throw Exception("redis_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageRedisStreams::create(args.table_id, args.getContext(), args.columns, std::move(redis_settings), collection_name, args.attach);
+        return std::make_shared<StorageRedisStreams>(args.table_id, args.getContext(), args.columns, std::move(redis_settings), collection_name, args.attach);
     };
     factory.registerStorage("RedisStreams", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }

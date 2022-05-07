@@ -1,9 +1,10 @@
 #include <Storages/RedisStreams/RedisStreamsSource.h>
+#include <Storages/RedisStreams/ReadBufferFromRedisStreams.h>
 
+#include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Executors/StreamingFormatExecutor.h>
-#include <base/logger_useful.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/StreamingFormatExecutor.h>
 
 namespace DB
 {
@@ -64,8 +65,8 @@ Chunk RedisStreamsSource::generateImpl()
     // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto input_format = FormatFactory::instance().getInputFormat(
-        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
+    auto input_format
+        = FormatFactory::instance().getInputFormat(storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -122,7 +123,7 @@ Chunk RedisStreamsSource::generateImpl()
     if (total_rows == 0)
         return {};
 
-    auto result_block  = non_virtual_header.cloneWithColumns(executor.getResultColumns());
+    auto result_block = non_virtual_header.cloneWithColumns(executor.getResultColumns());
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())

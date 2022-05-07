@@ -1,16 +1,16 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <base/types.h>
 #include <IO/ReadBuffer.h>
+#include <base/types.h>
 #include <Poco/JSON/Object.h>
 
-#include <redis++/redis++.h>
 #include <boost/algorithm/string.hpp>
+#include <redis++/redis++.h>
 
 namespace Poco
 {
-    class Logger;
+class Logger;
 }
 
 namespace DB
@@ -37,22 +37,17 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
-    inline bool hasMorePolledMessages() const
-    {
-        return (stalled_status == NOT_STALLED) && (current != messages.end());
-    }
+    inline bool hasMorePolledMessages() const { return (stalled_status == NOT_STALLED) && (current != messages.end()); }
 
-    inline bool isStalled() const
-    {
-        return stalled_status != NOT_STALLED;
-    }
+    inline bool isStalled() const { return stalled_status != NOT_STALLED; }
 
     // Polls batch of messages from Redis or allows to read consecutive message by nextImpl
     // returns true if there are some messages to process
     // return false and sets stalled to false if there are no messages to process.
     bool poll();
 
-    struct Message {
+    struct Message
+    {
         String stream;
         String key;
         uint64_t timestamp;
@@ -104,7 +99,7 @@ private:
     std::unordered_map<std::string, std::string> streams_with_ids;
     std::unordered_map<std::string, std::vector<std::string>> last_read_ids;
 
-    void convertStreamsOutputToMessages(const StreamsOutput& output);
+    void convertStreamsOutputToMessages(const StreamsOutput & output);
 
     bool nextImpl() override;
 };

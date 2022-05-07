@@ -24,7 +24,7 @@ class ASTStorage;
     M(UInt64, redis_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Redis.", 0) \
     M(Milliseconds, redis_flush_interval_ms, 0, "Timeout for flushing data from Redis.", 0) \
     M(Bool, redis_thread_per_consumer, false, "Provide independent thread for each consumer.", 0) \
-    M(String, redis_password, "", "Redis password.", 0) \
+    M(String, redis_password, "", "Redis password.", 0)
 
 #define LIST_OF_REDIS_STREAMS_SETTINGS(M) \
     REDIS_STREAMS_RELATED_SETTINGS(M) \

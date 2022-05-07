@@ -1,11 +1,11 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
+#include <IO/WriteBuffer.h>
+#include <boost/algorithm/string.hpp>
+#include <redis++/redis++.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <redis++/redis++.h>
-#include <boost/algorithm/string.hpp>
 
 #include <list>
 
@@ -31,7 +31,7 @@ private:
     void nextImpl() override;
     void addChunk();
     void reinitializeChunks();
-    static std::vector<std::pair<std::string, std::string>> convertRawPayloadToItems(const std::string& payload);
+    static std::vector<std::pair<std::string, std::string>> convertRawPayloadToItems(const std::string & payload);
 
     RedisPtr redis;
     const std::string stream;

@@ -1,9 +1,9 @@
 #include <Storages/RedisStreams/ReadBufferFromRedisStreams.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
-#include <fmt/ostream.h>
 #include <algorithm>
+#include <fmt/ostream.h>
 
 namespace DB
 {
@@ -31,13 +31,14 @@ ReadBufferFromRedisStreams::ReadBufferFromRedisStreams(
     , intermediate_ack(intermediate_ack_)
     , current(messages.begin())
 {
-    for (const auto & stream: _streams)
+    for (const auto & stream : _streams)
     {
         streams_with_ids[stream] = ">";
     }
 }
 
-ReadBufferFromRedisStreams::~ReadBufferFromRedisStreams() {
+ReadBufferFromRedisStreams::~ReadBufferFromRedisStreams()
+{
     for (const auto & [stream_name, id] : streams_with_ids)
     {
         redis->xgroup_delconsumer(stream_name, group_name, consumer_name);
@@ -70,16 +71,30 @@ bool ReadBufferFromRedisStreams::poll()
     StreamsOutput new_messages;
     try
     {
-        redis->xreadgroup(group_name, consumer_name, streams_with_ids.begin(), streams_with_ids.end(),
-                          std::chrono::milliseconds(poll_timeout), batch_size, std::inserter(new_messages, new_messages.end()));
+        redis->xreadgroup(
+            group_name,
+            consumer_name,
+            streams_with_ids.begin(),
+            streams_with_ids.end(),
+            std::chrono::milliseconds(poll_timeout),
+            batch_size,
+            std::inserter(new_messages, new_messages.end()));
         std::unordered_map<std::string, std::vector<std::string>> pending_items_for_streams;
         std::vector<PendingItem> pending_items;
         size_t num_claimed = 0;
         for (const auto & [stream_name, id] : streams_with_ids)
         {
-            redis->command("XPENDING", stream_name, group_name, "IDLE", min_pending_time_for_claim, "-", "+",
-                           claim_batch_size - num_claimed, std::inserter(pending_items, pending_items.end()));
-            for (const auto& item : pending_items)
+            redis->command(
+                "XPENDING",
+                stream_name,
+                group_name,
+                "IDLE",
+                min_pending_time_for_claim,
+                "-",
+                "+",
+                claim_batch_size - num_claimed,
+                std::inserter(pending_items, pending_items.end()));
+            for (const auto & item : pending_items)
             {
                 pending_items_for_streams[stream_name].push_back(std::get<0>(item));
             }
@@ -88,17 +103,24 @@ bool ReadBufferFromRedisStreams::poll()
             if (num_claimed == claim_batch_size)
                 break;
         }
-        for (const auto& [stream, ids] : pending_items_for_streams)
+        for (const auto & [stream, ids] : pending_items_for_streams)
         {
             ItemStream claimed_items;
-            redis->xclaim(stream, group_name, consumer_name, std::chrono::milliseconds(min_pending_time_for_claim),
-                          ids.begin(), ids.end(), std::inserter(claimed_items, claimed_items.end()));
+            redis->xclaim(
+                stream,
+                group_name,
+                consumer_name,
+                std::chrono::milliseconds(min_pending_time_for_claim),
+                ids.begin(),
+                ids.end(),
+                std::inserter(claimed_items, claimed_items.end()));
             new_messages.emplace_back(stream, std::move(claimed_items));
         }
     }
     catch (const sw::redis::Error & e)
     {
-        LOG_DEBUG(log, "Failed to poll messages from Redis in group {} consumer {}. Error message: {}", group_name, consumer_name, e.what());
+        LOG_DEBUG(
+            log, "Failed to poll messages from Redis in group {} consumer {}. Error message: {}", group_name, consumer_name, e.what());
     }
 
     if (new_messages.empty())
@@ -109,8 +131,7 @@ bool ReadBufferFromRedisStreams::poll()
     else
     {
         convertStreamsOutputToMessages(new_messages);
-        LOG_TRACE(log, "Polled batch of {} messages.",
-            messages.size());
+        LOG_TRACE(log, "Polled batch of {} messages.", messages.size());
     }
 
     stalled_status = NOT_STALLED;
@@ -140,7 +161,8 @@ bool ReadBufferFromRedisStreams::nextImpl()
     return true;
 }
 
-void ReadBufferFromRedisStreams::convertStreamsOutputToMessages(const StreamsOutput& output) {
+void ReadBufferFromRedisStreams::convertStreamsOutputToMessages(const StreamsOutput & output)
+{
     if (intermediate_ack)
         ack();
     messages.clear();
@@ -158,8 +180,10 @@ void ReadBufferFromRedisStreams::convertStreamsOutputToMessages(const StreamsOut
             msg.sequence_number = std::stoull(tmp.back());
 
             Poco::JSON::Object json;
-            if (attrs.has_value()) {
-                for (const auto& [key, value] : attrs.value()) {
+            if (attrs.has_value())
+            {
+                for (const auto & [key, value] : attrs.value())
+                {
                     json.set(key, value);
                 }
             }

@@ -1,7 +1,7 @@
 #include "WriteBufferToRedisStreams.h"
-#include "Core/Block.h"
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
+#include "Core/Block.h"
 
 namespace DB
 {
@@ -55,7 +55,7 @@ void WriteBufferToRedisStreams::countRow()
     }
 }
 
-std::vector<std::pair<std::string, std::string>> WriteBufferToRedisStreams::convertRawPayloadToItems(const std::string& payload)
+std::vector<std::pair<std::string, std::string>> WriteBufferToRedisStreams::convertRawPayloadToItems(const std::string & payload)
 {
     Poco::JSON::Parser parser;
     auto json = parser.parse(payload);
@@ -63,7 +63,7 @@ std::vector<std::pair<std::string, std::string>> WriteBufferToRedisStreams::conv
 
     std::vector<std::pair<std::string, std::string>> result;
     result.reserve(dict.size());
-    for (auto& [key, val] : dict)
+    for (auto & [key, val] : dict)
     {
         result.emplace_back(key, std::move(val));
     }
