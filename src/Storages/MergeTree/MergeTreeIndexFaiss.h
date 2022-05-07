@@ -17,11 +17,11 @@ namespace DB
 struct MergeTreeIndexGranuleFaiss final : public IMergeTreeIndexGranule
 {
     using FaissBaseIndex = faiss::Index;
-    using FaissBaseIndexPtr = std::unique_ptr<FaissBaseIndex>; 
+    using FaissBaseIndexPtr = std::unique_ptr<FaissBaseIndex>;
 
     MergeTreeIndexGranuleFaiss(const String & index_name_, const Block & index_sample_block_);
     MergeTreeIndexGranuleFaiss(
-        const String & index_name_, 
+        const String & index_name_,
         const Block & index_sample_block_,
         FaissBaseIndexPtr index_base_,
         bool is_incomplete_);

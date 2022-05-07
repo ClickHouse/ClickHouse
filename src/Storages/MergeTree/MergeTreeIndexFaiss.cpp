@@ -25,18 +25,20 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
-    extern const int INCORRECT_NUMBER_OF_COLUMNS; 
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
-namespace {
+namespace
+{
     // Wrapper class for the connection between faiss::IOWriter interface and internal WriteBuffer class
-    class WriteBufferFaissWrapper : public faiss::IOWriter {
+    class WriteBufferFaissWrapper : public faiss::IOWriter
+    {
     public:
         explicit WriteBufferFaissWrapper(WriteBuffer & ostr_)
-        : ostr(ostr_) 
+        : ostr(ostr_)
         {}
 
-        size_t operator()(const void* ptr, size_t size, size_t nitems) override 
+        size_t operator()(const void* ptr, size_t size, size_t nitems) override
         {
             ostr.write(reinterpret_cast<const char*>(ptr), size * nitems);
 
@@ -49,13 +51,14 @@ namespace {
     };
 
     // Wrapper class for the connection between faiss::IOReader interface and internal ReadBuffer class
-    class ReadBufferFaissWrapper : public faiss::IOReader {
-    public:        
+    class ReadBufferFaissWrapper : public faiss::IOReader
+    {
+    public:
         explicit ReadBufferFaissWrapper(ReadBuffer & istr_)
-        : istr(istr_) 
+        : istr(istr_)
         {}
 
-        size_t operator()(void* ptr, size_t size, size_t nitems) override 
+        size_t operator()(void* ptr, size_t size, size_t nitems) override
         {
             // Divide by size because ReadBuffer returns num of written bytes, but
             // faiss::IOReader must return num of written items
@@ -67,31 +70,32 @@ namespace {
     };
 
     // Parser for the input arguments of the index in the CREATE query
-    class ArgumentParser {
+    class ArgumentParser
+    {
     public:
-        struct Argument 
+        struct Argument
         {
             size_t position;
             Field default_value;
         };
-        
-        explicit ArgumentParser(FieldVector arguments_) 
+
+        explicit ArgumentParser(FieldVector arguments_)
         : arguments(std::move(arguments_))
         {
             initialize();
         }
 
-        Field getArgumentByName(String name) 
+        Field getArgumentByName(String name)
         {
-            if (argument_mapping.contains(name)) 
+            if (argument_mapping.contains(name))
             {
                 auto argument = argument_mapping[name];
-                if (argument.position < arguments.size()) 
+                if (argument.position < arguments.size())
                     return arguments[argument.position];
-                else 
+                else
                     return argument.default_value;
-            } 
-            else 
+            }
+            else
                 return {};
         }
 
@@ -99,23 +103,23 @@ namespace {
         FieldVector arguments;
         std::map<String, Argument> argument_mapping;
 
-        void initialize() 
+        void initialize()
         {
-            registerArgument("index_key", 0, {});  
-            registerArgument("metric_type", 1, "L2Distance");  
+            registerArgument("index_key", 0, {});
+            registerArgument("metric_type", 1, "L2Distance");
         }
 
-        void registerArgument(String name, size_t position, Field default_value) 
+        void registerArgument(String name, size_t position, Field default_value)
         {
             argument_mapping[name] = {position, std::move(default_value)};
         }
     };
 
-    inline faiss::MetricType StringToMetric(const String & str) 
+    inline faiss::MetricType StringToMetric(const String & str)
     {
-        if (str == "L2Distance") 
+        if (str == "L2Distance")
             return faiss::METRIC_L2;
-        else 
+        else
             throw Exception("Unsupported metric type. Faiss indexes right now support only L2 metric.", ErrorCodes::INCORRECT_QUERY);
     }
 }
@@ -128,7 +132,7 @@ MergeTreeIndexGranuleFaiss::MergeTreeIndexGranuleFaiss(const String & index_name
 {}
 
 MergeTreeIndexGranuleFaiss::MergeTreeIndexGranuleFaiss(
-    const String & index_name_, 
+    const String & index_name_,
     const Block & index_sample_block_,
     FaissBaseIndexPtr index_base_,
     bool is_incomplete_)
@@ -179,12 +183,12 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFaiss::getGranuleAndReset()
     std::unique_ptr<faiss::Index> index(faiss::index_factory(dimension, index_key.c_str(), StringToMetric(metric_type)));
     auto num_elements = values.size() / dimension;
 
-    try 
+    try
     {
         index->train(num_elements, values.data());
         index->add(num_elements, values.data());
-    } 
-    catch (const faiss::FaissException&) 
+    }
+    catch (const faiss::FaissException&)
     {
         index.reset();
     }
@@ -201,7 +205,7 @@ void MergeTreeIndexAggregatorFaiss::update(const Block & block, size_t * pos, si
                 "The provided position is not less than the number of block rows. Position: "
                 + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
-    if (index_sample_block.columns() != 1) 
+    if (index_sample_block.columns() != 1)
         throw Exception("Faiss indexes support construction only on the one column.", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
@@ -215,12 +219,12 @@ void MergeTreeIndexAggregatorFaiss::update(const Block & block, size_t * pos, si
     size_t offset = values.size();
     values.resize(offset + dimension * rows_read);
 
-    for (size_t col_idx = 0; col_idx < dimension; ++col_idx) 
+    for (size_t col_idx = 0; col_idx < dimension; ++col_idx)
     {
         const auto & inner_column = vectors->getColumns()[col_idx];
         const auto * coordinate_column = typeid_cast<const ColumnFloat32 *>(inner_column.get());
 
-        for (size_t row_idx = 0; row_idx < coordinate_column->size(); ++row_idx) 
+        for (size_t row_idx = 0; row_idx < coordinate_column->size(); ++row_idx)
             values[offset + dimension * row_idx + col_idx] = coordinate_column->getElement(row_idx);
     }
 
@@ -261,9 +265,9 @@ bool MergeTreeIndexConditionFaiss::mayBeTrueOnGranule(MergeTreeIndexGranulePtr i
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleFaiss>(idx_granule);
     String index_setting = condition.getSettingsStr();
 
-    if (!index_setting.empty()) 
+    if (!index_setting.empty())
         faiss::ParameterSpace().set_index_parameters(granule->index_base.get(), condition.getSettingsStr().c_str());
-    
+
     granule->index_base->search(n, target_vec.data(), k, &distance, &label);
 
     return distance < min_distance;
@@ -274,7 +278,7 @@ std::vector<size_t> MergeTreeIndexConditionFaiss::getUsefulRanges(MergeTreeIndex
     UInt64 limit = condition.getLimitCount() ? condition.getLimitCount().value() : 1;
     std::vector<float> target_vec = condition.getTargetVector();
     std::optional<float> distance = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistance()) : std::nullopt;
-    
+
     // Number of target vectors
     size_t n = 1;
 
@@ -292,22 +296,22 @@ std::vector<size_t> MergeTreeIndexConditionFaiss::getUsefulRanges(MergeTreeIndex
         return {0};
 
     String index_setting = condition.getSettingsStr();
-    if (!index_setting.empty()) 
+    if (!index_setting.empty())
         faiss::ParameterSpace().set_index_parameters(granule->index_base.get(), condition.getSettingsStr().c_str());
-    
+
     granule->index_base->search(n, target_vec.data(), k, distances.data(), labels.data());
 
     // Temporary hard-coded constant
     const size_t granule_size = 8192;
 
     std::unordered_set<size_t> useful_granules;
-    for (size_t i = 0; i < k; ++i) 
+    for (size_t i = 0; i < k; ++i)
     {
         // In the case of queries like WHERE ... < distance, 
         // we have to stop iteration if we meet a greater distance than the distance variable
         if (distance.has_value() && distances[i] > distance.value())
             break;
-        
+
         useful_granules.insert(labels[i] / granule_size);
     }
 
@@ -317,7 +321,6 @@ std::vector<size_t> MergeTreeIndexConditionFaiss::getUsefulRanges(MergeTreeIndex
     {
         useful_granules_vec.push_back(idx);
     }
-        
 
     return useful_granules_vec;
 }
@@ -325,7 +328,7 @@ std::vector<size_t> MergeTreeIndexConditionFaiss::getUsefulRanges(MergeTreeIndex
 MergeTreeIndexFaiss::MergeTreeIndexFaiss(const IndexDescription & index_)
     : IMergeTreeIndex(index_)
 {
-    if (index.arguments.empty()) 
+    if (index.arguments.empty())
         throw Exception("Faiss indexes require at least one argument: key string for the index factory.", ErrorCodes::INCORRECT_QUERY);
 
     ArgumentParser parser(index.arguments);
