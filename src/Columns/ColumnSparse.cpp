@@ -53,7 +53,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
 
 #ifndef NDEBUG
     const auto & offsets_data = getOffsetsData();
-    const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<UInt64>());
+    const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<>());
     if (it != offsets_data.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Offsets of ColumnSparse must be strictly sorted");
 #endif
@@ -288,7 +288,7 @@ void ColumnSparse::popBack(size_t n)
 ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 {
     if (_size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), _size);
 
     if (offsets->empty())
     {

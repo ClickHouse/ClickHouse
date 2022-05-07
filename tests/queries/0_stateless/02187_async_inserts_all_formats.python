@@ -28,7 +28,7 @@ def run_test(data_format, gen_data_template, settings):
         exit(1)
 
 formats = client.query("SELECT name FROM system.formats WHERE is_input AND is_output \
-    AND name NOT IN ('CapnProto', 'RawBLOB', 'Template', 'ProtobufSingle', 'LineAsString', 'Protobuf') ORDER BY name").strip().split('\n')
+    AND name NOT IN ('CapnProto', 'RawBLOB', 'Template', 'ProtobufSingle', 'LineAsString', 'Protobuf', 'ProtobufList') ORDER BY name").strip().split('\n')
 
 # Generic formats
 client.query("DROP TABLE IF EXISTS t_async_insert")

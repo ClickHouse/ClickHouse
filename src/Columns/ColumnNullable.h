@@ -41,7 +41,8 @@ public:
         return ColumnNullable::create(nested_column_->assumeMutable(), null_map_->assumeMutable());
     }
 
-    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
+    template <typename ... Args>
+    requires (IsMutableColumns<Args ...>::value)
     static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
 
     const char * getFamilyName() const override { return "Nullable"; }
@@ -137,22 +138,22 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (auto rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs))
+        if (const auto * rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs))
             return nested_column->structureEquals(*rhs_nullable->nested_column);
         return false;
     }
 
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
-        return null_map->getRatioOfDefaultRows(sample_ratio);
+        return getRatioOfDefaultRowsImpl<ColumnNullable>(sample_ratio);
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        null_map->getIndicesOfNonDefaultRows(indices, from, limit);
+        getIndicesOfNonDefaultRowsImpl<ColumnNullable>(indices, from, limit);
     }
 
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
+    ColumnPtr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
 
     bool isNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return false; }

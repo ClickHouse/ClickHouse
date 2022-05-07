@@ -9,434 +9,454 @@ from testflows.core import Requirement
 Heading = Specification.Heading
 
 RQ_SRS_016_Kerberos = Requirement(
-    name='RQ.SRS-016.Kerberos',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support user authentication using [Kerberos] server.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support user authentication using [Kerberos] server.\n" "\n"
+    ),
     link=None,
     level=3,
-    num='4.1.1')
+    num="4.1.1",
+)
 
 RQ_SRS_016_Kerberos_Ping = Requirement(
-    name='RQ.SRS-016.Kerberos.Ping',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Ping",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
-    description=(
-        'Docker containers SHALL be able to ping each other.\n'
-        '\n'
-        ),
+    description=("Docker containers SHALL be able to ping each other.\n" "\n"),
     link=None,
     level=3,
-    num='4.2.1')
+    num="4.2.1",
+)
 
 RQ_SRS_016_Kerberos_Configuration_MultipleAuthMethods = Requirement(
-    name='RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
         "[ClickHouse] SHALL generate an exception and TERMINATE in case some user in `users.xml` has a `<kerberos>` section specified alongside with any other authentication method's section, e.g. `ldap`, `password`.\n"
-        '\n'
-        ),
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.3.1')
+    num="4.3.1",
+)
 
 RQ_SRS_016_Kerberos_Configuration_KerberosNotEnabled = Requirement(
-    name='RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL reject [Kerberos] authentication in case user is properly configured for using Kerberos, but Kerberos itself is not enabled in `config.xml`. For example:\n'
-        '\n'
-        '```xml\n'
-        '<clickhouse>\n'
-        '    <!- ... -->\n'
-        '    <kerberos />\n'
-        '</clickhouse>\n'
-        '```\n'
-        '```xml\n'
-        '<clickhouse>\n'
-        '    <!- ... -->\n'
-        '    <kerberos>\n'
-        '        <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>\n'
-        '    </kerberos>\n'
-        '</clickhouse>\n'
-        '```\n'
-        '```xml\n'
-        '<clickhouse>\n'
-        '    <!- ... -->\n'
-        '    <kerberos>\n'
-        '        <realm>EXAMPLE.COM</realm>\n'
-        '    </kerberos>\n'
-        '</clickhouse>\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL reject [Kerberos] authentication in case user is properly configured for using Kerberos, but Kerberos itself is not enabled in `config.xml`. For example:\n"
+        "\n"
+        "```xml\n"
+        "<clickhouse>\n"
+        "    <!- ... -->\n"
+        "    <kerberos />\n"
+        "</clickhouse>\n"
+        "```\n"
+        "```xml\n"
+        "<clickhouse>\n"
+        "    <!- ... -->\n"
+        "    <kerberos>\n"
+        "        <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>\n"
+        "    </kerberos>\n"
+        "</clickhouse>\n"
+        "```\n"
+        "```xml\n"
+        "<clickhouse>\n"
+        "    <!- ... -->\n"
+        "    <kerberos>\n"
+        "        <realm>EXAMPLE.COM</realm>\n"
+        "    </kerberos>\n"
+        "</clickhouse>\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.3.2')
+    num="4.3.2",
+)
 
 RQ_SRS_016_Kerberos_Configuration_MultipleKerberosSections = Requirement(
-    name='RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL disable [Kerberos] and reject [Kerberos] authentication in case multiple `kerberos` sections are present in `config.xml`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL disable [Kerberos] and reject [Kerberos] authentication in case multiple `kerberos` sections are present in `config.xml`.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.3.3')
+    num="4.3.3",
+)
 
 RQ_SRS_016_Kerberos_Configuration_WrongUserRealm = Requirement(
-    name='RQ.SRS-016.Kerberos.Configuration.WrongUserRealm',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Configuration.WrongUserRealm",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
         "[ClickHouse] SHALL reject [Kerberos] authentication if user's realm specified in `users.xml` doesn't match the realm of the principal trying to authenticate.\n"
-        '\n'
-        ),
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.3.4')
+    num="4.3.4",
+)
 
 RQ_SRS_016_Kerberos_Configuration_PrincipalAndRealmSpecified = Requirement(
-    name='RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL generate an exception and disable [Kerberos] in case both `realm` and `principal` sections are defined in `config.xml`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL generate an exception and disable [Kerberos] in case both `realm` and `principal` sections are defined in `config.xml`.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.3.5')
+    num="4.3.5",
+)
 
 RQ_SRS_016_Kerberos_Configuration_MultiplePrincipalSections = Requirement(
-    name='RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL generate an exception and disable [Kerberos] in case multiple `principal` sections are specified inside `kerberos` section in `config.xml`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL generate an exception and disable [Kerberos] in case multiple `principal` sections are specified inside `kerberos` section in `config.xml`.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.3.6')
+    num="4.3.6",
+)
 
 RQ_SRS_016_Kerberos_Configuration_MultipleRealmSections = Requirement(
-    name='RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL generate an exception and disable [Kerberos] in case multiple `realm` sections are specified inside `kerberos` section in `config.xml`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL generate an exception and disable [Kerberos] in case multiple `realm` sections are specified inside `kerberos` section in `config.xml`.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.3.7')
+    num="4.3.7",
+)
 
 RQ_SRS_016_Kerberos_ValidUser_XMLConfiguredUser = Requirement(
-    name='RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL accept [Kerberos] authentication for a user that is configured in `users.xml` and has [Kerberos] enabled, i.e.:\n'
-        '\n'
-        '```xml\n'
-        '<clickhouse>\n'
-        '    <!- ... -->\n'
-        '    <users>\n'
-        '        <!- ... -->\n'
-        '        <my_user>\n'
-        '            <!- ... -->\n'
-        '            <kerberos>\n'
-        '                <realm>EXAMPLE.COM</realm>\n'
-        '            </kerberos>\n'
-        '        </my_user>\n'
-        '    </users>\n'
-        '</clickhouse>\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL accept [Kerberos] authentication for a user that is configured in `users.xml` and has [Kerberos] enabled, i.e.:\n"
+        "\n"
+        "```xml\n"
+        "<clickhouse>\n"
+        "    <!- ... -->\n"
+        "    <users>\n"
+        "        <!- ... -->\n"
+        "        <my_user>\n"
+        "            <!- ... -->\n"
+        "            <kerberos>\n"
+        "                <realm>EXAMPLE.COM</realm>\n"
+        "            </kerberos>\n"
+        "        </my_user>\n"
+        "    </users>\n"
+        "</clickhouse>\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.4.1')
+    num="4.4.1",
+)
 
 RQ_SRS_016_Kerberos_ValidUser_RBACConfiguredUser = Requirement(
-    name='RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL accept [Kerberos] authentication if user is configured to authenticate via [Kerberos] using SQL queries\n'
-        '\n'
-        '```sql\n'
+        "[ClickHouse] SHALL accept [Kerberos] authentication if user is configured to authenticate via [Kerberos] using SQL queries\n"
+        "\n"
+        "```sql\n"
         "CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'\n"
-        '```\n'
-        '\n'
-        'or\n'
-        '\n'
-        '```sql\n'
-        'CREATE USER my_user IDENTIFIED WITH kerberos\n'
-        '```\n'
-        '\n'
-        ),
+        "```\n"
+        "\n"
+        "or\n"
+        "\n"
+        "```sql\n"
+        "CREATE USER my_user IDENTIFIED WITH kerberos\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.4.2')
+    num="4.4.2",
+)
 
 RQ_SRS_016_Kerberos_ValidUser_KerberosNotConfigured = Requirement(
-    name='RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL reject [Kerberos] authentication if username is valid but [ClickHouse] user is not configured to be authenticated using [Kerberos].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL reject [Kerberos] authentication if username is valid but [ClickHouse] user is not configured to be authenticated using [Kerberos].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.4.3')
+    num="4.4.3",
+)
 
 RQ_SRS_016_Kerberos_InvalidUser = Requirement(
-    name='RQ.SRS-016.Kerberos.InvalidUser',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.InvalidUser",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL reject [Kerberos] authentication if name of the principal attempting to authenticate does not translate to a valid [ClickHouse] username configured in `users.xml` or via SQL workflow.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL reject [Kerberos] authentication if name of the principal attempting to authenticate does not translate to a valid [ClickHouse] username configured in `users.xml` or via SQL workflow.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.5.1')
+    num="4.5.1",
+)
 
 RQ_SRS_016_Kerberos_InvalidUser_UserDeleted = Requirement(
-    name='RQ.SRS-016.Kerberos.InvalidUser.UserDeleted',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.InvalidUser.UserDeleted",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL reject [Kerberos] authentication if [ClickHouse] user was removed from the database using an SQL query.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL reject [Kerberos] authentication if [ClickHouse] user was removed from the database using an SQL query.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.5.2')
+    num="4.5.2",
+)
 
 RQ_SRS_016_Kerberos_KerberosNotAvailable_InvalidServerTicket = Requirement(
-    name='RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
         "[ClickHouse] SHALL reject [Kerberos] authentication if [ClickHouse] user is configured to be authenticated using [Kerberos] and [Kerberos] server is unavailable, but [ClickHouse] doesn't have a valid Kerberos ticket or the ticket is expired.\n"
-        '\n'
-        ),
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.6.1')
+    num="4.6.1",
+)
 
 RQ_SRS_016_Kerberos_KerberosNotAvailable_InvalidClientTicket = Requirement(
-    name='RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
         "[ClickHouse] SHALL reject [Kerberos] authentication if [ClickHouse] user is configured to to be authenticated using [Kerberos] and [Kerberos] server is unavailable, but the client doesn't have a valid Kerberos ticket or the ticket is expired.\n"
-        '\n'
-        ),
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.6.2')
+    num="4.6.2",
+)
 
 RQ_SRS_016_Kerberos_KerberosNotAvailable_ValidTickets = Requirement(
-    name='RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL accept [Kerberos] authentication if no [Kerberos] server is reachable, but [ClickHouse] is configured to use valid credentials and [ClickHouse] has already processed some valid kerberized request (so it was granted a ticket), and the client has a valid ticket as well.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL accept [Kerberos] authentication if no [Kerberos] server is reachable, but [ClickHouse] is configured to use valid credentials and [ClickHouse] has already processed some valid kerberized request (so it was granted a ticket), and the client has a valid ticket as well.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.6.3')
+    num="4.6.3",
+)
 
 RQ_SRS_016_Kerberos_KerberosServerRestarted = Requirement(
-    name='RQ.SRS-016.Kerberos.KerberosServerRestarted',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.KerberosServerRestarted",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL accept [Kerberos] authentication if [Kerberos] server was restarted.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL accept [Kerberos] authentication if [Kerberos] server was restarted.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.7.1')
+    num="4.7.1",
+)
 
 RQ_SRS_016_Kerberos_Performance = Requirement(
-    name='RQ.SRS-016.Kerberos.Performance',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Performance",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
         "[ClickHouse]'s performance for [Kerberos] authentication SHALL be comparable to regular authentication.\n"
-        '\n'
-        ),
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.8.1')
+    num="4.8.1",
+)
 
 RQ_SRS_016_Kerberos_Parallel = Requirement(
-    name='RQ.SRS-016.Kerberos.Parallel',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Parallel",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support parallel authentication using [Kerberos].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support parallel authentication using [Kerberos].\n" "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.1')
+    num="4.9.1",
+)
 
 RQ_SRS_016_Kerberos_Parallel_ValidRequests_KerberosAndNonKerberos = Requirement(
-    name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support processing of simultaneous kerberized (for users configured to authenticate via [Kerberos]) and non-kerberized (for users configured to authenticate with any other means) requests.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support processing of simultaneous kerberized (for users configured to authenticate via [Kerberos]) and non-kerberized (for users configured to authenticate with any other means) requests.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.2')
+    num="4.9.2",
+)
 
 RQ_SRS_016_Kerberos_Parallel_ValidRequests_SameCredentials = Requirement(
-    name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support processing of simultaneously sent [Kerberos] requests under the same credentials.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support processing of simultaneously sent [Kerberos] requests under the same credentials.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.3')
+    num="4.9.3",
+)
 
 RQ_SRS_016_Kerberos_Parallel_ValidRequests_DifferentCredentials = Requirement(
-    name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support processing of simultaneously sent [Kerberos] requests under different credentials.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support processing of simultaneously sent [Kerberos] requests under different credentials.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.4')
+    num="4.9.4",
+)
 
 RQ_SRS_016_Kerberos_Parallel_ValidInvalid = Requirement(
-    name='RQ.SRS-016.Kerberos.Parallel.ValidInvalid',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Parallel.ValidInvalid",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
         "[ClickHouse] SHALL support parallel authentication of users using [Kerberos] server, some of which are valid and some invalid. Valid users' authentication should not be affected by invalid users' attempts.\n"
-        '\n'
-        ),
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.5')
+    num="4.9.5",
+)
 
 RQ_SRS_016_Kerberos_Parallel_Deletion = Requirement(
-    name='RQ.SRS-016.Kerberos.Parallel.Deletion',
-    version='1.0',
+    name="RQ.SRS-016.Kerberos.Parallel.Deletion",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL not crash when two or more [Kerberos] users are simultaneously deleting one another.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL not crash when two or more [Kerberos] users are simultaneously deleting one another.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.6')
+    num="4.9.6",
+)
 
 QA_SRS016_ClickHouse_Kerberos_Authentication = Specification(
-    name='QA-SRS016 ClickHouse Kerberos Authentication', 
+    name="QA-SRS016 ClickHouse Kerberos Authentication",
     description=None,
     author=None,
-    date=None, 
-    status=None, 
+    date=None,
+    status=None,
     approved_by=None,
     approved_date=None,
     approved_version=None,
@@ -448,46 +468,112 @@ QA_SRS016_ClickHouse_Kerberos_Authentication = Specification(
     parent=None,
     children=None,
     headings=(
-        Heading(name='Revision History', level=1, num='1'),
-        Heading(name='Introduction', level=1, num='2'),
-        Heading(name='Terminology', level=1, num='3'),
-        Heading(name='Requirements', level=1, num='4'),
-        Heading(name='Generic', level=2, num='4.1'),
-        Heading(name='RQ.SRS-016.Kerberos', level=3, num='4.1.1'),
-        Heading(name='Ping', level=2, num='4.2'),
-        Heading(name='RQ.SRS-016.Kerberos.Ping', level=3, num='4.2.1'),
-        Heading(name='Configuration', level=2, num='4.3'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods', level=3, num='4.3.1'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled', level=3, num='4.3.2'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections', level=3, num='4.3.3'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.WrongUserRealm', level=3, num='4.3.4'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified', level=3, num='4.3.5'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections', level=3, num='4.3.6'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections', level=3, num='4.3.7'),
-        Heading(name='Valid User', level=2, num='4.4'),
-        Heading(name='RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser', level=3, num='4.4.1'),
-        Heading(name='RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser', level=3, num='4.4.2'),
-        Heading(name='RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured', level=3, num='4.4.3'),
-        Heading(name='Invalid User', level=2, num='4.5'),
-        Heading(name='RQ.SRS-016.Kerberos.InvalidUser', level=3, num='4.5.1'),
-        Heading(name='RQ.SRS-016.Kerberos.InvalidUser.UserDeleted', level=3, num='4.5.2'),
-        Heading(name='Kerberos Not Available', level=2, num='4.6'),
-        Heading(name='RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket', level=3, num='4.6.1'),
-        Heading(name='RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket', level=3, num='4.6.2'),
-        Heading(name='RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets', level=3, num='4.6.3'),
-        Heading(name='Kerberos Restarted', level=2, num='4.7'),
-        Heading(name='RQ.SRS-016.Kerberos.KerberosServerRestarted', level=3, num='4.7.1'),
-        Heading(name='Performance', level=2, num='4.8'),
-        Heading(name='RQ.SRS-016.Kerberos.Performance', level=3, num='4.8.1'),
-        Heading(name='Parallel Requests processing', level=2, num='4.9'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel', level=3, num='4.9.1'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos', level=3, num='4.9.2'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials', level=3, num='4.9.3'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials', level=3, num='4.9.4'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidInvalid', level=3, num='4.9.5'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel.Deletion', level=3, num='4.9.6'),
-        Heading(name='References', level=1, num='5'),
+        Heading(name="Revision History", level=1, num="1"),
+        Heading(name="Introduction", level=1, num="2"),
+        Heading(name="Terminology", level=1, num="3"),
+        Heading(name="Requirements", level=1, num="4"),
+        Heading(name="Generic", level=2, num="4.1"),
+        Heading(name="RQ.SRS-016.Kerberos", level=3, num="4.1.1"),
+        Heading(name="Ping", level=2, num="4.2"),
+        Heading(name="RQ.SRS-016.Kerberos.Ping", level=3, num="4.2.1"),
+        Heading(name="Configuration", level=2, num="4.3"),
+        Heading(
+            name="RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods",
+            level=3,
+            num="4.3.1",
         ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled",
+            level=3,
+            num="4.3.2",
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections",
+            level=3,
+            num="4.3.3",
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.Configuration.WrongUserRealm",
+            level=3,
+            num="4.3.4",
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified",
+            level=3,
+            num="4.3.5",
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections",
+            level=3,
+            num="4.3.6",
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections",
+            level=3,
+            num="4.3.7",
+        ),
+        Heading(name="Valid User", level=2, num="4.4"),
+        Heading(
+            name="RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser", level=3, num="4.4.1"
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser",
+            level=3,
+            num="4.4.2",
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured",
+            level=3,
+            num="4.4.3",
+        ),
+        Heading(name="Invalid User", level=2, num="4.5"),
+        Heading(name="RQ.SRS-016.Kerberos.InvalidUser", level=3, num="4.5.1"),
+        Heading(
+            name="RQ.SRS-016.Kerberos.InvalidUser.UserDeleted", level=3, num="4.5.2"
+        ),
+        Heading(name="Kerberos Not Available", level=2, num="4.6"),
+        Heading(
+            name="RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket",
+            level=3,
+            num="4.6.1",
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket",
+            level=3,
+            num="4.6.2",
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets",
+            level=3,
+            num="4.6.3",
+        ),
+        Heading(name="Kerberos Restarted", level=2, num="4.7"),
+        Heading(
+            name="RQ.SRS-016.Kerberos.KerberosServerRestarted", level=3, num="4.7.1"
+        ),
+        Heading(name="Performance", level=2, num="4.8"),
+        Heading(name="RQ.SRS-016.Kerberos.Performance", level=3, num="4.8.1"),
+        Heading(name="Parallel Requests processing", level=2, num="4.9"),
+        Heading(name="RQ.SRS-016.Kerberos.Parallel", level=3, num="4.9.1"),
+        Heading(
+            name="RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos",
+            level=3,
+            num="4.9.2",
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials",
+            level=3,
+            num="4.9.3",
+        ),
+        Heading(
+            name="RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials",
+            level=3,
+            num="4.9.4",
+        ),
+        Heading(name="RQ.SRS-016.Kerberos.Parallel.ValidInvalid", level=3, num="4.9.5"),
+        Heading(name="RQ.SRS-016.Kerberos.Parallel.Deletion", level=3, num="4.9.6"),
+        Heading(name="References", level=1, num="5"),
+    ),
     requirements=(
         RQ_SRS_016_Kerberos,
         RQ_SRS_016_Kerberos_Ping,
@@ -514,8 +600,8 @@ QA_SRS016_ClickHouse_Kerberos_Authentication = Specification(
         RQ_SRS_016_Kerberos_Parallel_ValidRequests_DifferentCredentials,
         RQ_SRS_016_Kerberos_Parallel_ValidInvalid,
         RQ_SRS_016_Kerberos_Parallel_Deletion,
-        ),
-    content='''
+    ),
+    content="""
 # QA-SRS016 ClickHouse Kerberos Authentication
 # Software Requirements Specification
 
@@ -806,4 +892,5 @@ version: 1.0
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/kerberos/requirements/requirements.md
 [Git]: https://git-scm.com/
 [Kerberos terminology]: https://web.mit.edu/kerberos/kfw-4.1/kfw-4.1/kfw-4.1-help/html/kerberos_terminology.htm
-''')
+""",
+)

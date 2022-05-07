@@ -13,7 +13,7 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <chrono>
 
 
@@ -344,9 +344,9 @@ QueryStatus::~QueryStatus()
     if (auto * memory_tracker = getMemoryTracker())
     {
         if (user_process_list)
-            user_process_list->user_overcommit_tracker.unsubscribe(memory_tracker);
+            user_process_list->user_overcommit_tracker.onQueryStop(memory_tracker);
         if (auto shared_context = getContext())
-            shared_context->getGlobalOvercommitTracker()->unsubscribe(memory_tracker);
+            shared_context->getGlobalOvercommitTracker()->onQueryStop(memory_tracker);
     }
 }
 
@@ -455,6 +455,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.client_info       = client_info;
     res.elapsed_seconds   = watch.elapsedSeconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
+    res.is_all_data_sent  = is_all_data_sent.load(std::memory_order_relaxed);
     res.read_rows         = progress_in.read_rows;
     res.read_bytes        = progress_in.read_bytes;
     res.total_rows        = progress_in.total_rows_to_read;

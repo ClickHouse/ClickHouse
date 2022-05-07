@@ -1,6 +1,6 @@
 #include "ReadBufferFromWebServer.h"
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <Core/Types.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -76,7 +76,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
         read_settings,
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
         range,
-        context->getRemoteHostFilter(),
+        &context->getRemoteHostFilter(),
         /* delay_initialization */true,
         use_external_buffer);
 }
