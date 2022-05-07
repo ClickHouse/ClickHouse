@@ -1600,6 +1600,111 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 }
 
+TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./logs");
+    {
+        std::cerr << "================First time=====================\n";
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog.next_slot(), 2);
+    }
+
+    {
+        std::cerr << "================Second time=====================\n";
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog.next_slot(), 3);
+    }
+
+    {
+        std::cerr << "================Third time=====================\n";
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog.next_slot(), 4);
+    }
+
+    {
+        std::cerr << "================Fourth time=====================\n";
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog.next_slot(), 5);
+    }
+}
+
+
+TEST_P(CoordinationTest, ChangelogInsertMultipleTimesSmooth)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./logs");
+    for (size_t i = 0; i < 36; ++i)
+    {
+        std::cerr << "================First time=====================\n";
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        for (size_t j = 0; j < 7; ++j)
+        {
+            auto entry = getLogEntry("hello_world", 7);
+            changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+    }
+
+    DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+    changelog.init(1, 0);
+    EXPECT_EQ(changelog.next_slot(), 36 * 7 + 1);
+}
+
+TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./logs");
+    std::cerr << "================First time=====================\n";
+    DB::KeeperLogStore changelog1("./logs", 100, true, params.enable_compression);
+    changelog1.init(1, 0);
+    auto entry = getLogEntry("hello_world", 1000);
+    changelog1.append(entry);
+    changelog1.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog1.next_slot(), 2);
+
+    std::cerr << "================Second time=====================\n";
+    DB::KeeperLogStore changelog2("./logs", 100, true, params.enable_compression);
+    changelog2.init(1, 0);
+    entry = getLogEntry("hello_world", 1000);
+    changelog2.append(entry);
+    changelog2.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog2.next_slot(), 3);
+
+    std::cerr << "================Third time=====================\n";
+    DB::KeeperLogStore changelog3("./logs", 100, true, params.enable_compression);
+    changelog3.init(1, 0);
+    entry = getLogEntry("hello_world", 1000);
+    changelog3.append(entry);
+    changelog3.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog3.next_slot(), 4);
+
+    std::cerr << "================Fourth time=====================\n";
+    DB::KeeperLogStore changelog4("./logs", 100, true, params.enable_compression);
+    changelog4.init(1, 0);
+    entry = getLogEntry("hello_world", 1000);
+    changelog4.append(entry);
+    changelog4.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog4.next_slot(), 5);
+}
+
 
 TEST_P(CoordinationTest, TestLogGap)
 {
