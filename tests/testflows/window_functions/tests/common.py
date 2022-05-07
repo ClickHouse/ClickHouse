@@ -8,52 +8,77 @@ from testflows.core.name import basename, parentname
 from testflows._core.testtype import TestSubType
 from testflows.asserts import values, error, snapshot
 
+
 def window_frame_error():
     return (36, "Exception: Window frame")
+
 
 def frame_start_error():
     return (36, "Exception: Frame start")
 
+
 def frame_end_error():
     return (36, "Exception: Frame end")
+
 
 def frame_offset_nonnegative_error():
     return syntax_error()
 
+
 def frame_end_unbounded_preceding_error():
     return (36, "Exception: Frame end cannot be UNBOUNDED PRECEDING")
+
 
 def frame_range_offset_error():
     return (48, "Exception: The RANGE OFFSET frame")
 
+
 def frame_requires_order_by_error():
-    return (36, "Exception: The RANGE OFFSET window frame requires exactly one ORDER BY column, 0 given")
+    return (
+        36,
+        "Exception: The RANGE OFFSET window frame requires exactly one ORDER BY column, 0 given",
+    )
+
 
 def syntax_error():
     return (62, "Exception: Syntax error")
 
+
 def groups_frame_error():
     return (48, "Exception: Window frame 'Groups' is not implemented")
 
+
 def getuid():
     if current().subtype == TestSubType.Example:
-        testname = f"{basename(parentname(current().name)).replace(' ', '_').replace(',','')}"
+        testname = (
+            f"{basename(parentname(current().name)).replace(' ', '_').replace(',','')}"
+        )
     else:
         testname = f"{basename(current().name).replace(' ', '_').replace(',','')}"
-    return testname + "_" + str(uuid.uuid1()).replace('-', '_')
+    return testname + "_" + str(uuid.uuid1()).replace("-", "_")
+
 
 def convert_output(s):
-    """Convert expected output to TSV format.
-    """
-    return '\n'.join([l.strip() for i, l in enumerate(re.sub('\s+\|\s+', '\t', s).strip().splitlines()) if i != 1])
+    """Convert expected output to TSV format."""
+    return "\n".join(
+        [
+            l.strip()
+            for i, l in enumerate(re.sub("\s+\|\s+", "\t", s).strip().splitlines())
+            if i != 1
+        ]
+    )
 
-def execute_query(sql, expected=None, exitcode=None, message=None, format="TabSeparatedWithNames"):
-    """Execute SQL query and compare the output to the snapshot.
-    """
+
+def execute_query(
+    sql, expected=None, exitcode=None, message=None, format="TabSeparatedWithNames"
+):
+    """Execute SQL query and compare the output to the snapshot."""
     name = basename(current().name)
 
     with When("I execute query", description=sql):
-        r = current().context.node.query(sql + " FORMAT " + format, exitcode=exitcode, message=message)
+        r = current().context.node.query(
+            sql + " FORMAT " + format, exitcode=exitcode, message=message
+        )
 
     if message is None:
         if expected is not None:
@@ -62,18 +87,21 @@ def execute_query(sql, expected=None, exitcode=None, message=None, format="TabSe
         else:
             with Then("I check output against snapshot"):
                 with values() as that:
-                    assert that(snapshot("\n" + r.output.strip() + "\n", "tests", name=name, encoder=str)), error()
+                    assert that(
+                        snapshot(
+                            "\n" + r.output.strip() + "\n",
+                            "tests",
+                            name=name,
+                            encoder=str,
+                        )
+                    ), error()
+
 
 @TestStep(Given)
 def t1_table(self, name="t1", distributed=False):
-    """Create t1 table.
-    """
+    """Create t1 table."""
     table = None
-    data = [
-        "(1, 1)",
-        "(1, 2)",
-        "(2, 2)"
-    ]
+    data = ["(1, 1)", "(1, 2)", "(2, 2)"]
 
     if not distributed:
         with By("creating table"):
@@ -97,10 +125,18 @@ def t1_table(self, name="t1", distributed=False):
                     f2 Int8
                 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{name}', '{{replica}}') ORDER BY tuple()
                 """
-            create_table(name=name + "_source", statement=sql, on_cluster="sharded_cluster")
+            create_table(
+                name=name + "_source", statement=sql, on_cluster="sharded_cluster"
+            )
 
         with And("a distributed table"):
-            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, f1 % toUInt8(getMacro('shard')))"
+            sql = (
+                "CREATE TABLE {name} AS "
+                + name
+                + "_source"
+                + " ENGINE = Distributed(sharded_cluster, default, "
+                + f"{name + '_source'}, f1 % toUInt8(getMacro('shard')))"
+            )
             table = create_table(name=name, statement=sql)
 
         with And("populating table with data"):
@@ -110,10 +146,10 @@ def t1_table(self, name="t1", distributed=False):
 
     return table
 
+
 @TestStep(Given)
 def datetimes_table(self, name="datetimes", distributed=False):
-    """Create datetimes table.
-    """
+    """Create datetimes table."""
     table = None
     data = [
         "(1, '2000-10-19 10:23:54', '2000-10-19 10:23:54')",
@@ -125,7 +161,7 @@ def datetimes_table(self, name="datetimes", distributed=False):
         "(7, '2005-10-19 10:23:54', '2005-10-19 10:23:54')",
         "(8, '2006-10-19 10:23:54', '2006-10-19 10:23:54')",
         "(9, '2007-10-19 10:23:54', '2007-10-19 10:23:54')",
-        "(10, '2008-10-19 10:23:54', '2008-10-19 10:23:54')"
+        "(10, '2008-10-19 10:23:54', '2008-10-19 10:23:54')",
     ]
 
     if not distributed:
@@ -152,10 +188,18 @@ def datetimes_table(self, name="datetimes", distributed=False):
                 f_timestamp DateTime
             ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{name}', '{{replica}}') ORDER BY tuple()
             """
-            create_table(name=name + "_source", statement=sql, on_cluster="sharded_cluster")
+            create_table(
+                name=name + "_source", statement=sql, on_cluster="sharded_cluster"
+            )
 
         with And("a distributed table"):
-            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, id % toUInt8(getMacro('shard')))"
+            sql = (
+                "CREATE TABLE {name} AS "
+                + name
+                + "_source"
+                + " ENGINE = Distributed(sharded_cluster, default, "
+                + f"{name + '_source'}, id % toUInt8(getMacro('shard')))"
+            )
             table = create_table(name=name, statement=sql)
 
         with And("populating table with data"):
@@ -165,10 +209,10 @@ def datetimes_table(self, name="datetimes", distributed=False):
 
     return table
 
+
 @TestStep(Given)
 def numerics_table(self, name="numerics", distributed=False):
-    """Create numerics tables.
-    """
+    """Create numerics tables."""
     table = None
 
     data = [
@@ -181,7 +225,7 @@ def numerics_table(self, name="numerics", distributed=False):
         "(6, 2, 2, 2)",
         "(7, 100, 100, 100)",
         "(8, 'infinity', 'infinity', toDecimal64(1000,15))",
-        "(9, 'NaN', 'NaN', 0)"
+        "(9, 'NaN', 'NaN', 0)",
     ]
 
     if not distributed:
@@ -210,10 +254,18 @@ def numerics_table(self, name="numerics", distributed=False):
                     f_numeric Decimal64(15)
                 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{name}', '{{replica}}') ORDER BY tuple();
             """
-            create_table(name=name + "_source", statement=sql, on_cluster="sharded_cluster")
+            create_table(
+                name=name + "_source", statement=sql, on_cluster="sharded_cluster"
+            )
 
         with And("a distributed table"):
-            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, id % toUInt8(getMacro('shard')))"
+            sql = (
+                "CREATE TABLE {name} AS "
+                + name
+                + "_source"
+                + " ENGINE = Distributed(sharded_cluster, default, "
+                + f"{name + '_source'}, id % toUInt8(getMacro('shard')))"
+            )
             table = create_table(name=name, statement=sql)
 
         with And("populating table with data"):
@@ -223,10 +275,10 @@ def numerics_table(self, name="numerics", distributed=False):
 
     return table
 
+
 @TestStep(Given)
 def tenk1_table(self, name="tenk1", distributed=False):
-    """Create tenk1 table.
-    """
+    """Create tenk1 table."""
     table = None
 
     if not distributed:
@@ -256,7 +308,11 @@ def tenk1_table(self, name="tenk1", distributed=False):
         with And("populating table with data"):
             datafile = os.path.join(current_dir(), "tenk.data")
             debug(datafile)
-            self.context.cluster.command(None, f"cat \"{datafile}\" | {self.context.node.cluster.docker_compose} exec -T {self.context.node.name} clickhouse client -q \"INSERT INTO {name} FORMAT TSV\"", exitcode=0)
+            self.context.cluster.command(
+                None,
+                f'cat "{datafile}" | {self.context.node.cluster.docker_compose} exec -T {self.context.node.name} clickhouse client -q "INSERT INTO {name} FORMAT TSV"',
+                exitcode=0,
+            )
     else:
         with By("creating a table"):
             sql = """
@@ -279,10 +335,18 @@ def tenk1_table(self, name="tenk1", distributed=False):
                 string4             String
             )  ENGINE = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{name}', '{{replica}}') ORDER BY tuple()
             """
-            create_table(name=name + '_source', statement=sql, on_cluster="sharded_cluster")
+            create_table(
+                name=name + "_source", statement=sql, on_cluster="sharded_cluster"
+            )
 
         with And("a distributed table"):
-            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, unique1 % toUInt8(getMacro('shard')))"
+            sql = (
+                "CREATE TABLE {name} AS "
+                + name
+                + "_source"
+                + " ENGINE = Distributed(sharded_cluster, default, "
+                + f"{name + '_source'}, unique1 % toUInt8(getMacro('shard')))"
+            )
             table = create_table(name=name, statement=sql)
 
         with And("populating table with data"):
@@ -291,22 +355,24 @@ def tenk1_table(self, name="tenk1", distributed=False):
             with open(datafile, "r") as file:
                 lines = file.readlines()
 
-            chunks = [lines[i:i + 1000] for i in range(0, len(lines), 1000)]
+            chunks = [lines[i : i + 1000] for i in range(0, len(lines), 1000)]
 
             for chunk in chunks:
                 with tempfile.NamedTemporaryFile() as file:
-                    file.write(''.join(chunk).encode("utf-8"))
+                    file.write("".join(chunk).encode("utf-8"))
                     file.flush()
-                    self.context.cluster.command(None,
-                        f"cat \"{file.name}\" | {self.context.node.cluster.docker_compose} exec -T {self.context.node.name} clickhouse client -q \"INSERT INTO {table} FORMAT TSV\"",
-                        exitcode=0)
+                    self.context.cluster.command(
+                        None,
+                        f'cat "{file.name}" | {self.context.node.cluster.docker_compose} exec -T {self.context.node.name} clickhouse client -q "INSERT INTO {table} FORMAT TSV"',
+                        exitcode=0,
+                    )
 
     return table
 
+
 @TestStep(Given)
 def empsalary_table(self, name="empsalary", distributed=False):
-    """Create employee salary reference table.
-    """
+    """Create employee salary reference table."""
     table = None
 
     data = [
@@ -319,7 +385,7 @@ def empsalary_table(self, name="empsalary", distributed=False):
         "('develop', 9, 4500, '2008-01-01')",
         "('sales', 3, 4800, '2007-08-01')",
         "('develop', 8, 6000, '2006-10-01')",
-        "('develop', 11, 5200, '2007-08-15')"
+        "('develop', 11, 5200, '2007-08-15')",
     ]
 
     if not distributed:
@@ -341,7 +407,7 @@ def empsalary_table(self, name="empsalary", distributed=False):
 
     else:
         with By("creating replicated source tables"):
-                sql = """
+            sql = """
                 CREATE TABLE {name} ON CLUSTER sharded_cluster (
                     depname LowCardinality(String),
                     empno  UInt64,
@@ -350,27 +416,40 @@ def empsalary_table(self, name="empsalary", distributed=False):
                     )
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{name}', '{{replica}}') ORDER BY enroll_date
                 """
-                create_table(name=name + "_source", statement=sql, on_cluster="sharded_cluster")
+            create_table(
+                name=name + "_source", statement=sql, on_cluster="sharded_cluster"
+            )
 
         with And("a distributed table"):
-            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, empno % toUInt8(getMacro('shard')))"
+            sql = (
+                "CREATE TABLE {name} AS "
+                + name
+                + "_source"
+                + " ENGINE = Distributed(sharded_cluster, default, "
+                + f"{name + '_source'}, empno % toUInt8(getMacro('shard')))"
+            )
             table = create_table(name=name, statement=sql)
 
         with And("populating distributed table with data"):
-            with By("inserting one data row at a time", description="so that data is sharded between nodes"):
+            with By(
+                "inserting one data row at a time",
+                description="so that data is sharded between nodes",
+            ):
                 for row in data:
-                    self.context.node.query(f"INSERT INTO {table} VALUES {row}",
-                                            settings=[("insert_distributed_sync", "1")])
+                    self.context.node.query(
+                        f"INSERT INTO {table} VALUES {row}",
+                        settings=[("insert_distributed_sync", "1")],
+                    )
 
     with And("dumping all the data in the table"):
         self.context.node.query(f"SELECT * FROM {table}")
 
     return table
 
+
 @TestStep(Given)
 def create_table(self, name, statement, on_cluster=False):
-    """Create table.
-    """
+    """Create table."""
     node = current().context.node
     try:
         with Given(f"I have a {name} table"):

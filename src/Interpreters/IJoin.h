@@ -25,7 +25,7 @@ public:
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
-    virtual bool addJoinedBlock(const Block & block, bool check_limits = true) = 0;
+    virtual bool addJoinedBlock(const Block & block, bool check_limits = true) = 0; /// NOLINT
 
     virtual void checkTypesOfKeys(const Block & block) const = 0;
 
@@ -44,6 +44,9 @@ public:
     /// StorageJoin/Dictionary is already filled. No need to call addJoinedBlock.
     /// Different query plan is used for such joins.
     virtual bool isFilled() const { return false; }
+
+    // That can run FillingRightJoinSideTransform parallelly
+    virtual bool supportParallelJoin() const { return false; }
 
     virtual std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;

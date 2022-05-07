@@ -1,5 +1,6 @@
 #include "HashedArrayDictionary.h"
 
+#include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -577,7 +578,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getAttributeColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
 
     return result;
 }
@@ -757,7 +758,7 @@ Pipe HashedArrayDictionary<dictionary_key_type>::read(const Names & column_names
     }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
     auto result = coordinator->read(num_streams);
 
     return result;

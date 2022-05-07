@@ -5,7 +5,7 @@ This allows to find problems like segmentation fault which cause shutdown of ser
 Usage:
 ```
 $ ls $HOME/someclickhouse
-clickhouse-client_18.14.9_all.deb clickhouse-common-static_18.14.9_amd64.deb clickhouse-server_18.14.9_all.deb clickhouse-test_18.14.9_all.deb
+clickhouse-client_18.14.9_all.deb clickhouse-common-static_18.14.9_amd64.deb clickhouse-server_18.14.9_all.deb
 $ docker run --volume=$HOME/someclickhouse:/package_folder --volume=$HOME/test_output:/test_output clickhouse/stress-test
 Selecting previously unselected package clickhouse-common-static.
 (Reading database ... 14442 files and directories currently installed.)

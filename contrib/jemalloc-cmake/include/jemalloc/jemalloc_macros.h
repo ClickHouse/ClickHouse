@@ -4,13 +4,13 @@
 #include <limits.h>
 #include <strings.h>
 
-#define JEMALLOC_VERSION "5.2.1-0-gea6b3e973b477b8061e0076bb257dbd7f3faa756"
+#define JEMALLOC_VERSION "5.3-RC"
 #define JEMALLOC_VERSION_MAJOR 5
-#define JEMALLOC_VERSION_MINOR 2
-#define JEMALLOC_VERSION_BUGFIX 1
+#define JEMALLOC_VERSION_MINOR 3
+#define JEMALLOC_VERSION_BUGFIX 0
 #define JEMALLOC_VERSION_NREV 0
-#define JEMALLOC_VERSION_GID "ea6b3e973b477b8061e0076bb257dbd7f3faa756"
-#define JEMALLOC_VERSION_GID_IDENT ea6b3e973b477b8061e0076bb257dbd7f3faa756
+#define JEMALLOC_VERSION_GID "ca709c3139f77f4c00a903cdee46d71e9028f6c6"
+#define JEMALLOC_VERSION_GID_IDENT ca709c3139f77f4c00a903cdee46d71e9028f6c6
 
 #define MALLOCX_LG_ALIGN(la)	((int)(la))
 #if LG_SIZEOF_PTR == 2
@@ -71,6 +71,7 @@
 #  endif
 #  define JEMALLOC_FORMAT_ARG(i)
 #  define JEMALLOC_FORMAT_PRINTF(s, i)
+#  define JEMALLOC_FALLTHROUGH
 #  define JEMALLOC_NOINLINE __declspec(noinline)
 #  ifdef __cplusplus
 #    define JEMALLOC_NOTHROW __declspec(nothrow)
@@ -84,6 +85,7 @@
 #  else
 #    define JEMALLOC_ALLOCATOR
 #  endif
+#  define JEMALLOC_COLD
 #elif defined(JEMALLOC_HAVE_ATTR)
 #  define JEMALLOC_ATTR(s) __attribute__((s))
 #  define JEMALLOC_ALIGNED(s) JEMALLOC_ATTR(aligned(s))
@@ -109,11 +111,21 @@
 #  else
 #    define JEMALLOC_FORMAT_PRINTF(s, i)
 #  endif
+#  ifdef JEMALLOC_HAVE_ATTR_FALLTHROUGH
+#    define JEMALLOC_FALLTHROUGH JEMALLOC_ATTR(fallthrough)
+#  else
+#    define JEMALLOC_FALLTHROUGH
+#  endif
 #  define JEMALLOC_NOINLINE JEMALLOC_ATTR(noinline)
 #  define JEMALLOC_NOTHROW JEMALLOC_ATTR(nothrow)
 #  define JEMALLOC_SECTION(s) JEMALLOC_ATTR(section(s))
 #  define JEMALLOC_RESTRICT_RETURN
 #  define JEMALLOC_ALLOCATOR
+#  ifdef JEMALLOC_HAVE_ATTR_COLD
+#    define JEMALLOC_COLD JEMALLOC_ATTR(__cold__)
+#  else
+#    define JEMALLOC_COLD
+#  endif
 #else
 #  define JEMALLOC_ATTR(s)
 #  define JEMALLOC_ALIGNED(s)
@@ -121,9 +133,17 @@
 #  define JEMALLOC_ALLOC_SIZE2(s1, s2)
 #  define JEMALLOC_EXPORT
 #  define JEMALLOC_FORMAT_PRINTF(s, i)
+#  define JEMALLOC_FALLTHROUGH
 #  define JEMALLOC_NOINLINE
 #  define JEMALLOC_NOTHROW
 #  define JEMALLOC_SECTION(s)
 #  define JEMALLOC_RESTRICT_RETURN
 #  define JEMALLOC_ALLOCATOR
+#  define JEMALLOC_COLD
+#endif
+
+#if (defined(__APPLE__) || defined(__FreeBSD__)) && !defined(JEMALLOC_NO_RENAME)
+#  define JEMALLOC_SYS_NOTHROW
+#else
+#  define JEMALLOC_SYS_NOTHROW JEMALLOC_NOTHROW
 #endif

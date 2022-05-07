@@ -3,8 +3,11 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/HTTPRequest.h>
+#include <Common/config.h>
 
 #include <Poco/Net/HTTPServerSession.h>
+
+namespace Poco::Net { class X509Certificate; }
 
 namespace DB
 {
@@ -37,6 +40,11 @@ public:
 
     /// Returns the server's address.
     const Poco::Net::SocketAddress & serverAddress() const { return server_address; }
+
+#if USE_SSL
+    bool havePeerCertificate() const;
+    Poco::Net::X509Certificate peerCertificate() const;
+#endif
 
 private:
     /// Limits for basic sanity checks when reading a header

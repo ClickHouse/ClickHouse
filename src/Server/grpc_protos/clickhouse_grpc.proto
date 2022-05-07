@@ -45,21 +45,19 @@ message ExternalTable {
    map<string, string> settings = 5;
 }
 
-enum CompressionAlgorithm {
-   NO_COMPRESSION = 0;
-   DEFLATE = 1;
-   GZIP = 2;
-   STREAM_GZIP = 3;
-}
-
-enum CompressionLevel {
-   COMPRESSION_NONE = 0;
-   COMPRESSION_LOW = 1;
-   COMPRESSION_MEDIUM = 2;
-   COMPRESSION_HIGH = 3;
-}
-
-message Compression {
+message ObsoleteTransportCompression {
+   enum CompressionAlgorithm {
+      NO_COMPRESSION = 0;
+      DEFLATE = 1;
+      GZIP = 2;
+      STREAM_GZIP = 3;
+   }
+   enum CompressionLevel {
+      COMPRESSION_NONE = 0;
+      COMPRESSION_LOW = 1;
+      COMPRESSION_MEDIUM = 2;
+      COMPRESSION_HIGH = 3;
+   }
    CompressionAlgorithm algorithm = 1;
    CompressionLevel level = 2;
 }
@@ -84,6 +82,9 @@ message QueryInfo {
    // Default output format. If not specified, 'TabSeparated' is used.
    string output_format = 7;
 
+   // Set it if you want the names and the types of output columns to be sent to the client.
+   bool send_output_columns = 24;
+
    repeated ExternalTable external_tables = 8;
 
    string user_name = 9;
@@ -102,16 +103,16 @@ message QueryInfo {
    // `next_query_info` is allowed to be set only if a method with streaming input (i.e. ExecuteQueryWithStreamInput() or ExecuteQueryWithStreamIO()) is used.
    bool next_query_info = 16;
 
-   /// Controls how a ClickHouse server will compress query execution results before sending back to the client.
-   /// If not set the compression settings from the configuration file will be used.
-   Compression result_compression = 17;
-
-   // Compression type for `input_data`, `output_data`, `totals` and `extremes`.
+   // Compression type for `input_data`.
    // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
-   // When used for `input_data` the client is responsible to compress data before putting it into `input_data`.
-   // When used for `output_data` or `totals` or `extremes` the client receives compressed data and should decompress it by itself.
-   // In the latter case consider to specify also `compression_level`.
-   string compression_type = 18;
+   // The client is responsible to compress data before putting it into `input_data`.
+   string input_compression_type = 20;
+
+   // Compression type for `output_data`, `totals` and `extremes`.
+   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
+   // The client receives compressed data and should decompress it by itself.
+   // Consider also setting `output_compression_level`.
+   string output_compression_type = 21;
 
    // Compression level.
    // WARNING: If it's not specified the compression level is set to zero by default which might be not the best choice for some compression types (see below).
@@ -123,7 +124,23 @@ message QueryInfo {
    // zstd: 1..22; 3 is recommended by default (compression level 0 also means 3)
    // lz4: 0..16; values < 0 mean fast acceleration
    // bz2: 1..9
-   int32 compression_level = 19;
+   int32 output_compression_level = 19;
+
+   // Transport compression is an alternative way to make the server to compress its response.
+   // This kind of compression implies that instead of compressing just `output` the server will compress whole packed messages of the `Result` type,
+   // and then gRPC implementation on client side will decompress those messages so client code won't be bothered with decompression.
+   // Here is a big difference between the transport compression and the compression enabled by setting `output_compression_type` because
+   // in case of the transport compression the client code receives already decompressed data in `output`.
+   // If the transport compression is not set here it can still be enabled by the server configuration.
+   // Supported compression types: none, deflate, gzip, stream_gzip
+   // Supported compression levels: 0..3
+   // WARNING: Don't set `transport_compression` and `output_compression` at the same time because it will make the server to compress its output twice!
+   string transport_compression_type = 22;
+   int32 transport_compression_level = 23;
+
+   /// Obsolete fields, should not be used in new code.
+   ObsoleteTransportCompression obsolete_result_compression = 17;
+   string obsolete_compression_type = 18;
 }
 
 enum LogsLevel {
@@ -173,7 +190,17 @@ message Exception {
 
 // Result of execution of a query which is sent back by the ClickHouse server to the client.
 message Result {
-   // Output of the query, represented in the `output_format` or in a format specified in `query`.
+   string query_id = 9;
+   string time_zone = 10;
+   
+   // The format in which `output`, `totals` and `extremes` are written.
+   // It's either the same as `output_format` specified in `QueryInfo` or the format specified in the query itself.
+   string output_format = 11;
+
+   // The names and types of columns of the result written in `output`.
+   repeated NameAndType output_columns = 12;
+
+   // Output of the query, represented in the `output_format`.
    bytes output = 1;
    bytes totals = 2;
    bytes extremes = 3;
