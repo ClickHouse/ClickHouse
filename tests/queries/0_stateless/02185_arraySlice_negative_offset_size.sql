@@ -22,4 +22,4 @@ select arraySlice(s, l, -2) from t;
 select arraySlice(s, -2, r) from t;
 select arraySlice(s, l, r) from t;
 
-drop table if exists t;
+drop table t;
