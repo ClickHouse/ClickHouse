@@ -1,4 +1,5 @@
 #include <Parsers/MySQLCompatibility/TreePath.h>
+#include <Parsers/MySQLCompatibility/util.h>
 
 #include <Parsers/MySQLCompatibility/ExpressionCT.h>
 #include <Parsers/MySQLCompatibility/SelectQueryCT.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithAlias.h>
 
 namespace MySQLCompatibility
 {
@@ -21,10 +23,9 @@ bool SelectItemsListCT::setup(String & error)
     if (select_item_list == nullptr)
         return false;
 
-    auto select_expr_path = TreePath({
-        "selectItem",
-        "expr",
-    });
+    auto select_expr_path = TreePath({"selectItem", "expr"});
+
+    auto alias_path = TreePath({"selectItem", "selectAlias"});
 
     if (!select_item_list->terminal_types.empty())
         has_asterisk = select_item_list->terminal_types[0] == MySQLTree::TOKEN_TYPE::MULT_OPERATOR;
@@ -32,7 +33,7 @@ bool SelectItemsListCT::setup(String & error)
     for (const auto & child : select_item_list->children)
     {
         MySQLPtr expr_node = nullptr;
-        if ((expr_node = select_expr_path.find(child)) != nullptr)
+        if ((expr_node = select_expr_path.descend(child)) != nullptr)
         {
             ConvPtr expr = std::make_shared<ExpressionCT>(expr_node);
             if (!expr->setup(error))
@@ -41,7 +42,31 @@ bool SelectItemsListCT::setup(String & error)
                 return false;
             }
 
-            exprs.push_back(std::move(expr));
+            MySQLPtr alias_node = alias_path.descend(child);
+
+            String alias = "";
+            if (alias_node != nullptr)
+            {
+                LOG_DEBUG(getLogger(), "got an alias!");
+                LOG_DEBUG(getLogger(), "alias AST {}", alias_node->PrintTree());
+                MySQLPtr ident_alias = TreePath({"identifier"}).descend(alias_node);
+                MySQLPtr text_alias = TreePath({"textStringLiteral"}).descend(alias_node);
+
+                if (ident_alias != nullptr)
+                {
+                    if (!tryExtractIdentifier(ident_alias, alias))
+                    {
+                        error = "invalid identifier";
+                        return false;
+                    }
+                }
+                else if (text_alias != nullptr)
+                    alias = text_alias->terminals[0];
+            }
+
+            LOG_DEBUG(getLogger(), "alias is {}", alias);
+
+            exprs.push_back({std::move(expr), alias});
         }
     }
 
@@ -56,10 +81,18 @@ void SelectItemsListCT::convert(CHPtr & ch_tree) const
         auto asterisk = std::make_shared<DB::ASTAsterisk>();
         select_item_list->children.push_back(std::move(asterisk));
     }
-    for (const auto & expr : exprs)
+    for (const auto & item : exprs)
     {
         CHPtr expr_node = nullptr;
-        expr->convert(expr_node);
+        item.expr->convert(expr_node);
+
+        if (item.alias != "")
+        {
+            auto * aliased_node = dynamic_cast<DB::ASTWithAlias *>(expr_node.get());
+            if (aliased_node != nullptr)
+                aliased_node->setAlias(item.alias);
+        }
+
         select_item_list->children.push_back(std::move(expr_node));
     }
 
@@ -93,10 +126,7 @@ bool SelectOrderByCT::setup(String & error)
             args.push_back({std::move(order_elem_ct), MySQLTree::TOKEN_TYPE::ASC_SYMBOL});
 
             if (order_expr->children.size() == 2)
-            {
-                MySQLTree::TOKEN_TYPE direction = order_expr->children[1]->terminal_types[0];
-                args.back().second = direction;
-            }
+                args.back().direction = order_expr->children[1]->terminal_types[0];
         }
     }
 
@@ -111,8 +141,8 @@ void SelectOrderByCT::convert(CHPtr & ch_tree) const
     {
         auto order_node = std::make_shared<DB::ASTOrderByElement>();
         CHPtr expr = nullptr;
-        elem.first->convert(expr);
-        order_node->direction = (elem.second == MySQLTree::TOKEN_TYPE::ASC_SYMBOL ? 1 : -1);
+        elem.expr->convert(expr);
+        order_node->direction = (elem.direction == MySQLTree::TOKEN_TYPE::ASC_SYMBOL ? 1 : -1);
         order_node->children.push_back(std::move(expr));
         order_by_list->children.push_back(std::move(order_node));
     }
@@ -197,6 +227,7 @@ bool SelectTablesCT::setup(String &)
         MySQLPtr table_and_db_node;
         if ((table_and_db_node = table_path.find(child)) != nullptr)
         {
+            // FIXME: use tryExtractIdentifier?
             auto identifier_path = TreePath({"pureIdentifier"});
             if (table_and_db_node->children.size() == 1)
             {

@@ -8,9 +8,10 @@
 namespace MySQLCompatibility
 {
 
-// TODO: multiple key-value pairs in SET query
+// TODO: multiple key-value pairs in SET query, other complex syntax
 bool SetQueryCT::setup(String &)
 {
+    // FIXME: use tryExtractIdentifier?
     MySQLPtr key_node = TreePath({"internalVariableName", "pureIdentifier"}).find(getSourceNode());
 
     if (key_node == nullptr)

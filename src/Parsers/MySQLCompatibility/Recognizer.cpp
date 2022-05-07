@@ -2,6 +2,7 @@
 
 #include <Parsers/MySQLCompatibility/SelectQueryCT.h>
 #include <Parsers/MySQLCompatibility/SetQueryCT.h>
+#include <Parsers/MySQLCompatibility/ShowTablesQueryCT.h>
 #include <Parsers/MySQLCompatibility/UseCommandCT.h>
 
 namespace MySQLCompatibility
@@ -14,7 +15,7 @@ ConvPtr SetQueryRecognizer::Recognize(MySQLPtr node) const
     return nullptr;
 }
 
-ConvPtr SimpleSelectQueryRecognizer::Recognize(MySQLPtr node) const
+ConvPtr SelectQueryRecognizer::Recognize(MySQLPtr node) const
 {
     if (node->rule_name == "selectStatement")
         return std::make_shared<SelectQueryCT>(node);
@@ -26,6 +27,14 @@ ConvPtr UseCommandRecognizer::Recognize(MySQLPtr node) const
 {
     if (node->rule_name == "useCommand")
         return std::make_shared<UseCommandCT>(node);
+
+    return nullptr;
+}
+
+ConvPtr ShowTablesQueryRecognizer::Recognize(MySQLPtr node) const
+{
+    if (node->rule_name == "showStatement")
+        return std::make_shared<ShowTablesQueryCT>(node);
 
     return nullptr;
 }

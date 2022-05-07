@@ -82,7 +82,7 @@ private:
 class ExprIdentifierCT : public IConversionTree
 {
 public:
-    ExprIdentifierCT(MySQLPtr source) : IConversionTree(source, "pureIdentifier") { }
+    ExprIdentifierCT(MySQLPtr source) : IConversionTree(source, "identifier") { }
     virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
@@ -98,6 +98,7 @@ public:
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
+    String varname;
 };
 
 class ExprSimpleCT : public IConversionTree

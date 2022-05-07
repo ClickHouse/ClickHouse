@@ -10,7 +10,7 @@ public:
 	virtual void setMode(uint32_t);
 	virtual bool isSqlModeActive(SqlMode) const;
 protected:
-    int serverVersion = 50707;
+    int serverVersion = 80018;
 private:
 	uint32_t sqlMode;
 };

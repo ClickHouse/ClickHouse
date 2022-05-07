@@ -438,7 +438,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
 		const String & sql_dialect = settings.sql_dialect;
 		assert(sql_dialect == "clickhouse" || sql_dialect == "mysql");	
- 		if (sql_dialect == "mysql")
+ 		if (sql_dialect == "mysql" && !internal)
 		{
 			String query(begin, end);
 			LOG_DEBUG(&Poco::Logger::get("executeQuery"), "got MYSQL query {}", query);

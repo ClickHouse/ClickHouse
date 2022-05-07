@@ -7,6 +7,12 @@ namespace MySQLCompatibility
 
 class SelectItemsListCT : public IConversionTree
 {
+    struct SelectItem
+    {
+        ConvPtr expr;
+        String alias = "";
+    };
+
 public:
     SelectItemsListCT(MySQLPtr source) : IConversionTree(source) { }
     virtual bool setup(String & error) override;
@@ -14,18 +20,24 @@ public:
 
 private:
     bool has_asterisk = false;
-    std::vector<ConvPtr> exprs;
+    std::vector<SelectItem> exprs;
 };
 
 class SelectOrderByCT : public IConversionTree
 {
+    struct OrderByArg
+    {
+        ConvPtr expr;
+        MySQLTree::TOKEN_TYPE direction;
+    };
+
 public:
     SelectOrderByCT(MySQLPtr source) : IConversionTree(source) { }
     virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
-    std::vector<std::pair<ConvPtr, MySQLTree::TOKEN_TYPE>> args;
+    std::vector<OrderByArg> args;
 };
 
 class SelectLimitOffsetCT : public IConversionTree

@@ -50,6 +50,9 @@ public:
         // DIRECTION
         ASC_SYMBOL,
         DESC_SYMBOL,
+		
+		// SHOW
+		TABLES_SYMBOL,
 
         UNKNOWN
     };

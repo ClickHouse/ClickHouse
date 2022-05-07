@@ -6,4 +6,6 @@ namespace MySQLCompatibility
 {
 String removeQuotes(const String & quoted);
 Poco::Logger * getLogger();
+
+bool tryExtractIdentifier(MySQLPtr node, String & value);
 }

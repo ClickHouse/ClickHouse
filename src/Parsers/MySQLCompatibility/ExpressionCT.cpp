@@ -235,16 +235,13 @@ void ExprGenericLiteralCT::convert(CHPtr & ch_tree) const
 
 bool ExprIdentifierCT::setup(String & error)
 {
-    MySQLPtr identifier_node = TreePath({"pureIdentifier"}).find(getSourceNode());
+    MySQLPtr identifier_node = getSourceNode();
 
-    if (identifier_node == nullptr)
+    if (!tryExtractIdentifier(identifier_node, value))
     {
         error = "invalid identifier";
         return false;
     }
-    assert(!identifier_node->terminals.empty());
-    value = removeQuotes(identifier_node->terminals[0]);
-
     return true;
 }
 
@@ -252,6 +249,32 @@ void ExprIdentifierCT::convert(CHPtr & ch_tree) const
 {
     auto identifier = std::make_shared<DB::ASTIdentifier>(value);
     ch_tree = identifier;
+}
+
+bool ExprVariableCT::setup(String & error)
+{
+    const MySQLPtr & var_node = getSourceNode();
+
+    MySQLPtr sys_var_node = TreePath({"systemVariable"}).descend(var_node);
+
+    if (sys_var_node == nullptr)
+    {
+        error = "only system variables are supported now";
+        return false;
+    }
+
+    MySQLPtr sys_var_content = TreePath({"textOrIdentifier", "pureIdentifier"}).find(sys_var_node);
+
+    assert(sys_var_content != nullptr);
+    varname = sys_var_content->terminals[0];
+
+    return true;
+}
+
+void ExprVariableCT::convert(CHPtr & ch_tree) const
+{
+    auto literal_node = std::make_shared<DB::ASTLiteral>(varname);
+    ch_tree = DB::makeASTFunction("globalVariable", literal_node);
 }
 
 bool ExprSimpleCT::setup(String & error)
@@ -309,7 +332,7 @@ bool ExprSimpleCT::setup(String & error)
     MySQLPtr column_node = TreePath({"columnRef"}).descend(simple_expr_node);
     if (column_node != nullptr)
     {
-        MySQLPtr identifier_node = TreePath({"pureIdentifier"}).find(column_node);
+        MySQLPtr identifier_node = TreePath({"identifier"}).find(column_node);
         if (identifier_node == nullptr)
             return false;
 
@@ -326,6 +349,18 @@ bool ExprSimpleCT::setup(String & error)
     if (literal_node != nullptr)
     {
         subexpr_ct = std::make_shared<ExprGenericLiteralCT>(literal_node);
+        if (!subexpr_ct->setup(error))
+        {
+            subexpr_ct = nullptr;
+            return false;
+        }
+        return true;
+    }
+
+    MySQLPtr var_node = TreePath({"variable"}).descend(simple_expr_node);
+    if (var_node != nullptr)
+    {
+        subexpr_ct = std::make_shared<ExprVariableCT>(var_node);
         if (!subexpr_ct->setup(error))
         {
             subexpr_ct = nullptr;

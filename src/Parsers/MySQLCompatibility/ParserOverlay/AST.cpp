@@ -74,6 +74,9 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
             return AST::TOKEN_TYPE::ASC_SYMBOL;
         case MySQLLexer::DESC_SYMBOL:
             return AST::TOKEN_TYPE::DESC_SYMBOL;
+		
+		case MySQLLexer::TABLES_SYMBOL:
+			return AST::TOKEN_TYPE::TABLES_SYMBOL;
 
         default:
             return AST::TOKEN_TYPE::UNKNOWN;
