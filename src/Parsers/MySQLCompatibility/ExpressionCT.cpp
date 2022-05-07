@@ -94,9 +94,7 @@ static void spawnCHFunction(MySQLTree::TOKEN_TYPE operation, const ConvPtr & x, 
 
 bool ExprLiteralNullCT::setup(String &)
 {
-    MySQLPtr literal_node = TreePath({"nullLiteral"}).evaluate(_source);
-
-    return literal_node != nullptr;
+    return true;
 }
 
 void ExprLiteralNullCT::convert(CHPtr & ch_tree) const
@@ -107,11 +105,7 @@ void ExprLiteralNullCT::convert(CHPtr & ch_tree) const
 
 bool ExprLiteralBoolCT::setup(String &)
 {
-    MySQLPtr literal_node = TreePath({"boolLiteral"}).evaluate(_source);
-
-    if (literal_node == nullptr)
-        return false;
-
+    const MySQLPtr & literal_node = getSourceNode();
     value = (literal_node->terminal_types[0] == MySQLTree::TOKEN_TYPE::TRUE_SYMBOL);
     return true;
 }
@@ -124,11 +118,7 @@ void ExprLiteralBoolCT::convert(CHPtr & ch_tree) const
 
 bool ExprLiteralInt64CT::setup(String &)
 {
-    MySQLPtr literal_node = TreePath({"numLiteral"}).evaluate(_source);
-
-    if (literal_node == nullptr)
-        return false;
-
+    const MySQLPtr & literal_node = getSourceNode();
     value = std::stoi(literal_node->terminals[0]);
     return true;
 }
@@ -141,11 +131,7 @@ void ExprLiteralInt64CT::convert(CHPtr & ch_tree) const
 
 bool ExprLiteralFloat64CT::setup(String &)
 {
-    MySQLPtr literal_node = TreePath({"numLiteral"}).evaluate(_source);
-
-    if (literal_node == nullptr)
-        return false;
-
+    const MySQLPtr & literal_node = getSourceNode();
     value = std::stod(literal_node->terminals[0]);
     return true;
 }
@@ -158,11 +144,7 @@ void ExprLiteralFloat64CT::convert(CHPtr & ch_tree) const
 
 bool ExprLiteralNumericCT::setup(String & error)
 {
-    MySQLPtr numeric_node = TreePath({"numLiteral"}).evaluate(_source);
-
-    if (numeric_node == nullptr)
-        return false;
-
+    const MySQLPtr & numeric_node = getSourceNode();
     switch (numeric_node->terminal_types[0])
     {
         // FIXME: all int types ok?
@@ -194,18 +176,14 @@ void ExprLiteralNumericCT::convert(CHPtr & ch_tree) const
 
 bool ExprLiteralText::setup(String &)
 {
-    MySQLPtr text_literal = TreePath({"textLiteral"}).evaluate(_source);
-
-    if (text_literal == nullptr)
-        return false;
-
+    const MySQLPtr & text_literal = getSourceNode();
     auto string_path = TreePath({"textStringLiteral"});
 
     value = "";
     for (const auto & child : text_literal->children)
     {
         MySQLPtr text_string_node = nullptr;
-        if ((text_string_node = string_path.evaluate(child)) != nullptr)
+        if ((text_string_node = string_path.find(child)) != nullptr)
         {
             value += removeQuotes(text_string_node->terminals[0]);
         }
@@ -221,21 +199,22 @@ void ExprLiteralText::convert(CHPtr & ch_tree) const
 
 bool ExprGenericLiteralCT::setup(String & error)
 {
-    MySQLPtr literal_node = TreePath({"literal"}).evaluate(_source);
+    const MySQLPtr & literal_node = getSourceNode();
 
-    if (literal_node == nullptr)
-        return false;
+    auto numeric_path = TreePath({"numLiteral"});
+    auto text_path = TreePath({"textLiteral"});
+    auto bool_path = TreePath({"boolLiteral"});
+    auto null_path = TreePath({"nullLiteral"});
 
-    const String & rule_name = literal_node->children[0]->rule_name;
-
-    if (rule_name == "numLiteral")
-        literal_ct = std::make_shared<ExprLiteralNumericCT>(literal_node);
-    else if (rule_name == "textLiteral")
-        literal_ct = std::make_shared<ExprLiteralText>(literal_node);
-    else if (rule_name == "boolLiteral")
-        literal_ct = std::make_shared<ExprLiteralBoolCT>(literal_node);
-    else if (rule_name == "nullLiteral")
-        literal_ct = std::make_shared<ExprLiteralNullCT>(literal_node);
+    MySQLPtr result = nullptr;
+    if ((result = numeric_path.descend(literal_node)) != nullptr)
+        literal_ct = std::make_shared<ExprLiteralNumericCT>(result);
+    else if ((result = text_path.descend(literal_node)) != nullptr)
+        literal_ct = std::make_shared<ExprLiteralText>(result);
+    else if ((result = bool_path.descend(literal_node)) != nullptr)
+        literal_ct = std::make_shared<ExprLiteralBoolCT>(result);
+    else if ((result = null_path.descend(literal_node)) != nullptr)
+        literal_ct = std::make_shared<ExprLiteralNullCT>(result);
     else
         return false;
 
@@ -256,7 +235,7 @@ void ExprGenericLiteralCT::convert(CHPtr & ch_tree) const
 
 bool ExprIdentifierCT::setup(String & error)
 {
-    MySQLPtr identifier_node = TreePath({"pureIdentifier"}).evaluate(_source);
+    MySQLPtr identifier_node = TreePath({"pureIdentifier"}).find(getSourceNode());
 
     if (identifier_node == nullptr)
     {
@@ -277,14 +256,14 @@ void ExprIdentifierCT::convert(CHPtr & ch_tree) const
 
 bool ExprSimpleCT::setup(String & error)
 {
-    MySQLPtr simple_expr_node = TreePath({"simpleExpr"}).evaluate(_source);
+    MySQLPtr simple_expr_node = TreePath({"simpleExpr"}).find(getSourceNode());
 
     if (simple_expr_node == nullptr)
         return false;
 
     // ( subexpr )
     {
-        MySQLPtr expr_list = TreePath({"exprList"}).evaluate(simple_expr_node, true);
+        MySQLPtr expr_list = TreePath({"exprList"}).descend(simple_expr_node);
 
         if (expr_list != nullptr)
         {
@@ -327,10 +306,14 @@ bool ExprSimpleCT::setup(String & error)
             return false;
     }
 
-    MySQLPtr column_node = TreePath({"columnRef"}).evaluate(simple_expr_node, true);
+    MySQLPtr column_node = TreePath({"columnRef"}).descend(simple_expr_node);
     if (column_node != nullptr)
     {
-        subexpr_ct = std::make_shared<ExprIdentifierCT>(column_node);
+        MySQLPtr identifier_node = TreePath({"pureIdentifier"}).find(column_node);
+        if (identifier_node == nullptr)
+            return false;
+
+        subexpr_ct = std::make_shared<ExprIdentifierCT>(identifier_node);
         if (!subexpr_ct->setup(error))
         {
             subexpr_ct = nullptr;
@@ -339,7 +322,7 @@ bool ExprSimpleCT::setup(String & error)
         return true;
     }
 
-    MySQLPtr literal_node = TreePath({"literal"}).evaluate(simple_expr_node, true);
+    MySQLPtr literal_node = TreePath({"literal"}).descend(simple_expr_node);
     if (literal_node != nullptr)
     {
         subexpr_ct = std::make_shared<ExprGenericLiteralCT>(literal_node);
@@ -368,12 +351,12 @@ void ExprSimpleCT::convert(CHPtr & ch_tree) const
 
 bool ExprBitCT::setup(String & error)
 {
-    MySQLPtr bitexpr_node = TreePath({"bitExpr"}).evaluate(_source);
+    MySQLPtr bitexpr_node = TreePath({"bitExpr"}).find(getSourceNode());
 
     if (bitexpr_node == nullptr)
         return false;
 
-    MySQLPtr simple_expr_node = TreePath({"simpleExpr"}).evaluate(bitexpr_node, true);
+    MySQLPtr simple_expr_node = TreePath({"simpleExpr"}).descend(bitexpr_node);
 
 
     if (simple_expr_node != nullptr)
@@ -392,8 +375,8 @@ bool ExprBitCT::setup(String & error)
     {
         auto child_expr_path = TreePath({"bitExpr"});
 
-        MySQLPtr first = child_expr_path.evaluate(bitexpr_node->children[0], true);
-        MySQLPtr second = child_expr_path.evaluate(bitexpr_node->children[1], true);
+        MySQLPtr first = child_expr_path.descend(bitexpr_node->children[0]);
+        MySQLPtr second = child_expr_path.descend(bitexpr_node->children[1]);
 
         operation = bitexpr_node->terminal_types[0];
 
@@ -433,7 +416,7 @@ void ExprBitCT::convert(CHPtr & ch_tree) const
 
 bool ExprBoolStatementCT::setup(String & error)
 {
-    MySQLPtr bool_pri_node = TreePath({"boolPri"}).evaluate(_source);
+    MySQLPtr bool_pri_node = TreePath({"boolPri"}).find(getSourceNode());
 
     if (bool_pri_node == nullptr)
         return false;
@@ -441,7 +424,7 @@ bool ExprBoolStatementCT::setup(String & error)
     if (bool_pri_node->children.size() == 1)
     {
         // FIXME
-        MySQLPtr predicate_ptr = TreePath({"predicate", "bitExpr"}).evaluate(bool_pri_node, true);
+        MySQLPtr predicate_ptr = TreePath({"predicate", "bitExpr"}).descend(bool_pri_node);
 
         if (predicate_ptr != nullptr)
         {
@@ -505,9 +488,7 @@ void ExprBoolStatementCT::convert(CHPtr & ch_tree) const
 }
 bool ExpressionCT::setup(String & error)
 {
-    MySQLPtr expr = _source;
-    if (expr == nullptr)
-        return false;
+    MySQLPtr expr = getSourceNode();
 
     if (expr->children.size() == 1)
     {
@@ -573,17 +554,11 @@ bool ExpressionCT::setup(String & error)
 }
 void ExpressionCT::convert(CHPtr & ch_tree) const
 {
-    if (not_rule)
+    if (subexpr_ct != nullptr)
     {
         CHPtr subexpr = nullptr;
         subexpr_ct->convert(subexpr);
-        ch_tree = DB::makeASTFunction("not", subexpr);
-        return;
-    }
-
-    if (subexpr_ct != nullptr)
-    {
-        subexpr_ct->convert(ch_tree);
+        ch_tree = not_rule ? DB::makeASTFunction("not", subexpr) : subexpr;
         return;
     }
 

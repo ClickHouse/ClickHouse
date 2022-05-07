@@ -7,7 +7,7 @@ namespace MySQLCompatibility
 class SetQueryCT : public IConversionTree
 {
 public:
-    SetQueryCT(MySQLPtr source) : IConversionTree(source) { }
+    SetQueryCT(MySQLPtr source) : IConversionTree(source, "setStatement") { }
     virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 

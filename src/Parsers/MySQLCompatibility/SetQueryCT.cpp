@@ -11,14 +11,14 @@ namespace MySQLCompatibility
 // TODO: multiple key-value pairs in SET query
 bool SetQueryCT::setup(String &)
 {
-    MySQLPtr key_node = TreePath({"internalVariableName", "pureIdentifier"}).evaluate(_source);
+    MySQLPtr key_node = TreePath({"internalVariableName", "pureIdentifier"}).find(getSourceNode());
 
     if (key_node == nullptr)
         return false;
 
     const String & key = key_node->terminals[0];
 
-    MySQLPtr value_node = TreePath({"setExprOrDefault", "textStringLiteral"}).evaluate(_source);
+    MySQLPtr value_node = TreePath({"setExprOrDefault", "textStringLiteral"}).find(getSourceNode());
 
     if (value_node == nullptr)
         return false;

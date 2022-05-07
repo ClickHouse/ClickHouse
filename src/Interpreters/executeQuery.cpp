@@ -441,19 +441,22 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
  		if (sql_dialect == "mysql")
 		{
 			String query(begin, end);
-			LOG_INFO(&Poco::Logger::get("executeQuery"), "got query {}", query);
-			
+			LOG_DEBUG(&Poco::Logger::get("executeQuery"), "got MYSQL query {}", query);
+
 			MySQLCompatibility::Converter converter;
 			
 			String ast_dump = converter.dumpAST(query);
-			LOG_INFO(&Poco::Logger::get("executeQuery"), "MySQL AST = {}", ast_dump);
+			LOG_DEBUG(&Poco::Logger::get("executeQuery"), "MySQL AST = {}", ast_dump);
 			
 			String error;
 			if (!converter.toClickHouseAST(query, ast, error))
+			{
+				
+				LOG_ERROR(&Poco::Logger::get("executeQuery"), "failed query {}", query);
 				throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "ClickHouse failed to parse MySQL query with error: " + error);
-			
+			}
 			ast_dump = ast->dumpTree();
-			LOG_INFO(&Poco::Logger::get("executeQuery"), "Converted AST = {}", ast_dump);
+			LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Converted AST = {}", ast_dump);
 		}
 		else
 		{

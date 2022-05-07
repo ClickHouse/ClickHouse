@@ -16,7 +16,7 @@ namespace MySQLCompatibility
 {
 bool SelectItemsListCT::setup(String & error)
 {
-    MySQLPtr select_item_list = _source;
+    MySQLPtr select_item_list = getSourceNode();
 
     if (select_item_list == nullptr)
         return false;
@@ -32,7 +32,7 @@ bool SelectItemsListCT::setup(String & error)
     for (const auto & child : select_item_list->children)
     {
         MySQLPtr expr_node = nullptr;
-        if ((expr_node = select_expr_path.evaluate(child)) != nullptr)
+        if ((expr_node = select_expr_path.find(child)) != nullptr)
         {
             ConvPtr expr = std::make_shared<ExpressionCT>(expr_node);
             if (!expr->setup(error))
@@ -69,7 +69,7 @@ void SelectItemsListCT::convert(CHPtr & ch_tree) const
 
 bool SelectOrderByCT::setup(String & error)
 {
-    MySQLPtr order_list = _source;
+    MySQLPtr order_list = getSourceNode();
     if (order_list == nullptr)
         return false;
 
@@ -78,7 +78,7 @@ bool SelectOrderByCT::setup(String & error)
     for (const auto & child : order_list->children)
     {
         MySQLPtr order_expr = nullptr;
-        if ((order_expr = order_expr_path.evaluate(child)) != nullptr)
+        if ((order_expr = order_expr_path.find(child)) != nullptr)
         {
             assert(order_expr->children.size() <= 2);
             assert(order_expr->children[0]->rule_name == "expr");
@@ -122,7 +122,7 @@ void SelectOrderByCT::convert(CHPtr & ch_tree) const
 
 bool SelectLimitLengthCT::setup(String &)
 {
-    MySQLPtr limit_options = _source;
+    MySQLPtr limit_options = getSourceNode();
     if (limit_options == nullptr)
         return false;
 
@@ -155,7 +155,7 @@ void SelectLimitLengthCT::convert(CHPtr & ch_tree) const
 
 bool SelectLimitOffsetCT::setup(String &)
 {
-    MySQLPtr limit_options = _source;
+    MySQLPtr limit_options = getSourceNode();
     if (limit_options == nullptr)
         return false;
 
@@ -185,7 +185,7 @@ void SelectLimitOffsetCT::convert(CHPtr & ch_tree) const
 
 bool SelectTablesCT::setup(String &)
 {
-    auto table_list = _source;
+    auto table_list = getSourceNode();
     if (table_list == nullptr)
         return false;
 
@@ -195,19 +195,19 @@ bool SelectTablesCT::setup(String &)
     for (const auto & child : table_list->children)
     {
         MySQLPtr table_and_db_node;
-        if ((table_and_db_node = table_path.evaluate(child)) != nullptr)
+        if ((table_and_db_node = table_path.find(child)) != nullptr)
         {
             auto identifier_path = TreePath({"pureIdentifier"});
             if (table_and_db_node->children.size() == 1)
             {
-                const String & table_name = identifier_path.evaluate(table_and_db_node->children[0])->terminals[0];
+                const String & table_name = identifier_path.find(table_and_db_node->children[0])->terminals[0];
                 tables.push_back({table_name, ""});
             }
             else
             {
                 assert(table_and_db_node->children.size() == 2);
-                const String & table_name = identifier_path.evaluate(table_and_db_node->children[1])->terminals[0];
-                const String & db_name = identifier_path.evaluate(table_and_db_node->children[0])->terminals[0];
+                const String & table_name = identifier_path.find(table_and_db_node->children[1])->terminals[0];
+                const String & db_name = identifier_path.find(table_and_db_node->children[0])->terminals[0];
 
                 tables.push_back({table_name, db_name});
             }
@@ -245,7 +245,7 @@ void SelectTablesCT::convert(CHPtr & ch_tree) const
 
 bool SelectGroupByCT::setup(String & error)
 {
-    MySQLPtr group_clause = TreePath({"groupByClause"}).evaluate(_source);
+    MySQLPtr group_clause = TreePath({"groupByClause"}).find(getSourceNode());
 
     if (group_clause == nullptr)
         return false;
@@ -255,7 +255,7 @@ bool SelectGroupByCT::setup(String & error)
     for (const auto & child : group_clause->children)
     {
         MySQLPtr expr = nullptr;
-        if ((expr = expr_path.evaluate(child)) != nullptr)
+        if ((expr = expr_path.find(child)) != nullptr)
         {
             ConvPtr group_elem = std::make_shared<ExpressionCT>(expr);
             if (!group_elem->setup(error))
@@ -288,16 +288,16 @@ bool SelectQueryCT::setup(String & error)
 {
     auto column_path = TreePath::columnPath();
 
-    MySQLPtr query_expr = TreePath({"queryExpression"}).evaluate(_source);
+    MySQLPtr query_expr = TreePath({"queryExpression"}).find(getSourceNode());
 
-    MySQLPtr query_expr_spec = TreePath({"queryExpressionBody", "querySpecification"}).evaluate(query_expr);
+    MySQLPtr query_expr_spec = TreePath({"queryExpressionBody", "querySpecification"}).find(query_expr);
 
     if (query_expr_spec == nullptr)
         return false;
 
     // SELECT
     {
-        MySQLPtr items_node = TreePath({"selectItemList"}).evaluate(query_expr_spec);
+        MySQLPtr items_node = TreePath({"selectItemList"}).find(query_expr_spec);
 
         select_items_ct = std::make_shared<SelectItemsListCT>(items_node);
         if (!select_items_ct->setup(error))
@@ -309,7 +309,7 @@ bool SelectQueryCT::setup(String & error)
 
     // FROM
     {
-        MySQLPtr table_list = TreePath({"fromClause", "tableReferenceList"}).evaluate(query_expr_spec);
+        MySQLPtr table_list = TreePath({"fromClause", "tableReferenceList"}).find(query_expr_spec);
 
         if (table_list != nullptr)
         {
@@ -324,7 +324,7 @@ bool SelectQueryCT::setup(String & error)
 
     // ORDER BY
     {
-        MySQLPtr order_list = TreePath({"orderClause", "orderList"}).evaluate(query_expr);
+        MySQLPtr order_list = TreePath({"orderClause", "orderList"}).find(query_expr);
 
         if (order_list != nullptr)
         {
@@ -339,7 +339,7 @@ bool SelectQueryCT::setup(String & error)
 
     // LIMIT
     {
-        MySQLPtr limit_options = TreePath({"limitClause", "limitOptions"}).evaluate(query_expr);
+        MySQLPtr limit_options = TreePath({"limitClause", "limitOptions"}).find(query_expr);
 
         if (limit_options != nullptr)
         {
@@ -361,10 +361,11 @@ bool SelectQueryCT::setup(String & error)
 
     // WHERE
     {
-        MySQLPtr where_clause = TreePath({"whereClause"}).evaluate(query_expr_spec);
+        MySQLPtr where_clause = TreePath({"whereClause"}).find(query_expr_spec);
 
         if (where_clause != nullptr)
         {
+            assert(!where_clause->children.empty());
             where_ct = std::make_shared<ExpressionCT>(where_clause->children[0]);
             if (!where_ct->setup(error))
             {
@@ -376,7 +377,7 @@ bool SelectQueryCT::setup(String & error)
 
     // GROUP BY
     {
-        MySQLPtr group_by_clause = TreePath({"groupByClause"}).evaluate(query_expr_spec);
+        MySQLPtr group_by_clause = TreePath({"groupByClause"}).find(query_expr_spec);
 
         if (group_by_clause != nullptr)
         {
@@ -392,10 +393,11 @@ bool SelectQueryCT::setup(String & error)
     // HAVING
     {
         // TODO: if we don't have groupby, do we need this?
-        MySQLPtr having_clause = TreePath({"havingClause"}).evaluate(query_expr_spec);
+        MySQLPtr having_clause = TreePath({"havingClause"}).find(query_expr_spec);
 
         if (having_clause != nullptr)
         {
+            assert(!having_clause->children.empty());
             having_ct = std::make_shared<ExpressionCT>(having_clause->children[0]);
             if (!having_ct->setup(error))
             {

@@ -8,7 +8,7 @@ namespace MySQLCompatibility
 
 bool UseCommandCT::setup(String &)
 {
-    MySQLPtr db_node = TreePath({"useCommand", "identifier", "pureIdentifier"}).evaluate(_source);
+    MySQLPtr db_node = TreePath({"useCommand", "identifier", "pureIdentifier"}).find(getSourceNode());
 
     if (db_node == nullptr || db_node->terminals.empty())
         return false;
