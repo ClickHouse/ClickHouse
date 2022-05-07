@@ -135,6 +135,8 @@ TEST(LRUFileCache, get)
     /// Current cache:    [__________]
     ///                   ^          ^
     ///                   0          9
+    ASSERT_EQ(cache.getFileSegmentsNum(), 1);
+    ASSERT_EQ(cache.getUsedCacheSize(), 10);
 
     {
         /// Want range [5, 14], but [0, 9] already in cache, so only [10, 14] will be put in cache.
@@ -154,6 +156,8 @@ TEST(LRUFileCache, get)
     /// Current cache:    [__________][_____]
     ///                   ^          ^^     ^
     ///                   0          910    14
+    ASSERT_EQ(cache.getFileSegmentsNum(), 2);
+    ASSERT_EQ(cache.getUsedCacheSize(), 15);
 
     {
         auto holder = cache.getOrSet(key, 9, 1);  /// Get [9, 9]
@@ -179,12 +183,15 @@ TEST(LRUFileCache, get)
 
     complete(cache.getOrSet(key, 17, 4)); /// Get [17, 20]
     complete(cache.getOrSet(key, 24, 3)); /// Get [24, 26]
-    complete(cache.getOrSet(key, 27, 1)); /// Get [27, 27]
+    // complete(cache.getOrSet(key, 27, 1)); /// Get [27, 27]
+
 
     /// Current cache:    [__________][_____]   [____]    [___][]
     ///                   ^          ^^     ^   ^    ^    ^   ^^^
     ///                   0          910    14  17   20   24  2627
     ///
+    ASSERT_EQ(cache.getFileSegmentsNum(), 4);
+    ASSERT_EQ(cache.getUsedCacheSize(), 22);
 
     {
         auto holder = cache.getOrSet(key, 0, 26); /// Get [0, 25]
@@ -249,7 +256,7 @@ TEST(LRUFileCache, get)
     ///                   ^          ^       ^   ^   ^
     ///                   10         17      21  24  26
 
-    ASSERT_EQ(cache.getStat().size, 5);
+    ASSERT_EQ(cache.getFileSegmentsNum(), 5);
 
     {
         auto holder = cache.getOrSet(key, 23, 5); /// Get [23, 28]
@@ -478,8 +485,6 @@ TEST(LRUFileCache, get)
 
         auto cache2 = DB::LRUFileCache(cache_base_path, settings);
         cache2.initialize();
-
-        ASSERT_EQ(cache2.getStat().downloaded_size, 5);
 
         auto holder1 = cache2.getOrSet(key, 2, 28); /// Get [2, 29]
         auto segments1 = fromHolder(holder1);

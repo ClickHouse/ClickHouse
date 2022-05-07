@@ -104,11 +104,6 @@ size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_l
 
 String FileSegment::getCallerId()
 {
-    return getCallerIdImpl();
-}
-
-String FileSegment::getCallerIdImpl()
-{
     if (!CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()
         || CurrentThread::getQueryId().size == 0)
@@ -349,7 +344,10 @@ bool FileSegment::reserve(size_t size)
     bool reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
 
     if (reserved)
+    {
+        std::lock_guard segment_lock(mutex);
         reserved_size += size;
+    }
 
     return reserved;
 }
@@ -561,6 +559,7 @@ String FileSegment::getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock
     info << "File segment: " << range().toString() << ", ";
     info << "state: " << download_state << ", ";
     info << "downloaded size: " << getDownloadedSize(segment_lock) << ", ";
+    info << "reserved size: " << reserved_size << ", ";
     info << "downloader id: " << downloader_id << ", ";
     info << "caller id: " << getCallerId();
 
