@@ -90,7 +90,7 @@ void WriteBufferValidUTF8::nextImpl()
     while (p < pos)
     {
 #ifdef __SSE2__
-        /// Fast skip of ASCII
+        /// Fast skip of ASCII on x86
         static constexpr size_t SIMD_BYTES = 16;
         const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
 
@@ -102,7 +102,7 @@ void WriteBufferValidUTF8::nextImpl()
 #endif
 
 #ifdef __aarch64__
-        /// Fast skip of ASCII
+        /// Fast skip of ASCII on arm
         static constexpr size_t SIMD_BYTES = 16;
         const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
 
