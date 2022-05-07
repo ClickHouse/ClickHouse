@@ -440,7 +440,7 @@ def test_redis_multiple_streams_and_consumers(redis_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    for _ in range(20):
+    while True:
         result1 = instance.query("SELECT count() FROM test.view")
         time.sleep(1)
         if int(result1) == messages_num * threads_num:
@@ -1111,33 +1111,20 @@ def test_redis_many_consumers_with_threads_to_each_stream(redis_cluster):
     assert int(result2) == 8
 
 
-def test_redis_restore_failed_connection_without_losses_1(redis_cluster):
-    stream_name = 'with_losses_1'
-    group_name = 'test_with_losses_1'
+def test_redis_restore_failed_connection_without_losses(redis_cluster):
+    stream_name = 'with_losses'
+    group_name = 'test_with_losses'
     connection = redis.Redis(redis_cluster.redis_ip, port=redis_cluster.redis_port, password="clickhouse")
     connection.xgroup_create(stream_name, group_name, '$', mkstream=True)
 
     instance.query(
         """
-        DROP TABLE IF EXISTS test.consume;
-        CREATE TABLE test.view (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE TABLE test.consume (key UInt64, value UInt64)
+        CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
             ENGINE = RedisStreams
-            SETTINGS redis_broker = '{0}:6379',
-                     redis_stream_list = '{1}',
-                     redis_group_name = '{2}',
-                     redis_num_consumers = 2,
-                     redis_thread_per_consumer = true;
-        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.consume;
-        DROP TABLE IF EXISTS test.producer_reconnect;
-        CREATE TABLE test.producer_reconnect (key UInt64, value UInt64)
-            ENGINE = RedisStreams
-            SETTINGS redis_broker = '{0}:6379',
-                     redis_stream_list = '{1}',
-                     redis_group_name = '{2}';
+            SETTINGS redis_broker = '{}:6379',
+                     redis_stream_list = '{}',
+                     redis_group_name = '{}',
+                     redis_num_consumers = 10;
         """.format(
                 redis_cluster.redis_host,
                 stream_name,
@@ -1145,756 +1132,378 @@ def test_redis_restore_failed_connection_without_losses_1(redis_cluster):
             )
     )
 
-    messages_num = 100000
-    values = []
-    for i in range(messages_num):
-        values.append("({i}, {i})".format(i=i))
-    values = ",".join(values)
+    messages_num = 150000
 
-    for _ in range(3):
-        try:
-            instance.query(
-                "INSERT INTO test.producer_reconnect VALUES {}".format(values)
-            )
-            break
-        except QueryRuntimeException as e:
-            if "Local: Timed out." in str(e):
-                logging.warning("insert timed out")
-                continue
-            else:
-                raise
+    for i in range(messages_num):
+        connection.xadd(stream_name, {"key": i, "value": i})
+    connection.close()
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consumer_reconnect;
+    """
+    )
 
     while int(instance.query("SELECT count() FROM test.view")) == 0:
         time.sleep(0.1)
 
     kill_redis(redis_cluster.redis_docker_id)
-    time.sleep(4)
+    time.sleep(8)
     revive_redis(redis_cluster.redis_docker_id)
 
     while True:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
         time.sleep(1)
-        logging.warning("Num read {}".format(int(result)))
         if int(result) == messages_num:
             break
 
     instance.query(
         """
-        DROP TABLE test.consume;
-        DROP TABLE test.producer_reconnect;
+        DROP TABLE test.consumer;
+        DROP TABLE test.consumer_reconnect;
     """
     )
 
     assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
         result
     )
-#
-#
-# def test_redis_restore_failed_connection_without_losses_2(redis_cluster):
-#     instance.query(
-#         """
-#         CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'consumer_reconnect',
-#                      redis_num_consumers = 10,
-#                      redis_num_queues = 10,
-#                      redis_format = 'JSONEachRow',
-#                      redis_row_delimiter = '\\n';
-#     """
-#     )
-#
-#     i = 0
-#     messages_num = 150000
-#
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#     messages = []
-#     for _ in range(messages_num):
-#         messages.append(json.dumps({"key": i, "value": i}))
-#         i += 1
-#     for msg_id in range(messages_num):
-#         channel.basic_publish(
-#             exchange="consumer_reconnect",
-#             routing_key="",
-#             body=messages[msg_id],
-#             properties=pika.BasicProperties(delivery_mode=2, message_id=str(msg_id)),
-#         )
-#     connection.close()
-#     instance.query(
-#         """
-#         CREATE TABLE test.view (key UInt64, value UInt64)
-#             ENGINE = MergeTree
-#             ORDER BY key;
-#         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-#             SELECT * FROM test.consumer_reconnect;
-#     """
-#     )
-#
-#     while int(instance.query("SELECT count() FROM test.view")) == 0:
-#         print(3)
-#         time.sleep(0.1)
-#
-#     kill_redis(redis_cluster.redis_docker_id)
-#     time.sleep(8)
-#     revive_redis(redis_cluster.redis_docker_id)
-#
-#     # while int(instance.query('SELECT count() FROM test.view')) == 0:
-#     #    time.sleep(0.1)
-#
-#     # kill_redis()
-#     # time.sleep(2)
-#     # revive_redis()
-#
-#     while True:
-#         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
-#         time.sleep(1)
-#         if int(result) == messages_num:
-#             break
-#
-#     instance.query(
-#         """
-#         DROP TABLE test.consumer;
-#         DROP TABLE test.consumer_reconnect;
-#     """
-#     )
-#
-#     assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
-#         result
-#     )
-#
-#
-# def test_redis_commit_on_block_write(redis_cluster):
-#     instance.query(
-#         """
-#         CREATE TABLE test.redis (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'block',
-#                      redis_format = 'JSONEachRow',
-#                      redis_queue_base = 'block',
-#                      redis_max_block_size = 100,
-#                      redis_row_delimiter = '\\n';
-#         CREATE TABLE test.view (key UInt64, value UInt64)
-#             ENGINE = MergeTree()
-#             ORDER BY key;
-#         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-#             SELECT * FROM test.redis;
-#     """
-#     )
-#
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#
-#     cancel = threading.Event()
-#
-#     i = [0]
-#
-#     def produce():
-#         while not cancel.is_set():
-#             messages = []
-#             for _ in range(101):
-#                 messages.append(json.dumps({"key": i[0], "value": i[0]}))
-#                 i[0] += 1
-#             for message in messages:
-#                 channel.basic_publish(exchange="block", routing_key="", body=message)
-#
-#     redis_thread = threading.Thread(target=produce)
-#     redis_thread.start()
-#
-#     while int(instance.query("SELECT count() FROM test.view")) == 0:
-#         time.sleep(1)
-#
-#     cancel.set()
-#
-#     instance.query("DETACH TABLE test.redis;")
-#
-#     while (
-#         int(
-#             instance.query(
-#                 "SELECT count() FROM system.tables WHERE database='test' AND name='redis'"
-#             )
-#         )
-#         == 1
-#     ):
-#         time.sleep(1)
-#
-#     instance.query("ATTACH TABLE test.redis;")
-#
-#     while int(instance.query("SELECT uniqExact(key) FROM test.view")) < i[0]:
-#         time.sleep(1)
-#
-#     result = int(instance.query("SELECT count() == uniqExact(key) FROM test.view"))
-#
-#     instance.query(
-#         """
-#         DROP TABLE test.consumer;
-#         DROP TABLE test.view;
-#     """
-#     )
-#
-#     redis_thread.join()
-#     connection.close()
-#
-#     assert result == 1, "Messages from redis get duplicated!"
-#
-#
-# def test_redis_no_connection_at_startup_1(redis_cluster):
-#     # no connection when table is initialized
-#     redis_cluster.pause_container("redis1")
-#     instance.query_and_get_error(
-#         """
-#         CREATE TABLE test.cs (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'cs',
-#                      redis_format = 'JSONEachRow',
-#                      redis_num_consumers = '5',
-#                      redis_row_delimiter = '\\n';
-#     """
-#     )
-#     redis_cluster.unpause_container("redis1")
-#
-#
-# def test_redis_no_connection_at_startup_2(redis_cluster):
-#     instance.query(
-#         """
-#         CREATE TABLE test.cs (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'cs',
-#                      redis_format = 'JSONEachRow',
-#                      redis_num_consumers = '5',
-#                      redis_row_delimiter = '\\n';
-#         CREATE TABLE test.view (key UInt64, value UInt64)
-#             ENGINE = MergeTree
-#             ORDER BY key;
-#         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-#             SELECT * FROM test.cs;
-#     """
-#     )
-#     instance.query("DETACH TABLE test.cs")
-#     redis_cluster.pause_container("redis1")
-#     instance.query("ATTACH TABLE test.cs")
-#     redis_cluster.unpause_container("redis1")
-#
-#     messages_num = 1000
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#     for i in range(messages_num):
-#         message = json.dumps({"key": i, "value": i})
-#         channel.basic_publish(
-#             exchange="cs",
-#             routing_key="",
-#             body=message,
-#             properties=pika.BasicProperties(delivery_mode=2, message_id=str(i)),
-#         )
-#     connection.close()
-#
-#     while True:
-#         result = instance.query("SELECT count() FROM test.view")
-#         time.sleep(1)
-#         if int(result) == messages_num:
-#             break
-#
-#     instance.query(
-#         """
-#         DROP TABLE test.consumer;
-#         DROP TABLE test.cs;
-#     """
-#     )
-#
-#     assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
-#         result
-#     )
-#
-#
-# def test_redis_format_factory_settings(redis_cluster):
-#     instance.query(
-#         """
-#         CREATE TABLE test.format_settings (
-#             id String, date DateTime
-#         ) ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'format_settings',
-#                      redis_format = 'JSONEachRow',
-#                      date_time_input_format = 'best_effort';
-#         """
-#     )
-#
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#
-#     message = json.dumps(
-#         {"id": "format_settings_test", "date": "2021-01-19T14:42:33.1829214Z"}
-#     )
-#     expected = instance.query(
-#         """SELECT parseDateTimeBestEffort(CAST('2021-01-19T14:42:33.1829214Z', 'String'))"""
-#     )
-#
-#     channel.basic_publish(exchange="format_settings", routing_key="", body=message)
-#     result = ""
-#     while True:
-#         result = instance.query("SELECT date FROM test.format_settings")
-#         if result == expected:
-#             break
-#
-#     instance.query(
-#         """
-#         CREATE TABLE test.view (
-#             id String, date DateTime
-#         ) ENGINE = MergeTree ORDER BY id;
-#         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-#             SELECT * FROM test.format_settings;
-#         """
-#     )
-#
-#     channel.basic_publish(exchange="format_settings", routing_key="", body=message)
-#     result = ""
-#     while True:
-#         result = instance.query("SELECT date FROM test.view")
-#         if result == expected:
-#             break
-#
-#     connection.close()
-#     instance.query(
-#         """
-#         DROP TABLE test.consumer;
-#         DROP TABLE test.format_settings;
-#     """
-#     )
-#
-#     assert result == expected
-#
-#
-# def test_redis_vhost(redis_cluster):
-#     instance.query(
-#         """
-#         CREATE TABLE test.redis_vhost (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'vhost',
-#                      redis_format = 'JSONEachRow',
-#                      redis_vhost = '/'
-#         """
-#     )
-#
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#     channel.basic_publish(
-#         exchange="vhost", routing_key="", body=json.dumps({"key": 1, "value": 2})
-#     )
-#     connection.close()
-#     while True:
-#         result = instance.query(
-#             "SELECT * FROM test.redis_vhost ORDER BY key", ignore_error=True
-#         )
-#         if result == "1\t2\n":
-#             break
-#
-#
-# def test_redis_drop_table_properly(redis_cluster):
-#     instance.query(
-#         """
-#         CREATE TABLE test.redis_drop (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'drop',
-#                      redis_format = 'JSONEachRow',
-#                      redis_queue_base = 'rabbit_queue_drop'
-#         """
-#     )
-#
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#
-#     channel.basic_publish(
-#         exchange="drop", routing_key="", body=json.dumps({"key": 1, "value": 2})
-#     )
-#     while True:
-#         result = instance.query(
-#             "SELECT * FROM test.redis_drop ORDER BY key", ignore_error=True
-#         )
-#         if result == "1\t2\n":
-#             break
-#
-#     exists = channel.queue_declare(queue="rabbit_queue_drop", passive=True)
-#     assert exists
-#
-#     instance.query("DROP TABLE test.redis_drop")
-#     time.sleep(30)
-#
-#     try:
-#         exists = channel.queue_declare(
-#             callback, queue="rabbit_queue_drop", passive=True
-#         )
-#     except Exception as e:
-#         exists = False
-#
-#     assert not exists
-#
-#
-# def test_redis_queue_settings(redis_cluster):
-#     instance.query(
-#         """
-#         CREATE TABLE test.redis_settings (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'rabbit_exchange',
-#                      redis_format = 'JSONEachRow',
-#                      redis_queue_base = 'rabbit_queue_settings',
-#                      redis_queue_settings_list = 'x-max-length=10,x-overflow=reject-publish'
-#         """
-#     )
-#
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#
-#     for i in range(50):
-#         channel.basic_publish(
-#             exchange="rabbit_exchange",
-#             routing_key="",
-#             body=json.dumps({"key": 1, "value": 2}),
-#         )
-#     connection.close()
-#
-#     instance.query(
-#         """
-#         CREATE TABLE test.view (key UInt64, value UInt64)
-#         ENGINE = MergeTree ORDER BY key;
-#         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-#             SELECT * FROM test.redis_settings;
-#         """
-#     )
-#
-#     time.sleep(5)
-#
-#     result = instance.query(
-#         "SELECT count() FROM test.redis_settings", ignore_error=True
-#     )
-#     while int(result) != 10:
-#         time.sleep(0.5)
-#         result = instance.query("SELECT count() FROM test.view", ignore_error=True)
-#
-#     instance.query("DROP TABLE test.redis_settings")
-#
-#     # queue size is 10, but 50 messages were sent, they will be dropped (setting x-overflow = reject-publish) and only 10 will remain.
-#     assert int(result) == 10
-#
-#
-# def test_redis_queue_consume(redis_cluster):
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#     channel.queue_declare(queue="rabbit_queue", durable=True)
-#
-#     i = [0]
-#     messages_num = 1000
-#
-#     def produce():
-#         connection = pika.BlockingConnection(parameters)
-#         channel = connection.channel()
-#         messages = []
-#         for _ in range(messages_num):
-#             message = json.dumps({"key": i[0], "value": i[0]})
-#             channel.basic_publish(exchange="", routing_key="rabbit_queue", body=message)
-#             i[0] += 1
-#
-#     threads = []
-#     threads_num = 10
-#     for _ in range(threads_num):
-#         threads.append(threading.Thread(target=produce))
-#     for thread in threads:
-#         time.sleep(random.uniform(0, 1))
-#         thread.start()
-#
-#     instance.query(
-#         """
-#         CREATE TABLE test.redis_queue (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_format = 'JSONEachRow',
-#                      redis_queue_base = 'rabbit_queue',
-#                      redis_queue_consume = 1;
-#         CREATE TABLE test.view (key UInt64, value UInt64)
-#         ENGINE = MergeTree ORDER BY key;
-#         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-#             SELECT * FROM test.redis_queue;
-#         """
-#     )
-#
-#     result = ""
-#     while True:
-#         result = instance.query("SELECT count() FROM test.view")
-#         if int(result) == messages_num * threads_num:
-#             break
-#         time.sleep(1)
-#
-#     for thread in threads:
-#         thread.join()
-#
-#     instance.query("DROP TABLE test.redis_queue")
-#
-#
-# def test_redis_produce_consume_avro(redis_cluster):
-#     num_rows = 75
-#
-#     instance.query(
-#         """
-#         DROP TABLE IF EXISTS test.view;
-#         DROP TABLE IF EXISTS test.rabbit;
-#         DROP TABLE IF EXISTS test.rabbit_writer;
-#
-#         CREATE TABLE test.rabbit_writer (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_format = 'Avro',
-#                      redis_stream_list = 'avro',
-#                      redis_exchange_type = 'direct',
-#                      redis_routing_key_list = 'avro';
-#
-#         CREATE TABLE test.rabbit (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_format = 'Avro',
-#                      redis_stream_list = 'avro',
-#                      redis_exchange_type = 'direct',
-#                      redis_routing_key_list = 'avro';
-#
-#         CREATE MATERIALIZED VIEW test.view Engine=Log AS
-#             SELECT key, value FROM test.rabbit;
-#     """
-#     )
-#
-#     instance.query(
-#         "INSERT INTO test.rabbit_writer select number*10 as key, number*100 as value from numbers({num_rows}) SETTINGS output_format_avro_rows_in_file = 7".format(
-#             num_rows=num_rows
-#         )
-#     )
-#
-#     # Ideally we should wait for an event
-#     time.sleep(3)
-#
-#     expected_num_rows = instance.query(
-#         "SELECT COUNT(1) FROM test.view", ignore_error=True
-#     )
-#     assert int(expected_num_rows) == num_rows
-#
-#     expected_max_key = instance.query(
-#         "SELECT max(key) FROM test.view", ignore_error=True
-#     )
-#     assert int(expected_max_key) == (num_rows - 1) * 10
-#
-#
-# def test_redis_bad_args(redis_cluster):
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#     channel.exchange_declare(exchange="f", exchange_type="fanout")
-#     instance.query_and_get_error(
-#         """
-#         CREATE TABLE test.drop (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'f',
-#                      redis_format = 'JSONEachRow';
-#     """
-#     )
-#
-#
-#
-# def test_redis_drop_mv(redis_cluster):
-#     instance.query(
-#         """
-#         CREATE TABLE test.redis (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'mv',
-#                      redis_format = 'JSONEachRow',
-#                      redis_queue_base = 'drop_mv';
-#         CREATE TABLE test.view (key UInt64, value UInt64)
-#             ENGINE = MergeTree()
-#             ORDER BY key;
-#         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-#             SELECT * FROM test.redis;
-#     """
-#     )
-#
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#
-#     messages = []
-#     for i in range(20):
-#         channel.basic_publish(
-#             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
-#         )
-#
-#     instance.query("DROP VIEW test.consumer")
-#     for i in range(20, 40):
-#         channel.basic_publish(
-#             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
-#         )
-#
-#     instance.query(
-#         """
-#         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-#             SELECT * FROM test.redis;
-#     """
-#     )
-#     for i in range(40, 50):
-#         channel.basic_publish(
-#             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
-#         )
-#
-#     while True:
-#         result = instance.query("SELECT * FROM test.view ORDER BY key")
-#         if redis_check_result(result):
-#             break
-#
-#     redis_check_result(result, True)
-#
-#     instance.query("DROP VIEW test.consumer")
-#     for i in range(50, 60):
-#         channel.basic_publish(
-#             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
-#         )
-#     connection.close()
-#
-#     count = 0
-#     while True:
-#         count = int(instance.query("SELECT count() FROM test.redis"))
-#         if count:
-#             break
-#
-#     assert count > 0
-#
-#
-# def test_redis_random_detach(redis_cluster):
-#     NUM_CONSUMERS = 2
-#     NUM_QUEUES = 2
-#     instance.query(
-#         """
-#         CREATE TABLE test.redis (key UInt64, value UInt64)
-#             ENGINE = RedisStreams
-#             SETTINGS redis_broker = 'redis1:6379',
-#                      redis_stream_list = 'random',
-#                      redis_queue_base = 'random',
-#                      redis_num_queues = 2,
-#                      redis_num_consumers = 2,
-#                      redis_format = 'JSONEachRow';
-#         CREATE TABLE test.view (key UInt64, value UInt64, channel_id String)
-#             ENGINE = MergeTree
-#             ORDER BY key;
-#         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-#             SELECT *, _channel_id AS channel_id FROM test.redis;
-#     """
-#     )
-#
-#     i = [0]
-#     messages_num = 10000
-#
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#
-#     def produce():
-#         connection = pika.BlockingConnection(parameters)
-#         channel = connection.channel()
-#
-#         messages = []
-#         for i in range(messages_num):
-#             messages.append(json.dumps({"key": i[0], "value": i[0]}))
-#             i[0] += 1
-#             mes_id = str(i)
-#             channel.basic_publish(
-#                 exchange="test_sharding",
-#                 routing_key="",
-#                 properties=pika.BasicProperties(message_id=mes_id),
-#                 body=message,
-#             )
-#         connection.close()
-#
-#     threads = []
-#     threads_num = 20
-#
-#     for _ in range(threads_num):
-#         threads.append(threading.Thread(target=produce))
-#     for thread in threads:
-#         time.sleep(random.uniform(0, 1))
-#         thread.start()
-#
-#     # time.sleep(5)
-#     # kill_redis(redis_cluster.redis_docker_id)
-#     # instance.query("detach table test.redis")
-#     # revive_redis(redis_cluster.redis_docker_id)
-#
-#     for thread in threads:
-#         thread.join()
-#
-#
-# def test_redis_predefined_configuration(redis_cluster):
-#     credentials = pika.PlainCredentials("root", "clickhouse")
-#     parameters = pika.ConnectionParameters(
-#         redis_cluster.redis_ip, redis_cluster.redis_port, "/", credentials
-#     )
-#     connection = pika.BlockingConnection(parameters)
-#     channel = connection.channel()
-#
-#     instance.query(
-#         """
-#         CREATE TABLE test.redis (key UInt64, value UInt64)
-#             ENGINE = RedisStreams(rabbit1, redis_vhost = '/') """
-#     )
-#
-#     channel.basic_publish(
-#         exchange="named", routing_key="", body=json.dumps({"key": 1, "value": 2})
-#     )
-#     while True:
-#         result = instance.query(
-#             "SELECT * FROM test.redis ORDER BY key", ignore_error=True
-#         )
-#         if result == "1\t2\n":
-#             break
+
+
+def test_redis_no_connection_at_startup_1(redis_cluster):
+    # no connection when table is initialized
+    stream_name = 'cs'
+    group_name = 'test_cs'
+
+    redis_cluster.pause_container("redis1")
+    instance.query_and_get_error(
+        """
+        CREATE TABLE test.cs (key UInt64, value UInt64)
+            ENGINE = RedisStreams
+            SETTINGS redis_broker = '{}:6379',
+                     redis_stream_list = '{}',
+                     redis_group_name = '{}';
+        """.format(
+                redis_cluster.redis_host,
+                stream_name,
+                group_name
+            )
+    )
+    redis_cluster.unpause_container("redis1")
+
+
+def test_redis_no_connection_at_startup_2(redis_cluster):
+    stream_name = 'no_connection'
+    group_name = 'test_no_connection'
+    connection = redis.Redis(redis_cluster.redis_ip, port=redis_cluster.redis_port, password="clickhouse")
+    connection.xgroup_create(stream_name, group_name, '$', mkstream=True)
+
+    instance.query(
+        """
+        CREATE TABLE test.cs (key UInt64, value UInt64)
+            ENGINE = RedisStreams
+            SETTINGS redis_broker = '{}:6379',
+                     redis_stream_list = '{}',
+                     redis_group_name = '{}',
+                     redis_num_consumers = '5';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.cs;
+        """.format(
+                redis_cluster.redis_host,
+                stream_name,
+                group_name
+            )
+    )
+    instance.query("DETACH TABLE test.cs")
+    redis_cluster.pause_container("redis1")
+    instance.query("ATTACH TABLE test.cs")
+    redis_cluster.unpause_container("redis1")
+
+    messages_num = 1000
+    for i in range(messages_num):
+        connection.xadd(stream_name, {"key": i, "value": i})
+    connection.close()
+
+    while True:
+        result = instance.query("SELECT count() FROM test.view")
+        time.sleep(1)
+        if int(result) == messages_num:
+            break
+
+    instance.query(
+        """
+        DROP TABLE test.consumer;
+        DROP TABLE test.cs;
+    """
+    )
+
+    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
+        result
+    )
+
+
+def test_redis_json_format_factory_settings(redis_cluster):
+    stream_name = 'format_settings'
+    group_name = 'test_format_settings'
+    connection = redis.Redis(redis_cluster.redis_ip, port=redis_cluster.redis_port, password="clickhouse")
+    connection.xgroup_create(stream_name, group_name, '$', mkstream=True)
+
+    instance.query(
+        """
+        CREATE TABLE test.format_settings (
+            id String, date DateTime
+        ) ENGINE = RedisStreams
+            SETTINGS redis_broker = '{}:6379',
+                     redis_stream_list = '{}',
+                     redis_group_name = '{}',
+                     date_time_input_format = 'best_effort';
+        """.format(
+                redis_cluster.redis_host,
+                stream_name,
+                group_name
+            )
+    )
+
+    connection.xadd(stream_name, {"id": "format_settings_test", "date": "2021-01-19T14:42:33.1829214Z"})
+    expected = instance.query(
+        """SELECT parseDateTimeBestEffort(CAST('2021-01-19T14:42:33.1829214Z', 'String'))"""
+    )
+
+
+    result = ""
+    while True:
+        result = instance.query("SELECT date FROM test.format_settings")
+        if result == expected:
+            break
+
+    instance.query(
+        """
+        CREATE TABLE test.view (
+            id String, date DateTime
+        ) ENGINE = MergeTree ORDER BY id;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.format_settings;
+        """
+    )
+
+    connection.xadd(stream_name, {"id": "format_settings_test", "date": "2021-01-19T14:42:33.1829214Z"})
+    result = ""
+    while True:
+        result = instance.query("SELECT date FROM test.view")
+        if result == expected:
+            break
+
+    connection.close()
+    instance.query(
+        """
+        DROP TABLE test.consumer;
+        DROP TABLE test.format_settings;
+    """
+    )
+
+    assert result == expected
+
+
+def test_redis_manage_groups_properly(redis_cluster):
+    stream_name = 'manage_groups'
+    group_name = 'test_manage_groups'
+    connection = redis.Redis(redis_cluster.redis_ip, port=redis_cluster.redis_port, password="clickhouse")
+
+    instance.query(
+        """
+        CREATE TABLE test.redis_drop (key UInt64, value UInt64)
+            ENGINE = RedisStreams
+            SETTINGS redis_broker = '{}:6379',
+                     redis_stream_list = '{}',
+                     redis_group_name = '{}',
+                     redis_manage_consumer_groups = true;
+        """.format(
+                redis_cluster.redis_host,
+                stream_name,
+                group_name
+            )
+    )
+
+    connection.xadd(stream_name, {"key": 1, "value": 2})
+
+    while True:
+        result = instance.query(
+            "SELECT * FROM test.redis_drop ORDER BY key", ignore_error=True
+        )
+        if result == "1\t2\n":
+            break
+
+    exists = False
+    try:
+        connection.xgroup_create(stream_name, group_name, '$')
+    except Exception as e:
+        exists = "BUSYGROUP" in str(e)
+    assert exists
+
+    instance.query("DROP TABLE test.redis_drop")
+    time.sleep(10)
+
+    try:
+        connection.xgroup_create(stream_name, group_name, '$')
+        exists = False
+    except Exception as e:
+        exists = True
+
+    assert not exists
+
+
+def test_redis_consume_stream(redis_cluster):
+    stream_name = 'consume_stream'
+    group_name = 'test_consume_stream'
+    connection = redis.Redis(redis_cluster.redis_ip, port=redis_cluster.redis_port, password="clickhouse")
+
+    i = [0]
+    messages_num = 1000
+
+    def produce():
+        for _ in range(messages_num):
+            connection.xadd(stream_name, {"key": i[0], "value": i[0]})
+            i[0] += 1
+
+    threads = []
+    threads_num = 10
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=produce))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    instance.query(
+        """
+        CREATE TABLE test.redis_stream (key UInt64, value UInt64)
+            ENGINE = RedisStreams
+            SETTINGS redis_broker = '{}:6379',
+                     redis_stream_list = '{}',
+                     redis_group_name = '{}',
+                     redis_manage_consumer_groups = true,
+                     redis_consumer_groups_start_id = '0-0';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.redis_stream;
+        """.format(
+                redis_cluster.redis_host,
+                stream_name,
+                group_name
+            )
+    )
+
+    result = ""
+    while True:
+        result = instance.query("SELECT count() FROM test.view")
+        if int(result) == messages_num * threads_num:
+            break
+        time.sleep(1)
+
+    for thread in threads:
+        thread.join()
+
+    instance.query("DROP TABLE test.redis_stream")
+
+
+def test_redis_bad_args(redis_cluster):
+    instance.query_and_get_error(
+        """
+        CREATE TABLE test.drop (key UInt64, value UInt64)
+            ENGINE = RedisStreams
+            SETTINGS redis_broker = 'redis1:6379',
+                     redis_stream_list = 'f',
+                     redis_manage_consumer_groups = true,
+                     redis_consumer_groups_start_id = '0-0';
+        """
+    )
+
+
+def test_redis_drop_mv(redis_cluster):
+    stream_name = 'drop_mv'
+    group_name = 'test_drop_mv'
+    connection = redis.Redis(redis_cluster.redis_ip, port=redis_cluster.redis_port, password="clickhouse")
+    connection.xgroup_create(stream_name, group_name, '$', mkstream=True)
+
+    instance.query(
+        """
+        CREATE TABLE test.redis (key UInt64, value UInt64)
+            ENGINE = RedisStreams
+            SETTINGS redis_broker = '{}:6379',
+                     redis_stream_list = '{}',
+                     redis_group_name = '{}';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.redis;
+        """.format(
+                redis_cluster.redis_host,
+                stream_name,
+                group_name
+            )
+    )
+
+    messages = []
+    for i in range(20):
+        connection.xadd(stream_name, {"key": i, "value": i})
+
+    instance.query("DROP VIEW test.consumer")
+    for i in range(20, 40):
+        connection.xadd(stream_name, {"key": i, "value": i})
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.redis;
+    """
+    )
+    for i in range(40, 50):
+        connection.xadd(stream_name, {"key": i, "value": i})
+
+    while True:
+        result = instance.query("SELECT * FROM test.view ORDER BY key")
+        if redis_check_result(result):
+            break
+
+    redis_check_result(result, True)
+
+    instance.query("DROP VIEW test.consumer")
+    time.sleep(10)
+    for i in range(50, 60):
+        connection.xadd(stream_name, {"key": i, "value": i})
+    connection.close()
+
+    count = 0
+    while True:
+        count = int(instance.query("SELECT count() FROM test.redis"))
+        if count:
+            break
+
+    assert count > 0
+
+
+def test_redis_predefined_configuration(redis_cluster):
+    connection = redis.Redis(redis_cluster.redis_ip, port=redis_cluster.redis_port, password="clickhouse")
+
+    instance.query(
+        """
+        CREATE TABLE test.redis (key UInt64, value UInt64)
+            ENGINE = RedisStreams(redis1) """
+    )
+
+    connection.xadd('named', {"key": 1, "value": 2})
+    while True:
+        result = instance.query(
+            "SELECT * FROM test.redis ORDER BY key", ignore_error=True
+        )
+        if result == "1\t2\n":
+            break
 
 
 if __name__ == "__main__":

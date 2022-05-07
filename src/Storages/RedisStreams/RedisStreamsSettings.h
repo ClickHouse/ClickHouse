@@ -12,9 +12,11 @@ class ASTStorage;
 #define REDIS_STREAMS_RELATED_SETTINGS(M) \
     M(String, redis_broker, "", "A comma-separated list of brokers for Redis engine.", 0) \
     M(String, redis_stream_list, "", "A list of Redis topics.", 0) \
-    M(String, redis_group_name, "", "Client group id string. All Redis consumers sharing the same group.id belong to the same group.", 0) \
-    M(String, redis_consumer_id, "", "Common identifier for consumers. Must be unique within group", 0) \
+    M(String, redis_group_name, "", "Client group id string.", 0) \
+    M(String, redis_common_consumer_id, "", "Common identifier for consumers. Must be unique within group", 0) \
     M(UInt64, redis_num_consumers, 1, "The number of consumers per table for Redis engine.", 0) \
+    M(Bool, redis_manage_consumer_groups, false, "Create consumer groups on engine startup and delete them at the end.", 0) \
+    M(String, redis_consumer_groups_start_id, "$", "The id from which the consumer groups are reading.", 0) \
     M(Bool, redis_commit_every_batch, false, "Commit every consumed and handled batch instead of a single commit after writing a whole block", 0) \
     M(Milliseconds, redis_poll_timeout_ms, 0, "Timeout for single poll from Redis.", 0) \
     M(UInt64, redis_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Redis poll.", 0) \

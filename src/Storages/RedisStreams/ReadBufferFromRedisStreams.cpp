@@ -37,7 +37,12 @@ ReadBufferFromRedisStreams::ReadBufferFromRedisStreams(
     }
 }
 
-ReadBufferFromRedisStreams::~ReadBufferFromRedisStreams() = default;
+ReadBufferFromRedisStreams::~ReadBufferFromRedisStreams() {
+    for (const auto & [stream_name, id] : streams_with_ids)
+    {
+        redis->xgroup_delconsumer(stream_name, group_name, consumer_name);
+    }
+};
 
 
 void ReadBufferFromRedisStreams::ack()

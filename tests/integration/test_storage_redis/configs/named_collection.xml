@@ -1,14 +1,13 @@
 <clickhouse>
   <named_collections>
-    <rabbit1>
-        <rabbitmq_host_port>rabbitmq1:5672</rabbitmq_host_port>
-        <rabbitmq_exchange_name>named</rabbitmq_exchange_name>
-        <rabbitmq_format>JSONEachRow</rabbitmq_format>
-        <rabbitmq_skip_broken_messages>111</rabbitmq_skip_broken_messages>
-        <num_consumers>12</num_consumers>
-        <rabbitmq_persistent>1</rabbitmq_persistent>
-        <rabbitmq_username>root</rabbitmq_username>
-        <rabbitmq_password>clickhouse</rabbitmq_password>
-    </rabbit1>
+    <redis1>
+        <redis_broker>redis1:6379</redis_broker>
+        <redis_stream_list>named</redis_stream_list>
+        <redis_group_name>test_named</redis_group_name>
+        <redis_num_consumers>2</redis_num_consumers>
+        <redis_password>clickhouse</redis_password>
+        <redis_manage_consumer_groups>true</redis_manage_consumer_groups>
+        <redis_thread_per_consumer>true</redis_thread_per_consumer>
+    </redis1>
   </named_collections>
 </clickhouse>

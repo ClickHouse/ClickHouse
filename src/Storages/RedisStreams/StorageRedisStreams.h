@@ -23,7 +23,6 @@ namespace DB
 class StorageRedisStreams final : public shared_ptr_helper<StorageRedisStreams>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageRedisStreams>;
-    friend struct StorageRedisStreamsInterceptors;
     using RedisPtr = std::shared_ptr<sw::redis::Redis>;
 
 public:
@@ -64,7 +63,8 @@ protected:
         ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RedisStreamsSettings> Redis_settings_,
-        const String & collection_name_);
+        const String & collection_name_,
+        bool is_attach_);
 
 private:
     // Configuration and state
@@ -108,8 +108,8 @@ private:
 
     /// If named_collection is specified.
     String collection_name;
-
     uint64_t milliseconds_to_wait;
+    bool is_attach;
 
     void threadFunc(size_t idx);
 

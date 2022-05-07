@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int QUERY_NOT_ALLOWED;
     extern const int CONSUMER_GROUP_NOT_CREATED;
+    extern const int CANNOT_CONNECT_REDIS;
 }
 
 namespace
@@ -62,7 +63,7 @@ namespace
 StorageRedisStreams::StorageRedisStreams(
     const StorageID & table_id_, ContextPtr context_,
     const ColumnsDescription & columns_, std::unique_ptr<RedisStreamsSettings> redis_settings_,
-    const String & collection_name_)
+    const String & collection_name_, bool is_attach_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , redis_settings(std::move(redis_settings_))
@@ -70,8 +71,8 @@ StorageRedisStreams::StorageRedisStreams(
     , broker(getContext()->getMacros()->expand(redis_settings->redis_broker))
     , group(getContext()->getMacros()->expand(redis_settings->redis_group_name.value))
     , consumer_id(
-          redis_settings->redis_consumer_id.value.empty() ? getDefaultConsumerId(table_id_)
-                                                        : getContext()->getMacros()->expand(redis_settings->redis_consumer_id.value))
+          redis_settings->redis_common_consumer_id.value.empty() ? getDefaultConsumerId(table_id_)
+                                                        : getContext()->getMacros()->expand(redis_settings->redis_common_consumer_id.value))
     , num_consumers(redis_settings->redis_num_consumers.value)
     , log(&Poco::Logger::get("StorageRedisStreams (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers)
@@ -80,6 +81,7 @@ StorageRedisStreams::StorageRedisStreams(
     , thread_per_consumer(redis_settings->redis_thread_per_consumer.value)
     , collection_name(collection_name_)
     , milliseconds_to_wait(RESCHEDULE_MS)
+    , is_attach(is_attach_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -88,6 +90,7 @@ StorageRedisStreams::StorageRedisStreams(
     sw::redis::ConnectionOptions connect_options;
     connect_options.host = parsed_address.first;
     connect_options.port = parsed_address.second;
+    connect_options.socket_timeout = std::chrono::seconds(1);
     auto redis_password = redis_settings->redis_password.value;
     if (redis_password.empty() && getContext()->getConfigRef().has("redis.password")) {
         redis_password = getContext()->getConfigRef().getString("redis.password");
@@ -96,7 +99,25 @@ StorageRedisStreams::StorageRedisStreams(
         connect_options.password = std::move(redis_password);
     }
 
-    redis = std::make_shared<sw::redis::Redis>(connect_options);
+    try
+    {
+        redis = std::make_shared<sw::redis::Redis>(connect_options);
+        LOG_DEBUG(log, "Redis successfully pinged: {}", redis->ping());
+
+        if (redis_settings->redis_manage_consumer_groups.value)
+        {
+            for (const auto & stream : streams)
+            {
+                redis->xgroup_create(stream, group, redis_settings->redis_consumer_groups_start_id.value, true);
+            }
+        }
+    }
+    catch (const sw::redis::Error & e)
+    {
+        tryLogCurrentException(log);
+        if (!is_attach)
+            throw Exception(ErrorCodes::CANNOT_CONNECT_REDIS, "Cannot connect to Redis. Error message: {}", e.what());
+    }
     /// TODO: should I create consumer groups?
     auto task_count = thread_per_consumer ? num_consumers : 1;
     try
@@ -200,7 +221,7 @@ SinkToStoragePtr StorageRedisStreams::write(const ASTPtr &, const StorageMetadat
     modified_context->applySettingsChanges(settings_adjustments);
 
     if (streams.size() > 1)
-        throw Exception("Can't write to Redis table with multiple streams!", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Can't write to RedisStreams table with multiple streams!", ErrorCodes::NOT_IMPLEMENTED);
 
     return std::make_shared<RedisStreamsSink>(*this, metadata_snapshot, modified_context);
 }
@@ -241,6 +262,13 @@ void StorageRedisStreams::shutdown()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
         auto buffer = popReadBuffer();
+
+    if (redis_settings->redis_manage_consumer_groups.value)
+    {
+        for (const auto& stream : streams) {
+            redis->xgroup_destroy(stream, group);
+        }
+    }
 }
 
 
@@ -598,7 +626,7 @@ void registerStorageRedisStreams(StorageFactory & factory)
             throw Exception("redis_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageRedisStreams::create(args.table_id, args.getContext(), args.columns, std::move(redis_settings), collection_name);
+        return StorageRedisStreams::create(args.table_id, args.getContext(), args.columns, std::move(redis_settings), collection_name, args.attach);
     };
     factory.registerStorage("RedisStreams", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
