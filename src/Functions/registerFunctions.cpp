@@ -24,6 +24,7 @@ void registerFunctionsEmbeddedDictionaries(FunctionFactory &);
 void registerFunctionsExternalDictionaries(FunctionFactory &);
 void registerFunctionsExternalModels(FunctionFactory &);
 void registerFunctionsFormatting(FunctionFactory &);
+void registerFunctionHashID(FunctionFactory &);
 void registerFunctionsHashing(FunctionFactory &);
 void registerFunctionsHigherOrder(FunctionFactory &);
 void registerFunctionsLogical(FunctionFactory &);
@@ -90,6 +91,7 @@ void registerFunctions()
     registerFunctionsExternalDictionaries(factory);
     registerFunctionsExternalModels(factory);
     registerFunctionsFormatting(factory);
+    registerFunctionHashID(factory);
     registerFunctionsHashing(factory);
     registerFunctionsHigherOrder(factory);
     registerFunctionsLogical(factory);

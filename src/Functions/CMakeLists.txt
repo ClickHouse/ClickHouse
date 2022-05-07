@@ -96,6 +96,10 @@ if (TARGET ch_contrib::rapidjson)
     target_link_libraries(clickhouse_functions PRIVATE ch_contrib::rapidjson)
 endif()
 
+if (TARGET ch_contrib::hashidsxx)
+    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::hashidsxx)
+endif()
+
 add_subdirectory(GatherUtils)
 target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_gatherutils)
 
