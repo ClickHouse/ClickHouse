@@ -19,7 +19,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -1145,7 +1145,7 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
-        return StorageBuffer::create(
+        return std::make_shared<StorageBuffer>(
             args.table_id,
             args.columns,
             args.constraints,

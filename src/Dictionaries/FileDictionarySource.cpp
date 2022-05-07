@@ -1,5 +1,5 @@
 #include "FileDictionarySource.h"
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/ReadBufferFromFile.h>

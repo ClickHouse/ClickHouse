@@ -1,7 +1,7 @@
 #include "LibraryDictionarySource.h"
 
 #include <Interpreters/Context.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>

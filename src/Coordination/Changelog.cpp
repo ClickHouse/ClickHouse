@@ -9,7 +9,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -84,7 +84,8 @@ public:
         }
         else if (compression_method == CompressionMethod::Zstd)
         {
-            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::move(file_buf), /* compression level = */ 3, /* append_to_existing_stream = */ mode == WriteMode::Append);
+            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(
+                std::move(file_buf), /* compression level = */ 3, /* append_to_existing_file_ = */ mode == WriteMode::Append);
         }
         else
         {
@@ -140,7 +141,7 @@ private:
 
     std::string filepath;
     std::unique_ptr<WriteBufferFromFile> file_buf;
-    std::unique_ptr<WriteBufferWithOwnMemoryDecorator> compressed_buffer;
+    std::unique_ptr<ZstdDeflatingAppendableWriteBuffer> compressed_buffer;
     uint64_t start_index;
 };
 
@@ -712,14 +713,21 @@ void Changelog::flush()
         current_writer->flush(force_sync);
 }
 
+void Changelog::shutdown()
+{
+    if (!log_files_to_delete_queue.isFinished())
+        log_files_to_delete_queue.finish();
+
+    if (clean_log_thread.joinable())
+        clean_log_thread.join();
+}
+
 Changelog::~Changelog()
 {
     try
     {
         flush();
-        log_files_to_delete_queue.finish();
-        if (clean_log_thread.joinable())
-            clean_log_thread.join();
+        shutdown();
     }
     catch (...)
     {

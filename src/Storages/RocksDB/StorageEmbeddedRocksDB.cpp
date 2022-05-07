@@ -28,7 +28,7 @@
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sort.h>
 
 #include <rocksdb/db.h>
@@ -464,7 +464,7 @@ Pipe StorageEmbeddedRocksDB::read(
         Pipes pipes;
 
         size_t num_keys = keys->size();
-        size_t num_threads = std::min(size_t(num_streams), keys->size());
+        size_t num_threads = std::min<size_t>(num_streams, keys->size());
 
         assert(num_keys <= std::numeric_limits<uint32_t>::max());
         assert(num_threads <= std::numeric_limits<uint32_t>::max());
@@ -508,7 +508,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
     }
-    return StorageEmbeddedRocksDB::create(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0]);
+    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0]);
 }
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const

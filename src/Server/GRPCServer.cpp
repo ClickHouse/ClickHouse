@@ -40,7 +40,7 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/range.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -956,7 +956,13 @@ namespace
             if (!insert_query)
                 throw Exception("Query requires data to insert, but it is not an INSERT query", ErrorCodes::NO_DATA_TO_INSERT);
             else
-                throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+            {
+                const auto & settings = query_context->getSettingsRef();
+                if (settings.throw_if_no_data_to_insert)
+                    throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+                else
+                    return;
+            }
         }
 
         /// This is significant, because parallel parsing may be used.

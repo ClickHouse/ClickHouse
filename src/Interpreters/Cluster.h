@@ -229,6 +229,9 @@ public:
     /// The number of all shards.
     size_t getShardCount() const { return shards_info.size(); }
 
+    /// Returns an array of arrays of strings in the format 'escaped_host_name:port' for all replicas of all shards in the cluster.
+    std::vector<Strings> getHostIDs() const;
+
     const String & getSecret() const { return secret; }
 
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.

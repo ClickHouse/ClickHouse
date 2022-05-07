@@ -1,5 +1,5 @@
 #include <Backups/IBackupEntriesBatch.h>
-#include <IO/ReadBuffer.h>
+#include <IO/SeekableReadBuffer.h>
 
 
 namespace DB
@@ -15,7 +15,7 @@ public:
 
     UInt64 getSize() const override { return batch->getSize(index); }
     std::optional<UInt128> getChecksum() const override { return batch->getChecksum(index); }
-    std::unique_ptr<ReadBuffer> getReadBuffer() const override { return batch->getReadBuffer(index); }
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override { return batch->getReadBuffer(index); }
 
 private:
     const std::shared_ptr<IBackupEntriesBatch> batch;
