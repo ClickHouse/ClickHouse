@@ -1,7 +1,6 @@
 ---
-toc_folder_title: Optimizing Performance
-toc_hidden: true
-toc_priority: 52
+sidebar_label: Optimizing Performance
+sidebar_position: 52
 ---
 
 # Optimizing Performance {#optimizing-performance}

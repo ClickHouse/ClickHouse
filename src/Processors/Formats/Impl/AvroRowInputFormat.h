@@ -61,7 +61,7 @@ private:
             , target_column_idx(target_column_idx_)
             , deserialize_fn(deserialize_fn_) {}
 
-        Action(SkipFn skip_fn_)
+        explicit Action(SkipFn skip_fn_)
             : type(Skip)
             , skip_fn(skip_fn_) {}
 

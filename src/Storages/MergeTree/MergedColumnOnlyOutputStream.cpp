@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteSettings.h>
 
 namespace DB
 {
@@ -26,6 +27,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
+        data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
         /* rewrite_primary_key = */false);
@@ -74,9 +76,18 @@ MergedColumnOnlyOutputStream::fillChecksums(
     serialization_infos.replaceData(new_serialization_infos);
 
     auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
+
+    auto disk = new_part->volume->getDisk();
     for (const String & removed_file : removed_files)
-        if (all_checksums.files.count(removed_file))
+    {
+        auto file_path = new_part->getFullRelativePath() + removed_file;
+        /// Can be called multiple times, don't need to remove file twice
+        if (disk->exists(file_path))
+            disk->removeFile(file_path);
+
+        if (all_checksums.files.contains(removed_file))
             all_checksums.files.erase(removed_file);
+    }
 
     new_part->setColumns(columns);
     new_part->setSerializationInfos(serialization_infos);

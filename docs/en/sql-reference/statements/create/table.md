@@ -1,6 +1,6 @@
 ---
-toc_priority: 36
-toc_title: TABLE
+sidebar_position: 36
+sidebar_label: TABLE
 ---
 
 # CREATE TABLE {#create-table-query}
@@ -16,8 +16,8 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
@@ -112,6 +112,13 @@ Materialized expression. Such a column can’t be specified for INSERT, because 
 For an INSERT without a list of columns, these columns are not considered.
 In addition, this column is not substituted when using an asterisk in a SELECT query. This is to preserve the invariant that the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
+### EPHEMERAL {#ephemeral}
+
+`EPHEMERAL [expr]`
+
+Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement. If `expr` is omitted type for column is required.
+INSERT without list of columns will skip such column, so SELECT/INSERT invariant is preserved -  the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
+
 ### ALIAS {#alias}
 
 `ALIAS expr`
@@ -152,8 +159,9 @@ ENGINE = engine
 PRIMARY KEY(expr1[, expr2,...]);
 ```
 
-!!! warning "Warning"
-    You can't combine both ways in one query.
+:::warning    
+You can't combine both ways in one query.
+:::
 
 ## Constraints {#constraints}
 
@@ -207,8 +215,9 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
-!!! warning "Warning"
-    You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
+:::warning    
+You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
+:::
 
 Compression is supported for the following table engines:
 
@@ -230,7 +239,7 @@ Codecs:
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
-### Specialized Codecs {#create-query-specialized-codecs}
+### Specialized Codecs {#specialized-codecs}
 
 These codecs are designed to make compression more effective by using specific features of data. Some of these codecs do not compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
 
@@ -264,11 +273,13 @@ Encryption codecs:
 
 These codecs use a fixed nonce and encryption is therefore deterministic. This makes it compatible with deduplicating engines such as [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) but has a weakness: when the same data block is encrypted twice, the resulting ciphertext will be exactly the same so an adversary who can read the disk can see this equivalence (although only the equivalence, without getting its content).
 
-!!! attention "Attention"
-    Most engines including the "*MergeTree" family create index files on disk without applying codecs. This means plaintext will appear on disk if an encrypted column is indexed.
+:::warning    
+Most engines including the "*MergeTree" family create index files on disk without applying codecs. This means plaintext will appear on disk if an encrypted column is indexed.
+:::
 
-!!! attention "Attention"
-    If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
+:::warning    
+If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
+:::
 
 **Example**
 
@@ -280,8 +291,9 @@ CREATE TABLE mytable
 ENGINE = MergeTree ORDER BY x;
 ```
 
-!!!note "Note"
-    If compression needs to be applied, it must be explicitly specified. Otherwise, only encryption will be applied to data.
+:::note    
+If compression needs to be applied, it must be explicitly specified. Otherwise, only encryption will be applied to data.
+:::
 
 **Example**
 
@@ -323,8 +335,9 @@ It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engi
 
 'REPLACE' query allows you to update the table atomically.
 
-!!!note "Note"
-    This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
+:::note    
+This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
+:::
 
 If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, then drop the old table and rename the new one:
 
@@ -398,8 +411,9 @@ SELECT * FROM base.t1;
 
 You can add a comment to the table when you creating it.
 
-!!!note "Note"
-    The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+:::note    
+The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+:::
 
 
 **Syntax**

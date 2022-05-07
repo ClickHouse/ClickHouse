@@ -64,9 +64,12 @@ Block InterpreterDescribeQuery::getSampleBlock(bool include_subcolumns)
 BlockIO InterpreterDescribeQuery::execute()
 {
     ColumnsDescription columns;
+    StorageSnapshotPtr storage_snapshot;
 
     const auto & ast = query_ptr->as<ASTDescribeQuery &>();
     const auto & table_expression = ast.table_expression->as<ASTTableExpression &>();
+    const auto & settings = getContext()->getSettingsRef();
+
     if (table_expression.subquery)
     {
         auto names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(
@@ -83,19 +86,27 @@ BlockIO InterpreterDescribeQuery::execute()
         auto table_id = getContext()->resolveStorageID(table_expression.database_and_table_name);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
         auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
-        auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+        auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings.lock_acquire_timeout);
+
         auto metadata_snapshot = table->getInMemoryMetadataPtr();
+        storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
         columns = metadata_snapshot->getColumns();
     }
 
-    bool include_subcolumns = getContext()->getSettingsRef().describe_include_subcolumns;
+    bool extend_object_types = settings.describe_extend_object_types && storage_snapshot;
+    bool include_subcolumns = settings.describe_include_subcolumns;
+
     Block sample_block = getSampleBlock(include_subcolumns);
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     for (const auto & column : columns)
     {
         res_columns[0]->insert(column.name);
-        res_columns[1]->insert(column.type->getName());
+
+        if (extend_object_types)
+            res_columns[1]->insert(storage_snapshot->getConcreteType(column.name)->getName());
+        else
+            res_columns[1]->insert(column.type->getName());
 
         if (column.default_desc.expression)
         {
@@ -128,6 +139,8 @@ BlockIO InterpreterDescribeQuery::execute()
     {
         for (const auto & column : columns)
         {
+            auto type = extend_object_types ? storage_snapshot->getConcreteType(column.name) : column.type;
+
             IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
             {
                 res_columns[0]->insert(Nested::concatenateName(column.name, name));
@@ -150,7 +163,7 @@ BlockIO InterpreterDescribeQuery::execute()
                     res_columns[6]->insertDefault();
 
                 res_columns[7]->insert(1u);
-            }, {column.type->getDefaultSerialization(), column.type, nullptr, nullptr});
+            }, { type->getDefaultSerialization(), type, nullptr, nullptr });
         }
     }
 

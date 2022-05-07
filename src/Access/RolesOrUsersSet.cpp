@@ -22,8 +22,8 @@ namespace ErrorCodes
 RolesOrUsersSet::RolesOrUsersSet() = default;
 RolesOrUsersSet::RolesOrUsersSet(const RolesOrUsersSet & src) = default;
 RolesOrUsersSet & RolesOrUsersSet::operator =(const RolesOrUsersSet & src) = default;
-RolesOrUsersSet::RolesOrUsersSet(RolesOrUsersSet && src) = default;
-RolesOrUsersSet & RolesOrUsersSet::operator =(RolesOrUsersSet && src) = default;
+RolesOrUsersSet::RolesOrUsersSet(RolesOrUsersSet && src) noexcept = default;
+RolesOrUsersSet & RolesOrUsersSet::operator =(RolesOrUsersSet && src) noexcept = default;
 
 
 RolesOrUsersSet::RolesOrUsersSet(AllTag)

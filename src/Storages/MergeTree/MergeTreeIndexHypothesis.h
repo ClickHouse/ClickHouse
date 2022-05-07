@@ -16,7 +16,7 @@ struct MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
 
     MergeTreeIndexGranuleHypothesis(
         const String & index_name_,
-        const bool met_);
+        bool met_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -55,7 +55,7 @@ private:
 class MergeTreeIndexHypothesis : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexHypothesis(
+    explicit MergeTreeIndexHypothesis(
         const IndexDescription & index_)
         : IMergeTreeIndex(index_)
     {}
@@ -70,7 +70,7 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const override;
 
-    MergeTreeIndexMergedConditionPtr createIndexMergedCondtition(
+    MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;

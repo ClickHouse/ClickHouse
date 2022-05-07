@@ -55,7 +55,7 @@ public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    FunctionExtractAllGroups(ContextPtr context_)
+    explicit FunctionExtractAllGroups(ContextPtr context_)
         : context(context_)
     {}
 

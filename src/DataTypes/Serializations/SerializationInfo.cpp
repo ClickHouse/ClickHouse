@@ -181,10 +181,10 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     {
         auto info_json = info->toJSON();
         info_json.set(KEY_NAME, name);
-        column_infos.add(std::move(info_json));
+        column_infos.add(std::move(info_json)); /// NOLINT
     }
 
-    object.set(KEY_COLUMNS, std::move(column_infos));
+    object.set(KEY_COLUMNS, std::move(column_infos)); /// NOLINT
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
