@@ -35,7 +35,11 @@ struct ACL
     String scheme;
     String id;
 
-    auto operator<=>(const ACL &) const = default;
+    bool operator<(const ACL & other) const
+    {
+        return std::tuple(permissions, scheme, id)
+            < std::tuple(other.permissions, other.scheme, other.id);
+    }
 };
 
 using ACLs = std::vector<ACL>;
