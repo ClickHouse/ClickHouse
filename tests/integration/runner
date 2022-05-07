@@ -76,7 +76,7 @@ def check_args_and_update_paths(args):
             args.src_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.dockerd_volume))
 
     if (not os.path.exists(os.path.join(args.base_configs_dir, "config.xml"))) and (not os.path.exists(os.path.join(args.base_configs_dir, "config.yaml"))):
-        raise Exception("No configs.xml or configs.yaml in {}".format(args.base_configs_dir))
+        raise Exception("No config.xml or config.yaml in {}".format(args.base_configs_dir))
 
     if (not os.path.exists(os.path.join(args.base_configs_dir, "users.xml"))) and (not os.path.exists(os.path.join(args.base_configs_dir, "users.yaml"))):
         raise Exception("No users.xml or users.yaml in {}".format(args.base_configs_dir))
@@ -238,6 +238,8 @@ if __name__ == "__main__":
                 env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
             elif image == "clickhouse/integration-test":
                 env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
+            elif image == "clickhouse/kerberized-hadoop":
+                env_tags += "-e {}={} ".format("DOCKER_KERBERIZED_HADOOP_TAG", tag)
             elif image == "clickhouse/kerberos-kdc":
                 env_tags += "-e {}={} ".format("DOCKER_KERBEROS_KDC_TAG", tag)
             else:
@@ -277,7 +279,7 @@ if __name__ == "__main__":
 
     cmd = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
-        --volume={library_bridge_bin}:/clickhouse-library-bridge --volume={bin}:/clickhouse \
+        --volume={library_bridge_bin}:/clickhouse-library-bridge \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
         --volume=/run:/run/host:ro \

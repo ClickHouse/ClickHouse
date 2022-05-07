@@ -2,6 +2,7 @@ set (SRCS
     argsToConfig.cpp
     coverage.cpp
     demangle.cpp
+    getAvailableMemoryAmount.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
     getPageSize.cpp
@@ -17,6 +18,8 @@ set (SRCS
     terminalColors.cpp
     errnoToString.cpp
     StringRef.cpp
+    safeExit.cpp
+    throwError.cpp
 )
 
 if (ENABLE_REPLXX)

@@ -109,6 +109,8 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
         + toString(min_block_number) + "_"
         + toString(max_block_number) + WAL_FILE_EXTENSION;
 
+    /// Finalize stream before file rename
+    out->finalize();
     disk->replaceFile(path, storage.getRelativeDataPath() + new_name);
     init();
 }
@@ -195,7 +197,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 metadata_snapshot,
                 block.getNamesAndTypesList(),
                 {},
-                CompressionCodecFactory::instance().get("NONE", {}));
+                CompressionCodecFactory::instance().get("NONE", {}),
+                NO_TRANSACTION_PTR);
 
             part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);

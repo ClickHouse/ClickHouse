@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-s3-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,8 +15,8 @@ $CLICKHOUSE_CLIENT -q "select x + y, sum(x - y) as s from test_agg_proj group by
 $CLICKHOUSE_CLIENT -q "select (x + y) * 2, sum(x - y) * 2 as s from test_agg_proj group by x + y order by s desc limit 5 settings allow_experimental_projection_optimization=1"
 $CLICKHOUSE_CLIENT -q "select (x + y) * 2, sum(x - y) * 2 as s from test_agg_proj group by x + y order by s desc limit 5 settings allow_experimental_projection_optimization=1 format JSON" | grep "rows_read"
 
-$CLICKHOUSE_CLIENT -q "select intDiv(x + y, 2), intDiv(x + y, 3), sum(x - y) as s from test_agg_proj group by intDiv(x + y, 2), intDiv(x + y, 3) order by s desc limit 5 settings allow_experimental_projection_optimization=1"
-$CLICKHOUSE_CLIENT -q "select intDiv(x + y, 2), intDiv(x + y, 3), sum(x - y) as s from test_agg_proj group by intDiv(x + y, 2), intDiv(x + y, 3) order by s desc limit 5 settings allow_experimental_projection_optimization=1 format JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT -q "select intDiv(x + y, 2) as v, intDiv(x + y, 3), sum(x - y) as s from test_agg_proj group by intDiv(x + y, 2), intDiv(x + y, 3) order by s desc, v limit 5 settings allow_experimental_projection_optimization=1"
+$CLICKHOUSE_CLIENT -q "select intDiv(x + y, 2) as v, intDiv(x + y, 3), sum(x - y) as s from test_agg_proj group by intDiv(x + y, 2), intDiv(x + y, 3) order by s desc, v limit 5 settings allow_experimental_projection_optimization=1 format JSON" | grep "rows_read"
 
 $CLICKHOUSE_CLIENT -q "select x + y + 1, argMax(x, y) * sum(x - y) as s from test_agg_proj group by x + y + 1 order by s desc limit 5 settings allow_experimental_projection_optimization=1"
 $CLICKHOUSE_CLIENT -q "select x + y + 1, argMax(x, y) * sum(x - y) as s from test_agg_proj group by x + y + 1 order by s desc limit 5 settings allow_experimental_projection_optimization=1 format JSON" | grep "rows_read"

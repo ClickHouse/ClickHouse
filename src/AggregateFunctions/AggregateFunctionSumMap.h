@@ -17,7 +17,7 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <map>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 
 
@@ -489,15 +489,15 @@ public:
                 "Aggregate function '{}' requires exactly one parameter "
                 "of Array type", getName());
 
-        Array keys_to_keep_;
-        if (!params_.front().tryGet<Array>(keys_to_keep_))
+        Array keys_to_keep_values;
+        if (!params_.front().tryGet<Array>(keys_to_keep_values))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Aggregate function {} requires an Array as a parameter",
                 getName());
 
-        keys_to_keep.reserve(keys_to_keep_.size());
+        keys_to_keep.reserve(keys_to_keep_values.size());
 
-        for (const Field & f : keys_to_keep_)
+        for (const Field & f : keys_to_keep_values)
             keys_to_keep.emplace(f.safeGet<T>());
     }
 
