@@ -321,7 +321,7 @@ private:
                 --data.size;
 
             data_to.resize(offset + data.size + 1);
-            memcpy(data_to.data() + offset, data.data, data.size);
+            memcpy(&data_to[offset], data.data, data.size);
             offset += data.size;
             data_to[offset] = 0;
             ++offset;
