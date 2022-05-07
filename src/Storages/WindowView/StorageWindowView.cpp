@@ -338,7 +338,7 @@ namespace
     class AddingAggregatedChunkInfoTransform : public ISimpleTransform
     {
     public:
-        AddingAggregatedChunkInfoTransform(Block header) : ISimpleTransform(header, header, false) { }
+        explicit AddingAggregatedChunkInfoTransform(Block header) : ISimpleTransform(header, header, false) { }
 
         void transform(Chunk & chunk) override { chunk.setChunkInfo(std::make_shared<AggregatedChunkInfo>()); }
 
@@ -475,9 +475,9 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
     auto adding_column_actions
         = std::make_shared<ExpressionActions>(std::move(adding_column_dag), ExpressionActionsSettings::fromContext(getContext()));
-    builder.addSimpleTransform([&](const Block & stream_header)
+    builder.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); 
+        return std::make_shared<ExpressionTransform>(header, adding_column_actions);
     });
 
     /// Removing window id column
