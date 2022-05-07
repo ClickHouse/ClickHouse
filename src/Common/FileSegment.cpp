@@ -633,7 +633,9 @@ void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex> & segment_loc
     if (download_state != State::EMPTY && !hasFinalizedState())
     {
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Cache get into inconsistent state {}", getInfoForLogImpl(segment_lock));
+            ErrorCodes::LOGICAL_ERROR,
+            "Detached file segment has incorrent state: {}",
+            getInfoForLogImpl(segment_lock));
     }
 }
 
