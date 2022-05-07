@@ -87,16 +87,16 @@ concept UniqueHashAddressable
 {
     {
         T::place(x, mask)
-        } -> std::same_as<size_t>;
+    } -> std::same_as<size_t>;
     {
         T::addressingForResize(buf, start_index, max_index, x)
-        } -> std::same_as<size_t>;
+    } -> std::same_as<size_t>;
     {
         T::addressingForInsert(buf, start_index, max_index, x)
-        } -> std::same_as<size_t>;
+    } -> std::same_as<size_t>;
     {
         T::addressingForReInsert(buf, start_index, max_index)
-        } -> std::same_as<size_t>;
+    } -> std::same_as<size_t>;
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
     {
         T::setCollisions(nullptr)
