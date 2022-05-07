@@ -121,10 +121,6 @@
         <!-- TLS settings -->
         <enable_ssl>false</enable_ssl>
 
-        <!-- Authentication settings -->
-        <username>default</username>
-        <requirepass>password</requirepass>
-
         <!-- Database settings. Maps redis database to ClickHouse table. -->
         <db>
             <_0>table_name</_0>

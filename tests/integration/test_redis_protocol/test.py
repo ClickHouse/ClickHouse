@@ -5,8 +5,14 @@ from helpers.cluster import ClickHouseCluster
 from redis import Redis
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", main_configs=["configs/redis.xml"])
-node_ssl = cluster.add_instance("node_ssl", main_configs=["configs/redis_ssl.xml", "configs/ssl_conf.xml"])
+node = cluster.add_instance(
+    "node", main_configs=["configs/redis.xml"], user_configs=["configs/users.xml"]
+)
+node_ssl = cluster.add_instance(
+    "node_ssl",
+    main_configs=["configs/redis_ssl.xml", "configs/ssl_conf.xml"],
+    user_configs=["configs/users.xml"],
+)
 server_port = 9006
 ssl_server_port = 9007
 
@@ -30,7 +36,7 @@ def ssl_server_address():
 
 
 def test_python_client(server_address):
-    redis = Redis(host=server_address, port=server_port, username="user", password="123")
+    redis = Redis(host=server_address, port=server_port, password="123")
 
     value = redis.select(2)
     assert value
@@ -43,7 +49,13 @@ def test_python_client(server_address):
 
 
 def test_python_client_ssl(ssl_server_address):
-    redis = Redis(host=ssl_server_address, port=ssl_server_port, ssl=True, ssl_cert_reqs=None)
+    redis = Redis(
+        host=ssl_server_address,
+        port=ssl_server_port,
+        ssl=True,
+        ssl_cert_reqs=None,
+        password="123",
+    )
 
     value = redis.get("key")
     assert value == b"Hello world"

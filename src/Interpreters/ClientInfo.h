@@ -30,6 +30,7 @@ public:
         POSTGRESQL = 5,
         LOCAL = 6,
         TCP_INTERSERVER = 7,
+        REDIS = 8,
     };
 
     enum class HTTPMethod : uint8_t

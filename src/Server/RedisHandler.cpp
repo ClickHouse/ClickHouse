@@ -10,6 +10,9 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/setThreadName.h>
 
+#include <Interpreters/Session.h>
+#include <Interpreters/executeQuery.h>
+
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -29,20 +32,14 @@ RedisHandler::RedisHandler(const Poco::Net::StreamSocket & socket_, IServer & se
 {
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
-    if (auto pass = server.config().getString("redis.requirepass", ""); !pass.empty())
-    {
-        if (auto user = server.config().getString("redis.username", ""); !user.empty())
-        {
-            username = std::move(user);
-        }
-        password = std::move(pass);
-        authenticated = false;
-    }
 }
 
 void RedisHandler::run()
 {
     setThreadName("RedisHandler");
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::REDIS);
+    SCOPE_EXIT({ session.reset(); });
+
     try
     {
         if (server.config().getBool("redis.enable_ssl", false))
@@ -64,7 +61,7 @@ void RedisHandler::run()
             {
                 RedisProtocol::GetRequest get_req(req);
                 get_req.deserialize(*in);
-                log->log(Poco::format("GET request for %s key", get_req.getKey()));
+                LOG_DEBUG(log, "GET request for {} key", get_req.getKey());
 
                 if (!authenticated)
                 {
@@ -80,25 +77,27 @@ void RedisHandler::run()
             {
                 RedisProtocol::AuthRequest auth_req(req);
                 auth_req.deserialize(*in);
-                log->log(Poco::format("AUTH request for %s username", auth_req.getUsername()));
 
-                if (auth_req.getUsername() != username || auth_req.getPassword() != password)
-                {
-                    RedisProtocol::ErrorResponse resp(RedisProtocol::Message::WRONGPASS);
-                    resp.serialize(*out);
-                    continue;
-                }
+                String username = auth_req.getUsername();
+                if (auth_req.getUsername().empty())
+                    username = "default";
 
-                authenticated = true;
+                LOG_DEBUG(log, "AUTH request for {} username", auth_req.getUsername());
 
-                RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
-                resp.serialize(*out);
+                RedisProtocol::Writer writer(out.get());
+                if (authenticated)
+                    writer.writeSimpleString(RedisProtocol::Message::OK);
+
+                bool success
+                    = authentication_manager.authenticate(username, auth_req.getPassword(), *session, socket().address(), out.get());
+
+                authenticated = success;
             }
             else if (req.getMethod() == "select")
             {
                 RedisProtocol::SelectRequest select_req(req);
                 select_req.deserialize(*in);
-                log->log(Poco::format("SELECT request for %?d db", select_req.getDb()));
+                LOG_DEBUG(log, "SELECT request for {} db", std::to_string(select_req.getDb()));
 
                 if (!authenticated)
                 {
@@ -115,20 +114,21 @@ void RedisHandler::run()
             }
             else if (req.getMethod() == "reset")
             {
-                log->log(Poco::format("Reset %?d", 228));
+                LOG_DEBUG(log, "RESET request");
                 RedisProtocol::SimpleStringResponse resp("RESET");
                 resp.serialize(*out);
             }
             else if (req.getMethod() == "quit")
             {
-                log->log(Poco::format("Quit %?d", 228));
+                LOG_DEBUG(log, "QUIT request");
                 RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
                 resp.serialize(*out);
                 return;
             }
             else
             {
-                throw Exception("ERR Unknown command", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(
+                    Poco::format("%s (%s)", RedisProtocol::Message::UNKNOWNCOMMAND, req.getMethod()), ErrorCodes::NOT_IMPLEMENTED);
             }
         }
     }

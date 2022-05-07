@@ -5,7 +5,9 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/config.h>
 #include <Common/logger_useful.h>
+#include "Access/Common/AuthenticationData.h"
 #include "IServer.h"
+#include "RedisProtocol.hpp"
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -38,9 +40,8 @@ private:
 
     Int64 db = 0;
 
-    bool authenticated = true;
-    String username;
-    String password;
+    RedisProtocol::AuthenticationManager authentication_manager;
+    bool authenticated = false;
 
     Poco::Logger * log = &Poco::Logger::get("RedisHandler");
 
@@ -51,6 +52,8 @@ private:
 #endif
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
+
+    std::unique_ptr<Session> session;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::RedisConnection};
 };

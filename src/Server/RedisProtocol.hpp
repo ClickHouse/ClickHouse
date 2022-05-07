@@ -4,7 +4,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <boost/pending/detail/property.hpp>
+#include <Interpreters/Session.h>
+#include <Common/logger_useful.h>
+#include "Access/Common/AuthenticationData.h"
 
 namespace DB
 {
@@ -14,6 +16,7 @@ namespace ErrorCodes
     extern const int BAD_REQUEST_PARAMETER;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int NOT_IMPLEMENTED;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 namespace RedisProtocol
@@ -32,6 +35,8 @@ namespace RedisProtocol
         const String OK = "OK";
         const String NOAUTH = "NOAUTH Authentication required.";
         const String WRONGPASS = "WRONGPASS invalid username-password pair or user is disabled.";
+        const String WRONGAUTH = "WRONGAUTH Not supported authentication method.";
+        const String UNKNOWNCOMMAND = "ERR Unknown command";
     }
 
     class Reader
@@ -290,6 +295,44 @@ namespace RedisProtocol
 
     private:
         const String & error;
+    };
+
+    class AuthenticationManager
+    {
+    public:
+        bool authenticate(
+            const String & username,
+            const String & password,
+            Session & session,
+            const Poco::Net::SocketAddress & address,
+            WriteBuffer * buf)
+        {
+            Writer writer(buf);
+            const AuthenticationType user_auth_type = session.getAuthenticationTypeOrLogInFailure(username);
+            if (user_auth_type != DB::AuthenticationType::PLAINTEXT_PASSWORD)
+            {
+                writer.writeErrorString(Message::WRONGAUTH);
+                return false;
+            }
+            try
+            {
+                session.authenticate(username, password, address);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::AUTHENTICATION_FAILED)
+                    writer.writeErrorString(Message::WRONGPASS);
+                else
+                    writer.writeErrorString(Poco::format("AUTHERR %s", e.message()));
+                return false;
+            }
+            writer.writeSimpleString(Message::OK);
+            LOG_DEBUG(log, "Authentication for user {} was successful.", username);
+            return true;
+        }
+
+    private:
+        Poco::Logger * log = &Poco::Logger::get("RedisAuthenticationManager");
     };
 }
 }
