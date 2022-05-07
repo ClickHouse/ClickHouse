@@ -40,6 +40,7 @@
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ReplacingWindowColumnTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/StorageFactory.h>
@@ -1208,34 +1209,30 @@ BlockIO StorageWindowView::populate()
         throw Exception(
             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "POPULATE is not supported when using function now() as the time column");
 
-    auto modified_query = select_query->clone();
-    auto & modified_select = modified_query->as<ASTSelectQuery &>();
-
-    auto analyzer_res = TreeRewriterResult({});
-    removeJoin(modified_select, analyzer_res, getContext());
-
-    modified_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
-    modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-
-    auto select = std::make_shared<ASTExpressionList>();
-    select->children.push_back(std::make_shared<ASTAsterisk>());
-    modified_select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(select));
-
-    auto order_by = std::make_shared<ASTExpressionList>();
-    auto order_by_elem = std::make_shared<ASTOrderByElement>();
-    order_by_elem->children.push_back(std::make_shared<ASTIdentifier>(timestamp_column_name));
-    order_by_elem->direction = 1;
-    order_by->children.push_back(order_by_elem);
-    modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
-
     QueryPipelineBuilder pipeline;
 
-    /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-    InterpreterSelectQuery interpreter_select{modified_query, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-    pipeline = interpreter_select.buildQueryPipeline();
+    InterpreterSelectQuery interpreter_fetch{select_query, getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns)};
+    pipeline = interpreter_fetch.buildQueryPipeline();
 
-    auto header_block = interpreter_select.getSampleBlock();
-    auto sink = std::make_shared<PushingToWindowViewSink>(header_block, *this, nullptr, getContext());
+    SortDescription order_descr;
+    order_descr.emplace_back(timestamp_column_name);
+
+    pipeline.addSimpleTransform(
+        [&](const Block & header)
+        {
+            return std::make_shared<MergeSortingTransform>(
+                header,
+                order_descr,
+                getContext()->getSettingsRef().max_block_size,
+                0 /*LIMIT*/,
+                getContext()->getSettingsRef().max_bytes_before_remerge_sort,
+                getContext()->getSettingsRef().remerge_sort_lowered_memory_bytes_ratio,
+                getContext()->getSettingsRef().max_bytes_before_external_sort,
+                getContext()->getTemporaryVolume(),
+                getContext()->getSettingsRef().min_free_disk_space_for_temporary_data);
+        });
+
+    auto sink = std::make_shared<PushingToWindowViewSink>(interpreter_fetch.getSampleBlock(), *this, nullptr, getContext());
 
     BlockIO res;
 
