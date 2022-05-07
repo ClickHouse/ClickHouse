@@ -9,6 +9,8 @@
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <cmath>
+
 
 namespace DB
 {
@@ -176,27 +178,75 @@ UInt64 SettingFieldMaxThreads::getAuto()
     return getNumberOfPhysicalCPUCores();
 }
 
+namespace
+{
+    Poco::Timespan::TimeDiff float64AsSecondsToTimespan(Float64 d)
+    {
+        if (!std::isnormal(d) || std::signbit(d))
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a positive normal floating point number");
+        return static_cast<Poco::Timespan::TimeDiff>(d *= 1000000);
+    }
 
-template <SettingFieldTimespanUnit unit_>
-SettingFieldTimespan<unit_>::SettingFieldTimespan(const Field & f) : SettingFieldTimespan(fieldToNumber<UInt64>(f))
+}
+
+template <>
+SettingFieldSeconds::SettingFieldTimespan(const Field & f) : SettingFieldTimespan(float64AsSecondsToTimespan(fieldToNumber<Float64>(f)))
 {
 }
 
-template <SettingFieldTimespanUnit unit_>
-SettingFieldTimespan<unit_> & SettingFieldTimespan<unit_>::operator=(const Field & f)
+template <>
+SettingFieldMilliseconds::SettingFieldTimespan(const Field & f) : SettingFieldTimespan(fieldToNumber<UInt64>(f))
+{
+}
+
+template <>
+SettingFieldSeconds & SettingFieldSeconds::operator=(const Field & f)
+{
+    *this = Poco::Timespan{float64AsSecondsToTimespan(fieldToNumber<Float64>(f))};
+    return *this;
+}
+
+template <>
+SettingFieldMilliseconds & SettingFieldMilliseconds::operator=(const Field & f)
 {
     *this = fieldToNumber<UInt64>(f);
     return *this;
 }
 
-template <SettingFieldTimespanUnit unit_>
-String SettingFieldTimespan<unit_>::toString() const
+template <>
+String SettingFieldSeconds::toString() const
+{
+    return ::DB::toString(static_cast<Float64>(value.totalMicroseconds()) / microseconds_per_unit);
+}
+
+template <>
+String SettingFieldMilliseconds::toString() const
 {
     return ::DB::toString(operator UInt64());
 }
 
-template <SettingFieldTimespanUnit unit_>
-void SettingFieldTimespan<unit_>::parseFromString(const String & str)
+template <>
+SettingFieldSeconds::operator Field() const
+{
+    return static_cast<Float64>(value.totalMicroseconds()) / microseconds_per_unit;
+}
+
+template <>
+SettingFieldMilliseconds::operator Field() const
+{
+    return operator UInt64();
+}
+
+template <>
+void SettingFieldSeconds::parseFromString(const String & str)
+{
+    Float64 n = parse<Float64>(str.data(), str.size());
+    *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(n * microseconds_per_unit)};
+}
+
+template <>
+void SettingFieldMilliseconds::parseFromString(const String & str)
 {
     *this = stringToNumber<UInt64>(str);
 }
@@ -204,6 +254,9 @@ void SettingFieldTimespan<unit_>::parseFromString(const String & str)
 template <SettingFieldTimespanUnit unit_>
 void SettingFieldTimespan<unit_>::writeBinary(WriteBuffer & out) const
 {
+    /// Note that this is unchanged and returns UInt64 for both seconds and milliseconds for
+    /// compatibility reasons as it's only used the clients or servers older than
+    /// DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS
     auto num_units = operator UInt64();
     writeVarUInt(num_units, out);
 }
