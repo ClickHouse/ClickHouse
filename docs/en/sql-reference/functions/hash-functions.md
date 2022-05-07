@@ -233,7 +233,7 @@ This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust 
 
 **Return value**
 
-- BLAKE3 hash as a hex-unencoded string with type FixedString(32).
+- BLAKE3 hash as a byte array with type FixedString(32).
 
 Type: [FixedString](../data-types/fixedstring.md).
 
