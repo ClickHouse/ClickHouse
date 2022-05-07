@@ -14,19 +14,19 @@
 namespace DB
 {
 
-struct MergeTreeIndexGranuleIVFFlat final : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleFaiss final : public IMergeTreeIndexGranule
 {
     using FaissBaseIndex = faiss::Index;
     using FaissBaseIndexPtr = std::unique_ptr<FaissBaseIndex>; 
 
-    MergeTreeIndexGranuleIVFFlat(const String & index_name_, const Block & index_sample_block_);
-    MergeTreeIndexGranuleIVFFlat(
+    MergeTreeIndexGranuleFaiss(const String & index_name_, const Block & index_sample_block_);
+    MergeTreeIndexGranuleFaiss(
         const String & index_name_, 
         const Block & index_sample_block_,
         FaissBaseIndexPtr index_base_,
         bool is_incomplete_);
 
-    ~MergeTreeIndexGranuleIVFFlat() override = default;
+    ~MergeTreeIndexGranuleFaiss() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
 
@@ -43,12 +43,12 @@ struct MergeTreeIndexGranuleIVFFlat final : public IMergeTreeIndexGranule
 };
 
 
-struct MergeTreeIndexAggregatorIVFFlat final : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorFaiss final : IMergeTreeIndexAggregator
 {
     using Value = Float32;
 
-    MergeTreeIndexAggregatorIVFFlat(const String & index_name_, const Block & index_sample_block_, const String & index_key_, const String & metric_type_);
-    ~MergeTreeIndexAggregatorIVFFlat() override = default;
+    MergeTreeIndexAggregatorFaiss(const String & index_name_, const Block & index_sample_block_, const String & index_key_, const String & metric_type_);
+    ~MergeTreeIndexAggregatorFaiss() override = default;
 
     bool empty() const override;
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
@@ -63,15 +63,15 @@ struct MergeTreeIndexAggregatorIVFFlat final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionIVFFlat final : public IMergeTreeIndexConditionAnn
+class MergeTreeIndexConditionFaiss final : public IMergeTreeIndexConditionAnn
 {
 public:
-    MergeTreeIndexConditionIVFFlat(
+    MergeTreeIndexConditionFaiss(
         const IndexDescription & index,
         const SelectQueryInfo & query,
         ContextPtr context,
         const String & metric_type_);
-    ~MergeTreeIndexConditionIVFFlat() override = default;
+    ~MergeTreeIndexConditionFaiss() override = default;
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -86,12 +86,12 @@ private:
 };
 
 
-class MergeTreeIndexIVFFlat : public IMergeTreeIndex
+class MergeTreeIndexFaiss : public IMergeTreeIndex
 {
 public:
-    explicit MergeTreeIndexIVFFlat(const IndexDescription & index_);
+    explicit MergeTreeIndexFaiss(const IndexDescription & index_);
 
-    ~MergeTreeIndexIVFFlat() override = default;
+    ~MergeTreeIndexFaiss() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;

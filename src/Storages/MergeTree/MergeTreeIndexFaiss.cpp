@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeIndexIVFFlat.h>
+#include <Storages/MergeTree/MergeTreeIndexFaiss.h>
 
 #include <Core/Field.h>
 
@@ -113,14 +113,14 @@ namespace {
     }
 }
 
-MergeTreeIndexGranuleIVFFlat::MergeTreeIndexGranuleIVFFlat(const String & index_name_, const Block & index_sample_block_)
+MergeTreeIndexGranuleFaiss::MergeTreeIndexGranuleFaiss(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , index_base(nullptr)
     , is_incomplete(false)
 {}
 
-MergeTreeIndexGranuleIVFFlat::MergeTreeIndexGranuleIVFFlat(
+MergeTreeIndexGranuleFaiss::MergeTreeIndexGranuleFaiss(
     const String & index_name_, 
     const Block & index_sample_block_,
     FaissBaseIndexPtr index_base_,
@@ -131,20 +131,20 @@ MergeTreeIndexGranuleIVFFlat::MergeTreeIndexGranuleIVFFlat(
     , is_incomplete(is_incomplete_)
 {}
 
-void MergeTreeIndexGranuleIVFFlat::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleFaiss::serializeBinary(WriteBuffer & ostr) const
 {
     WriteBufferFaissWrapper ostr_wrapped(ostr);
     faiss::write_index(index_base.get(), &ostr_wrapped);
 }
 
-void MergeTreeIndexGranuleIVFFlat::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
+void MergeTreeIndexGranuleFaiss::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
     ReadBufferFaissWrapper istr_wrapped(istr);
     FaissBaseIndex* index = faiss::read_index(&istr_wrapped);
     index_base.reset(index);
 }
 
-bool MergeTreeIndexGranuleIVFFlat::empty() const
+bool MergeTreeIndexGranuleFaiss::empty() const
 {
     // Granule is empty if we didn't try to train index and failed (flag is_incomplete),
     // and we didn't set base index, or base index doesn't contain elements
@@ -152,7 +152,7 @@ bool MergeTreeIndexGranuleIVFFlat::empty() const
 }
 
 
-MergeTreeIndexAggregatorIVFFlat::MergeTreeIndexAggregatorIVFFlat(const String & index_name_,
+MergeTreeIndexAggregatorFaiss::MergeTreeIndexAggregatorFaiss(const String & index_name_,
                                                                 const Block & index_sample_block_,
                                                                 const String & index_key_,
                                                                 const String & metric_type_)
@@ -162,12 +162,12 @@ MergeTreeIndexAggregatorIVFFlat::MergeTreeIndexAggregatorIVFFlat(const String & 
     , metric_type(metric_type_)
 {}
 
-bool MergeTreeIndexAggregatorIVFFlat::empty() const
+bool MergeTreeIndexAggregatorFaiss::empty() const
 {
     return values.empty();
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIVFFlat::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFaiss::getGranuleAndReset()
 {
     std::unique_ptr<faiss::Index> index(faiss::index_factory(dimension, index_key.c_str(), StringToMetric(metric_type)));
     auto num_elements = values.size() / dimension;
@@ -184,10 +184,10 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIVFFlat::getGranuleAndReset()
     values.clear();
 
     bool is_incomplete = (index == nullptr);
-    return std::make_shared<MergeTreeIndexGranuleIVFFlat>(index_name, index_sample_block, std::move(index), is_incomplete);
+    return std::make_shared<MergeTreeIndexGranuleFaiss>(index_name, index_sample_block, std::move(index), is_incomplete);
 }
 
-void MergeTreeIndexAggregatorIVFFlat::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorFaiss::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -221,7 +221,7 @@ void MergeTreeIndexAggregatorIVFFlat::update(const Block & block, size_t * pos, 
 }
 
 
-MergeTreeIndexConditionIVFFlat::MergeTreeIndexConditionIVFFlat(
+MergeTreeIndexConditionFaiss::MergeTreeIndexConditionFaiss(
     const IndexDescription & index,
     const SelectQueryInfo & query,
     ContextPtr context,
@@ -231,12 +231,12 @@ MergeTreeIndexConditionIVFFlat::MergeTreeIndexConditionIVFFlat(
     , metric_type(metric_type_)
 {}
 
-bool MergeTreeIndexConditionIVFFlat::alwaysUnknownOrTrue() const
+bool MergeTreeIndexConditionFaiss::alwaysUnknownOrTrue() const
 {
     return condition.alwaysUnknownOrTrue(metric_type);
 }
 
-bool MergeTreeIndexConditionIVFFlat::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionFaiss::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
     std::vector<float> target_vec = condition.getTargetVector();
     float min_distance = condition.getComparisonDistance();
@@ -251,7 +251,7 @@ bool MergeTreeIndexConditionIVFFlat::mayBeTrueOnGranule(MergeTreeIndexGranulePtr
     float distance;
     int64_t label;
 
-    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleIVFFlat>(idx_granule);
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleFaiss>(idx_granule);
     String index_setting = condition.getSettingsStr();
 
     if (!index_setting.empty()) 
@@ -262,7 +262,7 @@ bool MergeTreeIndexConditionIVFFlat::mayBeTrueOnGranule(MergeTreeIndexGranulePtr
     return distance < min_distance;
 }
 
-std::vector<size_t> MergeTreeIndexConditionIVFFlat::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
+std::vector<size_t> MergeTreeIndexConditionFaiss::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
     UInt64 limit = condition.getLimitCount() ? condition.getLimitCount().value() : 1;
     std::vector<float> target_vec = condition.getTargetVector();
@@ -278,7 +278,7 @@ std::vector<size_t> MergeTreeIndexConditionIVFFlat::getUsefulRanges(MergeTreeInd
     std::vector<float> distances(k);
     std::vector<int64_t> labels(k);
 
-    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleIVFFlat>(idx_granule);
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleFaiss>(idx_granule);
 
     // Skip searching in the incomplete granule
     if (granule->is_incomplete)
@@ -315,7 +315,7 @@ std::vector<size_t> MergeTreeIndexConditionIVFFlat::getUsefulRanges(MergeTreeInd
     return useful_granules_vec;
 }
 
-MergeTreeIndexIVFFlat::MergeTreeIndexIVFFlat(const IndexDescription & index_)
+MergeTreeIndexFaiss::MergeTreeIndexFaiss(const IndexDescription & index_)
     : IMergeTreeIndex(index_)
 {
     if (index.arguments.empty()) 
@@ -327,28 +327,28 @@ MergeTreeIndexIVFFlat::MergeTreeIndexIVFFlat(const IndexDescription & index_)
 }
 
 
-MergeTreeIndexGranulePtr MergeTreeIndexIVFFlat::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexFaiss::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleIVFFlat>(index.name, index.sample_block);
+    return std::make_shared<MergeTreeIndexGranuleFaiss>(index.name, index.sample_block);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexIVFFlat::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexFaiss::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorIVFFlat>(index.name, index.sample_block, index_key, metric_type);
+    return std::make_shared<MergeTreeIndexAggregatorFaiss>(index.name, index.sample_block, index_key, metric_type);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexIVFFlat::createIndexCondition(
+MergeTreeIndexConditionPtr MergeTreeIndexFaiss::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionIVFFlat>(index, query, context, metric_type);
+    return std::make_shared<MergeTreeIndexConditionFaiss>(index, query, context, metric_type);
 }
 
-bool MergeTreeIndexIVFFlat::mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const
+bool MergeTreeIndexFaiss::mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const
 {
     return false;
 }
 
-MergeTreeIndexFormat MergeTreeIndexIVFFlat::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexFaiss::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
 {
     if (disk->exists(relative_path_prefix + ".idx2"))
         return {2, ".idx2"};
@@ -357,13 +357,13 @@ MergeTreeIndexFormat MergeTreeIndexIVFFlat::getDeserializedFormat(const DiskPtr 
     return {0 /* unknown */, ""};
 }
 
-MergeTreeIndexPtr IVFFlatIndexCreator(
+MergeTreeIndexPtr FaissIndexCreator(
     const IndexDescription & index)
 {
-    return std::make_shared<MergeTreeIndexIVFFlat>(index);
+    return std::make_shared<MergeTreeIndexFaiss>(index);
 }
 
-void IVFFlatIndexValidator(const IndexDescription & /* index */, bool /* attach */)
+void FaissIndexValidator(const IndexDescription & /* index */, bool /* attach */)
 {}
 
 }
