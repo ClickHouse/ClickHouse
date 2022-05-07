@@ -2,8 +2,8 @@
 
 #if USE_MYSQL
 #include <mysqlxx/PoolWithFailover.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Storages/StorageMySQL.h>
 
 namespace DB
 {
@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 mysqlxx::PoolWithFailover
-createMySQLPoolWithFailover(const StorageMySQLConfiguration & configuration, const MySQLSettings & mysql_settings)
+createMySQLPoolWithFailover(const StorageMySQL::Configuration & configuration, const MySQLSettings & mysql_settings)
 {
     if (!mysql_settings.connection_pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Connection pool cannot have zero size");

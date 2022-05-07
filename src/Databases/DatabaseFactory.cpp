@@ -155,21 +155,18 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        StorageMySQLConfiguration configuration;
+        StorageMySQL::LConfiguration configuration;
         ASTs & arguments = engine->arguments->children;
         MySQLSettings mysql_settings;
 
-        if (auto named_collection = getExternalDataSourceConfiguration(arguments, context, true, true, mysql_settings))
+        if (isNamedCollection(engine_args, config))
         {
-            auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
+            const auto & config_keys = StorageMySQL::getConfigKeys();
+            auto collection_name = getCollectionName(engine_args);
 
-            configuration.set(common_configuration);
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            mysql_settings.applyChanges(settings_changes);
-
-            if (!storage_specific_args.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
+            auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
+            overrideConfigurationFromNamedCollectionWithAST(engine_args, configuration_from_config, config_keys, context_);
+            configuration = StorageMySQL::parseConfigurationFromNamedCollection(configuration_from_config, context_);
         }
         else
         {

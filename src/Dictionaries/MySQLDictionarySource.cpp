@@ -16,6 +16,7 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Storages/NamedCollections.h>
 
 
 namespace DB
@@ -30,17 +31,37 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password",
-    "db", "database", "table", "schema",
-    "update_field", "invalidate_query", "priority",
-    "update_lag", "dont_check_update_time",
-    "query", "where", "name" /* name_collection */, "socket",
-    "share_connection", "fail_on_connection_loss", "close_connection",
-    "ssl_ca", "ssl_cert", "ssl_key",
-    "enable_local_infile", "opt_reconnect",
-    "connect_timeout", "mysql_connect_timeout",
-    "mysql_rw_timeout", "rw_timeout"};
+static const std::unordered_map<String, ConfigKeyInfo> dictionary_keys = {
+    {"host", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"port", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+    {"user", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"password", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"db", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"database", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"table", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"schema", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"update_field", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"update_lag", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
+    {"invalidate_query", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"query", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"where", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"priority", ConfigKeyInfo{ .type = Field::Types::UInt64 }}
+    {"dont_check_update_time", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"name", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"socket", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"share_connection", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"fail_on_connection_loss", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"close_connection", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"ssl_ca", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"ssl_cert", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"ssl_key", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"enable_local_infile", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"opt_reconnect", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"connect_timeout", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"rw_timeout", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"mysql_connect_timeout", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"mysql_rw_timeout", ConfigKeyInfo{ .type = Field::Types::String }},
+};
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {

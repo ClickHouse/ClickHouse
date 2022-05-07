@@ -53,7 +53,7 @@ StorageExternalDistributed::StorageExternalDistributed(
 #if USE_MYSQL || USE_LIBPQXX
 
     /// For each shard pass replicas description into storage, replicas are managed by storage's PoolWithFailover.
-    for (const auto & shard_description : shards_descriptions)
+    for ([[maybe_unused]] const auto & shard_description : shards_descriptions)
     {
         StoragePtr shard;
 
@@ -62,26 +62,26 @@ StorageExternalDistributed::StorageExternalDistributed(
 #if USE_MYSQL
             case ExternalStorageEngine::MySQL:
             {
-                addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 3306);
+                // addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 3306);
 
-                mysqlxx::PoolWithFailover pool(
-                    configuration.database,
-                    addresses,
-                    configuration.username,
-                    configuration.password);
+                // mysqlxx::PoolWithFailover pool(
+                //     configuration.database,
+                //     addresses,
+                //     configuration.username,
+                //     configuration.password);
 
-                shard = std::make_shared<StorageMySQL>(
-                    table_id_,
-                    std::move(pool),
-                    configuration.database,
-                    configuration.table,
-                    /* replace_query = */ false,
-                    /* on_duplicate_clause = */ "",
-                    columns_,
-                    constraints_,
-                    String{},
-                    context,
-                    MySQLSettings{});
+                // shard = std::make_shared<StorageMySQL>(
+                //     table_id_,
+                //     std::move(pool),
+                //     configuration.database,
+                //     configuration.table,
+                //     /* replace_query = */ false,
+                //     /* on_duplicate_clause = */ "",
+                //     columns_,
+                //     constraints_,
+                //     String{},
+                //     context,
+                //     MySQLSettings{});
                 break;
             }
 #endif
@@ -112,6 +112,10 @@ StorageExternalDistributed::StorageExternalDistributed(
         shards.emplace(std::move(shard));
     }
 
+    (void)configuration;
+    (void)cluster_description;
+    (void)addresses;
+    (void)table_engine;
 #else
     (void)configuration;
     (void)cluster_description;

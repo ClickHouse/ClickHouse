@@ -237,31 +237,65 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         local_context->getSettingsRef().mysql_max_rows_to_insert);
 }
 
-
-StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings)
+StorageMySQL::Configuration StorageMySQL::parseConfigurationFromNamedCollection(ConfigurationFromNamedCollection & configuration_from_config, ContextPtr context_)
 {
-    StorageMySQLConfiguration configuration;
+    StorageMySQL::Configuration configuration;
 
-    if (auto named_collection = getExternalDataSourceConfiguration(
-            engine_args, context_, /* is_database_engine */false, /* throw_on_no_collection */true, storage_settings))
+    for (const auto & [name, value] : configuration_from_config)
     {
-        auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
-        configuration.set(common_configuration);
-        configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-        storage_settings.applyChanges(settings_changes);
-
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
+        if ((name == "database" || name == "db") && configuration.database.empty())
+            configuration.database = value.safeGet<String>();
+        else if (name == "table")
+            configuration.table = value.safeGet<String>();
+        else if (name == "schema")
+            configuration.schema = value.safeGet<String>();
+        else if (name == "host")
+            configuration.host = value.safeGet<String>();
+        else if (name == "port")
+            configuration.port = value.safeGet<UInt64>();
+        else if (name == "username")
+            configuration.username = value.safeGet<String>();
+        else if (name == "password")
+            configuration.password = value.safeGet<String>();
+        else if (name == "addresses")
         {
-            if (arg_name == "replace_query")
-                configuration.replace_query = arg_value->as<ASTLiteral>()->value.safeGet<bool>();
-            else if (arg_name == "on_duplicate_clause")
-                configuration.on_duplicate_clause = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected key-value argument."
-                        "Got: {}, but expected one of:"
-                        "host, port, username, password, database, table, replace_query, on_duplicate_clause.", arg_name);
+            auto addresses_str = value.safeGet<String>();
+            size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
+            configuration.addresses = parseRemoteDescriptionForExternalDatabase(addresses_str, max_addresses, 5432);
+            if (configuration.addresses.size() == 1)
+            {
+                configuration.host = configuration.addresses[0].first;
+                configuration.port = configuration.addresses[0].second;
+            }
         }
+        else if (name == "on_duplicate_clause")
+            configuration.on_duplicate_clause = value.safeGet<String>();
+        else if (name == "replace_query")
+            configuration.replace_query = value.safeGet<UInt8>();
+        else if (name == "structure")
+            configuration.structure = value.safeGet<String>();
+        else if (name == "format")
+            configuration.format = value.safeGet<String>();
+        else if (name == "compression_method")
+            configuration.compression_method = value.safeGet<String>();
+    }
+
+    return configuration;
+}
+
+StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings)
+{
+    StorageMySQL::Configuration configuration;
+    const auto & config = context_->getConfigRef();
+
+    if (isNamedCollection(engine_args, config))
+    {
+        const auto & config_keys = getConfigKeys();
+        auto collection_name = getCollectionName(engine_args);
+
+        auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
+        overrideConfigurationFromNamedCollectionWithAST(engine_args, configuration_from_config, config_keys, context_);
+        configuration = parseConfigurationFromNamedCollection(configuration_from_config, context_);
     }
     else
     {
