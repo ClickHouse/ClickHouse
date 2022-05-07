@@ -21,9 +21,9 @@ namespace
     using Element = ASTBackupQuery::Element;
     using ElementType = ASTBackupQuery::ElementType;
 
-    bool parseType(IParser::Pos & pos, Expected & expected, ElementType & type, bool & name_is_in_temp_db)
+    bool parseType(IParser::Pos & pos, Expected & expected, ElementType & type, bool & is_temp_db)
     {
-        name_is_in_temp_db = false;
+        is_temp_db = false;
         if (ParserKeyword{"TABLE"}.ignore(pos, expected) || ParserKeyword{"DICTIONARY"}.ignore(pos, expected))
         {
             type = ElementType::TABLE;
@@ -32,7 +32,7 @@ namespace
         if (ParserKeyword{"TEMPORARY TABLE"}.ignore(pos, expected))
         {
             type = ElementType::TABLE;
-            name_is_in_temp_db = true;
+            is_temp_db = true;
             return true;
         }
         if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
@@ -43,7 +43,7 @@ namespace
         if (ParserKeyword{"ALL TEMPORARY TABLES"}.ignore(pos, expected))
         {
             type = ElementType::DATABASE;
-            name_is_in_temp_db = true;
+            is_temp_db = true;
             return true;
         }
         if (ParserKeyword{"ALL DATABASES"}.ignore(pos, expected))
@@ -54,45 +54,7 @@ namespace
         return false;
     }
 
-    bool parseTempDBFlag(IParser::Pos & pos, Expected & expected, ElementType type, bool & temp_db_flag)
-    {
-        temp_db_flag = false;
-        switch (type)
-        {
-            case ElementType::TABLE:
-            {
-                if (ParserKeyword{"TABLE"}.ignore(pos, expected) || ParserKeyword{"DICTIONARY"}.ignore(pos, expected))
-                {
-                    return true;
-                }
-                if (ParserKeyword{"TEMPORARY TABLE"}.ignore(pos, expected))
-                {
-                    temp_db_flag = true;
-                    return true;
-                }
-                return false;
-            }
-
-            case ElementType::DATABASE:
-            {
-                if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
-                {
-                    return true;
-                }
-                if (ParserKeyword{"ALL TEMPORARY TABLES"}.ignore(pos, expected))
-                {
-                    temp_db_flag = true;
-                    return true;
-                }
-                return false;
-            }
-
-            default:
-                return false;
-        }
-    }
-
-    bool parseName(IParser::Pos & pos, Expected & expected, ElementType type, bool name_is_in_temp_db, DatabaseAndTableName & name)
+    bool parseName(IParser::Pos & pos, Expected & expected, ElementType type, bool is_temp_db, DatabaseAndTableName & name)
     {
         name.first.clear();
         name.second.clear();
@@ -100,7 +62,7 @@ namespace
         {
             case ElementType::TABLE:
             {
-                if (name_is_in_temp_db)
+                if (is_temp_db)
                 {
                     ASTPtr ast;
                     if (!ParserIdentifier{}.parse(pos, ast, expected))
@@ -113,7 +75,7 @@ namespace
 
             case ElementType::DATABASE:
             {
-                if (name_is_in_temp_db)
+                if (is_temp_db)
                     return false;
                 ASTPtr ast;
                 if (!ParserIdentifier{}.parse(pos, ast, expected))
@@ -148,9 +110,9 @@ namespace
         return true;
     }
 
-    bool parseExceptList(IParser::Pos & pos, Expected & expected, std::set<String> & except_list)
+    bool parseExceptList(IParser::Pos & pos, Expected & expected, bool parse_except_tables, std::set<String> & except_list)
     {
-        if (!ParserKeyword{"EXCEPT"}.ignore(pos, expected))
+        if (!ParserKeyword{parse_except_tables ? "EXCEPT TABLES" : "EXCEPT"}.ignore(pos, expected))
             return false;
 
         std::set<String> result;
@@ -174,28 +136,24 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ElementType type;
-            bool name_is_in_temp_db = false;
-            if (!parseType(pos, expected, type, name_is_in_temp_db))
+            bool is_temp_db = false;
+            if (!parseType(pos, expected, type, is_temp_db))
                 return false;
 
             DatabaseAndTableName name;
-            if ((type == ElementType::TABLE) || (type == ElementType::DATABASE && !name_is_in_temp_db))
+            if ((type == ElementType::TABLE) || (type == ElementType::DATABASE && !is_temp_db))
             {
-                if (!parseName(pos, expected, type, name_is_in_temp_db, name))
+                if (!parseName(pos, expected, type, is_temp_db, name))
                     return false;
             }
 
-            bool new_name_is_in_temp_db = name_is_in_temp_db;
             DatabaseAndTableName new_name = name;
-            if (ParserKeyword{"AS"}.ignore(pos, expected) || ParserKeyword{"INTO"}.ignore(pos, expected))
+            if (ParserKeyword{"AS"}.ignore(pos, expected))
             {
-                if (!parseTempDBFlag(pos, expected, type, new_name_is_in_temp_db))
-                    new_name_is_in_temp_db = name_is_in_temp_db;
-
-                if ((type == ElementType::TABLE) || (type == ElementType::DATABASE && !new_name_is_in_temp_db))
+                if ((type == ElementType::TABLE) || (type == ElementType::DATABASE && !is_temp_db))
                 {
-                    if (!parseName(pos, expected, type, new_name_is_in_temp_db, new_name))
-                        new_name = name;
+                    if (!parseName(pos, expected, type, is_temp_db, new_name))
+                        return false;
                 }
             }
 
@@ -204,14 +162,16 @@ namespace
                 parsePartitions(pos, expected, partitions);
 
             std::set<String> except_list;
-            if (type != ElementType::TABLE)
-                parseExceptList(pos, expected, except_list);
+            if ((type == ElementType::DATABASE) || (type == ElementType::ALL_DATABASES))
+            {
+                bool parse_except_tables = ((type == ElementType::DATABASE) && !is_temp_db);
+                parseExceptList(pos, expected, parse_except_tables, except_list);
+            }
 
             entry.type = type;
             entry.name = std::move(name);
             entry.new_name = std::move(new_name);
-            entry.name_is_in_temp_db = name_is_in_temp_db;
-            entry.new_name_is_in_temp_db = new_name_is_in_temp_db;
+            entry.is_temp_db = is_temp_db;
             entry.partitions = std::move(partitions);
             entry.except_list = std::move(except_list);
             return true;
