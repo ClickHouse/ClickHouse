@@ -6,7 +6,6 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
-#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -416,9 +415,9 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end,
 
 bool ANNCondition::matchRPNWhere(RPN & rpn, ANNExpression & expr)
 {
-    // WHERE section must have at least 6 expressions
-    // Operator->Distance(float)->DistanceFunc->Column->TupleFunc(Literal)->Coordinates(floats)
-    if (rpn.size() < 6)
+    // WHERE section must have at least 5 expressions
+    // Operator->Distance(float)->DistanceFunc->Column->TupleFunc(TargetVector(floats))
+    if (rpn.size() < 5)
     {
         return false;
     }
