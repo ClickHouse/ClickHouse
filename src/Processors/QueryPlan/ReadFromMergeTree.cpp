@@ -662,8 +662,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     std::vector<RangesInDataPart> lonely_parts;
     size_t sum_marks_in_lonely_parts = 0;
 
-    const bool split_into_layers_optimization_applies = num_streams > 1 && metadata_for_reading->hasPrimaryKey();
-
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
         Pipes pipes;
@@ -700,7 +698,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     LOG_DEBUG(&Poco::Logger::get("PartsSplitter"), "begin={}, end={}", range.begin, range.end);
             }
 
-            if (split_into_layers_optimization_applies)
+            if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
             {
                 // Let's split parts into layers to ensure data parallelism of final.
                 auto reading_step_getter = [this, &column_names, &info](auto parts)
@@ -713,13 +711,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         0 /* min_marks_for_concurrent_read */,
                         info.use_uncompressed_cache);
                 };
-                PartsSplitter parts_splitter(
-                    metadata_for_reading->getPrimaryKey(),
-                    new_parts,
-                    num_streams,
-                    std::make_unique<IndexAccess>(new_parts),
-                    std::move(reading_step_getter));
-                pipes = parts_splitter.buildPipesForReading(context);
+                pipes = buildPipesForReading(
+                    metadata_for_reading->getPrimaryKey(), std::move(new_parts), num_streams, context, std::move(reading_step_getter));
             }
             else
             {
