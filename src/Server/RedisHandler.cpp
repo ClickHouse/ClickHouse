@@ -47,7 +47,12 @@ void RedisHandler::run()
     {
         if (server.config().getBool("redis.enable_ssl", false))
         {
+#if USE_SSL
             makeSecureConnection();
+#else
+            throw DB::Exception(
+                "Can't use SSL for redis protocol, because ClickHouse was built without SSL library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
         }
 
         while (tcp_server.isOpen())
@@ -142,9 +147,6 @@ void RedisHandler::makeSecureConnection()
         Poco::Net::SecureStreamSocket::attach(socket(), Poco::Net::SSLManager::instance().defaultServerContext()));
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
-#else
-    throw DB::Exception(
-        "Can't use SSL for redis protocol, because ClickHouse was built without SSL library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
 }
 }

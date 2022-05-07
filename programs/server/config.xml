@@ -127,7 +127,7 @@
 
         <!-- Database settings. Maps redis database to ClickHouse table. -->
         <db>
-            <0>table_name</0>
+            <_0>table_name</_0>
         </db>
     </redis>
 
