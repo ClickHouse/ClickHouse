@@ -54,7 +54,6 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr contex
     if (columns == tables_and_columns.end())
         throw Exception("MySQL table " + (configuration->database.empty() ? "" : (backQuote(configuration->database) + "."))
             + backQuote(configuration->table) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-
     return columns->second;
 }
 
