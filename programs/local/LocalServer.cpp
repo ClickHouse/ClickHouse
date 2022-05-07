@@ -738,6 +738,15 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
 }
 
+void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
+{
+    for (int arg_num = 1; arg_num < argc; ++arg_num)
+    {
+        const char * arg = argv[arg_num];
+        common_arguments.emplace_back(arg);
+    }
+}
+
 }
 
 #pragma GCC diagnostic ignored "-Wunused-function"
