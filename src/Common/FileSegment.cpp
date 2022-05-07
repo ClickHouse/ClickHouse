@@ -171,6 +171,8 @@ bool FileSegment::isDownloader() const
 {
     std::lock_guard segment_lock(mutex);
 
+    assertNotDetached(segment_lock);
+
     return getCallerId() == downloader_id;
 }
 

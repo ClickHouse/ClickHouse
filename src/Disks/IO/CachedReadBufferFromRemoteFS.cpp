@@ -676,18 +676,18 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
         return false;
 
     SCOPE_EXIT({
-        /// Save state of current file segment before it is completed.
-        nextimpl_step_log_info = getInfoForLog();
-
-        if (current_file_segment_it == file_segments_holder->file_segments.end())
-            return;
-
-        auto & file_segment = *current_file_segment_it;
-
-        bool download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-        if (download_current_segment)
+        try
         {
-            try
+            /// Save state of current file segment before it is completed.
+            nextimpl_step_log_info = getInfoForLog();
+
+            if (current_file_segment_it == file_segments_holder->file_segments.end())
+                return;
+
+            auto & file_segment = *current_file_segment_it;
+
+            bool download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
+            if (download_current_segment)
             {
                 bool need_complete_file_segment = file_segment->isDownloader();
                 if (need_complete_file_segment)
@@ -696,13 +696,13 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
                     file_segment->completeBatchAndResetDownloader();
                 }
             }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
 
-        assert(!file_segment->isDownloader());
+            assert(!file_segment->isDownloader());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     });
 
     bytes_to_predownload = 0;
