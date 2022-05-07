@@ -72,18 +72,19 @@ struct PartsRangesIterator
         RangeEnding,
     };
 
+    bool operator<(const PartsRangesIterator & other) const { return std::tie(value, event) > std::tie(other.value, other.event); }
+
     Value value;
     RangeInDataPart range;
     EventType event;
-
-    bool operator<(const PartsRangesIterator & other) const { return std::tie(value, event) > std::tie(other.value, other.event); }
 };
 
 
 std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInDataParts parts, size_t max_layers)
 {
     // We will advance the iterator pointing to the mark with the smallest value until there will be not less than rows_per_layer rows in the current layer (roughly speaking).
-    // Then we choose the last observed value as the new border.
+    // Then we choose the last observed value as the new border, so the current layer will consists of granules with values greater than the previous mark and less or equal
+    // than the new border.
 
     const auto index_access = std::make_unique<IndexAccess>(parts);
     std::priority_queue<PartsRangesIterator> parts_ranges_queue;
@@ -105,6 +106,7 @@ std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInData
     /// the current ending of a range of marks of a part in the current layer
     std::unordered_map<size_t, size_t> current_part_range_end;
 
+    /// determine borders between layers
     std::vector<Value> borders;
     std::vector<RangesInDataParts> result_layers;
 
@@ -121,7 +123,7 @@ std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInData
             ++marks_in_current_layer;
         }
 
-        // ratio is just emperical
+        // intersection between the current and next layers is just the last observed marks of each still open part range. ratio is empirical
         auto layers_intersection_is_too_big = [&]()
         {
             const auto intersected_parts = current_part_range_end.size();
@@ -132,7 +134,7 @@ std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInData
 
         while (rows_in_current_layer < rows_per_layer || layers_intersection_is_too_big() || result_layers.size() == max_layers)
         {
-            // advance iterators until a new value
+            // we're advancing iterators until a new value showed up
             Value last_value;
             while (!parts_ranges_queue.empty() && (last_value.empty() || last_value == parts_ranges_queue.top().value))
             {
