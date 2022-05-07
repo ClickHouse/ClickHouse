@@ -87,6 +87,7 @@ public:
 #define INHERIT_GRAPH_OPERATION_USINGS(...) \
     using __VA_ARGS__::GraphOperation; \
     using __VA_ARGS__::data; \
+    using __VA_ARGS__::getName; \
     using __VA_ARGS__::getVertexFromField; \
     using __VA_ARGS__::parameters; \
     using Vertex = typename __VA_ARGS__::Vertex; \

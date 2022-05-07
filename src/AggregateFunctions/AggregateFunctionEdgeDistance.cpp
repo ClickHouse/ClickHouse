@@ -20,6 +20,9 @@ public:
     {
         Vertex from = getVertexFromField(this->parameters.at(0), arena);
         Vertex to = getVertexFromField(this->parameters.at(1), arena);
+        if (!data(place).graph.has(from) || !data(place).graph.has(to))
+            throw Exception(
+                "Aggregate function " + getName() + " requires from, to parameters to present in graph", ErrorCodes::BAD_ARGUMENTS);
         if (from == to)
             return 0;
         VertexSet visited;
