@@ -1754,7 +1754,28 @@ size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
     return parts_to_remove.size();
 }
 
-void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_remove)
+void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts)
+{
+    clearPartsFromFilesystemImpl(parts, true, nullptr);
+}
+
+void MergeTreeData::tryClearPartsFromFilesystem(const DataPartsVector & parts, NameSet & parts_failed_to_delete)
+{
+    NameSet part_names_successeded;
+    clearPartsFromFilesystemImpl(parts, false, &part_names_successeded);
+
+    if (part_names_successeded.size() == parts.size())
+        return;
+
+    for (const auto & part : parts)
+    {
+        if (!part_names_successeded.contains(part->name))
+            parts_failed_to_delete.insert(part->name);
+    }
+}
+
+
+void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, bool throw_on_error, NameSet * part_names_successed)
 {
     const auto settings = getSettings();
     if (parts_to_remove.size() > 1 && settings->max_part_removal_threads > 1 && parts_to_remove.size() > settings->concurrent_part_removal_threshold)
@@ -1763,6 +1784,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
 
         size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
         ThreadPool pool(num_threads);
+        std::mutex part_names_mutex;
 
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         for (const DataPartPtr & part : parts_to_remove)
@@ -1774,17 +1796,50 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
 
                 LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
                 part->remove();
+                if (part_names_successed)
+                {
+                    std::lock_guard lock(part_names_mutex);
+                    part_names_successed->insert(part->name);
+                }
             });
         }
 
-        pool.wait();
+        if (throw_on_error)
+        {
+            pool.wait();
+        }
+        else
+        {
+            try
+            {
+                pool.wait();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log);
+            }
+        }
     }
     else
     {
         for (const DataPartPtr & part : parts_to_remove)
         {
             LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
-            part->remove();
+            try
+            {
+                part->remove();
+                if (part_names_successed)
+                    part_names_successed->insert(part->name);
+            }
+            catch (...)
+            {
+                if (throw_on_error)
+                    throw;
+
+                tryLogCurrentException(log);
+                break;
+            }
+
         }
     }
 }

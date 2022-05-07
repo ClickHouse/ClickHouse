@@ -6112,6 +6112,8 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
             RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto zookeeper = getZooKeeper();
 
+    /// Now these parts are in Deleting state. If we fail to remove some of them we must roll them back to Outdated state.
+    /// Otherwise they will not be deleted.
     DataPartsVector parts = grabOldParts();
     if (parts.empty())
         return;
@@ -6133,10 +6135,35 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     /// Delete duplicate parts from filesystem
     if (!parts_to_delete_only_from_filesystem.empty())
     {
-        clearPartsFromFilesystem(parts_to_delete_only_from_filesystem);
-        removePartsFinally(parts_to_delete_only_from_filesystem);
+        /// It can happen that some error appear during part removal from FS.
+        /// In case of such exception we have to change state of failed parts from Deleting to Outdated.
+        /// Otherwise nobody will try to remove them again (see grabOldParts).
+        NameSet parts_failed_to_delete;
+        tryClearPartsFromFilesystem(parts_to_delete_only_from_filesystem, parts_failed_to_delete);
 
-        LOG_DEBUG(log, "Removed {} old duplicate parts", parts_to_delete_only_from_filesystem.size());
+        DataPartsVector finally_remove_parts;
+        if (!parts_failed_to_delete.empty())
+        {
+            DataPartsVector rollback_parts;
+            for (const auto & part : parts_to_delete_only_from_filesystem)
+            {
+                if (!parts_failed_to_delete.contains(part->name))
+                    finally_remove_parts.push_back(part);
+                else
+                    rollback_parts.push_back(part);
+            }
+
+            if (!rollback_parts.empty())
+                rollbackDeletingParts(rollback_parts);
+        }
+        else
+        {
+            finally_remove_parts = parts_to_delete_only_from_filesystem;
+        }
+
+        removePartsFinally(finally_remove_parts);
+
+        LOG_DEBUG(log, "Removed {} old duplicate parts", finally_remove_parts.size());
     }
 
     /// Delete normal parts from ZooKeeper
@@ -6175,13 +6202,40 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
         LOG_DEBUG(log, "Will retry deletion of {} parts in the next time", parts_to_retry_deletion.size());
     }
 
+
     /// Remove parts from filesystem and finally from data_parts
     if (!parts_to_remove_from_filesystem.empty())
     {
-        clearPartsFromFilesystem(parts_to_remove_from_filesystem);
-        removePartsFinally(parts_to_remove_from_filesystem);
+        /// It can happen that some error appear during part removal from FS.
+        /// In case of such exception we have to change state of failed parts from Deleting to Outdated.
+        /// Otherwise nobody will try to remove them again (see grabOldParts).
+        NameSet parts_failed_to_delete;
+        tryClearPartsFromFilesystem(parts_to_remove_from_filesystem, parts_failed_to_delete);
 
-        LOG_DEBUG(log, "Removed {} old parts", parts_to_remove_from_filesystem.size());
+        DataPartsVector finally_remove_parts;
+        if (!parts_failed_to_delete.empty())
+        {
+            DataPartsVector rollback_parts;
+            for (const auto & part : parts_to_remove_from_filesystem)
+            {
+                if (!parts_failed_to_delete.contains(part->name))
+                    finally_remove_parts.push_back(part);
+                else
+                    rollback_parts.push_back(part);
+            }
+
+            if (!rollback_parts.empty())
+                rollbackDeletingParts(rollback_parts);
+        }
+        else
+        {
+            finally_remove_parts = parts_to_delete_only_from_filesystem;
+        }
+
+        removePartsFinally(finally_remove_parts);
+
+
+        LOG_DEBUG(log, "Removed {} old parts", finally_remove_parts.size());
     }
 }
 
