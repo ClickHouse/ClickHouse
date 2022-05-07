@@ -11,7 +11,7 @@
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sleep.h>
 
 #include <utility>
@@ -19,9 +19,9 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3ReadMicroseconds;
-    extern const Event S3ReadBytes;
-    extern const Event S3ReadRequestsErrors;
+    extern const Event ReadBufferFromS3Microseconds;
+    extern const Event ReadBufferFromS3Bytes;
+    extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
 }
 
@@ -40,16 +40,18 @@ ReadBufferFromS3::ReadBufferFromS3(
     std::shared_ptr<Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
+    const String & version_id_,
     UInt64 max_single_read_retries_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_)
-    : SeekableReadBufferWithSize(nullptr, 0)
+    : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
+    , version_id(version_id_)
     , max_single_read_retries(max_single_read_retries_)
     , offset(offset_)
     , read_until_position(read_until_position_)
@@ -119,17 +121,24 @@ bool ReadBufferFromS3::nextImpl()
             /// Try to read a next portion of data.
             next_result = impl->next();
             watch.stop();
-            ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             break;
         }
         catch (const Exception & e)
         {
             watch.stop();
-            ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
-            ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
-            LOG_DEBUG(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Attempt: {}, Message: {}",
-                    bucket, key, getPosition(), attempt, e.message());
+            LOG_DEBUG(
+                log,
+                "Caught exception while reading S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}, Attempt: {}, Message: {}",
+                bucket,
+                key,
+                version_id.empty() ? "Latest" : version_id,
+                getPosition(),
+                attempt,
+                e.message());
 
             if (attempt + 1 == max_single_read_retries)
                 throw;
@@ -148,7 +157,7 @@ bool ReadBufferFromS3::nextImpl()
 
     BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
 
-    ProfileEvents::increment(ProfileEvents::S3ReadBytes, working_buffer.size());
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
 
     return true;
@@ -208,12 +217,12 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     return offset;
 }
 
-std::optional<size_t> ReadBufferFromS3::getTotalSize()
+std::optional<size_t> ReadBufferFromS3::getFileSize()
 {
     if (file_size)
         return file_size;
 
-    auto object_size = S3::getObjectSize(client_ptr, bucket, key, false);
+    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, false);
 
     if (!object_size)
     {
@@ -248,6 +257,10 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
+    if (!version_id.empty())
+    {
+        req.SetVersionId(version_id);
+    }
 
     /**
      * If remote_filesystem_read_method = 'threadpool', then for MergeTree family tables
@@ -259,13 +272,26 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
         req.SetRange(fmt::format("bytes={}-{}", offset, read_until_position - 1));
-        LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, read_until_position - 1);
+        LOG_TEST(
+            log,
+            "Read S3 object. Bucket: {}, Key: {}, Version: {}, Range: {}-{}",
+            bucket,
+            key,
+            version_id.empty() ? "Latest" : version_id,
+            offset,
+            read_until_position - 1);
     }
     else
     {
         if (offset)
             req.SetRange(fmt::format("bytes={}-", offset));
-        LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
+        LOG_TEST(
+            log,
+            "Read S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}",
+            bucket,
+            key,
+            version_id.empty() ? "Latest" : version_id,
+            offset);
     }
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
@@ -293,6 +319,7 @@ SeekableReadBufferPtr ReadBufferS3Factory::getReader()
         client_ptr,
         bucket,
         key,
+        version_id,
         s3_max_single_read_retries,
         read_settings,
         false /*use_external_buffer*/,
@@ -307,7 +334,7 @@ off_t ReadBufferS3Factory::seek(off_t off, [[maybe_unused]] int whence)
     return off;
 }
 
-std::optional<size_t> ReadBufferS3Factory::getTotalSize()
+std::optional<size_t> ReadBufferS3Factory::getFileSize()
 {
     return object_size;
 }

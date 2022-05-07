@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 

@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
@@ -74,26 +74,34 @@ static void splitMutationCommands(
                     mutated_columns.emplace(column_name);
 
                 if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
-                     mutated_columns.emplace(command.column_name);
+                    mutated_columns.emplace(command.column_name);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
             {
                 for_file_renames.push_back(command);
             }
-            else if (part_columns.has(command.column_name))
+            else if (bool has_column = part_columns.has(command.column_name), has_nested_column = part_columns.hasNested(command.column_name); has_column || has_nested_column)
             {
-                if (command.type == MutationCommand::Type::DROP_COLUMN)
+                if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
-                    mutated_columns.emplace(command.column_name);
+                    if (has_nested_column)
+                    {
+                        const auto & nested = part_columns.getNested(command.column_name);
+                        assert(!nested.empty());
+                        for (const auto & nested_column : nested)
+                            mutated_columns.emplace(nested_column.name);
+                    }
+                    else
+                        mutated_columns.emplace(command.column_name);
                 }
-                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+
+                if (command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
                     for_interpreter.push_back(
                     {
                         .type = MutationCommand::Type::READ_COLUMN,
                         .column_name = command.rename_to,
                     });
-                    mutated_columns.emplace(command.column_name);
                     part_columns.rename(command.column_name, command.rename_to);
                 }
             }
@@ -144,6 +152,124 @@ static void splitMutationCommands(
             }
         }
     }
+}
+
+/// Get the columns list of the resulting part in the same order as storage_columns.
+static std::pair<NamesAndTypesList, SerializationInfoByName>
+getColumnsForNewDataPart(
+    MergeTreeData::DataPartPtr source_part,
+    const Block & updated_header,
+    NamesAndTypesList storage_columns,
+    const SerializationInfoByName & serialization_infos,
+    const MutationCommands & commands_for_removes)
+{
+    NameSet removed_columns;
+    NameToNameMap renamed_columns_to_from;
+    NameToNameMap renamed_columns_from_to;
+    ColumnsDescription part_columns(source_part->getColumns());
+
+    /// All commands are validated in AlterCommand so we don't care about order
+    for (const auto & command : commands_for_removes)
+    {
+        /// If we don't have this column in source part, than we don't need to materialize it
+        if (!part_columns.has(command.column_name))
+            continue;
+
+        if (command.type == MutationCommand::DROP_COLUMN)
+            removed_columns.insert(command.column_name);
+
+        if (command.type == MutationCommand::RENAME_COLUMN)
+        {
+            renamed_columns_to_from.emplace(command.rename_to, command.column_name);
+            renamed_columns_from_to.emplace(command.column_name, command.rename_to);
+        }
+    }
+
+    SerializationInfoByName new_serialization_infos;
+    for (const auto & [name, info] : serialization_infos)
+    {
+        if (removed_columns.contains(name))
+            continue;
+
+        auto it = renamed_columns_from_to.find(name);
+        if (it != renamed_columns_from_to.end())
+            new_serialization_infos.emplace(it->second, info);
+        else
+            new_serialization_infos.emplace(name, info);
+    }
+
+    /// In compact parts we read all columns, because they all stored in a
+    /// single file
+    if (!isWidePart(source_part))
+        return {updated_header.getNamesAndTypesList(), new_serialization_infos};
+
+    Names source_column_names = source_part->getColumns().getNames();
+    NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
+    for (auto it = storage_columns.begin(); it != storage_columns.end();)
+    {
+        if (updated_header.has(it->name))
+        {
+            auto updated_type = updated_header.getByName(it->name).type;
+            if (updated_type != it->type)
+                it->type = updated_type;
+            ++it;
+        }
+        else
+        {
+            if (!source_columns_name_set.contains(it->name))
+            {
+                /// Source part doesn't have column but some other column
+                /// was renamed to it's name.
+                auto renamed_it = renamed_columns_to_from.find(it->name);
+                if (renamed_it != renamed_columns_to_from.end()
+                    && source_columns_name_set.contains(renamed_it->second))
+                    ++it;
+                else
+                    it = storage_columns.erase(it);
+            }
+            else
+            {
+                /// Check that this column was renamed to some other name
+                bool was_renamed = renamed_columns_from_to.contains(it->name);
+                bool was_removed = removed_columns.contains(it->name);
+
+                /// If we want to rename this column to some other name, than it
+                /// should it's previous version should be dropped or removed
+                if (renamed_columns_to_from.contains(it->name) && !was_renamed && !was_removed)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Incorrect mutation commands, trying to rename column {} to {}, but part {} already has column {}", renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
+
+                /// Column was renamed and no other column renamed to it's name
+                /// or column is dropped.
+                if (!renamed_columns_to_from.contains(it->name) && (was_renamed || was_removed))
+                    it = storage_columns.erase(it);
+                else
+                    ++it;
+            }
+        }
+    }
+
+    return {storage_columns, new_serialization_infos};
+}
+
+
+static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies)
+{
+    if (!metadata_snapshot->hasAnyTTL())
+        return ExecuteTTLType::NONE;
+
+    bool has_ttl_expression = false;
+
+    for (const auto & dependency : dependencies)
+    {
+        if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
+            has_ttl_expression = true;
+
+        if (dependency.kind == ColumnDependency::TTL_TARGET)
+            return ExecuteTTLType::NORMAL;
+    }
+    return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
 
@@ -481,7 +607,6 @@ void finalizeMutatedPart(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), part_path));
     new_data_part->default_codec = codec;
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
-    new_data_part->storage.lockSharedData(*new_data_part);
 }
 
 }
@@ -549,6 +674,8 @@ struct MutationContext
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
 
     MergeTreeTransactionPtr txn;
+
+    MergeTreeData::HardlinkedFiles hardlinked_files;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -1071,6 +1198,7 @@ private:
         ctx->new_data_part->version.setCreationTID(tid, nullptr);
         ctx->new_data_part->storeVersionMetadata();
 
+        NameSet hardlinked_files;
         /// Create hardlinks for unchanged files
         for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
         {
@@ -1084,10 +1212,12 @@ private:
             {
                 return rename_pair.first == file_name;
             });
+
             if (rename_it != ctx->files_to_rename.end())
             {
                 if (rename_it->second.empty())
                     continue;
+
                 destination += rename_it->second;
             }
             else
@@ -1095,8 +1225,13 @@ private:
                 destination += it->name();
             }
 
+
             if (!ctx->disk->isDirectory(it->path()))
+            {
                 ctx->disk->createHardLink(it->path(), destination);
+                hardlinked_files.insert(it->name());
+            }
+
             else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
@@ -1105,9 +1240,17 @@ private:
                 {
                     String p_destination = fs::path(destination) / p_it->name();
                     ctx->disk->createHardLink(p_it->path(), p_destination);
+                    hardlinked_files.insert(p_it->name());
                 }
             }
         }
+
+        /// Tracking of hardlinked files required for zero-copy replication.
+        /// We don't remove them when we delete last copy of source part because
+        /// new part can use them.
+        ctx->hardlinked_files.source_table_shared_id = ctx->source_part->storage.getTableSharedID();
+        ctx->hardlinked_files.source_part_name = ctx->source_part->name;
+        ctx->hardlinked_files.hardlinks_from_source_part = hardlinked_files;
 
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
@@ -1263,7 +1406,7 @@ bool MutateTask::prepare()
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
     ctx->source_part = ctx->future_part->parts[0];
-    auto storage_from_source_part = StorageFromMergeTreeDataPart::create(ctx->source_part);
+    auto storage_from_source_part = std::make_shared<StorageFromMergeTreeDataPart>(ctx->source_part);
 
     auto context_for_reading = Context::createCopy(ctx->context);
     context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
@@ -1283,7 +1426,7 @@ bool MutateTask::prepare()
         storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn));
+        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false));
         return false;
     }
     else
@@ -1320,7 +1463,7 @@ bool MutateTask::prepare()
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
-    auto [new_columns, new_infos] = MergeTreeDataMergerMutator::getColumnsForNewDataPart(
+    auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns,
         ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
 
@@ -1340,7 +1483,7 @@ bool MutateTask::prepare()
     ctx->execute_ttl_type = ExecuteTTLType::NONE;
 
     if (ctx->mutating_pipeline.initialized())
-        ctx->execute_ttl_type = MergeTreeDataMergerMutator::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
+        ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
@@ -1374,7 +1517,7 @@ bool MutateTask::prepare()
             && ctx->files_to_rename.empty())
         {
             LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {} (optimized)", ctx->source_part->name, ctx->future_part->part_info.mutation);
-            promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn));
+            promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false));
             return false;
         }
 
@@ -1382,6 +1525,11 @@ bool MutateTask::prepare()
     }
 
     return true;
+}
+
+const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
+{
+    return ctx->hardlinked_files;
 }
 
 

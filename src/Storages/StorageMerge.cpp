@@ -1,4 +1,4 @@
-#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <QueryPipeline/narrowPipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
@@ -854,7 +854,7 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageMerge::create(
+        return std::make_shared<StorageMerge>(
             args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getContext());
     },
     {

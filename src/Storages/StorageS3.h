@@ -13,8 +13,7 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Poco/URI.h>
-#include <base/logger_useful.h>
-#include <base/shared_ptr_helper.h>
+#include <Common/logger_useful.h>
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
@@ -56,6 +55,18 @@ public:
             std::shared_ptr<Impl> pimpl;
     };
 
+    class ReadTasksIterator
+    {
+    public:
+        ReadTasksIterator(const std::vector<String> & read_tasks_, const ReadTaskCallback & new_read_tasks_callback_);
+        String next();
+
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
+    };
+
     using IteratorWrapper = std::function<String()>;
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
@@ -73,6 +84,7 @@ public:
         String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
+        const String & version_id,
         std::shared_ptr<IteratorWrapper> file_iterator_,
         size_t download_thread_num);
 
@@ -85,6 +97,7 @@ public:
 private:
     String name;
     String bucket;
+    String version_id;
     String file_path;
     String format;
     ColumnsDescription columns_desc;
@@ -118,7 +131,7 @@ private:
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 : public shared_ptr_helper<StorageS3>, public IStorage, WithContext
+class StorageS3 : public IStorage, WithContext
 {
 public:
     StorageS3(
@@ -199,9 +212,17 @@ private:
     ASTPtr partition_by;
     bool is_key_with_globs = false;
 
+    std::vector<String> read_tasks_used_in_schema_inference;
+
     static void updateS3Configuration(ContextPtr, S3Configuration &);
 
-    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const S3Configuration & s3_configuration, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context);
+    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(
+        const S3Configuration & s3_configuration,
+        const std::vector<String> & keys,
+        bool is_key_with_globs,
+        bool distributed_processing,
+        ContextPtr local_context,
+        const std::vector<String> & read_tasks = {});
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const String & format,
@@ -210,7 +231,8 @@ private:
         bool distributed_processing,
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        ContextPtr ctx,
+        std::vector<String> * read_keys_in_distributed_processing = nullptr);
 
     bool isColumnOriented() const override;
 };

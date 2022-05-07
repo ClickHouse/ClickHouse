@@ -337,7 +337,7 @@ void registerStorageJoin(StorageFactory & factory)
             key_names.push_back(*opt_key);
         }
 
-        return StorageJoin::create(
+        return std::make_shared<StorageJoin>(
             disk,
             args.relative_data_path,
             args.table_id,

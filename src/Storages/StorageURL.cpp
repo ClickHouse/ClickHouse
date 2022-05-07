@@ -31,7 +31,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
 
 
@@ -43,7 +43,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 
@@ -551,49 +550,31 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         urls_to_check = {uri};
     }
 
-    String exception_messages;
-    bool read_buffer_creator_was_used = false;
 
-    std::vector<String>::const_iterator option = urls_to_check.begin();
-    do
+    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()]() mutable -> std::unique_ptr<ReadBuffer>
     {
-        auto read_buffer_creator = [&]()
-        {
-            read_buffer_creator_was_used = true;
-            return StorageURLSource::getFirstAvailableURLReadBuffer(
-                option,
-                urls_to_check.end(),
-                context,
-                {},
-                Poco::Net::HTTPRequest::HTTP_GET,
-                {},
-                ConnectionTimeouts::getHTTPTimeouts(context),
-                compression_method,
-                credentials,
-                headers,
-                false,
-                false,
-                context->getSettingsRef().max_download_threads);
-        };
+        if (it == urls_to_check.cend())
+            return nullptr;
 
-        try
-        {
-            return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
-        }
-        catch (...)
-        {
-            if (urls_to_check.size() == 1 || !read_buffer_creator_was_used)
-                throw;
+        auto buf = StorageURLSource::getFirstAvailableURLReadBuffer(
+            it,
+            urls_to_check.cend(),
+            context,
+            {},
+            Poco::Net::HTTPRequest::HTTP_GET,
+            {},
+            ConnectionTimeouts::getHTTPTimeouts(context),
+            compression_method,
+            credentials,
+            headers,
+            false,
+            false,
+            context->getSettingsRef().max_download_threads);\
+        ++it;
+        return buf;
+    };
 
-            exception_messages += getCurrentExceptionMessage(false) + "\n";
-        }
-
-    } while (++option < urls_to_check.end());
-
-    throw Exception(
-        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-        "All attempts to extract table structure from urls failed. Errors:\n{}",
-        exception_messages);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
 }
 
 bool IStorageURLBase::isColumnOriented() const
@@ -938,7 +919,7 @@ void registerStorageURL(StorageFactory & factory)
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            return StorageURL::create(
+            return std::make_shared<StorageURL>(
                 configuration.url,
                 args.table_id,
                 configuration.format,
