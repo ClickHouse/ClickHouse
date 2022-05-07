@@ -55,7 +55,7 @@ namespace detail {
         {
             ostr.write(reinterpret_cast<const char*>(ptr), size * nitems);
 
-            // WriteBuffer guarantees to write all items so return the number of all elements 
+            // WriteBuffer guarantees to write all items, so return the number of all elements 
             return nitems;
         }
 
@@ -168,8 +168,8 @@ void MergeTreeIndexGranuleIVFFlat::deserializeBinary(ReadBuffer & istr, MergeTre
 
 bool MergeTreeIndexGranuleIVFFlat::empty() const
 {
-    // Granule is empty if we didn't try to train index and failed (flag is_incomplete)
-    // and we didn't set base index or base index doesn't contain elements
+    // Granule is empty if we didn't try to train index and failed (flag is_incomplete),
+    // and we didn't set base index, or base index doesn't contain elements
     return !is_incomplete && (index_base == nullptr || index_base->ntotal == 0);
 }
 
@@ -318,6 +318,8 @@ std::vector<size_t> MergeTreeIndexConditionIVFFlat::getUsefulRanges(MergeTreeInd
     std::unordered_set<size_t> useful_granules;
     for (size_t i = 0; i < k; ++i) 
     {
+        // In the case of queries like WHERE ... < distance, 
+        // we have to stop iteration if we meet a greater distance than the distance variable
         if (distance.has_value() && distances[i] > distance.value())
             break;
         
@@ -365,7 +367,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexIVFFlat::createIndexCondition(
 
 bool MergeTreeIndexIVFFlat::mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const
 {
-    return true;
+    return false;
 }
 
 MergeTreeIndexFormat MergeTreeIndexIVFFlat::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
