@@ -47,7 +47,6 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
-#include <Backups/BackupFactory.h>
 #include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -187,8 +186,6 @@ struct ContextSharedPart
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
     mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
-    mutable VolumePtr backups_volume;                       /// Volume for all the backups.
-
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
@@ -207,6 +204,8 @@ struct ContextSharedPart
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
     mutable std::optional<Lemmatizers> lemmatizers;
 #endif
+
+    std::optional<BackupsWorker> backups_worker;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -355,7 +354,8 @@ struct ContextSharedPart
         Session::shutdownNamedSessions();
 
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
-        BackupsWorker::instance().shutdown();
+        if (backups_worker)
+            backups_worker->shutdown();
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
@@ -1620,6 +1620,17 @@ Lemmatizers & Context::getLemmatizers() const
 }
 #endif
 
+BackupsWorker & Context::getBackupsWorker() const
+{
+    auto lock = getLock();
+
+    if (!shared->backups_worker)
+        shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads);
+
+    return *shared->backups_worker;
+}
+
+
 void Context::setProgressCallback(ProgressCallback callback)
 {
     /// Callback is set to a session or to a query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
@@ -2842,15 +2853,12 @@ void Context::shutdown()
     }
 
     // Special volumes might also use disks that require shutdown.
-    for (const auto & volume : {shared->tmp_volume, shared->backups_volume})
+    if (shared->tmp_volume)
     {
-        if (volume)
+        auto & disks = shared->tmp_volume->getDisks();
+        for (auto & disk : disks)
         {
-            auto & disks = volume->getDisks();
-            for (auto & disk : disks)
-            {
-                disk->shutdown();
-            }
+            disk->shutdown();
         }
     }
 
