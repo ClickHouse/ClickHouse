@@ -1,15 +1,10 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/CommonANNIndexes.h>
 
-#include <faiss/IndexIVFFlat.h>
+#include <faiss/Index.h>
 #include <faiss/MetricType.h>
-#include "Core/Field.h"
-#include "Interpreters/Context_fwd.h"
-#include "Parsers/IAST_fwd.h"
-#include "Storages/MergeTree/CommonANNIndexes.h"
-#include "Storages/SelectQueryInfo.h"
-#include "base/types.h"
 
 namespace DB
 {
