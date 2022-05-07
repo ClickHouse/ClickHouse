@@ -35,7 +35,7 @@ public:
     MergeTreeBaseSelectProcessor(
         Block header,
         const MergeTreeData & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         ExpressionActionsSettings actions_settings,
         UInt64 max_block_size_rows_,
@@ -86,9 +86,8 @@ protected:
 
     void initializeRangeReaders(MergeTreeReadTask & task);
 
-protected:
     const MergeTreeData & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
 
     PrewhereInfoPtr prewhere_info;
     std::unique_ptr<PrewhereExprInfo> prewhere_actions;
@@ -102,6 +101,9 @@ protected:
     bool use_uncompressed_cache;
 
     Names virt_column_names;
+
+    /// These columns will be filled by the merge tree range reader
+    Names non_const_virtual_column_names;
 
     DataTypePtr partition_value_type;
 

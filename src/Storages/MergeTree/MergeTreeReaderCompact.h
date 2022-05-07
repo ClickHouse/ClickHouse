@@ -41,6 +41,7 @@ private:
     bool isContinuousReading(size_t mark, size_t column_position);
 
     ReadBuffer * data_buffer;
+    CompressedReadBufferBase * compressed_data_buffer;
     std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
     std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
 

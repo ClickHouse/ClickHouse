@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
 #include <base/errnoToString.h>
 
@@ -48,13 +48,13 @@ namespace
             if (overrun_count)
             {
                 /// But pass with some frequency to avoid drop of all traces.
-                if (write_trace_iteration % (overrun_count + 1) == 0)
+                if (overrun_count > 0 && write_trace_iteration % (overrun_count + 1) == 0)
                 {
                     ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
                 }
                 else
                 {
-                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count + 1);
+                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
                     return;
                 }
             }
@@ -86,7 +86,7 @@ namespace ErrorCodes
 }
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
     : log(&Poco::Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
@@ -199,7 +199,7 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 template class QueryProfilerBase<QueryProfilerReal>;
 template class QueryProfilerBase<QueryProfilerCPU>;
 
-QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period)
+QueryProfilerReal::QueryProfilerReal(UInt64 thread_id, UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, SIGUSR1)
 {}
 
@@ -212,7 +212,7 @@ void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
     writeTraceInfo(TraceType::Real, sig, info, context);
 }
 
-QueryProfilerCPU::QueryProfilerCPU(const UInt64 thread_id, const UInt32 period)
+QueryProfilerCPU::QueryProfilerCPU(UInt64 thread_id, UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, SIGUSR2)
 {}
 

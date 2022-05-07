@@ -1,4 +1,8 @@
+-- Tags: no-random-settings
+
 DROP TABLE IF EXISTS order_by_desc;
+
+SET enable_filesystem_cache=0;
 
 CREATE TABLE order_by_desc (u UInt32, s String)
 ENGINE MergeTree ORDER BY u PARTITION BY u % 100

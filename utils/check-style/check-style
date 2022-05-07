@@ -74,6 +74,8 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::dumpToMapColumn
+    ProfileEvents::getProfileEvents
+    ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
     ProfileEvents::CountersIncrement
 
@@ -144,11 +146,6 @@ pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/
 find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
     grep -vP $EXCLUDE_DIRS |
     xargs yamllint --config-file=$ROOT_PATH/.yamllint
-
-# Machine translation to Russian is strictly prohibited
-find $ROOT_PATH/docs/ru -name '*.md' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -l -F 'machine_translated: true'
 
 # Tests should not be named with "fail" in their names. It makes looking at the results less convenient.
 find $ROOT_PATH/tests/queries -iname '*fail*' |
@@ -285,6 +282,9 @@ std_cerr_cout_excludes=(
     src/Client/ClientBase.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
+    src/Bridge/IBridge.cpp
+    src/Daemon/BaseDaemon.cpp
+    src/Loggers/Loggers.cpp
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/src -name '*.h' -or -name '*.cpp' | \

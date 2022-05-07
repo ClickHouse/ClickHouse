@@ -1,1 +1,0 @@
-../../../en/faq/general/why-clickhouse-is-so-fast.md

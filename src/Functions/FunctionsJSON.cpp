@@ -35,9 +35,9 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Functions/DummyJSONParser.h>
-#include <Functions/SimdJSONParser.h>
-#include <Functions/RapidJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Interpreters/Context.h>
@@ -896,7 +896,7 @@ struct JSONExtractTree
             if (element.isInt64())
             {
                 Type value;
-                if (!accurate::convertNumeric(element.getInt64(), value) || !only_values.count(value))
+                if (!accurate::convertNumeric(element.getInt64(), value) || !only_values.contains(value))
                     return false;
                 col_vec.insertValue(value);
                 return true;
@@ -905,7 +905,7 @@ struct JSONExtractTree
             if (element.isUInt64())
             {
                 Type value;
-                if (!accurate::convertNumeric(element.getUInt64(), value) || !only_values.count(value))
+                if (!accurate::convertNumeric(element.getUInt64(), value) || !only_values.contains(value))
                     return false;
                 col_vec.insertValue(value);
                 return true;
