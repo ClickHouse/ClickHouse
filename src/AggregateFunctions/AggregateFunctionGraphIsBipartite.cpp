@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include "AggregateFunctionGraphOperation.h"
 #include "AggregateFunctions/AggregateFunctionGraphBidirectionalData.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -30,7 +31,7 @@ public:
         return true;
     }
 
-    bool calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
+    UInt8 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
     {
         const auto & graph = data(place).graph;
         HashMap<Vertex, bool> color;

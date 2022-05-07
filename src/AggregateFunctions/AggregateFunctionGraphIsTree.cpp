@@ -14,7 +14,7 @@ public:
 
     DataTypePtr getReturnType() const override { return DataTypeFactory::instance().get("Bool"); }
 
-    bool calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const { return data(place).isTree(); }
+    UInt8 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const { return data(place).isTree(); }
 };
 
 INSTANTIATE_GRAPH_OPERATION(GraphIsTree)
