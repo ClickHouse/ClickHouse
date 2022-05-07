@@ -1,49 +1,27 @@
-#include <cassert>
-#include <cmath>
-#include <cstddef>
-#include <memory>
-#include <string>
 #include <Storages/MergeTree/MergeTreeIndexIVFFlat.h>
+
+#include <Core/Field.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
-#include <Parsers/ASTFunction.h>
-
-#include <Poco/Logger.h>
-#include <base/logger_useful.h>
-
-#include "Core/Field.h"
-#include "Disks/IVolume.h"
-#include "Interpreters/Context_fwd.h"
-#include "MergeTreeIndices.h"
-#include "KeyCondition.h"
-#include "Parsers/ASTIdentifier.h"
-#include "Parsers/ASTSelectQuery.h"
-#include "Parsers/IAST_fwd.h"
-#include "Storages/SelectQueryInfo.h"
-#include "base/types.h"
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <faiss/AutoTune.h>
-#include <faiss/IVFlib.h>
 #include <faiss/Index.h>
-#include <faiss/IndexFlat.h>
-#include <faiss/IndexIVF.h>
-#include <faiss/IndexIVFFlat.h>
 #include <faiss/MetricType.h>
-#include <faiss/impl/FaissException.h>
 #include <faiss/impl/io.h>
 #include <faiss/index_factory.h>
 #include <faiss/index_io.h>
 
-#include <chrono>
-#include <math.h>
+#include <map>
+#include <vector>
+#include <unordered_map>
 
 namespace DB
 {
 
-namespace detail {
+namespace {
     // Wrapper class for the connection between faiss::IOWriter interface and internal WriteBuffer class
     class WriteBufferFaissWrapper : public faiss::IOWriter {
     public:
@@ -155,13 +133,13 @@ MergeTreeIndexGranuleIVFFlat::MergeTreeIndexGranuleIVFFlat(
 
 void MergeTreeIndexGranuleIVFFlat::serializeBinary(WriteBuffer & ostr) const
 {
-    detail::WriteBufferFaissWrapper ostr_wrapped(ostr);
+    WriteBufferFaissWrapper ostr_wrapped(ostr);
     faiss::write_index(index_base.get(), &ostr_wrapped);
 }
 
 void MergeTreeIndexGranuleIVFFlat::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
-    detail::ReadBufferFaissWrapper istr_wrapped(istr);
+    ReadBufferFaissWrapper istr_wrapped(istr);
     FaissBaseIndex* index = faiss::read_index(&istr_wrapped);
     index_base.reset(index);
 }
@@ -191,7 +169,7 @@ bool MergeTreeIndexAggregatorIVFFlat::empty() const
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIVFFlat::getGranuleAndReset()
 {
-    std::unique_ptr<faiss::Index> index(faiss::index_factory(dimension, index_key.c_str(), detail::StringToMetric(metric_type)));
+    std::unique_ptr<faiss::Index> index(faiss::index_factory(dimension, index_key.c_str(), StringToMetric(metric_type)));
     auto num_elements = values.size() / dimension;
 
     try 
@@ -343,7 +321,7 @@ MergeTreeIndexIVFFlat::MergeTreeIndexIVFFlat(const IndexDescription & index_)
     if (index.arguments.empty()) 
         throw Exception("Faiss indexes require at least one argument: key string for the index factory.", ErrorCodes::LOGICAL_ERROR);
 
-    detail::ArgumentParser parser(index.arguments);
+    ArgumentParser parser(index.arguments);
     index_key = parser.getArgumentByName("index_key").safeGet<String>();
     metric_type = parser.getArgumentByName("metric_type").safeGet<String>();
 }
