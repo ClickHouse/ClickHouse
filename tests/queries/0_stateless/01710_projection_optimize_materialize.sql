@@ -1,3 +1,4 @@
+-- Tags: no-s3-storage
 drop table if exists z;
 
 create table z (pk Int64, d Date, id UInt64, c UInt64) Engine MergeTree partition by d order by pk ;

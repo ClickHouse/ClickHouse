@@ -1,4 +1,4 @@
-# system.zookeeper {#system-zookeeper}
+# zookeeper {#system-zookeeper}
 
 The table does not exist if ZooKeeper is not configured. Allows reading data from the ZooKeeper cluster defined in the config.
 The query must either have a ‘path =’   condition or a `path IN`  condition set with the `WHERE` clause as shown below. This corresponds to the path of the children in ZooKeeper that you want to get data for.
@@ -40,7 +40,7 @@ FORMAT Vertical
 ``` text
 Row 1:
 ──────
-name:           example01-08-1.yandex.ru
+name:           example01-08-1
 value:
 czxid:          932998691229
 mzxid:          932998691229
@@ -57,7 +57,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 Row 2:
 ──────
-name:           example01-08-2.yandex.ru
+name:           example01-08-2
 value:
 czxid:          933002738135
 mzxid:          933002738135

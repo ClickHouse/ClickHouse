@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Семейство Log"
-toc_title: "Введение"
-toc_priority: 29
+sidebar_label: "Семейство Log"
+sidebar_position: 29
 ---
 
 # Семейство Log {#semeistvo-log}

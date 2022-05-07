@@ -138,7 +138,7 @@ void addCreatingSetsStep(
 
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
-                std::move(description),
+                description,
                 std::move(set),
                 limits,
                 context);

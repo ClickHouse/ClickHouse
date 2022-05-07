@@ -115,10 +115,21 @@ bool canBecomeNullable(const DataTypePtr & type)
     return can_be_inside;
 }
 
+bool isNullable(const DataTypePtr & type)
+{
+    bool is_nullable = type->isNullable();
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        is_nullable |= low_cardinality_type->getDictionaryType()->isNullable();
+    return is_nullable;
+}
+
 /// Add nullability to type.
 /// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
 DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 {
+    if (isNullable(type))
+        return type;
+
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
     {
         const auto & dict_type = low_cardinality_type->getDictionaryType();
@@ -315,9 +326,10 @@ ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names)
 
     for (const auto & column_name : names)
     {
-        auto & column = block.getByName(column_name).column;
-        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
-        ptrs[column_name] = column.get();
+        auto & column = block.getByName(column_name);
+        column.column = recursiveRemoveLowCardinality(column.column->convertToFullColumnIfConst());
+        column.type = recursiveRemoveLowCardinality(column.type);
+        ptrs[column_name] = column.column.get();
     }
 
     return ptrs;
@@ -425,10 +437,13 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
         DataTypePtr right_type = removeNullable(recursiveRemoveLowCardinality(block_right.getByName(key_names_right[i]).type));
 
         if (!left_type->equals(*right_type))
-            throw Exception("Type mismatch of columns to JOIN by: "
-                            + key_names_left[i] + " " + left_type->getName() + " at left, "
-                            + key_names_right[i] + " " + right_type->getName() + " at right",
-                            ErrorCodes::TYPE_MISMATCH);
+        {
+            throw DB::Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "Type mismatch of columns to JOIN by: {} {} at left, {} {} at right",
+                key_names_left[i], left_type->getName(),
+                key_names_right[i], right_type->getName());
+        }
     }
 }
 
@@ -582,9 +597,19 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
             column_indices_left.emplace_back(left_pos);
     }
 
+    /// `sample_block_names` may contain non unique column names
+    /// (e.g. in case of `... JOIN (SELECT a, a, b FROM table) as t2`)
+    /// proper fix is to get rid of it
+    std::unordered_set<String> sample_block_names;
     for (size_t right_pos = 0; right_pos < saved_block_sample.columns(); ++right_pos)
     {
         const String & name = saved_block_sample.getByPosition(right_pos).name;
+
+        auto [_, inserted] = sample_block_names.insert(name);
+        /// skip columns with same names
+        if (!inserted)
+            continue;
+
         if (!result_sample_block.has(name))
             continue;
 
@@ -597,11 +622,16 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
         setRightIndex(right_pos, result_position);
     }
 
-    if (column_indices_left.size() + column_indices_right.size() + same_result_keys.size() != result_sample_block.columns())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Error in columns mapping in RIGHT|FULL JOIN. Left: {}, right: {}, same: {}, result: {}",
-                        column_indices_left.size(), column_indices_right.size(),
-                        same_result_keys.size(), result_sample_block.columns());
+    /// `result_sample_block` also may contains non unique column names
+    const auto & result_names = result_sample_block.getNames();
+    size_t unique_names_count = std::unordered_set<String>(result_names.begin(), result_names.end()).size();
+    if (column_indices_left.size() + column_indices_right.size() + same_result_keys.size() != unique_names_count)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Error in columns mapping in JOIN. (assertion failed {} + {} + {} != {}) "
+            "Result block [{}], Saved block [{}]",
+            column_indices_left.size(), column_indices_right.size(), same_result_keys.size(), unique_names_count,
+            result_sample_block.dumpNames(), saved_block_sample.dumpNames());
 }
 
 void NotJoinedBlocks::setRightIndex(size_t right_pos, size_t result_position)

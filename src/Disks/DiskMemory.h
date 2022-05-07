@@ -22,7 +22,7 @@ class WriteBufferFromFileBase;
 class DiskMemory : public IDisk
 {
 public:
-    DiskMemory(const String & name_) : name(name_), disk_path("memory://" + name_ + '/') {}
+    explicit DiskMemory(const String & name_) : name(name_), disk_path("memory://" + name_ + '/') {}
 
     const String & getName() const override { return name; }
 
@@ -71,7 +71,8 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode) override;
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
@@ -97,7 +98,6 @@ private:
     void createDirectoriesImpl(const String & path);
     void replaceFileImpl(const String & from_path, const String & to_path);
 
-private:
     friend class WriteIndirectBuffer;
 
     enum class FileType
@@ -112,7 +112,7 @@ private:
         String data;
 
         FileData(FileType type_, String data_) : type(type_), data(std::move(data_)) {}
-        explicit FileData(FileType type_) : type(type_), data("") {}
+        explicit FileData(FileType type_) : type(type_) {}
     };
     using Files = std::unordered_map<String, FileData>; /// file path -> file data
 

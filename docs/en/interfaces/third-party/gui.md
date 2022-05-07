@@ -1,6 +1,6 @@
 ---
-toc_priority: 28
-toc_title: Visual Interfaces
+sidebar_position: 28
+sidebar_label: Visual Interfaces
 ---
 
 # Visual Interfaces from Third-party Developers {#visual-interfaces-from-third-party-developers}
@@ -142,6 +142,10 @@ Features:
 -   Schema drift detection.
 -   Backup and restore.
 -   RBAC.
+
+### Zeppelin-Interpreter-for-ClickHouse {#zeppelin-interpreter-for-clickhouse}
+
+[Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a [Zeppelin](https://zeppelin.apache.org) interpreter for ClickHouse. Compared with JDBC interpreter, it can provide better timeout control for long running queries.
 
 ## Commercial {#commercial}
 

@@ -172,4 +172,13 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
+Names IndicesDescription::getAllRegisteredNames() const
+{
+    Names result;
+    for (const auto & index : *this)
+    {
+        result.emplace_back(index.name);
+    }
+    return result;
+}
 }

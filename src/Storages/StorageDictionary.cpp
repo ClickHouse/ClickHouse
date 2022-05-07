@@ -163,7 +163,7 @@ void StorageDictionary::checkTableCanBeDetached() const
 
 Pipe StorageDictionary::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & /*query_info*/,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -295,7 +295,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     }
 
     std::lock_guard<std::mutex> lock(dictionary_config_mutex);
-    configuration->setString("dictionary.comment", std::move(new_comment));
+    configuration->setString("dictionary.comment", new_comment);
 }
 
 void registerStorageDictionary(StorageFactory & factory)
@@ -318,7 +318,7 @@ void registerStorageDictionary(StorageFactory & factory)
 
             /// Create dictionary storage that owns underlying dictionary
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
-            auto result_storage = StorageDictionary::create(dictionary_id, abstract_dictionary_configuration, local_context);
+            auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
             bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
             if (!args.attach && !lazy_load)
@@ -348,7 +348,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
             }
 
-            return StorageDictionary::create(
+            return std::make_shared<StorageDictionary>(
                 args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
         }
     });

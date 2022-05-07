@@ -1,6 +1,6 @@
 ---
-toc_priority: 40
-toc_title: REVOKE
+sidebar_position: 40
+sidebar_label: REVOKE
 ---
 
 # 权限取消 {#revoke}

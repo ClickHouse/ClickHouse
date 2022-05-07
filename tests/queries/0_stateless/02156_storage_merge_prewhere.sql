@@ -1,3 +1,5 @@
+SET optimize_move_to_prewhere = 1;
+
 DROP TABLE IF EXISTS t_02156_mt1;
 DROP TABLE IF EXISTS t_02156_mt2;
 DROP TABLE IF EXISTS t_02156_log;
