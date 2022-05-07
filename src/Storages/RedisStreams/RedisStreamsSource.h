@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Processors/Sources/SourceWithProgress.h>
-
 #include <Storages/RedisStreams/StorageRedisStreams.h>
-#include <Storages/RedisStreams/ReadBufferFromRedisStreams.h>
 
 
 namespace Poco

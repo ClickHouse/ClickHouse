@@ -1,9 +1,5 @@
 #include <Storages/RedisStreams/StorageRedisStreams.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -16,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/RedisStreams/ReadBufferFromRedisStreams.h>
 #include <Storages/RedisStreams/RedisStreamsSink.h>
 #include <Storages/RedisStreams/RedisStreamsSettings.h>
 #include <Storages/RedisStreams/RedisStreamsSource.h>
@@ -24,10 +21,8 @@
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/logger_useful.h>
-#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/parseAddress.h>
@@ -36,7 +31,6 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
