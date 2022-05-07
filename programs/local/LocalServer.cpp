@@ -28,6 +28,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
+#include <IO/IOThreadPool.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
@@ -105,6 +106,17 @@ void LocalServer::initialize(Poco::Util::Application & self)
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
+
+    GlobalThreadPool::initialize(
+        config().getUInt("max_thread_pool_size", 10000),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000)
+    );
+
+    IOThreadPool::initialize(
+        config().getUInt("max_io_thread_pool_size", 100),
+        config().getUInt("max_io_thread_pool_free_size", 0),
+        config().getUInt("io_thread_pool_queue_size", 10000));
 }
 
 
