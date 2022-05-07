@@ -23,7 +23,6 @@ namespace ErrorCodes
 ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), in_), format_settings(format_settings_), skip_stripes(format_settings.orc.skip_stripes)
 {
-    std::cout << "orc input format:" << StackTrace().toString() << std::endl;
 }
 
 Chunk ORCBlockInputFormat::generate()

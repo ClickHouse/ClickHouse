@@ -51,6 +51,8 @@ public:
 
     String getFileName() const override;
 
+    Range getRemainingReadRange() const override;
+
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
 };

@@ -132,6 +132,12 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     {
         return file_offset;
     }
+
+    Range getRemainingReadRange() const override
+    {
+        return Range{
+            .left = static_cast<size_t>(file_offset), .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt};
+    }
 };
 
 ReadBufferFromHDFS::ReadBufferFromHDFS(
@@ -202,6 +208,12 @@ String ReadBufferFromHDFS::getFileName() const
 {
     return impl->hdfs_file_path;
 }
+
+ParallelReadBuffer::Range ReadBufferFromHDFS::getRemainingReadRange() const
+{
+    return impl->getRemainingReadRange();
+}
+
 
 SeekableReadBufferPtr ReadBufferHDFSFactory::getReader()
 {

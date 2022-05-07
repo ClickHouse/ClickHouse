@@ -40,7 +40,11 @@ public:
 
     explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, CallbackRunner schedule_, size_t max_working_readers);
 
-    ~ParallelReadBuffer() override { finishAndWait(); }
+    ~ParallelReadBuffer() override
+    {
+        std::cout << "ParallelReadBuffer::~ParallelReadBuffer" << std::endl;
+        finishAndWait();
+    }
 
     off_t seek(off_t off, int whence) override;
     std::optional<size_t> getFileSize();

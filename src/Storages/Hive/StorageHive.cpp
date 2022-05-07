@@ -195,8 +195,9 @@ public:
                     if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
                     {
                         source_info->hive_metastore_client->clearTableMetadata(source_info->database_name, source_info->table_name);
-                        throw;
                     }
+                    std::cout << "have exception:" << e.what() << std::endl;
+                    throw;
                 }
                 std::cout << "path:" << current_path << ",raw_read_buf:" << raw_read_buf.get() << std::endl;
 

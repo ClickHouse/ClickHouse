@@ -49,6 +49,7 @@ ParallelReadBuffer::ParallelReadBuffer(
     , schedule(std::move(schedule_))
     , reader_factory(std::move(reader_factory_))
 {
+    std::cout << "ParallelReadBuffer::ParallelReadBuffer" << std::endl;
     addReaders();
 }
 
