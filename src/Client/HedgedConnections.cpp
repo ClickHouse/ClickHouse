@@ -181,6 +181,7 @@ void HedgedConnections::sendQuery(
 
         replica.connection->sendQuery(timeouts, query, query_id, stage, &modified_settings, &client_info, with_pending_data);
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
+        replica.packet_receiver->setReceiveTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
     };
 
     for (auto & offset_status : offset_states)
@@ -354,11 +355,16 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
     }
     else if (std::holds_alternative<Poco::Timespan>(res))
     {
+        const String & description = replica_state.connection->getDescription();
         finishProcessReplica(replica_state, true);
 
         /// Check if there is no more active connections with the same offset and there is no new replica in process.
         if (offset_states[location.offset].active_connection_count == 0 && !offset_states[location.offset].next_replica_in_process)
-            throw NetException("Receive timeout expired", ErrorCodes::SOCKET_TIMEOUT);
+            throw NetException(
+                ErrorCodes::SOCKET_TIMEOUT,
+                "Timeout exceeded while reading from socket ({}, receive timeout {} ms)",
+                description,
+                std::get<Poco::Timespan>(res).totalMilliseconds());
     }
     else if (std::holds_alternative<std::exception_ptr>(res))
     {

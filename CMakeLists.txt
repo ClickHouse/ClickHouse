@@ -44,7 +44,7 @@ enable_language(C CXX ASM)
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
-include (cmake/analysis.cmake)
+include (cmake/clang_tidy.cmake)
 include (cmake/git_status.cmake)
 
 # Ignore export() since we don't use it,
@@ -257,6 +257,11 @@ endif()
 
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+if (NOT BUILD_STANDALONE_KEEPER)
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
+else ()
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" OFF)
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
@@ -314,23 +319,18 @@ if (ENABLE_BUILD_PATH_MAPPING)
     set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
 endif ()
 
-if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
-    # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
-    # We will add C++ standard controlling flag in CMAKE_CXX_FLAGS manually for now.
-
-    if (COMPILER_GCC OR COMPILER_CLANG)
-        # to make numeric_limits<__int128> works with GCC
-        set (_CXX_STANDARD "gnu++2a")
-    else ()
-        set (_CXX_STANDARD "c++2a")
-    endif ()
-
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=${_CXX_STANDARD}")
-else ()
-    set (CMAKE_CXX_STANDARD 20)
-    set (CMAKE_CXX_EXTENSIONS ON) # Same as gnu++2a (ON) vs c++2a (OFF): https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html
-    set (CMAKE_CXX_STANDARD_REQUIRED ON)
+option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
+if (ENABLE_BUILD_PROFILING)
+     if (COMPILER_CLANG)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
+     else ()
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Build profiling is only available with CLang")
+     endif ()
 endif ()
+
+set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_EXTENSIONS ON) # Same as gnu++2a (ON) vs c++2a (OFF): https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html
+set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON)
@@ -417,7 +417,7 @@ if (COMPILER_CLANG)
     endif ()
 
 elseif (ENABLE_THINLTO)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with Clang")
 endif ()
 
 # Turns on all external libs like s3, kafka, ODBC, ...

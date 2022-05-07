@@ -16,7 +16,7 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/escapeForFileName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
@@ -415,11 +415,13 @@ void DatabaseOnDisk::renameTable(
     }
     catch (const Exception &)
     {
+        setDetachedTableNotInUseForce(prev_uuid);
         attachTable(local_context, table_name, table, table_data_relative_path);
         throw;
     }
     catch (const Poco::Exception & e)
     {
+        setDetachedTableNotInUseForce(prev_uuid);
         attachTable(local_context, table_name, table, table_data_relative_path);
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPocoTag{}, e};

@@ -83,7 +83,7 @@ public:
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & storage_settings_,
-        ContextPtr context_)
+        const ContextPtr & context_)
         : WithContext(context_)
         , partition_values(partition_values_)
         , namenode_url(namenode_url_)
@@ -100,6 +100,7 @@ public:
     const String & getPath() const { return path; }
     UInt64 getLastModTs() const { return last_modify_time; }
     size_t getSize() const { return size; }
+    std::optional<size_t> getRows();
     const FieldVector & getPartitionValues() const { return partition_values; }
     const String & getNamenodeUrl() { return namenode_url; }
     MinMaxIndexPtr getMinMaxIndex() const { return file_minmax_idx; }
@@ -112,7 +113,6 @@ public:
     {
         if (!idx)
             return "";
-
         std::vector<String> strs;
         strs.reserve(index_names_and_types.size());
         size_t i = 0;
@@ -123,30 +123,42 @@ public:
 
     virtual FileFormat getFormat() const = 0;
 
+    /// If hive query could use file level minmax index?
     virtual bool useFileMinMaxIndex() const { return false; }
+    void loadFileMinMaxIndex();
 
-    virtual void loadFileMinMaxIndex()
-    {
-        throw Exception("Method loadFileMinMaxIndex is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /// If hive query could use contains sub-file level minmax index?
+    /// If hive query could use sub-file level minmax index?
     virtual bool useSplitMinMaxIndex() const { return false; }
-
-    virtual void loadSplitMinMaxIndex()
-    {
-        throw Exception("Method loadSplitMinMaxIndex is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+    void loadSplitMinMaxIndexes();
 
 protected:
+    virtual void loadFileMinMaxIndexImpl()
+    {
+        throw Exception("Method loadFileMinMaxIndexImpl is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    virtual void loadSplitMinMaxIndexesImpl()
+    {
+        throw Exception("Method loadSplitMinMaxIndexesImpl is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    virtual std::optional<size_t> getRowsImpl() = 0;
+
     FieldVector partition_values;
     String namenode_url;
     String path;
     UInt64 last_modify_time;
     size_t size;
+    std::optional<size_t> rows;
+
     NamesAndTypesList index_names_and_types;
+
     MinMaxIndexPtr file_minmax_idx;
+    std::atomic<bool> file_minmax_idx_loaded{false};
+
     std::vector<MinMaxIndexPtr> split_minmax_idxes;
+    std::atomic<bool> split_minmax_idxes_loaded{false};
+
     /// Skip splits for this file after applying minmax index (if any)
     std::unordered_set<int> skip_splits;
     std::shared_ptr<HiveSettings> storage_settings;
@@ -154,6 +166,8 @@ protected:
 
 using HiveFilePtr = std::shared_ptr<IHiveFile>;
 using HiveFiles = std::vector<HiveFilePtr>;
+using HiveFilesCache = LRUCache<String, IHiveFile>;
+using HiveFilesCachePtr = std::shared_ptr<HiveFilesCache>;
 
 class HiveTextFile : public IHiveFile
 {
@@ -166,12 +180,15 @@ public:
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
-        ContextPtr context_)
+        const ContextPtr & context_)
         : IHiveFile(partition_values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
 
-    virtual FileFormat getFormat() const override { return FileFormat::TEXT; }
+    FileFormat getFormat() const override { return FileFormat::TEXT; }
+
+private:
+    std::optional<size_t> getRowsImpl() override { return {}; }
 };
 
 class HiveORCFile : public IHiveFile
@@ -185,24 +202,25 @@ public:
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
-        ContextPtr context_)
+        const ContextPtr & context_)
         : IHiveFile(partition_values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
 
     FileFormat getFormat() const override { return FileFormat::ORC; }
     bool useFileMinMaxIndex() const override;
-    void loadFileMinMaxIndex() override;
-
     bool useSplitMinMaxIndex() const override;
-    void loadSplitMinMaxIndex() override;
 
 private:
     static Range buildRange(const orc::ColumnStatistics * col_stats);
 
+    void loadFileMinMaxIndexImpl() override;
+    void loadSplitMinMaxIndexesImpl() override;
     std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const orc::Statistics * statistics);
     void prepareReader();
     void prepareColumnMapping();
+
+    std::optional<size_t> getRowsImpl() override;
 
     std::unique_ptr<ReadBufferFromHDFS> in;
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> reader;
@@ -220,17 +238,17 @@ public:
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
-        ContextPtr context_)
+        const ContextPtr & context_)
         : IHiveFile(partition_values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
 
     FileFormat getFormat() const override { return FileFormat::PARQUET; }
-
     bool useSplitMinMaxIndex() const override;
-    void loadSplitMinMaxIndex() override;
 
 private:
+    void loadSplitMinMaxIndexesImpl() override;
+    std::optional<size_t> getRowsImpl() override;
     void prepareReader();
 
     std::unique_ptr<ReadBufferFromHDFS> in;

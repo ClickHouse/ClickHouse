@@ -77,3 +77,6 @@ wait
 echo "OK"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS async_inserts";
+
+# There is no other way to wait HTTP queries
+clickhouse_test_wait_queries 30
