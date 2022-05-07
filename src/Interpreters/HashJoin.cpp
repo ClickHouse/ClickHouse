@@ -1266,60 +1266,15 @@ public:
     }
 };
 
-template <typename Map, bool multiple_disjuncts>
-void recordFoundRowAll(
-    const typename Map::mapped_type & mapped,
-    IColumn::Offset & current_offset,
-    KnownRowsHolder<multiple_disjuncts> & known_rows [[maybe_unused]],
-    JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]],
-    std::vector<std::pair<const Block*, size_t>> & result_pairs)
-{
-    if constexpr (multiple_disjuncts)
-    {
-        std::unique_ptr<std::vector<KnownRowsHolder<true>::Type>> new_known_rows_ptr;
 
-        for (auto it = mapped.begin(); it.ok(); ++it)
-        {
-            const auto result_pair = std::make_pair(it->block, it->row_num);
-            if (!known_rows.isKnown(result_pair))
-            {
-                result_pairs.emplace_back(result_pair);
-                ++current_offset;
-                if (!new_known_rows_ptr)
-                {
-                    new_known_rows_ptr = std::make_unique<std::vector<KnownRowsHolder<true>::Type>>();
-                }
-                new_known_rows_ptr->push_back(std::make_pair(it->block, it->row_num));
-                if (used_flags)
-                {
-                    used_flags->JoinStuff::JoinUsedFlags::setUsedOnce<true, multiple_disjuncts>(
-                        FindResultImpl<const RowRef, false>(*it, true, 0));
-                }
-            }
-        }
-
-        if (new_known_rows_ptr)
-        {
-            known_rows.add(std::cbegin(*new_known_rows_ptr), std::cend(*new_known_rows_ptr));
-        }
-    }
-    else
-    {
-        for (auto it = mapped.begin(); it.ok(); ++it)
-        {
-            result_pairs.emplace_back(std::make_pair(it->block, it->row_num));
-            ++current_offset;
-        }
-    }
-};
-
-template <typename Map, bool add_missing, bool multiple_disjuncts>
+template <typename Map, bool add_missing, bool multiple_disjuncts, bool fast_inner_join>
 void addFoundRowAll(
     const typename Map::mapped_type & mapped,
     AddedColumns & added,
     IColumn::Offset & current_offset,
     KnownRowsHolder<multiple_disjuncts> & known_rows [[maybe_unused]],
-    JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]])
+    JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]],
+    std::vector<std::pair<const Block*, size_t>> & result_pairs [[maybe_unused]])
 {
     if constexpr (add_missing)
         added.applyLazyDefaults();
@@ -1330,9 +1285,13 @@ void addFoundRowAll(
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            if (!known_rows.isKnown(std::make_pair(it->block, it->row_num)))
+            const auto result_pair = std::make_pair(it->block, it->row_num);
+            if (!known_rows.isKnown(result_pair))
             {
-                added.appendFromBlock<false>(*it->block, it->row_num);
+                if constexpr (fast_inner_join)
+                    result_pairs.emplace_back(result_pair);
+                else
+                    added.appendFromBlock<false>(*it->block, it->row_num);
                 ++current_offset;
                 if (!new_known_rows_ptr)
                 {
@@ -1356,7 +1315,10 @@ void addFoundRowAll(
     {
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            added.appendFromBlock<false>(*it->block, it->row_num);
+            if constexpr (fast_inner_join)
+                result_pairs.emplace_back(std::make_pair(it->block, it->row_num));
+            else
+                added.appendFromBlock<false>(*it->block, it->row_num);
             ++current_offset;
         }
     }
@@ -1460,10 +1422,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     setUsed<need_filter>(filter, i);
                     used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
                     auto used_flags_opt = jf.need_flags ? &used_flags : nullptr;
-                    if constexpr (fast_inner_join)
-                        recordFoundRowAll<Map>(mapped, current_offset, known_rows, used_flags_opt, result_pairs);
-                    else
-                        addFoundRowAll<Map, jf.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+                    addFoundRowAll<Map, jf.add_missing, multiple_disjuncts, fast_inner_join>(mapped, added_columns, current_offset, known_rows, used_flags_opt, result_pairs);
                 }
                 else if constexpr ((jf.is_any_join || jf.is_semi_join) && jf.right)
                 {
@@ -1473,7 +1432,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     {
                         auto used_flags_opt = jf.need_flags ? &used_flags : nullptr;
                         setUsed<need_filter>(filter, i);
-                        addFoundRowAll<Map, jf.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+                        addFoundRowAll<Map, jf.add_missing, multiple_disjuncts, false>(mapped, added_columns, current_offset, known_rows, used_flags_opt, result_pairs);
                     }
                 }
                 else if constexpr (jf.is_any_join && KIND == ASTTableJoin::Kind::Inner)
