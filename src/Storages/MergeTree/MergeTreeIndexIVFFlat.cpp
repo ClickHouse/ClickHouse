@@ -36,9 +36,9 @@
 #include <faiss/impl/io.h>
 #include <faiss/index_factory.h>
 #include <faiss/index_io.h>
-#include <libnuraft/log_store.hxx>
 
-// TODO: Refactor includes, they are ugly
+#include <chrono>
+#include <math.h>
 
 namespace DB
 {
@@ -80,27 +80,81 @@ namespace detail {
     private:
         ReadBuffer & istr;
     };
+
+    // Parser for the input arguments of the index in the CREATE query
+    class ArgumentParser {
+    public:
+        struct Argument 
+        {
+            size_t position;
+            Field default_value;
+        };
+        
+        explicit ArgumentParser(FieldVector arguments_) 
+        : arguments(std::move(arguments_))
+        {
+            initialize();
+        }
+
+        Field getArgumentByName(String name) 
+        {
+            if (argument_mapping.contains(name)) 
+            {
+                auto argument = argument_mapping[name];
+                if (argument.position < arguments.size()) 
+                    return arguments[argument.position];
+                else 
+                    return argument.default_value;
+            } 
+            else 
+                return {};
+        }
+
+    private:
+        FieldVector arguments;
+        std::map<String, Argument> argument_mapping;
+
+        void initialize() 
+        {
+            registerArgument("index_key", 0, {});  
+            registerArgument("metric_type", 1, "L2Distance");  
+        }
+
+        void registerArgument(String name, size_t position, Field default_value) 
+        {
+            argument_mapping[name] = {position, std::move(default_value)};
+        }
+    };
+
+    inline faiss::MetricType StringToMetric(const String & str) 
+    {
+        if (str == "L2Distance") 
+            return faiss::METRIC_L2;
+        else 
+            throw Exception("Unsupported metric type. Faiss indexes right now support only L2 metric.", ErrorCodes::LOGICAL_ERROR);
+    }
 }
 
 MergeTreeIndexGranuleIVFFlat::MergeTreeIndexGranuleIVFFlat(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , index_base(nullptr)
+    , is_incomplete(false)
 {}
 
 MergeTreeIndexGranuleIVFFlat::MergeTreeIndexGranuleIVFFlat(
     const String & index_name_, 
     const Block & index_sample_block_,
-    FaissBaseIndexPtr index_base_)
+    FaissBaseIndexPtr index_base_,
+    bool is_incomplete_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , index_base(std::move(index_base_))
+    , is_incomplete(is_incomplete_)
 {}
 
 void MergeTreeIndexGranuleIVFFlat::serializeBinary(WriteBuffer & ostr) const
 {
-    // TODO: Change assert to an exception
-    assert(index_base.get() != nullptr);
     detail::WriteBufferFaissWrapper ostr_wrapped(ostr);
     faiss::write_index(index_base.get(), &ostr_wrapped);
 }
@@ -114,16 +168,20 @@ void MergeTreeIndexGranuleIVFFlat::deserializeBinary(ReadBuffer & istr, MergeTre
 
 bool MergeTreeIndexGranuleIVFFlat::empty() const
 {
-    return index_base->ntotal == 0;
+    // Granule is empty if we didn't try to train index and failed (flag is_incomplete)
+    // and we didn't set base index or base index doesn't contain elements
+    return !is_incomplete && (index_base == nullptr || index_base->ntotal == 0);
 }
 
 
 MergeTreeIndexAggregatorIVFFlat::MergeTreeIndexAggregatorIVFFlat(const String & index_name_,
                                                                 const Block & index_sample_block_,
-                                                                const String & index_key_)
+                                                                const String & index_key_,
+                                                                const String & metric_type_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , index_key(index_key_)
+    , metric_type(metric_type_)
 {}
 
 bool MergeTreeIndexAggregatorIVFFlat::empty() const
@@ -133,40 +191,22 @@ bool MergeTreeIndexAggregatorIVFFlat::empty() const
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIVFFlat::getGranuleAndReset()
 {
-    // TODO: Remove hardcoded params, we can get it from CREATE or from creation of the granule
-    // Hyperparams for the index
-    // Num of dimensions
-    // size_t dim = 3; 
-    // Num of clusters for training
-    // size_t nlist = 100;
-
-    // // IndexIFVFlat will take care of memory managment
-    // MergeTreeIndexGranuleIVFFlat::FaissBaseIndex* coarse_quantizer = new faiss::IndexFlat(dim, faiss::METRIC_L2);
-    // auto index = std::make_shared<faiss::IndexIVFFlat>(coarse_quantizer, dim, nlist);
-    // index->own_fields = true;
-
-    // auto num_elements = values.size() / dim;
-    // index->train(num_elements, values.data());
-    // index->add(num_elements, values.data());
-
-    // values.clear();
-
-    // return std::make_shared<MergeTreeIndexGranuleIVFFlat>(index_name, index_sample_block, index);
-    // const std::string key_string = "IVF64(Flat)";
-
-    std::unique_ptr<faiss::Index> index(faiss::index_factory(dimension, index_key.c_str()));
-
+    std::unique_ptr<faiss::Index> index(faiss::index_factory(dimension, index_key.c_str(), detail::StringToMetric(metric_type)));
     auto num_elements = values.size() / dimension;
 
-    try {
+    try 
+    {
         index->train(num_elements, values.data());
         index->add(num_elements, values.data());
-    } catch (const faiss::FaissException&) {
-        LOG_DEBUG(&Poco::Logger::get("IVFFlat"), "Too few items. Values: {}, dim: {}, num_el: {}", values.size(), dimension, num_elements);
+    } 
+    catch (const faiss::FaissException&) 
+    {
+        index.reset();
     }
     values.clear();
 
-    return std::make_shared<MergeTreeIndexGranuleIVFFlat>(index_name, index_sample_block, std::move(index));
+    bool is_incomplete = (index == nullptr);
+    return std::make_shared<MergeTreeIndexGranuleIVFFlat>(index_name, index_sample_block, std::move(index), is_incomplete);
 }
 
 void MergeTreeIndexAggregatorIVFFlat::update(const Block & block, size_t * pos, size_t limit)
@@ -176,53 +216,28 @@ void MergeTreeIndexAggregatorIVFFlat::update(const Block & block, size_t * pos, 
                 "The provided position is not less than the number of block rows. Position: "
                 + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
-    size_t rows_read = std::min(limit, block.rows() - *pos);
+    if (index_sample_block.columns() != 1) 
+        throw Exception("Faiss indexes support construction only on the one column.", ErrorCodes::LOGICAL_ERROR);
 
-    // TODO: Change assert to an exception
-    // This index can be used only for one column
-    assert(index_sample_block.columns() == 1);
+    size_t rows_read = std::min(limit, block.rows() - *pos);
 
     auto index_column_name = index_sample_block.getByPosition(0).name;
     const auto & column = block.getByName(index_column_name).column->cut(*pos, rows_read);
-
-    std::vector<std::vector<Float32>> coords_vector;
-
     const auto * vectors = typeid_cast<const ColumnTuple *>(column.get());
 
-    // TODO: Get dimension in the CREATE request
     dimension = vectors->getColumns().size();
 
     size_t offset = values.size();
     values.resize(offset + dimension * rows_read);
 
-    for (size_t col_idx = 0; col_idx < dimension; ++col_idx) {
+    for (size_t col_idx = 0; col_idx < dimension; ++col_idx) 
+    {
         const auto & inner_column = vectors->getColumns()[col_idx];
         const auto * coordinate_column = typeid_cast<const ColumnFloat32 *>(inner_column.get());
 
-        for (size_t row_idx = 0; row_idx < coordinate_column->size(); ++row_idx) {
+        for (size_t row_idx = 0; row_idx < coordinate_column->size(); ++row_idx) 
             values[offset + dimension * row_idx + col_idx] = coordinate_column->getElement(row_idx);
-        }
     }
-
-    // TODO: Fix dummy way of the access to the Field
-    // for (size_t i = 0; i < rows_read; ++i) 
-    // {
-    //     Field field;
-    //     column->get(i, field);
-        
-    //     auto field_array = field.safeGet<Tuple>();
-
-    //     if (dimension == 0) {
-    //         dimension = field_array
-    //     }
-
-    //     // Store vectors in the flatten arrays
-    //     for (const auto& value : field_array) 
-    //     {
-    //         auto num = value.safeGet<Float32>();
-    //         values.push_back(num);
-    //     }
-    // }
 
     *pos += rows_read;
 }
@@ -232,31 +247,21 @@ MergeTreeIndexConditionIVFFlat::MergeTreeIndexConditionIVFFlat(
     const IndexDescription & index,
     const SelectQueryInfo & query,
     ContextPtr context,
-    FieldVector arguments_)
+    const String & metric_type_)
     : index_data_types(index.data_types)
-    , arguments(std::move(arguments_))
-{
-    // Build Reverse Polish notation from the query
-    RPN rpn = buildRPN(query, context); 
-
-    // Match RPN with the pattern of the query for this type of index
-    // and extract expression data for the future usage of the index
-    matchRPN(rpn);
-}
+    , condition(query, context)
+    , metric_type(metric_type_)
+{}
 
 bool MergeTreeIndexConditionIVFFlat::alwaysUnknownOrTrue() const
 {
-    // In matchRPN() function we populate expession field in case of the success
-    return !expression.has_value();
+    return condition.alwaysUnknownOrTrue(metric_type);
 }
 
 bool MergeTreeIndexConditionIVFFlat::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    // TODO: Change assert to the exception
-    assert(expression.has_value());
-
-    std::vector<float> target_vec = expression.value().target;
-    float min_distance = expression.value().distance;
+    std::vector<float> target_vec = condition.getTargetVector();
+    float min_distance = condition.getComparisonDistance();
 
     // Number of target vectors
     size_t n = 1;
@@ -269,247 +274,76 @@ bool MergeTreeIndexConditionIVFFlat::mayBeTrueOnGranule(MergeTreeIndexGranulePtr
     int64_t label;
 
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleIVFFlat>(idx_granule);
+    String index_setting = condition.getSettingsStr();
 
-    std::optional<faiss::IVFSearchParameters> params;
-
-    // Explicit arguments
-    if (!arguments.empty()) {
-        const size_t nprobe_pos = 0;
-        const size_t max_codes_pos = 1;
-
-        params.emplace(faiss::IVFSearchParameters{});
-        params->nprobe = arguments[nprobe_pos].safeGet<size_t>();
-        if (arguments.size() > max_codes_pos) {
-            params->max_codes = arguments[max_codes_pos].safeGet<size_t>();
-        }
-    } else {
-        // TODO: Add autotune
-        auto* ifv_index = faiss::ivflib::try_extract_index_ivf(granule->index_base.get());
-        if (ifv_index != nullptr) {
-            // We use IVF-like index, so we use autotuning to find parameters
-
-            // TODO: add autotune
-            params.emplace(faiss::IVFSearchParameters{});
-            params->nprobe = 1;
-            params->max_codes = 0;
-        }     
-    }
-
-    if (params.has_value()) {
-        faiss::ivflib::search_with_parameters(
-            granule->index_base.get(), 
-            n, 
-            target_vec.data(), 
-            k, 
-            &distance, 
-            &label, 
-            &params.value());
-    } else {
-        granule->index_base->search(n, target_vec.data(), k, &distance, &label);
-    }
+    if (!index_setting.empty()) 
+        faiss::ParameterSpace().set_index_parameters(granule->index_base.get(), condition.getSettingsStr().c_str());
+    
+    granule->index_base->search(n, target_vec.data(), k, &distance, &label);
 
     return distance < min_distance;
 }
 
-MergeTreeIndexConditionIVFFlat::RPN MergeTreeIndexConditionIVFFlat::buildRPN(const SelectQueryInfo & query, ContextPtr context)
+std::vector<size_t> MergeTreeIndexConditionIVFFlat::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
-    RPN rpn;
+    UInt64 limit = condition.getLimitCount() ? condition.getLimitCount().value() : 1;
+    std::vector<float> target_vec = condition.getTargetVector();
+    std::optional<float> distance = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistance()) : std::nullopt;
+    
+    // Number of target vectors
+    size_t n = 1;
 
-    // Get block_with_constants for the future usage from query
-    block_with_constants = KeyCondition::getBlockWithConstants(query.query, query.syntax_analyzer_result, context);
+    // Number of NN to search
+    size_t k = limit;
 
-    const auto & select = query.query->as<ASTSelectQuery &>();
+    // Will be populated by faiss
+    std::vector<float> distances(k);
+    std::vector<int64_t> labels(k);
 
-    // Sometimes our ANN expression in where can be placed in prewhere section
-    // In this case we populate RPN from both source, but it can be dangerous in case
-    // of some additional expressions in our query
-    // We can either check prewhere or where, either match independently where and
-    // prewhere
-    // TODO: Need to think
-    if (select.where()) 
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleIVFFlat>(idx_granule);
+
+    // Skip searching in the incomplete granule
+    if (granule->is_incomplete)
+        return {0};
+
+    String index_setting = condition.getSettingsStr();
+    if (!index_setting.empty()) 
+        faiss::ParameterSpace().set_index_parameters(granule->index_base.get(), condition.getSettingsStr().c_str());
+    
+    granule->index_base->search(n, target_vec.data(), k, distances.data(), labels.data());
+
+    // Temporary hard-coded constant
+    const size_t granule_size = 8192;
+
+    std::unordered_set<size_t> useful_granules;
+    for (size_t i = 0; i < k; ++i) 
     {
-        traverseAST(select.where(), rpn);
-    }
-    if (select.prewhere())
-    {
-        traverseAST(select.prewhere(), rpn);
+        if (distance.has_value() && distances[i] > distance.value())
+            break;
+        
+        useful_granules.insert(labels[i] / granule_size);
     }
 
-    // Return prefix rpn, so reverse the result
-    std::reverse(rpn.begin(), rpn.end());
-    return rpn;
+    std::vector<size_t> useful_granules_vec;
+    useful_granules_vec.reserve(useful_granules.size());
+    for (auto idx : useful_granules)
+    {
+        useful_granules_vec.push_back(idx);
+    }
+        
+
+    return useful_granules_vec;
 }
-
-void MergeTreeIndexConditionIVFFlat::traverseAST(const ASTPtr & node, RPN & rpn) 
-{
-    RPNElement element;
-
-    // We need to go deeper only if we have ASTFunction in this node
-    if (const auto * func = node->as<ASTFunction>()) 
-    {
-        const ASTs & args = func->arguments->children;
-
-        // Traverse children
-        for (const auto & arg : args) 
-        {
-            traverseAST(arg, rpn);
-        }
-    } 
-
-    // Extract information about current node and populate it in the element
-    if (!traverseAtomAST(node, element)) {
-        // If we cannot identify our node type
-        element.function = RPNElement::FUNCTION_UNKNOWN;
-    }
-
-    rpn.emplace_back(std::move(element)); 
-}
-
-bool MergeTreeIndexConditionIVFFlat::traverseAtomAST(const ASTPtr & node, RPNElement & out) {
-    // Firstly check if we have contants behind the node
-    {
-        Field const_value;
-        DataTypePtr const_type;
-
-
-        if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
-        {
-            /// Check constant type (use Float64 because all Fields implementation contains Float64 (for Float32 too))
-            if (const_value.getType() == Field::Types::Float64)
-            {
-                out.function = RPNElement::FUNCTION_FLOAT_LITERAL;
-                out.literal.emplace(const_value.get<Float32>());
-
-                return true;
-            }
-        }
-    }
-
-    // Match function naming with a type
-    if (const auto * function = node->as<ASTFunction>())
-    {
-        // TODO: Add support for other metrics 
-        if (function->name == "L2Distance") 
-        {
-            out.function = RPNElement::FUNCTION_DISTANCE;
-        } 
-        else if (function->name == "tuple") 
-        {
-            out.function = RPNElement::FUNCTION_TUPLE;
-        } 
-        else if (function->name == "less") 
-        {
-            out.function = RPNElement::FUNCTION_LESS;
-        } 
-        else 
-        {
-            return false;
-        }
-
-        return true;
-    }
-    // Match identifier 
-    else if (const auto * identifier = node->as<ASTIdentifier>()) 
-    {
-        out.function = RPNElement::FUNCTION_IDENTIFIER;
-        out.identifier.emplace(identifier->name());
-
-        return true;
-    } 
-
-    return false;
-}
-
-bool MergeTreeIndexConditionIVFFlat::matchRPN(const RPN & rpn) 
-{
-    // Can we place it outside the function? 
-    // Use for match the rpn
-    // Take care of matching tuples (because it can contains arbitary number of fields)
-    RPN prefix_template_rpn{
-        RPNElement{RPNElement::FUNCTION_LESS}, 
-        RPNElement{RPNElement::FUNCTION_FLOAT_LITERAL}, 
-        RPNElement{RPNElement::FUNCTION_DISTANCE}, 
-        RPNElement{RPNElement::FUNCTION_TUPLE}, 
-        RPNElement{RPNElement::FUNCTION_IDENTIFIER}, 
-    };
-
-    // Placeholders for the extracted data
-    Target target_vec;
-    float distance = 0;
-
-    size_t rpn_idx = 0;
-    size_t template_idx = 0;
-
-    // TODO: Should we check what we have the same size of RPNs?
-    // If we wand to support complex expressions, we will not check it
-    while (rpn_idx < rpn.size() && template_idx < prefix_template_rpn.size()) 
-    {
-        const auto & element = rpn[rpn_idx];
-        const auto & template_element = prefix_template_rpn[template_idx];
-
-        if (element.function != template_element.function) 
-        {
-            return false;
-        }
-
-        if (element.function == RPNElement::FUNCTION_FLOAT_LITERAL) 
-        {
-            assert(element.literal.has_value());
-            auto value = element.literal.value();
-
-            distance = value; 
-        }
-
-        if (element.function == RPNElement::FUNCTION_TUPLE) 
-        {
-            // TODO: Better tuple extraction
-            // Extract target vec
-            ++rpn_idx;
-            while (rpn_idx < rpn.size()) {
-                if (rpn[rpn_idx].function == RPNElement::FUNCTION_FLOAT_LITERAL) 
-                {
-                    // Extract tuple element
-                    assert(rpn[rpn_idx].literal.has_value());
-                    auto value = rpn[rpn_idx].literal.value();
-                    target_vec.push_back(value);
-                    ++rpn_idx;
-                } else {
-                    ++template_idx;
-                    break;
-                } 
-            }
-            continue;
-        }
-
-        if (element.function == RPNElement::FUNCTION_IDENTIFIER) 
-        {
-            // TODO: Check that we have the same columns
-        }
-
-        ++rpn_idx;
-        ++template_idx;
-    }
-
-    expression.emplace(ANNExpression{
-        .target = std::move(target_vec),
-        .distance = distance,
-    });
-
-    return true;
-}
-
 
 MergeTreeIndexIVFFlat::MergeTreeIndexIVFFlat(const IndexDescription & index_)
     : IMergeTreeIndex(index_)
 {
-    assert(!index.arguments.empty());
+    if (index.arguments.empty()) 
+        throw Exception("Faiss indexes require at least one argument: key string for the index factory.", ErrorCodes::LOGICAL_ERROR);
 
-    index_key = index.arguments.front().safeGet<String>();
-
-    if (index.arguments.size() > 1) {
-        arguments.resize(index.arguments.size() - 1);
-        std::copy(index.arguments.begin() + 1, index.arguments.end(), arguments.begin());
-    }
+    detail::ArgumentParser parser(index.arguments);
+    index_key = parser.getArgumentByName("index_key").safeGet<String>();
+    metric_type = parser.getArgumentByName("metric_type").safeGet<String>();
 }
 
 
@@ -520,13 +354,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexIVFFlat::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexIVFFlat::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorIVFFlat>(index.name, index.sample_block, index_key);
+    return std::make_shared<MergeTreeIndexAggregatorIVFFlat>(index.name, index.sample_block, index_key, metric_type);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexIVFFlat::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionIVFFlat>(index, query, context, arguments);
+    return std::make_shared<MergeTreeIndexConditionIVFFlat>(index, query, context, metric_type);
 }
 
 bool MergeTreeIndexIVFFlat::mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const

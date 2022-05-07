@@ -3,9 +3,11 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <faiss/IndexIVFFlat.h>
+#include <faiss/MetricType.h>
 #include "Core/Field.h"
 #include "Interpreters/Context_fwd.h"
 #include "Parsers/IAST_fwd.h"
+#include "Storages/MergeTree/CommonANNIndexes.h"
 #include "Storages/SelectQueryInfo.h"
 #include "base/types.h"
 
@@ -21,7 +23,8 @@ struct MergeTreeIndexGranuleIVFFlat final : public IMergeTreeIndexGranule
     MergeTreeIndexGranuleIVFFlat(
         const String & index_name_, 
         const Block & index_sample_block_,
-        FaissBaseIndexPtr index_base_);
+        FaissBaseIndexPtr index_base_,
+        bool is_incomplete_);
 
     ~MergeTreeIndexGranuleIVFFlat() override = default;
 
@@ -34,6 +37,9 @@ struct MergeTreeIndexGranuleIVFFlat final : public IMergeTreeIndexGranule
     String index_name;
     Block index_sample_block;
     FaissBaseIndexPtr index_base;
+
+    // True if we tried to train index_base but we failed because of the lack of elements in the granule
+    bool is_incomplete;
 };
 
 
@@ -41,7 +47,7 @@ struct MergeTreeIndexAggregatorIVFFlat final : IMergeTreeIndexAggregator
 {
     using Value = Float32;
 
-    MergeTreeIndexAggregatorIVFFlat(const String & index_name_, const Block & index_sample_block_, const String & index_key_);
+    MergeTreeIndexAggregatorIVFFlat(const String & index_name_, const Block & index_sample_block_, const String & index_key_, const String & metric_type_);
     ~MergeTreeIndexAggregatorIVFFlat() override = default;
 
     bool empty() const override;
@@ -51,98 +57,32 @@ struct MergeTreeIndexAggregatorIVFFlat final : IMergeTreeIndexAggregator
     String index_name;
     Block index_sample_block;
     String index_key;
+    String metric_type;
     std::vector<Value> values;
     size_t dimension = 0;
 };
 
 
-class MergeTreeIndexConditionIVFFlat final : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionIVFFlat final : public IMergeTreeIndexConditionAnn
 {
 public:
     MergeTreeIndexConditionIVFFlat(
         const IndexDescription & index,
         const SelectQueryInfo & query,
         ContextPtr context,
-        FieldVector arguments_);
+        const String & metric_type_);
     ~MergeTreeIndexConditionIVFFlat() override = default;
 
     bool alwaysUnknownOrTrue() const override;
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 
+    std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const override;
+
 private:
-    // Type of the vector to use as a target in the distance function
-    using Target = std::vector<float>;
-
-    // Extracted data from the query like WHERE L2Distance(column_name, target) < distance
-    struct ANNExpression {
-        Target target;
-        float distance;
-    };
-
-    using ANNExpressionOpt = std::optional<ANNExpression>;
-
-    // Item of the Reverse Polish notation
-    struct RPNElement
-    {
-        enum Function
-        {
-            // Atoms of an ANN expression
-
-            // Function like L2Distance
-            FUNCTION_DISTANCE, 
-
-            // Function like tuple(...)
-            FUNCTION_TUPLE,
-
-            // Operator <
-            FUNCTION_LESS,
-
-            // Numeric float value
-            FUNCTION_FLOAT_LITERAL,
-
-            // Identifier of the column, e.g. L2Distance(number, target), number is a identifier of the column
-            FUNCTION_IDENTIFIER,
-
-            FUNCTION_UNKNOWN, /// Can take any value.
-            /// Operators of the logical expression.
-            FUNCTION_NOT,
-            FUNCTION_AND,
-            FUNCTION_OR,
-        };
-
-        explicit RPNElement(Function function_ = FUNCTION_UNKNOWN)
-        : function(function_)
-        {}
-
-        Function function;
-
-        // TODO: Use not optional, but variant
-        // Value for the FUNCTION_FLOAT_LITERAL
-        std::optional<float> literal;
-
-        // Value for the FUNCTION_IDENTIDIER
-        std::optional<String> identifier;
-    };
-
-    using RPN = std::vector<RPNElement>;
-
-    // Build RPN of the query, return with copy ellision
-    RPN buildRPN(const SelectQueryInfo & query, ContextPtr context);
-
-    // Util functions for the traversal of AST
-    void traverseAST(const ASTPtr & node, RPN & rpn);
-    // Return true if we can identify our node type
-    bool traverseAtomAST(const ASTPtr & node, RPNElement & out);
-
-    // Check that rpn matches the template rpn (TODO: put template RPN outside this function)
-    bool matchRPN(const RPN & rpn);
-
-    Block block_with_constants;
-
     DataTypes index_data_types;
-    ANNExpressionOpt expression;
-    FieldVector arguments;
+    ANNCondition::ANNCondition condition;
+    String metric_type;
 };
 
 
@@ -166,7 +106,7 @@ public:
 
 private:
     String index_key;
-    FieldVector arguments;
+    String metric_type;
 };
 
 }
