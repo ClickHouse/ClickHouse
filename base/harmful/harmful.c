@@ -163,7 +163,7 @@ TRAP(siginterrupt)
 TRAP(sigpause)
 //TRAP(sigprocmask)
 TRAP(sigsuspend)
-TRAP(sleep)
+//TRAP(sleep)
 TRAP(srand48)
 //TRAP(strerror) // Used by RocksDB and many other libraries, unfortunately.
 //TRAP(strsignal) // This function is imported from Musl and is thread safe.
