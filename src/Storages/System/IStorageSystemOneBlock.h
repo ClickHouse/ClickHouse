@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
-#include <base/shared_ptr_helper.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -32,26 +31,25 @@ protected:
     virtual void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const = 0;
 
 public:
-    IStorageSystemOneBlock(const StorageID & table_id_) : IStorage(table_id_)
+    explicit IStorageSystemOneBlock(const StorageID & table_id_) : IStorage(table_id_)
     {
-        StorageInMemoryMetadata metadata_;
-        metadata_.setColumns(ColumnsDescription(Self::getNamesAndTypes(), Self::getNamesAndAliases()));
-        setInMemoryMetadata(metadata_);
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(ColumnsDescription(Self::getNamesAndTypes(), Self::getNamesAndAliases()));
+        setInMemoryMetadata(storage_metadata);
     }
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override
     {
-        auto virtuals_names_and_types = getVirtuals();
-        metadata_snapshot->check(column_names, virtuals_names_and_types, getStorageID());
+        storage_snapshot->check(column_names);
 
-        Block sample_block = metadata_snapshot->getSampleBlockWithVirtuals(virtuals_names_and_types);
+        Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
         fillData(res_columns, context, query_info);
 

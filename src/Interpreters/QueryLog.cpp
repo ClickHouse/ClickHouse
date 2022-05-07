@@ -86,6 +86,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"initial_query_start_time", std::make_shared<DataTypeDateTime>()},
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
         {"interface", std::make_shared<DataTypeUInt8>()},
+        {"is_secure", std::make_shared<DataTypeUInt8>()},
         {"os_user", std::make_shared<DataTypeString>()},
         {"client_hostname", std::make_shared<DataTypeString>()},
         {"client_name", std::make_shared<DataTypeString>()},
@@ -98,6 +99,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"http_referer", std::make_shared<DataTypeString>()},
         {"forwarded_for", std::make_shared<DataTypeString>()},
         {"quota_key", std::make_shared<DataTypeString>()},
+        {"distributed_depth", std::make_shared<DataTypeUInt64>()},
 
         {"revision", std::make_shared<DataTypeUInt32>()},
 
@@ -115,7 +117,9 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_formats", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_storages", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
+        {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+
+        {"transaction_id", getTransactionIDDataType()},
     };
 
 }
@@ -255,6 +259,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
     }
+
+    columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
@@ -273,7 +279,8 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.initial_query_start_time);
     columns[i++]->insert(client_info.initial_query_start_time_microseconds);
 
-    columns[i++]->insert(UInt64(client_info.interface));
+    columns[i++]->insert(static_cast<UInt64>(client_info.interface));
+    columns[i++]->insert(static_cast<UInt64>(client_info.is_secure));
 
     columns[i++]->insert(client_info.os_user);
     columns[i++]->insert(client_info.client_hostname);
@@ -283,11 +290,12 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.client_version_minor);
     columns[i++]->insert(client_info.client_version_patch);
 
-    columns[i++]->insert(UInt64(client_info.http_method));
+    columns[i++]->insert(static_cast<UInt64>(client_info.http_method));
     columns[i++]->insert(client_info.http_user_agent);
     columns[i++]->insert(client_info.http_referer);
     columns[i++]->insert(client_info.forwarded_for);
 
     columns[i++]->insert(client_info.quota_key);
+    columns[i++]->insert(client_info.distributed_depth);
 }
 }

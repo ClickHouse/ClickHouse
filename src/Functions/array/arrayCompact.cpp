@@ -1,10 +1,13 @@
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsNumber.h>
+
 #include <Common/HashTable/HashTable.h>
-#include <Functions/array/FunctionArrayMapped.h>
+
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+
 #include <Functions/FunctionFactory.h>
+#include <Functions/array/FunctionArrayMapped.h>
 
 
 namespace DB
@@ -16,6 +19,9 @@ namespace ErrorCodes
 
 struct ArrayCompactImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

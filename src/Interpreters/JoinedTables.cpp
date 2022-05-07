@@ -183,7 +183,9 @@ std::unique_ptr<InterpreterSelectWithUnionQuery> JoinedTables::makeLeftTableSubq
 {
     if (!isLeftTableSubquery())
         return {};
-    return std::make_unique<InterpreterSelectWithUnionQuery>(left_table_expression, context, select_options);
+
+    /// Only build dry_run interpreter during analysis. We will reconstruct the subquery interpreter during plan building.
+    return std::make_unique<InterpreterSelectWithUnionQuery>(left_table_expression, context, select_options.copy().analyze());
 }
 
 StoragePtr JoinedTables::getLeftTableStorage()

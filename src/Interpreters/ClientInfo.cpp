@@ -19,12 +19,12 @@ namespace ErrorCodes
 }
 
 
-void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision) const
+void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception("Logical error: method ClientInfo::write is called for unsupported server revision", ErrorCodes::LOGICAL_ERROR);
 
-    writeBinary(UInt8(query_kind), out);
+    writeBinary(static_cast<UInt8>(query_kind), out);
     if (empty())
         return;
 
@@ -35,7 +35,7 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
     if (server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
         writeBinary(initial_query_start_time_microseconds, out);
 
-    writeBinary(UInt8(interface), out);
+    writeBinary(static_cast<UInt8>(interface), out);
 
     if (interface == Interface::TCP)
     {
@@ -48,7 +48,7 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
     }
     else if (interface == Interface::HTTP)
     {
-        writeBinary(UInt8(http_method), out);
+        writeBinary(static_cast<UInt8>(http_method), out);
         writeBinary(http_user_agent, out);
 
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO)
@@ -86,7 +86,7 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
         else
         {
             // Don't have OpenTelemetry header.
-            writeBinary(uint8_t(0), out);
+            writeBinary(static_cast<UInt8>(0), out);
         }
     }
 
@@ -99,7 +99,7 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
 }
 
 
-void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
+void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception("Logical error: method ClientInfo::read is called for unsupported client revision", ErrorCodes::LOGICAL_ERROR);
@@ -193,7 +193,10 @@ void ClientInfo::setInitialQuery()
 {
     query_kind = QueryKind::INITIAL_QUERY;
     fillOSUserHostNameAndVersionInfo();
-    client_name = (DBMS_NAME " ") + client_name;
+    if (client_name.empty())
+        client_name = DBMS_NAME;
+    else
+        client_name = (DBMS_NAME " ") + client_name;
 }
 
 

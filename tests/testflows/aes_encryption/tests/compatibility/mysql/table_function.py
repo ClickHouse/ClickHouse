@@ -7,10 +7,10 @@ from testflows.asserts import error
 from aes_encryption.requirements import *
 from aes_encryption.tests.common import mysql_modes, hex
 
+
 @contextmanager
 def table(name, node, mysql_node, secret_type):
-    """Create a table that can be accessed using MySQL table function.
-    """
+    """Create a table that can be accessed using MySQL table function."""
     try:
         with Given("table in MySQL"):
             sql = f"""
@@ -23,22 +23,35 @@ def table(name, node, mysql_node, secret_type):
                 );
                 """
             with When("I drop the table if exists"):
-                mysql_node.command(f"MYSQL_PWD=password mysql -D db -u user -e \"DROP TABLE IF EXISTS {name};\"", exitcode=0)
+                mysql_node.command(
+                    f'MYSQL_PWD=password mysql -D db -u user -e "DROP TABLE IF EXISTS {name};"',
+                    exitcode=0,
+                )
             with And("I create a table"):
-                mysql_node.command(f"MYSQL_PWD=password mysql -D db -u user <<'EOF'{textwrap.dedent(sql)}\nEOF", exitcode=0)
+                mysql_node.command(
+                    f"MYSQL_PWD=password mysql -D db -u user <<'EOF'{textwrap.dedent(sql)}\nEOF",
+                    exitcode=0,
+                )
         yield f"mysql('{mysql_node.name}:3306', 'db', 'user_data', 'user', 'password')"
 
     finally:
         with And("I drop a table in MySQL", flags=TE):
-            mysql_node.command(f"MYSQL_PWD=password mysql -D db -u user -e \"DROP TABLE IF EXISTS {name};\"", exitcode=0)
+            mysql_node.command(
+                f'MYSQL_PWD=password mysql -D db -u user -e "DROP TABLE IF EXISTS {name};"',
+                exitcode=0,
+            )
+
 
 @TestOutline(Scenario)
-@Examples("mysql_datatype", [
-    ("VARBINARY(100)",),
-    #("VARCHAR(100)",),
-    ("BLOB", ),
-    #("TEXT",)
-])
+@Examples(
+    "mysql_datatype",
+    [
+        ("VARBINARY(100)",),
+        # ("VARCHAR(100)",),
+        ("BLOB",),
+        # ("TEXT",)
+    ],
+)
 def decrypt(self, mysql_datatype):
     """Check that when using a table accessed through MySQL table function that
     contains a column encrypted in MySQL stored using specified data type
@@ -52,7 +65,7 @@ def decrypt(self, mysql_datatype):
 
     for func in ["decrypt", "aes_decrypt_mysql"]:
         for mode, key_len, iv_len in mysql_modes:
-            exact_key_size = int(mode.split("-")[1])//8
+            exact_key_size = int(mode.split("-")[1]) // 8
 
             if "ecb" not in mode and not iv_len:
                 continue
@@ -62,8 +75,12 @@ def decrypt(self, mysql_datatype):
                 if key_len != exact_key_size:
                     continue
 
-            with Example(f"""{func} mode={mode.strip("'")} key={key_len} iv={iv_len}"""):
-                with table("user_data", node, mysql_node, mysql_datatype) as table_function:
+            with Example(
+                f"""{func} mode={mode.strip("'")} key={key_len} iv={iv_len}"""
+            ):
+                with table(
+                    "user_data", node, mysql_node, mysql_datatype
+                ) as table_function:
                     example_mode = mode
                     example_key = f"'{key[:key_len]}'"
                     example_iv = None if not iv_len else f"'{iv[:iv_len]}'"
@@ -73,34 +90,51 @@ def decrypt(self, mysql_datatype):
                         SET block_encryption_mode = {example_mode};
                         INSERT INTO user_data VALUES (NULL, '2020-01-01', 'user0', AES_ENCRYPT('secret', {example_key}{(", " + example_iv) if example_iv else ", ''"}));
                         """
-                        mysql_node.command(f"MYSQL_PWD=password mysql -D db -u user <<'EOF'{textwrap.dedent(sql)}\nEOF", exitcode=0)
+                        mysql_node.command(
+                            f"MYSQL_PWD=password mysql -D db -u user <<'EOF'{textwrap.dedent(sql)}\nEOF",
+                            exitcode=0,
+                        )
 
                     with And("I read encrypted data in MySQL to make sure it is valid"):
                         sql = f"""
                         SET block_encryption_mode = {example_mode};
                         SELECT id, date, name, AES_DECRYPT(secret, {example_key}{(", " + example_iv) if example_iv else ", ''"}) AS secret FROM user_data;
                         """
-                        mysql_node.command(f"MYSQL_PWD=password mysql -D db -u user <<'EOF'{textwrap.dedent(sql)}\nEOF", exitcode=0)
+                        mysql_node.command(
+                            f"MYSQL_PWD=password mysql -D db -u user <<'EOF'{textwrap.dedent(sql)}\nEOF",
+                            exitcode=0,
+                        )
 
                     with And("I read raw encrypted data in MySQL"):
-                        mysql_node.command(f"MYSQL_PWD=password mysql -D db -u user -e \"SELECT id, date, name, hex(secret) as secret FROM user_data;\"", exitcode=0)
+                        mysql_node.command(
+                            f'MYSQL_PWD=password mysql -D db -u user -e "SELECT id, date, name, hex(secret) as secret FROM user_data;"',
+                            exitcode=0,
+                        )
 
                     with And("I read raw data using MySQL table function"):
-                        output = node.query(f"SELECT id, date, name, hex(secret) AS secret FROM {table_function}")
+                        output = node.query(
+                            f"SELECT id, date, name, hex(secret) AS secret FROM {table_function}"
+                        )
 
                     with And("I read decrypted data using MySQL table function"):
-                        output = node.query(f"""SELECT hex({func}({example_mode}, secret, {example_key}{(", " + example_iv) if example_iv else ""})) FROM {table_function}""").output.strip()
+                        output = node.query(
+                            f"""SELECT hex({func}({example_mode}, secret, {example_key}{(", " + example_iv) if example_iv else ""})) FROM {table_function}"""
+                        ).output.strip()
 
                     with Then("output should match the original plain text"):
                         assert output == hex("secret"), error()
 
+
 @TestOutline(Scenario)
-@Examples("mysql_datatype", [
-    ("VARBINARY(100)",),
-    #("VARCHAR(100)",),
-    ("BLOB", ),
-    #("TEXT",)
-])
+@Examples(
+    "mysql_datatype",
+    [
+        ("VARBINARY(100)",),
+        # ("VARCHAR(100)",),
+        ("BLOB",),
+        # ("TEXT",)
+    ],
+)
 def encrypt(self, mysql_datatype):
     """Check that when using a table accessed through MySQL table function that
     we can encrypt data during insert using the `aes_encrypt_mysql` function
@@ -113,7 +147,7 @@ def encrypt(self, mysql_datatype):
 
     for func in ["encrypt", "aes_encrypt_mysql"]:
         for mode, key_len, iv_len in mysql_modes:
-            exact_key_size = int(mode.split("-")[1])//8
+            exact_key_size = int(mode.split("-")[1]) // 8
 
             if "ecb" not in mode and not iv_len:
                 continue
@@ -123,15 +157,23 @@ def encrypt(self, mysql_datatype):
                 if key_len != exact_key_size:
                     continue
 
-            with Example(f"""{func} mode={mode.strip("'")} key={key_len} iv={iv_len}"""):
-                with table("user_data", node, mysql_node, mysql_datatype) as table_function:
+            with Example(
+                f"""{func} mode={mode.strip("'")} key={key_len} iv={iv_len}"""
+            ):
+                with table(
+                    "user_data", node, mysql_node, mysql_datatype
+                ) as table_function:
                     example_mode = mode
                     example_key = f"'{key[:key_len]}'"
                     example_iv = None if not iv_len else f"'{iv[:iv_len]}'"
                     example_transform = f"{func}({mode}, secret, {example_key}{(', ' + example_iv) if example_iv else ''})"
 
-                    with When("I insert encrypted data into a table provided by MySQL database engine"):
-                        node.query(textwrap.dedent(f"""
+                    with When(
+                        "I insert encrypted data into a table provided by MySQL database engine"
+                    ):
+                        node.query(
+                            textwrap.dedent(
+                                f"""
                             INSERT INTO TABLE FUNCTION
                                 {table_function}
                             SELECT
@@ -139,21 +181,36 @@ def encrypt(self, mysql_datatype):
                             FROM
                                 input('id Int32, date Date, name String, secret String')
                             FORMAT Values (1, '2020-01-01', 'user0', 'secret')
-                            """))
+                            """
+                            )
+                        )
 
                     with And("I read decrypted data using MySQL database engine"):
-                        output = node.query(f"""SELECT hex(aes_decrypt_mysql({example_mode}, secret, {example_key}{(", " + example_iv) if example_iv else ""})) FROM {table_function}""").output.strip()
+                        output = node.query(
+                            f"""SELECT hex(aes_decrypt_mysql({example_mode}, secret, {example_key}{(", " + example_iv) if example_iv else ""})) FROM {table_function}"""
+                        ).output.strip()
 
-                    with Then("decrypted data from MySQL database engine should should match the original plain text"):
+                    with Then(
+                        "decrypted data from MySQL database engine should should match the original plain text"
+                    ):
                         assert output == hex("secret"), error()
 
-                    with And("I read raw data using MySQL database engine to get expected raw data"):
-                        expected_raw_data = node.query(f"SELECT hex(secret) AS secret FROM {table_function}").output.strip()
+                    with And(
+                        "I read raw data using MySQL database engine to get expected raw data"
+                    ):
+                        expected_raw_data = node.query(
+                            f"SELECT hex(secret) AS secret FROM {table_function}"
+                        ).output.strip()
 
                     with And("I read raw encrypted data in MySQL"):
-                        output = mysql_node.command(f"MYSQL_PWD=password mysql -D db -u user -e \"SELECT hex(secret) as secret FROM user_data;\"", exitcode=0).output.strip()
+                        output = mysql_node.command(
+                            f'MYSQL_PWD=password mysql -D db -u user -e "SELECT hex(secret) as secret FROM user_data;"',
+                            exitcode=0,
+                        ).output.strip()
 
-                    with Then("check that raw encryted data in MySQL matches the expected"):
+                    with Then(
+                        "check that raw encryted data in MySQL matches the expected"
+                    ):
                         assert expected_raw_data in output, error()
 
                     with And("I decrypt data in MySQL to make sure it is valid"):
@@ -161,16 +218,20 @@ def encrypt(self, mysql_datatype):
                         SET block_encryption_mode = {example_mode};
                         SELECT id, date, name, hex(AES_DECRYPT(secret, {example_key}{(", " + example_iv) if example_iv else ", ''"})) AS secret FROM user_data;
                         """
-                        output = mysql_node.command(f"MYSQL_PWD=password mysql -D db -u user <<'EOF'{textwrap.dedent(sql)}\nEOF", exitcode=0).output.strip()
+                        output = mysql_node.command(
+                            f"MYSQL_PWD=password mysql -D db -u user <<'EOF'{textwrap.dedent(sql)}\nEOF",
+                            exitcode=0,
+                        ).output.strip()
 
-                    with Then("decryted data in MySQL should match the original plain text"):
+                    with Then(
+                        "decryted data in MySQL should match the original plain text"
+                    ):
                         assert hex("secret") in output, error()
+
 
 @TestFeature
 @Name("table function")
-@Requirements(
-    RQ_SRS008_AES_Functions_Compatibility_TableFunction_MySQL("1.0")
-)
+@Requirements(RQ_SRS008_AES_Functions_Compatibility_TableFunction_MySQL("1.0"))
 def feature(self, node="clickhouse1", mysql_node="mysql1"):
     """Check usage of encryption functions with [MySQL table function].
 
