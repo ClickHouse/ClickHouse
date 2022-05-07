@@ -1,12 +1,13 @@
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <numeric>
 
 #include <boost/algorithm/string.hpp>
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wframe-larger-than="
 #include <init.h>
@@ -26,7 +27,8 @@ namespace ErrorCodes
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
 {
     if (!creators.emplace(index_type, std::move(creator)).second)
-        throw Exception("MergeTreeIndexFactory: the Index creator name '" + index_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("MergeTreeIndexFactory: the Index creator name '" + index_type + "' is not unique",
+                        ErrorCodes::LOGICAL_ERROR);
 }
 void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Validator validator)
 {
@@ -35,24 +37,22 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
 }
 
 
-MergeTreeIndexPtr MergeTreeIndexFactory::get(const IndexDescription & index) const
+MergeTreeIndexPtr MergeTreeIndexFactory::get(
+    const IndexDescription & index) const
 {
     auto it = creators.find(index.type);
     if (it == creators.end())
         throw Exception(
-            "Unknown Index type '" + index.type + "'. Available index types: "
-                + std::accumulate(
-                    creators.cbegin(),
-                    creators.cend(),
-                    std::string{},
-                    [](auto && left, const auto & right) -> std::string
-                    {
-                        if (left.empty())
-                            return right.first;
-                        else
-                            return left + ", " + right.first;
-                    }),
-            ErrorCodes::INCORRECT_QUERY);
+                "Unknown Index type '" + index.type + "'. Available index types: " +
+                std::accumulate(creators.cbegin(), creators.cend(), std::string{},
+                        [] (auto && left, const auto & right) -> std::string
+                        {
+                            if (left.empty())
+                                return right.first;
+                            else
+                                return left + ", " + right.first;
+                        }),
+                ErrorCodes::INCORRECT_QUERY);
 
     return it->second(index);
 }
@@ -107,7 +107,6 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("hypothesis", hypothesisIndexCreator);
     registerValidator("hypothesis", hypothesisIndexValidator);
-
 
     similarity::initLibrary(0, LIB_LOGSTDERR, nullptr);
 

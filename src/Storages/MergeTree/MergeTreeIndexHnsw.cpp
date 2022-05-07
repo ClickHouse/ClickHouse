@@ -16,7 +16,7 @@
 #include <params.h>
 #include <space.h>
 #include <spacefactory.h>
-#include <Storages/MergeTree/MergeTreeIndexSimpleHnsw.h>
+#include <Storages/MergeTree/MergeTreeIndexHnsw.h>
 #include <space/space_lp.h>
 #include <space/space_scalar.h>
 #include "Storages/MergeTree/KeyCondition.h"
