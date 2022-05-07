@@ -39,7 +39,7 @@ inline size_t getLeadingZeroBitsUnsafe(T x)
     {
         return __builtin_clz(x);
     }
-    else if constexpr (sizeof(T) <= sizeof(unsigned long int))
+    else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
         return __builtin_clzl(x);
     }
@@ -79,7 +79,7 @@ inline size_t getTrailingZeroBitsUnsafe(T x)
     {
         return __builtin_ctz(x);
     }
-    else if constexpr (sizeof(T) <= sizeof(unsigned long int))
+    else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
         return __builtin_ctzl(x);
     }

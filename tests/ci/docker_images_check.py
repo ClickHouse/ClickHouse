@@ -7,11 +7,12 @@ import platform
 import shutil
 import subprocess
 import time
+import sys
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 from github import Github
 
-from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
+from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_RUN_URL
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
@@ -234,10 +235,12 @@ def build_and_push_one_image(
     with open(build_log, "wb") as bl:
         cmd = (
             "docker buildx build --builder default "
+            f"--label build-url={GITHUB_RUN_URL} "
             f"{from_tag_arg}"
-            f"--build-arg BUILDKIT_INLINE_CACHE=1 "
             f"--tag {image.repo}:{version_string} "
             f"--cache-from type=registry,ref={image.repo}:{version_string} "
+            f"--cache-from type=registry,ref={image.repo}:latest "
+            f"--cache-to type=inline,mode=max "
             f"{push_arg}"
             f"--progress plain {image.full_path}"
         )
@@ -349,14 +352,20 @@ def parse_args() -> argparse.Namespace:
         help="list of image paths to build instead of using pr_info + diff URL, "
         "e.g. 'docker/packager/binary'",
     )
+    parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-reports",
-        action="store_true",
+        action="store_false",
+        dest="reports",
+        default=argparse.SUPPRESS,
         help="don't push reports to S3 and github",
     )
+    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-push-images",
-        action="store_true",
+        action="store_false",
+        dest="push",
+        default=argparse.SUPPRESS,
         help="don't push images to docker hub",
     )
 
@@ -375,8 +384,7 @@ def main():
     else:
         changed_json = os.path.join(TEMP_PATH, "changed_images.json")
 
-    push = not args.no_push_images
-    if push:
+    if args.push:
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
             "docker login --username 'robotclickhouse' --password-stdin",
             input=get_parameter_from_ssm("dockerhub_robot_password"),
@@ -390,17 +398,19 @@ def main():
 
     images_dict = get_images_dict(GITHUB_WORKSPACE, "docker/images.json")
 
+    pr_info = PRInfo()
     if args.all:
-        pr_info = PRInfo()
         pr_info.changed_files = set(images_dict.keys())
     elif args.image_path:
-        pr_info = PRInfo()
         pr_info.changed_files = set(i for i in args.image_path)
     else:
-        pr_info = PRInfo(need_changed_files=True)
+        pr_info.fetch_changed_files()
 
     changed_images = get_changed_docker_images(pr_info, images_dict)
-    logging.info("Has changed images %s", ", ".join([im.path for im in changed_images]))
+    if changed_images:
+        logging.info(
+            "Has changed images: %s", ", ".join([im.path for im in changed_images])
+        )
 
     image_versions, result_version = gen_versions(pr_info, args.suffix)
 
@@ -408,7 +418,7 @@ def main():
     images_processing_result = []
     for image in changed_images:
         images_processing_result += process_image_with_parents(
-            image, image_versions, push
+            image, image_versions, args.push
         )
         result_images[image.repo] = result_version
 
@@ -437,7 +447,7 @@ def main():
     print(f"::notice ::Report url: {url}")
     print(f'::set-output name=url_output::"{url}"')
 
-    if args.no_reports:
+    if not args.reports:
         return
 
     gh = Github(get_best_robot_token())
@@ -453,7 +463,10 @@ def main():
         NAME,
     )
     ch_helper = ClickHouseHelper()
-    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+
+    if status == "error":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

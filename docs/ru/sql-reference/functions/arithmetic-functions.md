@@ -1,6 +1,6 @@
 ---
-toc_priority: 34
-toc_title: "Арифметические функции"
+sidebar_position: 34
+sidebar_label: "Арифметические функции"
 ---
 
 # Арифметические функции {#arifmeticheskie-funktsii}

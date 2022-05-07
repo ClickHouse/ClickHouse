@@ -17,7 +17,7 @@ protected:
 
 public:
     using WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor;
-    ~WriteBufferFromFileDescriptorDiscardOnFailure() override {}
+    ~WriteBufferFromFileDescriptorDiscardOnFailure() override = default;
 };
 
 }

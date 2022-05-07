@@ -60,7 +60,7 @@
 
 
 /** This hash function is not the most optimal, but UniquesHashSet states counted with it,
-  * stored in many places on disks (in the Yandex.Metrika), so it continues to be used.
+  * stored in many places on disks (in many companies), so it continues to be used.
   */
 struct UniquesHashSetDefaultHash
 {
@@ -361,9 +361,9 @@ private:
         }
     }
 
-    inline size_t bufSize() const { return 1ULL << size_degree; }
-    inline size_t maxFill() const { return 1ULL << (size_degree - 1); }
-    inline size_t mask() const { return bufSize() - 1; }
+    inline size_t buf_size() const { return 1ULL << size_degree; } /// NOLINT
+    inline size_t max_fill() const { return 1ULL << (size_degree - 1); } /// NOLINT
+    inline size_t mask() const { return buf_size() - 1; }
     inline size_t place(HashValue x) const { return AddrPolicy::place(x, mask()); }
 
     /// The value is divided by 2 ^ skip_degree
@@ -525,8 +525,9 @@ public:
 
     UniquesHashSetBase & operator=(const UniquesHashSetBase & rhs)
     {
-        if (this == &rhs)
+        if (&rhs == this)
             return *this;
+
         if (size_degree != rhs.size_degree)
         {
             free();

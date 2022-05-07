@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: Dates and Times
+sidebar_position: 39
+sidebar_label: Dates and Times
 ---
 
 # Functions for Working with Dates and Times {#functions-for-working-with-dates-and-times}
@@ -266,8 +266,9 @@ Result:
 └────────────────┘
 ```
 
-!!! attention "Attention"
-    The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1925 - 2283) will give an incorrect result.
+:::note    
+The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1925 - 2283) will give an incorrect result.
+:::
 
 ## toStartOfYear {#tostartofyear}
 
@@ -290,8 +291,9 @@ Returns the date.
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
-!!! attention "Attention"
-    The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
+:::note    
+The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
+:::
 
 ## toMonday {#tomonday}
 
@@ -358,13 +360,13 @@ Query with timezone:
 
 ``` sql
 WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
-SELECT toStartOfSecond(dt64, 'Europe/Moscow');
+SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 ```
 
 Result:
 
 ``` text
-┌─toStartOfSecond(dt64, 'Europe/Moscow')─┐
+┌─toStartOfSecond(dt64, 'Asia/Istanbul')─┐
 │                2020-01-01 13:20:30.000 │
 └────────────────────────────────────────┘
 ```
@@ -373,7 +375,7 @@ Result:
 
 -   [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
 
-## toStartOfFiveMinute {#tostartoffiveminute}
+## toStartOfFiveMinutes {#tostartoffiveminutes}
 
 Rounds down a date with time to the start of the five-minute interval.
 
@@ -560,13 +562,13 @@ Result:
 Query with the specified timezone:
 
 ```sql
-SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
+SELECT now(), date_trunc('hour', now(), 'Asia/Istanbul');
 ```
 
 Result:
 
 ```text
-┌───────────────now()─┬─date_trunc('hour', now(), 'Europe/Moscow')─┐
+┌───────────────now()─┬─date_trunc('hour', now(), 'Asia/Istanbul')─┐
 │ 2020-09-28 10:46:26 │                        2020-09-28 13:00:00 │
 └─────────────────────┴────────────────────────────────────────────┘
 ```
@@ -871,13 +873,13 @@ Result:
 Query with the specified timezone:
 
 ``` sql
-SELECT now('Europe/Moscow');
+SELECT now('Asia/Istanbul');
 ```
 
 Result:
 
 ``` text
-┌─now('Europe/Moscow')─┐
+┌─now('Asia/Istanbul')─┐
 │  2020-10-17 10:42:23 │
 └──────────────────────┘
 ```
@@ -895,7 +897,6 @@ The same as ‘today() - 1’.
 ## timeSlot {#timeslot}
 
 Rounds the time to the half hour.
-This function is specific to Yandex.Metrica, since half an hour is the minimum amount of time for breaking a session into two sessions if a tracking tag shows a single user’s consecutive pageviews that differ in time by strictly more than this amount. This means that tuples (the tag ID, user ID, and time slot) can be used to search for pageviews that are included in the corresponding session.
 
 ## toYYYYMM {#toyyyymm}
 

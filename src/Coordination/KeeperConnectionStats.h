@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <base/types.h>
 #include <memory>
 #include <cstdint>
@@ -11,7 +12,10 @@ namespace DB
 class KeeperConnectionStats
 {
 public:
-    KeeperConnectionStats() = default;
+    KeeperConnectionStats()
+    {
+        reset();
+    }
 
     uint64_t getMinLatency() const;
     uint64_t getMaxLatency() const;
@@ -33,20 +37,20 @@ private:
     void resetRequestCounters();
 
     /// all response with watch response included
-    uint64_t packets_sent = 0;
+    std::atomic_uint64_t packets_sent;
     /// All user requests
-    uint64_t packets_received = 0;
+    std::atomic_uint64_t packets_received;
 
     /// For consistent with zookeeper measured by millisecond,
     /// otherwise maybe microsecond is better
-    uint64_t total_latency = 0;
-    uint64_t max_latency = 0;
-    uint64_t min_latency = 0;
+    std::atomic_uint64_t total_latency;
+    std::atomic_uint64_t max_latency;
+    std::atomic_uint64_t min_latency;
 
     /// last operation latency
-    uint64_t last_latency = 0;
+    std::atomic_uint64_t last_latency;
 
-    uint64_t count = 0;
+    std::atomic_uint64_t count;
 };
 
 }
