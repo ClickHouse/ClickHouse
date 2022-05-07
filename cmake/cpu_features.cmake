@@ -29,7 +29,7 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
 elseif (ARCH_AARCH64)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc+simd")
 
 else ()
     set (TEST_FLAG "-mssse3")
@@ -65,7 +65,7 @@ else ()
     endif ()
 
     set (TEST_FLAG "-msse4.2")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+    set (    "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
         #include <nmmintrin.h>
         int main() {
