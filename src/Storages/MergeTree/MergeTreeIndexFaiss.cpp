@@ -21,6 +21,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS; 
+}
+
 namespace {
     // Wrapper class for the connection between faiss::IOWriter interface and internal WriteBuffer class
     class WriteBufferFaissWrapper : public faiss::IOWriter {
@@ -109,7 +116,7 @@ namespace {
         if (str == "L2Distance") 
             return faiss::METRIC_L2;
         else 
-            throw Exception("Unsupported metric type. Faiss indexes right now support only L2 metric.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unsupported metric type. Faiss indexes right now support only L2 metric.", ErrorCodes::INCORRECT_QUERY);
     }
 }
 
@@ -195,7 +202,7 @@ void MergeTreeIndexAggregatorFaiss::update(const Block & block, size_t * pos, si
                 + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
     if (index_sample_block.columns() != 1) 
-        throw Exception("Faiss indexes support construction only on the one column.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Faiss indexes support construction only on the one column.", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -319,7 +326,7 @@ MergeTreeIndexFaiss::MergeTreeIndexFaiss(const IndexDescription & index_)
     : IMergeTreeIndex(index_)
 {
     if (index.arguments.empty()) 
-        throw Exception("Faiss indexes require at least one argument: key string for the index factory.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Faiss indexes require at least one argument: key string for the index factory.", ErrorCodes::INCORRECT_QUERY);
 
     ArgumentParser parser(index.arguments);
     index_key = parser.getArgumentByName("index_key").safeGet<String>();
