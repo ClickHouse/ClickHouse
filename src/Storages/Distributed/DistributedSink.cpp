@@ -30,7 +30,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 #include <base/scope_guard.h>
 

@@ -38,13 +38,10 @@ StorageMongoDB::StorageMongoDB(
     const ConstraintsDescription & constraints_,
     const String & comment)
     : IStorage(table_id_)
-    , host(host_)
-    , port(port_)
     , database_name(database_name_)
     , collection_name(collection_name_)
     , username(username_)
     , password(password_)
-    , options(options_)
     , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -108,7 +105,7 @@ Pipe StorageMongoDB::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size, true));
+    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size));
 }
 
 
@@ -168,7 +165,7 @@ void registerStorageMongoDB(StorageFactory & factory)
     {
         auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
 
-        return StorageMongoDB::create(
+        return std::make_shared<StorageMongoDB>(
             args.table_id,
             configuration.host,
             configuration.port,
