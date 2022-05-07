@@ -167,28 +167,7 @@ public:
                 std::unique_ptr<ReadBuffer> raw_read_buf;
                 try
                 {
-                    // raw_read_buf = createHDFSReadBuffer(current_path, current_file->getSize());
-
-                    auto file_path = current_path;
-                    auto file_size = current_file->getSize();
-                    auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
-                    auto factory = std::make_unique<ReadBufferHDFSFactory>(
-                        hdfs_namenode_url,
-                        file_path,
-                        getContext()->getGlobalContext()->getConfigRef(),
-                        read_settings,
-                        download_buffer_size,
-                        file_size);
-                    LOG_TRACE(
-                        log,
-                        "Downloading from HDFS in {} threads. File size: {}, Range size: {}.",
-                        download_thread_num,
-                        file_size,
-                        download_buffer_size);
-
-                    std::cout << "path:" << file_path << ",before res:" << std::endl;
-                    raw_read_buf = std::make_unique<ParallelReadBuffer>(
-                        std::move(factory), threadPoolCallbackRunner(IOThreadPool::get()), download_thread_num);
+                    raw_read_buf = createHDFSReadBuffer(current_path, current_file->getSize());
                 }
                 catch (Exception & e)
                 {
@@ -196,10 +175,8 @@ public:
                     {
                         source_info->hive_metastore_client->clearTableMetadata(source_info->database_name, source_info->table_name);
                     }
-                    std::cout << "have exception:" << e.what() << std::endl;
                     throw;
                 }
-                std::cout << "path:" << current_path << ",raw_read_buf:" << raw_read_buf.get() << std::endl;
 
                 /// Use local cache for remote storage if enabled.
                 std::unique_ptr<ReadBuffer> remote_read_buf;
@@ -219,13 +196,11 @@ public:
                 }
                 else
                     remote_read_buf = std::move(raw_read_buf);
-                std::cout << "path:" << current_path << ",remote_read_buf:" << remote_read_buf.get() << std::endl;
 
                 if (current_file->getFormat() == FileFormat::TEXT)
                     read_buf = wrapReadBufferWithCompressionMethod(std::move(remote_read_buf), compression);
                 else
                     read_buf = std::move(remote_read_buf);
-                std::cout << "path:" << current_path << ",read_buf:" << read_buf.get() << std::endl;
 
                 auto input_format = FormatFactory::instance().getInputFormat(
                     format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file));
@@ -318,9 +293,7 @@ private:
             file_size,
             download_buffer_size);
 
-        auto res = std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner(IOThreadPool::get()), download_thread_num);
-        std::cout << "path:" << file_path << ",res:" << res.get() << std::endl;
-        return std::move(res);
+        return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner(IOThreadPool::get()), download_thread_num);
     }
 
     const SourcesInfoPtr source_info;
