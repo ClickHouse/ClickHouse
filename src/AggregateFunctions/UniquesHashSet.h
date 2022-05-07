@@ -356,7 +356,7 @@ private:
     {
         if (buf)
         {
-            Allocator::free(buf, bufSize() * sizeof(buf[0]));
+            Allocator::free(buf, buf_size() * sizeof(buf[0]));
             buf = nullptr;
         }
     }
@@ -374,7 +374,7 @@ private:
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
     {
-        for (size_t i = 0; i < bufSize(); ++i)
+        for (size_t i = 0; i < buf_size(); ++i)
         {
             if (buf[i])
             {
@@ -399,7 +399,7 @@ private:
         /** We must process first collision resolution chain once again.
           * Look at the comment in "resize" function.
           */
-        for (size_t i = 0; i < bufSize() && buf[i]; ++i)
+        for (size_t i = 0; i < buf_size() && buf[i]; ++i)
         {
             if (i != place(buf[i]))
             {
@@ -413,7 +413,7 @@ private:
     /// Increase the size of the buffer 2 times or up to new_size_degree, if it is non-zero.
     void resize(size_t new_size_degree = 0)
     {
-        size_t old_size = bufSize();
+        size_t old_size = buf_size();
 
         if (!new_size_degree)
             new_size_degree = size_degree + 1;
@@ -520,7 +520,7 @@ public:
     UniquesHashSetBase(const UniquesHashSetBase & rhs) : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
     {
         alloc(rhs.size_degree);
-        memcpy(buf, rhs.buf, bufSize() * sizeof(buf[0]));
+        memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
     }
 
     UniquesHashSetBase & operator=(const UniquesHashSetBase & rhs)
@@ -538,7 +538,7 @@ public:
         skip_degree = rhs.skip_degree;
         has_zero = rhs.has_zero;
 
-        memcpy(buf, rhs.buf, bufSize() * sizeof(buf[0]));
+        memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
 
         return *this;
     }
@@ -593,7 +593,7 @@ public:
             shrinkIfNeed();
         }
 
-        for (size_t i = 0; i < rhs.bufSize(); ++i)
+        for (size_t i = 0; i < rhs.buf_size(); ++i)
         {
             if (rhs.buf[i] && good(rhs.buf[i]))
             {
@@ -617,7 +617,7 @@ public:
             DB::writeIntBinary(x, wb);
         }
 
-        for (size_t i = 0; i < bufSize(); ++i)
+        for (size_t i = 0; i < buf_size(); ++i)
             if (buf[i])
                 DB::writeIntBinary(buf[i], wb);
     }
@@ -706,7 +706,7 @@ public:
         if (has_zero)
             wb.write(",0", 2);
 
-        for (size_t i = 0; i < bufSize(); ++i)
+        for (size_t i = 0; i < buf_size(); ++i)
         {
             if (buf[i])
             {
