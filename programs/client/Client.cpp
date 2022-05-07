@@ -4,12 +4,8 @@
 #include <iostream>
 #include <iomanip>
 #include <optional>
-<<<<<<< HEAD
-#include <Common/scope_guard_safe.h>
-=======
 #include <string_view>
-#include <base/scope_guard_safe.h>
->>>>>>> b84904b8a6930c392fae6b1525a030ef42e8e418
+#include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
