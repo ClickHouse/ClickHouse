@@ -7,6 +7,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 template <typename VertexType>
 class GraphMaxFlow final : public GraphOperation<DirectionalGraphData<VertexType>, GraphMaxFlow<VertexType>, 2>
 {
