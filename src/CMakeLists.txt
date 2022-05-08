@@ -553,6 +553,12 @@ if (TARGET ch_contrib::rapidjson)
     dbms_target_link_libraries(PRIVATE ch_contrib::rapidjson)
 endif()
 
+# if (TARGET mlpack)
+#     dbms_target_link_libraries(PUBLIC mlpack)
+# endif()
+dbms_target_link_libraries(PRIVATE mlpack)
+target_link_libraries (clickhouse_common_io PRIVATE mlpack)
+
 dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")

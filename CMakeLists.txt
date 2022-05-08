@@ -567,3 +567,5 @@ add_subdirectory (tests)
 add_subdirectory (utils)
 
 include (cmake/sanitize_target_link_libraries.cmake)
+
+link_libraries(mlpack)
