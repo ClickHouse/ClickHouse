@@ -2,6 +2,8 @@
 
 #include <Common/config.h>
 
+#if USE_HASHIDSXX
+
 #include <hashids.h>
 
 #include <DataTypes/DataTypeString.h>
@@ -151,3 +153,5 @@ public:
 };
 
 }
+
+#endif

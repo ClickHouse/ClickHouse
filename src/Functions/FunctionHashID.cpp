@@ -1,5 +1,7 @@
 #include "FunctionHashID.h"
 
+#if USE_HASHIDSXX
+
 #include <Functions/FunctionFactory.h>
 
 
@@ -11,3 +13,5 @@ void registerFunctionHashID(FunctionFactory & factory)
     factory.registerFunction<FunctionHashID>();
 }
 }
+
+#endif
