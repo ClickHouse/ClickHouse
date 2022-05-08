@@ -71,7 +71,6 @@ Checks: '*,
 
     -openmp-*,
 
-    -misc-new-delete-overloads,
     -misc-no-recursion,
     -misc-non-copyable-objects,
     -misc-non-private-member-variables-in-classes,
