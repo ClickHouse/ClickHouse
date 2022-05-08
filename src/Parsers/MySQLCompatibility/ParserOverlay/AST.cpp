@@ -11,6 +11,7 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
 {
     switch (antlr_token_type)
     {
+		// TYPES
         case MySQLLexer::INT_NUMBER:
             return AST::TOKEN_TYPE::INT_NUMBER;
         case MySQLLexer::FLOAT_NUMBER:
@@ -21,7 +22,8 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
             return AST::TOKEN_TYPE::FALSE_SYMBOL;
         case MySQLLexer::TRUE_SYMBOL:
             return AST::TOKEN_TYPE::TRUE_SYMBOL;
-
+		
+		// OPERATORS
         case MySQLLexer::PLUS_OPERATOR:
             return AST::TOKEN_TYPE::PLUS_OPERATOR;
         case MySQLLexer::MINUS_OPERATOR:
@@ -36,7 +38,8 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
             return AST::TOKEN_TYPE::MOD_OPERATOR;
         case MySQLLexer::MOD_SYMBOL:
             return AST::TOKEN_TYPE::MOD_SYMBOL;
-
+		
+		// COMPARE
         case MySQLLexer::GREATER_THAN_OPERATOR:
             return AST::TOKEN_TYPE::GREATER_THAN_OPERATOR;
         case MySQLLexer::GREATER_OR_EQUAL_OPERATOR:
@@ -45,7 +48,6 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
             return AST::TOKEN_TYPE::LESS_THAN_OPERATOR;
         case MySQLLexer::LESS_OR_EQUAL_OPERATOR:
             return AST::TOKEN_TYPE::LESS_OR_EQUAL_OPERATOR;
-
         case MySQLLexer::EQUAL_OPERATOR:
             return AST::TOKEN_TYPE::EQUAL_OPERATOR;
         case MySQLLexer::NOT_EQUAL_OPERATOR:
@@ -53,6 +55,7 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
         case MySQLLexer::NULL_SAFE_EQUAL_OPERATOR:
             return AST::TOKEN_TYPE::NULL_SAFE_EQUAL_OPERATOR;
 
+		// LOGIC
         case MySQLLexer::NOT_SYMBOL:
             return AST::TOKEN_TYPE::NOT_SYMBOL;
         case MySQLLexer::NOT2_SYMBOL:
@@ -70,13 +73,17 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
         case MySQLLexer::XOR_SYMBOL:
             return AST::TOKEN_TYPE::XOR_SYMBOL;
 
+		// DIRECTION
         case MySQLLexer::ASC_SYMBOL:
             return AST::TOKEN_TYPE::ASC_SYMBOL;
         case MySQLLexer::DESC_SYMBOL:
             return AST::TOKEN_TYPE::DESC_SYMBOL;
 		
+		// SHOW
 		case MySQLLexer::TABLES_SYMBOL:
 			return AST::TOKEN_TYPE::TABLES_SYMBOL;
+		case MySQLLexer::COLUMNS_SYMBOL:
+			return AST::TOKEN_TYPE::COLUMNS_SYMBOL;
 
         default:
             return AST::TOKEN_TYPE::UNKNOWN;

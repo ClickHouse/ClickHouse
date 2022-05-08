@@ -47,8 +47,6 @@ bool SelectItemsListCT::setup(String & error)
             String alias = "";
             if (alias_node != nullptr)
             {
-                LOG_DEBUG(getLogger(), "got an alias!");
-                LOG_DEBUG(getLogger(), "alias AST {}", alias_node->PrintTree());
                 MySQLPtr ident_alias = TreePath({"identifier"}).descend(alias_node);
                 MySQLPtr text_alias = TreePath({"textStringLiteral"}).descend(alias_node);
 
@@ -63,8 +61,6 @@ bool SelectItemsListCT::setup(String & error)
                 else if (text_alias != nullptr)
                     alias = text_alias->terminals[0];
             }
-
-            LOG_DEBUG(getLogger(), "alias is {}", alias);
 
             exprs.push_back({std::move(expr), alias});
         }
@@ -213,7 +209,7 @@ void SelectLimitOffsetCT::convert(CHPtr & ch_tree) const
     ch_tree = limit_offset;
 }
 
-bool SelectTablesCT::setup(String &)
+bool SelectTablesCT::setup(String & error)
 {
     auto table_list = getSourceNode();
     if (table_list == nullptr)
@@ -227,21 +223,13 @@ bool SelectTablesCT::setup(String &)
         MySQLPtr table_and_db_node;
         if ((table_and_db_node = table_path.find(child)) != nullptr)
         {
-            // FIXME: use tryExtractIdentifier?
-            auto identifier_path = TreePath({"pureIdentifier"});
-            if (table_and_db_node->children.size() == 1)
+            tables.push_back({"", ""});
+            if (!tryExtractTableName(table_and_db_node, tables.back().table, tables.back().database))
             {
-                const String & table_name = identifier_path.find(table_and_db_node->children[0])->terminals[0];
-                tables.push_back({table_name, ""});
+                error = "invalid table name";
+                return false;
             }
-            else
-            {
-                assert(table_and_db_node->children.size() == 2);
-                const String & table_name = identifier_path.find(table_and_db_node->children[1])->terminals[0];
-                const String & db_name = identifier_path.find(table_and_db_node->children[0])->terminals[0];
-
-                tables.push_back({table_name, db_name});
-            }
+            LOG_DEBUG(getLogger(), "got tables {} {}", tables.back().table, tables.back().database);
         }
     }
 

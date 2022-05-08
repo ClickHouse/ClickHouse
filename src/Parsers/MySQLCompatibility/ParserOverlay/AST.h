@@ -53,6 +53,7 @@ public:
 		
 		// SHOW
 		TABLES_SYMBOL,
+		COLUMNS_SYMBOL,
 
         UNKNOWN
     };
