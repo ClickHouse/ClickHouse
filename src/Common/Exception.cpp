@@ -59,12 +59,6 @@ Exception::Exception(const std::string & msg, int code, bool remote_)
     handle_error_code(msg, code, remote, getStackFramePointers());
 }
 
-Exception::Exception(const std::string & msg, const Exception & nested, int code)
-    : Poco::Exception(msg, nested, code)
-{
-    handle_error_code(msg, code, remote, getStackFramePointers());
-}
-
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
     : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
 {
