@@ -89,7 +89,6 @@ Checks: '*,
     -misc-no-recursion,
     -misc-non-copyable-objects,
     -misc-non-private-member-variables-in-classes,
-    -misc-static-assert,
 
     -modernize-avoid-c-arrays,
     -modernize-concat-nested-namespaces,
