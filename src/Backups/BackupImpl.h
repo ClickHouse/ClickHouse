@@ -49,7 +49,7 @@ public:
         const ContextPtr & context_,
         const std::optional<UUID> & backup_uuid_ = {},
         bool is_internal_backup_ = false,
-        const String & coordination_zk_path_ = {});
+        const std::shared_ptr<IBackupCoordination> & coordination_ = {});
 
     ~BackupImpl() override;
 
@@ -103,6 +103,7 @@ private:
     std::pair<String, std::shared_ptr<IArchiveWriter>> archive_writers[2];
     String current_archive_suffix;
     bool writing_finalized = false;
+    const Poco::Logger * log;
 };
 
 }
