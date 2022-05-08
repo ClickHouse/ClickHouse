@@ -20,7 +20,6 @@ Checks: '*,
     -cert-msc51-cpp,
     -cert-oop54-cpp,
     -cert-oop57-cpp,
-    -cert-oop58-cpp,
 
     -clang-analyzer-optin.performance.Padding,
     -clang-analyzer-optin.portability.UnixAPI,
