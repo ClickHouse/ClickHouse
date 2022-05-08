@@ -265,3 +265,6 @@
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash.git
+[submodule "contrib/nats-io"]
+	path = contrib/nats-io
+	url = https://github.com/nats-io/nats.c.git

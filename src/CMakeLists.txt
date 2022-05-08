@@ -107,6 +107,8 @@ if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+add_headers_and_sources(dbms Storages/NATS)
+
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
@@ -379,6 +381,8 @@ dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
 if (TARGET ch_contrib::rdkafka)
     dbms_target_link_libraries(PRIVATE ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
+
+dbms_target_link_libraries(PRIVATE ch_contrib::nats-io)
 
 if (TARGET ch_contrib::sasl2)
     dbms_target_link_libraries(PRIVATE ch_contrib::sasl2)
