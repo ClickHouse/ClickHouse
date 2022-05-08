@@ -89,7 +89,6 @@ Checks: '*,
     -performance-inefficient-string-concatenation,
     -performance-no-int-to-ptr,
     -performance-type-promotion-in-math-fn,
-    -performance-trivially-destructible,
     -performance-unnecessary-value-param,
 
     -portability-simd-intrinsics,
