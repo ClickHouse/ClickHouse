@@ -1085,8 +1085,7 @@ StorageWindowView::StorageWindowView(
         InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
-        inner_table = DatabaseCatalog::instance().getTable(StorageID(inner_create_query->getDatabase(), inner_create_query->getTable()), getContext());
-        inner_table_id = inner_table->getStorageID();
+        inner_table_id = StorageID(inner_create_query->getDatabase(), inner_create_query->getTable());
     }
 
     clean_interval_ms = getContext()->getSettingsRef().window_view_clean_interval.totalMilliseconds();
@@ -1456,7 +1455,6 @@ void StorageWindowView::shutdown()
 
     auto table_id = getStorageID();
     DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
-    inner_table.reset();
 }
 
 void StorageWindowView::checkTableCanBeDropped() const
@@ -1514,16 +1512,12 @@ Block & StorageWindowView::getHeader() const
 
 StoragePtr StorageWindowView::getParentTable() const
 {
-    if (!parent_table)
-        parent_table = DatabaseCatalog::instance().getTable(select_table_id, getContext());
-    return parent_table;
+    return DatabaseCatalog::instance().getTable(select_table_id, getContext());
 }
 
 StoragePtr StorageWindowView::getInnerTable() const
 {
-    if (!inner_table)
-        inner_table = DatabaseCatalog::instance().getTable(inner_table_id, getContext());
-    return inner_table;
+    return DatabaseCatalog::instance().getTable(inner_table_id, getContext());
 }
 
 ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const
@@ -1573,9 +1567,7 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
 
 StoragePtr StorageWindowView::getTargetTable() const
 {
-    if (!target_table&& !target_table_id.empty())
-        target_table = DatabaseCatalog::instance().getTable(target_table_id, getContext());
-    return target_table;
+    return DatabaseCatalog::instance().getTable(target_table_id, getContext());
 }
 
 void registerStorageWindowView(StorageFactory & factory)

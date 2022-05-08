@@ -37,7 +37,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         };
     }
 
-    if (entry.merge_type == MergeType::TTL_RECOMPRESS &&
+    if (entry.merge_type == MergeType::TTLRecompress &&
         (time(nullptr) - entry.create_time) <= storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds() &&
         entry.source_replica != storage.replica_name)
     {

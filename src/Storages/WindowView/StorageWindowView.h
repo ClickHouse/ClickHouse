@@ -208,9 +208,6 @@ private:
     StorageID select_table_id = StorageID::createEmpty();
     StorageID target_table_id = StorageID::createEmpty();
     StorageID inner_table_id = StorageID::createEmpty();
-    mutable StoragePtr parent_table;
-    mutable StoragePtr inner_table;
-    mutable StoragePtr target_table;
 
     BackgroundSchedulePool::TaskHolder clean_cache_task;
     BackgroundSchedulePool::TaskHolder fire_task;
