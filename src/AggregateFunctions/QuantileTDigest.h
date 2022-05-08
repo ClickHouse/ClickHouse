@@ -263,7 +263,7 @@ public:
     void add(T x, UInt64 cnt = 1)
     {
         auto vx = static_cast<Value>(x);
-        if (cnt == 0 || std::isnan(vx))
+        if (cnt == 0 || std::isnan(vx) || std::isinf(vx))
             return; // Count 0 breaks compress() assumptions, Nan breaks sort(). We treat them as no sample.
         addCentroid(Centroid{vx, static_cast<Count>(cnt)});
     }
@@ -271,7 +271,8 @@ public:
     void merge(const QuantileTDigest & other)
     {
         for (const auto & c : other.centroids)
-            addCentroid(c);
+            if (!std::isnan(c.mean) && !std::isinf(c.mean))
+                addCentroid(c);
     }
 
     void serialize(WriteBuffer & buf)
@@ -298,7 +299,7 @@ public:
 
         for (const auto & c : centroids)
         {
-            if (c.count <= 0 || std::isnan(c.count) || std::isnan(c.mean)) // invalid count breaks compress(), invalid mean breaks sort()
+            if (c.count <= 0 || std::isnan(c.count) || std::isnan(c.mean) || std::isinf(c.mean)) // invalid count breaks compress(), invalid mean breaks sort()
                 throw Exception("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
             count += c.count;
         }
