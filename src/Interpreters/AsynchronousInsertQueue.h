@@ -141,7 +141,7 @@ public:
     auto getQueueLocked() const
     {
         std::shared_lock lock(rwlock);
-        return std::make_pair(std::ref(queue), std::move(lock)); // NOLINT(style-check-make-pair-tuple)
+        return std::make_pair(std::ref(queue), std::move(lock));
     }
 };
 
