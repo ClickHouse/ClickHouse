@@ -36,12 +36,7 @@ public:
         const auto & index = parts[part_idx].data_part->index;
         Value value(index.size());
         for (size_t i = 0; i < value.size(); ++i)
-        {
             index[i]->get(mark, value[i]);
-            // NULL_LAST
-            if (value[i].isNull())
-                value[i] = POSITIVE_INFINITY;
-        }
         return value;
     }
 
