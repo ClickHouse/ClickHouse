@@ -26,9 +26,10 @@ int MySQLBaseLexer::checkCharset(const std::string & text)
 
 int MySQLBaseLexer::determineFunction(int proposed)
 {
+	decltype(this->_input->LA(1)) input;
 	if (isSqlModeActive(SqlMode::IgnoreSpace))
 	{
-		auto input = this->_input->LA(1);
+		input = this->_input->LA(1);
 		auto character = static_cast<char>(input); // MOO
 		while (character == ' ' || character == '\t' || character == '\r' || character == '\n')
 		{
@@ -40,8 +41,8 @@ int MySQLBaseLexer::determineFunction(int proposed)
 			input = this->_input->LA(1);
 			character = static_cast<char>(input); // MOO
 		}
-		input = this->_input->LA(1);
-
-		return static_cast<char>(input) == '(' ? proposed : MySQLLexer::IDENTIFIER;
 	}
+	input = this->_input->LA(1);
+
+	return static_cast<char>(input) == '(' ? proposed : MySQLLexer::IDENTIFIER;
 }
