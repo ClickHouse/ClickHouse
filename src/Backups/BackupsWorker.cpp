@@ -172,9 +172,10 @@ namespace
 }
 
 BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threads)
-    : backups_thread_pool(num_backup_threads)
-    , restores_thread_pool(num_restore_threads)
+    : backups_thread_pool(num_backup_threads, /* max_free_threads = */ 0, num_backup_threads)
+    , restores_thread_pool(num_restore_threads, /* max_free_threads = */ 0, num_restore_threads)
 {
+    /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
 }
 
 UUID BackupsWorker::start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context)
