@@ -101,6 +101,18 @@ private:
     String varname;
 };
 
+class ExprSumCT : public IConversionTree
+{
+public:
+    ExprSumCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup(String & error) override;
+    virtual void convert(CHPtr & ch_tree) const override;
+
+private:
+    MySQLTree::TOKEN_TYPE function_type;
+    ConvPtr expr_ct = nullptr;
+};
+
 class ExprSimpleCT : public IConversionTree
 {
 public:

@@ -362,6 +362,7 @@ bool SelectQueryCT::setup(String & error)
 
         if (limit_options != nullptr)
         {
+            assert(limit_options->children.size() > 0 && limit_options->children.size() <= 2);
             limit_length_ct = std::make_shared<SelectLimitLengthCT>(limit_options);
             if (!limit_length_ct->setup(error))
             {
@@ -369,11 +370,14 @@ bool SelectQueryCT::setup(String & error)
                 return false;
             }
 
-            limit_offset_ct = std::make_shared<SelectLimitOffsetCT>(limit_options);
-            if (!limit_offset_ct->setup(error))
+            if (limit_options->children.size() == 2)
             {
-                limit_offset_ct = nullptr;
-                return false;
+                limit_offset_ct = std::make_shared<SelectLimitOffsetCT>(limit_options);
+                if (!limit_offset_ct->setup(error))
+                {
+                    limit_offset_ct = nullptr;
+                    return false;
+                }
             }
         }
     }

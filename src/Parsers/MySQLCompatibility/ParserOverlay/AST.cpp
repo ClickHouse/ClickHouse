@@ -11,7 +11,7 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
 {
     switch (antlr_token_type)
     {
-		// TYPES
+        // TYPES
         case MySQLLexer::INT_NUMBER:
             return AST::TOKEN_TYPE::INT_NUMBER;
         case MySQLLexer::FLOAT_NUMBER:
@@ -22,8 +22,8 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
             return AST::TOKEN_TYPE::FALSE_SYMBOL;
         case MySQLLexer::TRUE_SYMBOL:
             return AST::TOKEN_TYPE::TRUE_SYMBOL;
-		
-		// OPERATORS
+
+        // OPERATORS
         case MySQLLexer::PLUS_OPERATOR:
             return AST::TOKEN_TYPE::PLUS_OPERATOR;
         case MySQLLexer::MINUS_OPERATOR:
@@ -38,8 +38,8 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
             return AST::TOKEN_TYPE::MOD_OPERATOR;
         case MySQLLexer::MOD_SYMBOL:
             return AST::TOKEN_TYPE::MOD_SYMBOL;
-		
-		// COMPARE
+
+        // COMPARE
         case MySQLLexer::GREATER_THAN_OPERATOR:
             return AST::TOKEN_TYPE::GREATER_THAN_OPERATOR;
         case MySQLLexer::GREATER_OR_EQUAL_OPERATOR:
@@ -55,7 +55,7 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
         case MySQLLexer::NULL_SAFE_EQUAL_OPERATOR:
             return AST::TOKEN_TYPE::NULL_SAFE_EQUAL_OPERATOR;
 
-		// LOGIC
+        // LOGIC
         case MySQLLexer::NOT_SYMBOL:
             return AST::TOKEN_TYPE::NOT_SYMBOL;
         case MySQLLexer::NOT2_SYMBOL:
@@ -73,17 +73,40 @@ static AST::TOKEN_TYPE castTokenTypeFromANTLR(size_t antlr_token_type)
         case MySQLLexer::XOR_SYMBOL:
             return AST::TOKEN_TYPE::XOR_SYMBOL;
 
-		// DIRECTION
+        // DIRECTION
         case MySQLLexer::ASC_SYMBOL:
             return AST::TOKEN_TYPE::ASC_SYMBOL;
         case MySQLLexer::DESC_SYMBOL:
             return AST::TOKEN_TYPE::DESC_SYMBOL;
-		
-		// SHOW
-		case MySQLLexer::TABLES_SYMBOL:
-			return AST::TOKEN_TYPE::TABLES_SYMBOL;
-		case MySQLLexer::COLUMNS_SYMBOL:
-			return AST::TOKEN_TYPE::COLUMNS_SYMBOL;
+
+        // SHOW
+        case MySQLLexer::TABLES_SYMBOL:
+            return AST::TOKEN_TYPE::TABLES_SYMBOL;
+        case MySQLLexer::COLUMNS_SYMBOL:
+            return AST::TOKEN_TYPE::COLUMNS_SYMBOL;
+
+        // AGGREGATE
+        case MySQLLexer::COUNT_SYMBOL:
+            return AST::TOKEN_TYPE::COUNT_SYMBOL;
+        case MySQLLexer::AVG_SYMBOL:
+            return AST::TOKEN_TYPE::AVG_SYMBOL;
+        case MySQLLexer::MIN_SYMBOL:
+            return AST::TOKEN_TYPE::MIN_SYMBOL;
+        case MySQLLexer::MAX_SYMBOL:
+            return AST::TOKEN_TYPE::MAX_SYMBOL;
+        case MySQLLexer::STD_SYMBOL:
+            return AST::TOKEN_TYPE::STD_SYMBOL;
+        case MySQLLexer::VARIANCE_SYMBOL:
+            return AST::TOKEN_TYPE::VARIANCE_SYMBOL;
+        case MySQLLexer::STDDEV_SAMP_SYMBOL:
+            return AST::TOKEN_TYPE::STDDEV_SAMP_SYMBOL;
+        case MySQLLexer::VAR_SAMP_SYMBOL:
+            return AST::TOKEN_TYPE::VAR_SAMP_SYMBOL;
+        case MySQLLexer::SUM_SYMBOL:
+            return AST::TOKEN_TYPE::SUM_SYMBOL;
+        case MySQLLexer::GROUP_CONCAT_SYMBOL:
+            return AST::TOKEN_TYPE::GROUP_CONCAT_SYMBOL;
+
 
         default:
             return AST::TOKEN_TYPE::UNKNOWN;
@@ -134,24 +157,24 @@ bool AST::FromQuery(const std::string & query, ASTPtr & result, std::string & er
     // settings |= AnsiQuotes;
 
     auto analyzer = MySQLAnalyzer(query, settings);
-	auto tree = analyzer.parse();
-	
-	result = std::make_shared<AST>();
-	if (!analyzer.getParseError().empty())
-	{
-		error = analyzer.getParseError();
-		result = nullptr;
-		return;
-	}
-    
-	if (!buildFromANTLR(analyzer.getParser(), tree, result))
-	{
-		error = "unkown internal error, syntax tree is invalid";
-        result = nullptr;
-		return false;
-	}
+    auto tree = analyzer.parse();
 
-	return true;
+    result = std::make_shared<AST>();
+    if (!analyzer.getParseError().empty())
+    {
+        error = analyzer.getParseError();
+        result = nullptr;
+        return;
+    }
+
+    if (!buildFromANTLR(analyzer.getParser(), tree, result))
+    {
+        error = "unkown internal error, syntax tree is invalid";
+        result = nullptr;
+        return false;
+    }
+
+    return true;
 }
 
 std::string AST::PrintTree() const
@@ -169,12 +192,12 @@ void AST::PrintTreeImpl(std::stringstream & ss) const
     {
         ss << "terminals = [";
         for (int i = 0; i < terminals.size(); ++i)
-		{
-			ss << "(";
-			ss << "'" << terminals[i] << "'";
-			ss << ")";
-		}
-		ss << "]; ";
+        {
+            ss << "(";
+            ss << "'" << terminals[i] << "'";
+            ss << ")";
+        }
+        ss << "]; ";
     }
     if (!children.empty())
     {

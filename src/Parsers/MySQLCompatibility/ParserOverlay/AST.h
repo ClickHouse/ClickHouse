@@ -50,10 +50,23 @@ public:
         // DIRECTION
         ASC_SYMBOL,
         DESC_SYMBOL,
-		
-		// SHOW
-		TABLES_SYMBOL,
-		COLUMNS_SYMBOL,
+
+        // SHOW
+        TABLES_SYMBOL,
+        COLUMNS_SYMBOL,
+
+        // AGGREGATE
+        AVG_SYMBOL,
+        COUNT_SYMBOL,
+        MIN_SYMBOL,
+        MAX_SYMBOL,
+        STD_SYMBOL,
+        VARIANCE_SYMBOL,
+        STDDEV_SAMP_SYMBOL,
+        VAR_SAMP_SYMBOL,
+        SUM_SYMBOL,
+        GROUP_CONCAT_SYMBOL,
+        // TODO: add all (BIT_XXX)
 
         UNKNOWN
     };

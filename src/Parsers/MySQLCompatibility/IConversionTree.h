@@ -8,7 +8,7 @@ namespace MySQLCompatibility
 class IConversionTree
 {
 public:
-    IConversionTree(MySQLPtr source, const String & rule_name = "") : _source(source)
+    IConversionTree(MySQLPtr source, __attribute__((unused)) const String & rule_name = "") : _source(source)
     {
         // extra check, that conversion node is built from correct source node
         // TODO: maybe exception?

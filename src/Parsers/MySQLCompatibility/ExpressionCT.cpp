@@ -54,6 +54,25 @@ static String getCHFunctionName(MySQLTree::TOKEN_TYPE operation)
         case MySQLTree::TOKEN_TYPE::XOR_SYMBOL:
             return "xor";
 
+        case MySQLTree::TOKEN_TYPE::COUNT_SYMBOL:
+            return "count";
+
+        case MySQLTree::TOKEN_TYPE::AVG_SYMBOL:
+            return "avg";
+        case MySQLTree::TOKEN_TYPE::MIN_SYMBOL:
+            return "min";
+        case MySQLTree::TOKEN_TYPE::MAX_SYMBOL:
+            return "max";
+        case MySQLTree::TOKEN_TYPE::STD_SYMBOL:
+            return "stddevPop";
+        case MySQLTree::TOKEN_TYPE::VARIANCE_SYMBOL:
+            return "varPop";
+        case MySQLTree::TOKEN_TYPE::STDDEV_SAMP_SYMBOL:
+            return "stddevSamp";
+        case MySQLTree::TOKEN_TYPE::VAR_SAMP_SYMBOL:
+            return "varSamp";
+        case MySQLTree::TOKEN_TYPE::SUM_SYMBOL:
+            return "sum";
         default:
             return "";
     }
@@ -277,6 +296,44 @@ void ExprVariableCT::convert(CHPtr & ch_tree) const
     ch_tree = DB::makeASTFunction("globalVariable", literal_node);
 }
 
+// TODO: full syntax
+bool ExprSumCT::setup(String & error)
+{
+    error = "";
+
+    const MySQLPtr sum_expr_node = getSourceNode();
+
+    if (!getCHFunctionName(sum_expr_node->terminal_types[0]).empty())
+    {
+        function_type = sum_expr_node->terminal_types[0];
+
+        MySQLPtr arg_node = TreePath({"inSumExpr", "expr"}).descend(sum_expr_node);
+
+        expr_ct = std::make_shared<ExpressionCT>(arg_node);
+        if (!expr_ct->setup(error))
+        {
+            expr_ct = nullptr;
+            return false;
+        }
+        return true;
+    }
+
+    error = "unknown function";
+    return false;
+}
+
+void ExprSumCT::convert(CHPtr & ch_tree) const
+{
+    assert(expr_ct);
+
+    CHPtr expr_node = nullptr;
+    expr_ct->convert(expr_node);
+
+    String function_name = getCHFunctionName(function_type);
+
+    ch_tree = DB::makeASTFunction(function_name, expr_node);
+}
+
 bool ExprSimpleCT::setup(String & error)
 {
     MySQLPtr simple_expr_node = TreePath({"simpleExpr"}).find(getSourceNode());
@@ -329,48 +386,42 @@ bool ExprSimpleCT::setup(String & error)
             return false;
     }
 
-    MySQLPtr column_node = TreePath({"columnRef"}).descend(simple_expr_node);
-    if (column_node != nullptr)
+    MySQLPtr subexpr_node = nullptr;
+
+    auto column_path = TreePath({"columnRef"});
+    auto literal_path = TreePath({"literal"});
+    auto var_path = TreePath({"variable"});
+    auto sum_path = TreePath({"sumExpr"});
+
+    if ((subexpr_node = column_path.descend(simple_expr_node)) != nullptr)
     {
-        MySQLPtr identifier_node = TreePath({"identifier"}).find(column_node);
+        MySQLPtr identifier_node = TreePath({"identifier"}).find(subexpr_node);
         if (identifier_node == nullptr)
+        {
+            error = "invalid column name";
             return false;
-
+        }
         subexpr_ct = std::make_shared<ExprIdentifierCT>(identifier_node);
-        if (!subexpr_ct->setup(error))
-        {
-            subexpr_ct = nullptr;
-            return false;
-        }
-        return true;
     }
-
-    MySQLPtr literal_node = TreePath({"literal"}).descend(simple_expr_node);
-    if (literal_node != nullptr)
+    else if ((subexpr_node = literal_path.descend(simple_expr_node)) != nullptr)
+        subexpr_ct = std::make_shared<ExprGenericLiteralCT>(subexpr_node);
+    else if ((subexpr_node = var_path.descend(simple_expr_node)) != nullptr)
+        subexpr_ct = std::make_shared<ExprVariableCT>(subexpr_node);
+    else if ((subexpr_node = sum_path.descend(simple_expr_node)) != nullptr)
+        subexpr_ct = std::make_shared<ExprSumCT>(subexpr_node);
+    else
     {
-        subexpr_ct = std::make_shared<ExprGenericLiteralCT>(literal_node);
-        if (!subexpr_ct->setup(error))
-        {
-            subexpr_ct = nullptr;
-            return false;
-        }
-        return true;
+        error = "unknown expression parameter";
+        return false;
     }
 
-    MySQLPtr var_node = TreePath({"variable"}).descend(simple_expr_node);
-    if (var_node != nullptr)
+    if (!subexpr_ct->setup(error))
     {
-        subexpr_ct = std::make_shared<ExprVariableCT>(var_node);
-        if (!subexpr_ct->setup(error))
-        {
-            subexpr_ct = nullptr;
-            return false;
-        }
-        return true;
+        subexpr_ct = nullptr;
+        return false;
     }
 
-    error = "unknown expression parameter";
-    return false;
+    return true;
 }
 
 void ExprSimpleCT::convert(CHPtr & ch_tree) const
