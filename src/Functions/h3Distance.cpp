@@ -56,7 +56,7 @@ public:
                 "Illegal type {} of argument {} of function {}. Must be UInt64",
                 arg->getName(), 2, getName());
 
-        return std::make_shared<DataTypeUInt64>();
+        return std::make_shared<DataTypeInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -88,7 +88,7 @@ public:
         const auto & data_end_index = col_end_index->getData();
 
 
-        auto dst = ColumnVector<UInt64>::create();
+        auto dst = ColumnVector<Int64>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
@@ -96,7 +96,7 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
-            
+
             auto size = gridPathCellsSize(start, end);
             dst_data[row] = size;
         }
