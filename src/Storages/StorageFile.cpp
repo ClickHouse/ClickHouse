@@ -206,8 +206,8 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         auto & in = static_cast<ReadBufferFromFileDescriptor &>(*nested_buffer);
         in.setProgressCallback(context);
     }
-
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
+    const auto &settings = context->getSettingsRef();
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, settings);
 }
 
 }

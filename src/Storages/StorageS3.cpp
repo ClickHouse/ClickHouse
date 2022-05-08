@@ -302,7 +302,8 @@ bool StorageS3Source::initialize()
 
     file_path = fs::path(bucket) / current_key;
 
-    read_buf = wrapReadBufferWithCompressionMethod(createS3ReadBuffer(current_key), chooseCompressionMethod(current_key, compression_hint));
+    const auto &settings = getContext()->getSettingsRef();
+    read_buf = wrapReadBufferWithCompressionMethod(createS3ReadBuffer(current_key), chooseCompressionMethod(current_key, compression_hint), settings);
 
     auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;
@@ -1017,10 +1018,12 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
             read_keys_in_distributed_processing->push_back(key);
 
         first = false;
+        const auto &settings = ctx->getSettingsRef();
         return wrapReadBufferWithCompressionMethod(
             std::make_unique<ReadBufferFromS3>(
                 s3_configuration.client, s3_configuration.uri.bucket, key, s3_configuration.uri.version_id, s3_configuration.rw_settings.max_single_read_retries, ctx->getReadSettings()),
-            chooseCompressionMethod(key, compression_method));
+            chooseCompressionMethod(key, compression_method),
+            settings);
     };
 
     return readSchemaFromFormat(format, format_settings, read_buffer_iterator, is_key_with_globs, ctx);
